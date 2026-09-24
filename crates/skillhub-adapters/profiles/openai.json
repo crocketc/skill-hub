@@ -1,9 +1,10 @@
 {
   "profile_version": 1,
-  "research_date": "2026-08-21",
+  "research_date": "2026-09-23",
   "official_references": [
     "https://learn.chatgpt.com/docs/build-skills",
-    "https://github.com/openai/codex"
+    "https://github.com/openai/codex",
+    "https://github.com/vercel-labs/skills#supported-agents"
   ],
   "brand": "OpenAI",
   "clients": [
@@ -36,9 +37,7 @@
         "copy": true,
         "symlink": true,
         "junction": true,
-        "limitations": [
-          "runtime_loading_unknown"
-        ]
+        "limitations": []
       },
       "call_policy": "unknown"
     },
@@ -71,9 +70,7 @@
         "copy": true,
         "symlink": true,
         "junction": true,
-        "limitations": [
-          "runtime_loading_unknown"
-        ]
+        "limitations": []
       },
       "call_policy": "unknown"
     },

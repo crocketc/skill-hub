@@ -1784,7 +1784,11 @@
       "project": "项目"
     },
     "errors": {
-      "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+      "generic": "添加操作失败（{{code}}）。请重试；若持续出现请记录该错误码。",
+      "noCurrentVersion": "该 Skill 没有可用版本，暂时无法添加。请先生成或指定一个可用版本。",
+      "runtimeNameUnavailable": "无法读取该 Skill 的名称，暂时无法添加。请刷新后重试。",
+      "planStale": "预览已经过期，目标状态可能发生变化。请返回后重新预览。",
+      "targetNotWritable": "目标目录不可写，请检查目录权限后重试。"
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
@@ -1818,13 +1822,31 @@
     },
     "plan": {
       "heading": "添加计划",
-      "description": "计划按物理目标归组；提交前始终保留警告。"
+      "description": "确认目标、部署方式和实际影响后再提交。预览不会修改文件。",
+      "target": "目标",
+      "operation": "操作",
+      "location": "目标目录",
+      "entry": "Skill 入口",
+      "logicalTargets": "关联目标",
+      "impact": {
+        "label": "影响",
+        "create": "将在目标目录创建一个 Skill 入口；集中库中的源 Skill 不会被修改。",
+        "noOp": "目标中已经是相同部署，无需重复写入。"
+      },
+      "conflicts": {
+        "generic": "目标存在需要处理的冲突。",
+        "runtimeNameExists": "目标中已有同名 Skill，无法直接添加。",
+        "ownershipUnknown": "无法确认目标内容的归属，添加前需要检查。",
+        "managedByAnotherSkill": "目标已由其他 Skill 管理，无法直接添加。"
+      }
     },
     "batch": {
       "heading": "添加 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
-      "planDescription": "以下计划按 Skill 展示，保留每个目标的警告与冲突。",
+      "planDescription": "以下按 Skill 展示将发生的目标变化；警告和冲突会在提交前保留。",
+      "previewSummary": "可添加 {{ready}} 个 Skill，无法添加 {{blocked}} 个 Skill",
       "previewFailed": "{{skillId}} 无法生成预览：{{message}}",
+      "unnamedSkill": "未命名 Skill",
       "expandAgents": "展开关联 Agent（{{count}} 个）",
       "expandAgentsHint": "把所选项目已关联的 Agent 目标一并加入选择。",
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
@@ -1875,7 +1897,9 @@
     },
     "notices": {
       "addedTitle": "已添加到 Agent/项目",
-      "addedPartialTitle": "已添加到 Agent/项目，部分目标失败"
+      "addedPartialTitle": "已添加到 Agent/项目，部分目标失败",
+      "addFailedTitle": "添加到 Agent/项目失败",
+      "addedSummary": "成功 {{succeeded}} 个 Skill，失败 {{failed}} 个，跳过 {{skipped}} 个"
     }
   },
   "security": {
@@ -3119,7 +3143,6 @@
       "emptyTitle": "暂无标签",
       "emptyHint": "给 Skill 添加标签后，这里会展示标签分布。",
       "detailCount": "{{count}} 个标签"
-      ,"untagged": "无标签"
     }
   },
   "source": {

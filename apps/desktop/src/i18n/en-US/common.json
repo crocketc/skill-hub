@@ -1784,7 +1784,11 @@
       "project": "Project"
     },
     "errors": {
-      "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists."
+      "generic": "The add operation failed ({{code}}). Please retry; note the error code if it persists.",
+      "noCurrentVersion": "This Skill has no available version and cannot be added yet. Create or select a version first.",
+      "runtimeNameUnavailable": "The Skill name could not be read, so it cannot be added yet. Refresh and try again.",
+      "planStale": "This preview is out of date; the target may have changed. Go back and preview again.",
+      "targetNotWritable": "The target directory is not writable. Check its permissions and try again."
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
@@ -1818,13 +1822,31 @@
     },
     "plan": {
       "heading": "Planned additions",
-      "description": "The plan is grouped by physical target; warnings stay visible before commit."
+      "description": "Review the target, deployment method, and file impact before committing. Preview does not change files.",
+      "target": "Target",
+      "operation": "Operation",
+      "location": "Target directory",
+      "entry": "Skill entry",
+      "logicalTargets": "Linked targets",
+      "impact": {
+        "label": "Impact",
+        "create": "A Skill entry will be created in the target directory; the source Skill in the central library will not be changed.",
+        "noOp": "The target already has the same deployment; no files need to be written."
+      },
+      "conflicts": {
+        "generic": "The target has a conflict that must be reviewed.",
+        "runtimeNameExists": "A Skill with the same name already exists in the target.",
+        "ownershipUnknown": "The target ownership could not be confirmed; review it before adding.",
+        "managedByAnotherSkill": "The target is managed by another Skill and cannot be added directly."
+      }
     },
     "batch": {
       "heading": "Add {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
-      "planDescription": "Plans are shown per Skill, preserving target warnings and conflicts.",
+      "planDescription": "Review the target changes per Skill; warnings and conflicts remain visible before commit.",
+      "previewSummary": "{{ready}} Skill(s) can be added; {{blocked}} Skill(s) are blocked",
       "previewFailed": "A preview could not be prepared for {{skillId}}: {{message}}",
+      "unnamedSkill": "Unnamed Skill",
       "expandAgents": "Expand linked agents ({{count}})",
       "expandAgentsHint": "Adds the agents associated with the selected projects to the target selection.",
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
@@ -1875,7 +1897,9 @@
     },
     "notices": {
       "addedTitle": "Added to Agent/Project",
-      "addedPartialTitle": "Added to Agent/Project, some targets failed"
+      "addedPartialTitle": "Added to Agent/Project, some targets failed",
+      "addFailedTitle": "Could not add to Agent/Project",
+      "addedSummary": "{{succeeded}} Skill(s) succeeded, {{failed}} failed, {{skipped}} skipped"
     }
   },
   "security": {
@@ -3118,8 +3142,7 @@
       "drilldown": "View {{count}} skills tagged {{label}}",
       "emptyTitle": "No tags yet",
       "emptyHint": "Tag your skills and the distribution will appear here.",
-      "detailCount": "{{count}} tags",
-      "untagged": "Untagged"
+      "detailCount": "{{count}} tags"
     }
   },
   "source": {

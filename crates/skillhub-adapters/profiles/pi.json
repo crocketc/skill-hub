@@ -1,10 +1,11 @@
 {
   "profile_version": 1,
-  "research_date": "2026-09-12",
+  "research_date": "2026-09-23",
   "official_references": [
     "https://pi.dev/docs/latest/skills",
     "https://pi.dev/docs/latest/settings",
-    "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent"
+    "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent",
+    "https://github.com/vercel-labs/skills#supported-agents"
   ],
   "brand": "Pi",
   "clients": [
@@ -47,13 +48,11 @@
       "skill_marker": "SKILL.md",
       "deployment": {
         "copy": true,
-        "symlink": false,
+        "symlink": true,
         "junction": false,
         "limitations": [
           "root_level_markdown_not_scanned",
           "project_ancestor_search_not_scanned",
-          "runtime_loading_unknown",
-          "symlink_support_unconfirmed",
           "junction_support_unconfirmed"
         ]
       },

@@ -1,8 +1,9 @@
 {
   "profile_version": 1,
-  "research_date": "2026-08-21",
+  "research_date": "2026-09-23",
   "official_references": [
-    "https://learn.chatgpt.com/docs/build-skills"
+    "https://learn.chatgpt.com/docs/build-skills",
+    "https://github.com/vercel-labs/skills#supported-agents"
   ],
   "brand": "OpenAI Codex",
   "clients": [
@@ -36,7 +37,6 @@
         "symlink": true,
         "junction": false,
         "limitations": [
-          "runtime_loading_unknown",
           "junction_support_unconfirmed"
         ]
       },

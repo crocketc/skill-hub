@@ -173,10 +173,7 @@ fn tag_chart_aggregates_skill_counts_per_tag() {
         .map(|category| (category.key.clone(), category.count))
         .collect();
     tags.sort();
-    assert_eq!(
-        tags,
-        vec![("__untagged__".to_string(), 1), ("pdf".to_string(), 1), ("writing".to_string(), 2)]
-    );
+    assert_eq!(tags, vec![("pdf".to_string(), 1), ("writing".to_string(), 3)]);
 }
 
 #[test]

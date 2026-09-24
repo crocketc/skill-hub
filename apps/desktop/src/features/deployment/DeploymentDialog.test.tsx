@@ -139,7 +139,7 @@ it("states an unsupported link mode in user-facing words and keeps the implement
       mode: "managed_copy" as const,
       warnings: ["deployment.mode.directory_junction_unavailable"],
     })),
-    warnings: [],
+    warnings: ["deployment.mode.directory_junction_unavailable"],
   }));
 
   render(
@@ -154,6 +154,7 @@ it("states an unsupported link mode in user-facing words and keeps the implement
   const row = (await screen.findAllByTestId("target-plan"))[0];
   // 主文案说「链接部署」，不出现「目录联接」这类实现术语。
   expect(within(row).getByText("此目标不支持链接部署，将改用复制部署")).toBeVisible();
+  expect(screen.getAllByText("此目标不支持链接部署，将改用复制部署")).toHaveLength(1);
   const implNode = within(row).getByText("此目标不支持目录联接");
   expect(implNode.closest("details")).not.toBeNull();
   expect(implNode).not.toBeVisible();

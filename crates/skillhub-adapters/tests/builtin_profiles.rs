@@ -176,17 +176,42 @@ fn workbuddy_local_directories_follow_the_2026_09_05_confirmation() {
 #[test]
 fn link_capabilities_are_true_only_when_documented_or_probe_verified() {
     // DEV-21（2026-09-20 用户裁决，不静默放松）：junction 声明改为双通道——
-    // ① 官方文档明确支持；② Windows 真机探针实证（RC-13/RC-14：非管理员
-    // 账号下 junction 落地为 reparse point、原文件零误删、探针零残留）。
-    // 下列客户端的目标目录均为 Windows 用户目录，属真机实证通道；其余
-    // 客户端维持保守的 junction:false，直到取得同等级证据。
+    // ① skills.sh 安装器/Agent 明确支持；② Windows 真机探针实证（RC-13/RC-14：
+    // 非管理员账号下 junction 落地为 reparse point、原文件零误删、探针零残留）。
+    // 符号链接清单依据 skills.sh 的 supported agents 与默认 symlink 安装流程；
+    // 其他客户端维持保守的 symlink:false，直到取得同等级证据。
     let catalog = ProfileCatalog::builtin();
-    let documented = [
+    let skills_cli_supported = [
+        "agent-skills.shared-directory",
+        "anthropic.claude-code",
+        "cline.extension",
+        "cline.cli",
+        "cline.sdk",
+        "cline.acp",
+        "codebuddy.code",
+        "codex.cli",
+        "cursor.editor",
+        "cursor.cli",
+        "github-copilot.cli",
+        "github-copilot.ide",
+        "google.antigravity.app",
+        "google.antigravity.cli",
+        "google.gemini-cli",
+        "grok.build-cli",
+        "grok.build-tui",
+        "grok.build-acp",
+        "hermes.agent",
+        "kimi.code",
         "openai.codex-cli",
         "openai.codex-ide",
-        "anthropic.claude-code",
-        "zcode.desktop",
         "openclaw.agent",
+        "opencode.cli",
+        "pi.coding-agent",
+        "qoder.ide",
+        "qoder.cli",
+        "trae.code",
+        "windsurf.cascade",
+        "zcode.desktop",
     ];
     let junction_probe_verified = [
         "openai.codex-cli",
@@ -213,7 +238,7 @@ fn link_capabilities_are_true_only_when_documented_or_probe_verified() {
                 "probe-verified junction must drop the unconfirmed limitation: {}",
                 client.id
             );
-            if documented.contains(&client.id.as_str()) {
+            if skills_cli_supported.contains(&client.id.as_str()) {
                 assert!(
                     client.deployment.symlink,
                     "documented symlink missing: {}",
@@ -234,6 +259,107 @@ fn link_capabilities_are_true_only_when_documented_or_probe_verified() {
                     .any(|limitation| limitation == "symlink_support_unconfirmed"));
             }
         }
+    }
+}
+
+#[test]
+fn gemini_cli_is_in_the_skills_cli_supported_set() {
+    let catalog = ProfileCatalog::builtin();
+    let client = catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter())
+        .find(|client| client.id == "google.gemini-cli")
+        .expect("Gemini CLI client is part of the bundled catalog");
+    assert!(client.deployment.symlink);
+    assert!(!client
+        .deployment
+        .limitations
+        .iter()
+        .any(|limitation| limitation == "runtime_loading_unknown"));
+    assert!(!client
+        .deployment
+        .limitations
+        .iter()
+        .any(|limitation| limitation == "symlink_support_unconfirmed"));
+}
+
+#[test]
+fn skills_cli_supported_profiles_do_not_retain_unknown_link_limitations() {
+    let catalog = ProfileCatalog::builtin();
+    for client in catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter())
+        .filter(|client| {
+            [
+                "agent-skills.shared-directory",
+                "cline.extension",
+                "cline.cli",
+                "cline.sdk",
+                "cline.acp",
+                "codebuddy.code",
+                "cursor.editor",
+                "cursor.cli",
+                "github-copilot.cli",
+                "github-copilot.ide",
+                "google.antigravity.app",
+                "google.antigravity.cli",
+                "grok.build-cli",
+                "grok.build-tui",
+                "grok.build-acp",
+                "hermes.agent",
+                "kimi.code",
+                "opencode.cli",
+                "pi.coding-agent",
+                "qoder.ide",
+                "qoder.cli",
+                "trae.code",
+                "windsurf.cascade",
+            ]
+            .contains(&client.id.as_str())
+        })
+    {
+        assert!(
+            client.deployment.symlink,
+            "skills.sh supported client must link: {}",
+            client.id
+        );
+        assert!(!client
+            .deployment
+            .limitations
+            .iter()
+            .any(|limitation| limitation == "runtime_loading_unknown"));
+        assert!(!client
+            .deployment
+            .limitations
+            .iter()
+            .any(|limitation| limitation == "symlink_support_unconfirmed"));
+    }
+}
+
+#[test]
+fn skills_cli_unsupported_boundaries_remain_copy_only() {
+    let catalog = ProfileCatalog::builtin();
+    let unsupported = [
+        "codebuddy.workbuddy",
+        "deepseek-harness.tui",
+        "deepseek-harness.web",
+        "comate.ide",
+        "google.antigravity.ide",
+        "google.antigravity.sdk",
+    ];
+    for client in catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter())
+        .filter(|client| unsupported.contains(&client.id.as_str()))
+    {
+        assert!(
+            !client.deployment.symlink,
+            "skills.sh unsupported client must remain copy-only: {}",
+            client.id
+        );
     }
 }
 

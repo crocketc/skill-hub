@@ -138,13 +138,13 @@ export function getTagItems(
   return [...snapshot.tag_categories]
     .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key))
     .map((category) => {
-      const label = category.key === "__untagged__" ? String(t("overview.tags.untagged" as never)) : category.key;
+      const label = category.key;
       return {
         buttonLabel: t("overview.tags.drilldown", { count: category.count, label }),
         count: category.count,
         key: category.key,
         label,
-        target: category.key === "__untagged__" ? "/library" : `/library?tag=${encodeURIComponent(category.key)}`,
+        target: `/library?tag=${encodeURIComponent(category.key)}`,
       };
     });
 }

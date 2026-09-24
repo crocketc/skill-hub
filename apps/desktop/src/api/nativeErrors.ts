@@ -141,6 +141,11 @@ export function keyedMessage(
   if (code === "source.provider_authentication_unavailable") return "source.providerAuthenticationUnavailable";
   if (code === "source.search_unavailable") return "source.searchUnavailable";
   if (code === "deployment.target_exists") return "deployment.results.failure.targetExists";
+  if (code === "deployment.no_current_version") return "deployment.errors.noCurrentVersion";
+  if (code === "deployment.runtime_name_unavailable") return "deployment.errors.runtimeNameUnavailable";
+  if (code === "deployment.plan_stale") return "deployment.errors.planStale";
+  if (code === "deployment.target_not_writable") return "deployment.errors.targetNotWritable";
+  if (code === "preview.version_missing") return "deployment.errors.noCurrentVersion";
   if (code === "deployment.name_mismatch") return "deployment.results.failure.nameMismatch";
   if (code === "deployment.target_changed") return "deployment.results.failure.targetChanged";
   if (code === "deployment.symlink_not_supported") return "deployment.results.failure.symlinkNotSupported";

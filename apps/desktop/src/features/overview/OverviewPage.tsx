@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import type { BootstrapOutletContext } from "../../app/AppShell";
@@ -14,7 +14,6 @@ import {
   RelationshipThumbnailNetwork,
   useOverviewRelationshipSummaries,
 } from "./RelationshipThumbnail";
-import { TagDistributionChart } from "./TagDistributionChart";
 import {
   getDeploymentItems,
   getOverviewSummaryMetrics,
@@ -126,24 +125,22 @@ function TagDistributionPanel({
   const heading = t("overview.tags.heading");
 
   if (items.length === 0) {
-    // DEV-7（用户裁定）：零标签渲染空态面板——饼图占位 + 暂无标签文案，
-    // 待处理摘要的位置因此保持稳定，不再随标签数量出现/消失。
+    // 零标签仍保留面板位置，但不伪造“无标签”分类；该区域只表达真实标签成员。
     return (
       <section aria-label={heading} className="sh-overview__tag-panel">
         <div className="sh-overview__details-head">
           <h2>{heading}</h2>
           <span>{t("overview.tags.detailCount", { count: 0 })}</span>
         </div>
-        <div className="sh-overview__tag-layout sh-overview__tag-layout--empty">
-          <div className="sh-overview__tag-placeholder" aria-hidden="true" />
-          <div className="sh-overview__tag-empty">
-            <p className="sh-overview__tag-empty-title">{t("overview.tags.emptyTitle")}</p>
-            <p className="sh-overview__tag-empty-hint">{t("overview.tags.emptyHint")}</p>
-          </div>
+        <div className="sh-overview__tag-empty">
+          <p className="sh-overview__tag-empty-title">{t("overview.tags.emptyTitle")}</p>
+          <p className="sh-overview__tag-empty-hint">{t("overview.tags.emptyHint")}</p>
         </div>
       </section>
     );
   }
+
+  const maxCount = items[0]?.count ?? 1;
 
   return (
     <section aria-label={heading} className="sh-overview__tag-panel">
@@ -152,24 +149,30 @@ function TagDistributionPanel({
         <span>{t("overview.tags.detailCount", { count: items.length })}</span>
       </div>
       <div className="sh-overview__tag-layout">
-        <TagDistributionChart ariaLabel={t("overview.tags.chartAria")} items={items} />
-        <div className="sh-overview__tag-details-scroll">
-          <ol aria-label={heading} className="sh-overview__chart-list">
-            {items.map((item) => (
+        <ol aria-label={heading} className="sh-overview__tag-bar-list">
+          {items.map((item) => {
+            const scale = item.count / maxCount;
+            return (
               <li key={item.key}>
                 <button
                   aria-label={item.buttonLabel}
-                  className="sh-overview__chart-link"
+                  className="sh-overview__tag-bar"
                   onClick={() => navigate(item.target)}
+                  style={{ "--tag-bar-scale": scale } as CSSProperties}
                   type="button"
                 >
-                  <span>{item.label}</span>
-                  <strong>{` ${item.count}`}</strong>
+                  <span className="sh-overview__tag-bar-label" title={item.label}>
+                    {item.label}
+                  </span>
+                  <span aria-hidden="true" className="sh-overview__tag-bar-track">
+                    <span className="sh-overview__tag-bar-fill" />
+                  </span>
+                  <strong>{item.count}</strong>
                 </button>
               </li>
-            ))}
-          </ol>
-        </div>
+            );
+          })}
+        </ol>
       </div>
     </section>
   );

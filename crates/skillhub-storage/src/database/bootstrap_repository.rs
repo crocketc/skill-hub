@@ -284,11 +284,10 @@ impl<'a> BootstrapRepository<'a> {
     }
 
     /// Aggregates skill counts per tag for the overview tag drill-down.
-    /// Each skill contributes to exactly one bucket: its alphabetically first
-    /// tag, or the explicit untagged bucket. This keeps the chart total equal
-    /// to the skill total even when a skill carries multiple tags.
+    /// A skill contributes once to every tag it carries. Untagged skills are
+    /// intentionally omitted because this panel is about tag membership.
     pub fn tag_chart(&self) -> AppResult<Vec<TagChartCategory>> {
-        let sql = "SELECT COALESCE((SELECT MIN(t.name) FROM tags t JOIN skill_tags st ON st.tag_id=t.id WHERE st.skill_id=s.id), '__untagged__'), COUNT(*) FROM skills s GROUP BY 1 ORDER BY 1";
+        let sql = "SELECT t.name, COUNT(DISTINCT st.skill_id) FROM tags t JOIN skill_tags st ON st.tag_id=t.id GROUP BY t.name ORDER BY t.name";
         let mut statement = self.database.connection.prepare(sql).map_err(error)?;
         let mut result = Vec::new();
         for row in statement

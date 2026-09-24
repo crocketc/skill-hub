@@ -103,8 +103,7 @@ it("previews every selected Skill before explicitly committing a batch", async (
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
 
-  expect(await screen.findByText("skill-pdf")).toBeVisible();
-  expect(screen.getByText("skill-docx")).toBeVisible();
+  expect((await screen.findAllByRole("heading", { name: "未命名 Skill" }))).toHaveLength(2);
   expect(preview).toHaveBeenCalledWith(["skill-pdf", "skill-docx"], [targets[0]], undefined);
 
   await user.click(screen.getByRole("button", { name: "确认添加" }));
@@ -329,6 +328,37 @@ it("blocks the batch commit and announces the failure when a skill preview fails
   expect(facade.commit).not.toHaveBeenCalled();
 });
 
+it("renders a native preview failure as user-facing text instead of an error key", async () => {
+  const user = userEvent.setup();
+  const facade = batchFacade({
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [{ skillId: "skill-docx", message: "deployment.no_current_version" }],
+      plans: [{
+        skillId: "skill-pdf",
+        plan: { skillId: "skill-pdf", versionId: "v1", targets: selected.map((target) => ({ targetId: target.id, label: target.label, mode: "managed_copy" as const, warnings: [] })), warnings: [] },
+      }],
+    })),
+  });
+  await renderBatchPage(facade, ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByText("该 Skill 没有可用版本，暂时无法添加。请先生成或指定一个可用版本。")).toBeVisible();
+  expect(screen.queryByText("deployment.no_current_version")).not.toBeInTheDocument();
+});
+
+it("shows a batch impact summary before commit", async () => {
+  const user = userEvent.setup();
+  await renderBatchPage(batchFacade(), ["skill-pdf", "skill-docx"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const plan = await screen.findByRole("region", { name: /添加计划/ });
+  expect(within(plan).getByRole("status")).toHaveTextContent("可添加 2 个 Skill，无法添加 0 个 Skill");
+});
+
 it("maps the skill UUID to a display name in preview failure rows and keeps the raw id in technical details (DEV-18-A)", async () => {
   const user = userEvent.setup();
   const facade = batchFacade({
@@ -415,6 +445,48 @@ it("renders a preview occupancy conflict as readable text with takeover guidance
   expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
 });
 
+it("shows the user-facing impact, destination and operation for a planned target", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const target = deploymentTargetsFixture()[0];
+  const facade = batchFacade({
+    listTargets: async () => [target],
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async (_skillIds, selected) => ({
+      failures: [],
+      plans: [{
+        skillId: "skill-pdf",
+        displayName: "PDF 抽取器",
+        plan: {
+          skillId: "skill-pdf",
+          versionId: "v1",
+          targets: selected.map((candidate) => ({
+            targetId: candidate.id,
+            label: candidate.label,
+            mode: "symbolic_link" as const,
+            warnings: [],
+            targetPath: candidate.path,
+            destinationPath: `${candidate.path}/pdf-extractor`,
+            change: "create" as const,
+          })),
+          warnings: [],
+        },
+      }],
+    })),
+  });
+
+  render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const card = await screen.findByTestId("target-plan");
+  expect(screen.getByRole("heading", { name: "PDF 抽取器" })).toBeVisible();
+  expect(card).toHaveTextContent("链接部署");
+  expect(card).toHaveTextContent("目标目录");
+  expect(card).toHaveTextContent("Skill 入口");
+  expect(card).toHaveTextContent("集中库中的源 Skill 不会被修改");
+  expect(card.querySelector("details")).not.toHaveAttribute("open");
+});
+
 it("swaps the target list for the plan panel at the preview step and supports going back", async () => {
   // DEV-17：计划区必须是独立呈现单元——预览步不再把「添加计划」追加在
   // 目标长列表尾部；提供「上一步」返回选择，勾选状态保持。
@@ -481,12 +553,20 @@ it("states an unsupported link mode in user-facing words and keeps the implement
         plan: {
           skillId: "skill-pdf",
           versionId: "v1",
-          warnings: [],
+          warnings: [
+            "deployment.mode.managed_copy",
+            "deployment.mode.symbolic_link_unavailable",
+            "deployment.mode.directory_junction_unavailable",
+          ],
           targets: selected.map((target) => ({
             targetId: target.id,
             label: target.label,
             mode: "managed_copy" as const,
-            warnings: ["deployment.mode.symbolic_link_unavailable"],
+            warnings: [
+              "deployment.mode.managed_copy",
+              "deployment.mode.symbolic_link_unavailable",
+              "deployment.mode.directory_junction_unavailable",
+            ],
           })),
         },
       }],
@@ -499,7 +579,9 @@ it("states an unsupported link mode in user-facing words and keeps the implement
 
   const row = (await screen.findAllByTestId("target-plan"))[0];
   // 主文案说「链接部署」，不出现「符号链接」这类实现术语。
+  expect(within(row).getAllByText("此目标不支持链接部署，将改用复制部署")).toHaveLength(1);
   expect(within(row).getByText("此目标不支持链接部署，将改用复制部署")).toBeVisible();
+  expect(screen.getAllByText("此目标不支持链接部署，将改用复制部署")).toHaveLength(1);
   const implNode = within(row).getByText("此目标不支持符号链接");
   expect(implNode.closest("details")).not.toBeNull();
   expect(implNode).not.toBeVisible();
@@ -524,7 +606,7 @@ it("offers a reachable manage-deployment entry after a successful batch (DEV-21-
   // 每个成功的 Skill 一条入口（同一 Skill 的多目标不重复）。
   const manage = await screen.findAllByRole("button", { name: /管理此部署/ });
   expect(manage).toHaveLength(2);
-  await user.click(screen.getByRole("button", { name: /管理此部署：skill-pdf/ }));
+  await user.click(screen.getAllByRole("button", { name: /管理此部署：未命名 Skill/ })[0]);
   expect(onManageDeployment).toHaveBeenCalledWith("skill-pdf");
 });
 

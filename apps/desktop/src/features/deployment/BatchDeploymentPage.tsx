@@ -7,7 +7,6 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
-import { Icon } from "../../ui/Icon";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import { ImportShell, type ImportStatus, type ImportStep } from "../import/ImportShell";
 import "./deployment.css";
@@ -16,9 +15,9 @@ import {
   type BatchDeploymentPreview,
   type BatchProjectInfo,
   type BatchDeploymentResult,
-  isImplementationWarning,
   userFacingDeploymentMode,
   userFacingDeploymentWarning,
+  warningsNotCoveredByTargets,
   type DeploymentMode,
   type DeploymentTarget,
 } from "./api";
@@ -26,6 +25,7 @@ import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
+import { DeploymentImpactCard } from "./DeploymentImpactCard";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -123,12 +123,23 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         label: t("deployment.tracker.label"),
         total: preview.plans.length,
         translate: (key, options) => String(t(key as never, options as never)),
-        errorNotice: () => null,
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("deployment.notices.addFailedTitle"),
+          detail: message,
+        }),
         successNotice: (_result, summary) => ({
           tone: summary && summary.failed > 0 ? "warning" : "success",
           title: summary && summary.failed > 0
             ? t("deployment.notices.addedPartialTitle")
             : t("deployment.notices.addedTitle"),
+          detail: summary
+            ? t("deployment.notices.addedSummary", {
+                succeeded: summary.succeeded,
+                failed: summary.failed,
+                skipped: summary.skipped,
+              })
+            : undefined,
         }),
         summarize: (results: BatchDeploymentResult[]) => ({
           succeeded: new Set(results.filter((result) => result.status === "succeeded").map((result) => result.skillId)).size,
@@ -182,7 +193,12 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   // DEV-21-A：结果面按 Skill 去重给出「管理此部署」入口，避免多目标重复条目。
   const managedSkills = [...new Map((results ?? [])
     .filter((result): result is BatchDeploymentResult & { skillId: string } => result.status === "succeeded" && Boolean(result.skillId))
-    .map((result) => [result.skillId, { skillId: result.skillId, displayName: result.displayName }]))
+    .map((result) => [result.skillId, {
+      skillId: result.skillId,
+      displayName: result.displayName
+        ?? preview?.plans.find((candidate) => candidate.skillId === result.skillId)?.displayName
+        ?? t("deployment.batch.unnamedSkill"),
+    }]))
     .values()];
   const failedResults = results?.filter((result) => result.status === "failed") ?? [];
   const previewFailures = preview?.failures ?? [];
@@ -317,14 +333,22 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
             <p>{t("deployment.batch.planDescription")}</p>
           </div>
         </div>
+        <p className="sh-deployment-impact-summary" role="status">
+          {t("deployment.batch.previewSummary", {
+            ready: preview.plans.length,
+            blocked: previewFailures.length,
+          })}
+        </p>
         {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li className="sh-deployment-flow__failure" key={failure.skillId}>
           <div>
             {/* DEV-18-A：失败行主文案用展示名（回退 runtime name）；裸 Skill
                 UUID 绝不作为首屏可见文本，只在可展开的「技术详情」区域内。 */}
-            <strong>{failure.displayName ?? failure.skillId}</strong>
-            <p>{failure.error
-              ? describeNativeError(failure.error, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic")
-              : failure.message}</p>
+            <strong>{failure.displayName ?? t("deployment.batch.unnamedSkill")}</strong>
+            <p>{describeNativeError(
+              failure.error ?? failure.message,
+              (key, options) => String(t(key as never, options as never)),
+              "deployment.errors.generic",
+            )}</p>
           </div>
           <details className="sh-deployment-flow__diagnostics">
             <summary>{t("deployment.batch.technicalDetails")}</summary>
@@ -337,43 +361,29 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           </details>
         </li>)}</ul> : null}
         {/* DEV-18-A：计划区标题用展示名，裸 Skill UUID 不作为主文案。 */}
-        {preview.plans.map(({ skillId, displayName, plan }) => <section key={skillId}>
-          <h3>{displayName ?? skillId}</h3>
-          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
-          <ul className="sh-workflow-list">
-            {plan.targets.map((target) => <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-              <span><DeploymentTargetPresentation fallback={target.label} target={targets?.find((candidate) => candidate.id === target.targetId)} /><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
-              {/* DEV-21-A：具体实现方式（符号链接/目录联接/托管复制）只在技术详情，
-                  首屏主文案统一为「链接部署」/「复制部署」。 */}
-              <details className="sh-deployment-flow__diagnostics">
-                <summary>{t("deployment.mode.technical")}</summary>
-                <dl className="sh-deployment-flow__diagnostics-list">
-                  <div>
-                    <dt>{t("deployment.mode.technical")}</dt>
-                    <dd>{t(`deployment.mode.${target.mode}`)}</dd>
-                  </div>
-                  {/* 实现方式告警的原始术语只留在技术详情（DEV-21-A）。 */}
-                  {target.warnings.filter(isImplementationWarning).map((warning) => <div key={warning}>
-                    <dt>{t("deployment.mode.technical")}</dt>
-                    <dd>{String(t(warning as never, { defaultValue: warning } as never))}</dd>
-                  </div>)}
-                </dl>
-              </details>
-              {target.warnings.length > 0 ? (
-                <span className="sh-status sh-status--warning">
-                  <Icon aria-hidden="true" name="warning" size={16} />
-                  {/* DEV-21-A：主文案只说「链接部署」/「复制部署」。 */}
-                  {target.warnings.map((warning) => String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))).join(" ")}
-                </span>
-              ) : null}
-            </li>)}
-          </ul>
-        </section>)}
+        {preview.plans.map(({ skillId, displayName, plan }) => {
+          const planWarnings = warningsNotCoveredByTargets(plan);
+          return <section key={skillId}>
+          <h3>{displayName ?? t("deployment.batch.unnamedSkill")}</h3>
+          {planWarnings.length > 0 ? <ul className="sh-notice-list">{planWarnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
+          <div className="sh-deployment-impact-list">
+            {plan.targets.map((target) => <DeploymentImpactCard
+              key={target.targetId}
+              target={target}
+              targets={targets ?? []}
+            />)}
+          </div>
+        </section>;
+        })}
       </section> : null}
       {results ? <BatchOperationSummary
         outcomes={results.map((result): BatchOutcome => ({
           id: `${result.skillId ?? "single"}:${result.targetId}`,
-          label: result.skillId ? `${result.skillId} · ${result.label}` : result.label,
+          label: result.skillId
+            ? `${result.displayName
+              ?? preview?.plans.find((candidate) => candidate.skillId === result.skillId)?.displayName
+              ?? t("deployment.batch.unnamedSkill")} · ${result.label}`
+            : result.label,
           message: describeDeploymentResult(result, (key, options) => String(t(key as never, options as never))),
           status: result.status,
         }))}
@@ -391,7 +401,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                   type="button"
                   onClick={() => (onManageDeployment ? onManageDeployment(skillId) : navigate(`/library/${skillId}`))}
                 >
-                  {t("deployment.results.manageDeployment")}：{displayName ?? skillId}
+                  {t("deployment.results.manageDeployment")}：{displayName}
                 </button>
               </li>
             ))}

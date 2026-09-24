@@ -96,9 +96,9 @@ it("keeps overview data modules in the page flow instead of creating nested scro
   expect(overviewCss).toMatch(/:root\.sh-is-window-maximized \.sh-overview/);
   expect(overviewCss).not.toMatch(/@media \(max-height:\s*56rem\)/);
   expect(overviewCss).not.toMatch(/\.sh-page-frame--fill \{[\s\S]*?height:\s*auto/);
-  expect(overviewCss).not.toMatch(/\.sh-overview[^}]*overflow-y:\s*(auto|scroll)/);
-  expect(overviewCss).not.toMatch(/\.sh-overview[^}]*max-height:\s*10rem/);
-  expect(overviewCss).toMatch(/\.sh-overview__tag-details-scroll\s*\{[\s\S]*?overflow-y:\s*visible/);
+  expect(overviewCss).not.toMatch(/\.sh-overview\s*\{[^}]*overflow-y:\s*(auto|scroll)/);
+  expect(overviewCss).not.toMatch(/\.sh-overview\s*\{[^}]*max-height:\s*10rem/);
+  expect(overviewCss).toMatch(/\.sh-overview__tag-bar-list\s*\{[\s\S]*?overflow-y:\s*auto/);
 });
 
 it("uses four equal compact metric tracks when the maximized hero occupies its own row", () => {

@@ -7,7 +7,6 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
-import { Icon } from "../../ui/Icon";
 import { ImportShell, type ImportStatus, type ImportStep } from "../import/ImportShell";
 import { DeploymentResults } from "./DeploymentResults";
 import "./deployment.css";
@@ -17,13 +16,14 @@ import {
   type DeploymentPlan,
   type DeploymentResult,
   type DeploymentTarget,
-  isImplementationWarning,
   userFacingDeploymentMode,
   userFacingDeploymentWarning,
+  warningsNotCoveredByTargets,
 } from "./api";
 import { createNativeDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
+import { DeploymentImpactCard } from "./DeploymentImpactCard";
 
 export interface DeploymentDialogProps {
   facade?: DeploymentFacade;
@@ -106,7 +106,11 @@ export function DeploymentDialog({
         label: t("deployment.tracker.label"),
         total: plan.targets.length,
         translate: (key, options) => String(t(key as never, options as never)),
-        errorNotice: () => null,
+        errorNotice: (_error, message) => ({
+          tone: "danger",
+          title: t("deployment.notices.addFailedTitle"),
+          detail: message,
+        }),
         successNotice: (_result, summary) => ({
           tone: summary && summary.failed > 0 ? "warning" : "success",
           title: summary && summary.failed > 0
@@ -125,8 +129,12 @@ export function DeploymentDialog({
           return results;
         },
       });
-      setResults(committed);
-      onCommitted?.(committed);
+      const withDisplayNames = committed.map((result) => ({
+        ...result,
+        displayName: result.displayName ?? plan.displayName ?? runtimeName,
+      }));
+      setResults(withDisplayNames);
+      onCommitted?.(withDisplayNames);
     } catch (reason) {
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
@@ -288,36 +296,16 @@ export function DeploymentDialog({
               <p>{t("deployment.plan.description")}</p>
             </div>
           </div>
-          {plan.warnings.length > 0 ? <ul className="sh-notice-list">{plan.warnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
-          <ul className="sh-workflow-list">
-            {plan.targets.map((target) => (
-              <li className="sh-workflow-list__item" data-testid="target-plan" key={target.targetId}>
-                <span><DeploymentTargetPresentation fallback={target.label} target={targets?.find((candidate) => candidate.id === target.targetId)} /><small>{t(userFacingDeploymentMode(target.mode))}</small></span>
-                {/* DEV-21-A：实现方式只在技术详情，首屏主文案统一为「链接部署」/「复制部署」。 */}
-                <details className="sh-deployment-flow__diagnostics">
-                  <summary>{t("deployment.mode.technical")}</summary>
-                  <dl className="sh-deployment-flow__diagnostics-list">
-                    <div>
-                      <dt>{t("deployment.mode.technical")}</dt>
-                      <dd>{t(`deployment.mode.${target.mode}`)}</dd>
-                    </div>
-                    {/* 实现方式告警的原始术语只留在技术详情（DEV-21-A）。 */}
-                    {target.warnings.filter(isImplementationWarning).map((warning) => <div key={warning}>
-                      <dt>{t("deployment.mode.technical")}</dt>
-                      <dd>{String(t(warning as never, { defaultValue: warning } as never))}</dd>
-                    </div>)}
-                  </dl>
-                </details>
-                {target.warnings.length > 0 ? (
-                  <span className="sh-status sh-status--warning">
-                    <Icon aria-hidden="true" name="warning" size={16} />
-                    {/* DEV-21-A：主文案只说「链接部署」/「复制部署」。 */}
-                    {target.warnings.map((warning) => String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))).join(" ")}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          {warningsNotCoveredByTargets(plan).length > 0 ? <ul className="sh-notice-list">{warningsNotCoveredByTargets(plan).map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
+          <div className="sh-deployment-impact-list">
+            {plan.targets.map((target) => <DeploymentImpactCard
+              key={target.targetId}
+              skillId={skillId}
+              skillName={plan.displayName ?? runtimeName ?? t("deployment.batch.unnamedSkill")}
+              target={target}
+              targets={targets ?? []}
+            />)}
+          </div>
         </section>
       ) : null}
       {phase === "results" && results ? <DeploymentResults results={results} targets={targets} /> : null}

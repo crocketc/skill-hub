@@ -92,6 +92,12 @@ function toPlan(
     label: labelForTarget(target.logical_target_ids, selected, target.physical_target_id),
     mode: target.mode,
     warnings: target.warnings,
+    logicalTargetIds: target.logical_target_ids,
+    targetPath: target.target_path,
+    destinationPath: target.destination_path,
+    sourcePath: target.source_path,
+    change: target.change,
+    conflicts: target.conflicts,
   }));
   return {
     skillId: native.skill_id,

@@ -47,6 +47,96 @@
   white-space: normal;
 }
 
+.sh-deployment-impact-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-deployment-impact-summary {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-deployment-impact-card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface-raised, var(--ui-surface));
+}
+
+.sh-deployment-impact-card h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.sh-deployment-impact-card__facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.sh-deployment-impact-card__facts > div {
+  display: grid;
+  grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+.sh-deployment-impact-card__facts dt {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-deployment-impact-card__facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sh-deployment-impact-card__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-deployment-impact-card__warnings {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-warning-foreground);
+}
+
+.sh-deployment-impact-card__conflicts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-danger-surface, var(--ui-surface-subtle));
+  color: var(--ui-danger-foreground);
+}
+
+@media (max-width: 38rem) {
+  .sh-deployment-impact-card__facts > div {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}
+
 /* 模式选择与主操作同行：选择器保持 40px 控件高度。 */
 .sh-import-wizard__actions-group select {
   min-height: 2.5rem;

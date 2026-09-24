@@ -1,8 +1,9 @@
 {
   "profile_version": 1,
-  "research_date": "2026-08-21",
+  "research_date": "2026-09-23",
   "official_references": [
-    "https://docs.windsurf.com/zh/windsurf/cascade/skills"
+    "https://docs.windsurf.com/zh/windsurf/cascade/skills",
+    "https://github.com/vercel-labs/skills#supported-agents"
   ],
   "brand": "Windsurf",
   "clients": [
@@ -31,11 +32,9 @@
       "skill_marker": "SKILL.md",
       "deployment": {
         "copy": true,
-        "symlink": false,
+        "symlink": true,
         "junction": false,
         "limitations": [
-          "runtime_loading_unknown",
-          "symlink_support_unconfirmed",
           "junction_support_unconfirmed"
         ]
       },

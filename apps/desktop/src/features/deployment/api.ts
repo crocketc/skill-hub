@@ -1,4 +1,8 @@
-import type { DeploymentPlan as NativeDeploymentPlan } from "../../api/bindings";
+import type {
+  DeploymentPlan as NativeDeploymentPlan,
+  TargetChange,
+  TargetConflict,
+} from "../../api/bindings";
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
@@ -21,6 +25,12 @@ const IMPLEMENTATION_WARNING_ALIASES: Record<string, string> = {
   "deployment.mode.directory_junction_unavailable": "deployment.mode.userLinkUnavailable",
 };
 
+const IMPLEMENTATION_MODE_WARNINGS = new Set([
+  "deployment.mode.symbolic_link",
+  "deployment.mode.directory_junction",
+  "deployment.mode.managed_copy",
+]);
+
 /** 把实现方式告警改写为用户层文案；非实现方式告警原样返回。 */
 export function userFacingDeploymentWarning(warning: string): string {
   return IMPLEMENTATION_WARNING_ALIASES[warning] ?? warning;
@@ -28,7 +38,18 @@ export function userFacingDeploymentWarning(warning: string): string {
 
 /** 该告警是否在描述实现方式（原始术语需要沉到技术详情）。 */
 export function isImplementationWarning(warning: string): boolean {
-  return Object.hasOwn(IMPLEMENTATION_WARNING_ALIASES, warning);
+  return Object.hasOwn(IMPLEMENTATION_WARNING_ALIASES, warning) || IMPLEMENTATION_MODE_WARNINGS.has(warning);
+}
+
+/** 模式说明是技术事实，不在卡片的用户提示区重复展示。 */
+export function isModeDescriptionWarning(warning: string): boolean {
+  return IMPLEMENTATION_MODE_WARNINGS.has(warning);
+}
+
+/** Skill 级 warnings 可能聚合了目标级 warnings；避免同一提示出现两次。 */
+export function warningsNotCoveredByTargets(plan: DeploymentPlan): string[] {
+  const targetWarnings = new Set(plan.targets.flatMap((target) => target.warnings));
+  return plan.warnings.filter((warning) => !targetWarnings.has(warning));
 }
 export type DeploymentTarget = {
   id: string;
@@ -47,6 +68,12 @@ export type DeploymentPlanTarget = {
   label: string;
   mode: DeploymentMode;
   warnings: string[];
+  logicalTargetIds?: string[];
+  targetPath?: string;
+  destinationPath?: string;
+  sourcePath?: string;
+  change?: TargetChange;
+  conflicts?: TargetConflict[];
 };
 export type DeploymentPlan = {
   skillId: string;

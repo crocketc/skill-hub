@@ -17,7 +17,6 @@ import type { RelationshipsFacade } from "../relationships/api";
 import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import overviewCss from "./overview.css?raw";
-import tagRuntime from "./TagDistributionChartRuntime.tsx?raw";
 import { OverviewPage } from "./OverviewPage";
 
 const overviewSnapshot: BootstrapSnapshot = {
@@ -401,15 +400,20 @@ it("contains overlong relationship thumbnail labels inside their cards", () => {
   expect(labelRule).toContain("overflow-wrap: anywhere");
 });
 
-it("renders the tag distribution in a fixed chart panel with a text equivalent", async () => {
+it("renders the tag distribution as a scrollable ranked bar list", async () => {
   await renderOverview();
 
-  expect(screen.getByRole("img", { name: "Skill count by tag chart" })).toBeVisible();
-  expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
+  const tagList = screen.getByRole("list", { name: "Skill count by tag" });
+  expect(tagList).toBeVisible();
+  expect(tagList).toHaveClass("sh-overview__tag-bar-list");
+  expect(within(tagList).getByRole("button", { name: "View 5 skills tagged writing" })).toBeVisible();
+  expect(within(tagList).getByRole("button", { name: "View 2 skills tagged pdf" })).toBeVisible();
 });
 
-it("assigns an explicit palette color to every tag slice", () => {
-  expect(tagRuntime).toContain("palette.chartColors[index % palette.chartColors.length]");
+it("uses the largest tag count as the bar scale and keeps the tag list scrollable", () => {
+  expect(overviewCss).toMatch(/\.sh-overview__tag-bar-list\s*\{[\s\S]*overflow-y:\s*auto/);
+  expect(overviewCss).toMatch(/\.sh-overview__tag-bar\s*\{[\s\S]*--tag-bar-scale/);
+  expect(overviewCss).toMatch(/\.sh-overview__tag-bar-fill\s*\{[\s\S]*transform:\s*scaleX\(var\(--tag-bar-scale/);
 });
 
 it("keeps a single page-level h1 for the overview heading outline", async () => {
@@ -699,9 +703,8 @@ it("renders the tag panel empty state and keeps relations above the deployment c
   };
   await renderOverview(emptyTags);
 
-  // 零标签：空态饼图面板仍然渲染（占位 + 暂无标签），不再整块消失。
+  // 零标签：仍然保留面板位置，但不把“无标签”伪装成一个可筛选标签。
   expect(await screen.findByText("No tags yet")).toBeVisible();
-  expect(document.querySelector(".sh-overview__tag-placeholder")).not.toBeNull();
   expect(screen.getByText("Skill count by tag")).toBeVisible();
 
   // 零标签时待处理摘要保持可见（与空态面板同列）。

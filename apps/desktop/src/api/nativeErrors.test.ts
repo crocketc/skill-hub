@@ -64,6 +64,15 @@ describe("nativeErrors", () => {
     expect(message).toContain("internal.error");
   });
 
+  it("maps a deployment error key carried by a regular Error to user-facing copy", () => {
+    const message = describeNativeError(
+      new Error("deployment.no_current_version"),
+      (translationKey) => translationKey,
+      "errors.generic",
+    );
+    expect(message).toBe("deployment.errors.noCurrentVersion");
+  });
+
   it.each([
     ["library_not_ready", "errors.onboarding.libraryNotReady"],
     ["library_root_locked", "errors.onboarding.libraryRootLocked"],
