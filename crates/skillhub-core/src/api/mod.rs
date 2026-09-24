@@ -38,7 +38,7 @@ pub use command::{
     RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelinkSource,
     RemoveCustomAgent, RemoveIgnoreRule, RemoveSkillRepo, RenameCombination, RenameSkill,
     RescanSkill, ResetProfileOverride, ResolveConflictCase, ResolveRecovery, RestoreDecision,
-    RestoreDeployment, RestoreOriginalCallPolicy, RollbackApplicationUpdate,
+    RestoreDeployment, RestoreOriginalCallPolicy, RetainSourceCopy, RollbackApplicationUpdate,
     RollbackOriginalMigration, RollbackRelationGovernanceBatch, RollbackRelationMigration,
     RunBasicCheck, RunHealthCheck, RunImportAiChecks, RunInitializationScan, RunLlmSafetyCheck,
     RunRelationshipCheck, RunRollingBackup, SaveLlmProvider, SaveMarkdownAsCopy,

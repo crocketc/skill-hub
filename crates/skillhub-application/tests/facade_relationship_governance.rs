@@ -5171,3 +5171,467 @@ mod unified_and_history {
         assert_eq!(by_skill.total, 2);
     }
 }
+
+// ===================== 8A：保留来源副本与来源关系维度的清理准备 =====================
+
+mod retain_and_cleanup_prepare {
+    //! 8A 验收：RetainSourceCopy 只改决策并记历史、绝不触碰来源目录；
+    //! PrepareOriginalMigration 以 source_relation_id 为对象，计划携带
+    //! 关系身份、Agent 呈现与逻辑目标上下文；Full 校验把关阻断冲突；
+    //! 同一 Skill 的多条来源互不影响（8.1/8.2/8.6/8.11/8.12）。
+
+    use skillhub_core::agent::{
+        ClientInstance, ClientKind, ClientPresence, DiscoverySnapshot, LogicalTarget,
+        OperatingSystem, TargetScope,
+    };
+    use skillhub_core::api::{ListGovernanceHistory, PrepareImport};
+    use skillhub_core::import::{ImportCandidate, ImportDecision};
+    use skillhub_core::physical_id_for_path;
+    use skillhub_core::relationship::{
+        SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact,
+    };
+    use skillhub_core::{AppCommand, AppCommandResult, AppQueryResult, ImportGovernanceDecision};
+
+    use super::*;
+
+    const CLIENT_ID: &str = "agent.demo";
+
+    fn register_agent_target(database: &Database, root: &std::path::Path) {
+        database
+            .agent_repository()
+            .replace(&DiscoverySnapshot {
+                generation: "1".into(),
+                observed_at: "2026-09-15T00:00:00Z".into(),
+                instances: vec![ClientInstance {
+                    profile_id: "demo".into(),
+                    client_id: CLIENT_ID.into(),
+                    kind: ClientKind::IdeExtension,
+                    display_name: "Demo IDE".into(),
+                    supported_os: vec![OperatingSystem::Macos, OperatingSystem::Windows],
+                    client_presence: ClientPresence::Unknown,
+                }],
+                logical_targets: vec![LogicalTarget {
+                    id: "target-1".into(),
+                    profile_id: "demo".into(),
+                    client_id: CLIENT_ID.into(),
+                    scope: TargetScope::Global,
+                    path: root.to_string_lossy().into_owned(),
+                    marker: "SKILL.md".into(),
+                    precedence: DirectoryPrecedence::Preferred,
+                    shared_reference: false,
+                    exists: true,
+                    readable: true,
+                    writable: true,
+                    available: true,
+                    physical_id: physical_id_for_path(root).expect("physical id"),
+                }],
+                physical_targets: Vec::new(),
+            })
+            .expect("agent snapshot");
+    }
+
+    /// Agent 目录 + 集中库 + 门面；返回 (facade, agent_skills_root)。
+    fn agent_facade(workspace: &std::path::Path) -> (LocalApplicationFacade, std::path::PathBuf) {
+        let agent_root = workspace.join("agents/demo/skills");
+        std::fs::create_dir_all(&agent_root).expect("agent root");
+        let database = Database::open(workspace.join("db.sqlite")).expect("database");
+        register_agent_target(&database, &agent_root);
+        let library_root = workspace.join("library");
+        CentralLibrary::initialize(&library_root).expect("library");
+        let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+        (facade, agent_root)
+    }
+
+    /// 导入一个来源副本并返回其来源关系 id（Task 5B 提交后即完成首轮
+    /// Full 校验，因此关系处于 Normal）。
+    async fn import_source_copy(
+        facade: &LocalApplicationFacade,
+        root: &std::path::Path,
+        name: &str,
+    ) -> String {
+        let candidate = ImportCandidate::detected(
+            SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(root)),
+            root.to_string_lossy(),
+            ".",
+            "SKILL.md",
+            name,
+        );
+        let prepared = facade
+            .execute(AppCommand::PrepareImport(PrepareImport {
+                candidate,
+                tree_hash: None,
+            }))
+            .await
+            .expect("prepared import");
+        let AppCommandResult::PreparedImport(prepared) = prepared else {
+            panic!("expected prepared import");
+        };
+        facade
+            .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+                prepared_import_id: prepared.id,
+                decision: ImportDecision::CopyIntoLibrary,
+                governance_decision: ImportGovernanceDecision {
+                    group_actions: BTreeMap::new(),
+                    item_overrides: BTreeMap::new(),
+                },
+                batch_id: None,
+                candidate_key: None,
+            }))
+            .await
+            .expect("commit import");
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .list_source_copy_relations(true)
+            .expect("source copy relations")
+            .into_iter()
+            .find(|relation| relation.source_path == root.to_string_lossy())
+            .unwrap_or_else(|| panic!("relation for {}", root.display()))
+            .relation_id
+    }
+
+    async fn relation_fact(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+    ) -> SourceCopyRelationFact {
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .list_source_copy_relations(false)
+            .expect("relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .unwrap_or_else(|| panic!("relation {relation_id}"))
+    }
+
+    async fn retain_history_count(facade: &LocalApplicationFacade, relation_id: &str) -> usize {
+        let AppQueryResult::GovernanceHistoryPage(page) = facade
+            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
+                page: 1,
+                page_size: 50,
+                relation_id: Some(relation_id.to_owned()),
+                skill_id: None,
+                agent_client_id: None,
+                project_id: None,
+                result: None,
+            }))
+            .await
+            .expect("governance history")
+        else {
+            panic!("expected governance history page");
+        };
+        page.items
+            .iter()
+            .filter(|entry| entry.action == "retain" && entry.result == "retained")
+            .count()
+    }
+
+    // 8.6：保留只改决策并记录历史，绝不读写来源目录。
+    #[tokio::test]
+    async fn retain_source_copy_updates_decision_records_history_and_keeps_files() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+
+        let retained = facade
+            .execute(AppCommand::RetainSourceCopy(
+                skillhub_core::api::RetainSourceCopy {
+                    source_relation_id: relation_id.clone(),
+                },
+            ))
+            .await
+            .expect("retain source copy");
+        let AppCommandResult::SourceCopyRelationUpdated(fact) = retained else {
+            panic!("expected updated relation");
+        };
+        assert_eq!(fact.relation_id, relation_id);
+        assert_eq!(fact.decision, SourceCopyDecision::Retained);
+        assert_eq!(fact.health, SourceCopyHealth::Normal);
+        assert!(fact.active);
+
+        let reloaded = relation_fact(&facade, &relation_id).await;
+        assert_eq!(reloaded.decision, SourceCopyDecision::Retained);
+        assert!(
+            source.join("SKILL.md").is_file(),
+            "retain never touches disk"
+        );
+
+        // 历史固定写时快照：动作、展示名、路径、Agent 呈现。
+        let AppQueryResult::GovernanceHistoryPage(page) = facade
+            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
+                page: 1,
+                page_size: 50,
+                relation_id: Some(relation_id.clone()),
+                skill_id: None,
+                agent_client_id: None,
+                project_id: None,
+                result: None,
+            }))
+            .await
+            .expect("governance history")
+        else {
+            panic!("expected governance history page");
+        };
+        let event = page
+            .items
+            .iter()
+            .find(|entry| entry.action == "retain")
+            .expect("retain history event");
+        assert_eq!(event.result, "retained");
+        assert_eq!(event.skill_display_name, "Notes");
+        assert_eq!(event.path, source.to_string_lossy());
+        assert_eq!(event.agent.client_id.as_deref(), Some(CLIENT_ID));
+    }
+
+    // 8.6：保留幂等——重复保留不重复写历史。
+    #[tokio::test]
+    async fn retain_is_idempotent_without_duplicate_history() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+
+        for _ in 0..2 {
+            let retained = facade
+                .execute(AppCommand::RetainSourceCopy(
+                    skillhub_core::api::RetainSourceCopy {
+                        source_relation_id: relation_id.clone(),
+                    },
+                ))
+                .await
+                .expect("retain source copy");
+            let AppCommandResult::SourceCopyRelationUpdated(fact) = retained else {
+                panic!("expected updated relation");
+            };
+            assert_eq!(fact.decision, SourceCopyDecision::Retained);
+        }
+        assert_eq!(retain_history_count(&facade, &relation_id).await, 1);
+    }
+
+    // 8.6/8.11：保留后清理准备直接可用；决策保持 Retained（不伪造
+    // Pending 过渡）；计划携带关系身份与 Agent 呈现/目标上下文。
+    #[tokio::test]
+    async fn retained_relation_enters_cleanup_prepare_without_pending_rewrite() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        facade
+            .execute(AppCommand::RetainSourceCopy(
+                skillhub_core::api::RetainSourceCopy {
+                    source_relation_id: relation_id.clone(),
+                },
+            ))
+            .await
+            .expect("retain source copy");
+
+        let planned = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: relation_id.clone(),
+                },
+            ))
+            .await
+            .expect("prepare cleanup");
+        let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
+            panic!("expected migration plan");
+        };
+        assert_eq!(plan.relation_id, relation_id);
+        assert_eq!(plan.original_path, source.to_string_lossy());
+        assert!(plan.conflicts.is_empty(), "clean copy prepares freely");
+        assert_eq!(plan.agent.client_id.as_deref(), Some(CLIENT_ID));
+        assert_eq!(
+            plan.target_context.agent_client_id.as_deref(),
+            Some(CLIENT_ID)
+        );
+        assert_eq!(plan.target_context.shared_directory_node_id, None);
+
+        let reloaded = relation_fact(&facade, &relation_id).await;
+        assert_eq!(
+            reloaded.decision,
+            SourceCopyDecision::Retained,
+            "prepare must not rewrite the decision back to pending"
+        );
+    }
+
+    // 8.1/8.2/8.12：清理准备按关系隔离；Full 校验把关内容分叉；一条
+    // 来源分叉不波及同 Skill 另一条来源。
+    #[tokio::test]
+    async fn cleanup_prepare_is_scoped_per_relation_and_gated_by_full_check() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let first = agent_root.join("notes-one");
+        let second = agent_root.join("notes-two");
+        write_skill(&first);
+        write_skill(&second);
+        let first_relation = import_source_copy(&facade, &first, "NotesOne").await;
+        let second_relation = import_source_copy(&facade, &second, "NotesTwo").await;
+
+        // 第一条来源内容分叉。
+        std::fs::write(first.join("SKILL.md"), "# Notes\n\ndiverged\n").expect("diverge");
+
+        let diverged = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: first_relation.clone(),
+                },
+            ))
+            .await
+            .expect("prepare cleanup");
+        let AppCommandResult::OriginalMigrationPlan(diverged) = diverged else {
+            panic!("expected migration plan");
+        };
+        assert_eq!(diverged.relation_id, first_relation);
+        assert_eq!(diverged.conflicts.len(), 1);
+        assert_eq!(
+            diverged.conflicts[0].reason,
+            skillhub_core::import::OriginalMigrationConflictReason::ContentDiverged
+        );
+
+        let clean = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: second_relation.clone(),
+                },
+            ))
+            .await
+            .expect("prepare cleanup");
+        let AppCommandResult::OriginalMigrationPlan(clean) = clean else {
+            panic!("expected migration plan");
+        };
+        assert_eq!(clean.relation_id, second_relation);
+        assert!(clean.conflicts.is_empty(), "other source stays unaffected");
+
+        let second_fact = relation_fact(&facade, &second_relation).await;
+        assert_eq!(second_fact.health, SourceCopyHealth::Normal);
+        let first_fact = relation_fact(&facade, &first_relation).await;
+        assert_eq!(first_fact.health, SourceCopyHealth::ContentChanged);
+    }
+
+    // 8.12：准备只接受活动来源关系；未知 id 与已归档关系一律拒绝。
+    #[tokio::test]
+    async fn cleanup_prepare_requires_an_active_source_relation() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+
+        let unknown = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: "rel-unknown".into(),
+                },
+            ))
+            .await;
+        assert_eq!(
+            unknown.expect_err("unknown relation").code,
+            ErrorCode::ObjectNotFound
+        );
+
+        // 归档后拒绝：清理准备不复活历史关系。
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .archive_source_copy_relation(
+                    &relation_id,
+                    skillhub_core::relationship::SourceCopyArchiveReason::ExternalRemoved,
+                    123,
+                )
+                .expect("archive relation");
+        }
+        let archived = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: relation_id.clone(),
+                },
+            ))
+            .await;
+        assert_eq!(
+            archived.expect_err("archived relation").code,
+            ErrorCode::OperationConflict
+        );
+    }
+
+    // 8.11/8.17：共享目录来源的准备返回 shared-directory 节点与关联
+    // Agent，不压扁成单一 agent 目标。
+    #[tokio::test]
+    async fn cleanup_prepare_reports_shared_directory_target_context() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let library_root = workspace.path().join("library");
+        CentralLibrary::initialize(&library_root).expect("library");
+        let database = Database::open(workspace.path().join("db.sqlite")).expect("database");
+        let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+
+        let shared_root = workspace.path().join("shared/skills");
+        std::fs::create_dir_all(&shared_root).expect("shared root");
+        let source = shared_root.join("notes");
+        write_skill(&source);
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .directory_repository()
+                .upsert_node(&DirectoryNodeFact {
+                    node_id: "directory:shared-skills".into(),
+                    path: shared_root.to_string_lossy().into_owned(),
+                    path_key: String::new(),
+                    role: DirectoryRole::SharedDirectory,
+                    profile_id: None,
+                    agent_client_id: None,
+                    exists: true,
+                    observed_at: 1,
+                    scan_source: Some("test".into()),
+                })
+                .expect("shared node");
+            for agent in ["agent.demo", "agent.other"] {
+                database
+                    .relationship_repository()
+                    .upsert_capability(&AgentDirectoryCapabilityFact {
+                        agent_client_id: agent.into(),
+                        directory_node_id: "directory:shared-skills".into(),
+                        recognition: DirectoryRecognition::Supported,
+                        precedence: DirectoryPrecedence::MayCoexist,
+                        evidence_reference: Some("fixture".into()),
+                        researched_at: Some("2026-09-15".into()),
+                        applicable_platforms: vec![],
+                    })
+                    .expect("capability");
+            }
+        }
+
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let planned = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: relation_id,
+                },
+            ))
+            .await
+            .expect("prepare cleanup");
+        let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
+            panic!("expected migration plan");
+        };
+        assert_eq!(
+            plan.agent.client_id, None,
+            "shared directory has no single agent"
+        );
+        let context = plan.target_context;
+        assert_eq!(
+            context.shared_directory_node_id.as_deref(),
+            Some("directory:shared-skills")
+        );
+        assert_eq!(context.agent_client_id, None);
+        let mut associated = context.associated_agent_client_ids;
+        associated.sort();
+        assert_eq!(associated, vec!["agent.demo", "agent.other"]);
+    }
+}

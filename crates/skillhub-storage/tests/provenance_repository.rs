@@ -406,9 +406,65 @@ fn original_migration_records_support_rollback_audit() {
     let skill = SkillId::new();
     insert_skill(&database, skill);
     let migration_id = OperationId::new();
+    // source_relation_id 外键指向 source_copy_relations：先落批次、
+    // 不可变事件与关系行。
+    database
+        .provenance_repository()
+        .begin_import_batch("batch-1", 900)
+        .unwrap();
+    database
+        .provenance_repository()
+        .append_provenance_event(&ImportProvenanceEvent {
+            provenance_id: "event-1".into(),
+            batch_id: "batch-1".into(),
+            skill_id: skill,
+            source_class: skillhub_core::ImportSourceClass::AgentLocal,
+            source: SourceDescriptor::new(
+                SourceKind::Local,
+                SourceLocator::local_path("/tmp/trae/skills/demo"),
+            ),
+            local_source_path: Some("/tmp/trae/skills/demo".into()),
+            source_container_id: None,
+            physical_source_id: Some("/tmp/trae/skills/demo".into()),
+            agent_client_id: Some("trae.code".into()),
+            content_fingerprint: "sha256:aa11".into(),
+            imported_at: 1_000,
+        })
+        .unwrap();
+    database
+        .relationship_repository()
+        .upsert_source_copy_relation(
+            &skillhub_core::relationship::SourceCopyRelationFact {
+                relation_id: "rel-migration".into(),
+                skill_id: skill,
+                latest_provenance_id: "event-1".into(),
+                source_class: skillhub_core::ImportSourceClass::AgentLocal,
+                source_path: "/tmp/trae/skills/demo".into(),
+                source_path_key: "/tmp/trae/skills/demo".into(),
+                physical_source_id: "/tmp/trae/skills/demo".into(),
+                source_container_id: None,
+                directory_node_id: None,
+                agent_client_id: Some("trae.code".into()),
+                expected_fingerprint: "sha256:aa11".into(),
+                current_fingerprint: None,
+                decision: skillhub_core::relationship::SourceCopyDecision::Pending,
+                health: skillhub_core::relationship::SourceCopyHealth::Normal,
+                active: true,
+                last_verified_at: None,
+                archived_at: None,
+                archive_reason: None,
+            },
+            "fs",
+            1,
+        )
+        .unwrap();
     let result = OriginalMigrationResult {
         migration_id,
         skill_id: skill,
+        relation_id: "rel-migration".into(),
+        agent: Default::default(),
+        target_context: Default::default(),
+        relationship_revision: 0,
         original_path: "/tmp/trae/skills/demo".into(),
         backup_path: "/library/.skillhub/original-migrations/backup".into(),
         content_fingerprint: "sha256:aa11".into(),
@@ -427,6 +483,7 @@ fn original_migration_records_support_rollback_audit() {
         .expect("migration record");
     assert_eq!(stored.state, OriginalMigrationState::Migrated);
     assert_eq!(stored.backup_path, result.backup_path);
+    assert_eq!(stored.relation_id, "rel-migration");
 
     // 回滚：状态翻转，备份路径保留（历史证据不删除）。
     database

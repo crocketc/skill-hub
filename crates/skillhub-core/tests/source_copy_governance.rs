@@ -275,3 +275,135 @@ fn only_confirmed_missing_with_accessible_parent_archives_external_removed() {
         }
     ));
 }
+
+// ===================== 8A：来源关系维度的原始文件清理 =====================
+
+mod relation_scoped_original_migration {
+    use skillhub_core::import::{
+        ensure_original_deletion_authorized, plan_original_migration, AgentPresentationFact,
+        OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationTargetContext,
+    };
+    use skillhub_core::OperationId;
+
+    use super::*;
+
+    /// 干净事实：Full 校验后的关系（Normal）+ 真实目录 + 指纹一致。
+    fn clean_facts(relation: &SourceCopyRelationFact) -> OriginalMigrationFacts {
+        let mut checked = relation.clone();
+        checked.health = SourceCopyHealth::Normal;
+        checked.current_fingerprint = Some(relation.expected_fingerprint.clone());
+        OriginalMigrationFacts {
+            relation: Some(checked),
+            path_exists: true,
+            is_symlink_or_junction: false,
+            is_directory: true,
+            current_fingerprint: Some(relation.expected_fingerprint.clone()),
+            has_managed_deployment_at_path: false,
+            relationship_revision: 7,
+            agent_client_id: relation.agent_client_id.clone(),
+            shared_directory_node_id: None,
+            associated_agent_client_ids: Vec::new(),
+        }
+    }
+
+    // 8.1/8.11：计划绑定单一来源关系。同一 Skill 两条来源各自成计划，
+    // 路径/关系 ID 互不混淆；计划同时携带呈现、目标上下文与关系修订号。
+    #[test]
+    fn plan_is_scoped_to_one_source_relation_and_carries_context() {
+        let skill = SkillId::new();
+        let first = relation(skill, "relation-a", "/source/a");
+        let second = relation(skill, "relation-b", "/source/b");
+
+        let plan = plan_original_migration(OperationId::new(), skill, &clean_facts(&first));
+        assert_eq!(plan.relation_id, "relation-a");
+        assert_eq!(plan.original_path, "/source/a");
+        assert_eq!(plan.skill_id, skill);
+        assert_eq!(plan.content_fingerprint, first.expected_fingerprint);
+        assert!(plan.conflicts.is_empty());
+
+        let other = plan_original_migration(OperationId::new(), skill, &clean_facts(&second));
+        assert_eq!(other.relation_id, "relation-b");
+        assert_eq!(other.original_path, "/source/b");
+
+        assert_eq!(plan.agent, AgentPresentationFact { client_id: None });
+        assert_eq!(
+            plan.target_context,
+            OriginalMigrationTargetContext {
+                agent_client_id: None,
+                shared_directory_node_id: None,
+                associated_agent_client_ids: Vec::new(),
+            }
+        );
+        assert_eq!(plan.relationship_revision, 7);
+        assert!(plan.requires_confirmation);
+    }
+
+    // 8.2：Full 校验后的健康异常全部阻断备份与删除，且逐类给名：
+    // 内容变化、身份/修订不可证、权限受限、managed 占用。
+    #[test]
+    fn unhealthy_relations_block_backup_and_delete_with_distinct_reasons() {
+        let cases = [
+            (
+                SourceCopyHealth::ContentChanged,
+                OriginalMigrationConflictReason::ContentDiverged,
+            ),
+            (
+                SourceCopyHealth::NeedsValidation,
+                OriginalMigrationConflictReason::NeedsValidation,
+            ),
+            (
+                SourceCopyHealth::PermissionLimited,
+                OriginalMigrationConflictReason::PermissionLimited,
+            ),
+            (
+                SourceCopyHealth::ManagedOccupied,
+                OriginalMigrationConflictReason::ManagedOccupied,
+            ),
+            (
+                SourceCopyHealth::OperationFailed,
+                OriginalMigrationConflictReason::NeedsValidation,
+            ),
+        ];
+        for (health, reason) in cases {
+            // 指纹一致，只让健康一项异常：验证健康裁决逐类给名。
+            let mut facts = clean_facts(&relation(SkillId::new(), "r", "/source"));
+            if let Some(checked) = facts.relation.as_mut() {
+                checked.health = health;
+            }
+            let skill_id = facts.relation.as_ref().expect("relation").skill_id;
+            let plan = plan_original_migration(OperationId::new(), skill_id, &facts);
+            assert_eq!(plan.conflicts.len(), 1, "health {health:?} blocks alone");
+            assert_eq!(plan.conflicts[0].reason, reason);
+            assert!(ensure_original_deletion_authorized(&plan, true).is_err());
+        }
+    }
+
+    // 8.6：Retained 决策不阻断清理准备——纯判定不读决策字段，保留后
+    // 直接进入 prepare，不要求先伪造 Pending 过渡。
+    #[test]
+    fn retained_decision_does_not_block_cleanup_prepare() {
+        let mut retained = relation(SkillId::new(), "r", "/source");
+        retained.decision = SourceCopyDecision::Retained;
+        let plan = plan_original_migration(
+            OperationId::new(),
+            retained.skill_id,
+            &clean_facts(&retained),
+        );
+        assert!(plan.conflicts.is_empty());
+        assert!(ensure_original_deletion_authorized(&plan, true).is_ok());
+    }
+
+    // 关系事实缺失（查无此关系）：ProvenanceMissing 阻断，且不暴露路径。
+    #[test]
+    fn missing_relation_blocks_and_hides_paths() {
+        let facts = OriginalMigrationFacts::default();
+        let plan = plan_original_migration(OperationId::new(), SkillId::new(), &facts);
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(
+            plan.conflicts[0].reason,
+            OriginalMigrationConflictReason::ProvenanceMissing
+        );
+        assert_eq!(plan.original_path, String::new());
+        assert_eq!(plan.relation_id, String::new());
+    }
+}

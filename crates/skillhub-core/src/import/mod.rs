@@ -14,9 +14,10 @@ pub use decision::{
     ImportCaseOutcome, ImportDecision, ImportGovernanceDecision,
 };
 pub use migration::{
-    ensure_original_deletion_authorized, plan_original_migration, OriginalMigrationConflict,
-    OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
-    OriginalMigrationResult, OriginalMigrationState,
+    ensure_original_deletion_authorized, plan_original_migration, AgentPresentationFact,
+    OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
+    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
+    OriginalMigrationTargetContext,
 };
 pub use model::{
     final_skill_for_import, legacy_managed_relation_rejected, AcquisitionWorkspaceKind,

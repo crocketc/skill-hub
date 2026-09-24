@@ -757,8 +757,8 @@ impl<'a> ProvenanceRepository<'a> {
             .connection
             .execute(
                 "INSERT INTO original_migrations \
-                 (id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at, source_relation_id) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     result.migration_id.to_string(),
                     result.skill_id.to_string(),
@@ -768,6 +768,7 @@ impl<'a> ProvenanceRepository<'a> {
                     migration_state_code(result.state),
                     result.confirmed_at,
                     result.rolled_back_at,
+                    result.relation_id,
                 ],
             )
             .map(|_| ())
@@ -796,7 +797,7 @@ impl<'a> ProvenanceRepository<'a> {
             .database
             .connection
             .query_row(
-                "SELECT id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at \
+                "SELECT id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at, source_relation_id \
                  FROM original_migrations WHERE id=?1",
                 [migration_id.to_string()],
                 |row| {
@@ -809,6 +810,7 @@ impl<'a> ProvenanceRepository<'a> {
                         row.get::<_, String>(5)?,
                         row.get::<_, i64>(6)?,
                         row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
                     ))
                 },
             )
@@ -1087,6 +1089,7 @@ type MigrationRow = (
     String,
     i64,
     Option<i64>,
+    Option<String>,
 );
 
 fn decode_migration(value: MigrationRow) -> Option<OriginalMigrationResult> {
@@ -1098,6 +1101,12 @@ fn decode_migration(value: MigrationRow) -> Option<OriginalMigrationResult> {
     Some(OriginalMigrationResult {
         migration_id: value.0.parse().ok()?,
         skill_id: value.1.parse().ok()?,
+        // 8A 前的旧记录没有关系关联（source_relation_id 为空）：路径与
+        // 备份仍是权威事实，呈现/上下文字段留空由展示层兜底。
+        relation_id: value.8.unwrap_or_default(),
+        agent: Default::default(),
+        target_context: Default::default(),
+        relationship_revision: 0,
         original_path: value.2,
         backup_path: value.3,
         content_fingerprint: value.4,

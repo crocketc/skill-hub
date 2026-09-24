@@ -199,6 +199,21 @@ async fn find_skill_by_name(facade: &LocalApplicationFacade, name: &str) -> Skil
         .skill_id
 }
 
+/// 计划 8A：迁移以来源关系为对象。导入提交即建立活动来源副本关系，
+/// 测试按路径取出对应 relation_id。
+async fn source_relation_id(facade: &LocalApplicationFacade, path: &std::path::Path) -> String {
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().expect("database lock");
+    database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("source copy relations")
+        .into_iter()
+        .find(|relation| relation.source_path == path.to_string_lossy())
+        .unwrap_or_else(|| panic!("source relation for {}", path.display()))
+        .relation_id
+}
+
 fn assert_dir_intact(path: &std::path::Path, body: &str) {
     let content = std::fs::read_to_string(path.join("SKILL.md"))
         .expect("user file must still exist and be readable");
@@ -461,12 +476,15 @@ async fn original_migration_requires_explicit_confirmation_and_never_touches_fil
 
     let prepared = prepare(&facade, &source, "Notes").await;
     let summary = commit_copy(&facade, prepared).await;
-    let skill_id = summary.items[0].skill_id.expect("skill in library");
+    let _skill_id = summary.items[0].skill_id.expect("skill in library");
+    let relation_id = source_relation_id(&facade, &source).await;
 
-    // 准备只读：给出冲突清单与确认要求，绝不删除。
+    // 准备只读：给出冲突清单与确认要求，绝不删除。计划绑定来源关系。
     let planned = facade
         .execute(AppCommand::PrepareOriginalMigration(
-            PrepareOriginalMigration { skill_id },
+            PrepareOriginalMigration {
+                source_relation_id: relation_id.clone(),
+            },
         ))
         .await
         .expect("prepare migration");
@@ -482,6 +500,12 @@ async fn original_migration_requires_explicit_confirmation_and_never_touches_fil
         "deletion always needs confirmation"
     );
     assert_eq!(plan.original_path, source.to_string_lossy());
+    assert_eq!(plan.relation_id, relation_id);
+    assert_eq!(plan.agent.client_id.as_deref(), Some(CLIENT_ID));
+    assert_eq!(
+        plan.target_context.agent_client_id.as_deref(),
+        Some(CLIENT_ID)
+    );
     assert_dir_intact(&source, BODY_V1);
 
     // 未知准备 id：拒绝且不触碰文件。
@@ -554,12 +578,15 @@ async fn original_migration_aborts_on_conflicts_and_preserves_the_scene() {
     // 场景一：导入后内容分叉 → ContentDiverged 冲突，确认也拒绝，现场保留。
     let prepared = prepare(&facade, &source, "Notes").await;
     let summary = commit_copy(&facade, prepared).await;
-    let skill_id = summary.items[0].skill_id.expect("skill in library");
+    let _skill_id = summary.items[0].skill_id.expect("skill in library");
+    let relation_id = source_relation_id(&facade, &source).await;
     write_skill(&source, BODY_V2);
 
     let planned = facade
         .execute(AppCommand::PrepareOriginalMigration(
-            PrepareOriginalMigration { skill_id },
+            PrepareOriginalMigration {
+                source_relation_id: relation_id.clone(),
+            },
         ))
         .await
         .expect("prepare migration");
@@ -585,7 +612,8 @@ async fn original_migration_aborts_on_conflicts_and_preserves_the_scene() {
     );
     assert_dir_intact(&source, BODY_V2);
 
-    // 场景二：无导入存证（所有权不明）→ ProvenanceMissing，确认也拒绝。
+    // 场景二（计划 8A 语义）：没有来源关系的目录无从授权清理——
+    // 未知 source_relation_id 一律拒绝（ObjectNotFound），现场不动。
     let handmade_source = workspace.path().join("handmade");
     write_skill(&handmade_source, BODY_V1);
     facade
@@ -595,34 +623,19 @@ async fn original_migration_aborts_on_conflicts_and_preserves_the_scene() {
         }))
         .await
         .expect("create skill");
-    let handmade_skill = find_skill_by_name(&facade, "HandMade").await;
-    let planned = facade
+    let _handmade_skill = find_skill_by_name(&facade, "HandMade").await;
+    let unknown_relation = facade
         .execute(AppCommand::PrepareOriginalMigration(
             PrepareOriginalMigration {
-                skill_id: handmade_skill,
-            },
-        ))
-        .await
-        .expect("prepare migration");
-    let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
-        panic!("expected migration plan");
-    };
-    assert_eq!(plan.conflicts.len(), 1);
-    assert_eq!(
-        plan.conflicts[0].reason,
-        OriginalMigrationConflictReason::ProvenanceMissing
-    );
-    let denied = facade
-        .execute(AppCommand::CommitOriginalMigration(
-            CommitOriginalMigration {
-                prepared_migration_id: plan.operation_id,
-                ownership_confirmed: true,
+                source_relation_id: "rel-unknown".into(),
             },
         ))
         .await;
     assert_eq!(
-        denied.expect_err("unowned migration must abort").code,
-        skillhub_core::ErrorCode::OperationConflict
+        unknown_relation
+            .expect_err("unknown relation must abort")
+            .code,
+        skillhub_core::ErrorCode::ObjectNotFound
     );
     assert_dir_intact(&handmade_source, BODY_V1);
 }
@@ -637,11 +650,13 @@ async fn original_migration_restores_the_original_directory_from_the_backup_on_r
 
     let prepared = prepare(&facade, &source, "Notes").await;
     let summary = commit_copy(&facade, prepared).await;
-    let skill_id = summary.items[0].skill_id.expect("skill in library");
+    let _skill_id = summary.items[0].skill_id.expect("skill in library");
 
     let planned = facade
         .execute(AppCommand::PrepareOriginalMigration(
-            PrepareOriginalMigration { skill_id },
+            PrepareOriginalMigration {
+                source_relation_id: source_relation_id(&facade, &source).await,
+            },
         ))
         .await
         .expect("prepare migration");

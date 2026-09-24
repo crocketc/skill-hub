@@ -181,13 +181,14 @@ pub use ignore::{IgnoreRule, IgnoreSubject};
 pub use import::{
     analyze_import, ensure_original_deletion_authorized, import_conflict_case_id,
     import_governance_task_id, plan_import_conflict_case, plan_original_migration,
-    AcquisitionWorkspaceKind, CandidateOwnership, DuplicateKind, ExistingSkillRecord,
-    ImportAcquisitionContext, ImportAction, ImportAnalysis, ImportCandidate, ImportCaseOutcome,
-    ImportConflict, ImportDecision, ImportGovernanceAction, ImportGovernanceClassification,
-    ImportGovernanceDecision, ImportGovernanceGroup, ImportGovernanceMember, ImportMatch,
-    ImportProvenance, ImportSourceClass, ImportSourceFacts, MatchBasis, OriginalMigrationConflict,
-    OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
-    OriginalMigrationResult, OriginalMigrationState,
+    AcquisitionWorkspaceKind, AgentPresentationFact, CandidateOwnership, DuplicateKind,
+    ExistingSkillRecord, ImportAcquisitionContext, ImportAction, ImportAnalysis, ImportCandidate,
+    ImportCaseOutcome, ImportConflict, ImportDecision, ImportGovernanceAction,
+    ImportGovernanceClassification, ImportGovernanceDecision, ImportGovernanceGroup,
+    ImportGovernanceMember, ImportMatch, ImportProvenance, ImportSourceClass, ImportSourceFacts,
+    MatchBasis, OriginalMigrationConflict, OriginalMigrationConflictReason, OriginalMigrationFacts,
+    OriginalMigrationPlan, OriginalMigrationResult, OriginalMigrationState,
+    OriginalMigrationTargetContext,
 };
 pub use llm::{search_query, translation};
 pub use llm::{

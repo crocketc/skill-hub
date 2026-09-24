@@ -274,12 +274,21 @@ pub struct OpenImportBatch {
     pub started_at: i64,
 }
 
-/// OPT-20260914-08：原始文件迁移的准备请求。准备只读地核验存证、路径
-/// 与冲突，绝不触碰用户文件；与扫描/导入完全解耦。
+/// OPT-20260914-08（计划 8A 起）：原始文件清理的准备请求。以来源关系为
+/// 对象：准备只读地核验该关系的路径、指纹与冲突，绝不触碰用户文件；与
+/// 扫描/导入完全解耦。同一 Skill 的多条来源各自独立成计划。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareOriginalMigration {
-    pub skill_id: SkillId,
+    pub source_relation_id: String,
+}
+
+/// 保留来源副本（计划 8.15）：只把关系决策改为 Retained 并记录治理历史，
+/// 绝不读写来源目录。幂等：已是 Retained 时原样返回，不重复写历史。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RetainSourceCopy {
+    pub source_relation_id: String,
 }
 
 /// OPT-20260914-08：原始文件迁移的提交请求。`ownership_confirmed` 是
@@ -1081,6 +1090,8 @@ pub enum AppCommand {
     CommitImport(CommitImport),
     #[serde(rename = "prepare_original_migration")]
     PrepareOriginalMigration(PrepareOriginalMigration),
+    #[serde(rename = "retain_source_copy")]
+    RetainSourceCopy(RetainSourceCopy),
     #[serde(rename = "commit_original_migration")]
     CommitOriginalMigration(CommitOriginalMigration),
     #[serde(rename = "rollback_original_migration")]
@@ -1296,6 +1307,8 @@ pub enum AppCommandResult {
     ImportSummary(Box<crate::application::ImportSummary>),
     #[serde(rename = "original_migration_plan")]
     OriginalMigrationPlan(crate::import::OriginalMigrationPlan),
+    #[serde(rename = "source_copy_relation_updated")]
+    SourceCopyRelationUpdated(crate::relationship::SourceCopyRelationFact),
     #[serde(rename = "original_migration_result")]
     OriginalMigrationResult(crate::import::OriginalMigrationResult),
     #[serde(rename = "prepared_relation_migration")]
