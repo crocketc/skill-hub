@@ -106,10 +106,14 @@ impl SourceCopyRelationFact {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceCopyProbe {
     AccessibleDirectory,
+    VerifiedDirectory {
+        physical_source_id: String,
+        content_fingerprint: String,
+    },
     MissingWithAccessibleParent,
     ParentMissing,
     PermissionDenied,
@@ -149,7 +153,23 @@ pub fn validate_source_copy_transition(
         }
         _ => {
             updated.health = match probe {
-                SourceCopyProbe::AccessibleDirectory => SourceCopyHealth::Normal,
+                SourceCopyProbe::AccessibleDirectory => {
+                    updated.current_fingerprint = None;
+                    SourceCopyHealth::NeedsValidation
+                }
+                SourceCopyProbe::VerifiedDirectory {
+                    physical_source_id,
+                    content_fingerprint,
+                } => {
+                    updated.current_fingerprint = Some(content_fingerprint.clone());
+                    if physical_source_id != updated.physical_source_id {
+                        SourceCopyHealth::NeedsValidation
+                    } else if content_fingerprint != updated.expected_fingerprint {
+                        SourceCopyHealth::ContentChanged
+                    } else {
+                        SourceCopyHealth::Normal
+                    }
+                }
                 SourceCopyProbe::FingerprintChanged | SourceCopyProbe::PhysicalIdentityChanged => {
                     SourceCopyHealth::ContentChanged
                 }

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{CandidateOwnership, ImportSourceClass};
-use crate::source::SourceDescriptor;
+use crate::source::{SourceDescriptor, SourceKind, SourceLocator};
 use crate::SkillId;
 
 /// Immutable fact for one successful import, including reuse of an existing Skill.
@@ -28,7 +28,21 @@ pub struct ImportProvenanceEvent {
 impl ImportProvenanceEvent {
     /// Reject an acquisition cache being recorded as an online source path.
     pub fn has_valid_source_coordinates(&self) -> bool {
-        !matches!(self.source_class, ImportSourceClass::Online) || self.local_source_path.is_none()
+        if self.source_class != ImportSourceClass::Online {
+            return true;
+        }
+        if self.local_source_path.is_some() || self.physical_source_id.is_some() {
+            return false;
+        }
+        let (raw, allowed_schemes): (&str, &[&str]) =
+            match (&self.source.kind, &self.source.locator) {
+                (SourceKind::Https, SourceLocator::HttpsUrl(url)) => (url, &["https"]),
+                (SourceKind::Git, SourceLocator::GitUrl(url)) => (url, &["https", "ssh", "git"]),
+                _ => return false,
+            };
+        url::Url::parse(raw)
+            .ok()
+            .is_some_and(|url| allowed_schemes.contains(&url.scheme()) && url.host_str().is_some())
     }
 }
 

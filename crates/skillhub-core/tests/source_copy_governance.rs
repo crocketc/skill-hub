@@ -1,11 +1,13 @@
+use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::import::{
     final_skill_for_import, AcquisitionWorkspaceKind, ImportAcquisitionContext,
     ImportOutcomeStatus, ImportProvenanceEvent, ImportSourceClass,
 };
 use skillhub_core::relationship::{
-    project_governable_relation, validate_source_copy_transition, GovernableRelationFact,
-    GovernableRelationStatus, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
-    SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
+    project_governable_relation, validate_source_copy_transition, DeploymentRelationFact,
+    FileRepresentation, GovernableRelationFact, GovernableRelationStatus, RelationshipType,
+    SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth, SourceCopyProbe,
+    SourceCopyRelationFact, SourceCopyTransition,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::SkillId;
@@ -76,7 +78,9 @@ fn decision_and_health_are_orthogonal() {
     copy.decision = SourceCopyDecision::Retained;
     copy.health = SourceCopyHealth::ContentChanged;
     assert_eq!(
-        project_governable_relation(&GovernableRelationFact::SourceCopy(copy)).status,
+        project_governable_relation(&GovernableRelationFact::SourceCopy(copy))
+            .unwrap()
+            .status,
         GovernableRelationStatus::NeedsAttention
     );
 }
@@ -144,7 +148,109 @@ fn only_local_sources_are_governable_and_cache_is_acquisition_only() {
         !event(skill, ImportSourceClass::Online, Some("/cache/download"))
             .has_valid_source_coordinates()
     );
-    assert!(event(skill, ImportSourceClass::Online, None).has_valid_source_coordinates());
+    assert!(!event(skill, ImportSourceClass::Online, None).has_valid_source_coordinates());
+    let mut online = event(skill, ImportSourceClass::Online, None);
+    online.source = SourceDescriptor::new(
+        SourceKind::Https,
+        SourceLocator::https_url("https://example.com/skill"),
+    );
+    assert!(online.has_valid_source_coordinates());
+    online.source = SourceDescriptor::new(
+        SourceKind::Https,
+        SourceLocator::https_url("file:///cache/skill"),
+    );
+    assert!(!online.has_valid_source_coordinates());
+    online.source = SourceDescriptor::new(SourceKind::Https, SourceLocator::https_url(""));
+    assert!(!online.has_valid_source_coordinates());
+    online.source = SourceDescriptor::new(
+        SourceKind::Git,
+        SourceLocator::git_url("ssh://git@example.com/repo"),
+    );
+    assert!(online.has_valid_source_coordinates());
+    online.source =
+        SourceDescriptor::new(SourceKind::Git, SourceLocator::local_path("/cache/repo"));
+    assert!(!online.has_valid_source_coordinates());
+}
+
+#[test]
+fn accessibility_without_verified_identity_and_fingerprint_is_not_normal() {
+    let copy = relation(SkillId::new(), "r", "/source");
+    let SourceCopyTransition::Update(accessible) =
+        validate_source_copy_transition(&copy, SourceCopyProbe::AccessibleDirectory, 2)
+    else {
+        panic!("accessible directory stays current")
+    };
+    assert_eq!(accessible.health, SourceCopyHealth::NeedsValidation);
+    assert_eq!(accessible.current_fingerprint, None);
+    let SourceCopyTransition::Update(verified) = validate_source_copy_transition(
+        &copy,
+        SourceCopyProbe::VerifiedDirectory {
+            physical_source_id: "/source".into(),
+            content_fingerprint: "hash".into(),
+        },
+        3,
+    ) else {
+        panic!("verified directory stays current")
+    };
+    assert_eq!(verified.health, SourceCopyHealth::Normal);
+    assert_eq!(verified.current_fingerprint.as_deref(), Some("hash"));
+    let SourceCopyTransition::Update(changed) = validate_source_copy_transition(
+        &copy,
+        SourceCopyProbe::VerifiedDirectory {
+            physical_source_id: "/source".into(),
+            content_fingerprint: "changed".into(),
+        },
+        4,
+    ) else {
+        panic!("changed directory stays current")
+    };
+    assert_eq!(changed.health, SourceCopyHealth::ContentChanged);
+    assert_eq!(changed.current_fingerprint.as_deref(), Some("changed"));
+    let SourceCopyTransition::Update(moved) = validate_source_copy_transition(
+        &copy,
+        SourceCopyProbe::VerifiedDirectory {
+            physical_source_id: "/other".into(),
+            content_fingerprint: "hash".into(),
+        },
+        5,
+    ) else {
+        panic!("identity mismatch stays current")
+    };
+    assert_eq!(moved.health, SourceCopyHealth::NeedsValidation);
+}
+
+#[test]
+fn current_projection_excludes_archived_source_and_released_deployment() {
+    let mut copy = relation(SkillId::new(), "r", "/source");
+    copy.active = false;
+    copy.archived_at = Some(4);
+    assert!(project_governable_relation(&GovernableRelationFact::SourceCopy(copy)).is_none());
+    let mut deployment = DeploymentRelationFact {
+        relation_id: "deployment".into(),
+        skill_id: Some(SkillId::new()),
+        agent_client_id: "agent".into(),
+        path: "/target".into(),
+        path_key: "/target".into(),
+        directory_node_id: None,
+        relationship: RelationshipType::ManagedCopy,
+        file_representation: FileRepresentation::Copy,
+        ownership: skillhub_core::OwnershipState::SkillhubManaged,
+        link_target_path: None,
+        link_target_path_key: None,
+        link_target_directory_id: None,
+        content_fingerprint: "hash".into(),
+        origin: ObservedOrigin::Scan,
+        match_state: ObservedMatchState::ContentVerified,
+        active: true,
+        observed_at: 1,
+        released_at: Some(4),
+    };
+    assert!(
+        project_governable_relation(&GovernableRelationFact::Deployment(deployment.clone()))
+            .is_none()
+    );
+    deployment.released_at = None;
+    assert!(project_governable_relation(&GovernableRelationFact::Deployment(deployment)).is_some());
 }
 
 #[test]

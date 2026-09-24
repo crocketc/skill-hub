@@ -60,9 +60,14 @@ pub struct GovernableRelationProjection {
     pub status: GovernableRelationStatus,
 }
 
-pub fn project_governable_relation(fact: &GovernableRelationFact) -> GovernableRelationProjection {
+pub fn project_governable_relation(
+    fact: &GovernableRelationFact,
+) -> Option<GovernableRelationProjection> {
     match fact {
         GovernableRelationFact::SourceCopy(copy) => {
+            if !copy.active || copy.archived_at.is_some() {
+                return None;
+            }
             let status = match copy.health {
                 SourceCopyHealth::ContentChanged | SourceCopyHealth::OperationFailed => {
                     GovernableRelationStatus::NeedsAttention
@@ -76,23 +81,24 @@ pub fn project_governable_relation(fact: &GovernableRelationFact) -> GovernableR
                 }
                 SourceCopyHealth::Normal => GovernableRelationStatus::Normal,
             };
-            GovernableRelationProjection {
+            Some(GovernableRelationProjection {
                 relation_id: copy.relation_id.clone(),
                 skill_id: Some(copy.skill_id),
                 endpoint: copy.source_path.clone(),
                 status,
-            }
+            })
         }
-        GovernableRelationFact::Deployment(deployment) => GovernableRelationProjection {
-            relation_id: deployment.relation_id.clone(),
-            skill_id: deployment.skill_id,
-            endpoint: deployment.path.clone(),
-            status: if deployment.active && deployment.released_at.is_none() {
-                GovernableRelationStatus::Normal
-            } else {
-                GovernableRelationStatus::Blocked
-            },
-        },
+        GovernableRelationFact::Deployment(deployment) => {
+            if !deployment.active || deployment.released_at.is_some() {
+                return None;
+            }
+            Some(GovernableRelationProjection {
+                relation_id: deployment.relation_id.clone(),
+                skill_id: deployment.skill_id,
+                endpoint: deployment.path.clone(),
+                status: GovernableRelationStatus::Normal,
+            })
+        }
     }
 }
 
