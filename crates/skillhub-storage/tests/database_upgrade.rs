@@ -4,7 +4,7 @@ use tempfile::tempdir;
 #[test]
 fn v19_exposes_safe_governance_tables_and_indexes() {
     let db = Database::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 19);
+    assert_eq!(db.schema_version().unwrap(), 20);
     for table in [
         "import_provenance_events_v19",
         "import_batches",

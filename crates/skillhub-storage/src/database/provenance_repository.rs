@@ -797,7 +797,7 @@ impl<'a> ProvenanceRepository<'a> {
             .database
             .connection
             .query_row(
-                "SELECT id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at, source_relation_id \
+                "SELECT id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at, source_relation_id, restored_relation_id \
                  FROM original_migrations WHERE id=?1",
                 [migration_id.to_string()],
                 |row| {
@@ -811,6 +811,7 @@ impl<'a> ProvenanceRepository<'a> {
                         row.get::<_, i64>(6)?,
                         row.get::<_, Option<i64>>(7)?,
                         row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
                     ))
                 },
             )
@@ -826,13 +827,19 @@ impl<'a> ProvenanceRepository<'a> {
         &self,
         migration_id: OperationId,
         rolled_back_at: i64,
+        restored_relation_id: &str,
     ) -> AppResult<()> {
         let changed = self
             .database
             .connection
             .execute(
-                "UPDATE original_migrations SET state='rolled_back', rolled_back_at=?1 WHERE id=?2",
-                params![rolled_back_at, migration_id.to_string()],
+                "UPDATE original_migrations SET state='rolled_back', rolled_back_at=?1, \
+                 restored_relation_id=?2 WHERE id=?3",
+                params![
+                    rolled_back_at,
+                    restored_relation_id,
+                    migration_id.to_string()
+                ],
             )
             .map_err(database_error)?;
         if changed == 0 {
@@ -840,6 +847,100 @@ impl<'a> ProvenanceRepository<'a> {
                 .with_param("field", "original_migration"));
         }
         Ok(())
+    }
+
+    /// 计划 8.14：推进 checkpoint 状态（backed_up/deleting/failed/
+    /// needs_recovery/migrated）。崩溃恢复与失败中止共用。
+    pub fn update_original_migration_state(
+        &self,
+        migration_id: OperationId,
+        state: OriginalMigrationState,
+    ) -> AppResult<()> {
+        let changed = self
+            .database
+            .connection
+            .execute(
+                "UPDATE original_migrations SET state=?1 WHERE id=?2",
+                params![migration_state_code(state), migration_id.to_string()],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "original_migration"));
+        }
+        Ok(())
+    }
+
+    pub fn update_original_migration_state_in_tx(
+        transaction: &Transaction<'_>,
+        migration_id: OperationId,
+        state: OriginalMigrationState,
+    ) -> AppResult<()> {
+        let changed = transaction
+            .execute(
+                "UPDATE original_migrations SET state=?1 WHERE id=?2",
+                params![migration_state_code(state), migration_id.to_string()],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "original_migration"));
+        }
+        Ok(())
+    }
+
+    pub fn mark_original_migration_rolled_back_in_tx(
+        transaction: &Transaction<'_>,
+        migration_id: OperationId,
+        rolled_back_at: i64,
+        restored_relation_id: &str,
+    ) -> AppResult<()> {
+        let changed = transaction
+            .execute(
+                "UPDATE original_migrations SET state='rolled_back', rolled_back_at=?1,                  restored_relation_id=?2 WHERE id=?3",
+                params![rolled_back_at, restored_relation_id, migration_id.to_string()],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "original_migration"));
+        }
+        Ok(())
+    }
+
+    /// 计划 8.14：启动恢复扫描——所有未到终态的迁移记录。
+    pub fn list_pending_original_migrations(&self) -> AppResult<Vec<OriginalMigrationResult>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT id, skill_id, original_path, backup_path, content_fingerprint, state, confirmed_at, rolled_back_at, source_relation_id, restored_relation_id \
+                 FROM original_migrations \
+                 WHERE state IN ('backed_up','deleting','needs_recovery') \
+                 ORDER BY confirmed_at",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| {
+            let value = row.map_err(database_error)?;
+            decode_migration(value).ok_or_else(invalid_record)
+        })
+        .collect()
     }
 }
 
@@ -1090,11 +1191,16 @@ type MigrationRow = (
     i64,
     Option<i64>,
     Option<String>,
+    Option<String>,
 );
 
 fn decode_migration(value: MigrationRow) -> Option<OriginalMigrationResult> {
     let state = match value.5.as_str() {
+        "backed_up" => OriginalMigrationState::BackedUp,
+        "deleting" => OriginalMigrationState::Deleting,
         "migrated" => OriginalMigrationState::Migrated,
+        "failed" => OriginalMigrationState::Failed,
+        "needs_recovery" => OriginalMigrationState::NeedsRecovery,
         "rolled_back" => OriginalMigrationState::RolledBack,
         _ => return None,
     };
@@ -1113,12 +1219,17 @@ fn decode_migration(value: MigrationRow) -> Option<OriginalMigrationResult> {
         state,
         confirmed_at: value.6,
         rolled_back_at: value.7,
+        restored_relation_id: value.9,
     })
 }
 
 fn migration_state_code(value: OriginalMigrationState) -> &'static str {
     match value {
+        OriginalMigrationState::BackedUp => "backed_up",
+        OriginalMigrationState::Deleting => "deleting",
         OriginalMigrationState::Migrated => "migrated",
+        OriginalMigrationState::Failed => "failed",
+        OriginalMigrationState::NeedsRecovery => "needs_recovery",
         OriginalMigrationState::RolledBack => "rolled_back",
     }
 }

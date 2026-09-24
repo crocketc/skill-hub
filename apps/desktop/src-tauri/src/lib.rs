@@ -415,6 +415,10 @@ fn apply_main_window_chrome(app: &tauri::App) -> tauri::Result<()> {
 
 pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
     re_register_custom_agent_grants(&facade);
+    // 计划 8.14：启动恢复——把上次清理中断的 checkpoint 按三方事实推进。
+    if let Err(error) = facade.recover_original_migrations() {
+        eprintln!("original migration recovery failed: {error}");
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup({

@@ -407,3 +407,53 @@ mod relation_scoped_original_migration {
         assert_eq!(plan.relation_id, String::new());
     }
 }
+
+// ===================== 8B：清理提交状态机与崩溃恢复 =====================
+
+mod original_migration_recovery {
+    use skillhub_core::import::{
+        original_migration_backup_key, resolve_original_migration_recovery,
+        OriginalMigrationRecoveryAdvancement,
+    };
+
+    // 8.13：备份目录键必须内部编码——不含路径分隔符、稳定、可区分。
+    #[test]
+    fn backup_key_is_path_safe_stable_and_distinct() {
+        let key = original_migration_backup_key("rel-abc.123");
+        assert!(!key.is_empty());
+        assert!(!key.contains('/') && !key.contains('\\') && !key.contains(':'));
+        assert!(
+            !key.contains("rel-abc"),
+            "raw relation id must not be the key"
+        );
+        assert_eq!(key, original_migration_backup_key("rel-abc.123"));
+        assert_ne!(
+            original_migration_backup_key("rel-abc.123"),
+            original_migration_backup_key("rel-other.456")
+        );
+    }
+
+    // 8.3/8.14：checkpoint 之后崩溃，按"原路径/备份/关系"三方事实推进：
+    // 删除已发生（原目录不在、备份在）→ 前滚为已完成；
+    // 删除未发生（原目录仍在、备份在）→ 回退为失败且现场保留；
+    // 备份缺失 → 既不能前滚也不能回滚 → 需要人工恢复。
+    #[test]
+    fn recovery_advances_by_original_and_backup_facts() {
+        assert_eq!(
+            resolve_original_migration_recovery(false, true),
+            OriginalMigrationRecoveryAdvancement::RollForward
+        );
+        assert_eq!(
+            resolve_original_migration_recovery(true, true),
+            OriginalMigrationRecoveryAdvancement::RollBackToFailed
+        );
+        assert_eq!(
+            resolve_original_migration_recovery(false, false),
+            OriginalMigrationRecoveryAdvancement::NeedsRecovery
+        );
+        assert_eq!(
+            resolve_original_migration_recovery(true, false),
+            OriginalMigrationRecoveryAdvancement::NeedsRecovery
+        );
+    }
+}

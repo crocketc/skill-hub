@@ -128,13 +128,60 @@ pub struct OriginalMigrationResult {
     #[serde(with = "crate::i64_option_string")]
     #[specta(type = Option<String>)]
     pub rolled_back_at: Option<i64>,
+    /// 回滚后新建的活动来源关系（8.7：记录显式关联新旧关系）。
+    /// 非回滚记录为空。
+    pub restored_relation_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum OriginalMigrationState {
+    /// checkpoint：备份完成、尚未开始删除（此状态重启可安全放弃或重试）。
+    BackedUp,
+    /// checkpoint：删除进行中——此状态崩溃后原目录是否删净未知，
+    /// 启动恢复必须按事实推进，不得假设。
+    Deleting,
+    /// 提交完成：删除成功且归档事务已提交。
     Migrated,
+    /// 失败中止：能确认原目录仍在、现场完整。
+    Failed,
+    /// 未知中间态：不能确认原目录状态或备份缺失，需要人工对账。
+    NeedsRecovery,
     RolledBack,
+}
+
+/// 备份目录键（8.13）：把来源关系 id 编码为路径安全、确定且可区分的
+/// 形态——绝不把任意关系字符串直接当路径。采用字节十六进制编码。
+pub fn original_migration_backup_key(relation_id: &str) -> String {
+    relation_id
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// 崩溃恢复的推进方向（8.14）：由"原路径/备份"两个文件系统事实决定；
+/// 活动关系状态由执行方读取（决定归档还是仅补历史），不参与方向判定。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OriginalMigrationRecoveryAdvancement {
+    /// 删除已发生：前滚为 Migrated（补归档与历史）。
+    RollForward,
+    /// 删除未发生：原目录仍在，回退为 Failed（现场保留）。
+    RollBackToFailed,
+    /// 备份缺失：既不能前滚也不能回滚，转 NeedsRecovery。
+    NeedsRecovery,
+}
+
+pub fn resolve_original_migration_recovery(
+    original_exists: bool,
+    backup_exists: bool,
+) -> OriginalMigrationRecoveryAdvancement {
+    match (original_exists, backup_exists) {
+        (false, true) => OriginalMigrationRecoveryAdvancement::RollForward,
+        (true, true) => OriginalMigrationRecoveryAdvancement::RollBackToFailed,
+        // 备份不在时无论原目录在否都无法安全收场：数据安全优先。
+        (_, false) => OriginalMigrationRecoveryAdvancement::NeedsRecovery,
+    }
 }
 
 /// 纯判定：根据事实列出全部阻断冲突。决策字段（保留/待定）不参与判定：

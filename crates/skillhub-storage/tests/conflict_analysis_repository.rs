@@ -165,10 +165,7 @@ fn v14_database_upgrades_to_current_schema_and_keeps_conflict_facts_readable() {
         connection.pragma_update(None, "user_version", 14).unwrap();
     }
     let upgraded = Database::open(&db_path).unwrap();
-    assert_eq!(
-        upgraded.schema_version().unwrap(),
-        CURRENT_SCHEMA_VERSION
-    );
+    assert_eq!(upgraded.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
     assert!(upgraded.has_table("conflict_analysis_records").unwrap());
     let cases = upgraded.conflict_repository().list_cases().unwrap();
     assert_eq!(cases.len(), 1);

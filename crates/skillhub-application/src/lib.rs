@@ -67,6 +67,7 @@ use skillhub_core::duplicate::{
 use skillhub_core::evidence::UsageEvidenceAnalyzer;
 use skillhub_core::health::{HealthFinding, RecoveryCandidate, RepairAction};
 use skillhub_core::ignore::IgnoreRule;
+use skillhub_core::import::{original_migration_backup_key, resolve_original_migration_recovery};
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, LastConnectionTestView, LlmAdmin,
@@ -94,6 +95,27 @@ use skillhub_storage::{
 pub use update_service::{
     ApplicationUpdateInstaller, RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService,
 };
+
+/// 计划 8.5：原始目录删除抽象。生产直接走文件系统；测试注入失败假象
+/// （权限墙/占用等无法跨平台稳定模拟的场景）。
+pub trait OriginalMigrationDeletion: Send + Sync {
+    fn delete_dir_all(&self, path: &Path) -> std::io::Result<()>;
+}
+
+/// 生产实现：直接删除目录树。
+#[derive(Clone, Copy, Debug)]
+pub struct FilesystemDeletion;
+
+impl OriginalMigrationDeletion for FilesystemDeletion {
+    fn delete_dir_all(&self, path: &Path) -> std::io::Result<()> {
+        std::fs::remove_dir_all(path)
+    }
+}
+
+pub(crate) fn default_original_migration_deletion() -> std::sync::Arc<dyn OriginalMigrationDeletion>
+{
+    std::sync::Arc::new(FilesystemDeletion)
+}
 
 /// The date provider is kept on the facade so all date-sensitive projections
 /// in one request use the same day boundary. Production uses the current UTC
@@ -147,6 +169,8 @@ pub struct LocalApplicationFacade {
     /// 关系路径探测实现；生产走真实文件系统，测试可注入受控假象。
     relationship_probe:
         Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
+    /// 计划 8.5：原始目录删除实现；生产走文件系统，测试可注入失败。
+    original_migration_deletion: Mutex<std::sync::Arc<dyn OriginalMigrationDeletion>>,
 }
 
 /// 获取阶段落地的完整来源记录：原始 descriptor、临时工作区、权威类别与
@@ -1784,6 +1808,7 @@ impl LocalApplicationFacade {
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
+            original_migration_deletion: Mutex::new(default_original_migration_deletion()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -1863,6 +1888,7 @@ impl LocalApplicationFacade {
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
+            original_migration_deletion: Mutex::new(default_original_migration_deletion()),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -8316,6 +8342,18 @@ impl LocalApplicationFacade {
 
     /// 计划 8.15：保留来源副本——只把决策改为 Retained 并记录治理历史，
     /// 绝不读写来源目录。幂等：已是 Retained 原样返回，不重复写历史。
+    /// 仅供测试：注入删除失败假象（权限墙/占用等无法跨平台模拟）。
+    #[doc(hidden)]
+    pub fn set_original_migration_deletion_for_tests(
+        &self,
+        deletion: std::sync::Arc<dyn OriginalMigrationDeletion>,
+    ) {
+        *self
+            .original_migration_deletion
+            .lock()
+            .expect("deletion lock") = deletion;
+    }
+
     fn retain_source_copy(
         &self,
         request: skillhub_core::api::RetainSourceCopy,
@@ -8425,9 +8463,11 @@ impl LocalApplicationFacade {
         result.map(AppCommandResult::OriginalMigrationResult)
     }
 
-    /// 迁移执行：备份 → 记录 → 删除；任一步失败立即中止并保留现场。
-    /// 记录先于删除写入，删除失败时用补偿删除收回记录，保证审计与
-    /// 文件系统一致；备份目录保留（用户数据绝不因失败而丢失）。
+    /// 迁移执行（计划 8.3/8.4/8.5/8.13）：备份 → checkpoint → 删除 →
+    /// 单事务原子归档（关系 Cleaned + 历史 migrated + 记录 Migrated）。
+    /// 任何失败立即中止并保留现场：备份与审计绝不删除；能确认原目录
+    /// 仍在时标 Failed（关系 OperationFailed + 历史 failed），不能确认
+    /// 时标 NeedsRecovery 交启动恢复推进，绝不假装原文件仍在。
     fn commit_original_migration_flow(
         &self,
         plan: &skillhub_core::OriginalMigrationPlan,
@@ -8451,18 +8491,22 @@ impl LocalApplicationFacade {
             let fresh = plan_original_migration(plan.operation_id, plan.skill_id, &facts);
             ensure_original_deletion_authorized(&fresh, true)
         })?;
+        // 8.13：备份根 = safe-key(relation_id)/operation_id，绝不把任意
+        // 关系字符串直接当路径。
         let backup_root = library
             .root
             .join(".skillhub")
             .join("original-migrations")
-            .join(plan.skill_id.to_string());
+            .join(original_migration_backup_key(&plan.relation_id));
         std::fs::create_dir_all(&backup_root).map_err(|error| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("io_kind", format!("{:?}", error.kind()))
                 .with_action(RecoveryAction::Retry)
         })?;
         let backup = backup_root.join(plan.operation_id.to_string());
+        // 备份失败：checkpoint 尚未写入，原目录未动，直接中止。
         copy_directory_tree(&original, &backup)?;
+        let confirmed_at = now_epoch_seconds();
         let result = skillhub_core::OriginalMigrationResult {
             migration_id: plan.operation_id,
             skill_id: plan.skill_id,
@@ -8473,14 +8517,25 @@ impl LocalApplicationFacade {
             original_path: plan.original_path.clone(),
             backup_path: backup.to_string_lossy().into_owned(),
             content_fingerprint: plan.content_fingerprint.clone(),
-            state: skillhub_core::OriginalMigrationState::Migrated,
-            confirmed_at: now_epoch_seconds(),
+            state: skillhub_core::OriginalMigrationState::BackedUp,
+            confirmed_at,
             rolled_back_at: None,
+            restored_relation_id: None,
         };
-        self.with_database("execute.commit_original_migration.record", |database| {
+        // checkpoint #1：备份完成。此后任何中断都由启动恢复按事实推进。
+        self.with_database("execute.commit_original_migration.checkpoint", |database| {
             database
                 .provenance_repository()
                 .insert_original_migration(&result)
+        })?;
+        // checkpoint #2：进入删除。
+        self.with_database("execute.commit_original_migration.deleting", |database| {
+            database
+                .provenance_repository()
+                .update_original_migration_state(
+                    plan.operation_id,
+                    skillhub_core::OriginalMigrationState::Deleting,
+                )
         })?;
         // 删除前的最后防线：必须是真实目录（绝不跟随链接）。
         let metadata = std::fs::symlink_metadata(&original).map_err(|error| {
@@ -8495,20 +8550,57 @@ impl LocalApplicationFacade {
                 .with_param("detail", "original path is not a real directory")
                 .with_action(RecoveryAction::InspectTarget));
         }
-        if let Err(error) = std::fs::remove_dir_all(&original) {
-            // 中止并保留现场：原文件仍在，补偿收回审计行；备份保留。
-            let compensation =
-                self.with_database("execute.commit_original_migration.compensate", |database| {
-                    database
-                        .provenance_repository()
-                        .remove_original_migration(plan.operation_id)
-                });
-            if let Err(compensation_error) = compensation {
-                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("detail", "migration delete failed and audit cleanup failed")
-                    .with_param("source", compensation_error.to_string())
-                    .with_action(RecoveryAction::InspectTarget));
+        let deletion = self
+            .original_migration_deletion
+            .lock()
+            .map_err(|_| internal("execute.commit_original_migration.deletion"))?
+            .clone();
+        if let Err(error) = deletion.delete_dir_all(&original) {
+            // 8.5：审计与备份绝不删除。能确认原目录仍在 → Failed（关系
+            // OperationFailed + 历史 failed）；不能确认 → NeedsRecovery。
+            let still_there = std::fs::symlink_metadata(&original).is_ok();
+            let state = if still_there {
+                skillhub_core::OriginalMigrationState::Failed
+            } else {
+                skillhub_core::OriginalMigrationState::NeedsRecovery
+            };
+            let aborted = self.with_database("execute.commit_original_migration.abort", |database| {
+                database
+                    .provenance_repository()
+                    .update_original_migration_state(plan.operation_id, state)?;
+                if still_there {
+                    if let Some(mut relation) = database
+                        .relationship_repository()
+                        .list_source_copy_relations(false)?
+                        .into_iter()
+                        .find(|relation| relation.relation_id == plan.relation_id)
+                    {
+                        relation.health =
+                            skillhub_core::relationship::SourceCopyHealth::OperationFailed;
+                        let transaction = database.begin_transaction()?;
+                        skillhub_storage::RelationshipRepository::upsert_source_copy_relation_tx(
+                            &transaction,
+                            &relation,
+                            "fs",
+                            1,
+                        )?;
+                        Database::commit_transaction(transaction)?;
+                    }
+                }
+                Ok(())
+            });
+            if let Err(abort_error) = aborted {
+                eprintln!("migration abort bookkeeping failed: {abort_error}");
             }
+            self.record_migration_history(
+                plan.relation_id.clone(),
+                plan.skill_id,
+                if still_there {
+                    "failed"
+                } else {
+                    "needs_recovery"
+                },
+            );
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("path", plan.original_path.clone())
                 .with_param(
@@ -8518,7 +8610,104 @@ impl LocalApplicationFacade {
                 .with_param("source", error.to_string())
                 .with_action(RecoveryAction::Retry));
         }
-        Ok(result)
+        // 8.4：删除成功后单事务原子归档：关系 Cleaned + 历史 migrated +
+        // 记录 Migrated。事务失败 → NeedsRecovery（不假装原文件仍在）。
+        let archive = self.with_database("execute.commit_original_migration.archive", |database| {
+            let relation = database
+                .relationship_repository()
+                .list_source_copy_relations(false)?
+                .into_iter()
+                .find(|relation| relation.relation_id == plan.relation_id)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("source_relation_id", plan.relation_id.clone())
+                        .with_action(RecoveryAction::ChooseAnotherName)
+                })?;
+            let transaction = database.begin_transaction()?;
+            let changed =
+                skillhub_storage::RelationshipRepository::archive_source_copy_relation_tx(
+                    &transaction,
+                    &plan.relation_id,
+                    skillhub_core::relationship::SourceCopyArchiveReason::Cleaned,
+                    now_epoch_seconds(),
+                )?;
+            if changed {
+                skillhub_storage::GovernanceHistoryRepository::append_tx(
+                    &transaction,
+                    &migration_history_event(
+                        database,
+                        &relation,
+                        plan.skill_id,
+                        "migrate",
+                        "migrated",
+                        Some("cleaned_by_skill_hub"),
+                        Some(plan.operation_id.to_string()),
+                    ),
+                )?;
+            }
+            skillhub_storage::ProvenanceRepository::update_original_migration_state_in_tx(
+                &transaction,
+                plan.operation_id,
+                skillhub_core::OriginalMigrationState::Migrated,
+            )?;
+            Database::commit_transaction(transaction)
+        });
+        if let Err(error) = archive {
+            self.with_database(
+                "execute.commit_original_migration.needs_recovery",
+                |database| {
+                    database
+                        .provenance_repository()
+                        .update_original_migration_state(
+                            plan.operation_id,
+                            skillhub_core::OriginalMigrationState::NeedsRecovery,
+                        )
+                },
+            )
+            .ok();
+            self.record_migration_history(
+                plan.relation_id.clone(),
+                plan.skill_id,
+                "needs_recovery",
+            );
+            return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("detail", "cleanup archive failed; marked needs_recovery")
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        let mut migrated = result;
+        migrated.state = skillhub_core::OriginalMigrationState::Migrated;
+        Ok(migrated)
+    }
+
+    /// 迁移历史事件统一落点（migrate 前缀全部经此写入；事务提交后调用）。
+    fn record_migration_history(
+        &self,
+        relation_id: String,
+        skill_id: skillhub_core::SkillId,
+        result: &str,
+    ) {
+        let outcome = self.with_database("record.migration_history", |database| {
+            let Some(relation) = database
+                .relationship_repository()
+                .list_source_copy_relations(false)?
+                .into_iter()
+                .find(|relation| relation.relation_id == relation_id)
+            else {
+                return Ok(());
+            };
+            let transaction = database.begin_transaction()?;
+            skillhub_storage::GovernanceHistoryRepository::append_tx(
+                &transaction,
+                &migration_history_event(
+                    database, &relation, skill_id, "migrate", result, None, None,
+                ),
+            )?;
+            Database::commit_transaction(transaction)
+        });
+        if let Err(error) = outcome {
+            eprintln!("migration history write failed: {error}");
+        }
     }
 
     /// 回滚：用备份恢复原目录。原路径已存在时拒绝（绝不覆盖用户文件）；
@@ -8555,18 +8744,295 @@ impl LocalApplicationFacade {
         }
         let backup = PathBuf::from(&record.backup_path);
         copy_directory_tree(&backup, &original)?;
+        // 8.7：旧关系保持 archived；按旧关系事实新建活动关系（新
+        // relation_id），决策沿用，健康交 Full 校验裁决；绝不改写旧
+        // provenance/历史事件。同 (Skill, 路径) 的活动槽位唯一：新行
+        // 入库前该槽位必须空着（清理后旧关系已归档）。
+        let restored_relation_id =
+            self.with_database("execute.rollback_original_migration.relation", |database| {
+                let old_relation = database
+                    .relationship_repository()
+                    .list_source_copy_relations(false)?
+                    .into_iter()
+                    .find(|relation| relation.relation_id == record.relation_id)
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("source_relation_id", record.relation_id.clone())
+                            .with_action(RecoveryAction::ChooseAnotherName)
+                    })?;
+                let mut relation = old_relation.clone();
+                relation.relation_id = format!("rel-{}", OperationId::new());
+                relation.active = true;
+                relation.archived_at = None;
+                relation.archive_reason = None;
+                relation.health = skillhub_core::relationship::SourceCopyHealth::NeedsValidation;
+                relation.current_fingerprint = None;
+                relation.last_verified_at = None;
+                // 恢复出的目录是新的物理目录（dev+ino 已变）：以恢复后
+                // 重算的物理身份作为新关系身份，再交 Full 校验核对内容。
+                if let Some(identity) = physical_id_for_path(&original) {
+                    relation.physical_source_id = identity;
+                }
+                let existing = database
+                    .relationship_repository()
+                    .list_source_copy_relations(true)?;
+                if skillhub_core::relationship::SourceCopyRelationFact::active_physical_conflict(
+                    &existing, &relation,
+                ) || existing
+                    .iter()
+                    .any(|candidate| candidate.source_path_key == relation.source_path_key)
+                {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("path", relation.source_path.clone())
+                        .with_param(
+                            "detail",
+                            "another active source relation occupies this slot",
+                        )
+                        .with_action(RecoveryAction::InspectTarget));
+                }
+                let transaction = database.begin_transaction()?;
+                skillhub_storage::RelationshipRepository::upsert_source_copy_relation_tx(
+                    &transaction,
+                    &relation,
+                    "fs",
+                    1,
+                )?;
+                Database::commit_transaction(transaction)?;
+                Ok(relation.relation_id)
+            })?;
+        // 恢复后 Full 校验：确认 Skill 身份与内容（结果如实落库；校验
+        // 失败不否定文件恢复本身）。
+        let _ = self.run_relationship_check(skillhub_core::api::RunRelationshipCheck {
+            level: skillhub_core::relationship::RelationshipCheckLevel::Full,
+            scope: skillhub_core::relationship::RelationshipCheckScope::RelationIds {
+                relation_ids: vec![restored_relation_id.clone()],
+            },
+        });
+        let rolled_back_at = now_epoch_seconds();
+        let rollback_event =
+            self.with_database("execute.rollback_original_migration.record", |database| {
+                let old_relation = database
+                    .relationship_repository()
+                    .list_source_copy_relations(false)?
+                    .into_iter()
+                    .find(|relation| relation.relation_id == record.relation_id);
+                let transaction = database.begin_transaction()?;
+                if let Some(relation) = old_relation.as_ref() {
+                    skillhub_storage::GovernanceHistoryRepository::append_tx(
+                        &transaction,
+                        &migration_history_event(
+                            database,
+                            relation,
+                            record.skill_id,
+                            "rollback",
+                            "rolled_back",
+                            None,
+                            Some(request.migration_id.to_string()),
+                        ),
+                    )?;
+                }
+                skillhub_storage::ProvenanceRepository::mark_original_migration_rolled_back_in_tx(
+                    &transaction,
+                    request.migration_id,
+                    rolled_back_at,
+                    &restored_relation_id,
+                )?;
+                Database::commit_transaction(transaction)
+            });
+        if let Err(error) = rollback_event {
+            eprintln!("rollback bookkeeping failed: {error}");
+            return Err(error);
+        }
         let mut rolled_back = record.clone();
         rolled_back.state = skillhub_core::OriginalMigrationState::RolledBack;
-        rolled_back.rolled_back_at = Some(now_epoch_seconds());
-        self.with_database("execute.rollback_original_migration.record", |database| {
+        rolled_back.rolled_back_at = Some(rolled_back_at);
+        rolled_back.restored_relation_id = Some(restored_relation_id);
+        Ok(AppCommandResult::OriginalMigrationResult(rolled_back))
+    }
+
+    /// 计划 8.14：启动恢复。扫描所有未到终态的迁移记录，按"原路径/
+    /// 备份/活动关系"三方事实推进（core 纯判定），不通过删除审计做
+    /// 补偿。返回推进的记录数。
+    pub fn recover_original_migrations(&self) -> AppResult<usize> {
+        let pending = self.with_database("recover.original_migrations.list", |database| {
             database
                 .provenance_repository()
-                .mark_original_migration_rolled_back(
-                    request.migration_id,
-                    rolled_back.rolled_back_at.expect("just set"),
-                )
+                .list_pending_original_migrations()
         })?;
-        Ok(AppCommandResult::OriginalMigrationResult(rolled_back))
+        let mut advanced = 0usize;
+        for record in pending {
+            let original = PathBuf::from(&record.original_path);
+            let backup = PathBuf::from(&record.backup_path);
+            let original_exists = original.symlink_metadata().is_ok();
+            let backup_exists = backup.symlink_metadata().is_ok();
+            match resolve_original_migration_recovery(original_exists, backup_exists) {
+                skillhub_core::import::OriginalMigrationRecoveryAdvancement::RollForward => {
+                    // 删除已发生：前滚为 Migrated（补归档与历史）。
+                    let rolled = self.with_database(
+                        "recover.original_migrations.roll_forward",
+                        |database| {
+                            let transaction = database.begin_transaction()?;
+                            let changed =
+                                skillhub_storage::RelationshipRepository::archive_source_copy_relation_tx(
+                                    &transaction,
+                                    &record.relation_id,
+                                    skillhub_core::relationship::SourceCopyArchiveReason::Cleaned,
+                                    now_epoch_seconds(),
+                                )?;
+                            if changed {
+                                if let Some(relation) = database
+                                    .relationship_repository()
+                                    .list_source_copy_relations(false)?
+                                    .into_iter()
+                                    .find(|relation| {
+                                        relation.relation_id == record.relation_id
+                                    })
+                                {
+                                    skillhub_storage::GovernanceHistoryRepository::append_tx(
+                                        &transaction,
+                                        &migration_history_event(
+                                            database,
+                                            &relation,
+                                            record.skill_id,
+                                            "migrate",
+                                            "migrated",
+                                            Some("cleaned_by_skill_hub"),
+                                            Some(record.migration_id.to_string()),
+                                        ),
+                                    )?;
+                                }
+                            }
+                            skillhub_storage::ProvenanceRepository::update_original_migration_state_in_tx(
+                                &transaction,
+                                record.migration_id,
+                                skillhub_core::OriginalMigrationState::Migrated,
+                            )?;
+                            Database::commit_transaction(transaction)
+                        },
+                    );
+                    advanced += rolled.is_ok() as usize;
+                }
+                skillhub_core::import::OriginalMigrationRecoveryAdvancement::RollBackToFailed => {
+                    // 删除未发生：标 Failed，关系 OperationFailed，历史 failed。
+                    let failed = self.with_database(
+                        "recover.original_migrations.roll_back",
+                        |database| {
+                            database
+                                .provenance_repository()
+                                .update_original_migration_state(
+                                    record.migration_id,
+                                    skillhub_core::OriginalMigrationState::Failed,
+                                )?;
+                            if let Some(mut relation) = database
+                                .relationship_repository()
+                                .list_source_copy_relations(false)?
+                                .into_iter()
+                                .find(|relation| relation.relation_id == record.relation_id)
+                            {
+                                relation.health =
+                                    skillhub_core::relationship::SourceCopyHealth::OperationFailed;
+                                let transaction = database.begin_transaction()?;
+                                skillhub_storage::RelationshipRepository::upsert_source_copy_relation_tx(
+                                    &transaction,
+                                    &relation,
+                                    "fs",
+                                    1,
+                                )?;
+                                skillhub_storage::GovernanceHistoryRepository::append_tx(
+                                    &transaction,
+                                    &migration_history_event(
+                                        database,
+                                        &relation,
+                                        record.skill_id,
+                                        "migrate",
+                                        "failed",
+                                        None,
+                                        Some(record.migration_id.to_string()),
+                                    ),
+                                )?;
+                                Database::commit_transaction(transaction)?;
+                            }
+                            Ok(())
+                        },
+                    );
+                    advanced += failed.is_ok() as usize;
+                }
+                skillhub_core::import::OriginalMigrationRecoveryAdvancement::NeedsRecovery => {
+                    // 备份缺失：只能如实转 NeedsRecovery 并记录历史。
+                    let marked = self.with_database(
+                        "recover.original_migrations.needs_recovery",
+                        |database| {
+                            database
+                                .provenance_repository()
+                                .update_original_migration_state(
+                                    record.migration_id,
+                                    skillhub_core::OriginalMigrationState::NeedsRecovery,
+                                )?;
+                            if let Some(relation) = database
+                                .relationship_repository()
+                                .list_source_copy_relations(false)?
+                                .into_iter()
+                                .find(|relation| relation.relation_id == record.relation_id)
+                            {
+                                let transaction = database.begin_transaction()?;
+                                skillhub_storage::GovernanceHistoryRepository::append_tx(
+                                    &transaction,
+                                    &migration_history_event(
+                                        database,
+                                        &relation,
+                                        record.skill_id,
+                                        "migrate",
+                                        "needs_recovery",
+                                        None,
+                                        Some(record.migration_id.to_string()),
+                                    ),
+                                )?;
+                                Database::commit_transaction(transaction)?;
+                            }
+                            Ok(())
+                        },
+                    );
+                    advanced += marked.is_ok() as usize;
+                }
+            }
+        }
+        Ok(advanced)
+    }
+}
+
+/// 迁移/回滚的治理历史事件构造：展示名与 Agent 呈现按写时快照固化。
+fn migration_history_event(
+    database: &Database,
+    relation: &SourceCopyRelationFact,
+    skill_id: skillhub_core::SkillId,
+    action: &str,
+    result: &str,
+    reason: Option<&str>,
+    operation_id: Option<String>,
+) -> GovernanceHistoryEvent {
+    let skill_display_name = database
+        .catalog_repository()
+        .and_then(|repository| repository.get_sync(skill_id))
+        .ok()
+        .flatten()
+        .map(|skill| skill.runtime_name().to_owned())
+        .unwrap_or_else(|| "unknown-skill".to_owned());
+    GovernanceHistoryEvent {
+        event_id: format!("hist-{}", OperationId::new()),
+        relation_id: relation.relation_id.clone(),
+        skill_id: Some(skill_id.to_string()),
+        skill_display_name,
+        agent_presentation: serde_json::json!({
+            "client_id": relation.agent_client_id,
+        }),
+        path: relation.source_path.clone(),
+        scope: "source_copy".to_owned(),
+        project_id: relation.source_container_id.clone(),
+        action: action.to_owned(),
+        result: result.to_owned(),
+        reason: reason.map(str::to_owned),
+        operation_id,
+        occurred_at: now_epoch_seconds(),
     }
 }
 

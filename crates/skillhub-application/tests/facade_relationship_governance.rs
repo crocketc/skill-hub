@@ -4908,7 +4908,7 @@ mod unified_and_history {
 
     use super::*;
 
-    async fn import_source_copy(
+    pub(super) async fn import_source_copy(
         facade: &LocalApplicationFacade,
         root: &std::path::Path,
         name: &str,
@@ -5194,7 +5194,7 @@ mod retain_and_cleanup_prepare {
 
     use super::*;
 
-    const CLIENT_ID: &str = "agent.demo";
+    pub(super) const CLIENT_ID: &str = "agent.demo";
 
     fn register_agent_target(database: &Database, root: &std::path::Path) {
         database
@@ -5231,7 +5231,9 @@ mod retain_and_cleanup_prepare {
     }
 
     /// Agent 目录 + 集中库 + 门面；返回 (facade, agent_skills_root)。
-    fn agent_facade(workspace: &std::path::Path) -> (LocalApplicationFacade, std::path::PathBuf) {
+    pub(super) fn agent_facade(
+        workspace: &std::path::Path,
+    ) -> (LocalApplicationFacade, std::path::PathBuf) {
         let agent_root = workspace.join("agents/demo/skills");
         std::fs::create_dir_all(&agent_root).expect("agent root");
         let database = Database::open(workspace.join("db.sqlite")).expect("database");
@@ -5244,7 +5246,7 @@ mod retain_and_cleanup_prepare {
 
     /// 导入一个来源副本并返回其来源关系 id（Task 5B 提交后即完成首轮
     /// Full 校验，因此关系处于 Normal）。
-    async fn import_source_copy(
+    pub(super) async fn import_source_copy(
         facade: &LocalApplicationFacade,
         root: &std::path::Path,
         name: &str,
@@ -5291,7 +5293,7 @@ mod retain_and_cleanup_prepare {
             .relation_id
     }
 
-    async fn relation_fact(
+    pub(super) async fn relation_fact(
         facade: &LocalApplicationFacade,
         relation_id: &str,
     ) -> SourceCopyRelationFact {
@@ -5633,5 +5635,486 @@ mod retain_and_cleanup_prepare {
         let mut associated = context.associated_agent_client_ids;
         associated.sort();
         assert_eq!(associated, vec!["agent.demo", "agent.other"]);
+    }
+}
+
+// ===================== 8B：清理提交状态机、崩溃恢复与回滚 =====================
+
+mod cleanup_commit_recovery {
+    //! 8B 验收：提交按"备份→checkpoint→删除→原子归档"推进（8.4）；
+    //! 删除失败不删审计、现场保留、关系标 OperationFailed（8.5）；
+    //! checkpoint 后崩溃由启动恢复按三方事实推进（8.3/8.14）；回滚恢复
+    //! 文件、Full 校验、新建关系并显式关联新旧关系（8.7）。
+
+    use skillhub_core::import::original_migration_backup_key;
+    use skillhub_core::relationship::{
+        SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
+    };
+    use skillhub_core::{
+        AppCommand, AppCommandResult, ErrorCode, OperationId, OriginalMigrationState,
+    };
+
+    use super::retain_and_cleanup_prepare::{agent_facade, import_source_copy, relation_fact};
+    use super::*;
+
+    async fn prepare_cleanup(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+    ) -> skillhub_core::OriginalMigrationPlan {
+        let planned = facade
+            .execute(AppCommand::PrepareOriginalMigration(
+                skillhub_core::api::PrepareOriginalMigration {
+                    source_relation_id: relation_id.to_owned(),
+                },
+            ))
+            .await
+            .expect("prepare cleanup");
+        let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
+            panic!("expected migration plan");
+        };
+        assert!(plan.conflicts.is_empty());
+        plan
+    }
+
+    async fn committed_record(
+        facade: &LocalApplicationFacade,
+        migration_id: OperationId,
+    ) -> skillhub_core::OriginalMigrationResult {
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .provenance_repository()
+            .original_migration(migration_id)
+            .expect("migration lookup")
+            .expect("migration record")
+    }
+
+    async fn history_with(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+        action: &str,
+        result: &str,
+    ) -> usize {
+        let AppQueryResult::GovernanceHistoryPage(page) = facade
+            .query(AppQuery::ListGovernanceHistory(
+                skillhub_core::api::ListGovernanceHistory {
+                    page: 1,
+                    page_size: 50,
+                    relation_id: Some(relation_id.to_owned()),
+                    skill_id: None,
+                    agent_client_id: None,
+                    project_id: None,
+                    result: None,
+                },
+            ))
+            .await
+            .expect("governance history")
+        else {
+            panic!("expected governance history page");
+        };
+        page.items
+            .iter()
+            .filter(|entry| entry.action == action && entry.result == result)
+            .count()
+    }
+
+    /// 直接落一条迁移 checkpoint（模拟"写 checkpoint 后崩溃"）。以
+    /// operation id 为备份目录名；`create_backup=false` 模拟备份缺失。
+    async fn seed_checkpoint(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+        source_path: &std::path::Path,
+        backup_base: &std::path::Path,
+        create_backup: bool,
+        state: OriginalMigrationState,
+    ) -> OperationId {
+        let operation_id = OperationId::new();
+        let backup = backup_base.join(operation_id.to_string());
+        if create_backup {
+            std::fs::create_dir_all(&backup).expect("backup dir");
+            std::fs::write(backup.join("SKILL.md"), BODY).expect("backup body");
+        }
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        let relation = database
+            .relationship_repository()
+            .list_source_copy_relations(false)
+            .expect("relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .expect("relation");
+        database
+            .provenance_repository()
+            .insert_original_migration(&skillhub_core::OriginalMigrationResult {
+                migration_id: operation_id,
+                skill_id: relation.skill_id,
+                relation_id: relation_id.to_owned(),
+                agent: Default::default(),
+                target_context: Default::default(),
+                relationship_revision: 0,
+                original_path: source_path.to_string_lossy().into_owned(),
+                backup_path: backup.to_string_lossy().into_owned(),
+                content_fingerprint: relation.expected_fingerprint.clone(),
+                state,
+                confirmed_at: 1,
+                rolled_back_at: None,
+                restored_relation_id: None,
+            })
+            .expect("seed migration record");
+        operation_id
+    }
+
+    fn backup_base(workspace: &std::path::Path, relation_id: &str) -> std::path::PathBuf {
+        workspace
+            .join("library")
+            .join(".skillhub")
+            .join("original-migrations")
+            .join(original_migration_backup_key(relation_id))
+    }
+
+    // 8.4/8.13/8.17：提交 = 备份 → checkpoint → 删除 → 单事务原子归档
+    // （关系 Cleaned + 历史 migrated + 记录 Migrated）；结果带逻辑目标
+    // 上下文；备份在 safe-key 目录下。
+    #[tokio::test]
+    async fn cleanup_commit_archives_relation_and_records_history_atomically() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let plan = prepare_cleanup(&facade, &relation_id).await;
+
+        let committed = facade
+            .execute(AppCommand::CommitOriginalMigration(
+                skillhub_core::api::CommitOriginalMigration {
+                    prepared_migration_id: plan.operation_id,
+                    ownership_confirmed: true,
+                },
+            ))
+            .await
+            .expect("confirmed cleanup");
+        let AppCommandResult::OriginalMigrationResult(result) = committed else {
+            panic!("expected migration result");
+        };
+        assert_eq!(result.state, OriginalMigrationState::Migrated);
+        assert_eq!(result.relation_id, relation_id);
+        assert_eq!(
+            result.target_context.agent_client_id.as_deref(),
+            Some("agent.demo")
+        );
+        assert!(!source.exists(), "cleanup removes the original directory");
+
+        // 备份目录：safe-key + operation id，不在用户目录里。
+        let backup = std::path::PathBuf::from(&result.backup_path);
+        let expected_root = backup_base(workspace.path(), &relation_id);
+        assert!(backup.starts_with(&expected_root), "backup at {backup:?}");
+        assert!(backup.join("SKILL.md").is_file(), "backup holds the copy");
+
+        // 关系以 Cleaned 归档；历史与记录一致。
+        let archived = relation_fact(&facade, &relation_id).await;
+        assert!(!archived.active);
+        assert_eq!(
+            archived.archive_reason,
+            Some(SourceCopyArchiveReason::Cleaned)
+        );
+        assert_eq!(
+            history_with(&facade, &relation_id, "migrate", "migrated").await,
+            1
+        );
+        let record = committed_record(&facade, plan.operation_id).await;
+        assert_eq!(record.state, OriginalMigrationState::Migrated);
+    }
+
+    // 8.5：删除失败（可确认原目录仍在）→ 记录 Failed、关系
+    // OperationFailed、历史 failed；审计与备份绝不删除。
+    #[tokio::test]
+    async fn delete_failure_marks_operation_failed_and_preserves_scene() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let plan = prepare_cleanup(&facade, &relation_id).await;
+        facade.set_original_migration_deletion_for_tests(std::sync::Arc::new(
+            failing_deletion::FailingDeletion,
+        ));
+
+        let denied = facade
+            .execute(AppCommand::CommitOriginalMigration(
+                skillhub_core::api::CommitOriginalMigration {
+                    prepared_migration_id: plan.operation_id,
+                    ownership_confirmed: true,
+                },
+            ))
+            .await;
+        assert_eq!(
+            denied.expect_err("delete failure must abort").code,
+            ErrorCode::OperationConflict
+        );
+        assert!(source.join("SKILL.md").is_file(), "scene preserved");
+
+        let record = committed_record(&facade, plan.operation_id).await;
+        assert_eq!(record.state, OriginalMigrationState::Failed);
+        assert!(std::path::PathBuf::from(&record.backup_path)
+            .join("SKILL.md")
+            .is_file());
+        let relation = relation_fact(&facade, &relation_id).await;
+        assert_eq!(relation.health, SourceCopyHealth::OperationFailed);
+        assert!(relation.active, "failed cleanup does not archive");
+        assert_eq!(
+            history_with(&facade, &relation_id, "migrate", "failed").await,
+            1
+        );
+    }
+
+    // 8.3/8.14：checkpoint 后、删除后崩溃（原目录不在、备份在）→ 启动
+    // 恢复前滚为 Migrated，补归档与历史。
+    #[tokio::test]
+    async fn crash_after_delete_rolls_forward_to_migrated() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let operation_id = seed_checkpoint(
+            &facade,
+            &relation_id,
+            &source,
+            &backup_base(workspace.path(), &relation_id),
+            true,
+            OriginalMigrationState::Deleting,
+        )
+        .await;
+        std::fs::remove_dir_all(&source).expect("simulate the delete happened");
+
+        let _ = facade.recover_original_migrations();
+
+        let record = committed_record(&facade, operation_id).await;
+        assert_eq!(record.state, OriginalMigrationState::Migrated);
+        let archived = relation_fact(&facade, &relation_id).await;
+        assert!(!archived.active);
+        assert_eq!(
+            archived.archive_reason,
+            Some(SourceCopyArchiveReason::Cleaned)
+        );
+        assert_eq!(
+            history_with(&facade, &relation_id, "migrate", "migrated").await,
+            1
+        );
+        assert!(!source.exists());
+    }
+
+    // 8.3/8.14/8.5：checkpoint 后、删除前崩溃（原目录仍在）→ 恢复为
+    // Failed，现场保留，关系 OperationFailed。
+    #[tokio::test]
+    async fn crash_before_delete_recovers_as_failed_preserving_scene() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        seed_checkpoint(
+            &facade,
+            &relation_id,
+            &source,
+            &backup_base(workspace.path(), &relation_id),
+            true,
+            OriginalMigrationState::BackedUp,
+        )
+        .await;
+
+        let _ = facade.recover_original_migrations();
+
+        let relation = relation_fact(&facade, &relation_id).await;
+        assert!(relation.active, "nothing was deleted");
+        assert_eq!(relation.health, SourceCopyHealth::OperationFailed);
+        assert_eq!(
+            history_with(&facade, &relation_id, "migrate", "failed").await,
+            1
+        );
+        assert!(source.join("SKILL.md").is_file(), "scene preserved");
+    }
+
+    // 8.14：备份缺失 → NeedsRecovery（不归档、不假装任何一侧完好）。
+    #[tokio::test]
+    async fn crash_without_backup_lands_in_needs_recovery() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        seed_checkpoint(
+            &facade,
+            &relation_id,
+            &source,
+            &backup_base(workspace.path(), &relation_id),
+            false,
+            OriginalMigrationState::Deleting,
+        )
+        .await;
+        std::fs::remove_dir_all(&source).expect("simulate the delete happened");
+
+        let _ = facade.recover_original_migrations();
+
+        let relation = relation_fact(&facade, &relation_id).await;
+        assert!(relation.active, "must not archive without a backup");
+        assert_eq!(
+            history_with(&facade, &relation_id, "migrate", "needs_recovery").await,
+            1
+        );
+    }
+
+    // 8.7：回滚恢复原目录、旧关系保持归档、新建活动关系并 Full 校验，
+    // 记录显式关联新旧关系，历史追加 rolled_back；重复回滚拒绝。
+    #[tokio::test]
+    async fn rollback_restores_files_and_creates_a_new_active_relation() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        facade
+            .execute(AppCommand::RetainSourceCopy(
+                skillhub_core::api::RetainSourceCopy {
+                    source_relation_id: relation_id.clone(),
+                },
+            ))
+            .await
+            .expect("retain");
+        let plan = prepare_cleanup(&facade, &relation_id).await;
+        let committed = facade
+            .execute(AppCommand::CommitOriginalMigration(
+                skillhub_core::api::CommitOriginalMigration {
+                    prepared_migration_id: plan.operation_id,
+                    ownership_confirmed: true,
+                },
+            ))
+            .await
+            .expect("commit");
+        let AppCommandResult::OriginalMigrationResult(record) = committed else {
+            panic!("expected migration result");
+        };
+
+        let rolled_back = facade
+            .execute(AppCommand::RollbackOriginalMigration(
+                skillhub_core::api::RollbackOriginalMigration {
+                    migration_id: record.migration_id,
+                },
+            ))
+            .await
+            .expect("rollback");
+        let AppCommandResult::OriginalMigrationResult(rolled_back) = rolled_back else {
+            panic!("expected rollback result");
+        };
+        assert_eq!(rolled_back.state, OriginalMigrationState::RolledBack);
+        assert!(source.join("SKILL.md").is_file(), "files restored");
+
+        // 旧关系保持归档；新关系活动、同路径、Full 校验后 Normal、决策
+        // 沿用保留（Retained）。
+        let old_relation = relation_fact(&facade, &relation_id).await;
+        assert!(!old_relation.active);
+        assert_eq!(
+            old_relation.archive_reason,
+            Some(SourceCopyArchiveReason::Cleaned)
+        );
+        let new_relations = {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .list_source_copy_relations(true)
+                .expect("active relations")
+        };
+        let new_relation = new_relations
+            .iter()
+            .find(|relation| relation.source_path == source.to_string_lossy())
+            .expect("new active relation at the restored path");
+        assert_ne!(new_relation.relation_id, relation_id);
+        assert_eq!(new_relation.decision, SourceCopyDecision::Retained);
+        assert_eq!(new_relation.health, SourceCopyHealth::Normal);
+        assert_eq!(
+            history_with(&facade, &relation_id, "rollback", "rolled_back").await,
+            1
+        );
+
+        // 记录显式关联新旧关系。
+        let stored = committed_record(&facade, record.migration_id).await;
+        assert_eq!(stored.state, OriginalMigrationState::RolledBack);
+        assert_eq!(stored.relation_id, relation_id);
+        assert_eq!(
+            stored.restored_relation_id.as_deref(),
+            Some(new_relation.relation_id.as_str())
+        );
+
+        // 已回滚的迁移不能再次回滚。
+        let again = facade
+            .execute(AppCommand::RollbackOriginalMigration(
+                skillhub_core::api::RollbackOriginalMigration {
+                    migration_id: record.migration_id,
+                },
+            ))
+            .await;
+        assert_eq!(
+            again.expect_err("double rollback").code,
+            ErrorCode::OperationConflict
+        );
+    }
+
+    // 8.7：原路径已存在时拒绝回滚，绝不覆盖用户文件。
+    #[tokio::test]
+    async fn rollback_refuses_to_overwrite_an_existing_path() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let plan = prepare_cleanup(&facade, &relation_id).await;
+        let committed = facade
+            .execute(AppCommand::CommitOriginalMigration(
+                skillhub_core::api::CommitOriginalMigration {
+                    prepared_migration_id: plan.operation_id,
+                    ownership_confirmed: true,
+                },
+            ))
+            .await
+            .expect("commit");
+        let AppCommandResult::OriginalMigrationResult(record) = committed else {
+            panic!("expected migration result");
+        };
+
+        // 原路径被用户重建（有新内容）→ 回滚必须拒绝。
+        std::fs::create_dir_all(&source).expect("user recreates the path");
+        std::fs::write(source.join("SKILL.md"), "# user data\n").expect("user content");
+
+        let refused = facade
+            .execute(AppCommand::RollbackOriginalMigration(
+                skillhub_core::api::RollbackOriginalMigration {
+                    migration_id: record.migration_id,
+                },
+            ))
+            .await;
+        assert_eq!(
+            refused.expect_err("existing path must refuse").code,
+            ErrorCode::OperationConflict
+        );
+        assert_eq!(
+            std::fs::read_to_string(source.join("SKILL.md")).expect("user file"),
+            "# user data\n",
+            "user files are never overwritten"
+        );
+    }
+}
+
+/// 8.5 测试注入：删除永远失败的文件系统假象（模拟权限墙/占用）。
+pub mod failing_deletion {
+    pub struct FailingDeletion;
+
+    impl skillhub_application::OriginalMigrationDeletion for FailingDeletion {
+        fn delete_dir_all(&self, _path: &std::path::Path) -> std::io::Result<()> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected deletion failure",
+            ))
+        }
     }
 }

@@ -2101,9 +2101,27 @@ export type OriginalMigrationResult = {
 	/**  迁移确认时间（epoch 秒；跨 IPC 以字符串承载，见 `crate::i64_string`）。 */
 	confirmed_at: string,
 	rolled_back_at: string | null,
+	/**
+	 *  回滚后新建的活动来源关系（8.7：记录显式关联新旧关系）。
+	 *  非回滚记录为空。
+	 */
+	restored_relation_id: string | null,
 };
 
-export type OriginalMigrationState = "migrated" | "rolled_back";
+export type OriginalMigrationState =
+/**  checkpoint：备份完成、尚未开始删除（此状态重启可安全放弃或重试）。 */
+"backed_up" |
+/**
+ *  checkpoint：删除进行中——此状态崩溃后原目录是否删净未知，
+ *  启动恢复必须按事实推进，不得假设。
+ */
+"deleting" |
+/**  提交完成：删除成功且归档事务已提交。 */
+"migrated" |
+/**  失败中止：能确认原目录仍在、现场完整。 */
+"failed" |
+/**  未知中间态：不能确认原目录状态或备份缺失，需要人工对账。 */
+"needs_recovery" | "rolled_back";
 
 /**
  *  清理后的逻辑部署目标上下文：只用于打开部署选择，绝不自动部署。
