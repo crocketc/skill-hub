@@ -62,6 +62,8 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const [committing, setCommitting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const preselectedTargetId = searchParams.get("target");
+  // 治理清理结果等入口只知道 Agent：?agent= 预选该 Agent 的首个可用目标。
+  const preselectedAgentClientId = searchParams.get("agent");
 
   const [projects, setProjects] = useState<BatchProjectInfo[]>();
   useEffect(() => {
@@ -84,6 +86,18 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     setSelectedIds((current) => current.includes(preselectedTargetId) ? current : [...current, preselectedTargetId]);
     setSearchParams({}, { replace: true });
   }, [preselectedTargetId, setSearchParams, targets]);
+
+  // 反向入口（治理清理结果）：?agent= 按 Agent 身份解析首个可用目标并预选；
+  // 解析失败时静默退化为不预选，目标选择仍由用户在页面上显式完成。
+  useEffect(() => {
+    if (!preselectedAgentClientId || !targets) return;
+    const target = targets.find((candidate) => candidate.agentClientId === preselectedAgentClientId
+      && candidate.available);
+    if (!target) return;
+    const targetId = target.id;
+    setSelectedIds((current) => current.includes(targetId) ? current : [...current, targetId]);
+    setSearchParams({}, { replace: true });
+  }, [preselectedAgentClientId, setSearchParams, targets]);
 
   const selectedProjects = (targets ?? [])
     .filter((target) => selectedIds.includes(target.id))

@@ -716,3 +716,30 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     expect(failed.error).toBe("deployment.plan_stale");
   });
 });
+
+it("preselects the first available target of an agent passed via the agent search parameter", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  // 自带 agentClientId 的目标：治理清理结果只知道 Agent 身份，不知道目标 id。
+  const targets: DeploymentTarget[] = [
+    { ...deploymentTargetsFixture()[0], agentClientId: "codex" },
+    { ...deploymentTargetsFixture()[1], agentClientId: "claude-code" },
+  ];
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => targets,
+    preview: async () => ({ failures: [], plans: [] }),
+    commit: async () => [],
+  };
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={[{ pathname: "/deploy", search: "?skill=skill-pdf&agent=codex" }]}>
+        <BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} />
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+
+  // 治理清理结果只知道 Agent 身份：按 agentClientId 解析首个可用目标。
+  // 目标卡的可达名即 agentClientId（与展示层的品牌/类型徽标无关）。
+  await waitFor(() => expect(screen.getByLabelText("codex")).toBeChecked());
+  expect(screen.getByLabelText("claude-code")).not.toBeChecked();
+});
