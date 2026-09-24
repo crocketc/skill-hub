@@ -187,12 +187,12 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     let ready = all
         .rows
         .iter()
-        .find(|row| row.relation.relation_id == "relation:ready")
+        .find(|row| row.relation_id() == "relation:ready")
         .expect("ready row");
-    assert_eq!(ready.relation.skill_id, Some(skill_id(SKILL)));
-    assert_eq!(ready.relation.agent_client_id, AGENT);
-    assert_eq!(ready.relation.path, "/agent/skills/ready");
-    assert_eq!(ready.relation.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(ready.skill_id(), Some(skill_id(SKILL)));
+    assert_eq!(ready.agent_client_id(), Some(AGENT));
+    assert_eq!(ready.path(), "/agent/skills/ready");
+    assert_eq!(ready.relationship(), Some(RelationshipType::ManagedCopy));
     assert_eq!(
         ready.readiness,
         RelationGovernanceReadiness::EligibleToCentralize
@@ -209,7 +209,7 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     let stale = all
         .rows
         .iter()
-        .find(|row| row.relation.relation_id == "relation:stale")
+        .find(|row| row.relation_id() == "relation:stale")
         .expect("stale row");
     assert_eq!(
         stale.readiness,
@@ -224,7 +224,7 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     let junction = all
         .rows
         .iter()
-        .find(|row| row.relation.relation_id == "relation:junction")
+        .find(|row| row.relation_id() == "relation:junction")
         .expect("junction row");
     assert_eq!(junction.readiness, RelationGovernanceReadiness::Blocked);
     assert_eq!(junction.primary_action, RelationGovernanceAction::None);
@@ -236,7 +236,7 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     let link = all
         .rows
         .iter()
-        .find(|row| row.relation.relation_id == "relation:link")
+        .find(|row| row.relation_id() == "relation:link")
         .expect("link row");
     assert_eq!(
         link.readiness,
@@ -276,7 +276,7 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
         let ids = ledger
             .rows
             .iter()
-            .map(|row| row.relation.relation_id.as_str())
+            .map(|row| row.relation_id())
             .collect::<Vec<_>>();
         assert_eq!(
             ids, expected,
@@ -303,7 +303,7 @@ fn ledger_marks_an_unconfirmed_shared_impact_as_pending_validation() {
     let alias = ledger
         .rows
         .iter()
-        .find(|row| row.relation.relation_id == "relation:alias")
+        .find(|row| row.relation_id() == "relation:alias")
         .expect("alias row");
 
     assert_eq!(
@@ -363,7 +363,7 @@ fn ledger_protects_the_shared_directory_body_and_unregistered_edges() {
         ledger
             .rows
             .iter()
-            .find(|row| row.relation.relation_id == relation_id)
+            .find(|row| row.relation_id() == relation_id)
             .unwrap_or_else(|| panic!("{relation_id} row"))
             .blockers
             .clone()
@@ -462,7 +462,7 @@ fn ledger_never_lists_a_released_edge_and_keeps_input_order_stable() {
         ledger
             .rows
             .iter()
-            .map(|row| row.relation.relation_id.as_str())
+            .map(|row| row.relation_id())
             .collect::<Vec<_>>(),
         vec!["relation:live"],
         "a released edge is history, not a governable current relationship"
@@ -496,7 +496,7 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
         by_skill
             .rows
             .iter()
-            .map(|row| row.relation.relation_id.as_str())
+            .map(|row| row.relation_id())
             .collect::<Vec<_>>(),
         vec!["relation:b"]
     );
@@ -510,7 +510,7 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
         },
     );
     assert_eq!(by_agent.rows.len(), 1);
-    assert_eq!(by_agent.rows[0].relation.relation_id, "relation:b");
+    assert_eq!(by_agent.rows[0].relation_id(), "relation:b");
 
     let by_text = ledger_of(
         &specs,
@@ -522,7 +522,8 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
     );
     assert_eq!(by_text.rows.len(), 1);
     assert_eq!(
-        by_text.rows[0].relation.relation_id, "relation:c",
+        by_text.rows[0].relation_id(),
+        "relation:c",
         "path search ignores case"
     );
 
@@ -535,7 +536,7 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
         },
     );
     assert_eq!(by_relationship.rows.len(), 1);
-    assert_eq!(by_relationship.rows[0].relation.relation_id, "relation:c");
+    assert_eq!(by_relationship.rows[0].relation_id(), "relation:c");
 
     let combined = ledger_of(
         &specs,
@@ -548,7 +549,7 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
         },
     );
     assert_eq!(combined.rows.len(), 1);
-    assert_eq!(combined.rows[0].relation.relation_id, "relation:a");
+    assert_eq!(combined.rows[0].relation_id(), "relation:a");
 
     // 稳定排序：输入顺序反转不改变输出顺序。
     let mut reversed = specs.iter().map(RelationSpec::build).collect::<Vec<_>>();
@@ -559,8 +560,365 @@ fn ledger_filters_by_bucket_skill_agent_text_and_relationship_type() {
         forward
             .rows
             .iter()
-            .map(|row| row.relation.relation_id.as_str())
+            .map(|row| row.relation_id())
             .collect::<Vec<_>>(),
         vec!["relation:a", "relation:b", "relation:c"]
     );
+}
+
+mod unified_ledger {
+    //! Task 7 验收：统一治理清单同时消费来源副本与部署关系（plan 7.1–7.4、
+    //! 7.9、7.11）。来源副本与部署都出现在 All；已归档关系只进 history；
+    //! Online provenance 永不出现在清单（清单只从关系事实构建，函数签名
+    //! 根本不接受 provenance）。筛选可组合：scope、batch_id、skill、agent、
+    //! project、source_class、text 与五个快捷状态。
+
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use skillhub_core::import::ImportSourceClass;
+    use skillhub_core::relationship::{
+        project_governable_relation, project_unified_governance_ledger, GovernableRelationFact,
+        GovernableRelationStatus, RelationGovernanceAction, RelationGovernanceBucket,
+        RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceReadiness,
+        SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact,
+    };
+
+    fn provenance_event() -> skillhub_core::import::ImportProvenanceEvent {
+        skillhub_core::import::ImportProvenanceEvent {
+            provenance_id: "prov-unified".to_owned(),
+            batch_id: "batch-unified".to_owned(),
+            skill_id: skill_id(SKILL),
+            source_class: skillhub_core::ImportSourceClass::UserLocal,
+            source: skillhub_core::SourceDescriptor::new(
+                skillhub_core::SourceKind::Local,
+                skillhub_core::SourceLocator::local_path("C:/src/notes"),
+            ),
+            local_source_path: Some("C:/src/notes".to_owned()),
+            source_container_id: None,
+            physical_source_id: Some("fs:dev-1-ino-2".to_owned()),
+            agent_client_id: Some(AGENT.to_owned()),
+            content_fingerprint: "hash-a".to_owned(),
+            imported_at: 42,
+        }
+    }
+
+    fn source_copy(relation_id: &str, health: SourceCopyHealth) -> SourceCopyRelationFact {
+        let mut fact = SourceCopyRelationFact::from_import_event(
+            relation_id,
+            &provenance_event(),
+            "c:/src/notes",
+            "fs:dev-1-ino-2",
+        )
+        .expect("governable");
+        fact.health = health;
+        fact
+    }
+
+    fn source_copy_with_decision(
+        relation_id: &str,
+        health: SourceCopyHealth,
+        decision: SourceCopyDecision,
+    ) -> SourceCopyRelationFact {
+        let mut fact = source_copy(relation_id, health);
+        fact.decision = decision;
+        fact
+    }
+
+    fn unified_of(
+        facts: Vec<GovernableRelationFact>,
+        filters: RelationGovernanceFilters,
+    ) -> skillhub_core::relationship::RelationGovernanceLedger {
+        project_unified_governance_ledger(
+            &filters,
+            &facts,
+            &supported_capabilities(),
+            &BTreeSet::new(),
+            &Vec::new(),
+            7,
+            None,
+        )
+    }
+
+    #[test]
+    fn six_healths_and_two_decisions_project_into_five_quick_statuses() {
+        let cases = [
+            (SourceCopyHealth::Normal, GovernableRelationStatus::Normal),
+            (
+                SourceCopyHealth::NeedsValidation,
+                GovernableRelationStatus::NeedsValidation,
+            ),
+            (
+                SourceCopyHealth::ContentChanged,
+                GovernableRelationStatus::NeedsAttention,
+            ),
+            (
+                SourceCopyHealth::OperationFailed,
+                GovernableRelationStatus::NeedsAttention,
+            ),
+            (
+                SourceCopyHealth::PermissionLimited,
+                GovernableRelationStatus::Blocked,
+            ),
+            (
+                SourceCopyHealth::ManagedOccupied,
+                GovernableRelationStatus::Blocked,
+            ),
+        ];
+        for (health, expected) in cases {
+            let projection = project_governable_relation(&GovernableRelationFact::SourceCopy(
+                source_copy("rel-copy", health),
+            ))
+            .expect("active source copy projects");
+            assert_eq!(projection.status, expected, "health {health:?}");
+        }
+
+        // Retained 决策 + Normal 健康 → Retained；Pending 决策 → Normal。
+        let retained = project_governable_relation(&GovernableRelationFact::SourceCopy(
+            source_copy_with_decision(
+                "rel-copy",
+                SourceCopyHealth::Normal,
+                SourceCopyDecision::Retained,
+            ),
+        ))
+        .expect("retained copy projects");
+        assert_eq!(retained.status, GovernableRelationStatus::Retained);
+    }
+
+    #[test]
+    fn unified_all_bucket_lists_source_copies_and_deployments_together() {
+        let filters = RelationGovernanceFilters {
+            bucket: RelationGovernanceBucket::All,
+            ..RelationGovernanceFilters::default()
+        };
+        let ledger = unified_of(
+            vec![
+                GovernableRelationFact::SourceCopy(source_copy(
+                    "rel-copy",
+                    SourceCopyHealth::Normal,
+                )),
+                GovernableRelationFact::Deployment(
+                    RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+                ),
+            ],
+            filters,
+        );
+        let mut ids = ledger
+            .rows
+            .iter()
+            .map(|row| row.relation_id().to_owned())
+            .collect::<Vec<_>>();
+        ids.sort();
+        assert_eq!(ids, vec!["rel-copy", "rel-link"]);
+
+        // 已归档来源副本不进清单（history 独立查询负责）。
+        let mut archived = source_copy("rel-copy", SourceCopyHealth::Normal);
+        archived.active = false;
+        let ledger = unified_of(
+            vec![
+                GovernableRelationFact::SourceCopy(archived),
+                GovernableRelationFact::Deployment(
+                    RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+                ),
+            ],
+            RelationGovernanceFilters::default(),
+        );
+        assert_eq!(ledger.rows.len(), 1);
+        assert_eq!(ledger.rows[0].relation_id(), "rel-link");
+    }
+
+    #[test]
+    fn unified_filters_combine_scope_class_project_batch_and_statuses() {
+        let mut user_copy = source_copy("rel-user-copy", SourceCopyHealth::Normal);
+        user_copy.source_class = ImportSourceClass::UserLocal;
+        let mut project_copy = source_copy("rel-project-copy", SourceCopyHealth::Normal);
+        project_copy.source_class = ImportSourceClass::RegisteredProject;
+        project_copy.source_container_id = Some("project-1".to_owned());
+        let deployment = GovernableRelationFact::Deployment(
+            RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+        );
+        let facts = vec![
+            GovernableRelationFact::SourceCopy(user_copy),
+            GovernableRelationFact::SourceCopy(project_copy),
+            deployment,
+        ];
+
+        // source_class 过滤只命中来源副本。
+        let filters = RelationGovernanceFilters {
+            source_class: Some(ImportSourceClass::UserLocal),
+            ..RelationGovernanceFilters::default()
+        };
+        let ledger = unified_of(facts.clone(), filters);
+        assert_eq!(
+            ledger
+                .rows
+                .iter()
+                .map(|row| row.relation_id().to_owned())
+                .collect::<Vec<_>>(),
+            vec!["rel-user-copy"]
+        );
+
+        // project 过滤命中项目副本。
+        let filters = RelationGovernanceFilters {
+            project_id: Some("project-1".to_owned()),
+            ..RelationGovernanceFilters::default()
+        };
+        let ledger = unified_of(facts.clone(), filters);
+        assert_eq!(
+            ledger
+                .rows
+                .iter()
+                .map(|row| row.relation_id().to_owned())
+                .collect::<Vec<_>>(),
+            vec!["rel-project-copy"]
+        );
+
+        // batch_id 只命中 import_batch_items 映射的关系（由调用方传入）。
+        let filters = RelationGovernanceFilters {
+            batch_id: Some("batch-7".to_owned()),
+            ..RelationGovernanceFilters::default()
+        };
+        let mut batch_ids = BTreeSet::new();
+        batch_ids.insert("rel-link".to_owned());
+        let ledger = project_unified_governance_ledger(
+            &filters,
+            &facts,
+            &supported_capabilities(),
+            &batch_ids,
+            &Vec::new(),
+            7,
+            None,
+        );
+        assert_eq!(
+            ledger
+                .rows
+                .iter()
+                .map(|row| row.relation_id().to_owned())
+                .collect::<Vec<_>>(),
+            vec!["rel-link"]
+        );
+
+        // 快捷状态过滤与 skill 过滤可组合。
+        let filters = RelationGovernanceFilters {
+            statuses: vec![GovernableRelationStatus::Normal],
+            skill_id: Some(skill_id(OTHER_SKILL)),
+            ..RelationGovernanceFilters::default()
+        };
+        let ledger = unified_of(facts, filters);
+        assert!(
+            ledger.rows.is_empty(),
+            "no other-skill facts in this fixture"
+        );
+    }
+
+    #[test]
+    fn unified_counts_report_five_statuses_and_both_kinds() {
+        let facts = vec![
+            GovernableRelationFact::SourceCopy(source_copy("rel-normal", SourceCopyHealth::Normal)),
+            GovernableRelationFact::SourceCopy(source_copy(
+                "rel-changed",
+                SourceCopyHealth::ContentChanged,
+            )),
+            GovernableRelationFact::SourceCopy(source_copy(
+                "rel-occupied",
+                SourceCopyHealth::ManagedOccupied,
+            )),
+            GovernableRelationFact::Deployment(
+                RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+            ),
+        ];
+        let ledger = unified_of(facts, RelationGovernanceFilters::default());
+        let counts: &RelationGovernanceCounts = &ledger.counts;
+        assert_eq!(counts.all, 4);
+        assert_eq!(counts.source_copies, 3);
+        assert_eq!(counts.deployments, 1);
+        assert_eq!(counts.status_normal, 2);
+        assert_eq!(counts.status_needs_attention, 1);
+        assert_eq!(counts.status_blocked, 1);
+        assert_eq!(counts.status_needs_validation, 0);
+        assert_eq!(counts.status_retained, 0);
+    }
+
+    #[test]
+    fn action_eligibility_only_offers_actions_with_executable_implementations() {
+        // 来源副本：Pending 决策提供 KeepIndependentCopy（命令已存在）。
+        let pending = unified_of(
+            vec![GovernableRelationFact::SourceCopy(source_copy(
+                "rel-pending",
+                SourceCopyHealth::Normal,
+            ))],
+            RelationGovernanceFilters::default(),
+        );
+        assert_eq!(
+            pending.rows[0].primary_action,
+            RelationGovernanceAction::KeepIndependentCopy
+        );
+        assert_eq!(
+            pending.rows[0].readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+
+        // 需要复核的来源副本提供 Revalidate。
+        let stale = unified_of(
+            vec![GovernableRelationFact::SourceCopy(source_copy(
+                "rel-stale",
+                SourceCopyHealth::NeedsValidation,
+            ))],
+            RelationGovernanceFilters::default(),
+        );
+        assert_eq!(
+            stale.rows[0].primary_action,
+            RelationGovernanceAction::Revalidate
+        );
+
+        // 部署：受管链接 → Undeploy；受管副本 → DetachKeepFiles（复用
+        // DetachManagement）；就绪受管条目保留 CentralizeManagement。
+        let deployments = unified_of(
+            vec![
+                GovernableRelationFact::Deployment(
+                    RelationSpec::managed_link("rel-managed-link", "/agent/skills/link").build(),
+                ),
+                GovernableRelationFact::Deployment(
+                    RelationSpec::observed_copy("rel-observed-copy", "/agent/skills/copy").build(),
+                ),
+            ],
+            RelationGovernanceFilters::default(),
+        );
+        let by_id = |ledger: &skillhub_core::relationship::RelationGovernanceLedger, id: &str| {
+            ledger
+                .rows
+                .iter()
+                .find(|row| row.relation_id() == id)
+                .unwrap_or_else(|| panic!("row {id}"))
+                .primary_action
+        };
+        assert_eq!(
+            by_id(&deployments, "rel-managed-link"),
+            RelationGovernanceAction::Undeploy
+        );
+    }
+
+    #[test]
+    fn legacy_bucket_urls_map_to_equivalent_status_filters() {
+        assert!(
+            skillhub_core::relationship::legacy_bucket_statuses(RelationGovernanceBucket::All)
+                .is_empty()
+        );
+        assert_eq!(
+            skillhub_core::relationship::legacy_bucket_statuses(
+                RelationGovernanceBucket::NeedsValidation
+            ),
+            vec![GovernableRelationStatus::NeedsValidation]
+        );
+        assert_eq!(
+            skillhub_core::relationship::legacy_bucket_statuses(RelationGovernanceBucket::Blocked),
+            vec![GovernableRelationStatus::Blocked]
+        );
+        assert_eq!(
+            skillhub_core::relationship::legacy_bucket_statuses(
+                RelationGovernanceBucket::EligibleToCentralize
+            ),
+            vec![GovernableRelationStatus::Normal]
+        );
+    }
 }

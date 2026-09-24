@@ -53,7 +53,9 @@ pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite
 pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use directory_repository::DirectoryRepository;
 pub use evidence_repository::UsageEvidenceRepository;
-pub use governance_history_repository::{GovernanceHistoryEvent, GovernanceHistoryRepository};
+pub use governance_history_repository::{
+    GovernanceHistoryEvent, GovernanceHistoryPageQuery, GovernanceHistoryRepository,
+};
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
 pub use llm_connection_test_repository::{LlmConnectionTestRepository, PersistedConnectionTest};

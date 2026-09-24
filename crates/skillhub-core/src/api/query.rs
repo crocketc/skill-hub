@@ -886,6 +886,7 @@ pub enum AppQuery {
     GetConflictWorkspace(GetConflictWorkspace),
     #[serde(rename = "list_relation_governance")]
     ListRelationGovernance(ListRelationGovernance),
+    ListGovernanceHistory(crate::relationship::ListGovernanceHistory),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
     #[serde(rename = "get_call_policy")]
@@ -997,6 +998,8 @@ pub enum AppQueryResult {
     ConflictWorkspace(ConflictWorkspace),
     #[serde(rename = "relation_governance_ledger")]
     RelationGovernanceLedger(RelationGovernanceLedger),
+    #[serde(rename = "governance_history_page")]
+    GovernanceHistoryPage(crate::relationship::GovernanceHistoryPage),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
     #[serde(rename = "skill_operations")]

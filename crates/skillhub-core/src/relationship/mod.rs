@@ -1,6 +1,7 @@
 pub mod classifier;
 pub mod governance;
 pub mod graph;
+pub mod history;
 pub mod impact;
 pub mod resolution;
 pub mod source_copy;
@@ -21,17 +22,21 @@ pub use classifier::{
     classify_observed_relation_with_reason, RelationClassification, RelationTargetFact,
 };
 pub use governance::{
-    project_governable_relation, project_relation_governance_ledger,
-    project_relation_governance_ledger_with_names, GovernableRelationFact,
-    GovernableRelationProjection, GovernableRelationStatus, RelationGovernanceAction,
-    RelationGovernanceBlocker, RelationGovernanceBucket, RelationGovernanceCounts,
-    RelationGovernanceFilters, RelationGovernanceImpact, RelationGovernanceLedger,
-    RelationGovernanceNames, RelationGovernanceReadiness, RelationGovernanceRow,
+    legacy_bucket_statuses, project_governable_relation, project_relation_governance_ledger,
+    project_relation_governance_ledger_with_names, project_unified_governance_ledger,
+    GovernableRelationFact, GovernableRelationProjection, GovernableRelationStatus,
+    RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
+    RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceImpact,
+    RelationGovernanceLedger, RelationGovernanceNames, RelationGovernanceReadiness,
+    RelationGovernanceRow,
 };
 pub use graph::{
     project_skill_relationship_graph, RelationshipGraphEdgeKind, RelationshipGraphFactCounts,
     RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus,
     SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode,
+};
+pub use history::{
+    GovernanceHistoryAgent, GovernanceHistoryEntry, GovernanceHistoryPage, ListGovernanceHistory,
 };
 pub use impact::{
     calculate_removal_impact, recommend_removal_action, BackupRecoveryInfo, MinimalImpactAction,

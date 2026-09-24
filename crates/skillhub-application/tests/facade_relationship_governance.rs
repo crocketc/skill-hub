@@ -4482,13 +4482,10 @@ async fn governance_ledger_query_is_read_only_and_groups_edges_by_relationship()
         .all(|row| row.readiness == RelationGovernanceReadiness::EligibleToCentralize));
     assert!(all.rows.iter().all(|row| row.blockers.is_empty()));
     assert_eq!(all.rows[0].skill_display_name.as_deref(), Some("Notes"));
+    assert_eq!(all.rows[0].path(), fixture.entry(0).to_string_lossy());
     assert_eq!(
-        all.rows[0].relation.path,
-        fixture.entry(0).to_string_lossy()
-    );
-    assert_eq!(
-        all.rows[0].relation.relationship,
-        RelationshipType::ManagedCopy
+        all.rows[0].relationship(),
+        Some(RelationshipType::ManagedCopy)
     );
 
     // 四个筛选是同一份清单的快捷筛选：计数始终描述整份清单。
@@ -4513,10 +4510,7 @@ async fn governance_ledger_query_is_read_only_and_groups_edges_by_relationship()
     )
     .await;
     assert_eq!(by_agent.rows.len(), 1);
-    assert_eq!(
-        by_agent.rows[0].relation.relation_id,
-        fixture.relation_id(1)
-    );
+    assert_eq!(by_agent.rows[0].relation_id(), fixture.relation_id(1));
 
     assert_eq!(
         relationship_revision(&fixture.facade),
@@ -4899,4 +4893,281 @@ async fn governance_batch_rejects_an_empty_selection() {
         .await
         .expect_err("a batch needs at least one relationship edge");
     assert_eq!(error.code, ErrorCode::InvalidInput);
+}
+
+mod unified_and_history {
+    //! Task 7 集成验收：统一清单同表呈现来源副本与部署边（7.2/7.8），
+    //! batch_id 过滤只命中 import_batch_items 映射关系（7.3），批次约束在
+    //! prepare 前整体拒绝（7.5），治理历史是独立分页查询且只读写入时固化
+    //! 的显示快照（7.10）。
+
+    use skillhub_core::api::{ListGovernanceHistory, PrepareRelationGovernanceBatch};
+    use skillhub_core::import::{ImportCandidate, ImportDecision};
+    use skillhub_core::relationship::GovernableRelationStatus;
+    use skillhub_core::{AppCommandResult, AppQueryResult};
+
+    use super::*;
+
+    async fn import_source_copy(
+        facade: &LocalApplicationFacade,
+        root: &std::path::Path,
+        name: &str,
+    ) -> String {
+        let candidate = ImportCandidate::detected(
+            SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(root)),
+            root.to_string_lossy(),
+            ".",
+            "SKILL.md",
+            name,
+        );
+        let prepared = facade
+            .execute(AppCommand::PrepareImport(skillhub_core::PrepareImport {
+                candidate,
+                tree_hash: None,
+            }))
+            .await
+            .expect("prepared import");
+        let AppCommandResult::PreparedImport(prepared) = prepared else {
+            panic!("expected prepared import");
+        };
+        let committed = facade
+            .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+                prepared_import_id: prepared.id,
+                decision: ImportDecision::CopyIntoLibrary,
+                governance_decision: skillhub_core::ImportGovernanceDecision {
+                    group_actions: prepared
+                        .analysis
+                        .governance_groups
+                        .iter()
+                        .map(|group| (group.group_id.clone(), group.default_action))
+                        .collect(),
+                    item_overrides: Default::default(),
+                },
+                batch_id: None,
+                candidate_key: None,
+            }))
+            .await
+            .expect("commit import");
+        let AppCommandResult::ImportSummary(_) = committed else {
+            panic!("expected import summary");
+        };
+        // 关系 id：来源副本清单行以 import 产生的活动关系为准。
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        let relations = database
+            .relationship_repository()
+            .list_source_copy_relations(true)
+            .expect("source copy relations");
+        relations
+            .iter()
+            .find(|relation| relation.source_path == root.to_string_lossy())
+            .unwrap_or_else(|| panic!("relation for {}", root.display()))
+            .relation_id
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn unified_ledger_lists_imported_source_copies_beside_deployments() {
+        let fixture = fixture().await;
+        let sources = tempfile::tempdir().expect("sources");
+        let source = sources.path().join("imported-src");
+        write_skill(&source);
+        let copy_relation_id = import_source_copy(&fixture.facade, &source, "Imported").await;
+
+        let ledger = governance_ledger(&fixture.facade, RelationGovernanceFilters::default()).await;
+        let ids = ledger
+            .rows
+            .iter()
+            .map(|row| row.relation_id().to_owned())
+            .collect::<Vec<_>>();
+        assert!(
+            ids.contains(&copy_relation_id),
+            "source copy rows join the unified ledger: {ids:?}"
+        );
+        assert_eq!(ledger.counts.source_copies, 1);
+        assert_eq!(ledger.counts.deployments, 1);
+        assert!(ledger.counts.all >= 2);
+
+        // 五状态计数与行状态一致：来源副本导入后为 Normal。
+        assert!(ledger.counts.status_normal >= 1);
+        let copy_row = ledger
+            .rows
+            .iter()
+            .find(|row| row.relation_id() == copy_relation_id)
+            .expect("copy row");
+        assert_eq!(copy_row.status, GovernableRelationStatus::Normal);
+
+        // 状态过滤只命中对应行。
+        let filters = RelationGovernanceFilters {
+            statuses: vec![GovernableRelationStatus::Normal],
+            ..RelationGovernanceFilters::default()
+        };
+        let filtered = governance_ledger(&fixture.facade, filters).await;
+        assert!(filtered
+            .rows
+            .iter()
+            .all(|row| row.status == GovernableRelationStatus::Normal));
+    }
+
+    #[tokio::test]
+    async fn batch_id_filter_only_hits_relations_mapped_by_the_import_batch() {
+        let fixture = fixture().await;
+        let sources = tempfile::tempdir().expect("sources");
+        let source = sources.path().join("batched-src");
+        write_skill(&source);
+        let copy_relation_id = import_source_copy(&fixture.facade, &source, "Batched").await;
+
+        // 另一个 import 产生第二个批次与关系。
+        let other = sources.path().join("other-src");
+        write_skill(&other);
+        let other_relation_id = import_source_copy(&fixture.facade, &other, "Other").await;
+
+        let database = fixture.facade.database_for_tests().clone();
+        let first_batch = {
+            let database = database.lock().expect("database lock");
+            let mut statement = database
+                .connection_for_test()
+                .prepare(
+                    "SELECT DISTINCT batch_id FROM import_batch_items WHERE source_relation_id = ?1",
+                )
+                .expect("batch lookup");
+            let found: String = statement
+                .query_row([&copy_relation_id], |row| row.get(0))
+                .expect("batch for the first import");
+            found
+        };
+
+        let filters = RelationGovernanceFilters {
+            batch_id: Some(first_batch),
+            ..RelationGovernanceFilters::default()
+        };
+        let ledger = governance_ledger(&fixture.facade, filters).await;
+        let ids = ledger
+            .rows
+            .iter()
+            .map(|row| row.relation_id().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![copy_relation_id]);
+        assert!(!ids.contains(&other_relation_id));
+    }
+
+    #[tokio::test]
+    async fn governance_batch_rejects_duplicate_relation_ids_before_prepare() {
+        let fixture = fixture().await;
+        let relation_id = fixture.relation_id.clone();
+        let error = fixture
+            .facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action: RelationGovernanceBatchAction::CentralizeManagement,
+                    relation_ids: vec![relation_id.clone(), relation_id],
+                    confirmations: BTreeMap::new(),
+                },
+            ))
+            .await
+            .expect_err("duplicate ids are rejected");
+        assert_eq!(
+            error.code.as_str(),
+            skillhub_core::ErrorCode::InvalidInput.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn governance_history_is_a_paged_display_snapshot_query() {
+        let fixture = fixture().await;
+        let now = 1_700_000_000i64;
+        let relation_id = fixture.relation_id.clone();
+        let seed = |event_id: &str, result: &str, occurred_at: i64| {
+            let database = fixture.facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            skillhub_storage::GovernanceHistoryRepository::append(
+                &database.governance_history_repository(),
+                &skillhub_storage::GovernanceHistoryEvent {
+                    event_id: event_id.to_owned(),
+                    relation_id: relation_id.clone(),
+                    skill_id: Some(fixture.skill_id.to_string()),
+                    skill_display_name: "Notes".to_owned(),
+                    agent_presentation: serde_json::json!({"client_id": "codebuddy.code"}),
+                    path: "/agent/skills/notes".to_owned(),
+                    scope: "deployment".to_owned(),
+                    project_id: Some("project-9".to_owned()),
+                    action: "validate".to_owned(),
+                    result: result.to_owned(),
+                    reason: None,
+                    operation_id: Some("op-1".to_owned()),
+                    occurred_at,
+                },
+            )
+            .expect("seed history");
+        };
+        seed("hist-old", "checked", now);
+        seed("hist-new", "archived", now + 5);
+
+        let page = match fixture
+            .facade
+            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
+                page: 1,
+                page_size: 1,
+                relation_id: None,
+                skill_id: None,
+                agent_client_id: None,
+                project_id: None,
+                result: None,
+            }))
+            .await
+            .expect("history page")
+        {
+            AppQueryResult::GovernanceHistoryPage(page) => page,
+            other => panic!("expected history page, got {other:?}"),
+        };
+        assert_eq!(page.total, 2);
+        assert_eq!(page.items.len(), 1, "page size is honored");
+        assert_eq!(page.items[0].result, "archived", "newest first");
+        assert_eq!(page.items[0].skill_display_name, "Notes");
+        assert_eq!(
+            page.items[0].agent.client_id.as_deref(),
+            Some("codebuddy.code")
+        );
+
+        // result 过滤与分页可组合。
+        let filtered = match fixture
+            .facade
+            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
+                page: 1,
+                page_size: 10,
+                relation_id: None,
+                skill_id: None,
+                agent_client_id: None,
+                project_id: None,
+                result: Some("checked".to_owned()),
+            }))
+            .await
+            .expect("filtered history")
+        {
+            AppQueryResult::GovernanceHistoryPage(page) => page,
+            other => panic!("expected history page, got {other:?}"),
+        };
+        assert_eq!(filtered.total, 1);
+        assert_eq!(filtered.items[0].result, "checked");
+
+        // skill 过滤同样可用。
+        let by_skill = match fixture
+            .facade
+            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
+                page: 1,
+                page_size: 10,
+                relation_id: None,
+                skill_id: Some(fixture.skill_id),
+                agent_client_id: None,
+                project_id: None,
+                result: None,
+            }))
+            .await
+            .expect("skill-filtered history")
+        {
+            AppQueryResult::GovernanceHistoryPage(page) => page,
+            other => panic!("expected history page, got {other:?}"),
+        };
+        assert_eq!(by_skill.total, 2);
+    }
 }

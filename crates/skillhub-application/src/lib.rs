@@ -6118,6 +6118,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::GetConflictWorkspace(_) => self.get_conflict_workspace(),
             AppQuery::ListRelationGovernance(request) => self.list_relation_governance(request),
+            AppQuery::ListGovernanceHistory(request) => self.list_governance_history(request),
             AppQuery::ListRecoveryCandidates => self
                 .recovery_service
                 .list()

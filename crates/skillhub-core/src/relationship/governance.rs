@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use super::source_copy::{SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact};
 use crate::deployment::{DeploymentRelationFact, ObservedMatchState};
+use crate::import::ImportSourceClass;
 use crate::relationship::{
     calculate_removal_impact, AgentDirectoryCapabilityFact, DirectoryRecognition,
     FileRepresentation, OwnershipState, RelatedSkillPath, RelationshipType, RemovalFacts,
@@ -155,6 +156,10 @@ pub enum RelationGovernanceAction {
     Undeploy,
     /// 重新检查/重新扫描后回到清单；不写文件、不写关系事实。
     Revalidate,
+    /// 来源副本转用户自留（复用既有 KeepIndependentCopy 命令）。
+    KeepIndependentCopy,
+    /// 部署副本解除受管但保留目标文件（复用既有 DetachManagement 命令）。
+    DetachKeepFiles,
     /// 受阻或无适用动作。
     None,
 }
@@ -194,17 +199,75 @@ pub struct RelationGovernanceImpact {
     pub rollback_available: bool,
 }
 
-/// One relationship edge, ready for display and for batch selection.
+/// One relationship edge, ready for display and for batch selection. The
+/// tagged `relation` carries either a source-copy edge or a deployment edge;
+/// the accessors below keep call sites free of enum plumbing.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct RelationGovernanceRow {
     /// 对象、关系类型、目标路径、存证与验证状态的唯一事实来源。
-    pub relation: DeploymentRelationFact,
+    pub relation: GovernableRelationFact,
+    /// 五个快捷状态（plan 7.1/7.9）：Normal/Retained/NeedsValidation/
+    /// NeedsAttention/Blocked。
+    pub status: GovernableRelationStatus,
     pub skill_display_name: Option<String>,
     pub readiness: RelationGovernanceReadiness,
     pub primary_action: RelationGovernanceAction,
     pub blockers: Vec<RelationGovernanceBlocker>,
     pub impact: RelationGovernanceImpact,
+}
+
+impl RelationGovernanceRow {
+    pub fn relation_id(&self) -> &str {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(fact) => &fact.relation_id,
+            GovernableRelationFact::Deployment(fact) => &fact.relation_id,
+        }
+    }
+
+    pub fn skill_id(&self) -> Option<SkillId> {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(fact) => Some(fact.skill_id),
+            GovernableRelationFact::Deployment(fact) => fact.skill_id,
+        }
+    }
+
+    pub fn path(&self) -> &str {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(fact) => &fact.source_path,
+            GovernableRelationFact::Deployment(fact) => &fact.path,
+        }
+    }
+
+    /// 部署端总是有 Agent；来源副本的 Agent 关联方可缺省。
+    pub fn agent_client_id(&self) -> Option<&str> {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(fact) => fact.agent_client_id.as_deref(),
+            GovernableRelationFact::Deployment(fact) => Some(&fact.agent_client_id),
+        }
+    }
+
+    /// 只有部署边有关系类型语义；来源副本返回 None。
+    pub fn relationship(&self) -> Option<RelationshipType> {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(_) => None,
+            GovernableRelationFact::Deployment(fact) => Some(fact.relationship),
+        }
+    }
+
+    pub fn deployment(&self) -> Option<&DeploymentRelationFact> {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(_) => None,
+            GovernableRelationFact::Deployment(fact) => Some(fact),
+        }
+    }
+
+    pub fn source_copy(&self) -> Option<&SourceCopyRelationFact> {
+        match &self.relation {
+            GovernableRelationFact::SourceCopy(fact) => Some(fact),
+            GovernableRelationFact::Deployment(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -214,6 +277,15 @@ pub struct RelationGovernanceCounts {
     pub eligible_to_centralize: u32,
     pub needs_validation: u32,
     pub blocked: u32,
+    /// 五个快捷状态计数（plan 7.9）。
+    pub status_normal: u32,
+    pub status_retained: u32,
+    pub status_needs_validation: u32,
+    pub status_needs_attention: u32,
+    pub status_blocked: u32,
+    /// 两侧 kind 计数。
+    pub source_copies: u32,
+    pub deployments: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -229,6 +301,18 @@ pub struct RelationGovernanceFilters {
     pub text: String,
     #[serde(default)]
     pub relationship_types: Vec<RelationshipType>,
+    /// 项目 scope：命中来源副本的 source_container_id。
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// 来源类别过滤；部署边不受此过滤影响。
+    #[serde(default)]
+    pub source_class: Option<ImportSourceClass>,
+    /// 批次过滤：只命中 import_batch_items 映射的关系（由服务层传入集合）。
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    /// 五个快捷状态过滤；空集合表示不过滤。
+    #[serde(default)]
+    pub statuses: Vec<GovernableRelationStatus>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -277,41 +361,97 @@ pub fn project_relation_governance_ledger_with_names(
     relationship_revision: i64,
     last_verified_at: Option<i64>,
 ) -> RelationGovernanceLedger {
-    let facts = RemovalFacts::new(relations.to_vec(), directory_capabilities.to_vec());
-    let mut rows = relations
+    let facts = relations
         .iter()
-        .filter(|relation| relation.active && relation.released_at.is_none())
-        .map(|relation| {
-            let impact = calculate_removal_impact(&relation.relation_id, &facts);
-            let blockers = blockers_for(relation, directory_capabilities, &impact);
-            let readiness = readiness_for(relation, &blockers);
-            RelationGovernanceRow {
-                relation: relation.clone(),
-                skill_display_name: relation.skill_id.and_then(|skill_id| {
-                    names
-                        .iter()
-                        .find(|(candidate, _)| *candidate == skill_id)
-                        .map(|(_, name)| name.clone())
-                }),
-                readiness,
-                primary_action: primary_action_for(relation, readiness),
-                blockers,
-                impact: RelationGovernanceImpact {
-                    other_consumer_agent_ids: impact
-                        .other_consumers
-                        .iter()
-                        .map(|consumer| consumer.agent_client_id.clone())
-                        .collect::<BTreeSet<_>>()
-                        .into_iter()
-                        .collect(),
-                    other_skill_paths: impact.other_skill_paths.clone(),
-                    backup_required: impact.backup.required,
-                    rollback_available: impact.backup.rollback_available,
-                },
+        .map(|relation| GovernableRelationFact::Deployment(relation.clone()))
+        .collect::<Vec<_>>();
+    project_unified_governance_ledger(
+        filters,
+        &facts,
+        directory_capabilities,
+        &BTreeSet::new(),
+        names,
+        relationship_revision,
+        last_verified_at,
+    )
+}
+
+/// Unified projection entry (plan 7.8): consumes source-copy relations and
+/// deployment relations in one ledger, plus the batch→relation map used by
+/// the `batch_id` filter. Pure: no filesystem I/O, no writes.
+pub fn project_unified_governance_ledger(
+    filters: &RelationGovernanceFilters,
+    facts: &[GovernableRelationFact],
+    directory_capabilities: &[AgentDirectoryCapabilityFact],
+    batch_relation_ids: &BTreeSet<String>,
+    names: &RelationGovernanceNames,
+    relationship_revision: i64,
+    last_verified_at: Option<i64>,
+) -> RelationGovernanceLedger {
+    let deployment_facts = facts
+        .iter()
+        .filter_map(|fact| match fact {
+            GovernableRelationFact::Deployment(relation) => Some(relation.clone()),
+            GovernableRelationFact::SourceCopy(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let removal_facts =
+        RemovalFacts::new(deployment_facts.clone(), directory_capabilities.to_vec());
+
+    let mut rows = facts
+        .iter()
+        .filter_map(|fact| {
+            let projection = project_governable_relation(fact)?;
+            let status = projection.status;
+            Some((fact, projection.relation_id, status))
+        })
+        .map(|(fact, _relation_id, status)| match fact {
+            GovernableRelationFact::SourceCopy(copy) => RelationGovernanceRow {
+                relation: GovernableRelationFact::SourceCopy(copy.clone()),
+                status,
+                skill_display_name: names
+                    .iter()
+                    .find(|(candidate, _)| *candidate == copy.skill_id)
+                    .map(|(_, name)| name.clone()),
+                // 来源副本已是集中库治理形态，不存在"再纳入"。
+                readiness: RelationGovernanceReadiness::AlreadyCentralized,
+                primary_action: source_copy_action(copy, status),
+                blockers: Vec::new(),
+                impact: RelationGovernanceImpact::default(),
+            },
+            GovernableRelationFact::Deployment(relation) => {
+                let impact = calculate_removal_impact(&relation.relation_id, &removal_facts);
+                let blockers = blockers_for(relation, directory_capabilities, &impact);
+                let readiness = readiness_for(relation, &blockers);
+                RelationGovernanceRow {
+                    relation: GovernableRelationFact::Deployment(relation.clone()),
+                    status: deployment_status(relation),
+                    skill_display_name: relation.skill_id.and_then(|skill_id| {
+                        names
+                            .iter()
+                            .find(|(candidate, _)| *candidate == skill_id)
+                            .map(|(_, name)| name.clone())
+                    }),
+                    readiness,
+                    primary_action: primary_action_for(relation, readiness),
+                    blockers,
+                    impact: RelationGovernanceImpact {
+                        other_consumer_agent_ids: impact
+                            .other_consumers
+                            .iter()
+                            .map(|consumer| consumer.agent_client_id.clone())
+                            .collect::<BTreeSet<_>>()
+                            .into_iter()
+                            .collect(),
+                        other_skill_paths: impact.other_skill_paths.clone(),
+                        backup_required: impact.backup.required,
+                        rollback_available: impact.backup.rollback_available,
+                    },
+                }
             }
         })
         .collect::<Vec<_>>();
-    rows.sort_by(|left, right| left.relation.relation_id.cmp(&right.relation.relation_id));
+    rows.sort_by(|left, right| left.relation_id().cmp(right.relation_id()));
 
     let counts = RelationGovernanceCounts {
         all: rows.len() as u32,
@@ -327,42 +467,73 @@ pub fn project_relation_governance_ledger_with_names(
             .iter()
             .filter(|row| row.readiness == RelationGovernanceReadiness::Blocked)
             .count() as u32,
+        status_normal: status_count(&rows, GovernableRelationStatus::Normal),
+        status_retained: status_count(&rows, GovernableRelationStatus::Retained),
+        status_needs_validation: status_count(&rows, GovernableRelationStatus::NeedsValidation),
+        status_needs_attention: status_count(&rows, GovernableRelationStatus::NeedsAttention),
+        status_blocked: status_count(&rows, GovernableRelationStatus::Blocked),
+        source_copies: rows
+            .iter()
+            .filter(|row| row.source_copy().is_some())
+            .count() as u32,
+        deployments: rows.iter().filter(|row| row.deployment().is_some()).count() as u32,
     };
 
     let text = filters.text.trim().to_lowercase();
     let selected = rows
         .into_iter()
         .filter(|row| filters.bucket.accepts(row.readiness))
+        .filter(|row| filters.statuses.is_empty() || filters.statuses.contains(&row.status))
         .filter(|row| {
             filters
                 .skill_id
-                .is_none_or(|skill_id| row.relation.skill_id == Some(skill_id))
+                .is_none_or(|skill_id| row.skill_id() == Some(skill_id))
         })
         .filter(|row| {
             filters
                 .agent_client_id
                 .as_ref()
-                .is_none_or(|agent| &row.relation.agent_client_id == agent)
+                .is_none_or(|agent| row.agent_client_id() == Some(agent.as_str()))
+        })
+        .filter(|row| {
+            filters
+                .project_id
+                .as_ref()
+                .is_none_or(|project| match row.source_copy() {
+                    Some(copy) => copy.source_container_id.as_deref() == Some(project.as_str()),
+                    None => false,
+                })
+        })
+        .filter(|row| {
+            filters
+                .source_class
+                .is_none_or(|source_class| match row.source_copy() {
+                    Some(copy) => copy.source_class == source_class,
+                    None => false,
+                })
+        })
+        .filter(|row| {
+            filters
+                .batch_id
+                .as_ref()
+                .is_none_or(|_batch| batch_relation_ids.contains(row.relation_id()))
         })
         .filter(|row| {
             filters.relationship_types.is_empty()
-                || filters
-                    .relationship_types
-                    .contains(&row.relation.relationship)
+                || row
+                    .relationship()
+                    .is_some_and(|relationship| filters.relationship_types.contains(&relationship))
         })
         .filter(|row| {
             text.is_empty()
-                || row.relation.path.to_lowercase().contains(text.as_str())
+                || row.path().to_lowercase().contains(text.as_str())
                 || row
-                    .relation
-                    .link_target_path
-                    .as_deref()
+                    .deployment()
+                    .and_then(|relation| relation.link_target_path.as_deref())
                     .is_some_and(|target| target.to_lowercase().contains(text.as_str()))
                 || row
-                    .relation
-                    .agent_client_id
-                    .to_lowercase()
-                    .contains(text.as_str())
+                    .agent_client_id()
+                    .is_some_and(|agent| agent.to_lowercase().contains(text.as_str()))
                 || row
                     .skill_display_name
                     .as_deref()
@@ -377,6 +548,53 @@ pub fn project_relation_governance_ledger_with_names(
         bucket: filters.bucket,
         relationship_revision: relationship_revision.to_string(),
         last_verified_at,
+    }
+}
+
+fn status_count(rows: &[RelationGovernanceRow], status: GovernableRelationStatus) -> u32 {
+    rows.iter().filter(|row| row.status == status).count() as u32
+}
+
+/// Deployment edges carry no source-copy health, so their quick status is
+/// derived from the edge's own evidence state.
+fn deployment_status(relation: &DeploymentRelationFact) -> GovernableRelationStatus {
+    match relation.match_state {
+        ObservedMatchState::ContentVerified => GovernableRelationStatus::Normal,
+        _ => GovernableRelationStatus::NeedsValidation,
+    }
+}
+
+/// 来源副本的可行动作只覆盖当前已有执行实现的命令（plan 7.4）。
+fn source_copy_action(
+    copy: &SourceCopyRelationFact,
+    status: GovernableRelationStatus,
+) -> RelationGovernanceAction {
+    match status {
+        GovernableRelationStatus::NeedsValidation | GovernableRelationStatus::NeedsAttention => {
+            RelationGovernanceAction::Revalidate
+        }
+        GovernableRelationStatus::Normal => {
+            if copy.decision == SourceCopyDecision::Pending {
+                RelationGovernanceAction::KeepIndependentCopy
+            } else {
+                RelationGovernanceAction::None
+            }
+        }
+        GovernableRelationStatus::Retained | GovernableRelationStatus::Blocked => {
+            RelationGovernanceAction::None
+        }
+    }
+}
+
+/// 旧深链 bucket 到新五状态的等价映射（plan 7.11）；空集合表示不过滤。
+pub fn legacy_bucket_statuses(bucket: RelationGovernanceBucket) -> Vec<GovernableRelationStatus> {
+    match bucket {
+        RelationGovernanceBucket::All => Vec::new(),
+        RelationGovernanceBucket::EligibleToCentralize => vec![GovernableRelationStatus::Normal],
+        RelationGovernanceBucket::NeedsValidation => {
+            vec![GovernableRelationStatus::NeedsValidation]
+        }
+        RelationGovernanceBucket::Blocked => vec![GovernableRelationStatus::Blocked],
     }
 }
 

@@ -67,16 +67,94 @@ impl LocalApplicationFacade {
             let revision = relationship_repository.relationship_revision()?;
             let last_verified_at = relationship_repository.last_verified_at()?;
             let names = relationship_names(database)?;
-            Ok(project_relation_governance_ledger_with_names(
-                &request.filters,
-                &relationship_repository.list_relations()?,
-                &relationship_repository.list_capabilities()?,
-                &names,
-                revision,
-                last_verified_at,
-            ))
+            // 统一清单（plan 7.8）：来源副本与部署边同表投影；Online
+            // provenance 不参与（清单只从关系事实构建）。
+            let mut facts = Vec::new();
+            for copy in relationship_repository.list_source_copy_relations(true)? {
+                facts.push(skillhub_core::relationship::GovernableRelationFact::SourceCopy(copy));
+            }
+            for relation in relationship_repository.list_relations()? {
+                facts.push(
+                    skillhub_core::relationship::GovernableRelationFact::Deployment(relation),
+                );
+            }
+            // batch_id 过滤只命中 import_batch_items 映射的关系（plan 7.3）。
+            let batch_relation_ids = match &request.filters.batch_id {
+                Some(batch_id) => database
+                    .provenance_repository()
+                    .list_batch_relation_ids(batch_id)?
+                    .into_iter()
+                    .collect::<std::collections::BTreeSet<_>>(),
+                None => std::collections::BTreeSet::new(),
+            };
+            Ok(
+                skillhub_core::relationship::project_unified_governance_ledger(
+                    &request.filters,
+                    &facts,
+                    &relationship_repository.list_capabilities()?,
+                    &batch_relation_ids,
+                    &names,
+                    revision,
+                    last_verified_at,
+                ),
+            )
         })?;
         Ok(AppQueryResult::RelationGovernanceLedger(ledger))
+    }
+
+    /// 独立治理历史查询（plan 7.10）：只读写入时固化的显示快照，分页、
+    /// 最新在前；不回查可能已删除的 Agent/项目，也不混入通用 operations。
+    pub(crate) fn list_governance_history(
+        &self,
+        request: skillhub_core::relationship::ListGovernanceHistory,
+    ) -> AppResult<AppQueryResult> {
+        let page = self.with_database("query.governance_history", |database| {
+            let query = skillhub_storage::GovernanceHistoryPageQuery {
+                relation_id: request.relation_id.clone(),
+                skill_id: request.skill_id.map(|skill_id| skill_id.to_string()),
+                agent_client_id: request.agent_client_id.clone(),
+                project_id: request.project_id.clone(),
+                result: request.result.clone(),
+                page: request.page,
+                page_size: request.page_size,
+            };
+            let (events, total) = database.governance_history_repository().list_page(&query)?;
+            let items = events
+                .into_iter()
+                .map(
+                    |event| skillhub_core::relationship::GovernanceHistoryEntry {
+                        relation_id: event.relation_id,
+                        skill_id: event
+                            .skill_id
+                            .as_deref()
+                            .and_then(|raw| raw.parse::<skillhub_core::SkillId>().ok()),
+                        skill_display_name: event.skill_display_name,
+                        agent: skillhub_core::relationship::GovernanceHistoryAgent {
+                            client_id: event
+                                .agent_presentation
+                                .get("client_id")
+                                .and_then(|value| value.as_str())
+                                .map(str::to_owned),
+                        },
+                        path: event.path,
+                        scope: event.scope,
+                        project_id: event.project_id,
+                        action: event.action,
+                        result: event.result,
+                        reason: event.reason,
+                        operation_id: event.operation_id,
+                        occurred_at: event.occurred_at,
+                    },
+                )
+                .collect();
+            Ok(skillhub_core::relationship::GovernanceHistoryPage {
+                items,
+                total,
+                page: request.page.max(1),
+                page_size: request.page_size.clamp(1, 200),
+            })
+        })?;
+        Ok(AppQueryResult::GovernanceHistoryPage(page))
     }
 
     /// Prepares one child operation per selected relationship edge.  A row the
@@ -89,7 +167,6 @@ impl LocalApplicationFacade {
     ) -> AppResult<AppCommandResult> {
         let batch_id = OperationId::new();
         let relation_ids = dedupe_preserving_order(&request.relation_ids)?;
-        self.journal_begin(batch_id, BATCH_KIND);
 
         let rows = self.with_database("query.relation_governance_ledger", |database| {
             let relationship_repository = database.relationship_repository();
@@ -104,9 +181,18 @@ impl LocalApplicationFacade {
             Ok(ledger
                 .rows
                 .into_iter()
-                .map(|row| (row.relation.relation_id.clone(), row))
+                .map(|row| (row.relation_id().to_owned(), row))
                 .collect::<HashMap<_, _>>())
         })?;
+
+        // 批次约束（plan 7.5）：来源副本与部署边不可混在同一个批次里。
+        let has_source_copy = rows.values().any(|row| row.source_copy().is_some());
+        let has_deployment = rows.values().any(|row| row.deployment().is_some());
+        if has_source_copy && has_deployment {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", "mixed_relation_governance_batch_kinds"));
+        }
+        self.journal_begin(batch_id, BATCH_KIND);
 
         let mut children = Vec::new();
         let mut items = Vec::new();
@@ -595,9 +681,14 @@ fn dedupe_preserving_order(relation_ids: &[String]) -> AppResult<Vec<String>> {
         if relation_id.is_empty() {
             continue;
         }
-        if seen.insert(relation_id.to_owned()) {
-            ordered.push(relation_id.to_owned());
+        // 批次约束（plan 7.5）：重复 relation_id 在拆分子操作前整体拒绝，
+        // 不静默去重。
+        if !seen.insert(relation_id.to_owned()) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", "duplicate_relation_governance_batch_item")
+                .with_param("relation_id", relation_id.to_owned()));
         }
+        ordered.push(relation_id.to_owned());
     }
     if ordered.is_empty() {
         return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)

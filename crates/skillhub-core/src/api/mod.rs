@@ -7,6 +7,7 @@ pub use crate::app_update::{
 };
 pub use crate::deployment::DeploymentPlanRequest;
 pub use crate::relationship::{
+    GovernanceHistoryAgent, GovernanceHistoryEntry, GovernanceHistoryPage, ListGovernanceHistory,
     RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
     RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceImpact,
     RelationGovernanceLedger, RelationGovernanceReadiness, RelationGovernanceRow,

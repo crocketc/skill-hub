@@ -158,7 +158,117 @@ type HistoryRow = (
     i64,
 );
 
+/// Governance-history page filters (plan 7.10). All fields are optional and
+/// combine; paging is 1-based.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GovernanceHistoryPageQuery {
+    pub relation_id: Option<String>,
+    pub skill_id: Option<String>,
+    pub agent_client_id: Option<String>,
+    pub project_id: Option<String>,
+    pub result: Option<String>,
+    pub page: u32,
+    pub page_size: u32,
+}
+
 #[allow(clippy::type_complexity)]
+impl GovernanceHistoryRepository<'_> {
+    /// Paged, newest-first history read. Returns the page plus the total
+    /// number of rows matching the same filters.
+    pub fn list_page(
+        &self,
+        query: &GovernanceHistoryPageQuery,
+    ) -> AppResult<(Vec<GovernanceHistoryEvent>, u32)> {
+        let mut conditions = Vec::new();
+        if query.relation_id.is_some() {
+            conditions.push("relation_id=?");
+        }
+        if query.skill_id.is_some() {
+            conditions.push("skill_id=?");
+        }
+        if query.agent_client_id.is_some() {
+            conditions.push("json_extract(agent_presentation_json,'$.client_id')=?");
+        }
+        if query.project_id.is_some() {
+            conditions.push("project_id=?");
+        }
+        if query.result.is_some() {
+            conditions.push("result=?");
+        }
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", conditions.join(" AND "))
+        };
+        let page = query.page.max(1);
+        let page_size = query.page_size.clamp(1, 200);
+        let total: u32 = self
+            .database
+            .connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM relation_history_events{where_clause}"),
+                rusqlite::params_from_iter(Self::page_params(query)),
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        let sql = format!(
+            "SELECT event_id, relation_id, skill_id, skill_display_name,                    agent_presentation_json, path, scope, project_id, action, result,                    reason, operation_id, occurred_at             FROM relation_history_events{where_clause}             ORDER BY occurred_at DESC, event_id DESC LIMIT ? OFFSET ?"
+        );
+        let mut statement = self
+            .database
+            .connection
+            .prepare(&sql)
+            .map_err(database_error)?;
+        let mut params: Vec<rusqlite::types::Value> = Self::page_params(query);
+        params.push(page_size.into());
+        params.push((page - 1).saturating_mul(page_size).into());
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(params), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, String>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
+                    row.get::<_, i64>(12)?,
+                ))
+            })
+            .map_err(database_error)?;
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(decode_history(row.map_err(database_error)?).ok_or_else(invalid_record)?);
+        }
+        Ok((events, total))
+    }
+
+    fn page_params(query: &GovernanceHistoryPageQuery) -> Vec<rusqlite::types::Value> {
+        let mut params = Vec::new();
+        if let Some(value) = &query.relation_id {
+            params.push(value.clone().into());
+        }
+        if let Some(value) = &query.skill_id {
+            params.push(value.clone().into());
+        }
+        if let Some(value) = &query.agent_client_id {
+            params.push(value.clone().into());
+        }
+        if let Some(value) = &query.project_id {
+            params.push(value.clone().into());
+        }
+        if let Some(value) = &query.result {
+            params.push(value.clone().into());
+        }
+        params
+    }
+}
+
 fn decode_history(value: HistoryRow) -> Option<GovernanceHistoryEvent> {
     let agent_presentation = serde_json::from_str(&value.4).ok()?;
     Some(GovernanceHistoryEvent {
