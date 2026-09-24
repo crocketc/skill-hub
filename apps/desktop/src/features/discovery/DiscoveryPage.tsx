@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GovernanceTaskFact } from "../../api/bindings";
 import { ImportWizard } from "../import/ImportWizard";
-import { type ImportFacade, type ImportResult } from "../import/api";
+import { type ImportBatchSummary, type ImportFacade, type ImportResult } from "../import/api";
 import { nativeImportFacade } from "../import/nativeApi";
 import {
   operationTracker,
@@ -42,8 +42,8 @@ export interface DiscoveryPageProps {
   governanceTasks?: GovernanceTaskFact[];
   governanceTasksLoading?: boolean;
   onOpenLibrary?: () => void;
-  /** 导入完成后，打开独立的关系治理工作台。 */
-  onOpenGovernance?: () => void;
+  /** 导入完成后，打开独立的关系治理工作台；携带本次导入的批次上下文。 */
+  onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   /** 生产路由提供：打开治理待办时刷新真实关系概览并回到本地发现入口。 */
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
@@ -311,7 +311,7 @@ interface DiscoveryModulePageProps {
   governanceTasks: GovernanceTaskFact[];
   governanceTasksLoading: boolean;
   onOpenLibrary?: () => void;
-  onOpenGovernance?: () => void;
+  onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
   onOpenSettings?: () => void;

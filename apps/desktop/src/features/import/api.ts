@@ -89,6 +89,13 @@ export interface ImportProvenanceSummary {
   agentClientId: string | null;
   originalPath: string;
   importedAt: string;
+  /**
+   * 任务 10：来源形态。在线来源（https/git）只展示服务/仓库地址，
+   * 本地缓存路径绝不进入界面。
+   */
+  sourceKind?: "local" | "https" | "git";
+  /** 在线来源的服务/仓库地址；本地来源缺省。 */
+  sourceLocator?: string;
 }
 
 export interface ImportResult {

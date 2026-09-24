@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { BootstrapSnapshot, GovernanceTaskFact } from "../api/bindings";
 import * as bindings from "../api/bindings";
@@ -100,6 +100,16 @@ function todoOnlyCommit(facade: ImportFacade): void {
   });
 }
 
+function GovernanceLocationProbe() {
+  const location = useLocation();
+  return (
+    <div>
+      <h1>关系治理工作台</h1>
+      <p data-testid="governance-location">{`${location.pathname}${location.search}`}</p>
+    </div>
+  );
+}
+
 async function renderDiscoveryRoute(
   facade: ImportFacade,
   options: { locationState?: { initialSources?: string[]; onboardingImport?: boolean; governanceTaskId?: string } } = {},
@@ -119,7 +129,7 @@ async function renderDiscoveryRoute(
                 element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
                 path="discovery/local"
               />
-              <Route element={<h1>关系治理工作台</h1>} path="relationships/governance" />
+              <Route element={<GovernanceLocationProbe />} path="relationships/governance" />
             </Route>
           </Routes>
         </AppNotificationsProvider>
@@ -277,7 +287,7 @@ it("opens independent governance from the production import completion page", as
   } as unknown as Awaited<ReturnType<typeof bindings.queryApplication>>);
   const facade = createMockImportFacade({ scenario: "safe-local" });
   facade.commitImport = async (): Promise<ImportCommitOutcome> => ({
-    batch: { batchId: "batch-test", manageableSourceCount: 0 },
+    batch: { batchId: "batch-test", manageableSourceCount: 2 },
     results: [{
       action: "copy",
       candidateId: "safe-pdf",
@@ -296,7 +306,7 @@ it("opens independent governance from the production import completion page", as
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
-  await user.click(await screen.findByRole("button", { name: "现在整理 Agent 副本" }));
+  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
   expect(await screen.findByRole("heading", { name: "关系治理工作台" })).toBeVisible();
   query.mockRestore();
 });
@@ -332,4 +342,37 @@ it("refetches the latest governance task instead of using a fresh cached overvie
   expect(screen.queryByTestId("governance-task-old-task")).not.toBeInTheDocument();
   expect(query).toHaveBeenCalledTimes(1);
   query.mockRestore();
+});
+
+it("opens governance scoped to this import's source copies via the batch deep link", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = async (): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch deep 42", manageableSourceCount: 2 },
+    results: [{
+      action: "copy",
+      candidateId: "safe-pdf",
+      message: "importWorkflow.commitMessages.imported",
+      originalPreserved: true,
+      status: "succeeded",
+    }],
+  });
+  await renderDiscoveryRoute(facade);
+
+  // 走完整导入链路：提交成功后完成页提供「整理来源副本」入口。
+  await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
+  await user.type(screen.getByLabelText("来源"), "C:/Skills");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  // 深链锁定本次导入：from/scope/status 固定词表 + 编码后的批次 id。
+  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
+
+  const location = await screen.findByTestId("governance-location");
+  expect(location.textContent).toBe(
+    "/relationships/governance?from=import&scope=source_copy&status=needs_attention&batch=batch%20deep%2042",
+  );
 });

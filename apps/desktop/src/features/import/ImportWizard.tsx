@@ -20,6 +20,8 @@ import {
   type ImportProgress,
   type ImportResult,
   type SourceDescriptor,
+  type ImportBatchSummary,
+  type ImportCommitOutcome,
   type SourceScanStatus,
   unavailableImportFacade,
 } from "./api";
@@ -79,6 +81,8 @@ interface WizardState {
   actions: Record<string, ImportAction>;
   commitProgress?: ImportProgress;
   results: ImportResult[];
+  /** 任务 10：本次提交的批次上下文；治理深链参数的唯一来源。 */
+  batch?: ImportBatchSummary;
   /** M-29：每个已扫描目录的结果（候选数/失败原因）；保持扫描顺序。 */
   sourceResults: SourceScanResult[];
   /** M-29：单个失败目录重试中（显示进行中状态）。 */
@@ -111,7 +115,7 @@ type WizardEvent =
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
-  | { type: "commit_succeeded"; results: ImportResult[] }
+  | { type: "commit_succeeded"; results: ImportResult[]; batch?: ImportBatchSummary }
   | { type: "source_preview_started"; source: string }
   | { type: "source_preview_finished"; source: string; status: SourceScanStatus }
   | { type: "source_rescan_started"; source: string }
@@ -294,7 +298,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "commit_progress":
       return { ...state, commitProgress: event.progress };
     case "commit_succeeded":
-      return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results };
+      return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results, batch: event.batch };
     case "source_rescan_started":
       // M-29：单个失败目录重试——其余目录的候选与结果保持不动。
       return {
@@ -338,6 +342,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
+        batch: undefined,
         analysisProgress: undefined,
         analysisStartedAt: undefined,
         analysisTotal: undefined,
@@ -386,7 +391,8 @@ export interface ImportWizardProps {
   /** 全局操作跟踪；测试可注入独立实例，默认模块级单例（跨路由存续）。 */
   tracker?: OperationTracker;
   onComplete?: (results: ImportResult[]) => void;
-  onOpenGovernance?: () => void;
+  /** 任务 10：整理入口携带本次导入的批次上下文（null 表示无批次）。 */
+  onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
   onOpenLibrary?: () => void;
 }
@@ -822,7 +828,7 @@ type: "failed",
     const total = state.plan.candidates.length;
     dispatch({ type: "commit_started", total });
     try {
-      const results = await runTrackedOperation<ImportResult[]>({
+      const outcome = await runTrackedOperation<ImportCommitOutcome>({
         tracker,
         notifications,
         kind: "import",
@@ -830,10 +836,10 @@ type: "failed",
         total,
         translate: (key, options) => String(t(key as never, options as never)),
         summarize: (settled) => ({
-          succeeded: settled.filter((result) => result.status === "succeeded").length,
-          failed: settled.filter((result) => result.status === "failed").length,
-          skipped: settled.filter((result) => result.status === "skipped").length,
-          todo: settled.filter((result) => result.status === "todo").length,
+          succeeded: settled.results.filter((result) => result.status === "succeeded").length,
+          failed: settled.results.filter((result) => result.status === "failed").length,
+          skipped: settled.results.filter((result) => result.status === "skipped").length,
+          todo: settled.results.filter((result) => result.status === "todo").length,
         }),
         successNotice: (_settled, summary) => ({
           tone: summary?.failed || summary?.todo ? "warning" : "success",
@@ -854,16 +860,14 @@ type: "failed",
           detail: message,
         }),
         run: async (handle) =>
-          (
-            await facade.commitImport(state.plan!, state.actions, (progress) => {
-              handle.progress(progress.completed, progress.total);
-              if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-            })
-          ).results,
+          facade.commitImport(state.plan!, state.actions, (progress) => {
+            handle.progress(progress.completed, progress.total);
+            if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
+          }),
       });
       if (operation === operationRef.current) {
-        dispatch({ type: "commit_succeeded", results });
-        onComplete?.(results);
+        dispatch({ type: "commit_succeeded", results: outcome.results, batch: outcome.batch });
+        onComplete?.(outcome.results);
       }
     } catch (error) {
       const commitError = describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic");
@@ -1036,15 +1040,15 @@ type: "failed",
       };
       break;
     case "summary":
+      // 任务 10：失败重试与来源整理 CTA 都在摘要区内按状态给出主次；
+      // 底栏只保留离开向导的稳定出口。
       actions = {
         primary: [
           <Button key="open-library" onClick={onOpenLibrary} size="lg">
             {t("importWorkflow.summary.openLibrary")}
           </Button>,
         ],
-        secondary: hasFailure
-          ? [<Button key="retry" onClick={() => dispatch({ type: "retry" })} variant="secondary">{t("actions.retry")}</Button>]
-          : [],
+        secondary: [],
       };
       break;
     case "cancelled":
@@ -1294,9 +1298,13 @@ type: "failed",
 
       {state.phase === "summary" ? (
         <ImportSummary
+          manageableSourceCount={state.batch?.manageableSourceCount}
           onContinueLater={onOpenLibrary}
-          onOpenGovernance={onOpenGovernance}
+          onOpenGovernance={
+            onOpenGovernance ? () => onOpenGovernance(state.batch ?? null) : undefined
+          }
           onOpenGovernanceTask={onOpenGovernanceTask}
+          onRetryFailed={() => dispatch({ type: "retry" })}
           results={state.results}
         />
       ) : null}

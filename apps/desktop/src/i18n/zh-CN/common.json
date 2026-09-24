@@ -311,9 +311,10 @@
       "hideCompletedDetails": "收起成功和跳过明细",
       "originalsPreserved": "原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
       "governanceNextLabel": "后续整理",
-      "governanceNextDescription": "已复制到集中库。你可以现在整理 Agent 中的副本，也可以稍后在关系治理中处理。",
-      "organizeNow": "现在整理 Agent 副本",
-      "organizeLater": "稍后再说",
+      "governanceNextDescription": "这些 Skill 已集中保存到集中库，统一更新、多端复用。删除原入口后，Agent 将不再从原来的位置读取它们；之后你可以随时在关系治理里从集中库为各 Agent 重新建立链接或复制。",
+      "organizeNow": "整理来源副本",
+      "organizeLater": "稍后处理",
+      "retryFailed": "重试失败项",
       "governanceTasksLabel": "关系治理待办",
       "openGovernanceTask": "查看治理待办 {{taskId}}",
       "counts": {
@@ -337,7 +338,8 @@
       },
       "provenance": "已从 {{path}} 导入（{{agent}}）",
       "provenanceAgent": "来源 Agent：",
-      "unknownAgent": "来源未识别"
+      "provenanceLocal": "本地目录",
+      "provenanceOnline": "在线来源："
     },
     "governance": {
       "eyebrow": "关系治理",

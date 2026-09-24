@@ -311,9 +311,10 @@
       "hideCompletedDetails": "Hide successful and skipped details",
       "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
       "governanceNextLabel": "Next steps",
-      "governanceNextDescription": "The Skill is now in the central library. You can organize the Agent copy now or return later from relationship governance.",
-      "organizeNow": "Organize Agent copy now",
-      "organizeLater": "Not now",
+      "governanceNextDescription": "These Skills are now stored centrally in the library — update once, reuse everywhere. Once the original entry is removed, agents no longer read from their old location; you can later link or copy from the central library to any agent.",
+      "organizeNow": "Organize source copies",
+      "organizeLater": "Handle later",
+      "retryFailed": "Retry failed items",
       "governanceTasksLabel": "Relationship governance tasks",
       "openGovernanceTask": "View governance task {{taskId}}",
       "counts": {
@@ -337,7 +338,8 @@
       },
       "provenance": "Imported from {{path}} ({{agent}})",
       "provenanceAgent": "Source agent:",
-      "unknownAgent": "source unrecognized"
+      "provenanceLocal": "Local directory",
+      "provenanceOnline": "Online source:"
     },
     "governance": {
       "eyebrow": "Relationship governance",

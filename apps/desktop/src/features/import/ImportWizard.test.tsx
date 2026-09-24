@@ -341,7 +341,7 @@ it("offers the cancelled state its own message and footer retry without merging 
   expect(screen.getByLabelText("来源")).toHaveValue("C:\\Skills\\pdf");
 });
 
-it("returns a partially failed summary to a fresh run through the footer retry", async () => {
+it("returns a partially failed summary to a fresh run through the retry CTA", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   facade.commitImport = vi.fn(async (): Promise<ImportCommitOutcome> => ({
@@ -361,8 +361,8 @@ it("returns a partially failed summary to a fresh run through the footer retry",
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
   expect(await screen.findByText("写入失败")).toBeVisible();
-  const retry = screen.getByRole("button", { name: "重试" });
-  expect(retry.closest("footer")).not.toBeNull();
+  // 任务 10：重试入口在摘要区内作为主操作（底栏只留离开向导的出口）。
+  const retry = screen.getByRole("button", { name: "重试失败项" });
   await user.click(retry);
 
   // 恢复路径：摘要重试回到来源步骤重新发起，绝不静默重复提交。
@@ -1655,4 +1655,67 @@ describe("AI import pre-check", () => {
       screen.queryByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
     ).not.toBeInTheDocument();
   });
+});
+it("hands the exact batch context to the governance entry without showing the batch id", async () => {
+  const onOpenGovernance = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  facade.commitImport = vi.fn(async (): Promise<ImportCommitOutcome> => ({
+    batch: { batchId: "batch-e2e-42", manageableSourceCount: 3 },
+    results: [
+      { candidateId: "safe-pdf", action: "copy", status: "succeeded", message: "已导入" },
+      { candidateId: "safe-browser", action: "copy", status: "succeeded", message: "已导入" },
+    ],
+  }));
+  render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard facade={facade} onOpenGovernance={onOpenGovernance} />
+      </I18nextProvider>
+    </TestShell>,
+  );
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  // 深链上下文整对象传出：稳定 batch id 与后端计数是 URL 参数的唯一来源。
+  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
+  expect(onOpenGovernance).toHaveBeenCalledTimes(1);
+  expect(onOpenGovernance).toHaveBeenCalledWith({
+    batchId: "batch-e2e-42",
+    manageableSourceCount: 3,
+  });
+  // 批次 id 是内部对账标识，完成页文本不显示。
+  expect(screen.queryByText(/batch-e2e-42/)).not.toBeInTheDocument();
+});
+
+it("closes the wizard for later without touching retain or cleanup decisions", async () => {
+  const onOpenLibrary = vi.fn();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const commitSpy = vi.fn(facade.commitImport);
+  facade.commitImport = commitSpy;
+  render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard facade={facade} onOpenLibrary={onOpenLibrary} />
+      </I18nextProvider>
+    </TestShell>,
+  );
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "提交导入" }));
+
+  // 「稍后处理」只结束向导：Pending 决策保持不变，没有任何 retain/cleanup 调用。
+  await user.click(await screen.findByRole("button", { name: "稍后处理" }));
+  expect(onOpenLibrary).toHaveBeenCalledOnce();
+  expect(commitSpy).toHaveBeenCalledTimes(1);
 });

@@ -10,8 +10,15 @@ import type { ImportResult } from "./api";
 export interface ImportSummaryProps {
   results: ImportResult[];
   unavailable?: boolean;
+  /**
+   * 任务 10：后端计算的本次导入可管理来源副本数。CTA 只由它与失败数
+   * 决定；缺省按 0 处理（online-only 导入不提供整理入口）。
+   */
+  manageableSourceCount?: number;
   onOpenGovernance?: () => void;
   onContinueLater?: () => void;
+  /** 任务 10：有失败/待办时，主操作回到向导重新发起（绝不静默重复提交）。 */
+  onRetryFailed?: () => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
 }
 
@@ -19,8 +26,10 @@ export interface ImportSummaryProps {
 export function ImportSummary({
   results,
   unavailable = false,
+  manageableSourceCount,
   onOpenGovernance,
   onContinueLater,
+  onRetryFailed,
   onOpenGovernanceTask,
 }: ImportSummaryProps) {
   const { t } = useTranslation();
@@ -43,6 +52,8 @@ export function ImportSummary({
   const skipped = results.filter((result) => result.status === "skipped").length;
   const failed = results.filter((result) => result.status === "failed").length;
   const todo = results.filter((result) => result.status === "todo").length;
+  // 任务 10：治理资格只看后端计数；originalsPreserved 只是事实展示，不作判断。
+  const manageableCount = manageableSourceCount ?? 0;
   const visibleResults = showCompletedDetails
     ? results
     : results.filter((result) => result.status === "failed" || result.status === "todo");
@@ -72,16 +83,29 @@ export function ImportSummary({
         </p>
       ) : null}
 
-      {succeeded > 0 && originalsPreserved ? (
+      {hasAttention || manageableCount > 0 ? (
         <section aria-label={t("importWorkflow.summary.governanceNextLabel")} className="sh-import-summary__governance-next">
           <p>{t("importWorkflow.summary.governanceNextDescription")}</p>
           <div className="sh-button-row">
-            <Button onClick={onOpenGovernance} disabled={!onOpenGovernance}>
-              {t("importWorkflow.summary.organizeNow")}
-            </Button>
-            <Button onClick={onContinueLater} disabled={!onContinueLater} variant="secondary">
-              {t("importWorkflow.summary.organizeLater")}
-            </Button>
+            {hasAttention ? (
+              <Button onClick={onRetryFailed} disabled={!onRetryFailed}>
+                {t("importWorkflow.summary.retryFailed")}
+              </Button>
+            ) : (
+              <Button onClick={onOpenGovernance} disabled={!onOpenGovernance}>
+                {t("importWorkflow.summary.organizeNow")}
+              </Button>
+            )}
+            {hasAttention && manageableCount > 0 ? (
+              <Button onClick={onOpenGovernance} disabled={!onOpenGovernance} variant="secondary">
+                {t("importWorkflow.summary.organizeNow")}
+              </Button>
+            ) : null}
+            {!hasAttention && manageableCount > 0 ? (
+              <Button onClick={onContinueLater} disabled={!onContinueLater} variant="secondary">
+                {t("importWorkflow.summary.organizeLater")}
+              </Button>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -112,12 +136,26 @@ export function ImportSummary({
                 className="sh-import-summary__provenance"
                 data-testid="import-provenance"
               >
-                {t("importWorkflow.summary.provenanceAgent")}{" "}
-                {result.provenance.agentClientId ? (
-                  <AgentPresentation agentId={result.provenance.agentClientId} />
-                ) : t("importWorkflow.summary.unknownAgent")}{" "}
-                <strong>{t("agents.pathLabel")}</strong>{" "}
-                {displayPath(result.provenance.originalPath)}
+                {result.provenance.sourceKind === "https" || result.provenance.sourceKind === "git" ? (
+                  // 在线来源只展示服务/仓库地址，绝不显示本机缓存路径。
+                  <>
+                    {t("importWorkflow.summary.provenanceOnline")}{" "}
+                    <strong>{result.provenance.sourceLocator ?? "—"}</strong>
+                  </>
+                ) : (
+                  <>
+                    {result.provenance.agentClientId ? (
+                      <>
+                        {t("importWorkflow.summary.provenanceAgent")}{" "}
+                        <AgentPresentation agentId={result.provenance.agentClientId} />
+                      </>
+                    ) : (
+                      t("importWorkflow.summary.provenanceLocal")
+                    )}{" "}
+                    <strong>{t("agents.pathLabel")}</strong>{" "}
+                    {displayPath(result.provenance.originalPath)}
+                  </>
+                )}
               </p>
             ) : null}
           </li>

@@ -110,7 +110,11 @@ export function DiscoveryRoute({
       governanceTasks={governanceTasks}
       governanceTasksLoading={governanceTasksLoading}
       onOpenLibrary={() => navigate("/library")}
-      onOpenGovernance={() => navigate("/relationships/governance")}
+      onOpenGovernance={(batch) => navigate(
+        batch?.batchId
+          ? `/relationships/governance?from=import&scope=source_copy&status=needs_attention&batch=${encodeURIComponent(batch.batchId)}`
+          : "/relationships/governance",
+      )}
       onOpenGovernanceTask={handleOpenGovernanceTask}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
       onOpenSettings={() => navigate("/settings")}

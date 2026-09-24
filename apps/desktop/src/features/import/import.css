@@ -225,6 +225,13 @@ section.sh-import-wizard {
   min-height: 2.75rem;
 }
 
+/* 任务 10：摘要 CTA 行——桌面横排；窄屏换行后主操作仍保持在首位。 */
+.sh-import-summary .sh-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* —— 长路径在冲突列表与摘要中换行，不产生根级横向滚动 —— */
 
 .sh-import-conflicts code,

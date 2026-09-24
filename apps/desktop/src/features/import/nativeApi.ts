@@ -203,6 +203,11 @@ function resultForSummary(
           agentClientId: item.provenance.agent_client_id,
           originalPath: item.provenance.original_path,
           importedAt: item.provenance.imported_at,
+          // 任务 10：在线来源展示服务/仓库地址；本地缓存路径不进界面。
+          sourceKind: item.provenance.source.kind,
+          sourceLocator:
+            item.provenance.source.locator.https_url
+            ?? item.provenance.source.locator.git_url,
         }
       : undefined,
     // 计划 9.7：逐项稳定身份来自生成 DTO，绝不从结果数组下标或缓存路径推断。

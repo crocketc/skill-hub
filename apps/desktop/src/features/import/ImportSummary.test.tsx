@@ -150,7 +150,9 @@ it("renders the import provenance line only when evidence was recorded", async (
   expect(screen.getAllByTestId("import-provenance")[0]).toHaveTextContent("来源 Agent：");
   expect(screen.getAllByTestId("import-provenance")[0]).toHaveTextContent("路径：");
   expect(screen.queryByText("trae.code")).not.toBeInTheDocument();
-  expect(screen.getByText(/来源未识别/)).toBeVisible();
+  // 普通本地目录用「本地目录」标注，不再猜测或留空归属。
+  expect(screen.getAllByTestId("import-provenance")[1]).toHaveTextContent("本地目录");
+  expect(screen.getAllByTestId("import-provenance")[1]).toHaveTextContent("路径：");
 });
 
 it("keeps the original copy and exposes the relationship-governance todo after a partial import", async () => {
@@ -236,6 +238,7 @@ it("offers relationship governance only after a successful import", async () => 
   render(
     <I18nextProvider i18n={i18n}>
       <ImportSummary
+        manageableSourceCount={1}
         onOpenGovernance={onOpenGovernance}
         results={[{
           candidateId: "shared-pdf",
@@ -248,7 +251,138 @@ it("offers relationship governance only after a successful import", async () => 
     </I18nextProvider>,
   );
 
-  await userEvent.click(screen.getByRole("button", { name: "现在整理 Agent 副本" }));
+  await userEvent.click(screen.getByRole("button", { name: "整理来源副本" }));
   expect(onOpenGovernance).toHaveBeenCalledOnce();
-  expect(screen.getByRole("button", { name: "稍后再说" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "稍后处理" })).toBeVisible();
+});
+// —— 任务 10：完成页 CTA 只由后端 manageableSourceCount 与失败数决定 ——
+
+const cleanResults: ImportResult[] = [
+  { candidateId: "a", action: "copy", status: "succeeded", message: "已导入" },
+  { candidateId: "b", action: "copy", status: "succeeded", message: "已导入" },
+];
+
+async function renderSummary(
+  props: Partial<Omit<Parameters<typeof ImportSummary>[0], "results">> & { results?: ImportResult[] },
+) {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary results={[]} {...props} />
+    </I18nextProvider>,
+  );
+}
+
+it("makes retry the primary action with failures and organizes source copies secondary", async () => {
+  const onRetryFailed = vi.fn();
+  const onOpenGovernance = vi.fn();
+  await renderSummary({
+    results: [
+      ...cleanResults,
+      { candidateId: "c", action: "copy", status: "failed", message: "写入失败" },
+    ],
+    manageableSourceCount: 2,
+    onRetryFailed,
+    onOpenGovernance,
+  });
+
+  // 有失败时主按钮是重试失败项；来源整理退为次按钮，不与恢复操作争夺主次。
+  const retry = screen.getByRole("button", { name: "重试失败项" });
+  expect(retry).toHaveClass("sh-button--primary");
+  const organize = screen.getByRole("button", { name: "整理来源副本" });
+  expect(organize).toHaveClass("sh-button--secondary");
+  await userEvent.click(retry);
+  expect(onRetryFailed).toHaveBeenCalledOnce();
+  expect(onOpenGovernance).not.toHaveBeenCalled();
+});
+
+it("makes organizing source copies the primary action after a clean import", async () => {
+  const onOpenGovernance = vi.fn();
+  const onContinueLater = vi.fn();
+  await renderSummary({
+    results: cleanResults,
+    manageableSourceCount: 2,
+    onOpenGovernance,
+    onContinueLater,
+  });
+
+  const organize = screen.getByRole("button", { name: "整理来源副本" });
+  expect(organize).toHaveClass("sh-button--primary");
+  expect(screen.getByRole("button", { name: "稍后处理" })).toBeVisible();
+  // 说明文案讲清收益与后果：集中保存、删除原入口后 Agent 不再从原位置读取、
+  // 之后可从集中库为 Agent 重新链接或复制；不承诺提升准确率。
+  const note = screen.getByText(/集中保存/);
+  expect(note.textContent).toContain("链接");
+  expect(note.textContent).not.toContain("准确率");
+  await userEvent.click(organize);
+  expect(onOpenGovernance).toHaveBeenCalledOnce();
+});
+
+it("hides the organize entry when no source copies are manageable (online-only)", async () => {
+  await renderSummary({ results: cleanResults, manageableSourceCount: 0 });
+
+  expect(screen.queryByRole("button", { name: "整理来源副本" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "稍后处理" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/集中保存/)).not.toBeInTheDocument();
+});
+
+it("keeps retry as the only next step when failures come from an online-only import", async () => {
+  const onRetryFailed = vi.fn();
+  await renderSummary({
+    results: [{ candidateId: "c", action: "copy", status: "failed", message: "写入失败" }],
+    manageableSourceCount: 0,
+    onRetryFailed,
+  });
+
+  expect(screen.getByRole("button", { name: "重试失败项" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "整理来源副本" })).not.toBeInTheDocument();
+});
+
+it("shows the online source locator instead of the cache path", async () => {
+  await renderSummary({
+    results: [{
+      candidateId: "a",
+      action: "reuse",
+      status: "succeeded",
+      message: "已导入",
+      provenance: {
+        agentClientId: null,
+        originalPath: "C:/Users/demo/AppData/Local/skillhub/cache/repo",
+        importedAt: "1700000002",
+        sourceKind: "git",
+        sourceLocator: "https://github.com/example/skills",
+      },
+    }],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "查看成功和跳过明细" }));
+  const line = screen.getByTestId("import-provenance");
+  expect(line).toHaveTextContent("在线来源");
+  expect(line).toHaveTextContent("https://github.com/example/skills");
+  // 绝不显示本机缓存路径。
+  expect(line.textContent).not.toContain("AppData");
+  expect(line.textContent).not.toContain("cache");
+});
+
+it("labels plain local directories instead of guessing agent ownership in provenance", async () => {
+  await renderSummary({
+    results: [{
+      candidateId: "a",
+      action: "copy",
+      status: "succeeded",
+      message: "已导入",
+      provenance: {
+        agentClientId: null,
+        originalPath: "/downloads/demo",
+        importedAt: "1700000003",
+        sourceKind: "local",
+      },
+    }],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "查看成功和跳过明细" }));
+  const line = screen.getByTestId("import-provenance");
+  expect(line).toHaveTextContent("本地目录");
+  expect(line).toHaveTextContent("路径：");
+  expect(screen.queryByText(/来源未识别/)).not.toBeInTheDocument();
 });
