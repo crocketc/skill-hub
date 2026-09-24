@@ -4,10 +4,16 @@ pub mod graph;
 pub mod impact;
 pub mod resolution;
 pub mod source_copy;
+pub mod validation;
 
 pub use source_copy::{
     validate_source_copy_transition, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
     SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
+};
+pub use validation::{
+    evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
+    PlatformFsErrorCategory, RelationshipCheckItem, RelationshipCheckItemStatus,
+    RelationshipCheckLevel, RelationshipCheckReport, RelationshipCheckScope, RelationshipPathProbe,
 };
 
 pub use classifier::{

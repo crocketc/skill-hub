@@ -4,6 +4,7 @@ mod external_link;
 pub mod library_runtime;
 mod relationship_governance_batch;
 mod relationship_governance_service;
+pub mod relationship_validation_service;
 mod update_service;
 
 use std::collections::{BTreeMap, HashMap};
@@ -141,6 +142,9 @@ pub struct LocalApplicationFacade {
     /// 发现时固化的权威来源分类，按 observed_path_key 索引；提交阶段按
     /// 同一 key 取回，不按路径拼写或显示名反推类别与物理身份。
     import_source_classifications: Mutex<HashMap<String, ClassifiedImportSource>>,
+    /// 关系路径探测实现；生产走真实文件系统，测试可注入受控假象。
+    relationship_probe:
+        Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
 }
 
 /// 获取阶段落地的完整来源记录：原始 descriptor、临时工作区、权威类别与
@@ -1775,6 +1779,9 @@ impl LocalApplicationFacade {
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
+            relationship_probe: Mutex::new(
+                relationship_validation_service::default_relationship_probe(),
+            ),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -1851,6 +1858,9 @@ impl LocalApplicationFacade {
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
+            relationship_probe: Mutex::new(
+                relationship_validation_service::default_relationship_probe(),
+            ),
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -5324,6 +5334,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
             AppCommand::BeginImportBatch(_) => return self.begin_import_batch(),
             AppCommand::FinalizeImportBatch(request) => return self.finalize_import_batch(request),
+            AppCommand::RunRelationshipCheck(request) => {
+                return self.run_relationship_check(request)
+            }
             AppCommand::CommitImport(request) => return self.commit_import(request),
             AppCommand::PrepareOriginalMigration(request) => {
                 return self.prepare_original_migration(request)

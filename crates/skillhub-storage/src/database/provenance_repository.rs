@@ -357,6 +357,23 @@ impl<'a> ProvenanceRepository<'a> {
             .map_err(database_error)
     }
 
+    /// Source relation ids established by a batch's succeeded items — the
+    /// persisted join for Batch-scoped relationship checks (plan 5.3).
+    pub fn list_batch_relation_ids(&self, batch_id: &str) -> AppResult<Vec<String>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT DISTINCT source_relation_id FROM import_batch_items
+                 WHERE batch_id=?1 AND source_relation_id IS NOT NULL",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([batch_id], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
+    }
+
     /// Closes an import batch with a terminal status and finish time.
     /// Final-state semantics (pinned by tests): finalizing a running batch
     /// writes `status`/`finished_at`; replaying the identical terminal state

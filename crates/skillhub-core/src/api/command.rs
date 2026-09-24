@@ -237,6 +237,15 @@ pub struct FinalizeImportBatch {
 #[serde(deny_unknown_fields)]
 pub struct QueryOpenImportBatch {}
 
+/// 校验可治理关系（plan 5A）：手动触发与补偿扫描共用入口。逐项返回
+/// checked/unchanged/archived/failed，检查失败不中止整批。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RunRelationshipCheck {
+    pub level: crate::relationship::RelationshipCheckLevel,
+    pub scope: crate::relationship::RelationshipCheckScope,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ImportBatchStarted {
@@ -996,6 +1005,8 @@ pub enum AppCommand {
     BeginImportBatch(BeginImportBatch),
     #[serde(rename = "finalize_import_batch")]
     FinalizeImportBatch(FinalizeImportBatch),
+    #[serde(rename = "run_relationship_check")]
+    RunRelationshipCheck(RunRelationshipCheck),
     #[serde(rename = "open_official_release")]
     OpenOfficialRelease(OpenOfficialRelease),
     #[serde(rename = "open_external_url")]
@@ -1243,6 +1254,8 @@ pub enum AppCommandResult {
     ImportBatchStarted(ImportBatchStarted),
     #[serde(rename = "import_batch_finalized")]
     ImportBatchFinalized(ImportBatchFinalized),
+    #[serde(rename = "relationship_check_report")]
+    RelationshipCheckReport(crate::relationship::RelationshipCheckReport),
     #[serde(rename = "application_update")]
     ApplicationUpdate(ApplicationUpdate),
     #[serde(rename = "application_update_policy")]

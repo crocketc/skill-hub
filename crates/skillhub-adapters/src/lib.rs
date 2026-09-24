@@ -7,6 +7,7 @@ pub mod import;
 pub mod invocation;
 pub mod llm;
 pub mod logging;
+pub mod relationship;
 pub mod requirements;
 pub mod scanner;
 pub mod security;

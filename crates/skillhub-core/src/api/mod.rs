@@ -40,13 +40,13 @@ pub use command::{
     RestoreDeployment, RestoreOriginalCallPolicy, RollbackApplicationUpdate,
     RollbackOriginalMigration, RollbackRelationGovernanceBatch, RollbackRelationMigration,
     RunBasicCheck, RunHealthCheck, RunImportAiChecks, RunInitializationScan, RunLlmSafetyCheck,
-    RunRollingBackup, SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveProjectView,
-    SaveSearchCandidates, SaveSkillContent, SaveUserTranslationRevision, SavedSkillContent,
-    ScanTargets, SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
-    SetLlmProviderEnabled, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial,
-    SetUiPreference, SetVersionLabel, TestLlmConnection, TranslateDescription,
-    TranslateDescriptionsBatch, UpdateCombination, UpdateCustomAgent, UpdateProject, VerifyBackup,
-    WriteSharedProjectConfig,
+    RunRelationshipCheck, RunRollingBackup, SaveLlmProvider, SaveMarkdownAsCopy,
+    SaveMarkdownContent, SaveProjectView, SaveSearchCandidates, SaveSkillContent,
+    SaveUserTranslationRevision, SavedSkillContent, ScanTargets, SetCurrentVersion,
+    SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle, SetLlmProviderEnabled, SetMetadata,
+    SetProfileOverride, SetProjectTags, SetTrial, SetUiPreference, SetVersionLabel,
+    TestLlmConnection, TranslateDescription, TranslateDescriptionsBatch, UpdateCombination,
+    UpdateCustomAgent, UpdateProject, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
