@@ -5373,6 +5373,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_original_migration(request)
             }
             AppCommand::RetainSourceCopy(request) => return self.retain_source_copy(request),
+            AppCommand::RelinkSourceCopy(request) => return self.relink_source_copy(request),
             AppCommand::CommitOriginalMigration(request) => {
                 return self.commit_original_migration(request)
             }
@@ -8417,6 +8418,239 @@ impl LocalApplicationFacade {
         )?;
         Database::commit_transaction(transaction)?;
         Ok(AppCommandResult::SourceCopyRelationUpdated(retained))
+    }
+
+    /// 计划 8.8/8.15：重新关联——把已因外部删除归档的来源关系指向用户
+    /// 重新选择的目录。身份与内容必须完整校验：新目录的 SKILL.md 声明名
+    /// 必须与集中库 runtime_name 一致（绝不按目录名猜测身份），新物理身份
+    /// 必须可建立且不与活动关系冲突。成功时始终创建新关系与新历史事件，
+    /// 旧关系与旧 provenance event 原样保留。
+    fn relink_source_copy(
+        &self,
+        request: skillhub_core::api::RelinkSourceCopy,
+    ) -> AppResult<AppCommandResult> {
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, "relink_source_copy");
+        let journal_denied = |error: &AppError| {
+            self.journal_advance(
+                operation_id,
+                "relink_source_copy",
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error.code),
+            )
+        };
+        // 独立短锁取旧关系（含归档）：只有 ExternalRemoved 是重关联对象。
+        let old = self
+            .with_database("execute.relink_source_copy.load", |database| {
+                database
+                    .relationship_repository()
+                    .list_source_copy_relations(false)?
+                    .into_iter()
+                    .find(|relation| relation.relation_id == request.source_relation_id)
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("source_relation_id", request.source_relation_id.clone())
+                            .with_action(RecoveryAction::ChooseAnotherName)
+                    })
+            })
+            .inspect_err(journal_denied)?;
+        if old.active
+            || old.archive_reason
+                != Some(skillhub_core::relationship::SourceCopyArchiveReason::ExternalRemoved)
+        {
+            let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("source_relation_id", old.relation_id.clone())
+                .with_param(
+                    "detail",
+                    "only externally removed relations can be relinked",
+                )
+                .with_action(RecoveryAction::Acknowledge);
+            journal_denied(&error);
+            return Err(error);
+        }
+        // 新目录核验（文件系统短操作）：存在、是真实目录、声明了 Skill
+        // 身份；集中库内部路径不是用户来源。
+        let new_path = PathBuf::from(&request.new_source_path);
+        let metadata = std::fs::symlink_metadata(&new_path).map_err(|_| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", request.new_source_path.clone())
+                .with_param("detail", "chosen directory does not exist")
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", request.new_source_path.clone())
+                .with_param("detail", "chosen path is not a real directory")
+                .with_action(RecoveryAction::ChooseAnotherName);
+            journal_denied(&error);
+            return Err(error);
+        }
+        let markdown = std::fs::read_to_string(new_path.join("SKILL.md")).map_err(|_| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", request.new_source_path.clone())
+                .with_param("detail", "chosen directory has no SKILL.md")
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        let declared_name = read_frontmatter_name(&markdown).ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", request.new_source_path.clone())
+                .with_param("detail", "chosen directory does not declare a skill name")
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        let library = self.library_runtime.snapshot()?;
+        let canonical = Self::canonical_path_string(&request.new_source_path);
+        // 库根与候选路径同走规范化，避免 Windows 扩展长度前缀（\\?\）
+        // 造成前缀比较失效（与导入分类的库根比较同款处理）。
+        let library_root = Self::canonical_path_string(&library.root.to_string_lossy());
+        if path_lives_under(&canonical, &library_root) {
+            let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", canonical.clone())
+                .with_param("detail", "chosen path lives under the central library")
+                .with_action(RecoveryAction::ChooseAnotherName);
+            journal_denied(&error);
+            return Err(error);
+        }
+        // 身份核验（8.8）：声明名必须与集中库 runtime_name 一致；绝不
+        // 按目录名猜测，也绝不按名称搜索替代目录。
+        let runtime_name = self
+            .with_database("execute.relink_source_copy.identity", |database| {
+                let detail = database
+                    .catalog_repository()?
+                    .get_detail(old.skill_id)?
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("skill_id", old.skill_id.to_string())
+                            .with_action(RecoveryAction::ChooseAnotherName)
+                    })?;
+                Ok(detail.runtime_name)
+            })
+            .inspect_err(journal_denied)?;
+        if declared_name != runtime_name {
+            let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("runtime_name", runtime_name)
+                .with_param("declared_name", declared_name)
+                .with_param(
+                    "detail",
+                    "chosen directory does not declare this skill's identity",
+                )
+                .with_action(RecoveryAction::ChooseAnotherName);
+            journal_denied(&error);
+            return Err(error);
+        }
+        // 新物理身份（8.8）：恢复/移动后的目录是新的物理目录；身份可建立
+        // 且槽位（物理身份、路径键）不被活动关系占用。
+        let physical_source_id = physical_id_for_path(&new_path).ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", canonical.clone())
+                .with_param(
+                    "detail",
+                    "cannot establish a physical identity for the path",
+                )
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        let source_path_key = observed_path_key(&canonical);
+        let mut relation = old.clone();
+        relation.relation_id = format!("rel-{}", OperationId::new());
+        relation.source_path = canonical.clone();
+        relation.source_path_key = source_path_key;
+        relation.physical_source_id = physical_source_id;
+        relation.active = true;
+        relation.archived_at = None;
+        relation.archive_reason = None;
+        relation.health = skillhub_core::relationship::SourceCopyHealth::NeedsValidation;
+        relation.current_fingerprint = None;
+        relation.last_verified_at = None;
+        let occupied = self
+            .with_database("execute.relink_source_copy.slots", |database| {
+                let existing = database
+                    .relationship_repository()
+                    .list_source_copy_relations(true)?;
+                Ok(
+                    skillhub_core::relationship::SourceCopyRelationFact::active_physical_conflict(
+                        &existing, &relation,
+                    ) || existing
+                        .iter()
+                        .any(|candidate| candidate.source_path_key == relation.source_path_key),
+                )
+            })
+            .inspect_err(journal_denied)?;
+        if occupied {
+            let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", canonical)
+                .with_param(
+                    "detail",
+                    "another active source relation occupies this slot",
+                )
+                .with_action(RecoveryAction::InspectTarget);
+            journal_denied(&error);
+            return Err(error);
+        }
+        // 单事务：新建关系 + 新历史事件（锚在旧关系 id 上）；旧关系与旧
+        // provenance event 原样保留。
+        self.with_database("execute.relink_source_copy.commit", |database| {
+            let display_name = database
+                .catalog_repository()
+                .and_then(|repository| repository.get_sync(old.skill_id))
+                .ok()
+                .flatten()
+                .map(|skill| skill.runtime_name().to_owned())
+                .unwrap_or_else(|| "unknown-skill".to_owned());
+            let transaction = database.begin_transaction()?;
+            skillhub_storage::RelationshipRepository::upsert_source_copy_relation_tx(
+                &transaction,
+                &relation,
+                "fs",
+                1,
+            )?;
+            skillhub_storage::GovernanceHistoryRepository::append_tx(
+                &transaction,
+                &GovernanceHistoryEvent {
+                    event_id: format!("hist-{}", OperationId::new()),
+                    relation_id: old.relation_id.clone(),
+                    skill_id: Some(old.skill_id.to_string()),
+                    skill_display_name: display_name,
+                    agent_presentation: serde_json::json!({
+                        "client_id": old.agent_client_id,
+                    }),
+                    path: relation.source_path.clone(),
+                    scope: "source_copy".to_owned(),
+                    project_id: old.source_container_id.clone(),
+                    action: "relink".to_owned(),
+                    result: "relinked".to_owned(),
+                    reason: None,
+                    operation_id: Some(operation_id.to_string()),
+                    occurred_at: now_epoch_seconds(),
+                },
+            )?;
+            Database::commit_transaction(transaction)?;
+            Ok(())
+        })
+        .inspect_err(journal_denied)?;
+        // 建立后的 Full 校验核对内容（结果如实落库：一致→Normal，分叉→
+        // ContentChanged；校验结果不否定关系重建本身）。
+        let _ = self.run_relationship_check(skillhub_core::api::RunRelationshipCheck {
+            level: skillhub_core::relationship::RelationshipCheckLevel::Full,
+            scope: skillhub_core::relationship::RelationshipCheckScope::RelationIds {
+                relation_ids: vec![relation.relation_id.clone()],
+            },
+        });
+        let fact = self
+            .with_database("execute.relink_source_copy.reload", |database| {
+                Ok(database
+                    .relationship_repository()
+                    .list_source_copy_relations(false)?
+                    .into_iter()
+                    .find(|candidate| candidate.relation_id == relation.relation_id)
+                    .unwrap_or(relation))
+            })
+            .inspect_err(journal_denied)?;
+        self.journal_advance(
+            operation_id,
+            "relink_source_copy",
+            skillhub_core::OperationPhase::Committed,
+            None,
+        );
+        Ok(AppCommandResult::SourceCopyRelationUpdated(fact))
     }
 
     fn commit_original_migration(

@@ -35,7 +35,7 @@ pub use command::{
     ReadSharedProjectConfig, RecheckBasic, RecheckLlmSafety, RefreshSkillRepo, RegisterProject,
     RelationGovernanceBatchAction, RelationGovernanceBatchItem, RelationGovernanceBatchItemState,
     RelationGovernanceBatchOutcome, RelationGovernanceBatchState, RelationMigrationInput,
-    RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelinkSource,
+    RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelinkSource, RelinkSourceCopy,
     RemoveCustomAgent, RemoveIgnoreRule, RemoveSkillRepo, RenameCombination, RenameSkill,
     RescanSkill, ResetProfileOverride, ResolveConflictCase, ResolveRecovery, RestoreDecision,
     RestoreDeployment, RestoreOriginalCallPolicy, RetainSourceCopy, RollbackApplicationUpdate,

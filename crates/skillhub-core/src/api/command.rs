@@ -291,6 +291,19 @@ pub struct RetainSourceCopy {
     pub source_relation_id: String,
 }
 
+/// 重新关联来源副本（计划 8.8/8.15）：把已因外部删除归档的来源关系指向
+/// 用户重新选择的目录。身份与内容由后端完整校验——新目录的 SKILL.md 声明
+/// 名必须与集中库 runtime_name 一致，绝不按目录名猜测；新物理身份必须可
+/// 建立且不与活动关系冲突。成功时始终创建新关系与新历史事件，绝不改写
+/// 旧关系或旧 provenance event。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelinkSourceCopy {
+    pub source_relation_id: String,
+    /// 目录 picker 授权后的路径；后端在使用前自行规范化与核验。
+    pub new_source_path: String,
+}
+
 /// OPT-20260914-08：原始文件迁移的提交请求。`ownership_confirmed` 是
 /// 硬门槛：必须由用户在界面上显式确认，缺省/未确认一律拒绝执行。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -1099,6 +1112,8 @@ pub enum AppCommand {
     PrepareOriginalMigration(PrepareOriginalMigration),
     #[serde(rename = "retain_source_copy")]
     RetainSourceCopy(RetainSourceCopy),
+    #[serde(rename = "relink_source_copy")]
+    RelinkSourceCopy(RelinkSourceCopy),
     #[serde(rename = "commit_original_migration")]
     CommitOriginalMigration(CommitOriginalMigration),
     #[serde(rename = "rollback_original_migration")]

@@ -6167,7 +6167,7 @@ mod source_copy_batches {
         outcome
     }
 
-    async fn history_count(
+    pub(super) async fn history_count(
         facade: &LocalApplicationFacade,
         relation_id: &str,
         action: &str,
@@ -6502,6 +6502,216 @@ mod source_copy_batches {
             .expect("good item");
         assert_eq!(good_item.state, RelationGovernanceBatchItemState::Committed);
         assert!(!good.exists(), "unrelated row committed as usual");
+    }
+}
+
+// ===================== 8D：重关联（relink）与历史恢复 =====================
+
+mod relink_history_restore {
+    //! 8D 验收：ExternalRemoved 关系由用户选择新目录后，只有完整校验——
+    //! 新目录 SKILL.md 声明名与集中库 runtime_name 一致（绝不按目录名
+    //! 猜测身份）、新物理身份可建立且不与活动关系冲突——才建立新活动
+    //! 关系；始终创建新关系与新历史事件，旧关系与旧 provenance event
+    //! 原样保留（8.8/8.15）。
+
+    use skillhub_core::relationship::{SourceCopyArchiveReason, SourceCopyDecision};
+    use skillhub_core::{AppCommand, AppCommandResult, ErrorCode};
+
+    use super::retain_and_cleanup_prepare::{agent_facade, import_source_copy, relation_fact};
+    use super::*;
+
+    fn write_named_skill(path: &std::path::Path, name: &str) {
+        std::fs::create_dir_all(path).expect("skill directory");
+        std::fs::write(
+            path.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: relink fixture\n---\n\n# Notes\n"),
+        )
+        .expect("skill body");
+    }
+
+    async fn archive_external_removed(facade: &LocalApplicationFacade, relation_id: &str) {
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .archive_source_copy_relation(
+                relation_id,
+                SourceCopyArchiveReason::ExternalRemoved,
+                123,
+            )
+            .expect("archive relation");
+    }
+
+    async fn active_relations(facade: &LocalApplicationFacade) -> usize {
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .list_source_copy_relations(true)
+            .expect("active relations")
+            .len()
+    }
+
+    async fn relink(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+        new_source_path: &std::path::Path,
+    ) -> Result<skillhub_core::relationship::SourceCopyRelationFact, skillhub_core::AppError> {
+        match facade
+            .execute(AppCommand::RelinkSourceCopy(
+                skillhub_core::api::RelinkSourceCopy {
+                    source_relation_id: relation_id.to_owned(),
+                    new_source_path: new_source_path.to_string_lossy().into_owned(),
+                },
+            ))
+            .await
+        {
+            Ok(AppCommandResult::SourceCopyRelationUpdated(fact)) => Ok(fact),
+            Ok(other) => panic!("expected source copy relation, got {other:?}"),
+            Err(error) => Err(error),
+        }
+    }
+
+    // 8.8：身份与内容完整校验通过后新建活动关系；旧关系保持归档且
+    // 原样保留，历史追加在新事件里，不改写旧记录。
+    #[tokio::test]
+    async fn relink_builds_a_new_active_relation_from_the_chosen_directory() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let original = sources.path().join("relink-src");
+        write_named_skill(&original, "relink-src");
+        let old_relation = import_source_copy(&facade, &original, "relink-src").await;
+        archive_external_removed(&facade, &old_relation).await;
+
+        let restored = sources.path().join("relink-restored");
+        write_named_skill(&restored, "relink-src");
+        let fact = relink(&facade, &old_relation, &restored)
+            .await
+            .expect("relink succeeds");
+
+        assert_ne!(fact.relation_id, old_relation, "always a new relation");
+        assert!(fact.active);
+        assert_eq!(fact.decision, SourceCopyDecision::Pending);
+        assert_eq!(
+            fact.health,
+            skillhub_core::relationship::SourceCopyHealth::Normal,
+            "identical content passes the follow-up full check"
+        );
+        assert!(
+            fact.source_path.ends_with("relink-restored"),
+            "source path points at the chosen directory: {}",
+            fact.source_path
+        );
+
+        // 旧关系原样归档；来源动作只新增事实。
+        let old_fact = relation_fact(&facade, &old_relation).await;
+        assert!(!old_fact.active);
+        assert_eq!(
+            old_fact.archive_reason,
+            Some(SourceCopyArchiveReason::ExternalRemoved)
+        );
+        assert_eq!(
+            old_fact.source_path,
+            original.to_string_lossy().into_owned()
+        );
+        assert_eq!(
+            super::source_copy_batches::history_count(&facade, &old_relation, "relink", "relinked")
+                .await,
+            1,
+            "one relinked history event anchored to the old relation"
+        );
+    }
+
+    // 8.8：声明名不一致时拒绝——绝不按目录名猜测身份，也不产生新关系。
+    #[tokio::test]
+    async fn relink_refuses_directories_whose_declared_name_is_not_the_skill() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let original = sources.path().join("relink-src");
+        write_named_skill(&original, "relink-src");
+        let old_relation = import_source_copy(&facade, &original, "relink-src").await;
+        archive_external_removed(&facade, &old_relation).await;
+
+        let impostor = sources.path().join("impostor");
+        write_named_skill(&impostor, "totally-other");
+        let error = relink(&facade, &old_relation, &impostor)
+            .await
+            .expect_err("name mismatch is refused");
+        assert_eq!(error.code.as_str(), ErrorCode::InvalidInput.as_str());
+        assert_eq!(active_relations(&facade).await, 0, "no new relation");
+        assert_eq!(
+            super::source_copy_batches::history_count(&facade, &old_relation, "relink", "relinked")
+                .await,
+            0
+        );
+    }
+
+    // 8.8：新物理身份与活动关系冲突时拒绝（槽位被另一条活动关系占用）。
+    #[tokio::test]
+    async fn relink_refuses_slots_occupied_by_another_active_relation() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let original = sources.path().join("relink-src");
+        write_named_skill(&original, "relink-src");
+        let old_relation = import_source_copy(&facade, &original, "relink-src").await;
+        archive_external_removed(&facade, &old_relation).await;
+
+        // 另一条活动关系已经占据新目录的物理槽位。
+        let occupied = sources.path().join("relink-restored");
+        write_named_skill(&occupied, "relink-src");
+        import_source_copy(&facade, &occupied, "relink-src").await;
+
+        let error = relink(&facade, &old_relation, &occupied)
+            .await
+            .expect_err("occupied slot is refused");
+        assert_eq!(error.code.as_str(), ErrorCode::OperationConflict.as_str());
+        let old_fact = relation_fact(&facade, &old_relation).await;
+        assert!(!old_fact.active, "old relation stays archived");
+        assert_eq!(active_relations(&facade).await, 1, "no new relation");
+    }
+
+    // 8.8/8.15：只有 ExternalRemoved 关系可重关联；未知关系、活动关系、
+    // 不存在的新目录与集中库内部路径一律拒绝。
+    #[tokio::test]
+    async fn relink_only_applies_to_externally_removed_relations_with_real_directories() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let original = sources.path().join("relink-src");
+        write_named_skill(&original, "relink-src");
+        let active_relation = import_source_copy(&facade, &original, "relink-src").await;
+
+        let restored = sources.path().join("relink-restored");
+        write_named_skill(&restored, "relink-src");
+
+        let still_active = relink(&facade, &active_relation, &restored)
+            .await
+            .expect_err("active relations are not relinkable");
+        assert_eq!(
+            still_active.code.as_str(),
+            ErrorCode::OperationConflict.as_str()
+        );
+
+        let unknown = relink(&facade, "rel-unknown", &restored)
+            .await
+            .expect_err("unknown relation");
+        assert_eq!(unknown.code.as_str(), ErrorCode::ObjectNotFound.as_str());
+
+        archive_external_removed(&facade, &active_relation).await;
+        let missing = relink(&facade, &active_relation, &sources.path().join("nope"))
+            .await
+            .expect_err("missing directory");
+        assert_eq!(missing.code.as_str(), ErrorCode::InvalidInput.as_str());
+
+        let under_library = workspace.path().join("library/inside");
+        write_named_skill(&under_library, "relink-src");
+        let managed = relink(&facade, &active_relation, &under_library)
+            .await
+            .expect_err("library-internal paths are not sources");
+        assert_eq!(managed.code.as_str(), ErrorCode::InvalidInput.as_str());
     }
 }
 
