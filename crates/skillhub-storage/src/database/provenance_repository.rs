@@ -1,11 +1,12 @@
 use super::Database;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::{
     ObservedDeployment, ObservedMatchState, ObservedOrigin, ObservedRowAction, ObservedStatus,
 };
 use skillhub_core::import::{
-    CandidateOwnership, ImportProvenance, OriginalMigrationResult, OriginalMigrationState,
+    CandidateOwnership, ImportBatch, ImportProvenance, ImportProvenanceEvent, ImportSourceClass,
+    OriginalMigrationResult, OriginalMigrationState,
 };
 use skillhub_core::relationship::{
     DeploymentRelationFact, FileRepresentation, OwnershipState, RelationshipType,
@@ -31,6 +32,12 @@ impl<'a> ProvenanceRepository<'a> {
 
     /// 导入即存证。0014 规范化关系表以独立 provenance ID 保存每次事实；
     /// 旧 import_provenance 表只继续承担最新兼容投影，确保既有调用不破坏。
+    ///
+    /// Deprecated compatibility path (v19): this writes the immutable event via
+    /// the legacy source-relation shape and classifies it as
+    /// `legacy_unclassified` because the storage layer never guesses a source
+    /// class. New import flows must call [`Self::append_provenance_event`] with
+    /// an explicit classification instead.
     pub fn upsert_provenance(&self, provenance: &ImportProvenance) -> AppResult<()> {
         let relation = provenance.to_source_relation_fact();
         let transaction = self
@@ -68,6 +75,10 @@ impl<'a> ProvenanceRepository<'a> {
         transaction.commit().map_err(database_error)
     }
 
+    /// Deprecated latest-only compatibility projection over the immutable
+    /// import events (the `import_provenance` table carries the schema-level
+    /// `deprecated_projection` marker since v19). New callers should read
+    /// [`Self::list_provenance_events_for_skill`] instead.
     pub fn provenance_for_skill(&self, skill_id: SkillId) -> AppResult<Option<ImportProvenance>> {
         let row = self
             .database
@@ -115,6 +126,192 @@ impl<'a> ProvenanceRepository<'a> {
             .into_iter()
             .map(provenance_from_relation)
             .collect())
+    }
+
+    /// Opens an import batch (`status='running'`). Batch bookkeeping is not a
+    /// relationship fact and never invalidates the relationship projection.
+    pub fn begin_import_batch(&self, batch_id: &str, started_at: i64) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::begin_import_batch_tx(&transaction, batch_id, started_at)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for cross-repository writes: opens the batch
+    /// inside the caller's transaction so batches, provenance events, and
+    /// source-copy relations commit or roll back together.
+    pub fn begin_import_batch_tx(
+        transaction: &Transaction<'_>,
+        batch_id: &str,
+        started_at: i64,
+    ) -> AppResult<()> {
+        transaction
+            .execute(
+                "INSERT INTO import_batches (batch_id, status, started_at) VALUES (?1, 'running', ?2)",
+                params![batch_id, started_at],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    /// Persists one immutable import event under an already opened batch.
+    /// Events are evidence: a provenance ID can never be rewritten, and the
+    /// online source-coordinate validation from the domain layer runs again
+    /// before anything is written.
+    pub fn append_provenance_event(&self, event: &ImportProvenanceEvent) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::append_provenance_event_tx(&transaction, event)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for appending an event. The event is visible to
+    /// the `source_relations` compatibility view, so a successful append bumps
+    /// the relationship projection revision.
+    pub fn append_provenance_event_tx(
+        transaction: &Transaction<'_>,
+        event: &ImportProvenanceEvent,
+    ) -> AppResult<()> {
+        if !event.has_valid_source_coordinates() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "source_coordinates")
+                .with_action(RecoveryAction::Retry));
+        }
+        let source_kind = source_kind_code(&event.source.kind);
+        let source_locator = source_locator_text(&event.source.locator);
+        let source_path = event
+            .local_source_path
+            .clone()
+            .unwrap_or_else(|| source_locator.clone());
+        transaction
+            .execute(
+                "INSERT INTO import_provenance_events_v19 (
+                    provenance_id, batch_id, skill_id, agent_client_id, source_path,
+                    source_path_key, relationship, file_representation, ownership,
+                    link_target_path, link_target_directory_id, content_fingerprint,
+                    source_kind, source_locator, imported_at, source_class,
+                    local_source_path, source_container_id, physical_source_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'import_copy', 'directory',
+                     CASE WHEN ?7 = 'central_library' THEN 'skillhub_managed'
+                          ELSE 'observed_unmanaged' END,
+                     NULL, NULL, ?8, ?9, ?10, ?11, ?7, ?12, ?13, ?14)",
+                params![
+                    event.provenance_id,
+                    event.batch_id,
+                    event.skill_id.to_string(),
+                    event.agent_client_id,
+                    source_path,
+                    observed_path_key(&source_path),
+                    source_class_code(event.source_class),
+                    event.content_fingerprint,
+                    source_kind,
+                    source_locator,
+                    event.imported_at,
+                    event.local_source_path,
+                    event.source_container_id,
+                    event.physical_source_id,
+                ],
+            )
+            .map_err(database_error)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO import_batch_items
+                 (batch_id, candidate_key, skill_id, provenance_id, status)
+                 VALUES (?1, ?2, ?3, ?2, 'succeeded')",
+                params![
+                    event.batch_id,
+                    event.provenance_id,
+                    event.skill_id.to_string(),
+                ],
+            )
+            .map_err(database_error)?;
+        super::relationship_repository::bump_relationship_revision_tx(transaction)
+    }
+
+    /// Batch summary with the number of successfully imported candidates.
+    pub fn import_batch(&self, batch_id: &str) -> AppResult<Option<ImportBatch>> {
+        let imported_count: Option<i64> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM import_batch_items
+                         WHERE batch_id=?1 AND status='succeeded')
+                 FROM import_batches WHERE batch_id=?1",
+                [batch_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        Ok(imported_count.map(|count| ImportBatch {
+            batch_id: batch_id.to_owned(),
+            imported_count: u32::try_from(count).unwrap_or(u32::MAX),
+        }))
+    }
+
+    /// Immutable import facts for one Skill in chronological order. Re-imports
+    /// with a different time or source remain separate events.
+    pub fn list_provenance_events_for_skill(
+        &self,
+        skill_id: SkillId,
+    ) -> AppResult<Vec<ImportProvenanceEvent>> {
+        self.list_events(
+            "WHERE skill_id=?1 ORDER BY imported_at, provenance_id",
+            [skill_id.to_string()],
+        )
+    }
+
+    /// Read-only legacy backfill seam: returns the unclassified events left by
+    /// the v19 migration (and by the deprecated compat write path) so a later
+    /// classification step can review them. There is deliberately no delete or
+    /// rewrite API: evidence stays until a classified successor flow exists.
+    pub fn list_unclassified_legacy_events(&self) -> AppResult<Vec<ImportProvenanceEvent>> {
+        self.list_events(
+            "WHERE source_class='legacy_unclassified' ORDER BY imported_at, provenance_id",
+            [],
+        )
+    }
+
+    fn list_events<T: rusqlite::Params>(
+        &self,
+        suffix: &str,
+        parameters: T,
+    ) -> AppResult<Vec<ImportProvenanceEvent>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(&format!(
+                "SELECT provenance_id, batch_id, skill_id, source_class, source_kind,
+                        source_locator, local_source_path, source_container_id,
+                        physical_source_id, agent_client_id, content_fingerprint, imported_at
+                 FROM import_provenance_events_v19 {suffix}"
+            ))
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map(parameters, |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, i64>(11)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| decode_event(row.map_err(database_error)?).ok_or_else(invalid_record))
+            .collect()
     }
 
     pub fn list_observed(&self) -> AppResult<Vec<ObservedDeployment>> {
@@ -407,6 +604,86 @@ type ProvenanceRow = (
     String,
     i64,
 );
+
+type EventRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+    i64,
+);
+
+#[allow(clippy::type_complexity)]
+fn decode_event(value: EventRow) -> Option<ImportProvenanceEvent> {
+    let skill_id = value.2.parse().ok()?;
+    let source_class = parse_source_class(&value.3)?;
+    let source_kind = parse_source_kind(&value.4)?;
+    let source_locator = parse_source_locator(&value.4, &value.5)?;
+    Some(ImportProvenanceEvent {
+        provenance_id: value.0,
+        batch_id: value.1,
+        skill_id,
+        source_class,
+        source: SourceDescriptor::new(source_kind, source_locator),
+        local_source_path: value.6,
+        source_container_id: value.7,
+        physical_source_id: value.8,
+        agent_client_id: value.9,
+        content_fingerprint: value.10,
+        imported_at: value.11,
+    })
+}
+
+fn parse_source_class(value: &str) -> Option<ImportSourceClass> {
+    let source_class = match value {
+        "agent_local" => ImportSourceClass::AgentLocal,
+        "user_local" => ImportSourceClass::UserLocal,
+        "registered_project" => ImportSourceClass::RegisteredProject,
+        "online" => ImportSourceClass::Online,
+        "central_library" => ImportSourceClass::CentralLibrary,
+        "legacy_unclassified" => ImportSourceClass::LegacyUnclassified,
+        _ => return None,
+    };
+    Some(source_class)
+}
+
+fn source_class_code(value: ImportSourceClass) -> &'static str {
+    match value {
+        ImportSourceClass::AgentLocal => "agent_local",
+        ImportSourceClass::UserLocal => "user_local",
+        ImportSourceClass::RegisteredProject => "registered_project",
+        ImportSourceClass::Online => "online",
+        ImportSourceClass::CentralLibrary => "central_library",
+        ImportSourceClass::LegacyUnclassified => "legacy_unclassified",
+    }
+}
+
+fn parse_source_kind(value: &str) -> Option<SourceKind> {
+    let source_kind = match value {
+        "local" => SourceKind::Local,
+        "https" => SourceKind::Https,
+        "git" => SourceKind::Git,
+        _ => return None,
+    };
+    Some(source_kind)
+}
+
+fn parse_source_locator(kind: &str, locator: &str) -> Option<SourceLocator> {
+    let source_locator = match kind {
+        "local" => SourceLocator::local_path(locator),
+        "https" => SourceLocator::https_url(locator),
+        "git" => SourceLocator::git_url(locator),
+        _ => return None,
+    };
+    Some(source_locator)
+}
 
 fn decode_provenance(value: ProvenanceRow) -> Option<ImportProvenance> {
     let skill_id = value.0.parse().ok()?;

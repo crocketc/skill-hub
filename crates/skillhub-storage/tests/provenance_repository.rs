@@ -5,7 +5,8 @@ use skillhub_core::deployment::{
     reconcile_observed_row, ObservedOrigin, ObservedPathObservation, ObservedRowAction,
 };
 use skillhub_core::import::{
-    CandidateOwnership, ImportProvenance, OriginalMigrationResult, OriginalMigrationState,
+    CandidateOwnership, ImportProvenance, ImportProvenanceEvent, ImportSourceClass,
+    OriginalMigrationResult, OriginalMigrationState,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{OperationId, SkillId};
@@ -99,6 +100,96 @@ fn provenance_round_trips_with_and_without_agent_attribution() {
         .unwrap()
         .expect("provenance");
     assert_eq!(stored.imported_at, 2_000);
+}
+
+/// v19 governance event fixture: user-local source with a filesystem-verified
+/// physical identity.
+fn import_event(skill_id: SkillId, provenance_id: &str) -> ImportProvenanceEvent {
+    ImportProvenanceEvent {
+        provenance_id: provenance_id.into(),
+        batch_id: "batch".into(),
+        skill_id,
+        source_class: ImportSourceClass::UserLocal,
+        source: SourceDescriptor::new(
+            SourceKind::Local,
+            SourceLocator::local_path("/source/notes"),
+        ),
+        local_source_path: Some("/source/notes".into()),
+        source_container_id: None,
+        physical_source_id: Some("device:inode".into()),
+        agent_client_id: None,
+        content_fingerprint: "hash".into(),
+        imported_at: 42,
+    }
+}
+
+#[test]
+fn import_events_are_immutable_chronological_and_counted_per_batch() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    let repository = database.provenance_repository();
+    repository.begin_import_batch("batch", 41).unwrap();
+
+    let first = import_event(skill, "event-1");
+    let second = import_event(skill, "event-2");
+    repository.append_provenance_event(&first).unwrap();
+    repository.append_provenance_event(&second).unwrap();
+
+    // 一个 Skill 允许多条存证，按时间顺序可回放。
+    assert_eq!(
+        repository.list_provenance_events_for_skill(skill).unwrap(),
+        vec![first.clone(), second.clone()]
+    );
+
+    // 存证不可改写：同一 provenance ID 换内容再落库必须被拒绝。
+    let mut tampered = first.clone();
+    tampered.content_fingerprint = "tampered".into();
+    assert!(repository.append_provenance_event(&tampered).is_err());
+
+    let batch = repository.import_batch("batch").unwrap().expect("batch");
+    assert_eq!(batch.batch_id, "batch");
+    assert_eq!(batch.imported_count, 2);
+    assert!(repository.import_batch("missing").unwrap().is_none());
+}
+
+#[test]
+fn legacy_backfill_seam_lists_only_unclassified_events_and_never_deletes() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    let repository = database.provenance_repository();
+
+    // 兼容写入路径（deprecated）落库为 legacy_unclassified：存储层不猜来源类别。
+    repository
+        .upsert_provenance(&provenance(
+            skill,
+            "/tmp/legacy/skills/demo",
+            Some("legacy.agent"),
+        ))
+        .unwrap();
+
+    let classified = {
+        let mut event = import_event(skill, "event-classified");
+        event.source_class = ImportSourceClass::UserLocal;
+        event
+    };
+    repository.begin_import_batch("batch", 1).unwrap();
+    repository.append_provenance_event(&classified).unwrap();
+
+    let unclassified = repository.list_unclassified_legacy_events().unwrap();
+    assert_eq!(unclassified.len(), 1);
+    assert_eq!(
+        unclassified[0].source_class,
+        ImportSourceClass::LegacyUnclassified
+    );
+    assert_ne!(unclassified[0].provenance_id, "event-classified");
+
+    // 只读回填缝：重复读取不删除、不改写，等待后续分类流程处理。
+    assert_eq!(
+        repository.list_unclassified_legacy_events().unwrap(),
+        unclassified
+    );
 }
 
 #[test]

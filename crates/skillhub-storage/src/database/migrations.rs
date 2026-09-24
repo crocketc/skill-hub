@@ -6,7 +6,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 use super::relationship_repository::deployment_entry_path;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 18;
+pub const CURRENT_SCHEMA_VERSION: u32 = 19;
 
 #[derive(Clone, Copy)]
 struct Migration<'a> {
@@ -87,6 +87,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 18,
         sql: include_str!("../../migrations/0018_source_update_checks.sql"),
     },
+    Migration {
+        version: 19,
+        sql: include_str!("../../migrations/0019_import_source_governance.sql"),
+    },
 ];
 
 /// The result of applying zero or more schema migrations.
@@ -126,6 +130,17 @@ fn run_with_migrations(
             .map_err(database_error)?;
         if migration.version == 14 {
             repair_relationship_paths(&transaction)?;
+        }
+        if migration.version == 19 {
+            let violations: i64 = transaction
+                .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                    row.get(0)
+                })
+                .map_err(database_error)?;
+            if violations != 0 {
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("migration", "foreign_key_check"));
+            }
         }
         transaction
             .pragma_update(None, "user_version", migration.version)

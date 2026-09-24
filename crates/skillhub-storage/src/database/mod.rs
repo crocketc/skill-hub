@@ -9,6 +9,7 @@ mod deployment_repository;
 mod desktop_settings_repository;
 mod directory_repository;
 pub mod evidence_repository;
+mod governance_history_repository;
 mod ignore_rule_repository;
 mod import_repository;
 mod llm_connection_test_repository;
@@ -35,7 +36,7 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 use skillhub_core::{
     AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionRecord,
 };
@@ -52,6 +53,7 @@ pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite
 pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use directory_repository::DirectoryRepository;
 pub use evidence_repository::UsageEvidenceRepository;
+pub use governance_history_repository::{GovernanceHistoryEvent, GovernanceHistoryRepository};
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
 pub use llm_connection_test_repository::{LlmConnectionTestRepository, PersistedConnectionTest};
@@ -213,6 +215,21 @@ impl Database {
 
     pub fn governance_task_repository(&self) -> GovernanceTaskRepository<'_> {
         GovernanceTaskRepository::new(self)
+    }
+
+    /// v19：关系治理历史（不可变审计行，支持按关系回放）。
+    pub fn governance_history_repository(&self) -> GovernanceHistoryRepository<'_> {
+        GovernanceHistoryRepository::new(self)
+    }
+
+    /// Opens an explicit transaction on this database for cross-repository
+    /// writes. The transaction rolls back when dropped without `commit()`, and
+    /// every `*_tx` repository API accepts it so relation facts, provenance
+    /// evidence, and history rows commit or roll back together.
+    pub fn begin_transaction(&self) -> AppResult<Transaction<'_>> {
+        self.connection
+            .unchecked_transaction()
+            .map_err(database_error)
     }
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {

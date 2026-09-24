@@ -12,7 +12,7 @@ use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryRecognition,
     FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    SourceRelationFact,
+    SourceCopyArchiveReason, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
@@ -331,6 +331,84 @@ impl<'a> RelationshipRepository<'a> {
             .collect())
     }
 
+    /// Creates or refreshes one independently identified source-copy relation.
+    /// `identity_algorithm` / `identity_version` record how the caller derived
+    /// the filesystem-verified `physical_source_id`; an absent (blank) physical
+    /// identity never becomes a cleanable relation. Active uniqueness per
+    /// physical source and per (Skill, path) is enforced by partial unique
+    /// indexes inside the same transaction.
+    pub fn upsert_source_copy_relation(
+        &self,
+        fact: &SourceCopyRelationFact,
+        identity_algorithm: &str,
+        identity_version: i64,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::upsert_source_copy_relation_tx(
+            &transaction,
+            fact,
+            identity_algorithm,
+            identity_version,
+        )?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Archives a source-copy relation. The row stays as history; only the
+    /// active flag, archive timestamp, and reason change.
+    pub fn archive_source_copy_relation(
+        &self,
+        relation_id: &str,
+        reason: SourceCopyArchiveReason,
+        archived_at: i64,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::archive_source_copy_relation_tx(&transaction, relation_id, reason, archived_at)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Re-activates an archived source-copy relation. Fails while another
+    /// active relation holds the same physical source identity or the same
+    /// (Skill, path) slot; re-establishment must first archive that successor.
+    pub fn restore_source_copy_relation(&self, relation_id: &str) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::restore_source_copy_relation_tx(&transaction, relation_id)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    pub fn list_source_copy_relations(
+        &self,
+        active_only: bool,
+    ) -> AppResult<Vec<SourceCopyRelationFact>> {
+        let filter = if active_only { " WHERE active=1" } else { "" };
+        let mut statement = self
+            .database
+            .connection
+            .prepare(&format!(
+                "SELECT fact_json FROM source_copy_relations{filter} ORDER BY skill_id, relation_id"
+            ))
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.map(|row| {
+            let fact_json = row.map_err(database_error)?;
+            serde_json::from_str(&fact_json).map_err(|error| serialization_error(error.to_string()))
+        })
+        .collect()
+    }
+
     pub(crate) fn sync_managed_deployment_tx(
         &self,
         transaction: &Transaction<'_>,
@@ -609,41 +687,37 @@ pub(crate) fn sync_reconciled_deployment_tx(
         .map_err(database_error)
 }
 
+/// v19 write path for the legacy source-relation compatibility flow. The
+/// authoritative store is the immutable `import_provenance_events_v19` table;
+/// the `source_relations` object in the database is a read-only view over it.
+/// Compat writes are classified as `legacy_unclassified` events under a
+/// deterministic per-event batch — the storage layer never guesses a source
+/// class, and identical re-writes are ignored instead of rewritten (evidence
+/// is immutable).
 pub(crate) fn upsert_source_relation_tx(
     transaction: &Transaction<'_>,
     relation: &SourceRelationFact,
 ) -> AppResult<bool> {
     let source_path_key = observed_path_key(&relation.source_path);
     let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.source_path)?;
+    let batch_id = format!("legacy:{}", relation.provenance_id);
     transaction
         .execute(
-            "INSERT INTO source_relations
-             (provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
-              source_path_key, relationship, file_representation, ownership, link_target_path,
-              link_target_directory_id, content_fingerprint, source_kind, source_locator, imported_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-             ON CONFLICT(provenance_id) DO UPDATE SET
-             skill_id=excluded.skill_id, directory_node_id=excluded.directory_node_id,
-             agent_client_id=excluded.agent_client_id, source_path=excluded.source_path,
-             source_path_key=excluded.source_path_key, relationship=excluded.relationship,
-             file_representation=excluded.file_representation, ownership=excluded.ownership,
-             link_target_path=excluded.link_target_path, link_target_directory_id=excluded.link_target_directory_id,
-             content_fingerprint=excluded.content_fingerprint, source_kind=excluded.source_kind,
-             source_locator=excluded.source_locator, imported_at=excluded.imported_at
-             WHERE source_relations.skill_id IS NOT excluded.skill_id
-                OR source_relations.directory_node_id IS NOT excluded.directory_node_id
-                OR source_relations.agent_client_id IS NOT excluded.agent_client_id
-                OR source_relations.source_path IS NOT excluded.source_path
-                OR source_relations.source_path_key IS NOT excluded.source_path_key
-                OR source_relations.relationship IS NOT excluded.relationship
-                OR source_relations.file_representation IS NOT excluded.file_representation
-                OR source_relations.ownership IS NOT excluded.ownership
-                OR source_relations.link_target_path IS NOT excluded.link_target_path
-                OR source_relations.link_target_directory_id IS NOT excluded.link_target_directory_id
-                OR source_relations.content_fingerprint IS NOT excluded.content_fingerprint
-                OR source_relations.source_kind IS NOT excluded.source_kind
-                OR source_relations.source_locator IS NOT excluded.source_locator
-                OR source_relations.imported_at IS NOT excluded.imported_at",
+            "INSERT OR IGNORE INTO import_batches (batch_id, status, started_at, finished_at)
+             VALUES (?1, 'completed', ?2, ?2)",
+            params![batch_id, relation.imported_at],
+        )
+        .map_err(database_error)?;
+    let inserted = transaction
+        .execute(
+            "INSERT OR IGNORE INTO import_provenance_events_v19 (
+                provenance_id, skill_id, directory_node_id, agent_client_id, source_path,
+                source_path_key, relationship, file_representation, ownership,
+                link_target_path, link_target_directory_id, content_fingerprint,
+                source_kind, source_locator, imported_at, batch_id, source_class,
+                local_source_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
+                     'legacy_unclassified', ?5)",
             params![
                 relation.provenance_id,
                 relation.skill_id.to_string(),
@@ -660,10 +734,261 @@ pub(crate) fn upsert_source_relation_tx(
                 source_kind_code(&relation.source.kind),
                 source_locator_text(&relation.source.locator),
                 relation.imported_at,
+                batch_id,
             ],
         )
-        .map(|changed| changed != 0)
-        .map_err(database_error)
+        .map_err(database_error)?;
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO import_batch_items
+             (batch_id, candidate_key, skill_id, provenance_id, status)
+             VALUES (?1, ?2, ?3, ?2, 'succeeded')",
+            params![
+                batch_id,
+                relation.provenance_id,
+                relation.skill_id.to_string()
+            ],
+        )
+        .map_err(database_error)?;
+    Ok(inserted != 0)
+}
+
+impl<'a> RelationshipRepository<'a> {
+    /// Caller-transaction write seam: creates or refreshes one source-copy
+    /// relation inside the caller's transaction, so relation facts,
+    /// cross-repository evidence, and the projection revision commit or roll
+    /// back together. Returns whether any fact changed.
+    pub fn upsert_source_copy_relation_tx(
+        transaction: &Transaction<'_>,
+        fact: &SourceCopyRelationFact,
+        identity_algorithm: &str,
+        identity_version: i64,
+    ) -> AppResult<bool> {
+        if identity_algorithm.trim().is_empty() {
+            return Err(invalid_source_copy_field("identity_algorithm"));
+        }
+        if identity_version <= 0 {
+            return Err(invalid_source_copy_field("identity_version"));
+        }
+        // 身份缺失的来源永远不落成可清理关系：物理身份是唯一清理依据。
+        if fact.physical_source_id.trim().is_empty() {
+            return Err(invalid_source_copy_field("physical_source_id"));
+        }
+        let source_path_key = observed_path_key(&fact.source_path);
+        let fact_json =
+            serde_json::to_string(fact).map_err(|error| serialization_error(error.to_string()))?;
+        let stored = transaction
+            .query_row(
+                "SELECT physical_source_id, identity_algorithm, identity_version, active,
+                        source_path_key, fact_json
+                 FROM source_copy_relations WHERE relation_id=?1",
+                [&fact.relation_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(database_error)?;
+        let changed = match stored {
+            Some((
+                stored_physical_source_id,
+                stored_algorithm,
+                stored_version,
+                stored_active,
+                stored_path_key,
+                stored_fact_json,
+            )) => {
+                if stored_physical_source_id == fact.physical_source_id
+                    && stored_algorithm == identity_algorithm
+                    && stored_version == identity_version
+                    && stored_active == i64::from(fact.active)
+                    && stored_path_key == source_path_key
+                    && stored_fact_json == fact_json
+                {
+                    false
+                } else {
+                    transaction
+                        .execute(
+                            "UPDATE source_copy_relations
+                             SET latest_provenance_id=?2, physical_source_id=?3,
+                                 identity_algorithm=?4, identity_version=?5, active=?6,
+                                 source_path_key=?7, fact_json=?8
+                             WHERE relation_id=?1",
+                            params![
+                                fact.relation_id,
+                                fact.latest_provenance_id,
+                                fact.physical_source_id,
+                                identity_algorithm,
+                                identity_version,
+                                i64::from(fact.active),
+                                source_path_key,
+                                fact_json,
+                            ],
+                        )
+                        .map_err(database_error)?
+                        != 0
+                }
+            }
+            None => {
+                transaction
+                    .execute(
+                        "INSERT INTO source_copy_relations
+                     (relation_id, skill_id, latest_provenance_id, physical_source_id,
+                      identity_algorithm, identity_version, source_path_key, active, fact_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                        params![
+                            fact.relation_id,
+                            fact.skill_id.to_string(),
+                            fact.latest_provenance_id,
+                            fact.physical_source_id,
+                            identity_algorithm,
+                            identity_version,
+                            source_path_key,
+                            i64::from(fact.active),
+                            fact_json,
+                        ],
+                    )
+                    .map_err(database_error)?
+                    != 0
+            }
+        };
+        if changed {
+            bump_relationship_revision_tx(transaction)?;
+        }
+        Ok(changed)
+    }
+
+    /// Caller-transaction seam for archiving; see
+    /// [`RelationshipRepository::archive_source_copy_relation`].
+    pub fn archive_source_copy_relation_tx(
+        transaction: &Transaction<'_>,
+        relation_id: &str,
+        reason: SourceCopyArchiveReason,
+        archived_at: i64,
+    ) -> AppResult<bool> {
+        let mut fact = load_source_copy_fact(transaction, relation_id)?
+            .ok_or_else(|| missing_source_copy_relation(relation_id))?;
+        if !fact.active
+            && fact.archive_reason == Some(reason)
+            && fact.archived_at == Some(archived_at)
+        {
+            return Ok(false);
+        }
+        fact.active = false;
+        fact.archived_at = Some(archived_at);
+        fact.archive_reason = Some(reason);
+        write_source_copy_fact(transaction, &fact)?;
+        bump_relationship_revision_tx(transaction)?;
+        Ok(true)
+    }
+
+    /// Caller-transaction seam for restoring; see
+    /// [`RelationshipRepository::restore_source_copy_relation`].
+    pub fn restore_source_copy_relation_tx(
+        transaction: &Transaction<'_>,
+        relation_id: &str,
+    ) -> AppResult<bool> {
+        let mut fact = load_source_copy_fact(transaction, relation_id)?
+            .ok_or_else(|| missing_source_copy_relation(relation_id))?;
+        if fact.active {
+            return Ok(false);
+        }
+        let active_physical_conflict: i64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM source_copy_relations
+                 WHERE physical_source_id=?1 AND active=1 AND relation_id<>?2",
+                params![fact.physical_source_id, relation_id],
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        if active_physical_conflict > 0 {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "physical_source_id")
+                .with_param("reason", "active_physical_conflict")
+                .with_action(RecoveryAction::Retry));
+        }
+        let active_path_conflict: i64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM source_copy_relations
+                 WHERE skill_id=?1 AND source_path_key=?2 AND active=1 AND relation_id<>?3",
+                params![
+                    fact.skill_id.to_string(),
+                    observed_path_key(&fact.source_path),
+                    relation_id
+                ],
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        if active_path_conflict > 0 {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "source_path")
+                .with_param("reason", "active_path_conflict")
+                .with_action(RecoveryAction::Retry));
+        }
+        fact.active = true;
+        fact.archived_at = None;
+        fact.archive_reason = None;
+        write_source_copy_fact(transaction, &fact)?;
+        bump_relationship_revision_tx(transaction)?;
+        Ok(true)
+    }
+}
+
+fn load_source_copy_fact(
+    transaction: &Transaction<'_>,
+    relation_id: &str,
+) -> AppResult<Option<SourceCopyRelationFact>> {
+    let fact_json: Option<String> = transaction
+        .query_row(
+            "SELECT fact_json FROM source_copy_relations WHERE relation_id=?1",
+            [relation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    fact_json
+        .map(|json| {
+            serde_json::from_str(&json).map_err(|error| serialization_error(error.to_string()))
+        })
+        .transpose()
+}
+
+fn write_source_copy_fact(
+    transaction: &Transaction<'_>,
+    fact: &SourceCopyRelationFact,
+) -> AppResult<()> {
+    let fact_json =
+        serde_json::to_string(fact).map_err(|error| serialization_error(error.to_string()))?;
+    let changed = transaction
+        .execute(
+            "UPDATE source_copy_relations SET active=?2, fact_json=?3 WHERE relation_id=?1",
+            params![fact.relation_id, i64::from(fact.active), fact_json],
+        )
+        .map_err(database_error)?;
+    if changed == 0 {
+        return Err(missing_source_copy_relation(&fact.relation_id));
+    }
+    Ok(())
+}
+
+fn missing_source_copy_relation(relation_id: &str) -> AppError {
+    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+        .with_param("field", "source_copy_relation")
+        .with_param("relation_id", relation_id.to_owned())
+        .with_action(RecoveryAction::Retry)
+}
+
+fn invalid_source_copy_field(field: &str) -> AppError {
+    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+        .with_param("field", field)
+        .with_action(RecoveryAction::Retry)
 }
 
 pub struct ConflictRepository<'a> {

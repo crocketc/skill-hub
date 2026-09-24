@@ -752,7 +752,10 @@ async fn import_copies_without_a_governance_confirmation_and_preserves_the_sourc
         panic!("expected import summary");
     };
     assert!(summary.committed);
-    assert_eq!(summary.items[0].status, skillhub_core::ImportItemStatus::Succeeded);
+    assert_eq!(
+        summary.items[0].status,
+        skillhub_core::ImportItemStatus::Succeeded
+    );
     assert!(source.path().join("SKILL.md").is_file());
 }
 
@@ -3013,6 +3016,9 @@ async fn commit_rechecks_source_relations_after_the_applying_checkpoint() {
 
     // The trigger is a deterministic stand-in for another writer committing
     // after the initial source snapshot but before filesystem mutation.
+    // Since v19, `source_relations` is a read-only view over the immutable
+    // `import_provenance_events_v19` table, so the race write targets the
+    // event table (with its required batch row) directly.
     fixture
         .database
         .lock()
@@ -3023,15 +3029,19 @@ async fn commit_rechecks_source_relations_after_the_applying_checkpoint() {
              AFTER UPDATE OF phase ON operations
              WHEN NEW.phase = 'applying'
              BEGIN
-                 INSERT INTO source_relations (
+                 INSERT OR IGNORE INTO import_batches (batch_id, status, started_at, finished_at)
+                 VALUES ('legacy:provenance:concurrent', 'completed', 2, 2);
+                 INSERT INTO import_provenance_events_v19 (
                      provenance_id, skill_id, directory_node_id, agent_client_id,
                      source_path, source_path_key, relationship, file_representation,
                      ownership, link_target_path, link_target_directory_id,
-                     content_fingerprint, source_kind, source_locator, imported_at
+                     content_fingerprint, source_kind, source_locator, imported_at,
+                     batch_id, source_class, local_source_path
                  )
                  SELECT 'provenance:concurrent', skill_id, NULL, agent_client_id,
                         path, path, 'import_copy', 'directory', 'observed_unmanaged',
-                        NULL, NULL, content_fingerprint, 'local', path, 2
+                        NULL, NULL, content_fingerprint, 'local', path, 2,
+                        'legacy:provenance:concurrent', 'legacy_unclassified', path
                  FROM deployment_relations
                  WHERE relation_id = 'observed:agent.demo:notes';
              END;",

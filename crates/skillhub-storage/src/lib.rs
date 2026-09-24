@@ -8,13 +8,13 @@ pub use database::VersionPin;
 pub use database::{
     ApplicationUpdateRepository, CatalogRepositorySqlite, CheckRepositorySqlite,
     ConflictRepository, CustomAgentRepository, Database, DeploymentRepository,
-    DeploymentRepositorySqlite, DirectoryRepository, GovernanceTaskRepository, ImportRepository,
+    DeploymentRepositorySqlite, DirectoryRepository, GovernanceHistoryEvent,
+    GovernanceHistoryRepository, GovernanceTaskRepository, ImportRepository,
     LlmConnectionTestRepository, LlmProfileRepository, MigrationReport, OperationRepositorySqlite,
-    CURRENT_SCHEMA_VERSION,
-    PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation, PhysicalTargetRegistration,
-    ProjectRepository, RecoveryPoint, RelationshipImpactSnapshot, RelationshipRepository,
-    ScanRepository, SearchCandidateRepository, SearchRepository, TargetRepository,
-    UsageEvidenceRepository,
+    PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation,
+    PhysicalTargetRegistration, ProjectRepository, ProvenanceRepository, RecoveryPoint,
+    RelationshipImpactSnapshot, RelationshipRepository, ScanRepository, SearchCandidateRepository,
+    SearchRepository, TargetRepository, UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
 };
 pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
