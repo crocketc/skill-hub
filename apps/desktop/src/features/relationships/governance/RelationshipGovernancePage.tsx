@@ -830,6 +830,11 @@ export function RelationshipGovernancePage({
         <DataState message={t("relationships.governance.loading")} state="loading" />
       ) : null}
 
+      <div className="sh-governance__history-topbar">
+        <Link data-testid="governance-history-link" to="/relationships/governance/history">
+          {t("relationships.governance.history.link")}
+        </Link>
+      </div>
       {ledgerQuery.isSuccess ? (
         visibleRows.length === 0 ? (
           <p role="status">

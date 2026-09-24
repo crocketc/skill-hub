@@ -2,6 +2,7 @@ import { RelationshipsLayout } from "./RelationshipsLayout";
 import { SkillGraphPage } from "./graph/SkillGraphPage";
 import { ConflictDecisionPage } from "./decisions/ConflictDecisionPage";
 import { RelationshipGovernancePage } from "./governance/RelationshipGovernancePage";
+import { GovernanceHistoryPage } from "./governance/GovernanceHistoryPage";
 
 /**
  * 任务 5 的三条懒加载路由入口。业务画布已分别由任务 6（图谱）、任务 7（冲突处理）、
@@ -28,4 +29,8 @@ export function RelationshipsDecisionsPage() {
 
 export function RelationshipsGovernancePage() {
   return <RelationshipGovernancePage />;
+}
+
+export function RelationshipsGovernanceHistoryPage() {
+  return <GovernanceHistoryPage />;
 }

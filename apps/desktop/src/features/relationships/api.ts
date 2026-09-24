@@ -60,6 +60,8 @@ export const relationshipsKeys = {
     [relationshipsKeys.root, "conflicts", params] as const,
   governance: (params: RelationshipGovernanceParams = {}) =>
     [relationshipsKeys.root, "governance", params] as const,
+  governanceHistory: (params: { page: number; pageSize: number }) =>
+    [relationshipsKeys.root, "governance-history", params] as const,
 };
 
 /** 只读关系查询门面；写入类操作由后续任务经统一异步包装接入。 */

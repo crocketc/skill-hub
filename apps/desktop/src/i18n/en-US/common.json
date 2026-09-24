@@ -2566,6 +2566,48 @@
         "revalidate": "Re-check",
         "none": "Blocked"
       },
+      "history": {
+        "title": "Governance history",
+        "link": "View governance history",
+        "listLink": "Back to governance list",
+        "time": "Time",
+        "object": "Object",
+        "scopeColumn": "Scope",
+        "actionColumn": "Action",
+        "resultColumn": "Result",
+        "followUp": "Follow-up",
+        "empty": "No governance history yet",
+        "loadError": "Governance history is unavailable",
+        "externalRemoved": "Source no longer exists (removed externally)",
+        "relink": "Relink",
+        "relinkDone": "Relinked to the new directory",
+        "prevPage": "Previous page",
+        "nextPage": "Next page",
+        "pageInfo": "Page {{page}} / {{total}} entries",
+        "action": {
+          "clean_source_copy": "Clean up source copy",
+          "retain_source_copy": "Keep source copy",
+          "relink_source_copy": "Relink source directory",
+          "centralize_management": "Bring under central library management",
+          "retain": "Keep",
+          "relink": "Relink",
+          "validate": "Re-check"
+        },
+        "result": {
+          "committed": "Executed",
+          "retained": "Kept",
+          "relinked": "Relinked",
+          "archived": "Archived",
+          "rolled_back": "Rolled back",
+          "failed": "Failed"
+        },
+        "scope": {
+          "agent": "Agent directory",
+          "project": "Project directory",
+          "shared": "Shared directory",
+          "central": "Central library"
+        }
+      },
       "revalidate": {
         "checked": "Check complete; status updated",
         "unchanged": "No content changes",

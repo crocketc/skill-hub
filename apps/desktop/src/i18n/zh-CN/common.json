@@ -2566,6 +2566,48 @@
         "revalidate": "重新检查",
         "none": "受阻"
       },
+      "history": {
+        "title": "治理历史",
+        "link": "查看治理历史",
+        "listLink": "返回治理清单",
+        "time": "时间",
+        "object": "对象",
+        "scopeColumn": "关系范围",
+        "actionColumn": "动作",
+        "resultColumn": "结果",
+        "followUp": "后续处理",
+        "empty": "暂无治理历史记录",
+        "loadError": "治理历史暂不可用",
+        "externalRemoved": "来源已不存在（外部删除）",
+        "relink": "重新关联",
+        "relinkDone": "已重新关联到新目录",
+        "prevPage": "上一页",
+        "nextPage": "下一页",
+        "pageInfo": "第 {{page}} 页 / 共 {{total}} 条",
+        "action": {
+          "clean_source_copy": "清理来源副本",
+          "retain_source_copy": "保留来源副本",
+          "relink_source_copy": "重新关联来源目录",
+          "centralize_management": "纳入集中库管理",
+          "retain": "保留",
+          "relink": "重新关联",
+          "validate": "重新检查"
+        },
+        "result": {
+          "committed": "已执行",
+          "retained": "已保留",
+          "relinked": "已重新关联",
+          "archived": "已归档",
+          "rolled_back": "已回滚",
+          "failed": "失败"
+        },
+        "scope": {
+          "agent": "Agent 目录",
+          "project": "项目目录",
+          "shared": "共享目录",
+          "central": "集中库"
+        }
+      },
       "revalidate": {
         "checked": "校验完成，状态已更新",
         "unchanged": "内容无变化",

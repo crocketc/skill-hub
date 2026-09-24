@@ -82,6 +82,7 @@ const RepoManagerPage = lazy(() => import("../features/discovery/RepoManagerPage
 const RelationshipsGraphPage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsGraphPage })));
 const RelationshipsDecisionsPage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsDecisionsPage })));
 const RelationshipsGovernancePage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsGovernancePage })));
+const RelationshipsGovernanceHistoryPage = lazy(() => import("../features/relationships/RelationshipsPages").then((m) => ({ default: m.RelationshipsGovernanceHistoryPage })));
 
 function RouteSuspense({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -306,6 +307,7 @@ export const appRouter = createBrowserRouter([
       { path: "relationships", element: <RouteSuspense><RelationshipsGraphPage /></RouteSuspense> },
       { path: "relationships/decisions", element: <RouteSuspense><RelationshipsDecisionsPage /></RouteSuspense> },
       { path: "relationships/governance", element: <RouteSuspense><RelationshipsGovernancePage /></RouteSuspense> },
+      { path: "relationships/governance/history", element: <RouteSuspense><RelationshipsGovernanceHistoryPage /></RouteSuspense> },
       // AR-012：发现主页 + 每种发现方式的独立子页（本机/在线/仓库/手动来源）。
       { path: "discovery", element: <DiscoveryRoute /> },
       { path: "discovery/local", element: <DiscoveryRoute view="local" /> },

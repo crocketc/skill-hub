@@ -67,6 +67,10 @@ vi.mock("../api/bindings", async (importOriginal) => {
           last_verified_at: null,
         },
       };
+      if (query.type === "list_governance_history") return {
+        type: "governance_history_page" as const,
+        payload: { items: [], total: 0, page: 1, page_size: 20 },
+      };
       return { type: "bootstrap_snapshot" as const, payload: {
         initialization_state: "initialized" as const,
         library_path: "C:\\Users\\Test\\SkillHub",
@@ -509,6 +513,22 @@ it("renders the three relationships routes with honest placeholders and module t
       "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
     ),
   ).not.toBeInTheDocument();
+});
+
+it("renders the governance history route as a sub-page of the governance workbench", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/relationships/governance/history");
+  render(<AppRouter />);
+
+  // 任务 12A：治理历史是治理清单的下级页面——独立路由、可返回清单，
+  // 不复用清单页本身（清单页有工作台空态，历史页有独立标题）。
+  expect(await screen.findByTestId("governance-history-page")).toBeVisible();
+  expect(screen.getByRole("heading", { level: 1, name: "Governance history" })).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Back to governance list" }),
+  ).toHaveAttribute("href", "/relationships/governance");
+  expect(await screen.findByText("No governance history yet")).toBeVisible();
 });
 
 it("preloads the relationships chunk and maps module titles with nested fallbacks", async () => {
