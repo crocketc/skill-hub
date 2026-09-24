@@ -139,7 +139,7 @@ async fn all_active_scope_checks_healthy_relations_and_stays_idempotent() {
     write_skill(&source, "# Notes\n");
     import_copy(&facade, &source, "Notes").await;
 
-    // Full 检查：目录健康 → Checked，health 升为 Normal。
+    // 导入触发已做 Full 校验：关系已是 Normal；显式复查 → Unchanged。
     let first = run_check(
         &facade,
         RelationshipCheckLevel::Full,
@@ -147,7 +147,10 @@ async fn all_active_scope_checks_healthy_relations_and_stays_idempotent() {
     )
     .await;
     assert_eq!(first.items.len(), 1, "one active local relation");
-    assert_eq!(first.items[0].status, RelationshipCheckItemStatus::Checked);
+    assert_eq!(
+        first.items[0].status,
+        RelationshipCheckItemStatus::Unchanged
+    );
     assert_eq!(
         first.items[0].health,
         Some(skillhub_core::relationship::SourceCopyHealth::Normal)
@@ -383,4 +386,148 @@ async fn permission_denied_and_offline_volume_keep_relations_active() {
 
     // 两种失败之后关系仍然活动：AllActive 仍能选中它。
     assert_eq!(offline.items.len(), 1);
+}
+
+#[tokio::test]
+async fn successful_import_immediately_verifies_the_new_relation() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = workspace.path().join("fresh-src");
+    write_skill(&source, "# Fresh\n");
+    import_copy(&facade, &source, "Fresh").await;
+
+    // 5B：导入成功触发 Full 校验 → 关系 health 升为 Normal、有验证时间。
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().unwrap();
+    let relations = database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("relations");
+    assert_eq!(relations.len(), 1);
+    assert_eq!(
+        relations[0].health,
+        skillhub_core::relationship::SourceCopyHealth::Normal,
+        "the import trigger verified the fresh relation"
+    );
+    assert!(relations[0].last_verified_at.is_some());
+}
+
+#[tokio::test]
+async fn path_scoped_check_only_verifies_relations_on_that_path() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = workspace.path().join("scoped-src");
+    write_skill(&source, "# Scoped\n");
+    import_copy(&facade, &source, "Scoped").await;
+
+    let report = facade
+        .run_relationship_check_for_path_for_tests(
+            source.to_string_lossy().as_ref(),
+            RelationshipCheckLevel::Full,
+        )
+        .expect("path check");
+    assert_eq!(report.items.len(), 1, "the path selects its relation");
+    assert_eq!(
+        report.items[0].health,
+        Some(skillhub_core::relationship::SourceCopyHealth::Normal)
+    );
+    assert_eq!(
+        report.items[0].status,
+        RelationshipCheckItemStatus::Unchanged
+    );
+
+    // 无关路径选不中任何关系。
+    let unrelated = facade
+        .run_relationship_check_for_path_for_tests(
+            workspace.path().join("elsewhere").to_str().unwrap(),
+            RelationshipCheckLevel::Full,
+        )
+        .expect("path check");
+    assert!(unrelated.items.is_empty());
+}
+
+#[tokio::test]
+async fn legacy_reconciliation_reclassifies_only_provable_sources() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let library_root = workspace.path().join("library");
+
+    // 两个迁移形态的 legacy 事件：一个落在集中库内（可证明），
+    // 一个是普通用户目录（不可证明）。
+    let database = facade.database_for_tests().clone();
+    let seed = |provenance_id: &str, skill: skillhub_core::SkillId, path: &str| {
+        let database = database.lock().unwrap();
+        let repository = database.provenance_repository();
+        repository
+            .begin_import_batch(&format!("legacy:{provenance_id}"), 42)
+            .expect("seed batch");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO import_provenance_events_v19 \
+                 (provenance_id, skill_id, source_path, source_path_key, relationship, \
+                  file_representation, ownership, content_fingerprint, source_kind, source_locator, \
+                  imported_at, batch_id, source_class, local_source_path) \
+                 VALUES (?1, ?2, ?3, ?4, 'source_copy', 'directory', 'independent', 'hash-legacy', \
+                  'local', ?3, 42, ?5, 'legacy_unclassified', ?3)",
+                rusqlite::params![
+                    provenance_id,
+                    skill.to_string(),
+                    path,
+                    path,
+                    format!("legacy:{provenance_id}")
+                ],
+            )
+            .expect("seed legacy event");
+    };
+    let central_skill = skillhub_core::SkillId::new();
+    let central_dir = library_root.join("centralized");
+    std::fs::create_dir_all(&central_dir).expect("central dir");
+    seed(
+        "prov-legacy-1",
+        central_skill,
+        central_dir.to_str().unwrap(),
+    );
+    let orphan_skill = skillhub_core::SkillId::new();
+    seed(
+        "prov-legacy-2",
+        orphan_skill,
+        workspace
+            .path()
+            .join("users/Someone/notes")
+            .to_str()
+            .unwrap(),
+    );
+
+    let first = facade.reconcile_legacy_import_events();
+    match first {
+        Ok(report) => {
+            assert_eq!(report.reclassified, 1, "central-library source is provable");
+            assert_eq!(report.retained, 1, "user dir stays unclassified");
+        }
+        Err(error) => panic!("reconciliation failed: {error:?}"),
+    }
+
+    // 幂等：重复对账不再追加继承事件。
+    let second = facade.reconcile_legacy_import_events().expect("replay");
+    assert_eq!(second.reclassified, 0);
+
+    let database = database.lock().unwrap();
+    let events = database
+        .provenance_repository()
+        .list_provenance_events_for_skill(central_skill)
+        .expect("events");
+    assert!(events
+        .iter()
+        .any(|event| { event.source_class == skillhub_core::ImportSourceClass::CentralLibrary }));
+    assert_eq!(
+        events
+            .iter()
+            .filter(
+                |event| event.source_class == skillhub_core::ImportSourceClass::LegacyUnclassified
+            )
+            .count(),
+        1,
+        "the original legacy event is retained as history"
+    );
 }

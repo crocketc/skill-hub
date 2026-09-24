@@ -24,6 +24,7 @@ use skillhub_core::{AppError, AppResult, OperationId};
 use skillhub_storage::Database;
 use skillhub_storage::GovernanceHistoryEvent;
 
+use crate::ClassifiedImportSource;
 use crate::LocalApplicationFacade;
 
 /// Relationship-path probing abstraction. Production resolves through the
@@ -312,4 +313,158 @@ fn now_epoch_seconds() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
+}
+
+impl LocalApplicationFacade {
+    /// 一次性 legacy 对账（plan 5.13）：对迁移产生的 legacy_unclassified
+    /// 事件重新分类。只有能被正面根证据（集中库根、目录节点、Agent 目标、
+    /// 项目根、git 上游）证明的来源才追加已分类的继承事件；证明不了的
+    /// 原样保留，绝不把 UserLocal 兜底当作证明。幂等：同一
+    /// (skill, fingerprint) 已有已分类事件时跳过。
+    pub fn reconcile_legacy_import_events(&self) -> AppResult<LegacyReconciliationReport> {
+        let library = self.library_runtime.snapshot()?;
+        let central_root = library.root.to_string_lossy().into_owned();
+        self.with_database("execute.reconcile_legacy_import_events", |database| {
+            let repository = database.provenance_repository();
+            let legacy = repository.list_unclassified_legacy_events()?;
+            let mut reclassified = 0usize;
+            let mut retained = 0usize;
+            for event in legacy {
+                let has_classified_successor = repository
+                    .list_provenance_events_for_skill(event.skill_id)?
+                    .into_iter()
+                    .any(|existing| {
+                        existing.provenance_id != event.provenance_id
+                            && existing.source_class
+                                != skillhub_core::ImportSourceClass::LegacyUnclassified
+                            && existing.content_fingerprint == event.content_fingerprint
+                    });
+                if has_classified_successor {
+                    continue;
+                }
+                let proven = event
+                    .local_source_path
+                    .as_ref()
+                    .and_then(|path| {
+                        Self::classify_import_source_core(
+                            database,
+                            &event.source,
+                            path,
+                            Some(&central_root),
+                        )
+                        .ok()
+                    })
+                    .flatten();
+                // git 上游坐标本身就是正面证据（来源是仓库下载）。
+                let proven = match proven {
+                    Some(classified) => Some(classified),
+                    None if event.source.kind == skillhub_core::SourceKind::Git => {
+                        Some(ClassifiedImportSource {
+                            source_class: skillhub_core::ImportSourceClass::Online,
+                            physical_source_id: None,
+                            source_container_id: None,
+                            agent_client_id: None,
+                        })
+                    }
+                    None => None,
+                };
+                match proven {
+                    Some(classified) => {
+                        repository.ensure_batch(RECONCILIATION_BATCH_ID, now_epoch_seconds())?;
+                        repository.append_provenance_event(
+                            &skillhub_core::import::ImportProvenanceEvent {
+                                provenance_id: format!("prov-{}", OperationId::new()),
+                                batch_id: RECONCILIATION_BATCH_ID.to_owned(),
+                                skill_id: event.skill_id,
+                                source_class: classified.source_class,
+                                source: event.source.clone(),
+                                local_source_path: event.local_source_path.clone(),
+                                source_container_id: classified.source_container_id,
+                                physical_source_id: classified.physical_source_id,
+                                agent_client_id: classified.agent_client_id,
+                                content_fingerprint: event.content_fingerprint.clone(),
+                                imported_at: now_epoch_seconds(),
+                            },
+                        )?;
+                        reclassified += 1;
+                    }
+                    None => retained += 1,
+                }
+            }
+            Ok(LegacyReconciliationReport {
+                reclassified,
+                retained,
+            })
+        })
+    }
+
+    /// 导入成功后的受影响关系校验（plan 5.12）：对刚落库的关系跑一次
+    /// Full 校验（指纹即导入哈希），失败只记项不回滚导入。
+    pub(crate) fn validate_relationships_after_import(&self, skill_id: skillhub_core::SkillId) {
+        let _ = self.run_relationship_check(RunRelationshipCheck {
+            level: RelationshipCheckLevel::Full,
+            scope: RelationshipCheckScope::Skill { skill_id },
+        });
+    }
+
+    /// 路径变化后的受影响关系校验（plan 5.12）：只检查 source path 命中
+    /// 该路径（或位于其下）的活动关系，绝不触发全量 hash。
+    pub(crate) fn validate_relationships_after_path_change(&self, path: &str) {
+        let Ok(report) = self.run_relationship_check_for_path(path, RelationshipCheckLevel::Light)
+        else {
+            return;
+        };
+        let _ = report;
+    }
+
+    /// 仅供测试：按路径选择关系并执行校验，返回报告供断言。
+    #[doc(hidden)]
+    pub fn run_relationship_check_for_path_for_tests(
+        &self,
+        path: &str,
+        level: RelationshipCheckLevel,
+    ) -> AppResult<RelationshipCheckReport> {
+        self.run_relationship_check_for_path(path, level)
+    }
+
+    fn run_relationship_check_for_path(
+        &self,
+        path: &str,
+        level: RelationshipCheckLevel,
+    ) -> AppResult<RelationshipCheckReport> {
+        let path_key = skillhub_core::deployment::observed_path_key(path);
+        let scope =
+            self.with_database("execute.relationship_check_for_path.select", |database| {
+                let relation_ids = database
+                    .relationship_repository()
+                    .list_source_copy_relations(true)?
+                    .into_iter()
+                    .filter(|relation| {
+                        relation.source_path_key == path_key
+                            || path_lives_under(&relation.source_path, path)
+                    })
+                    .map(|relation| relation.relation_id)
+                    .collect::<Vec<_>>();
+                Ok(RelationshipCheckScope::RelationIds { relation_ids })
+            })?;
+        match self.run_relationship_check(RunRelationshipCheck { level, scope })? {
+            AppCommandResult::RelationshipCheckReport(report) => Ok(report),
+            _ => Err(AppError::new(
+                skillhub_core::ErrorCode::InternalError,
+                skillhub_core::Severity::Error,
+            )
+            .with_param("operation", "relationship_check_for_path")),
+        }
+    }
+}
+
+/// legacy 对账统一挂靠的批次；与迁移的 `legacy:` 约定区分开。
+pub const RECONCILIATION_BATCH_ID: &str = "legacy-reconciliation";
+
+/// legacy 对账结果摘要。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyReconciliationReport {
+    pub reclassified: usize,
+    pub retained: usize,
 }

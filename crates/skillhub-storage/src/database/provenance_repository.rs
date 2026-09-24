@@ -201,6 +201,17 @@ impl<'a> ProvenanceRepository<'a> {
 
     /// Opens an import batch (`status='running'`). Batch bookkeeping is not a
     /// relationship fact and never invalidates the relationship projection.
+    /// Idempotent batch creation for callers that only know "this batch must
+    /// exist before appending events" (implicit import batches, the legacy
+    /// reconciliation batch). Returns whether a new row was created.
+    pub fn ensure_batch(&self, batch_id: &str, started_at: i64) -> AppResult<bool> {
+        if self.import_batch(batch_id)?.is_some() {
+            return Ok(false);
+        }
+        self.begin_import_batch(batch_id, started_at)?;
+        Ok(true)
+    }
+
     pub fn begin_import_batch(&self, batch_id: &str, started_at: i64) -> AppResult<()> {
         let transaction = self
             .database

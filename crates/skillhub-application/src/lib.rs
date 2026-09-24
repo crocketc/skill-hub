@@ -3514,6 +3514,7 @@ impl LocalApplicationFacade {
         request: skillhub_core::api::RescanSkill,
     ) -> AppResult<AppCommandResult> {
         self.scan_scope_ids(vec![request.scope_id.clone()])?;
+        let rescan_path = request.path.clone();
         let stored = self.with_database("execute.rescan_skill", |database| {
             let mut scanner = self
                 .scan_service
@@ -3523,6 +3524,8 @@ impl LocalApplicationFacade {
             database.scan_repository().replace(&result)
         })?;
         self.reconcile_observed_deployments(&stored)?;
+        // 5B：单 Skill 重扫后对命中该路径的来源关系做 Light 校验。
+        self.validate_relationships_after_path_change(&rescan_path);
         Ok(AppCommandResult::ScanResult(stored))
     }
 
@@ -6893,6 +6896,12 @@ impl LocalApplicationFacade {
             Ok(())
         })?;
         let result = self.commit_import_apply(&prepared, &request, &batch_id, &candidate_key);
+        if let Ok(AppCommandResult::ImportSummary(summary)) = result.as_ref() {
+            if let Some(skill_id) = summary.items.first().and_then(|item| item.skill_id) {
+                // 5B：导入成功即触发受影响关系的定向校验；失败不影响导入。
+                self.validate_relationships_after_import(skill_id);
+            }
+        }
         if let Err(error) = result.as_ref() {
             let _ = self.with_database("execute.commit_import.failure_item", |database| {
                 database.provenance_repository().record_batch_item(
@@ -7597,6 +7606,28 @@ impl LocalApplicationFacade {
         resolved_root: &str,
         central_root: Option<&str>,
     ) -> AppResult<ClassifiedImportSource> {
+        Ok(
+            match Self::classify_import_source_core(database, source, resolved_root, central_root)?
+            {
+                Some(classified) => classified,
+                None => ClassifiedImportSource {
+                    source_class: skillhub_core::ImportSourceClass::UserLocal,
+                    physical_source_id: skillhub_core::physical_id_for_path(resolved_root),
+                    source_container_id: None,
+                    agent_client_id: None,
+                },
+            },
+        )
+    }
+
+    /// 带可证明性的分类核心：None 表示没有任何正面根证据（plan 5.13 的
+    /// legacy 对账只用它，不把 UserLocal 兜底当作证明）。
+    fn classify_import_source_core(
+        database: &Database,
+        source: &SourceDescriptor,
+        resolved_root: &str,
+        central_root: Option<&str>,
+    ) -> AppResult<Option<ClassifiedImportSource>> {
         #[derive(Clone, Copy, PartialEq, Eq)]
         enum RootKind {
             Central,
@@ -7610,12 +7641,12 @@ impl LocalApplicationFacade {
         };
         if source.locator.as_local_path().is_none() {
             // 在线来源只保存业务坐标；临时缓存不产生长期身份事实。
-            return Ok(ClassifiedImportSource {
+            return Ok(Some(ClassifiedImportSource {
                 source_class: skillhub_core::ImportSourceClass::Online,
                 physical_source_id: None,
                 source_container_id: None,
                 agent_client_id: None,
-            });
+            }));
         }
         // 目录节点先收集，Agent 逻辑目标后收集：同为最长匹配时目标自带
         // client_id，优先作为归属证据。
@@ -7669,8 +7700,8 @@ impl LocalApplicationFacade {
             .filter(|(root, _, _, _)| canonical == *root || path_lives_under(&canonical, root))
             .max_by_key(|(root, kind, _, _)| (root.chars().count(), kind_rank(kind)));
         let physical = skillhub_core::physical_id_for_path(resolved_root);
-        Ok(match matched {
-            Some((_, kind, node_id, client_id)) => ClassifiedImportSource {
+        Ok(
+            matched.map(|(_, kind, node_id, client_id)| ClassifiedImportSource {
                 source_class: match kind {
                     RootKind::Central => skillhub_core::ImportSourceClass::CentralLibrary,
                     RootKind::Project => skillhub_core::ImportSourceClass::RegisteredProject,
@@ -7682,14 +7713,8 @@ impl LocalApplicationFacade {
                 },
                 source_container_id: node_id,
                 agent_client_id: client_id,
-            },
-            None => ClassifiedImportSource {
-                source_class: skillhub_core::ImportSourceClass::UserLocal,
-                physical_source_id: physical,
-                source_container_id: None,
-                agent_client_id: None,
-            },
-        })
+            }),
+        )
     }
 
     /// 库内每个 Skill 当前版本的 (skill_id, content_hash)。
