@@ -1,4 +1,5 @@
 mod coalescer;
+mod native;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -7,6 +8,10 @@ use std::time::Duration;
 use skillhub_core::AppResult;
 
 pub use coalescer::WatchCoalescer;
+pub use native::{
+    ManualWatchClock, NativeRelationshipWatcher, NativeWatchBackend, NativeWatchEvent,
+    NativeWatchEventKind, NotifyWatchBackend, SystemWatchClock, WatchClock,
+};
 pub use skillhub_core::{WatchHint, WatchHintKind};
 
 /// In-process watcher boundary. Native OS backends can feed it hints, while
@@ -41,6 +46,19 @@ impl Watcher {
         }
     }
 
+    pub fn with_coalescer<I, P>(roots: I, coalescer: WatchCoalescer) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        Self {
+            active_roots: roots.into_iter().map(Into::into).collect(),
+            coalescer,
+            running: false,
+            compensation_pending: false,
+        }
+    }
+
     pub fn active_roots(&self) -> impl Iterator<Item = &Path> {
         self.active_roots.iter().map(PathBuf::as_path)
     }
@@ -60,7 +78,7 @@ impl Watcher {
 
     pub fn stop(&mut self) -> AppResult<()> {
         self.running = false;
-        self.coalescer = WatchCoalescer::new(self.coalescer.stable_window());
+        self.coalescer.reset();
         self.compensation_pending = false;
         Ok(())
     }

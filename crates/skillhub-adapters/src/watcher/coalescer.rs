@@ -1,28 +1,43 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use skillhub_core::WatchHint;
+
+use super::native::{SystemWatchClock, WatchClock};
 
 /// Coalesces noisy editor notifications into one confirming-scan hint per
 /// nearest recognized Skill or target.
 #[derive(Debug)]
 pub struct WatchCoalescer {
-    stable_window: Duration,
-    pending: BTreeMap<String, (Instant, WatchHint)>,
+    stable_window_millis: u64,
+    clock: Box<dyn WatchClock>,
+    pending: BTreeMap<String, (u64, WatchHint)>,
     recognized_skill_roots: BTreeSet<String>,
 }
 
 impl WatchCoalescer {
     pub fn new(stable_window: Duration) -> Self {
+        Self::with_clock(stable_window, Box::new(SystemWatchClock::new()))
+    }
+
+    pub fn with_clock(stable_window: Duration, clock: Box<dyn WatchClock>) -> Self {
         Self {
-            stable_window,
+            stable_window_millis: stable_window.as_millis().try_into().unwrap_or(u64::MAX),
+            clock,
             pending: BTreeMap::new(),
             recognized_skill_roots: BTreeSet::new(),
         }
     }
 
     pub fn stable_window(&self) -> Duration {
-        self.stable_window
+        Duration::from_millis(self.stable_window_millis)
+    }
+
+    /// Discard pending hints and learned skill roots while keeping the clock
+    /// and stable window; the stop path uses this to keep its identity.
+    pub fn reset(&mut self) {
+        self.pending.clear();
+        self.recognized_skill_roots.clear();
     }
 
     pub fn set_recognized_skill_roots<I, P>(&mut self, roots: I)
@@ -42,7 +57,7 @@ impl WatchCoalescer {
                 .insert(normalize_path(&skill_root));
         }
         let key = hint.coalescing_key_with_skill_roots(&self.recognized_skill_roots);
-        self.pending.insert(key, (Instant::now(), hint));
+        self.pending.insert(key, (self.clock.now_millis(), hint));
     }
 
     pub fn len(&self) -> usize {
@@ -63,11 +78,13 @@ impl WatchCoalescer {
     }
 
     pub fn flush_ready(&mut self) -> Vec<WatchHint> {
-        let now = Instant::now();
+        let now = self.clock.now_millis();
         let mut ready = Vec::new();
         let mut pending = BTreeMap::new();
         for (key, (seen_at, hint)) in std::mem::take(&mut self.pending) {
-            if now.duration_since(seen_at) >= self.stable_window || self.stable_window.is_zero() {
+            if self.stable_window_millis == 0
+                || now >= seen_at.saturating_add(self.stable_window_millis)
+            {
                 ready.push(hint);
             } else {
                 pending.insert(key, (seen_at, hint));
