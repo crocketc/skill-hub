@@ -24,6 +24,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use super::source_copy::{SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact};
 use crate::deployment::{DeploymentRelationFact, ObservedMatchState};
 use crate::relationship::{
     calculate_removal_impact, AgentDirectoryCapabilityFact, DirectoryRecognition,
@@ -31,6 +32,69 @@ use crate::relationship::{
     RemovalImpactFact,
 };
 use crate::SkillId;
+
+/// Tagged current relation; existing deployment ledger remains intact.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(tag = "kind", content = "fact", rename_all = "snake_case")]
+pub enum GovernableRelationFact {
+    SourceCopy(SourceCopyRelationFact),
+    Deployment(DeploymentRelationFact),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum GovernableRelationStatus {
+    NeedsAttention,
+    Retained,
+    Normal,
+    NeedsValidation,
+    Blocked,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GovernableRelationProjection {
+    pub relation_id: String,
+    pub skill_id: Option<SkillId>,
+    pub endpoint: String,
+    pub status: GovernableRelationStatus,
+}
+
+pub fn project_governable_relation(fact: &GovernableRelationFact) -> GovernableRelationProjection {
+    match fact {
+        GovernableRelationFact::SourceCopy(copy) => {
+            let status = match copy.health {
+                SourceCopyHealth::ContentChanged | SourceCopyHealth::OperationFailed => {
+                    GovernableRelationStatus::NeedsAttention
+                }
+                SourceCopyHealth::PermissionLimited | SourceCopyHealth::ManagedOccupied => {
+                    GovernableRelationStatus::Blocked
+                }
+                SourceCopyHealth::NeedsValidation => GovernableRelationStatus::NeedsValidation,
+                SourceCopyHealth::Normal if copy.decision == SourceCopyDecision::Retained => {
+                    GovernableRelationStatus::Retained
+                }
+                SourceCopyHealth::Normal => GovernableRelationStatus::Normal,
+            };
+            GovernableRelationProjection {
+                relation_id: copy.relation_id.clone(),
+                skill_id: Some(copy.skill_id),
+                endpoint: copy.source_path.clone(),
+                status,
+            }
+        }
+        GovernableRelationFact::Deployment(deployment) => GovernableRelationProjection {
+            relation_id: deployment.relation_id.clone(),
+            skill_id: deployment.skill_id,
+            endpoint: deployment.path.clone(),
+            status: if deployment.active && deployment.released_at.is_none() {
+                GovernableRelationStatus::Normal
+            } else {
+                GovernableRelationStatus::Blocked
+            },
+        },
+    }
+}
 
 /// The four quick filters of the governance list.  They select from one
 /// ledger; they are not four separate pages.

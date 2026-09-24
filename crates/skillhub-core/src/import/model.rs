@@ -2,6 +2,62 @@ use serde::{Deserialize, Serialize};
 
 use crate::source::SourceDescriptor;
 
+/// Long-lived provenance classification; acquisition cache paths are excluded.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourceClass {
+    AgentLocal,
+    UserLocal,
+    RegisteredProject,
+    Online,
+    CentralLibrary,
+    LegacyUnclassified,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AcquisitionWorkspaceKind {
+    DirectSource,
+    TemporaryCache,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportAcquisitionContext {
+    pub workspace_kind: AcquisitionWorkspaceKind,
+    pub workspace_path: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportOutcomeStatus {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+/// Resolve the committed Skill identity before recording import facts.
+pub fn final_skill_for_import(
+    decision: super::ImportDecision,
+    status: ImportOutcomeStatus,
+    existing_skill_id: Option<crate::SkillId>,
+    created_skill_id: Option<crate::SkillId>,
+) -> Option<crate::SkillId> {
+    if status != ImportOutcomeStatus::Succeeded {
+        return None;
+    }
+    match decision {
+        super::ImportDecision::Skip | super::ImportDecision::EstablishManagedRelation => None,
+        super::ImportDecision::ReuseExisting => existing_skill_id,
+        _ => created_skill_id,
+    }
+}
+
+/// Legacy direct relation action is refused by the new import fact flow.
+pub fn legacy_managed_relation_rejected(decision: super::ImportDecision) -> bool {
+    decision == super::ImportDecision::EstablishManagedRelation
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateOwnership {

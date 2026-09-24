@@ -18,5 +18,9 @@ pub use migration::{
     OriginalMigrationConflictReason, OriginalMigrationFacts, OriginalMigrationPlan,
     OriginalMigrationResult, OriginalMigrationState,
 };
-pub use model::{CandidateOwnership, ImportAction, ImportCandidate};
-pub use provenance::ImportProvenance;
+pub use model::{
+    final_skill_for_import, legacy_managed_relation_rejected, AcquisitionWorkspaceKind,
+    CandidateOwnership, ImportAcquisitionContext, ImportAction, ImportCandidate,
+    ImportOutcomeStatus, ImportSourceClass,
+};
+pub use provenance::{ImportBatch, ImportProvenance, ImportProvenanceEvent};

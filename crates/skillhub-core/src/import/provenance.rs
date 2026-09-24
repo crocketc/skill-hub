@@ -1,9 +1,44 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::CandidateOwnership;
+use super::{CandidateOwnership, ImportSourceClass};
 use crate::source::SourceDescriptor;
 use crate::SkillId;
+
+/// Immutable fact for one successful import, including reuse of an existing Skill.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportProvenanceEvent {
+    pub provenance_id: String,
+    pub batch_id: String,
+    pub skill_id: SkillId,
+    pub source_class: ImportSourceClass,
+    pub source: SourceDescriptor,
+    /// Original local source only; never an online download workspace.
+    pub local_source_path: Option<String>,
+    pub source_container_id: Option<String>,
+    pub physical_source_id: Option<String>,
+    pub agent_client_id: Option<String>,
+    pub content_fingerprint: String,
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
+    pub imported_at: i64,
+}
+
+impl ImportProvenanceEvent {
+    /// Reject an acquisition cache being recorded as an online source path.
+    pub fn has_valid_source_coordinates(&self) -> bool {
+        !matches!(self.source_class, ImportSourceClass::Online) || self.local_source_path.is_none()
+    }
+}
+
+/// Query handle and count for one import operation; the ID is internal UI state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatch {
+    pub batch_id: String,
+    pub imported_count: u32,
+}
 
 /// OPT-20260914-08：导入即存证。
 ///
