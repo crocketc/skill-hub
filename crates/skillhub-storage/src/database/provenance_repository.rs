@@ -25,6 +25,55 @@ pub struct ProvenanceRepository<'a> {
     database: &'a Database,
 }
 
+/// Terminal status for closing an import batch. The 0019 schema CHECK admits
+/// `completed`/`failed`/`cancelled` — a running batch cannot be a final state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImportBatchFinalStatus {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// Outcome of one import candidate inside a batch (`import_batch_items`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImportBatchItemStatus {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Skipped,
+}
+
+/// One candidate outcome to record for an import batch. `skill_id`,
+/// `provenance_id`, and `source_relation_id` are optional because failed,
+/// cancelled, and skipped candidates may never have produced those entities.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportBatchItemRecord {
+    pub batch_id: String,
+    pub candidate_key: String,
+    pub skill_id: Option<SkillId>,
+    pub provenance_id: Option<String>,
+    pub source_relation_id: Option<String>,
+    pub status: ImportBatchItemStatus,
+    pub reason: Option<String>,
+}
+
+fn final_status_code(value: ImportBatchFinalStatus) -> &'static str {
+    match value {
+        ImportBatchFinalStatus::Completed => "completed",
+        ImportBatchFinalStatus::Failed => "failed",
+        ImportBatchFinalStatus::Cancelled => "cancelled",
+    }
+}
+
+fn item_status_code(value: ImportBatchItemStatus) -> &'static str {
+    match value {
+        ImportBatchItemStatus::Succeeded => "succeeded",
+        ImportBatchItemStatus::Failed => "failed",
+        ImportBatchItemStatus::Cancelled => "cancelled",
+        ImportBatchItemStatus::Skipped => "skipped",
+    }
+}
+
 impl<'a> ProvenanceRepository<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
@@ -252,6 +301,122 @@ impl<'a> ProvenanceRepository<'a> {
             batch_id: batch_id.to_owned(),
             imported_count: u32::try_from(count).unwrap_or(u32::MAX),
         }))
+    }
+
+    /// Closes an import batch with a terminal status and finish time.
+    /// Final-state semantics (pinned by tests): finalizing a running batch
+    /// writes `status`/`finished_at`; replaying the identical terminal state
+    /// is an idempotent no-op; any other transition on an already-finalized
+    /// batch, or finalizing a missing batch, is rejected. Batch bookkeeping is
+    /// not a relationship fact and never bumps the projection revision.
+    pub fn finalize_import_batch(
+        &self,
+        batch_id: &str,
+        status: ImportBatchFinalStatus,
+        finished_at: i64,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::finalize_import_batch_tx(&transaction, batch_id, status, finished_at)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for closing an import batch inside the
+    /// caller's transaction.
+    pub fn finalize_import_batch_tx(
+        transaction: &Transaction<'_>,
+        batch_id: &str,
+        status: ImportBatchFinalStatus,
+        finished_at: i64,
+    ) -> AppResult<()> {
+        let status_code = final_status_code(status);
+        let stored = transaction
+            .query_row(
+                "SELECT status, finished_at FROM import_batches WHERE batch_id=?1",
+                [batch_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .optional()
+            .map_err(database_error)?;
+        match stored {
+            None => Err(missing_import_batch(batch_id)),
+            Some((current, _)) if current == "running" => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE import_batches SET status=?2, finished_at=?3
+                         WHERE batch_id=?1 AND status='running'",
+                        params![batch_id, status_code, finished_at],
+                    )
+                    .map_err(database_error)?;
+                if changed == 0 {
+                    return Err(missing_import_batch(batch_id));
+                }
+                Ok(())
+            }
+            Some((current, stored_finished_at))
+                if current == status_code && stored_finished_at == Some(finished_at) =>
+            {
+                Ok(())
+            }
+            Some((current, _)) => Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "import_batch")
+                .with_param("reason", "import_batch_already_finalized")
+                .with_param("status", current)
+                .with_action(RecoveryAction::Retry)),
+        }
+    }
+
+    /// Records one candidate outcome with an explicit status (`succeeded`,
+    /// `failed`, `cancelled`, or `skipped`) and an optional reason, so
+    /// failure/skip/cancel evidence is as reachable as the success rows that
+    /// the event append writes automatically.
+    pub fn record_batch_item(&self, item: &ImportBatchItemRecord) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::record_batch_item_tx(&transaction, item)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for recording a candidate outcome inside the
+    /// caller's transaction.
+    pub fn record_batch_item_tx(
+        transaction: &Transaction<'_>,
+        item: &ImportBatchItemRecord,
+    ) -> AppResult<()> {
+        for field in [
+            ("batch_id", item.batch_id.as_str()),
+            ("candidate_key", item.candidate_key.as_str()),
+        ] {
+            if field.1.trim().is_empty() {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", field.0)
+                    .with_action(RecoveryAction::Retry));
+            }
+        }
+        transaction
+            .execute(
+                "INSERT INTO import_batch_items
+                 (batch_id, candidate_key, skill_id, provenance_id, source_relation_id,
+                  status, reason)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    item.batch_id,
+                    item.candidate_key,
+                    item.skill_id.map(|skill_id| skill_id.to_string()),
+                    item.provenance_id,
+                    item.source_relation_id,
+                    item_status_code(item.status),
+                    item.reason,
+                ],
+            )
+            .map(|_| ())
+            .map_err(database_error)
     }
 
     /// Immutable import facts for one Skill in chronological order. Re-imports
@@ -639,6 +804,13 @@ fn decode_event(value: EventRow) -> Option<ImportProvenanceEvent> {
         content_fingerprint: value.10,
         imported_at: value.11,
     })
+}
+
+fn missing_import_batch(batch_id: &str) -> AppError {
+    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+        .with_param("field", "import_batch")
+        .with_param("batch_id", batch_id.to_owned())
+        .with_action(RecoveryAction::Retry)
 }
 
 fn parse_source_class(value: &str) -> Option<ImportSourceClass> {

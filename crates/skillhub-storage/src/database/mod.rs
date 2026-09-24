@@ -62,7 +62,9 @@ pub use llm_provider_repository::LlmProviderRepository;
 pub use migrations::{MigrationReport, CURRENT_SCHEMA_VERSION};
 pub use operation_repository::OperationRepositorySqlite;
 pub use project_repository::{ProjectRepository, VersionPin};
-pub use provenance_repository::ProvenanceRepository;
+pub use provenance_repository::{
+    ImportBatchFinalStatus, ImportBatchItemRecord, ImportBatchItemStatus, ProvenanceRepository,
+};
 pub use recovery_point::RecoveryPoint;
 pub use relationship_repository::{
     ConflictAnalysisRepository, ConflictRepository, GovernanceTaskRepository,

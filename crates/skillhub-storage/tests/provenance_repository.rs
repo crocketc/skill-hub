@@ -10,7 +10,10 @@ use skillhub_core::import::{
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{OperationId, SkillId};
-use skillhub_storage::{Database, CURRENT_SCHEMA_VERSION};
+use skillhub_storage::{
+    Database, ImportBatchFinalStatus, ImportBatchItemRecord, ImportBatchItemStatus,
+    ProvenanceRepository, CURRENT_SCHEMA_VERSION,
+};
 
 /// observed_deployments 等表对 skills(id) 有外键约束，先落父行。
 fn insert_skill(database: &Database, skill_id: SkillId) {
@@ -503,4 +506,159 @@ fn provenance_history_keeps_multiple_sources_and_duplicate_import_facts() {
             .imported_at,
         2_000
     );
+}
+
+#[test]
+fn import_batch_lifecycle_records_non_succeeded_items_and_finalizes_once() {
+    let database = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    let repository = database.provenance_repository();
+    repository.begin_import_batch("batch", 41).unwrap();
+
+    // 失败/跳过候选有了显式落库通道（带原因），不再是只有成功项可写。
+    for (candidate_key, status, reason) in [
+        (
+            "candidate-failed",
+            ImportBatchItemStatus::Failed,
+            "source disappeared before commit",
+        ),
+        (
+            "candidate-skipped",
+            ImportBatchItemStatus::Skipped,
+            "duplicate of an existing skill",
+        ),
+    ] {
+        repository
+            .record_batch_item(&ImportBatchItemRecord {
+                batch_id: "batch".into(),
+                candidate_key: candidate_key.into(),
+                skill_id: None,
+                provenance_id: None,
+                source_relation_id: None,
+                status,
+                reason: Some(reason.into()),
+            })
+            .unwrap();
+    }
+
+    let event = import_event(skill, "event-1");
+    repository.append_provenance_event(&event).unwrap();
+
+    // 终态落库：status 与 finished_at 一起写入。
+    repository
+        .finalize_import_batch("batch", ImportBatchFinalStatus::Completed, 99)
+        .unwrap();
+    let (status, finished_at): (String, Option<i64>) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT status, finished_at FROM import_batches WHERE batch_id='batch'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "completed");
+    assert_eq!(finished_at, Some(99));
+
+    // 批次仍可通过 import_batch 观察；计数只统计成功候选。
+    let batch = repository.import_batch("batch").unwrap().expect("batch");
+    assert_eq!(batch.batch_id, "batch");
+    assert_eq!(batch.imported_count, 1);
+
+    // 失败/跳过原因可读回。
+    let (failed_reason, skipped_reason): (String, String) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT
+                 (SELECT reason FROM import_batch_items WHERE batch_id='batch' AND candidate_key='candidate-failed'),
+                 (SELECT reason FROM import_batch_items WHERE batch_id='batch' AND candidate_key='candidate-skipped')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(failed_reason, "source disappeared before commit");
+    assert_eq!(skipped_reason, "duplicate of an existing skill");
+
+    // 终态语义：完全相同的重放是幂等无操作；其他任何终态迁移都被拒绝。
+    repository
+        .finalize_import_batch("batch", ImportBatchFinalStatus::Completed, 99)
+        .expect("identical finalize replay is an idempotent no-op");
+    assert!(
+        repository
+            .finalize_import_batch("batch", ImportBatchFinalStatus::Failed, 100)
+            .is_err(),
+        "a finalized batch must not switch terminal status"
+    );
+    assert!(
+        repository
+            .finalize_import_batch("batch", ImportBatchFinalStatus::Completed, 100)
+            .is_err(),
+        "a finalized batch must not change finished_at"
+    );
+    let (status, finished_at): (String, Option<i64>) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT status, finished_at FROM import_batches WHERE batch_id='batch'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "completed");
+    assert_eq!(finished_at, Some(99));
+
+    // 不存在的批次：拒绝。
+    assert!(repository
+        .finalize_import_batch("missing", ImportBatchFinalStatus::Completed, 99)
+        .is_err());
+}
+
+#[test]
+fn caller_transaction_rolls_back_batch_lifecycle_changes() {
+    let database = Database::open_in_memory().unwrap();
+    database
+        .provenance_repository()
+        .begin_import_batch("batch", 1)
+        .unwrap();
+
+    let item = ImportBatchItemRecord {
+        batch_id: "batch".into(),
+        candidate_key: "candidate-tx".into(),
+        skill_id: None,
+        provenance_id: None,
+        source_relation_id: None,
+        status: ImportBatchItemStatus::Cancelled,
+        reason: Some("user cancelled the import".into()),
+    };
+    {
+        let tx = database.begin_transaction().unwrap();
+        ProvenanceRepository::record_batch_item_tx(&tx, &item).unwrap();
+        ProvenanceRepository::finalize_import_batch_tx(
+            &tx,
+            "batch",
+            ImportBatchFinalStatus::Failed,
+            50,
+        )
+        .unwrap();
+        // 未提交即丢弃：批次条目与终态迁移必须整体回滚。
+    }
+
+    let (status, finished_at): (String, Option<i64>) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT status, finished_at FROM import_batches WHERE batch_id='batch'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(status, "running");
+    assert_eq!(finished_at, None);
+    let item_count: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM import_batch_items WHERE batch_id='batch'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(item_count, 0);
 }
