@@ -10,6 +10,8 @@ import {
   relationSourceKeyOf,
   relationVerificationKeyOf,
   relationshipKeyOf,
+  sourceCopyCleanAvailability,
+  sourceCopyRetainAvailability,
 } from "./api";
 import { Button } from "../../../ui/Button";
 import { StatusBadge } from "../../../ui/StatusBadge";
@@ -36,6 +38,10 @@ export interface GovernanceRelationTableProps {
   onCentralize: (row: RelationGovernanceRow) => void;
   onUndeploy: (row: RelationGovernanceRow) => void;
   onRevalidate: (row: RelationGovernanceRow) => void;
+  /** 来源副本清理（任务 11.7）：打开影响预览，经确认后走 clean 批次。 */
+  onClean: (row: RelationGovernanceRow) => void;
+  /** 来源副本保留：账本写入，绝不触碰来源目录。 */
+  onRetain: (row: RelationGovernanceRow) => void;
 }
 
 type PrimaryAction = RelationGovernanceRow["primary_action"];
@@ -49,8 +55,10 @@ export function GovernanceRelationTable({
   busyRelationIds,
   listRef,
   onCentralize,
+  onClean,
   onListScroll,
   onRevalidate,
+  onRetain,
   onToggleAll,
   onToggleRow,
   onUndeploy,
@@ -104,7 +112,9 @@ export function GovernanceRelationTable({
               <tr data-testid="governance-row" key={relationId}>
                 <td>
                   <input
-                    aria-label={t("relationships.governance.table.selectRow", { id: relationId })}
+                    aria-label={t("relationships.governance.table.selectRow", {
+                    name: row.skill_display_name ?? relationSkillIdOf(row.relation) ?? relationId,
+                  })}
                     checked={selectedIds.has(relationId)}
                     data-testid={`governance-select-${relationId}`}
                     onChange={(event) => onToggleRow(relationId, event.target.checked)}
@@ -131,7 +141,9 @@ export function GovernanceRelationTable({
                     {directoryGovernanceLabel(row, t)}
                   </strong>
                   {/* 来源副本边没有 Agent 归属，仅部署边呈现 Agent 身份。 */}
-                  {rowAgentId ? <AgentIdentity agentId={rowAgentId} /> : null}
+                  {row.relation.kind === "deployment" && rowAgentId ? (
+                    <AgentIdentity agentId={rowAgentId} />
+                  ) : null}
                   <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
@@ -179,6 +191,7 @@ export function GovernanceRelationTable({
                     primary={row.primary_action}
                     row={row}
                   />
+                  {sourceCopyActionButtons(row, busy, onClean, onRetain)}
                   {/* 仅待共享影响确认的行：主操作是重新检查，另给带确认的纳入入口。 */}
                   {rowNeedsSharedImpactConfirmation(row) ? (
                     <Button
@@ -246,6 +259,11 @@ function PrimaryActionButton({
   row: RelationGovernanceRow;
 }) {
   const { t } = useTranslation();
+  // 来源副本的保留动作由专属按钮承载（任务 11.7）；后端给的
+  // keep_independent_copy/none 主操作不再重复出按钮。
+  const superseded = row.relation.kind === "source_copy"
+    && (primary === "keep_independent_copy" || primary === "none");
+  if (superseded) return null;
   const disabled = busy || primary === "none";
   const onClick = () => {
     if (primary === "centralize_management") onCentralize(row);
@@ -262,5 +280,52 @@ function PrimaryActionButton({
     >
       {t(`relationships.governance.actions.${primary}` as never)}
     </Button>
+  );
+}
+
+/**
+ * 来源副本行专属动作（任务 11.7）：清理（pending/retained）与保留（仅
+ * pending）。可用性由统一的行 DTO 推导：受阻隐藏、待校验禁用。
+ */
+function sourceCopyActionButtons(
+  row: RelationGovernanceRow,
+  busy: boolean,
+  onClean: (row: RelationGovernanceRow) => void,
+  onRetain: (row: RelationGovernanceRow) => void,
+) {
+  const { t } = useTranslation();
+  const relationId = relationIdOf(row.relation);
+  const clean = sourceCopyCleanAvailability(row);
+  const retain = sourceCopyRetainAvailability(row);
+  const title = clean === "disabled"
+    ? t("relationships.governance.clean.needsValidationHint")
+    : undefined;
+  return (
+    <>
+      {clean !== "hidden" ? (
+        <Button
+          data-testid={`governance-clean-${relationId}`}
+          disabled={busy || clean === "disabled"}
+          onClick={() => onClean(row)}
+          size="sm"
+          title={title}
+          variant="secondary"
+        >
+          {t("relationships.governance.clean.action")}
+        </Button>
+      ) : null}
+      {retain !== "hidden" ? (
+        <Button
+          data-testid={`governance-retain-${relationId}`}
+          disabled={busy || retain === "disabled"}
+          onClick={() => onRetain(row)}
+          size="sm"
+          title={title}
+          variant="secondary"
+        >
+          {t("relationships.governance.retain.action")}
+        </Button>
+      ) : null}
+    </>
   );
 }

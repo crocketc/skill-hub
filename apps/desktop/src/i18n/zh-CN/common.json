@@ -2474,7 +2474,7 @@
     "governance": {
       "title": "关系治理",
       "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。",
-      "description": "逐条查看已建立的关系边，先预览影响，再确认纳入集中库管理或从 Agent/项目移除。",
+      "description": "这里集中管理全部可管理关系：来源副本与部署边，先预览影响，再确认执行。在线来源与完整拓扑请到技能图谱查看。",
       "loading": "正在加载关系治理清单…",
       "loadError": "关系治理清单暂不可用。",
       "retryLoad": "重新加载",
@@ -2497,7 +2497,20 @@
         "eligible_to_centralize": "可纳入集中库管理",
         "needs_validation": "待校验",
         "blocked": "受阻",
-        "withCount": "{{label}}（{{count}}）"
+        "withCount": "{{label}}（{{count}}）",
+      "scope_all": "全部类别",
+      "scope_source_copy": "来源副本",
+      "scope_deployment": "部署边",
+      "statusFilter": {
+        "normal": "正常",
+        "retained": "已保留",
+        "needs_validation": "待校验",
+        "needs_attention": "需关注",
+        "blocked": "受阻"
+      }
+      },
+      "importBatch": {
+        "banner": "本次导入留下 {{count}} 个本地来源副本"
       },
       "search": {
         "label": "搜索 Skill、目标或路径",
@@ -2511,7 +2524,7 @@
         "verification": "校验",
         "action": "操作",
         "selectAll": "全选本页关系",
-        "selectRow": "选择关系 {{id}}",
+        "selectRow": "选择关系 {{name}}",
         "listLabel": "关系治理清单"
       },
       "source": {
@@ -2553,6 +2566,32 @@
         "revalidate": "重新检查",
         "none": "受阻"
       },
+      "revalidate": {
+        "checked": "校验完成，状态已更新",
+        "unchanged": "内容无变化",
+        "archived": "来源已不存在，关系已归档",
+        "failed": "校验失败：{{reason}}"
+      },
+      "clean": {
+        "action": "清理",
+        "previewTitle": "清理来源副本",
+        "explain": "将删除该 Skill 在下方位置的本地来源副本。",
+        "stopUsing": "清理后，Agent 处的原入口将停止使用",
+        "centralUnaffected": "集中库中的技能副本不受影响",
+        "redeployLater": "以后可以把该技能重新部署到此 Agent",
+        "backupRollback": "清理前会先创建备份，支持回滚",
+        "noRollback": "此副本没有可用的回滚路径",
+        "ownership": "我确认这是我可以清理的本地副本",
+        "commit": "确认清理",
+        "resultTitle": "清理完成",
+        "deployNow": "部署到此 Agent",
+        "deployLater": "稍后部署",
+        "needsValidationHint": "先重新检查，再清理或保留"
+      },
+      "retain": {
+        "action": "保留",
+        "done": "已保留此来源副本"
+      },
       "selection": {
         "selectedCount": "已选 {{count}} 条",
         "openBatch": "批量纳入集中库管理"
@@ -2581,6 +2620,7 @@
       "batch": {
         "title": "批量纳入集中库管理",
         "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
+        "mixing": "来源副本与部署关系不能加入同一批次；请分开处理",
         "itemExecutable": "可执行",
         "itemBlocked": "受阻",
         "itemCheck": "执行 {{name}}",

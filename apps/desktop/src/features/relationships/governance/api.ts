@@ -216,12 +216,72 @@ export function rowNeedsSharedImpactConfirmation(row: RelationGovernanceRow): bo
     && row.blockers.every((blocker) => blocker === SHARED_IMPACT_BLOCKER);
 }
 
+/** 来源副本动作的可用性：hidden 不出按钮，disabled 出但先校验。 */
+export type SourceCopyActionAvailability = "enabled" | "disabled" | "hidden";
+
+function sourceCopyEdgeAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
+  if (row.relation.kind !== "source_copy") return "hidden";
+  // 受阻行只展示原因，不提供危险提交（任务 11.7）。
+  if (row.status === "blocked") return "hidden";
+  // 存证不是指纹一致：先重新检查，再清理/保留。
+  return row.relation.fact.health === "normal" ? "enabled" : "disabled";
+}
+
+/** 清理来源副本：pending 与 retained 都可清理。 */
+export function sourceCopyCleanAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
+  return sourceCopyEdgeAvailability(row);
+}
+
+/** 保留来源副本：仅 pending 提供；retained 已是保留态，不再重复出卡。 */
+export function sourceCopyRetainAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
+  if (row.relation.kind !== "source_copy") return "hidden";
+  if (row.relation.fact.decision === "retained" || row.status === "retained") return "hidden";
+  return sourceCopyEdgeAvailability(row);
+}
+
+/** 一个批次只处理一类关系边、只执行一个动作（任务 11.10/11.15）。 */
+export type BatchSelectionSummary =
+  | { kind: "empty"; action: null }
+  | { kind: "mixed"; action: null }
+  | { kind: "source_copy"; action: "clean_source_copy" }
+  | { kind: "deployment"; action: "centralize_management" };
+
+export function summarizeBatchSelection(
+  rows: readonly RelationGovernanceRow[],
+): BatchSelectionSummary {
+  const kinds = new Set(rows.map((row) => row.relation.kind));
+  if (kinds.size === 0) return { kind: "empty", action: null };
+  if (kinds.size > 1) return { kind: "mixed", action: null };
+  return kinds.has("source_copy")
+    ? { kind: "source_copy", action: "clean_source_copy" }
+    : { kind: "deployment", action: "centralize_management" };
+}
+
+/** 行在当前批次动作下的可执行性：部署沿用既有判定，来源副本要求健康。 */
+export function rowIsBatchExecutableFor(
+  row: RelationGovernanceRow,
+  kind: BatchSelectionSummary["kind"],
+): boolean {
+  if (kind === "source_copy") {
+    return rowIsNaturallyExecutable(row);
+  }
+  return rowIsBatchExecutable(row);
+}
+
+/** 行按自身类别可执行：部署走 centralize 判定，来源副本要求健康可清理。 */
+export function rowIsNaturallyExecutable(row: RelationGovernanceRow): boolean {
+  return row.relation.kind === "source_copy"
+    ? row.status !== "blocked" && row.relation.fact.health === "normal"
+    : rowIsBatchExecutable(row);
+}
+
 /** 该行是否可被批量纳入集中库管理（与后端 batch_row_is_executable 对齐）。 */
 export function rowIsBatchExecutable(row: RelationGovernanceRow): boolean {
   return row.readiness === "eligible_to_centralize" || rowNeedsSharedImpactConfirmation(row);
 }
 
-/** 行列表的批量摘要：可执行与受阻分开统计，任何受阻项都不计入可执行。 */
+/** 行列表的批量摘要：可执行与受阻分开统计，任何受阻项都不计入可执行。
+ *  可执行性按行自身类别判定（任务 11.15：来源副本要求健康可清理）。 */
 export function summarizeRowExecutability(rows: readonly RelationGovernanceRow[]): {
   executable: number;
   blocked: number;
@@ -229,7 +289,7 @@ export function summarizeRowExecutability(rows: readonly RelationGovernanceRow[]
   let executable = 0;
   let blocked = 0;
   for (const row of rows) {
-    if (rowIsBatchExecutable(row)) executable += 1;
+    if (rowIsNaturallyExecutable(row)) executable += 1;
     else blocked += 1;
   }
   return { executable, blocked };

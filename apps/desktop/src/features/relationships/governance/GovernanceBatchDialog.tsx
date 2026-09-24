@@ -12,8 +12,9 @@ import {
   batchResultTitleKey,
   relationIdOf,
   relationPathOf,
-  rowIsBatchExecutable,
+  rowIsNaturallyExecutable,
   rowNeedsSharedImpactConfirmation,
+  summarizeBatchSelection,
 } from "./api";
 
 export interface GovernanceBatchDialogProps {
@@ -27,6 +28,9 @@ export interface GovernanceBatchDialogProps {
   error: string | null;
   /** commit 完成后的批次结果；null 表示仍在预览/执行阶段。 */
   result: RelationGovernanceBatchOutcome | null;
+  /** 批量清理的所有权确认（任务 11.15）：单一开关覆盖全部勾选行。 */
+  ownershipConfirmed: boolean;
+  onOwnershipConfirm: (checked: boolean) => void;
   onToggleItem: (relationId: string, checked: boolean) => void;
   onSharedImpactConfirm: (relationId: string, checked: boolean) => void;
   onConfirm: () => void;
@@ -45,29 +49,42 @@ export function GovernanceBatchDialog({
   error,
   onClose,
   onConfirm,
+  onOwnershipConfirm,
   onRetry,
   onRollback,
   onSharedImpactConfirm,
   onToggleItem,
+  ownershipConfirmed,
   result,
   rows,
   running,
   sharedConfirmedIds,
 }: GovernanceBatchDialogProps) {
   const { t } = useTranslation();
-  const executableRows = rows.filter(rowIsBatchExecutable);
-  const blockedRows = rows.filter((row) => !rowIsBatchExecutable(row));
-  const checkedCount = executableRows.filter((row) => checkedIds.has(relationIdOf(row.relation))).length;
-  const missingSharedConfirmation = executableRows.some((row) => {
+  // 任务 11.10/11.15：一个批次只做一件事、只处理一类关系边；勾选行一旦
+  // 混类就拒绝收敛（确认禁用），受阻行单独分组、不可勾选。取消单项后
+  // 批次按剩余勾选行重新收敛，其余行不受影响。
+  const executableRows = rows.filter(rowIsNaturallyExecutable);
+  const blockedRows = rows.filter((row) => !rowIsNaturallyExecutable(row));
+  const checkedRows = executableRows.filter((row) => checkedIds.has(relationIdOf(row.relation)));
+  const selection = summarizeBatchSelection(checkedRows);
+  const isMixed = selection.kind === "mixed";
+  const checkedCount = checkedRows.length;
+  const missingSharedConfirmation = selection.kind === "deployment" && executableRows.some((row) => {
     const relationId = relationIdOf(row.relation);
     return rowNeedsSharedImpactConfirmation(row)
       && checkedIds.has(relationId)
       && !sharedConfirmedIds.has(relationId);
   });
-  const confirmDisabled = running || checkedCount === 0 || missingSharedConfirmation;
+  const needsOwnershipConfirmation = selection.kind === "source_copy";
+  const confirmDisabled = running
+    || isMixed
+    || checkedCount === 0
+    || missingSharedConfirmation
+    || (needsOwnershipConfirmation && !ownershipConfirmed);
 
   return (
-    <div aria-label={t("relationships.governance.batch.title")} className="sh-governance__dialog" role="dialog">
+    <div aria-label={t("relationships.governance.batch.title")} className="sh-governance__dialog" data-testid="governance-batch-dialog" role="dialog">
       <h3>{t("relationships.governance.batch.title")}</h3>
       {result ? (
         <BatchResult
@@ -78,6 +95,11 @@ export function GovernanceBatchDialog({
       ) : (
         <>
           <p>{t("relationships.governance.batch.hint")}</p>
+          {isMixed ? (
+            <p data-testid="governance-batch-mixing" role="alert">
+              {t("relationships.governance.batch.mixing")}
+            </p>
+          ) : null}
           {blockedRows.length > 0 ? (
             <p data-testid="governance-batch-blocked-summary">
               {t("relationships.governance.batchSummary.blocked", { count: blockedRows.length })}
@@ -144,6 +166,18 @@ export function GovernanceBatchDialog({
               );
             })}
           </ul>
+          {needsOwnershipConfirmation && !isMixed ? (
+            <label className="sh-governance__confirm-check">
+              <input
+                checked={ownershipConfirmed}
+                data-testid="governance-batch-ownership"
+                disabled={running}
+                onChange={(event) => onOwnershipConfirm(event.target.checked)}
+                type="checkbox"
+              />
+              {t("relationships.governance.clean.ownership")}
+            </label>
+          ) : null}
           {running ? (
             <p role="status">{t("relationships.governance.batch.running")}</p>
           ) : null}
@@ -157,7 +191,7 @@ export function GovernanceBatchDialog({
             <Button disabled={running} onClick={onClose} variant="secondary">
               {t("actions.cancel")}
             </Button>
-            <Button disabled={confirmDisabled} onClick={onConfirm}>
+            <Button data-testid="governance-batch-confirm" disabled={confirmDisabled} onClick={onConfirm}>
               {t("relationships.governance.batch.confirmCount", { count: checkedCount })}
             </Button>
           </div>

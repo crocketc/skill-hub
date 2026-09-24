@@ -4,8 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../../api/nativeErrors";
 import type {
+  RelationGovernanceBatchAction,
   RelationGovernanceBatchOutcome,
   RelationGovernanceRow,
+  RelationshipCheckItem,
+  RelationshipCheckReport,
 } from "../../../api/bindings";
 import {
   operationTracker,
@@ -18,6 +21,7 @@ import { DataState } from "../../../ui/DataState";
 import { RelationshipsLayout } from "../RelationshipsLayout";
 import { useRelationshipsReturnState } from "../returnState";
 import { relationshipsKeys } from "../api";
+import { useRelationshipContextCheck } from "./useRelationshipContextCheck";
 import {
   GOVERNANCE_BUCKETS,
   mergeBatchItemOutcome,
@@ -26,6 +30,8 @@ import {
   relationPathOf,
   relationSkillIdOf,
   rowIsBatchExecutable,
+  rowIsNaturallyExecutable,
+  summarizeBatchSelection,
   summarizeRowExecutability,
   SHARED_IMPACT_CONFIRMATION_TOKEN,
 } from "./api";
@@ -33,6 +39,8 @@ import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
+import { SourceCopyImpactPreview } from "./SourceCopyImpactPreview";
+import { SourceCleanupResult } from "./SourceCleanupResult";
 import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
 import "./governance.css";
 
@@ -46,7 +54,7 @@ export interface RelationshipGovernancePageProps {
 }
 
 interface SingleFlowState {
-  kind: "centralize" | "undeploy";
+  kind: "centralize" | "undeploy" | "clean";
   row: RelationGovernanceRow;
   busy: boolean;
   error: string | null;
@@ -60,6 +68,8 @@ interface SingleFlowState {
 interface BatchFlowState {
   checkedIds: string[];
   sharedConfirmedIds: string[];
+  /** 批量清理的所有权确认（任务 11.15）；部署批次不使用。 */
+  ownershipConfirmed: boolean;
   running: boolean;
   error: string | null;
   result: RelationGovernanceBatchOutcome | null;
@@ -68,6 +78,7 @@ interface BatchFlowState {
 const INITIAL_BATCH_FLOW: BatchFlowState = {
   checkedIds: [],
   sharedConfirmedIds: [],
+  ownershipConfirmed: false,
   running: false,
   error: null,
   result: null,
@@ -95,21 +106,51 @@ export function RelationshipGovernancePage({
   );
   const returnState = useRelationshipsReturnState("governance");
 
+  // 任务 11.5：逐行重校验的在途集合与最近一次逐项结论（按 relation 记忆）。
+  const [revalidateBusy, setRevalidateBusy] = useState<ReadonlySet<string>>(new Set());
+  const [revalidateResults, setRevalidateResults] = useState<ReadonlyMap<string, RelationshipCheckItem>>(
+    new Map(),
+  );
+
+  const governanceFilters = {
+    agent_client_id: deepLink.agentClientId ?? undefined,
+    bucket: deepLink.bucket,
+    skill_id: deepLink.skillId ?? undefined,
+    text: deepLink.text || undefined,
+    // 任务 11：状态与批次过滤直达后端；scope 由前端按行类别收敛。
+    statuses: deepLink.status ? [deepLink.status] : undefined,
+    batch_id: deepLink.batchId ?? undefined,
+  } as const;
   const ledgerQuery = useQuery({
-    queryFn: () => facade.listGovernance({
-      agent_client_id: deepLink.agentClientId ?? undefined,
-      bucket: deepLink.bucket,
-      skill_id: deepLink.skillId ?? undefined,
-      text: deepLink.text || undefined,
-    }),
-    queryKey: relationshipsKeys.governance({
-      agent_client_id: deepLink.agentClientId ?? undefined,
-      bucket: deepLink.bucket,
-      skill_id: deepLink.skillId ?? undefined,
-      text: deepLink.text || undefined,
-    }),
+    queryFn: () => facade.listGovernance({ ...governanceFilters }),
+    queryKey: relationshipsKeys.governance(governanceFilters),
   });
   const rows = useMemo(() => ledgerQuery.data?.rows ?? [], [ledgerQuery.data]);
+  // scope=source_copy/deployment 在前端按行类别收敛（后端 DTO 无 scope 维度）。
+  const visibleRows = useMemo(() => {
+    let filtered = rows;
+    if (deepLink.scope === "source_copy") {
+      filtered = filtered.filter((row) => row.relation.kind === "source_copy");
+    } else if (deepLink.scope === "deployment") {
+      filtered = filtered.filter((row) => row.relation.kind === "deployment");
+    }
+    if (deepLink.status) {
+      filtered = filtered.filter((row) => row.status === deepLink.status);
+    }
+    return filtered;
+  }, [deepLink.scope, deepLink.status, rows]);
+  // 导入横幅的 N：本次批次映射的本地来源副本数（不受 scope chip 影响）。
+  const sourceCopyCount = useMemo(
+    () => rows.filter((row) => row.relation.kind === "source_copy").length,
+    [rows],
+  );
+  // 任务 11.6：清单先渲染，再对当前 scope 做一次会话级 Light check。
+  useRelationshipContextCheck({
+    facade,
+    scope: deepLink.scope,
+    relationIds: visibleRows.map((row) => relationIdOf(row.relation)),
+    enabled: ledgerQuery.isSuccess && visibleRows.length > 0,
+  });
   const counts = ledgerQuery.data?.counts;
 
   // —— 会话视图状态：勾选 + 滚动（仅存 return-state，不进 URL/tracker）——
@@ -177,20 +218,21 @@ export function RelationshipGovernancePage({
     setSelectedIds(() => {
       if (!checked) return [];
       // 全选默认跳过受阻行；它们仍可被单独勾选（勾选后在预览里按受阻呈现）。
-      return rows
+      return visibleRows
         .filter((row) => row.readiness !== "blocked")
         .map((row) => relationIdOf(row.relation));
     });
-  }, [rows]);
+  }, [visibleRows]);
 
-  // —— URL 即状态：筛选浏览一律 replace，不向历史推入条目 ——
+  // —— URL 即状态：已提交筛选写入历史条目（任务 11），前进/后退可恢复；
+  // 勾选与滚动位置仍走 return-state，不进 URL。 ——
   const applyParams = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams);
     for (const [key, value] of Object.entries(patch)) {
       if (value === null || value === "") next.delete(key);
       else next.set(key, value);
     }
-    setSearchParams(next, { replace: true });
+    setSearchParams(next);
   }, [searchParams, setSearchParams]);
 
   const [searchDraft, setSearchDraft] = useState(deepLink.text);
@@ -213,8 +255,8 @@ export function RelationshipGovernancePage({
 
   // —— 批量流程 ——
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectedIds.includes(relationIdOf(row.relation))),
-    [rows, selectedIds],
+    () => visibleRows.filter((row) => selectedIds.includes(relationIdOf(row.relation))),
+    [selectedIds, visibleRows],
   );
   const executability = useMemo(
     () => summarizeRowExecutability(selectedRows),
@@ -226,9 +268,10 @@ export function RelationshipGovernancePage({
   const openBatchDialog = useCallback(() => {
     setBatchFlow({
       ...INITIAL_BATCH_FLOW,
-      // 受阻行在对话框里默认不选中（它们根本不可勾选执行）。
+      // 受阻行在对话框里默认不选中；可执行行按自身类别预选，
+      // 混类批次在对话框里被拒绝收敛，取消单项后按剩余行重新收敛。
       checkedIds: selectedRows
-        .filter(rowIsBatchExecutable)
+        .filter(rowIsNaturallyExecutable)
         .map((row) => relationIdOf(row.relation)),
     });
     setBatchOpen(true);
@@ -247,8 +290,9 @@ export function RelationshipGovernancePage({
     if (batchOpen && batchFlow.running) {
       for (const id of batchFlow.checkedIds) busy.add(id);
     }
+    for (const id of revalidateBusy) busy.add(id);
     return busy;
-  }, [batchFlow.checkedIds, batchFlow.running, batchOpen, single]);
+  }, [batchFlow.checkedIds, batchFlow.running, batchOpen, revalidateBusy, single]);
 
   const describeError = useCallback(
     (reason: unknown) => describeNativeError(
@@ -261,6 +305,36 @@ export function RelationshipGovernancePage({
     [t],
   );
 
+  // 任务 11.5：重校验是 RunRelationshipCheck 命令（facade.revalidate），完成后失效
+  // 清单重新拉取；绝不把“再查一次清单”冒充校验。结论按 relation 记忆就地展示。
+  const revalidateRows = useCallback((relationIds: readonly string[]) => {
+    const ids = [...relationIds];
+    if (ids.length === 0) return;
+    setRevalidateBusy((current) => new Set([...current, ...ids]));
+    void runTrackedOperation<RelationshipCheckReport>({
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "revalidate",
+      label: t("relationships.governance.actions.revalidate"),
+      notifications,
+      queryClient,
+      run: () => facade.revalidate(ids),
+      summarize: () => ({ failed: 0, skipped: 0, succeeded: ids.length }),
+      total: ids.length,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    }).then((report) => {
+      setRevalidateResults((current) => {
+        const next = new Map(current);
+        for (const item of report.items) next.set(item.relation_id, item);
+        return next;
+      });
+    }).catch(() => undefined).finally(() => {
+      setRevalidateBusy((current) => new Set([...current].filter((id) => !ids.includes(id))));
+    });
+  }, [describeError, facade, notifications, queryClient, t, tracker]);
+
   const buildConfirmations = useCallback((relationIds: readonly string[], confirmed: ReadonlySet<string>) => {
     const confirmations: Record<string, string> = {};
     for (const relationId of relationIds) {
@@ -271,8 +345,10 @@ export function RelationshipGovernancePage({
     return confirmations;
   }, []);
 
-  /** 一组关系的纳入集中库管理执行（单条 = 一个只有一项的批次）。 */
-  const runCentralizeBatch = useCallback((
+  /** 一组关系的同动作批次执行（单条 = 一个只有一项的批次）；全部异步写操作
+   *  都经这里走 runTrackedOperation 并与后端 operation id 关联（任务 11.14）。 */
+  const runGovernanceBatch = useCallback((
+    action: RelationGovernanceBatchAction,
     relationIds: string[],
     confirmed: ReadonlySet<string>,
     onResult: (outcome: RelationGovernanceBatchOutcome) => void,
@@ -290,7 +366,7 @@ export function RelationshipGovernancePage({
       run: async (handle) => {
         handle.phase(phaseLabel);
         const prepared = await facade.prepareGovernanceBatch({
-          action: "centralize_management",
+          action,
           confirmations: buildConfirmations(relationIds, confirmed),
           relationIds,
         });
@@ -372,7 +448,8 @@ export function RelationshipGovernancePage({
   const confirmSingleCentralize = useCallback((flow: SingleFlowState) => {
     const relationId = relationIdOf(flow.row.relation);
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    runCentralizeBatch(
+    runGovernanceBatch(
+      "centralize_management",
       [relationId],
       flow.sharedImpactConfirmed ? new Set([relationId]) : new Set(),
       (outcome) => {
@@ -393,14 +470,15 @@ export function RelationshipGovernancePage({
       },
       t("relationships.governance.batch.running"),
     );
-  }, [centralizeDoneText, runCentralizeBatch, t]);
+  }, [centralizeDoneText, runGovernanceBatch, t]);
 
   /** 单条结果的逐项重试：与批量重试共用同一合并语义。 */
   const retrySingleItem = useCallback((relationId: string) => {
     if (!single?.outcome) return;
     const confirmed = single.sharedImpactConfirmed ? new Set([relationId]) : new Set<string>();
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    runCentralizeBatch(
+    runGovernanceBatch(
+      single.kind === "clean" ? "clean_source_copy" : "centralize_management",
       [relationId],
       confirmed,
       (outcome) => {
@@ -422,7 +500,57 @@ export function RelationshipGovernancePage({
         : current),
       t("relationships.governance.batch.running"),
     );
-  }, [centralizeDoneText, runCentralizeBatch, single, t]);
+  }, [centralizeDoneText, runGovernanceBatch, single, t]);
+
+  // —— 来源副本动作（任务 11.7/11.9/11.14）——
+
+  /** 保留来源副本：账本写入（决策改 retained + 历史），绝不触碰来源目录。 */
+  const retainSourceCopyRow = useCallback((row: RelationGovernanceRow) => {
+    const relationId = relationIdOf(row.relation);
+    void runTrackedOperation({
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "retain_source_copy",
+      label: t("relationships.governance.retain.action"),
+      notifications,
+      queryClient,
+      run: () => facade.retainSourceCopy(relationId),
+      successNotice: () => ({
+        title: t("relationships.governance.retain.done"),
+        tone: "success" as const,
+      }),
+      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    }).catch(() => undefined);
+  }, [describeError, facade, notifications, queryClient, t, tracker]);
+
+  /** 单条清理：一个只有一项的 clean_source_copy 批次；成功面板给部署入口。 */
+  const confirmSingleClean = useCallback((flow: SingleFlowState) => {
+    const relationId = relationIdOf(flow.row.relation);
+    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
+    runGovernanceBatch(
+      "clean_source_copy",
+      [relationId],
+      flow.sharedImpactConfirmed ? new Set([relationId]) : new Set(),
+      (outcome) => {
+        // committed 的呈现交给 SourceCleanupResult；其余终态由逐项结果
+        // 面板如实呈现。清单按后端 revision 失效刷新，不做本地假删。
+        setSingle((current) => current ? {
+          ...current,
+          busy: false,
+          outcome,
+          resultText: null,
+        } : current);
+      },
+      (message) => setSingle((current) => current
+        ? { ...current, busy: false, error: message }
+        : current),
+      t("relationships.governance.batch.running"),
+    );
+  }, [runGovernanceBatch, t]);
 
   /** 单条结果的逐项回退：回退必须针对发起批次（子任务挂在该批次下）。 */
   const rollbackSingleItem = useCallback((relationId: string) => {
@@ -502,21 +630,33 @@ export function RelationshipGovernancePage({
 
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
+    const selection = summarizeBatchSelection(selectedRows);
+    if (!selection.action) return;
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
-    runCentralizeBatch(
+    // 清理批次：所有权确认覆盖全部勾选行；部署批次沿用逐行共享影响确认。
+    const confirmed = selection.kind === "source_copy"
+      ? (batchFlow.ownershipConfirmed ? new Set(relationIds) : new Set<string>())
+      : new Set(batchFlow.sharedConfirmedIds);
+    runGovernanceBatch(
+      selection.action,
       relationIds,
-      new Set(batchFlow.sharedConfirmedIds),
+      confirmed,
       (outcome) => setBatchFlow((current) => ({ ...current, running: false, result: outcome })),
       (message) => setBatchFlow((current) => ({ ...current, running: false, error: message })),
       t("relationships.governance.batch.running"),
     );
-  }, [batchFlow.checkedIds, batchFlow.sharedConfirmedIds, runCentralizeBatch, t]);
+  }, [batchFlow.checkedIds, batchFlow.ownershipConfirmed, batchFlow.sharedConfirmedIds, runGovernanceBatch, selectedRows, t]);
 
   const retryBatchItem = useCallback((relationId: string) => {
+    const selection = summarizeBatchSelection(selectedRows);
+    if (!selection.action) return;
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
-    runCentralizeBatch(
+    runGovernanceBatch(
+      selection.action,
       [relationId],
-      new Set(batchFlow.sharedConfirmedIds),
+      selection.kind === "source_copy"
+        ? new Set([relationId])
+        : new Set(batchFlow.sharedConfirmedIds),
       (outcome) => {
         // 逐项重试后原位替换该项，计数与终态按合并后的事实重算。
         setBatchFlow((current) => {
@@ -531,7 +671,7 @@ export function RelationshipGovernancePage({
       (message) => setBatchFlow((current) => ({ ...current, running: false, error: message })),
       t("relationships.governance.batch.running"),
     );
-  }, [batchFlow.sharedConfirmedIds, runCentralizeBatch, t]);
+  }, [batchFlow.sharedConfirmedIds, runGovernanceBatch, selectedRows, t]);
 
   const rollbackBatchItem = useCallback((relationId: string) => {
     if (!batchFlow.result) return;
@@ -575,13 +715,24 @@ export function RelationshipGovernancePage({
     if (!ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
     const relationId = pendingRelationIdRef.current;
     pendingRelationIdRef.current = null;
-    const row = rows.find((candidate) => relationIdOf(candidate.relation) === relationId);
+    const row = visibleRows.find((candidate) => relationIdOf(candidate.relation) === relationId);
     if (!row) return;
     if (rowIsBatchExecutable(row)) openSingle("centralize", row);
     else if (row.primary_action === "undeploy") openSingle("undeploy", row);
-  }, [ledgerQuery.isSuccess, openSingle, rows]);
+  }, [ledgerQuery.isSuccess, openSingle, visibleRows]);
 
   const closeSingle = useCallback(() => setSingle(null), []);
+
+  /** 清理成功后的「部署到此 Agent」：只打开目标可预选的部署页，不自动提交。 */
+  const deployCleanedSkill = useCallback((flow: SingleFlowState) => {
+    const relation = flow.row.relation;
+    if (relation.kind !== "source_copy") return;
+    const params = new URLSearchParams();
+    params.set("skill", relation.fact.skill_id);
+    if (relation.fact.agent_client_id) params.set("agent", relation.fact.agent_client_id);
+    navigate(`/deploy?${params.toString()}`);
+    closeSingle();
+  }, [closeSingle, navigate]);
 
   return (
     <RelationshipsLayout scope="governance">
@@ -604,6 +755,12 @@ export function RelationshipGovernancePage({
 
       <p>{t("relationships.governance.description")}</p>
 
+      {deepLink.from === "import" ? (
+        <p className="sh-governance__import-banner" data-testid="governance-import-banner" role="status">
+          {t("relationships.governance.importBatch.banner", { count: sourceCopyCount })}
+        </p>
+      ) : null}
+
       <div aria-label={t("relationships.governance.filters.label")} className="sh-governance__filters" role="group">
         {GOVERNANCE_BUCKETS.map((bucket) => (
           <Button
@@ -618,6 +775,30 @@ export function RelationshipGovernancePage({
               count: counts ? counts[bucket] : 0,
               label: t(`relationships.governance.filters.${bucket}` as never),
             })}
+          </Button>
+        ))}
+        {(["all", "source_copy", "deployment"] as const).map((scope) => (
+          <Button
+            aria-pressed={deepLink.scope === scope}
+            data-testid={`governance-scope-${scope}`}
+            key={`scope-${scope}`}
+            onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
+            size="sm"
+            variant={deepLink.scope === scope ? "primary" : "secondary"}
+          >
+            {t(`relationships.governance.scope.${scope}` as never)}
+          </Button>
+        ))}
+        {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
+          <Button
+            aria-pressed={deepLink.status === status}
+            data-testid={`governance-status-${status}`}
+            key={`status-${status}`}
+            onClick={() => applyParams({ status: deepLink.status === status ? null : status })}
+            size="sm"
+            variant={deepLink.status === status ? "primary" : "secondary"}
+          >
+            {t(`relationships.governance.statusFilter.${status}` as never)}
           </Button>
         ))}
         <form
@@ -650,7 +831,7 @@ export function RelationshipGovernancePage({
       ) : null}
 
       {ledgerQuery.isSuccess ? (
-        rows.length === 0 ? (
+        visibleRows.length === 0 ? (
           <p role="status">
             {deepLink.bucket === "all"
               ? t("relationships.governance.empty.all")
@@ -670,6 +851,7 @@ export function RelationshipGovernancePage({
                   {t("relationships.governance.batchSummary.blocked", { count: executability.blocked })}
                 </span>
                 <Button
+                  data-testid="governance-open-batch"
                   disabled={executability.executable === 0}
                   onClick={openBatchDialog}
                   size="sm"
@@ -682,14 +864,27 @@ export function RelationshipGovernancePage({
               busyRelationIds={busyRelationIds}
               listRef={listRef}
               onCentralize={(row) => openSingle("centralize", row)}
+              onClean={(row) => openSingle("clean", row)}
               onListScroll={onListScroll}
-              onRevalidate={() => void ledgerQuery.refetch()}
+              onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
+              onRetain={(row) => retainSourceCopyRow(row)}
               onToggleAll={toggleAll}
               onToggleRow={toggleRow}
               onUndeploy={(row) => openSingle("undeploy", row)}
-              rows={rows}
+              rows={visibleRows}
               selectedIds={new Set(selectedIds)}
             />
+            {[...revalidateResults.entries()].map(([relationId, item]) => (
+              <p
+                data-testid={`governance-revalidate-result-${relationId}`}
+                key={relationId}
+                role="status"
+              >
+                {t(`relationships.governance.revalidate.${item.status}`, {
+                  reason: item.reason ?? "",
+                })}
+              </p>
+            ))}
           </>
         )
       ) : null}
@@ -706,6 +901,16 @@ export function RelationshipGovernancePage({
             </div>
           </div>
         ) : single.outcome ? (
+          single.kind === "clean" && single.outcome.state === "committed" ? (
+            // 来源副本清理成功（任务 11.9）：主入口是“部署到此 Agent”
+            // （目标预选，仅导航不提交），次入口是“稍后部署”。
+            <SourceCleanupResult
+              busy={single.busy}
+              onDeployNow={() => deployCleanedSkill(single)}
+              onLater={closeSingle}
+              row={single.row}
+            />
+          ) : (
           // committed 以外的终态：与批量共用同一套逐项结果组件，
           // 标题/失败明细/重试/回退语义完全一致，不冒充成功。
           <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
@@ -727,6 +932,21 @@ export function RelationshipGovernancePage({
               </Button>
             </div>
           </div>
+          )
+        ) : single.kind === "clean" ? (
+          // 来源副本清理预览（任务 11.8）：所有权确认是提交硬门槛。
+          <SourceCopyImpactPreview
+            busy={single.busy}
+            error={single.error}
+            loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
+            onCancel={closeSingle}
+            onConfirm={() => confirmSingleClean(single)}
+            onOwnershipConfirmChange={(checked) => setSingle((current) => current
+              ? { ...current, sharedImpactConfirmed: checked }
+              : current)}
+            ownershipConfirmed={single.sharedImpactConfirmed}
+            row={single.row}
+          />
         ) : (
           <GovernanceImpactPreview
             busy={single.busy}
@@ -752,6 +972,10 @@ export function RelationshipGovernancePage({
           error={batchFlow.error}
           onClose={closeBatchDialog}
           onConfirm={confirmBatch}
+          onOwnershipConfirm={(checked) => setBatchFlow((current) => ({
+            ...current,
+            ownershipConfirmed: checked,
+          }))}
           onRetry={retryBatchItem}
           onRollback={rollbackBatchItem}
           onSharedImpactConfirm={(relationId, checked) => setBatchFlow((current) => ({
@@ -766,6 +990,7 @@ export function RelationshipGovernancePage({
               ? [...current.checkedIds, relationId]
               : current.checkedIds.filter((id) => id !== relationId),
           }))}
+          ownershipConfirmed={batchFlow.ownershipConfirmed}
           result={batchFlow.result}
           rows={selectedRows}
           running={batchFlow.running}

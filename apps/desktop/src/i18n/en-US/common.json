@@ -2474,7 +2474,7 @@
     "governance": {
       "title": "Relationship governance",
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
-      "description": "Review each established relationship edge, preview the impact first, then confirm bringing it under central library management or removing it from the Agent/Project.",
+      "description": "Manage every governable relationship in one place — source copies and deployment edges. Preview the impact first, then confirm. Online sources and the full topology live in the skill graph.",
       "loading": "Loading the relationship governance ledger…",
       "loadError": "The relationship governance ledger is unavailable.",
       "retryLoad": "Reload",
@@ -2497,7 +2497,20 @@
         "eligible_to_centralize": "Ready to centralize",
         "needs_validation": "Needs validation",
         "blocked": "Blocked",
-        "withCount": "{{label}} ({{count}})"
+        "withCount": "{{label}} ({{count}})",
+      "scope_all": "All types",
+      "scope_source_copy": "Source copies",
+      "scope_deployment": "Deployment edges",
+      "statusFilter": {
+        "normal": "Normal",
+        "retained": "Retained",
+        "needs_validation": "Needs validation",
+        "needs_attention": "Needs attention",
+        "blocked": "Blocked"
+      }
+      },
+      "importBatch": {
+        "banner": "This import left {{count}} local source copies"
       },
       "search": {
         "label": "Search skills, targets or paths",
@@ -2511,7 +2524,7 @@
         "verification": "Verification",
         "action": "Action",
         "selectAll": "Select all rows",
-        "selectRow": "Select relationship {{id}}",
+        "selectRow": "Select relationship {{name}}",
         "listLabel": "Relationship governance ledger"
       },
       "source": {
@@ -2553,6 +2566,32 @@
         "revalidate": "Re-check",
         "none": "Blocked"
       },
+      "revalidate": {
+        "checked": "Check complete; status updated",
+        "unchanged": "No content changes",
+        "archived": "Source no longer exists; relationship archived",
+        "failed": "Check failed: {{reason}}"
+      },
+      "clean": {
+        "action": "Clean up",
+        "previewTitle": "Clean up source copy",
+        "explain": "This deletes the local source copy of the skill at the location below.",
+        "stopUsing": "After cleanup, the original entry at the Agent stops working",
+        "centralUnaffected": "The copy in the central library is not affected",
+        "redeployLater": "You can redeploy the skill to this Agent later",
+        "backupRollback": "A backup is created before cleanup; rollback is available",
+        "noRollback": "This copy has no rollback path",
+        "ownership": "I confirm this is a local copy I may clean up",
+        "commit": "Confirm cleanup",
+        "resultTitle": "Cleanup complete",
+        "deployNow": "Deploy to this Agent",
+        "deployLater": "Deploy later",
+        "needsValidationHint": "Re-check first, then clean up or keep"
+      },
+      "retain": {
+        "action": "Keep",
+        "done": "Source copy kept"
+      },
       "selection": {
         "selectedCount": "{{count}} selected",
         "openBatch": "Bring the selection under central library management"
@@ -2581,6 +2620,7 @@
       "batch": {
         "title": "Bring the selection under central library management",
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
+        "mixing": "Source copies and deployment relations cannot join the same batch; handle them separately",
         "itemExecutable": "Executable",
         "itemBlocked": "Blocked",
         "itemCheck": "Run {{name}}",
