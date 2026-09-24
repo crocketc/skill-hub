@@ -96,6 +96,9 @@ pub struct RelationshipCheckItem {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct RelationshipCheckReport {
     pub items: Vec<RelationshipCheckItem>,
+    /// 关系修订号（epoch 计数；跨 IPC 以字符串承载，见 `crate::i64_string`）。
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
     pub relationship_revision: i64,
 }
 

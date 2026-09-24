@@ -1,9 +1,14 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
+use skillhub_application::relationship_watch_confirmation::{
+    RelationshipCheckExecuting, RelationshipWatchPump,
+};
 use skillhub_application::{ExternalUrlOpener, LocalApplicationFacade, SystemExternalUrlOpener};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
+    FactsChanged,
 };
 #[cfg(test)]
 use skillhub_core::{DEFAULT_UPDATE_SIGNATURE_PUBLIC_KEY, TAURI_UPDATE_SIGNATURE_PUBLIC_KEY};
@@ -252,6 +257,137 @@ pub fn emit_app_event<R: tauri::Runtime>(app: &AppHandle<R>, event: AppEvent) ->
     app.emit("app_event", event)
 }
 
+/// watcher tick 周期：hint 经过 400ms 稳定窗口后在后续 tick 得到确认。
+pub const WATCH_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// 桌面关系 watcher 生命周期（plan Task 6C）。managed state 强持有
+/// confirmation pump：主界面显示后才启动 watcher 与后台 Light 检查（6.7）；
+/// 窗口重新聚焦作为桌面端可靠的 resume 信号提交补偿 hint，网络/卷重连没有
+/// 可靠跨平台事件，不承诺原生触发（6.8）；确认后的事实变化通过既有
+/// app_event 通道发布 FactsChanged，不新增第二套事件总线（6.11）；
+/// RunEvent::Exit 取消后台线程、关停 watcher 并等待释放（6.10）。启动失败
+/// 只写诊断，不阻塞 UI（6.7）。
+pub struct RelationshipWatchLifecycle {
+    pump: RelationshipWatchPump,
+    stop: Arc<AtomicBool>,
+    startup_done: AtomicBool,
+    task: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl RelationshipWatchLifecycle {
+    pub fn new(pump: RelationshipWatchPump) -> Self {
+        Self {
+            pump,
+            stop: Arc::new(AtomicBool::new(false)),
+            startup_done: AtomicBool::new(false),
+            task: Mutex::new(None),
+        }
+    }
+
+    /// 主界面显示之后调用：后台线程持续 tick，任何失败只写诊断。
+    pub fn start_watcher_thread(self: &Arc<Self>, app: AppHandle) {
+        let lifecycle = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name("relationship-watch".to_owned())
+            .spawn(move || {
+                let emit = |event: AppEvent| {
+                    if let Err(error) = emit_app_event(&app, event) {
+                        eprintln!("relationship watch emit failed: {error}");
+                    }
+                };
+                while lifecycle.tick(&emit) {
+                    std::thread::sleep(WATCH_TICK_INTERVAL);
+                }
+            });
+        match spawned {
+            Ok(handle) => *self.task.lock().expect("watch task") = Some(handle),
+            Err(error) => eprintln!("relationship watcher thread spawn failed: {error}"),
+        }
+    }
+
+    /// 一个 tick。首个 tick 先启动 watcher 并做一次后台 Light 全量检查；
+    /// 之后常规 refresh/collect/confirm。返回 false 表示已停止。
+    pub fn tick(&self, emit: &dyn Fn(AppEvent)) -> bool {
+        if self.stop.load(Ordering::Acquire) {
+            return false;
+        }
+        if !self.startup_done.swap(true, Ordering::AcqRel) {
+            if let Err(error) = self.pump.start() {
+                eprintln!("relationship watcher startup deferred: {error:?}");
+            }
+            match self.pump.executor().compensate() {
+                Ok(report) => {
+                    Self::emit_if_items_changed(&report.items, emit);
+                }
+                Err(error) => {
+                    eprintln!("relationship watcher startup light check failed: {error:?}")
+                }
+            }
+        }
+        match self.pump.tick() {
+            Ok(report) => {
+                if report.facts_changed {
+                    emit(AppEvent::FactsChanged(FactsChanged::new()));
+                }
+            }
+            Err(error) => eprintln!("relationship watch tick failed: {error:?}"),
+        }
+        true
+    }
+
+    fn emit_if_items_changed(
+        items: &[skillhub_core::relationship::RelationshipCheckItem],
+        emit: &dyn Fn(AppEvent),
+    ) {
+        if items.iter().any(|item| {
+            matches!(
+                item.status,
+                skillhub_core::relationship::RelationshipCheckItemStatus::Checked
+                    | skillhub_core::relationship::RelationshipCheckItemStatus::Archived
+            )
+        }) {
+            emit(AppEvent::FactsChanged(FactsChanged::new()));
+        }
+    }
+
+    /// 桌面端可靠的 resume 信号：主窗口重新聚焦。
+    pub fn on_app_resume(&self) {
+        if let Ok(mut runtime) = self.pump.runtime().lock() {
+            runtime.on_app_resumed();
+        }
+    }
+
+    /// RunEvent::Exit：置停、关停 watcher（关闭 channel、释放 OS 句柄）
+    /// 并等待后台线程退出。
+    pub fn shutdown(&self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.pump.stop();
+        if let Some(handle) = self.task.lock().expect("watch task").take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// setup 在主界面显示后调用：managed state 强持有 pump（6.6），启动后台
+/// watcher 线程，并把主窗口重新聚焦接到 resume 补偿上。
+fn start_relationship_watcher(app: &tauri::App, facade: &Arc<LocalApplicationFacade>) {
+    let lifecycle = Arc::new(RelationshipWatchLifecycle::new(RelationshipWatchPump::new(
+        Arc::clone(facade),
+    )));
+    app.manage(Arc::clone(&lifecycle));
+    lifecycle.start_watcher_thread(app.handle().clone());
+    if let Some(window) = app.get_webview_window("main") {
+        let handle = app.handle().clone();
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                if let Some(lifecycle) = handle.try_state::<Arc<RelationshipWatchLifecycle>>() {
+                    lifecycle.on_app_resume();
+                }
+            }
+        });
+    }
+}
+
 /// Hands the platform browser to the facade. Without it every external link
 /// (README links, the official release page) is refused by the facade, so the
 /// registration is part of the startup contract rather than an optimization.
@@ -289,6 +425,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
                     updater::TauriUpdateInstaller::for_app(app.handle().clone()),
                 ));
                 register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener));
+                start_relationship_watcher(app, &facade);
                 Ok(())
             }
         })
@@ -300,7 +437,15 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
             pick_local_directory,
             open_local_directory
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())?
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(lifecycle) = app_handle.try_state::<Arc<RelationshipWatchLifecycle>>() {
+                    lifecycle.shutdown();
+                }
+            }
+        });
+    Ok(())
 }
 
 pub fn run() -> tauri::Result<()> {
@@ -884,5 +1029,252 @@ mod path_grant_tests {
         let draft = custom_agent_draft(grant_id, path);
         tauri::async_runtime::block_on(bridge.execute(AppCommand::CreateCustomAgent(draft)))
             .expect("seed custom agent");
+    }
+}
+
+#[cfg(test)]
+mod relationship_watch_lifecycle_tests {
+    //! Task 6C 验收：桌面 shell 强持有 confirmation pump；主界面显示后才
+    //! 启动 watcher（6.7）；窗口聚焦作为 resume 信号（6.8）；确认产生事实
+    //! 变化才发布既有 FactsChanged app_event（6.11）；退出路径关停后台
+    //! 线程并释放 watcher（6.10）。
+
+    use super::*;
+
+    fn facade_with(workspace: &std::path::Path) -> Arc<LocalApplicationFacade> {
+        let database =
+            skillhub_storage::Database::open(workspace.join("db.sqlite")).expect("database");
+        let library_root = workspace.join("library");
+        skillhub_storage::CentralLibrary::initialize(&library_root).expect("initialize library");
+        Arc::new(LocalApplicationFacade::new_with_library(
+            database,
+            &library_root,
+        ))
+    }
+
+    fn write_skill(root: &std::path::Path, body: &str) {
+        std::fs::create_dir_all(root).expect("create dir");
+        std::fs::write(root.join("SKILL.md"), body).expect("write SKILL.md");
+    }
+
+    fn import_copy(facade: &LocalApplicationFacade, root: &std::path::Path, name: &str) {
+        let candidate = skillhub_core::ImportCandidate::detected(
+            skillhub_core::SourceDescriptor::new(
+                skillhub_core::SourceKind::Local,
+                skillhub_core::SourceLocator::local_path(root),
+            ),
+            root.to_string_lossy(),
+            ".",
+            "SKILL.md",
+            name,
+        );
+        let prepared = tauri::async_runtime::block_on(facade.execute(AppCommand::PrepareImport(
+            skillhub_core::PrepareImport {
+                candidate,
+                tree_hash: None,
+            },
+        )))
+        .expect("prepared import");
+        let skillhub_core::AppCommandResult::PreparedImport(prepared) = prepared else {
+            panic!("expected prepared import");
+        };
+        let committed = tauri::async_runtime::block_on(
+            facade.execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+                prepared_import_id: prepared.id,
+                decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+                governance_decision: skillhub_core::ImportGovernanceDecision {
+                    group_actions: prepared
+                        .analysis
+                        .governance_groups
+                        .iter()
+                        .map(|group| (group.group_id.clone(), group.default_action))
+                        .collect(),
+                    item_overrides: Default::default(),
+                },
+                batch_id: None,
+                candidate_key: None,
+            })),
+        )
+        .expect("commit import");
+        let skillhub_core::AppCommandResult::ImportSummary(_) = committed else {
+            panic!("expected import summary");
+        };
+    }
+
+    struct Recorder {
+        events: Mutex<Vec<String>>,
+    }
+
+    impl Recorder {
+        fn emit(&self, event: AppEvent) {
+            self.events
+                .lock()
+                .expect("recorder mutex")
+                .push(match event {
+                    AppEvent::FactsChanged(_) => "facts_changed".to_owned(),
+                    AppEvent::OperationFinished(_) => "operation_finished".to_owned(),
+                    AppEvent::OperationProgress(_) => "operation_progress".to_owned(),
+                });
+        }
+
+        fn events(&self) -> Vec<String> {
+            self.events.lock().expect("recorder mutex").clone()
+        }
+    }
+
+    #[test]
+    fn healthy_relations_produce_no_facts_changed_events() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_with(workspace.path());
+        let source = workspace.path().join("healthy-src");
+        write_skill(&source, "# Healthy\n");
+        import_copy(&facade, &source, "Healthy");
+
+        let lifecycle = super::RelationshipWatchLifecycle::new(
+            skillhub_application::relationship_watch_confirmation::RelationshipWatchPump::new(
+                facade.clone(),
+            ),
+        );
+        let recorder = Arc::new(Recorder {
+            events: Mutex::new(Vec::new()),
+        });
+        let sink = recorder.clone();
+        let emit = move |event: AppEvent| sink.emit(event);
+
+        assert!(lifecycle.tick(&emit), "the startup tick runs");
+        assert!(lifecycle.tick(&emit), "the second tick runs");
+        assert!(
+            recorder.events().is_empty(),
+            "healthy relations never announce changes"
+        );
+        lifecycle.shutdown();
+    }
+
+    #[test]
+    fn confirmed_fact_changes_are_published_through_the_existing_event_channel() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_with(workspace.path());
+        let source = workspace.path().join("vanish-src");
+        write_skill(&source, "# Vanish\n");
+        import_copy(&facade, &source, "Vanish");
+        std::fs::remove_dir_all(&source).expect("remove source");
+
+        let lifecycle = super::RelationshipWatchLifecycle::new(
+            skillhub_application::relationship_watch_confirmation::RelationshipWatchPump::new(
+                facade.clone(),
+            ),
+        );
+        let recorder = Arc::new(Recorder {
+            events: Mutex::new(Vec::new()),
+        });
+        let sink = recorder.clone();
+        let emit = move |event: AppEvent| sink.emit(event);
+
+        // 首个 tick：启动 watcher + 后台 Light 检查 → 归档已删除来源。
+        assert!(lifecycle.tick(&emit));
+        assert_eq!(
+            recorder.events(),
+            vec!["facts_changed".to_owned()],
+            "the startup light check publishes exactly one facts change"
+        );
+
+        // 无事实变化的 tick 保持安静。
+        assert!(lifecycle.tick(&emit));
+        assert_eq!(recorder.events().len(), 1);
+
+        // 新导入后来源消失，窗口聚焦（resume 信号）触发补偿并发布变化。
+        let second = workspace.path().join("second-src");
+        write_skill(&second, "# Second\n");
+        import_copy(&facade, &second, "Second");
+        std::fs::remove_dir_all(&second).expect("remove second source");
+        lifecycle.on_app_resume();
+        assert!(lifecycle.tick(&emit));
+        assert_eq!(
+            recorder.events(),
+            vec!["facts_changed".to_owned(), "facts_changed".to_owned()],
+        );
+        lifecycle.shutdown();
+    }
+
+    #[test]
+    fn shutdown_prevents_further_ticking_and_releases_the_watcher() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_with(workspace.path());
+        let lifecycle = super::RelationshipWatchLifecycle::new(
+            skillhub_application::relationship_watch_confirmation::RelationshipWatchPump::new(
+                facade.clone(),
+            ),
+        );
+        let recorder = Recorder {
+            events: Mutex::new(Vec::new()),
+        };
+        let emit = |event: AppEvent| recorder.emit(event);
+
+        assert!(lifecycle.tick(&emit));
+        lifecycle.shutdown();
+        assert!(
+            !lifecycle.tick(&emit),
+            "a shutdown lifecycle refuses further ticks"
+        );
+    }
+
+    #[test]
+    fn app_resume_requests_a_compensation_scan() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let facade = facade_with(workspace.path());
+        let lifecycle = super::RelationshipWatchLifecycle::new(
+            skillhub_application::relationship_watch_confirmation::RelationshipWatchPump::new(
+                facade.clone(),
+            ),
+        );
+        assert!(!lifecycle
+            .pump
+            .runtime()
+            .lock()
+            .expect("runtime")
+            .take_compensation_scan());
+        lifecycle.on_app_resume();
+        assert!(lifecycle
+            .pump
+            .runtime()
+            .lock()
+            .expect("runtime")
+            .take_compensation_scan());
+    }
+
+    #[test]
+    fn setup_starts_the_watcher_after_the_window_shows_and_exit_shuts_it_down() {
+        let source =
+            std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+                .expect("desktop shell source");
+        let chrome = source
+            .find("apply_main_window_chrome(app)?")
+            .expect("window chrome first");
+        let start = source
+            .find("start_relationship_watcher(app, &facade)")
+            .expect("watcher startup must be wired in setup");
+        let exit = source
+            .find("RunEvent::Exit")
+            .expect("the exit path must be wired");
+        assert!(
+            chrome < start,
+            "the watcher starts only after the main window is shown (plan 6.7)"
+        );
+        assert!(
+            source.contains("lifecycle.shutdown()"),
+            "the exit path must shut the watcher lifecycle down (plan 6.10)"
+        );
+        assert!(
+            exit < source.len(),
+            "sanity: the exit handler is present in the shell"
+        );
+        assert!(
+            source.contains("WindowEvent::Focused(true)"),
+            "window focus is the desktop resume signal (plan 6.8)"
+        );
+        assert!(
+            source.contains("eprintln!(\"relationship watcher"),
+            "watcher startup failures write diagnostics without blocking the UI (plan 6.7)"
+        );
     }
 }

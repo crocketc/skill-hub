@@ -5001,6 +5001,7 @@ dependencies = [
  "serde_json",
  "skillhub-application",
  "skillhub-core",
+ "skillhub-storage",
  "specta",
  "specta-serde",
  "specta-typescript",

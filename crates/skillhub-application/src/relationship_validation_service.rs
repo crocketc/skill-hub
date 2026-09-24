@@ -145,6 +145,20 @@ fn check_one_relation(
         RelationshipPathProbe::MissingWithAccessibleParent => {
             archive_removed_relation(facade, database, &relation, now)
         }
+        // Light 只核可达：可达性声明本身不改写既有健康与指纹裁决（否则
+        // 周期性补偿扫描会反复抹掉 Full 核验事实并造成事实抖动）；离线、
+        // 权限受限与 Missing 仍照常落库。
+        RelationshipPathProbe::Accessible { .. }
+            if request.level == RelationshipCheckLevel::Light =>
+        {
+            RelationshipCheckItem {
+                relation_id: relation.relation_id.clone(),
+                skill_id: relation.skill_id,
+                status: RelationshipCheckItemStatus::Unchanged,
+                health: Some(relation.health),
+                reason: None,
+            }
+        }
         probe => {
             let occupied = request.level == RelationshipCheckLevel::Full
                 && path_lives_under(&relation.source_path, central_root);

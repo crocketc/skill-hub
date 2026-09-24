@@ -130,6 +130,9 @@ pub struct RelationshipWatchRuntime {
     watcher: NativeRelationshipWatcher,
     roots_generation: u64,
     pending: VecDeque<WatchHint>,
+    /// 与 watcher 运行状态无关的补偿意图：watcher 停止期间收到的 resume
+    /// 也要在下一次 collect 时成为补偿载体，不因未运行而丢失。
+    resume_pending: bool,
 }
 
 impl std::fmt::Debug for RelationshipWatchRuntime {
@@ -172,6 +175,7 @@ impl RelationshipWatchRuntime {
             ),
             roots_generation: 0,
             pending: VecDeque::new(),
+            resume_pending: false,
         }
     }
 
@@ -189,7 +193,11 @@ impl RelationshipWatchRuntime {
 
     /// Lifecycle-injected compensation triggers (Task 6C).
     pub fn on_app_resumed(&mut self) -> bool {
-        self.watcher.on_app_resumed()
+        if self.resume_pending {
+            return false;
+        }
+        self.resume_pending = true;
+        true
     }
 
     pub fn on_reconnected(&mut self, root: impl Into<String>) -> bool {
@@ -198,6 +206,12 @@ impl RelationshipWatchRuntime {
 
     pub fn on_overflow(&mut self, root: impl Into<String>) -> bool {
         self.watcher.on_overflow(root)
+    }
+
+    /// 仅供测试：观察补偿意图是否已提交（含 watcher 运行态与 resume 意图）。
+    #[doc(hidden)]
+    pub fn take_compensation_scan(&mut self) -> bool {
+        std::mem::take(&mut self.resume_pending) | self.watcher.take_compensation_scan()
     }
 
     /// First start: pull the current root generation and begin watching.
@@ -228,7 +242,9 @@ impl RelationshipWatchRuntime {
         }
         self.watcher.apply_root_generation(roots)?;
         if !self.watcher.is_running() && self.watcher.active_roots().next().is_some() {
-            self.watcher.start()?;
+            // 注册失败（如来源目录暂不可见）不阻断本 tick 的补偿确认；
+            // 下一次 generation 变化会重试注册。
+            let _ = self.watcher.start();
         }
         self.roots_generation += 1;
         Ok(true)
@@ -242,7 +258,9 @@ impl RelationshipWatchRuntime {
             self.pending.push_back(hint);
             queued += 1;
         }
-        if self.watcher.take_compensation_scan() {
+        let watcher_scan = self.watcher.take_compensation_scan();
+        let resume_scan = std::mem::take(&mut self.resume_pending);
+        if watcher_scan || resume_scan {
             self.pending.push_back(WatchHint::app_resumed());
             queued += 1;
         }
