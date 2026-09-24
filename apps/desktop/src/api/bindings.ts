@@ -2494,7 +2494,18 @@ export type RelationGovernanceBatchAction =
  *  用户术语「纳入集中库管理」：复用 required-backup ManagedLink 的
  *  prepare/commit/rollback 四段安全链路。
  */
-"centralize_management";
+"centralize_management" |
+/**
+ *  保留来源副本（计划 8.9/8.16）：逐行复用单条 RetainSourceCopy 的
+ *  账本写入与治理历史，绝不触碰来源目录。
+ */
+"retain_source_copy" |
+/**
+ *  清理来源副本（计划 8.9/8.16）：逐行复用单条 cleanup 状态机
+ *  （prepare → 备份 → checkpoint → 删除 → 原子归档），并要求逐行
+ *  携带显式确认。
+ */
+"clean_source_copy";
 
 /**
  *  One child item of a governance batch.  `operation_id` is the child

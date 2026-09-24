@@ -6105,6 +6105,406 @@ mod cleanup_commit_recovery {
     }
 }
 
+// ===================== 8C：来源副本批处理（batch retain/clean） =====================
+
+mod source_copy_batches {
+    //! 8C 验收：来源副本批次必须同为 source_copy 且动作一致，部署边混入
+    //! 在拆分子操作前整体拒绝（8.9）；清理逐行显式确认，未确认的行在
+    //! prepare 阶段就受阻；预览后取消的行不触碰文件系统；一行删除失败
+    //! 只影响该行，其余行照常提交；子操作走 retain/cleanup 自己的
+    //! operation kind，不借用部署转换的链路（8.16）。
+
+    use skillhub_core::relationship::{SourceCopyArchiveReason, SourceCopyDecision};
+    use skillhub_core::{AppCommand, AppCommandResult, ErrorCode, OperationId};
+
+    use super::failing_deletion::SelectiveDeletion;
+    use super::retain_and_cleanup_prepare::{agent_facade, import_source_copy, relation_fact};
+    use super::*;
+
+    fn confirmation(relation_id: &str) -> (String, String) {
+        (relation_id.to_owned(), format!("confirm:{relation_id}"))
+    }
+
+    async fn prepare_batch(
+        facade: &LocalApplicationFacade,
+        action: RelationGovernanceBatchAction,
+        relation_ids: Vec<String>,
+        confirmations: BTreeMap<String, String>,
+    ) -> RelationGovernanceBatchOutcome {
+        let prepared = facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action,
+                    relation_ids,
+                    confirmations,
+                },
+            ))
+            .await
+            .expect("prepare batch");
+        let AppCommandResult::RelationGovernanceBatch(outcome) = prepared else {
+            panic!("expected batch outcome");
+        };
+        outcome
+    }
+
+    async fn commit_batch(
+        facade: &LocalApplicationFacade,
+        batch_id: OperationId,
+        relation_ids: Vec<String>,
+    ) -> RelationGovernanceBatchOutcome {
+        let committed = facade
+            .execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id,
+                    relation_ids,
+                },
+            ))
+            .await
+            .expect("commit batch");
+        let AppCommandResult::RelationGovernanceBatch(outcome) = committed else {
+            panic!("expected batch outcome");
+        };
+        outcome
+    }
+
+    async fn history_count(
+        facade: &LocalApplicationFacade,
+        relation_id: &str,
+        action: &str,
+        result: &str,
+    ) -> usize {
+        let AppQueryResult::GovernanceHistoryPage(page) = facade
+            .query(AppQuery::ListGovernanceHistory(
+                skillhub_core::api::ListGovernanceHistory {
+                    page: 1,
+                    page_size: 50,
+                    relation_id: Some(relation_id.to_owned()),
+                    skill_id: None,
+                    agent_client_id: None,
+                    project_id: None,
+                    result: None,
+                },
+            ))
+            .await
+            .expect("governance history")
+        else {
+            panic!("expected governance history page");
+        };
+        page.items
+            .iter()
+            .filter(|entry| entry.action == action && entry.result == result)
+            .count()
+    }
+
+    fn child_operation_kind(facade: &LocalApplicationFacade, operation_id: OperationId) -> String {
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("operation lookup")
+            .expect("child operation record")
+            .kind
+    }
+
+    // 8.9：retain 批次逐行复用单条保留语义；每行一条治理历史，子操作
+    // 记录在自己的 operation kind 下。
+    #[tokio::test]
+    async fn retain_batch_commits_each_row_and_records_history() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let first = sources.path().join("batch-retain-a");
+        let second = sources.path().join("batch-retain-b");
+        write_skill(&first);
+        write_skill(&second);
+        let first_id = import_source_copy(&facade, &first, "RetainA").await;
+        let second_id = import_source_copy(&facade, &second, "RetainB").await;
+
+        let outcome = prepare_batch(
+            &facade,
+            RelationGovernanceBatchAction::RetainSourceCopy,
+            vec![first_id.clone(), second_id.clone()],
+            BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(outcome.state, RelationGovernanceBatchState::Prepared);
+        assert_eq!(outcome.prepared_count, 2);
+        assert!(outcome
+            .items
+            .iter()
+            .all(|item| item.state == RelationGovernanceBatchItemState::Prepared));
+        let child_ops: Vec<OperationId> = outcome
+            .items
+            .iter()
+            .filter_map(|item| item.operation_id)
+            .collect();
+        assert_eq!(child_ops.len(), 2);
+
+        let outcome = commit_batch(
+            &facade,
+            outcome.batch_id,
+            vec![first_id.clone(), second_id.clone()],
+        )
+        .await;
+        assert_eq!(outcome.state, RelationGovernanceBatchState::Committed);
+        assert_eq!(outcome.committed_count, 2);
+        assert!(outcome
+            .items
+            .iter()
+            .all(|item| item.state == RelationGovernanceBatchItemState::Committed));
+
+        for relation_id in [&first_id, &second_id] {
+            let fact = relation_fact(&facade, relation_id).await;
+            assert_eq!(fact.decision, SourceCopyDecision::Retained);
+            assert_eq!(
+                history_count(&facade, relation_id, "retain", "retained").await,
+                1,
+                "one retained history event per relation"
+            );
+            assert!(
+                first.exists() && second.exists(),
+                "retain never touches the source directories"
+            );
+        }
+        for operation_id in child_ops {
+            assert_eq!(
+                child_operation_kind(&facade, operation_id),
+                "retain_source_copy",
+                "retain children run under their own operation kind"
+            );
+        }
+    }
+
+    // 8.9：来源动作只接受同为 source_copy 的批次；部署边混入在拆分
+    // 子操作前整体拒绝。
+    #[tokio::test]
+    async fn source_actions_refuse_batches_containing_deployment_edges() {
+        let fixture = fixture().await;
+        let sources = tempfile::tempdir().expect("sources");
+        let source = sources.path().join("mixed-src");
+        write_skill(&source);
+        let copy_id =
+            super::unified_and_history::import_source_copy(&fixture.facade, &source, "Mixed").await;
+
+        for action in [
+            RelationGovernanceBatchAction::RetainSourceCopy,
+            RelationGovernanceBatchAction::CleanSourceCopy,
+        ] {
+            let error = fixture
+                .facade
+                .execute(AppCommand::PrepareRelationGovernanceBatch(
+                    PrepareRelationGovernanceBatch {
+                        action,
+                        relation_ids: vec![fixture.relation_id.clone(), copy_id.clone()],
+                        confirmations: BTreeMap::new(),
+                    },
+                ))
+                .await
+                .expect_err("deployment edges are refused in source batches");
+            assert_eq!(
+                error.code.as_str(),
+                ErrorCode::InvalidInput.as_str(),
+                "action {action:?} rejects mixed kinds"
+            );
+        }
+    }
+
+    // 7.5：纳入管理的批次同样拒绝来源副本与部署边混批——批次行改用统一
+    // 清单投影后，该约束才真正有来源副本事实可判。
+    #[tokio::test]
+    async fn centralize_management_refuses_mixed_kinds() {
+        let fixture = fixture().await;
+        let sources = tempfile::tempdir().expect("sources");
+        let source = sources.path().join("mixed-central-src");
+        write_skill(&source);
+        let copy_id =
+            super::unified_and_history::import_source_copy(&fixture.facade, &source, "MixedC")
+                .await;
+        let error = fixture
+            .facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action: RelationGovernanceBatchAction::CentralizeManagement,
+                    relation_ids: vec![fixture.relation_id.clone(), copy_id],
+                    confirmations: BTreeMap::new(),
+                },
+            ))
+            .await
+            .expect_err("mixed kinds are refused before child operations");
+        assert_eq!(error.code.as_str(), ErrorCode::InvalidInput.as_str());
+    }
+
+    // 8.9：清理逐行显式确认是硬门槛；预览后未提交的行按取消处理且
+    // 不触碰文件；回滚逐行恢复。
+    #[tokio::test]
+    async fn clean_batch_confirms_rows_cancels_deselected_and_rolls_back() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let first = sources.path().join("batch-clean-a");
+        let second = sources.path().join("batch-clean-b");
+        write_skill(&first);
+        write_skill(&second);
+        let first_id = import_source_copy(&facade, &first, "CleanA").await;
+        let second_id = import_source_copy(&facade, &second, "CleanB").await;
+        let first_original = first.to_string_lossy().into_owned();
+
+        // 未确认：全部受阻，不产生子操作。
+        let outcome = prepare_batch(
+            &facade,
+            RelationGovernanceBatchAction::CleanSourceCopy,
+            vec![first_id.clone(), second_id.clone()],
+            BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(outcome.state, RelationGovernanceBatchState::Failed);
+        assert_eq!(outcome.blocked_count, 2);
+        assert!(outcome
+            .items
+            .iter()
+            .all(|item| item.state == RelationGovernanceBatchItemState::Blocked));
+
+        // 逐行确认后进入准备，预览携带将被删除的原路径。
+        let outcome = prepare_batch(
+            &facade,
+            RelationGovernanceBatchAction::CleanSourceCopy,
+            vec![first_id.clone(), second_id.clone()],
+            BTreeMap::from([confirmation(&first_id), confirmation(&second_id)]),
+        )
+        .await;
+        assert_eq!(outcome.state, RelationGovernanceBatchState::Prepared);
+        assert_eq!(outcome.prepared_count, 2);
+        for item in &outcome.items {
+            assert_eq!(item.state, RelationGovernanceBatchItemState::Prepared);
+            assert!(!item.rollback_available);
+            assert_eq!(
+                item.affected_paths,
+                vec![if item.relation_id == first_id {
+                    first_original.clone()
+                } else {
+                    second.to_string_lossy().into_owned()
+                }]
+            );
+        }
+
+        // 预览后只保留第一行：第二行取消且毫发无损。
+        let outcome = commit_batch(&facade, outcome.batch_id, vec![first_id.clone()]).await;
+        assert_eq!(outcome.state, RelationGovernanceBatchState::Committed);
+        let first_item = outcome
+            .items
+            .iter()
+            .find(|item| item.relation_id == first_id)
+            .expect("first item");
+        assert_eq!(
+            first_item.state,
+            RelationGovernanceBatchItemState::Committed
+        );
+        assert!(first_item.rollback_available);
+        let second_item = outcome
+            .items
+            .iter()
+            .find(|item| item.relation_id == second_id)
+            .expect("second item");
+        assert_eq!(
+            second_item.state,
+            RelationGovernanceBatchItemState::Cancelled
+        );
+        assert!(!first.exists(), "committed cleanup removed the source");
+        assert!(second.exists(), "cancelled cleanup left the source alone");
+        let second_fact = relation_fact(&facade, &second_id).await;
+        assert_eq!(second_fact.decision, SourceCopyDecision::Pending);
+        let first_fact = relation_fact(&facade, &first_id).await;
+        assert!(!first_fact.active, "committed row is archived");
+        assert_eq!(
+            first_fact.archive_reason,
+            Some(SourceCopyArchiveReason::Cleaned)
+        );
+        let first_operation_id = first_item.operation_id.expect("child operation");
+        assert_eq!(
+            child_operation_kind(&facade, first_operation_id),
+            "migrate_original",
+            "cleanup children run under the original-migration operation kind"
+        );
+
+        // 批次回退：仅选中的行用备份恢复。
+        let rolled = facade
+            .execute(AppCommand::RollbackRelationGovernanceBatch(
+                RollbackRelationGovernanceBatch {
+                    batch_id: outcome.batch_id,
+                    relation_ids: vec![first_id.clone()],
+                },
+            ))
+            .await
+            .expect("rollback batch");
+        let AppCommandResult::RelationGovernanceBatch(rolled) = rolled else {
+            panic!("expected batch outcome");
+        };
+        assert_eq!(
+            rolled.items[0].state,
+            RelationGovernanceBatchItemState::RolledBack
+        );
+        assert!(first.exists(), "rollback restored the original directory");
+    }
+
+    // 8.9：一行删除失败只影响该行，其余行照常提交（部分成功）。
+    #[tokio::test]
+    async fn clean_batch_delete_failure_keeps_the_other_rows_committed() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, _agent_root) = agent_facade(workspace.path());
+        let sources = tempfile::tempdir().expect("sources");
+        let good = sources.path().join("batch-clean-good");
+        let bad = sources.path().join("batch-clean-bad");
+        write_skill(&good);
+        write_skill(&bad);
+        let good_id = import_source_copy(&facade, &good, "CleanGood").await;
+        let bad_id = import_source_copy(&facade, &bad, "CleanBad").await;
+        facade.set_original_migration_deletion_for_tests(std::sync::Arc::new(SelectiveDeletion {
+            fail_when_contains: "batch-clean-bad".into(),
+        }));
+
+        let outcome = prepare_batch(
+            &facade,
+            RelationGovernanceBatchAction::CleanSourceCopy,
+            vec![bad_id.clone(), good_id.clone()],
+            BTreeMap::from([confirmation(&bad_id), confirmation(&good_id)]),
+        )
+        .await;
+        assert_eq!(outcome.prepared_count, 2);
+
+        let outcome = commit_batch(
+            &facade,
+            outcome.batch_id,
+            vec![bad_id.clone(), good_id.clone()],
+        )
+        .await;
+        assert_eq!(
+            outcome.state,
+            RelationGovernanceBatchState::PartiallyCommitted
+        );
+        let bad_item = outcome
+            .items
+            .iter()
+            .find(|item| item.relation_id == bad_id)
+            .expect("bad item");
+        assert_eq!(bad_item.state, RelationGovernanceBatchItemState::Failed);
+        assert!(bad.exists(), "failed row keeps the user's files");
+        let bad_fact = relation_fact(&facade, &bad_id).await;
+        assert!(bad_fact.active);
+        assert_eq!(
+            bad_fact.health,
+            skillhub_core::relationship::SourceCopyHealth::OperationFailed
+        );
+        let good_item = outcome
+            .items
+            .iter()
+            .find(|item| item.relation_id == good_id)
+            .expect("good item");
+        assert_eq!(good_item.state, RelationGovernanceBatchItemState::Committed);
+        assert!(!good.exists(), "unrelated row committed as usual");
+    }
+}
+
 /// 8.5 测试注入：删除永远失败的文件系统假象（模拟权限墙/占用）。
 pub mod failing_deletion {
     pub struct FailingDeletion;
@@ -6115,6 +6515,24 @@ pub mod failing_deletion {
                 std::io::ErrorKind::PermissionDenied,
                 "injected deletion failure",
             ))
+        }
+    }
+
+    /// 8.9 测试注入：只对命中片段的路径注入删除失败，其余照常删除，
+    /// 用于验证批处理中单行失败不影响其余行。
+    pub struct SelectiveDeletion {
+        pub fail_when_contains: String,
+    }
+
+    impl skillhub_application::OriginalMigrationDeletion for SelectiveDeletion {
+        fn delete_dir_all(&self, path: &std::path::Path) -> std::io::Result<()> {
+            if path.to_string_lossy().contains(&self.fail_when_contains) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "injected selective deletion failure",
+                ));
+            }
+            std::fs::remove_dir_all(path)
         }
     }
 }

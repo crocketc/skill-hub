@@ -25,19 +25,21 @@ use std::collections::{BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, CommitRelationGovernanceBatch, CommitRelationMigration,
-    ListRelationGovernance, PrepareRelationGovernanceBatch, PrepareRelationMigration,
-    RelationGovernanceBatchAction, RelationGovernanceBatchItem, RelationGovernanceBatchItemState,
-    RelationGovernanceBatchOutcome, RelationGovernanceBatchState,
-    RelationshipMigrationBackupPolicy, RollbackRelationGovernanceBatch, RollbackRelationMigration,
+    AppCommandResult, AppQueryResult, CommitOriginalMigration, CommitRelationGovernanceBatch,
+    CommitRelationMigration, ListRelationGovernance, PrepareOriginalMigration,
+    PrepareRelationGovernanceBatch, PrepareRelationMigration, RelationGovernanceBatchAction,
+    RelationGovernanceBatchItem, RelationGovernanceBatchItemState, RelationGovernanceBatchOutcome,
+    RelationGovernanceBatchState, RelationshipMigrationBackupPolicy, RetainSourceCopy,
+    RollbackOriginalMigration, RollbackRelationGovernanceBatch, RollbackRelationMigration,
 };
 use skillhub_core::relationship::{
-    project_relation_governance_ledger_with_names, RelationGovernanceFilters,
-    RelationGovernanceNames, RelationGovernanceReadiness,
+    project_unified_governance_ledger, GovernableRelationFact, RelationGovernanceFilters,
+    RelationGovernanceNames, RelationGovernanceReadiness, RelationGovernanceRow,
+    SourceCopyDecision,
 };
 use skillhub_core::{
-    AppError, AppResult, ErrorCode, OperationId, OperationPhase, RelationMigrationState,
-    RelationMigrationTargetMode, Severity,
+    AppError, AppResult, ErrorCode, OperationId, OperationPhase, OriginalMigrationState,
+    RelationMigrationState, RelationMigrationTargetMode, Severity,
 };
 use skillhub_storage::Database;
 
@@ -52,6 +54,11 @@ const BATCH_KIND: &str = "relation_governance_batch";
 struct GovernanceBatchChild {
     relation_id: String,
     operation_id: OperationId,
+    /// CleanSourceCopy 在 prepare 阶段逐行取得的删除确认；提交时原样传
+    /// 给单条状态机。未确认的行根本不会成为子操作，所以部署转换子项
+    /// 恒为 false（旧批次记录缺字段时同样按 false 读取）。
+    #[serde(default)]
+    ownership_confirmed: bool,
 }
 
 impl LocalApplicationFacade {
@@ -170,10 +177,20 @@ impl LocalApplicationFacade {
 
         let rows = self.with_database("query.relation_governance_ledger", |database| {
             let relationship_repository = database.relationship_repository();
-            let ledger = project_relation_governance_ledger_with_names(
+            // 统一清单（plan 7.8）：批次行的资格判定与治理页同源，来源副本
+            // 与部署边都在场，来源批次约束（plan 8.9）才有事实可判。
+            let mut facts = Vec::new();
+            for copy in relationship_repository.list_source_copy_relations(true)? {
+                facts.push(GovernableRelationFact::SourceCopy(copy));
+            }
+            for relation in relationship_repository.list_relations()? {
+                facts.push(GovernableRelationFact::Deployment(relation));
+            }
+            let ledger = project_unified_governance_ledger(
                 &RelationGovernanceFilters::default(),
-                &relationship_repository.list_relations()?,
+                &facts,
                 &relationship_repository.list_capabilities()?,
+                &std::collections::BTreeSet::new(),
                 &relationship_names(database)?,
                 relationship_repository.relationship_revision()?,
                 relationship_repository.last_verified_at()?,
@@ -191,6 +208,17 @@ impl LocalApplicationFacade {
         if has_source_copy && has_deployment {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
                 .with_param("reason", "mixed_relation_governance_batch_kinds"));
+        }
+        // 批次约束（plan 8.9）：来源动作只接受同为来源副本的批次；部署边
+        // 混入在拆分子操作前整体拒绝，而不是逐行降级成 blocked。
+        let source_scoped = matches!(
+            request.action,
+            RelationGovernanceBatchAction::RetainSourceCopy
+                | RelationGovernanceBatchAction::CleanSourceCopy
+        );
+        if source_scoped && has_deployment {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
+                .with_param("reason", "batch_action_requires_source_copy_rows"));
         }
         self.journal_begin(batch_id, BATCH_KIND);
 
@@ -211,49 +239,22 @@ impl LocalApplicationFacade {
                 .get(&relation_id)
                 .filter(|token| !token.trim().is_empty())
                 .cloned();
-            if !batch_row_is_executable(row, confirmation_token.as_deref()) {
-                items.push(blocked_item(
-                    relation_id,
-                    ErrorCode::OperationConflict,
-                    "relationship is not eligible to be brought under central management",
-                    row.blockers.clone(),
-                ));
-                continue;
-            }
-            let prepared = self.prepare_relation_migration(PrepareRelationMigration {
-                relation_id: relation_id.clone(),
-                target_mode: RelationMigrationTargetMode::ManagedLink,
-                backup_policy: RelationshipMigrationBackupPolicy::Required,
-                confirmation_token,
-            });
-            match prepared {
-                Ok(AppCommandResult::PreparedRelationMigration(prepared)) => {
-                    children.push(GovernanceBatchChild {
-                        relation_id: relation_id.clone(),
-                        operation_id: prepared.operation_id,
-                    });
-                    items.push(RelationGovernanceBatchItem {
-                        relation_id,
-                        operation_id: Some(prepared.operation_id),
-                        state: RelationGovernanceBatchItemState::Prepared,
-                        error_code: None,
-                        detail: None,
-                        retryable: true,
-                        rollback_available: prepared.rollback_available,
-                        backup_path: Some(prepared.backup_path.clone()),
-                        affected_paths: prepared.affected_paths.clone(),
-                        blockers: Vec::new(),
-                    });
+            // 8.16：按 action 分派到各自的逐行状态机；批处理本身只做编排。
+            let (child, item) = match request.action {
+                RelationGovernanceBatchAction::CentralizeManagement => {
+                    self.prepare_centralize_item(relation_id.clone(), row, confirmation_token)
                 }
-                Ok(_) => items.push(failed_item(
-                    relation_id,
-                    ErrorCode::InternalError,
-                    Some("prepare did not return a prepared relationship migration".into()),
-                )),
-                Err(error) => {
-                    items.push(failed_item(relation_id, error.code, error_detail(&error)))
+                RelationGovernanceBatchAction::RetainSourceCopy => {
+                    self.prepare_retain_item(relation_id.clone(), row)
                 }
+                RelationGovernanceBatchAction::CleanSourceCopy => {
+                    self.prepare_clean_item(relation_id.clone(), confirmation_token)
+                }
+            };
+            if let Some(child) = child {
+                children.push(child);
             }
+            items.push(item);
         }
 
         let prepared_count = count(&items, RelationGovernanceBatchItemState::Prepared);
@@ -285,6 +286,170 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::RelationGovernanceBatch(outcome))
     }
 
+    /// 部署转换行的逐行准备：与单条流程完全同链路（资格门 + prepare）。
+    fn prepare_centralize_item(
+        &self,
+        relation_id: String,
+        row: &RelationGovernanceRow,
+        confirmation_token: Option<String>,
+    ) -> (Option<GovernanceBatchChild>, RelationGovernanceBatchItem) {
+        if !batch_row_is_executable(row, confirmation_token.as_deref()) {
+            return (
+                None,
+                blocked_item(
+                    relation_id,
+                    ErrorCode::OperationConflict,
+                    "relationship is not eligible to be brought under central management",
+                    row.blockers.clone(),
+                ),
+            );
+        }
+        match self.prepare_relation_migration(PrepareRelationMigration {
+            relation_id: relation_id.clone(),
+            target_mode: RelationMigrationTargetMode::ManagedLink,
+            backup_policy: RelationshipMigrationBackupPolicy::Required,
+            confirmation_token,
+        }) {
+            Ok(AppCommandResult::PreparedRelationMigration(prepared)) => {
+                let child = GovernanceBatchChild {
+                    relation_id: relation_id.clone(),
+                    operation_id: prepared.operation_id,
+                    ownership_confirmed: false,
+                };
+                let item = RelationGovernanceBatchItem {
+                    relation_id,
+                    operation_id: Some(prepared.operation_id),
+                    state: RelationGovernanceBatchItemState::Prepared,
+                    error_code: None,
+                    detail: None,
+                    retryable: true,
+                    rollback_available: prepared.rollback_available,
+                    backup_path: Some(prepared.backup_path.clone()),
+                    affected_paths: prepared.affected_paths.clone(),
+                    blockers: Vec::new(),
+                };
+                (Some(child), item)
+            }
+            Ok(_) => (
+                None,
+                failed_item(
+                    relation_id,
+                    ErrorCode::InternalError,
+                    Some("prepare did not return a prepared relationship migration".into()),
+                ),
+            ),
+            Err(error) => (
+                None,
+                failed_item(relation_id, error.code, error_detail(&error)),
+            ),
+        }
+    }
+
+    /// 保留行的逐行准备：只读检查决策事实，绝不触碰来源目录。已是
+    /// Retained 的行如实报受阻——批处理不把「无事可做」伪装成成功。
+    fn prepare_retain_item(
+        &self,
+        relation_id: String,
+        row: &RelationGovernanceRow,
+    ) -> (Option<GovernanceBatchChild>, RelationGovernanceBatchItem) {
+        let Some(fact) = row.source_copy() else {
+            return (
+                None,
+                blocked_item(
+                    relation_id,
+                    ErrorCode::OperationConflict,
+                    "row is not a source copy",
+                    row.blockers.clone(),
+                ),
+            );
+        };
+        if fact.decision != SourceCopyDecision::Pending {
+            return (
+                None,
+                blocked_item(
+                    relation_id,
+                    ErrorCode::OperationConflict,
+                    "source copy is not waiting for a retain decision",
+                    Vec::new(),
+                ),
+            );
+        }
+        let child = GovernanceBatchChild {
+            operation_id: OperationId::new(),
+            relation_id: relation_id.clone(),
+            ownership_confirmed: false,
+        };
+        let item = RelationGovernanceBatchItem {
+            relation_id,
+            operation_id: Some(child.operation_id),
+            state: RelationGovernanceBatchItemState::Prepared,
+            error_code: None,
+            detail: None,
+            retryable: true,
+            rollback_available: false,
+            backup_path: None,
+            affected_paths: Vec::new(),
+            blockers: Vec::new(),
+        };
+        (Some(child), item)
+    }
+
+    /// 清理行的逐行准备：逐行显式确认是硬门槛，未确认的行不产生子操作；
+    /// 确认后复用单条 cleanup prepare（Full 校验与冲突判定都在里面）。
+    fn prepare_clean_item(
+        &self,
+        relation_id: String,
+        confirmation_token: Option<String>,
+    ) -> (Option<GovernanceBatchChild>, RelationGovernanceBatchItem) {
+        let Some(_) = confirmation_token.filter(|token| !token.trim().is_empty()) else {
+            return (
+                None,
+                blocked_item(
+                    relation_id,
+                    ErrorCode::OperationConflict,
+                    "per-row ownership confirmation is required before cleanup",
+                    Vec::new(),
+                ),
+            );
+        };
+        match self.prepare_original_migration(PrepareOriginalMigration {
+            source_relation_id: relation_id.clone(),
+        }) {
+            Ok(AppCommandResult::OriginalMigrationPlan(plan)) => {
+                let child = GovernanceBatchChild {
+                    relation_id: relation_id.clone(),
+                    operation_id: plan.operation_id,
+                    ownership_confirmed: true,
+                };
+                let item = RelationGovernanceBatchItem {
+                    relation_id,
+                    operation_id: Some(plan.operation_id),
+                    state: RelationGovernanceBatchItemState::Prepared,
+                    error_code: None,
+                    detail: None,
+                    retryable: true,
+                    rollback_available: false,
+                    backup_path: None,
+                    affected_paths: vec![plan.original_path.clone()],
+                    blockers: Vec::new(),
+                };
+                (Some(child), item)
+            }
+            Ok(_) => (
+                None,
+                failed_item(
+                    relation_id,
+                    ErrorCode::InternalError,
+                    Some("prepare did not return an original migration plan".into()),
+                ),
+            ),
+            Err(error) => (
+                None,
+                failed_item(relation_id, error.code, error_detail(&error)),
+            ),
+        }
+    }
+
     /// Executes the rows the user kept after the preview.  Every child is
     /// committed independently, so a failure never discards the rows that
     /// already succeeded, and a row the user deselected is cancelled without
@@ -302,56 +467,17 @@ impl LocalApplicationFacade {
         let mut items = Vec::new();
         for child in &children {
             if !selected.contains(&child.relation_id) {
-                items.push(self.cancel_governance_batch_child(child).await);
+                items.push(self.cancel_governance_batch_child(child, action).await);
                 continue;
             }
-            let committed = self
-                .commit_relation_migration(CommitRelationMigration {
-                    prepared_relation_migration_id: child.operation_id,
-                })
-                .await;
-            match committed {
-                Ok(AppCommandResult::RelationMigrationResult(result)) => {
-                    items.push(RelationGovernanceBatchItem {
-                        relation_id: child.relation_id.clone(),
-                        operation_id: Some(result.operation_id),
-                        state: match result.state {
-                            RelationMigrationState::Committed => {
-                                RelationGovernanceBatchItemState::Committed
-                            }
-                            // A row that was rolled back to its original
-                            // relationship changed nothing, so it is reported
-                            // as cancelled rather than as a success.
-                            RelationMigrationState::RolledBack => {
-                                RelationGovernanceBatchItemState::Cancelled
-                            }
-                            RelationMigrationState::Cancelled => {
-                                RelationGovernanceBatchItemState::Cancelled
-                            }
-                            RelationMigrationState::Failed | RelationMigrationState::Prepared => {
-                                RelationGovernanceBatchItemState::Failed
-                            }
-                        },
-                        error_code: result.error_code,
-                        detail: result.detail.clone(),
-                        retryable: true,
-                        rollback_available: result.rollback_available,
-                        backup_path: result.backup_path.clone(),
-                        affected_paths: result.affected_paths.clone(),
-                        blockers: Vec::new(),
-                    });
+            let item = match action {
+                RelationGovernanceBatchAction::CentralizeManagement => {
+                    self.commit_centralize_child(child).await
                 }
-                Ok(_) => items.push(failed_item(
-                    child.relation_id.clone(),
-                    ErrorCode::InternalError,
-                    Some("commit did not return a relationship migration result".into()),
-                )),
-                Err(error) => items.push(failed_item(
-                    child.relation_id.clone(),
-                    error.code,
-                    error_detail(&error),
-                )),
-            }
+                RelationGovernanceBatchAction::RetainSourceCopy => self.commit_retain_child(child),
+                RelationGovernanceBatchAction::CleanSourceCopy => self.commit_clean_child(child),
+            };
+            items.push(item);
         }
 
         // Rows that were refused during prepare are not selectable; reporting
@@ -421,45 +547,23 @@ impl LocalApplicationFacade {
             if !selected.contains(&child.relation_id) {
                 continue;
             }
-            let rolled_back = self
-                .rollback_relation_migration(RollbackRelationMigration {
-                    operation_id: child.operation_id,
-                })
-                .await;
-            match rolled_back {
-                Ok(AppCommandResult::RelationMigrationResult(result)) => {
-                    items.push(RelationGovernanceBatchItem {
-                        relation_id: child.relation_id.clone(),
-                        operation_id: Some(result.operation_id),
-                        state: match result.state {
-                            RelationMigrationState::RolledBack => {
-                                RelationGovernanceBatchItemState::RolledBack
-                            }
-                            RelationMigrationState::Committed => {
-                                RelationGovernanceBatchItemState::Committed
-                            }
-                            _ => RelationGovernanceBatchItemState::Failed,
-                        },
-                        error_code: result.error_code,
-                        detail: result.detail.clone(),
-                        retryable: true,
-                        rollback_available: result.rollback_available,
-                        backup_path: result.backup_path.clone(),
-                        affected_paths: result.affected_paths.clone(),
-                        blockers: Vec::new(),
-                    });
+            let item = match action {
+                RelationGovernanceBatchAction::CentralizeManagement => {
+                    self.rollback_centralize_child(child).await
                 }
-                Ok(_) => items.push(failed_item(
+                // 保留决策是账本事实，没有文件系统回滚；如实报失败，
+                // 不假装能撤销。
+                RelationGovernanceBatchAction::RetainSourceCopy => failed_item(
                     child.relation_id.clone(),
-                    ErrorCode::InternalError,
-                    Some("rollback did not return a relationship migration result".into()),
-                )),
-                Err(error) => items.push(failed_item(
-                    child.relation_id.clone(),
-                    error.code,
-                    error_detail(&error),
-                )),
-            }
+                    ErrorCode::OperationConflict,
+                    Some(
+                        "a retained decision is a ledger fact and has no filesystem rollback"
+                            .into(),
+                    ),
+                ),
+                RelationGovernanceBatchAction::CleanSourceCopy => self.rollback_clean_child(child),
+            };
+            items.push(item);
         }
 
         let rolled_back_count = count(&items, RelationGovernanceBatchItemState::RolledBack);
@@ -504,17 +608,88 @@ impl LocalApplicationFacade {
     async fn cancel_governance_batch_child(
         &self,
         child: &GovernanceBatchChild,
+        action: RelationGovernanceBatchAction,
+    ) -> RelationGovernanceBatchItem {
+        match action {
+            RelationGovernanceBatchAction::CentralizeManagement => {
+                match self
+                    .rollback_relation_migration(RollbackRelationMigration {
+                        operation_id: child.operation_id,
+                    })
+                    .await
+                {
+                    Ok(AppCommandResult::RelationMigrationResult(result)) => {
+                        RelationGovernanceBatchItem {
+                            relation_id: child.relation_id.clone(),
+                            operation_id: Some(result.operation_id),
+                            state: RelationGovernanceBatchItemState::Cancelled,
+                            error_code: result.error_code,
+                            detail: result.detail.clone(),
+                            retryable: true,
+                            rollback_available: result.rollback_available,
+                            backup_path: result.backup_path.clone(),
+                            affected_paths: result.affected_paths.clone(),
+                            blockers: Vec::new(),
+                        }
+                    }
+                    Ok(_) => failed_item(
+                        child.relation_id.clone(),
+                        ErrorCode::InternalError,
+                        Some("cancellation did not return a relationship migration result".into()),
+                    ),
+                    Err(error) => {
+                        failed_item(child.relation_id.clone(), error.code, error_detail(&error))
+                    }
+                }
+            }
+            // 来源动作的取消行没有任何已提交或已执行的动作：保留只差一次
+            // 账本写入，清理只差一次确认后的执行。清理子操作在 prepare 时
+            // 已落一条 migrate_original 记录，取消时推进到 RolledBack，避免
+            // 悬挂的 Prepared 操作。
+            RelationGovernanceBatchAction::RetainSourceCopy => cancelled_item(child),
+            RelationGovernanceBatchAction::CleanSourceCopy => {
+                self.journal_advance(
+                    child.operation_id,
+                    "migrate_original",
+                    OperationPhase::RolledBack,
+                    None,
+                );
+                cancelled_item(child)
+            }
+        }
+    }
+
+    /// 部署转换行的逐行提交：复用单条 commit（关系锁、链接校验、备份）。
+    async fn commit_centralize_child(
+        &self,
+        child: &GovernanceBatchChild,
     ) -> RelationGovernanceBatchItem {
         match self
-            .rollback_relation_migration(RollbackRelationMigration {
-                operation_id: child.operation_id,
+            .commit_relation_migration(CommitRelationMigration {
+                prepared_relation_migration_id: child.operation_id,
             })
             .await
         {
             Ok(AppCommandResult::RelationMigrationResult(result)) => RelationGovernanceBatchItem {
                 relation_id: child.relation_id.clone(),
                 operation_id: Some(result.operation_id),
-                state: RelationGovernanceBatchItemState::Cancelled,
+                state: match result.state {
+                    RelationMigrationState::Committed => {
+                        RelationGovernanceBatchItemState::Committed
+                    }
+                    // A row that was rolled back to its original
+                    // relationship changed nothing, so it is reported
+                    // as cancelled rather than as a success.
+                    RelationMigrationState::RolledBack => {
+                        RelationGovernanceBatchItemState::Cancelled
+                    }
+                    RelationMigrationState::Cancelled => {
+                        RelationGovernanceBatchItemState::Cancelled
+                    }
+                    RelationMigrationState::Failed | RelationMigrationState::Prepared => {
+                        RelationGovernanceBatchItemState::Failed
+                    }
+                },
                 error_code: result.error_code,
                 detail: result.detail.clone(),
                 retryable: true,
@@ -526,7 +701,164 @@ impl LocalApplicationFacade {
             Ok(_) => failed_item(
                 child.relation_id.clone(),
                 ErrorCode::InternalError,
-                Some("cancellation did not return a relationship migration result".into()),
+                Some("commit did not return a relationship migration result".into()),
+            ),
+            Err(error) => failed_item(child.relation_id.clone(), error.code, error_detail(&error)),
+        }
+    }
+
+    /// 保留行的逐行提交：复用单条 retain（决策 + 治理历史），子操作记录
+    /// 在自己的 operation kind 下。
+    fn commit_retain_child(&self, child: &GovernanceBatchChild) -> RelationGovernanceBatchItem {
+        self.journal_begin(child.operation_id, "retain_source_copy");
+        match self.retain_source_copy(RetainSourceCopy {
+            source_relation_id: child.relation_id.clone(),
+        }) {
+            Ok(AppCommandResult::SourceCopyRelationUpdated(_)) => {
+                self.journal_advance(
+                    child.operation_id,
+                    "retain_source_copy",
+                    OperationPhase::Committed,
+                    None,
+                );
+                RelationGovernanceBatchItem {
+                    relation_id: child.relation_id.clone(),
+                    operation_id: Some(child.operation_id),
+                    state: RelationGovernanceBatchItemState::Committed,
+                    error_code: None,
+                    detail: None,
+                    retryable: true,
+                    rollback_available: false,
+                    backup_path: None,
+                    affected_paths: Vec::new(),
+                    blockers: Vec::new(),
+                }
+            }
+            Ok(_) => {
+                self.journal_advance(
+                    child.operation_id,
+                    "retain_source_copy",
+                    OperationPhase::NeedsRecovery,
+                    Some(ErrorCode::InternalError),
+                );
+                failed_item(
+                    child.relation_id.clone(),
+                    ErrorCode::InternalError,
+                    Some("retain did not return the updated source copy".into()),
+                )
+            }
+            Err(error) => {
+                self.journal_advance(
+                    child.operation_id,
+                    "retain_source_copy",
+                    OperationPhase::RolledBack,
+                    Some(error.code),
+                );
+                failed_item(child.relation_id.clone(), error.code, error_detail(&error))
+            }
+        }
+    }
+
+    /// 清理行的逐行提交：复用单条 cleanup 状态机（备份、checkpoint、
+    /// 删除、原子归档）；prepare 阶段取得的逐行确认在这里原样生效。
+    fn commit_clean_child(&self, child: &GovernanceBatchChild) -> RelationGovernanceBatchItem {
+        match self.commit_original_migration(CommitOriginalMigration {
+            prepared_migration_id: child.operation_id,
+            ownership_confirmed: child.ownership_confirmed,
+        }) {
+            Ok(AppCommandResult::OriginalMigrationResult(result)) => RelationGovernanceBatchItem {
+                relation_id: child.relation_id.clone(),
+                operation_id: Some(result.migration_id),
+                state: if result.state == OriginalMigrationState::Migrated {
+                    RelationGovernanceBatchItemState::Committed
+                } else {
+                    RelationGovernanceBatchItemState::Failed
+                },
+                error_code: None,
+                detail: None,
+                retryable: true,
+                rollback_available: result.state == OriginalMigrationState::Migrated,
+                backup_path: Some(result.backup_path.clone()),
+                affected_paths: vec![result.original_path.clone()],
+                blockers: Vec::new(),
+            },
+            Ok(_) => failed_item(
+                child.relation_id.clone(),
+                ErrorCode::InternalError,
+                Some("commit did not return an original migration result".into()),
+            ),
+            Err(error) => failed_item(child.relation_id.clone(), error.code, error_detail(&error)),
+        }
+    }
+
+    /// 清理行的逐行回退：复用单条 rollback（备份恢复、新建关系、旧记录
+    /// 翻转 RolledBack）。
+    fn rollback_clean_child(&self, child: &GovernanceBatchChild) -> RelationGovernanceBatchItem {
+        match self.rollback_original_migration(RollbackOriginalMigration {
+            migration_id: child.operation_id,
+        }) {
+            Ok(AppCommandResult::OriginalMigrationResult(result)) => RelationGovernanceBatchItem {
+                relation_id: child.relation_id.clone(),
+                operation_id: Some(result.migration_id),
+                state: match result.state {
+                    OriginalMigrationState::RolledBack => {
+                        RelationGovernanceBatchItemState::RolledBack
+                    }
+                    OriginalMigrationState::Migrated => RelationGovernanceBatchItemState::Committed,
+                    _ => RelationGovernanceBatchItemState::Failed,
+                },
+                error_code: None,
+                detail: None,
+                retryable: true,
+                rollback_available: result.state == OriginalMigrationState::Migrated,
+                backup_path: Some(result.backup_path.clone()),
+                affected_paths: vec![result.original_path.clone()],
+                blockers: Vec::new(),
+            },
+            Ok(_) => failed_item(
+                child.relation_id.clone(),
+                ErrorCode::InternalError,
+                Some("rollback did not return an original migration result".into()),
+            ),
+            Err(error) => failed_item(child.relation_id.clone(), error.code, error_detail(&error)),
+        }
+    }
+
+    /// 部署转换行的逐行回退：复用单条 rollback。
+    async fn rollback_centralize_child(
+        &self,
+        child: &GovernanceBatchChild,
+    ) -> RelationGovernanceBatchItem {
+        match self
+            .rollback_relation_migration(RollbackRelationMigration {
+                operation_id: child.operation_id,
+            })
+            .await
+        {
+            Ok(AppCommandResult::RelationMigrationResult(result)) => RelationGovernanceBatchItem {
+                relation_id: child.relation_id.clone(),
+                operation_id: Some(result.operation_id),
+                state: match result.state {
+                    RelationMigrationState::RolledBack => {
+                        RelationGovernanceBatchItemState::RolledBack
+                    }
+                    RelationMigrationState::Committed => {
+                        RelationGovernanceBatchItemState::Committed
+                    }
+                    _ => RelationGovernanceBatchItemState::Failed,
+                },
+                error_code: result.error_code,
+                detail: result.detail.clone(),
+                retryable: true,
+                rollback_available: result.rollback_available,
+                backup_path: result.backup_path.clone(),
+                affected_paths: result.affected_paths.clone(),
+                blockers: Vec::new(),
+            },
+            Ok(_) => failed_item(
+                child.relation_id.clone(),
+                ErrorCode::InternalError,
+                Some("rollback did not return a relationship migration result".into()),
             ),
             Err(error) => failed_item(child.relation_id.clone(), error.code, error_detail(&error)),
         }
@@ -728,6 +1060,22 @@ fn failed_item(
         state: RelationGovernanceBatchItemState::Failed,
         error_code: Some(code),
         detail,
+        retryable: true,
+        rollback_available: false,
+        backup_path: None,
+        affected_paths: Vec::new(),
+        blockers: Vec::new(),
+    }
+}
+
+/// 用户在预览后放弃的行：没有任何已执行的动作，只如实报取消。
+fn cancelled_item(child: &GovernanceBatchChild) -> RelationGovernanceBatchItem {
+    RelationGovernanceBatchItem {
+        relation_id: child.relation_id.clone(),
+        operation_id: Some(child.operation_id),
+        state: RelationGovernanceBatchItemState::Cancelled,
+        error_code: None,
+        detail: None,
         retryable: true,
         rollback_available: false,
         backup_path: None,
