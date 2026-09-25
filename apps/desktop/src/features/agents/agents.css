@@ -115,15 +115,26 @@
   font-size: var(--font-size-xs);
 }
 
-/* 2026-09-25：内置技能目录的「内置」徽标与只读边界提示。 */
+/* 2026-09-25：内置技能目录的「内置 · 只读」徽标（DEV-87 差异色：琥珀
+   tint，与可访问绿/灰状态徽标、普通类型徽标区分，直接承载只读政策）。 */
 .sh-agent-card__builtin {
   padding: 1px var(--space-2);
-  border: 1px solid var(--ui-border);
+  border: 1px solid var(--ui-warning-border);
   border-radius: var(--radius-xs);
-  background: var(--ui-surface-subtle);
-  color: var(--ui-ink-muted);
+  background: var(--ui-warning-background);
+  color: var(--ui-warning-foreground);
   font-size: var(--font-size-xs);
   font-weight: 650;
+  white-space: nowrap;
+}
+
+/* DEV-87：头部左侧组——品牌/类型与「内置 · 只读」徽标同排。 */
+.sh-agent-card__head-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
 }
 
 .sh-agent-card__builtin-hint {

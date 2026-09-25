@@ -776,8 +776,8 @@
     "managedSkillsCount_other": "{{count}} managed skills",
     "managedRelationsCount_one": "{{count}} deployment relation",
     "managedRelationsCount_other": "{{count}} deployment relations",
-    "builtinLabel": "Built-in",
-    "builtinHint": "This built-in skill directory is managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally."
+    "builtinLabel": "Built-in · read-only",
+    "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally."
   },
   "projects": {
     "actions": {

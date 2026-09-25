@@ -776,8 +776,8 @@
     "managedSkillsCount_other": "{{count}} 个 Skill",
     "managedRelationsCount_one": "{{count}} 条部署关系",
     "managedRelationsCount_other": "{{count}} 条部署关系",
-    "builtinLabel": "内置",
-    "builtinHint": "内置技能目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。"
+    "builtinLabel": "内置 · 只读",
+    "builtinHint": "如需调整请在对应 Agent 内手动管理；常用技能建议导入 SkillHub 统一管理。"
   },
   "projects": {
     "actions": {

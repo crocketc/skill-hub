@@ -171,8 +171,9 @@ it("tiles every agent card in a single page-level grid", async () => {
 });
 
 it("renders built-in directories as separate read-only cards with guidance", async () => {
-  // 2026-09-25 验收裁决：内置技能目录（如 .codex/skills/.system）独立成
-  // 「内置」类型卡片；只读边界与手动管理提示随卡说明。
+  // 2026-09-25 验收裁决：内置技能目录独立成卡。DEV-87（2026-09-25 反馈）：
+  // 三标签融二——类型徽标保留，可访问状态徽标独占头部右侧；「内置」升级为
+  // 差异色「内置 · 只读」徽标（政策入文案），提示段压缩为行动指引。
   const builtinAgents: AgentView[] = [
     {
       brand: "OpenAI",
@@ -204,8 +205,19 @@ it("renders built-in directories as separate read-only cards with guidance", asy
   await renderListPage(facadeWith(), builtinAgents);
 
   expect((await screen.findAllByTestId("agent-card"))).toHaveLength(2);
-  expect(screen.getByText("内置")).toBeVisible();
-  expect(screen.getByText(/由平台自带管理/)).toBeVisible();
+
+  const card = screen.getAllByTestId("agent-card")[1];
+  const badge = within(card).getByText("内置 · 只读");
+  expect(badge).toBeVisible();
+  // 差异色徽标挂在头部左侧（与品牌/类型同组），样式类锁定。
+  expect(badge.closest(".sh-agent-card__head-main")).not.toBeNull();
+  expect(badge.className).toContain("sh-agent-card__builtin");
+  // 可访问状态徽标仍是头部直接子元素（右上角，与其他卡片一致）。
+  const head = badge.closest(".sh-agent-card__head") as HTMLElement;
+  expect(within(head).getAllByText("可访问")).toHaveLength(1);
+  // 提示段压缩为行动指引，不再复述只读政策。
+  expect(within(card).getByText(/手动管理/)).toBeVisible();
+  expect(within(card).queryByText(/由平台自带管理/)).not.toBeInTheDocument();
 });
 
 it("refreshes discovery facts and keeps every agent visible", async () => {

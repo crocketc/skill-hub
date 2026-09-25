@@ -147,17 +147,21 @@ export function AgentListPage({
           {cards.map(({ agent, kinds, sharedDirectory }) => (
               <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
-                  <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
-                    <AgentPresentation
-                      agentId={agent.client}
-                      brand={agent.brand}
-                      kinds={kinds}
-                      sharedDirectory={sharedDirectory}
-                    />
-                  </Link>
+                  {/* DEV-87（2026-09-25 验收反馈）：三标签融二——左侧为品牌
+                      +类型与差异色「内置 · 只读」徽标，可访问状态徽标独占
+                      右上角，与其他卡片位置一致。 */}
+                  <div className="sh-agent-card__head-main">
+                    <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
+                      <AgentPresentation
+                        agentId={agent.client}
+                        brand={agent.brand}
+                        kinds={kinds}
+                        sharedDirectory={sharedDirectory}
+                      />
+                    </Link>
+                    {agent.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
+                  </div>
                   <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
-                  {/* 2026-09-25 验收裁决：内置技能目录标注「内置」徽标与只读提示。 */}
-                  {agent.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
                 </div>
                 {agent.builtin ? (
                   <p className="sh-agent-card__builtin-hint">{t("agents.builtinHint")}</p>
