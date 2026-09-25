@@ -21,6 +21,7 @@ const PROFILE_FILES: &[&str] = &[
     "grok",
     "pi",
     "deepseek-harness",
+    "doubao",
 ];
 
 #[test]
@@ -47,6 +48,7 @@ fn builtin_catalog_contains_every_researched_brand_and_no_roo_code() {
         "grok",
         "pi",
         "deepseek-harness",
+        "doubao-work",
     ] {
         assert!(ids.contains(expected), "missing {expected}");
     }

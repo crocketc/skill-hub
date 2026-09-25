@@ -257,6 +257,7 @@ impl ProfileCatalog {
             include_str!("../../../skillhub-adapters/profiles/grok.json"),
             include_str!("../../../skillhub-adapters/profiles/pi.json"),
             include_str!("../../../skillhub-adapters/profiles/deepseek-harness.json"),
+            include_str!("../../../skillhub-adapters/profiles/doubao.json"),
         ];
         Self {
             profiles: PROFILES

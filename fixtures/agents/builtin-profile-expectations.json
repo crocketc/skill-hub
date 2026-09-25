@@ -115,6 +115,9 @@
       "{project_root}/.dsh/skills",
       "{user_home}/.agents/skills",
       "{user_home}/.dsh/skills"
+    ],
+    "doubao": [
+      "{user_home}/.agents/skills"
     ]
   }
 }

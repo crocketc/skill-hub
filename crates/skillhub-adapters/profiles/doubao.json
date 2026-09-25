@@ -1,0 +1,40 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-09-25",
+  "official_references": [
+    "https://www.doubao.com/work",
+    "https://www.doubao.com/download/desktop"
+  ],
+  "brand": "Doubao Work",
+  "clients": [
+    {
+      "id": "doubao-work.desktop",
+      "kind": "desktop",
+      "display_name": "豆包工作",
+      "supported_os": ["windows", "macos"],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md",
+          "shared_reference": true
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed",
+          "internal_skill_dirs_not_public_contract",
+          "macos_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研完成；2026-09-16 补充豆包工作 Windows 真机目录观察与行为反查；2026-09-15 已完成豆包工作 profile 初步调研；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整真机验证仍待后续测试阶段
+> 文档状态：官方资料调研完成；2026-09-25 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-16 补充豆包工作 Windows 真机目录观察与行为反查；2026-09-15 已完成豆包工作 profile 初步调研；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整真机验证仍待后续测试阶段
 >
 > 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
-> 调研基准日：2026-08-28；豆包工作真机补充复核日：2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
+> 调研基准日：2026-08-28；豆包工作真机补充复核日：2026-09-25（profile 落地核实）；此前复核日 2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
 >
 > 适用项目：SkillHub
 >
@@ -18,7 +18,7 @@
 - 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
 - 0.2.0 当前实现边界是目录型 `SKILL.md`。Pi 原生根级 `.md`、DeepSeek Harness 扁平 `<name>.md`、项目祖先目录搜索、运行时加载/调用、链接行为和 project trust 均保留为明确限制，不能据此宣称 Agent 已加载或执行 Skill。
 - 后端 profile 契约、实际发现路径和前端品牌映射均已有自动化测试；Windows 当前只完成本机命令与目录观察，完整文件接入验收仍按第 7 节执行，macOS 尚未验证。
-- 豆包工作本轮仅完成 Windows 真机调研与证据补录，尚未进入 0.2.0 的预置前后端适配；当前已确认豆包可识别并正常调用 `.agents/skills` 中的目录型 Skill，可据此设计后续 profile，但不把内部 `.user_skills/<name>/` 目录当作稳定公开契约。
+- 豆包工作已完成 Windows 真机调研与证据补录，并于 2026-09-25 以 `doubao-work` profile 进入 0.2.0 预置适配（仅声明共享目录 `{user_home}/.agents/skills`，shared_reference）；当前已确认豆包可识别并正常调用 `.agents/skills` 中的目录型 Skill，可据此设计后续 profile，但不把内部 `.user_skills/<name>/` 目录当作稳定公开契约。
 
 ## 1. 调研目的
 
@@ -187,7 +187,7 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | Agent Skills（共享目录约定） | 通用共享目录（非客户端产品） | 用户级 `~/.agents/skills/`；项目级 `.agents/skills/`（跨客户端互操作） | 即约定本身 | 官方明确 | [客户端实现指南](https://agentskills.io/client-implementation/adding-skills-support)、[规范](https://agentskills.io/specification) |
 | CodeBuddy Code | 终端 CLI | `~/.codebuddy/skills/`；`.codebuddy/skills/` | 官方文档未提及 | 官方明确 + 真机确认（Windows，2026-09-05，目录观察） | [CodeBuddy Code Skills](https://www.codebuddy.ai/docs/cli/skills) |
 | WorkBuddy | 桌面端 | `~/.workbuddy/skills/`；`<workspace>/.workbuddy/skills/` | 未发现兼容目录；官方文档仅提"从 `.agents` 等目录复制安装的技能保持原始内容" | 真机确认（Windows，2026-09-05，目录观察，沿用既有记录）；官方未公开路径文本 | [WorkBuddy Skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) |
-| 豆包工作（字节跳动） | 桌面办公 Agent（另有豆包桌面端工作任务入口、移动远程与云电脑执行环境） | Windows 真机确认应用工作区 `.user_skills/<name>/` 存放导入 Skill；应用内置/工作区 `.skills/` 另存大量目录型 Skill | 用户级 `~/.agents/skills` 共享目录：Windows 真机确认可识别并正常调用；项目级关系待确认 | 真机确认（Windows，2026-09-16，目录观察 + 行为反查）；内部目录是否为稳定公开契约、项目级规则和同名优先级仍待确认 | [豆包工作产品入口](https://www.doubao.com/work)、[豆包电脑版下载](https://www.doubao.com/download/desktop) |
+| 豆包工作（字节跳动） | 桌面办公 Agent（另有豆包桌面端工作任务入口、移动远程与云电脑执行环境） | Windows 真机确认应用工作区 `.user_skills/<name>/` 存放导入 Skill；应用内置/工作区 `.skills/` 另存大量目录型 Skill | 用户级 `~/.agents/skills` 共享目录：Windows 真机确认可识别并正常调用；项目级关系待确认 | 真机确认（Windows，2026-09-16 + 2026-09-25 核实，目录观察 + 行为反查）；内部目录不作为稳定公开契约，项目级规则和同名优先级仍待确认 | [豆包工作产品入口](https://www.doubao.com/work)、[豆包电脑版下载](https://www.doubao.com/download/desktop) |
 | TraeCode（trae.code） | IDE（桌面端形态） | 中国版 `~/.trae-cn/skills/`（Windows 为 `%userprofile%/.trae-cn/skills`）；项目级 `.trae/skills/`；全球版 `~/.trae/skills/`（真机并存） | 官方明确支持：设置中可启用 `.agents/skills`；同名时 `.trae/skills` 优先 | 官方明确 + 真机确认（Windows，2026-09-05） | [TraeCode 技能](https://docs.trae.cn/ide_skills) |
 | TraeWork（trae.work） | 桌面/Web/移动办公 Agent | 未公开 | 待测试确认 | 官方未公开（有限接入候选，维持） | [TraeWork](https://www.trae.ai/work) |
 | Claude Code | 终端 CLI（官方另提供 IDE/桌面应用/网页入口） | `~/.claude/skills/`；`.claude/skills/`；企业托管目录；插件 `skills/`；`~/.claude/skills/synced/` | 官方文档未提及 | 官方明确 | [Claude Code Skills](https://code.claude.com/docs/en/skills) |
@@ -230,7 +230,7 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | Hermes Agent | `SKILL.md` 目录 | `~/.hermes/skills` | `.hermes/skills`、`.agents/skills`，需要项目信任 | `skills.external_dirs`、插件 Skill | Project > Local > External | 新会话、`--now` 或 reset；完整 watcher 待验证 | 推荐 external dirs；Skill 目录链接待验证 | 完整适配候选 |
 | Pi coding agent | Agent Skills 目录；原生目录还允许带有效 frontmatter 的根级 `.md` | `~/.pi/agent/skills`、`~/.agents/skills` | `.pi/skills`；`.agents/skills` 从 cwd 和祖先目录扫描至 Git 根或文件系统根，项目资源需先通过信任 | `package.json` 的 `pi.skills`、包内 `skills/`、`settings.json` 的 `skills`、CLI `--skill` | 同名冲突告警并保留先发现项；完整顺序及多源精确优先级需真机/源码复核 | 启动扫描；交互模式 `/reload` 可重载 skills；热刷新未确认 | Windows 目录联接本机已观察；Agent 跟随行为待测试 | 完整适配候选 |
 | DeepSeek Harness (`dsh`) | 目录型 `SKILL.md` 与扁平 `<name>.md`；不支持嵌套递归 `**/SKILL.md` | `<dshHome>/skills`；`<agentsHome>/skills` | `<projectRoot>/.dsh/skills`、`<projectRoot>/.agents/skills` | `Config.customSkillDirs`、`Config.bundledSkillDir`、包内 provider；本机 `~/.dsh` 存在 `dsh-tui` 与 `web` profile | 官方 rank：project-dsh 100、project-agents 200、custom 300、user-dsh 400、user-agents 500、bundled 600；host/per-scope 最近层优先 | Chokidar 监听现有根与目录入口变更；watcher 变化通过 `skills/change` 触发重新读取 | 未确认 | 完整适配候选 |
-| 豆包工作（Doubao Work） | 目录型 `SKILL.md`；Windows 真机确认导入 Skill 位于应用工作区 `.user_skills/<name>/` | 内部用户 Skill 存储：应用工作区 `.user_skills/<name>/`；内置/工作区 Skill 目录 `.skills/` | 用户级 `~/.agents/skills`：Windows 真机确认可识别并正常调用；项目级目录待确认 | 在线技能/连接器/工作伙伴与本地文件 Skill 分开；本地与云电脑执行环境分离 | 未公开；项目级与内部目录同名优先级待确认 | UI 管理；新会话/重启与本地文件变更可见时机待验证 | 未确认 | 部分适配候选 |
+| 豆包工作（Doubao Work） | 目录型 `SKILL.md`；Windows 真机确认导入 Skill 位于应用工作区 `.user_skills/<name>/` | 内部用户 Skill 存储：应用工作区 `.user_skills/<name>/`；内置/工作区 Skill 目录 `.skills/` | 用户级 `~/.agents/skills`：Windows 真机确认可识别并正常调用；项目级目录待确认 | 在线技能/连接器/工作伙伴与本地文件 Skill 分开；本地与云电脑执行环境分离 | 未公开；项目级与内部目录同名优先级待确认 | UI 管理；新会话/重启与本地文件变更可见时机待验证 | 未确认 | 已预置适配（2026-09-25，doubao-work profile，仅共享目录） |
 | Grok Build CLI / TUI / ACP | `SKILL.md` 目录 | `$GROK_HOME/skills`，默认 `~/.grok/skills`；`~/.agents/skills`；兼容 Claude/Cursor 用户目录 | 从当前目录到仓库根扫描 `.grok/skills`、`.agents/skills` 及已启用兼容目录 | `[skills].paths`、Bundled Skill、插件 `skills/`、Marketplace 插件 | 当前目录 > 较上层项目目录 > 用户；原生同名按高层级覆盖；Bundled 可被原生覆盖；插件冲突保留限定名 | 文件变化后数秒内自动重载；`grok inspect [--json]` 可查看发现结果 | 未确认 | 完整适配候选 |
 | Grok Web / iOS / Android Skills | 官方确认内置和自定义 Skills，但属于账号同步能力 | 未公开稳定本地扫描目录 | 未公开 | 可通过对话、上传文件或从头创建；内置 Skill 随账号提供 | 官方说明用户自定义版本优先于同名内置版本 | 云端/UI 管理；客户端间账号同步 | 不适用 | 有限接入候选 |
 | Grok Bot desktop / iOS Skills | 官方确认保存 Skill、私有 Skill 和插件所带 Skill，但工作在共享云端计算机 | 未公开稳定本地扫描目录 | 未公开 | Settings > Plugins 安装与启用；Skill 可跨 Bot 使用并按 Bot 启用 | 未公开 | 桌面端/UI 管理；iOS 与桌面连接同一账号和云端计算机 | 不适用 | 有限接入候选 |
@@ -517,15 +517,16 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 - 已确认（官方产品资料/官方消息转引）：豆包工作提供面向 Windows 和 macOS 的桌面入口；豆包桌面端可从“技能·连接器·伙伴”进入技能、连接器和工作伙伴/小队；支持创建自定义技能，技能与连接器数量按公开消息为 200+。
 - 已确认（官方产品资料/官方消息转引）：工作任务可选择本地电脑或云电脑；本地模式需要用户授权指定文件夹，Agent 可在授权范围内处理本地文件。该授权范围是任务执行沙箱/工作区边界，不是全局或项目 Skill 根目录。
+- 已确认（Windows 真机，2026-09-25，第二轮目录核实）：内置/工作区 Skill 目录实际位于 `%LOCALAPPDATA%\DoubaoWork\User Data\Default\.doubaowork\agent_mode\workspace\.skills\`，实测含 106 个带 `SKILL.md` 的目录型 Skill；同层 `.user_skills\` 与用户工作区 `~DoubaoWork\skills\` 为空。该 AppData 路径随安装与账号 profile（`Default`）变化，不作为稳定公开契约写入 profile，仅作研究记录。
 - 已确认（Windows 真机，2026-09-16，目录观察）：通过 UI 导入的 PDF Skill 落在应用工作区的 `.user_skills/pdf/`，目录包含 `SKILL.md`、参考资料和脚本；应用工作区另有 `.skills/` 目录，实测包含大量目录型 `SKILL.md` Skill。该内部路径应视为当前版本的本机观察结果，不直接等同于稳定公开 API。
 - 已确认（Windows 真机，2026-09-16，行为反查）：豆包工作能够自动发现、识别并正常调用用户级 `~/.agents/skills` 共享目录中的 Skill。该结论证明 `.agents/skills` 可作为豆包工作的本地 Skill 来源；但尚未证明豆包工作会把该目录作为可写部署目标，或支持项目级 `.agents/skills` 的完整优先级规则。
 - 已确认（公开使用资料，非稳定目录契约）：技能可以通过界面选择、管理或导入，连接器需要单独授权，工作伙伴是独立的专业 Agent 形态；三者的在线/账号资产与本地文件 Skill 应分开建模。
 - 未确认：项目级 Skill 根目录、项目根识别、`.doubaowork` 内部目录是否长期稳定、同名优先级、市场/导入后的所有权、启停落盘、刷新/重开会话行为、符号链接与 Windows Directory Junction、macOS 实际路径及调用记录。
 - 重要边界：云电脑与本地电脑是两个执行环境；本地电脑中授权或安装的 Skill 不能默认视为云电脑可见，反之亦然。手机端的远程派单和任务查看也不等于手机端拥有本地 Skill 文件目录。
 - SkillHub 接入建议：维持部分文件管理接入候选；可记录 `.agents/skills` 为已确认可读取、可识别、可调用的本地 Skill 来源，并把 `.user_skills/<name>/` 记录为 Windows 当前版本的内部用户 Skill 存储观察项。外部写入部署、项目级目录和解除部署仍需保守处理，不覆盖平台技能市场、连接器资产或未确认的内部目录。
-- 调研结论：豆包工作值得建立独立的 `doubao-work` profile；Windows 已确认目录型 Skill 导入，以及 `.agents/skills` Skill 的自动发现、识别和正常调用，但项目级规则、优先级、刷新、链接及跨平台路径仍待测试，不能复用 TraeCode、TraeWork、WorkBuddy 或普通豆包的路径规则。
+- 调研结论：豆包工作已于 2026-09-25 建立独立的 `doubao-work` profile（`crates/skillhub-adapters/profiles/doubao.json`，内置客户端 `doubao-work.desktop`，品牌图标取自官方 CDN 一手素材）；profile 仅声明用户级共享目录 `{user_home}/.agents/skills`（preferred，shared_reference，部署采用受控复制），不声明内部 AppData 目录。项目级规则、优先级、刷新、符号链接/Junction、macOS 实际路径仍待测试，不能复用 TraeCode、TraeWork、WorkBuddy 或普通豆包的路径规则。
 
-主要来源：[豆包工作产品入口](https://www.doubao.com/work)、[豆包电脑版下载页](https://www.doubao.com/download/desktop)、[豆包官方关于工作任务升级的消息](https://weibo.com/2/detail/5334423399565762)、[豆包工作任务上线技能/连接器/工作伙伴的公开报道（转引豆包官方消息）](https://www.ithome.com/0/992/607.htm)、[火山引擎开发者社区补充文章（非产品规范）](https://developer.volcengine.com/articles/7675658258166022195)、Windows 真机目录观察与行为反查（2026-09-16）。真机证据只覆盖当前 Windows 安装和当前账号/客户端状态；用户 Skill 内容不纳入项目记录，内部目录不视为官方稳定契约。
+主要来源：[豆包工作产品入口](https://www.doubao.com/work)、[豆包电脑版下载页](https://www.doubao.com/download/desktop)、[豆包官方关于工作任务升级的消息](https://weibo.com/2/detail/5334423399565762)、[豆包工作任务上线技能/连接器/工作伙伴的公开报道（转引豆包官方消息）](https://www.ithome.com/0/992/607.htm)、[火山引擎开发者社区补充文章（非产品规范）](https://developer.volcengine.com/articles/7675658258166022195)、Windows 真机目录观察与行为反查（2026-09-16；2026-09-25 第二轮内置目录核实）。真机证据只覆盖当前 Windows 安装和当前账号/客户端状态；用户 Skill 内容不纳入项目记录，内部目录不视为官方稳定契约。
 
 ### 5.24 Grok
 

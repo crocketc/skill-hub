@@ -137,9 +137,12 @@ it("resolves every bundled agent logo through brandIconSrc", () => {
 it("covers every shipped lobehub asset with a mapping and vice versa", () => {
   // Vitest 以 apps/desktop 为工作目录，公共资源固定在 public/ 下。
   const assetDir = path.resolve(process.cwd(), "public/brand/agents/lobehub");
-  const shipped = readdirSync(assetDir).filter((name) => name.endsWith(".svg")).sort();
+  const shipped = readdirSync(assetDir)
+    .filter((name) => name.endsWith(".svg") || name.endsWith(".png"))
+    .sort();
   // M-30：pi.svg 与 deepseek-harness.svg 来自官方一手来源（SOURCES.md）。
-  expect(shipped).toHaveLength(19);
+  // doubao.png 同为官方一手素材（豆包工作 logo PNG），见 SOURCES.md。
+  expect(shipped).toHaveLength(20);
 
   const mapped = [...new Set(Object.values(BRAND_ICON_FILES))].sort();
   expect(mapped).toEqual(shipped);
@@ -149,14 +152,16 @@ it("covers every shipped lobehub asset with a mapping and vice versa", () => {
 });
 
 // M-30：Pi 与 DeepSeek Harness 的图标是官方一手素材的逐字节拷贝；
+// doubao.png 同为官方一手素材（豆包工作 logo PNG）。
 // 与 assets/branding/ 下记录的原始下载件比对，防止后续被随机素材
 // 静默替换（来源与许可证记录见 assets/branding/SOURCES.md）。
-it("serves official Pi and DeepSeek Harness artwork byte for byte from the recorded masters", () => {
+it("serves official Pi, DeepSeek Harness and Doubao Work artwork byte for byte from the recorded masters", () => {
   const assetDir = path.resolve(process.cwd(), "public/brand/agents/lobehub");
   const brandingDir = path.resolve(process.cwd(), "../../assets/branding");
   const pairs: Array<[string, string]> = [
     ["pi.svg", "pi/pi-favicon.svg"],
     ["deepseek-harness.svg", "deepseek-harness/deepseek-harness-favicon.svg"],
+    ["doubao.png", "doubao/doubaowork-logo-f.png"],
   ];
   for (const [shippedName, masterName] of pairs) {
     const shippedPath = path.join(assetDir, shippedName);

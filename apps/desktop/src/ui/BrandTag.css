@@ -126,6 +126,12 @@
   --brand-chip-foreground: #294c9b;
 }
 
+.sh-brand-tag--doubao-work {
+  --brand-chip-background: #e8edfd;
+  --brand-chip-border: #ccd6f8;
+  --brand-chip-foreground: #2f55c8;
+}
+
 .sh-brand-tag--pi {
   --brand-chip-background: #eee9fc;
   --brand-chip-border: #d9cdf4;
@@ -161,6 +167,7 @@
 [data-theme="grok-night"] .sh-brand-tag--grok,
 [data-theme="grok-night"] .sh-brand-tag--zcode,
 [data-theme="grok-night"] .sh-brand-tag--deepseek-harness,
+[data-theme="grok-night"] .sh-brand-tag--doubao-work,
 [data-theme="grok-night"] .sh-brand-tag--pi {
   --brand-chip-background: color-mix(in srgb, var(--brand-chip-background) 22%, var(--color-surface-raised));
   --brand-chip-foreground: color-mix(in srgb, var(--brand-chip-foreground) 25%, #f2f3ef);

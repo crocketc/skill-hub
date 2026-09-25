@@ -46,6 +46,26 @@
   Harness 目录，不暗示官方背书；若版权方提出异议，删除该素材即回退为现有
   颜色标签（`sh-brand-tag--deepseek-harness`）。
 
+## doubao（豆包工作 / Doubao Work）
+
+- 应用内素材：`apps/desktop/public/brand/agents/lobehub/doubao.png`
+- 原始下载件：`assets/branding/doubao/doubaowork-logo-f.png`（与应用内副本
+  逐字节一致，由 `BrandTag.test.tsx` 校验）
+- 来源 URL：`https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/doubaowork-logo-f.png`
+  （2026-09-25 获取；390×390 PNG）
+- 官方性依据：该 CDN 域名是豆包官方网站 `www.doubao.com` 页面自身引用的
+  静态资源域（从 `https://www.doubao.com/work` 页面 HTML 的 link/icon
+  引用解析获得），域名归属于豆包官方（字节跳动），非第三方图标聚合站。
+  适配器 profile `crates/skillhub-adapters/profiles/doubao.json` 的官方
+  参考链接同样指向 `www.doubao.com/work`。
+- 许可证：素材无独立许可文件。SkillHub 仅在目录列表中如实标识真实存在的
+  豆包工作目录（指示性使用），不暗示官方背书；若版权方提出异议，删除该
+  素材即回退为现有颜色标签（`sh-brand-tag--doubao-work`）。
+- 变换：无（逐字节原样拷贝；`<img>` 以 aria-hidden 装饰方式渲染，不修改图形）。
+- 备注：豆包工作桌面端内置技能目录（AppData 下 `.doubaowork` 路径）经
+  真机核实（2026-09-25）不作为稳定公开契约，未写入 profile；profile 只
+  声明共享目录 `{user_home}/.agents/skills`。
+
 ## SkillHub 自有素材
 
 - `assets/branding/tauri-icons/`：SkillHub 应用自有图标母版（非第三方素材），
