@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import { onDeploymentFactsChanged } from "../../platform/deploymentEvents";
+import { onDiscoveryFactsChanged } from "../../platform/discoveryEvents";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
@@ -55,6 +56,11 @@ export function AgentListPage({
   // DEV-22：部署提交成功后 Agent 卡片的 Skill/部署关系计数必须即时刷新
   // （本页是本地 state 拉取，没有可失效的 query key，靠应用内广播触发重读）。
   useEffect(() => onDeploymentFactsChanged(() => {
+    setRevision((current) => current + 1);
+  }), []);
+
+  // 启动后台 Agent 重扫发现新品牌/类型后广播：本页重读快照，让新卡片即时出现。
+  useEffect(() => onDiscoveryFactsChanged(() => {
     setRevision((current) => current + 1);
   }), []);
 

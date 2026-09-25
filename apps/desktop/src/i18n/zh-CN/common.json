@@ -948,6 +948,12 @@
     "close": "关闭"
   },
   "bootstrap": {
+    "agentRefresh": {
+      "action": "查看 Agent",
+      "newDetail_one": "本次启动后台重扫新识别 {{count}} 个品牌/类型：{{brands}}",
+      "newDetail_other": "本次启动后台重扫新识别 {{count}} 个品牌/类型：{{brands}}",
+      "newTitle": "发现新的 Agent"
+    },
     "blockingStartup": "阻塞启动",
     "openRecovery": "打开操作记录与恢复",
     "recoveryDescription": "检测到尚未完成的恢复操作。完成恢复前，SkillHub 不会继续显示可能过期的本地数据。",

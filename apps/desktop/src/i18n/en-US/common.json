@@ -948,6 +948,12 @@
     "close": "Close"
   },
   "bootstrap": {
+    "agentRefresh": {
+      "action": "View agents",
+      "newDetail_one": "Startup background rediscovery found {{count}} new brand/type: {{brands}}",
+      "newDetail_other": "Startup background rediscovery found {{count}} new brands/types: {{brands}}",
+      "newTitle": "New agents discovered"
+    },
     "blockingStartup": "Blocking startup",
     "openRecovery": "Open operations and recovery",
     "recoveryDescription": "An unfinished recovery operation needs attention. SkillHub will not show potentially stale local data until recovery is complete.",

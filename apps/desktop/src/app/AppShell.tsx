@@ -19,6 +19,7 @@ import {
   useAppNotifications,
 } from "../ui/notifications";
 import { BackgroundScanNotifier } from "../features/bootstrap/BackgroundScanNotifier";
+import { AgentDiscoveryRefreshBridge } from "../features/bootstrap/AgentDiscoveryRefreshBridge";
 import { Sidebar } from "./Sidebar";
 import { TaskStatusIndicator } from "./TaskStatusIndicator";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
@@ -172,6 +173,12 @@ function BackgroundScanBridge() {
   return <BackgroundScanNotifier notify={notify} />;
 }
 
+/** Bridges the startup background agent rediscovery into the notification service. */
+function AgentDiscoveryBridge({ enabled }: { enabled: boolean }) {
+  const { notify } = useAppNotifications();
+  return <AgentDiscoveryRefreshBridge enabled={enabled} notify={notify} />;
+}
+
 export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
@@ -228,6 +235,8 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
     <LibraryViewModeProvider>
       <AppNotificationsProvider>
         <BackgroundScanBridge />
+        {/* 初始化完成后启动一次后台 Agent 重扫；向导自己负责首次发现。 */}
+        <AgentDiscoveryBridge enabled={snapshot.initialization_state === "initialized"} />
         <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
           <a className="sh-skip-link" href="#main-content">
             {t("appShell.skipToContent")}
