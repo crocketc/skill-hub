@@ -111,6 +111,65 @@ describe("RelationshipsLayout", () => {
     );
   });
 
+  // DEV-90：「技能图谱」页签 to=/relationships 是其余子路由的前缀，未加
+  // end 时在治理页会误激活。回归：三个页签中只有当前工作区带 aria-current。
+  it("marks only the active workspace tab on subroutes", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/relationships/governance"]}>
+          <Routes>
+            <Route element={<RelationshipsLayout scope="graph" />} path="/relationships" />
+            <Route element={<RelationshipsLayout scope="decisions" />} path="/relationships/decisions" />
+            <Route element={<RelationshipsLayout scope="governance" />} path="/relationships/governance" />
+            <Route element={<RelationshipsLayout scope="governance" />} path="/relationships/governance/history" />
+          </Routes>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Relationship sections" });
+    expect(within(nav).getByRole("link", { name: "Relationship governance" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).getByRole("link", { name: "Skill graph" })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).getByRole("link", { name: "Conflict decisions" })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  // 治理历史页属于治理工作区：治理页签保持前缀匹配（不加 end），历史页仍高亮。
+  it("keeps the governance tab active on the governance history page", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={["/relationships/governance/history"]}>
+          <Routes>
+            <Route element={<RelationshipsLayout scope="graph" />} path="/relationships" />
+            <Route element={<RelationshipsLayout scope="decisions" />} path="/relationships/decisions" />
+            <Route element={<RelationshipsLayout scope="governance" />} path="/relationships/governance" />
+            <Route element={<RelationshipsLayout scope="governance" />} path="/relationships/governance/history" />
+          </Routes>
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Relationship sections" });
+    expect(within(nav).getByRole("link", { name: "Relationship governance" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).getByRole("link", { name: "Skill graph" })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("shows relationship counts on the section badges once the shared queries land", async () => {
     const facade: RelationshipsFacade = {
       listCandidates: async () =>

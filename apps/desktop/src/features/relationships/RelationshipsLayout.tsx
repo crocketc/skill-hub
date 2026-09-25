@@ -66,6 +66,10 @@ function RelationshipsNav({ facade }: RelationshipsNavProps) {
           ].filter(Boolean).join(" ")}
           key={item.scope}
           to={item.href}
+          /* DEV-90：图谱页签的 /relationships 是其余子路由的前缀，必须精确
+             匹配，否则在治理/冲突页会误高亮。治理页签保持前缀匹配——治理
+             历史页（governance/history）仍归属治理工作区。 */
+          end={item.scope === "graph"}
         >
           <span>{t(item.titleKey)}</span>
           <span
