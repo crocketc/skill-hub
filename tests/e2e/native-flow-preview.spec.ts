@@ -333,7 +333,7 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
   ).toBeVisible();
   await expect(page.getByText("documents")).toBeVisible();
   await page.getByRole("radio", { name: "Projects" }).check();
-  await expect(page.getByRole("img", { name: "Deployment relation count by project" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by project" })).toBeVisible();
 });
 
 test("discovery home and local workbench expose separate navigation and scan facts", async ({ page }) => {

@@ -121,7 +121,7 @@ it("keeps the chart landmark visible while the lazy runtime is unresolved", asyn
   );
 
   expect(screen.getByRole("img", { name: "Deployment count by agent" })).toBeVisible();
-  expect(screen.getByText("Loading deployment relations chart")).toBeVisible();
+  expect(screen.getByText("Loading the configuration relation chart")).toBeVisible();
 });
 
 it("shows every agent vertically but limits a large project ranking to ten horizontal bars", async () => {
@@ -160,7 +160,7 @@ it("shows every agent vertically but limits a large project ranking to ten horiz
   expect(await screen.findByTestId("Project chart")).toHaveTextContent(
     "horizontal|10|Project 1|Project 10",
   );
-  expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
+  expect(screen.getByText("Showing the top 10 of 12 projects by configuration relations")).toBeVisible();
 });
 
 it("resolves palette values from theme tokens and keeps chart animation disabled", async () => {

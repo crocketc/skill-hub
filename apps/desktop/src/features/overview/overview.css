@@ -591,6 +591,18 @@
   min-height: 0;
 }
 
+/* 验收反馈（2026-09-25）：最大化窗口下标签较多时必须在面板框内滚动，
+   不能被 overflow:hidden 静默裁剪——面板头部固定，列表行吃满剩余高度。 */
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+:root.sh-is-window-maximized .sh-overview .sh-overview__tag-layout {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
 :root.sh-is-window-maximized .sh-overview .sh-overview__tag-bar {
   min-height: 0;
   padding: 0.25rem var(--space-1);

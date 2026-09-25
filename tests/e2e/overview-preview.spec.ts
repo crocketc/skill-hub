@@ -40,9 +40,9 @@ const expectedAccents: Record<(typeof themeNames)[number], string> = {
 // 确定性关系事实：2 个待确认冲突、4 个图谱候选、9 条治理关系边。
 const heroMetricName = "27 Total skills";
 const statNames = [
-  "3 Agents (3 configured targets · 5 discovered)",
+  "3 Agents (3 configured · 5 discovered)",
   "3 Manage projects",
-  "45 Skill deployment relations (27 to agents · 18 to projects)",
+  "45 Skill configuration relations (27 to agents · 18 to projects)",
   "2 Unconfirmed relationship conflicts",
 ] as const;
 
@@ -104,7 +104,7 @@ test("mounts the overview preview with one primary metric and compact stats", as
   for (const name of statNames) {
     await expect(stats.getByRole("link", { name })).toBeVisible();
   }
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "4 pending items" })).toBeVisible();
 });
 
@@ -224,7 +224,7 @@ test("stacks chart and pending into one column with single-column stats at 800px
   await expect(page.getByRole("link", { name: statNames[3] })).toBeVisible();
 
   // 窄容器：图表面板与待处理区域纵向堆叠，不再并排。
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Configuration relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     chartBox.y + chartBox.height,
@@ -241,7 +241,7 @@ test("stacks chart and pending into one column with single-column stats at 800px
   // 长项目名在窄容器中保持可读且不产生根级横向溢出。
   await page.getByRole("radio", { name: "Projects" }).click();
   const longLabel = page.getByRole("button", {
-    name: "View Aurora Mobile Workspace's 9 deployment relations",
+    name: "View Aurora Mobile Workspace's 9 configuration relations",
   });
   await expect(longLabel).toBeVisible();
   await expectNoRootHorizontalOverflow(page);
@@ -260,7 +260,7 @@ test("keeps two stat columns and a single-column chart area at 1024px", async ({
   }
   expect(distinctRowCount(boxes), "compact stats must form a 2x2 grid").toBe(2);
 
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Configuration relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     chartBox.y + chartBox.height,
@@ -299,7 +299,7 @@ test("keeps the two-row metrics contract with four stat columns at 1440px", asyn
     "the hero row must sit above the compact stats row",
   ).toBeLessThanOrEqual(Math.min(...boxes.map((box) => box.y)) + 1);
 
-  const chartBox = await boxOf(page.getByRole("img", { name: "Deployment relation count by agent" }));
+  const chartBox = await boxOf(page.getByRole("img", { name: "Configuration relation count by agent" }));
   const pendingBox = await boxOf(page.getByRole("heading", { name: "4 pending items" }));
   expect(
     pendingBox.y,
@@ -385,15 +385,15 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
   // 不是放松断言；「待办链接可键盘可达」的实质断言保留。
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 deployment relations" }),
+    page.getByRole("button", { name: "View Aurora Mobile Workspace's 9 configuration relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View Orbital Docs's 6 deployment relations" }),
+    page.getByRole("button", { name: "View Orbital Docs's 6 configuration relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("button", { name: "View SkillHub Website's 3 deployment relations" }),
+    page.getByRole("button", { name: "View SkillHub Website's 3 configuration relations" }),
   ).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "View 8 skills tagged writing" })).toBeFocused();
@@ -425,7 +425,7 @@ test.describe("overview honors the theme contract at 1280x900", () => {
       await page.goto("/__preview/overview");
 
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+      await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
       await page
         .waitForFunction(() => document.querySelectorAll("main svg [fill]").length > 0)
         .catch(() => {
@@ -465,7 +465,7 @@ test("renders without continuous motion when the system prefers reduced motion",
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/__preview/overview");
 
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   // base.css 的全局减少动效守卫把时长钳制到 0.01ms；这里断言概览没有任何
   // 超过感知阈值的过渡或动画（图表动画本就关闭）。
   const freeOfMotion = await page.waitForFunction(() => {

@@ -3171,51 +3171,51 @@
   "overview": {
     "chart": {
       "aria": {
-        "agent": "各 Agent 部署关系数量",
-        "project": "各项目部署关系数量"
+        "agent": "各 Agent 配置关系数量",
+        "project": "各项目配置关系数量"
       },
       "axis": {
-        "agent": "Agent 部署关系",
-        "project": "项目部署关系"
+        "agent": "Agent 配置关系",
+        "project": "项目配置关系"
       },
-      "detailsLabel": "部署关系数量明细",
+      "detailsLabel": "配置关系数量明细",
       "detailCount": {
         "agent_one": "{{count}} 个 Agent",
         "agent_other": "{{count}} 个 Agent",
         "project_one": "{{count}} 个项目",
         "project_other": "{{count}} 个项目"
       },
-      "dimensionLabel": "部署关系维度",
+      "dimensionLabel": "配置关系维度",
       "dimensions": {
         "agent": "Agent",
         "project": "项目"
       },
       "drilldown": {
-        "agent": "查看 {{label}} 的 {{count}} 条部署关系",
-        "project": "查看 {{label}} 的 {{count}} 条部署关系"
+        "agent": "查看 {{label}} 的 {{count}} 条配置关系",
+        "project": "查看 {{label}} 的 {{count}} 条配置关系"
       },
       "empty": {
-        "agent": "暂时没有按 Agent 统计的部署关系",
-        "project": "暂时没有按项目统计的部署关系"
+        "agent": "暂时没有按 Agent 统计的配置关系",
+        "project": "暂时没有按项目统计的配置关系"
       },
-      "eyebrow": "部署关系分布",
-      "heading": "受管理技能的部署关系去向",
-      "loading": "正在加载部署关系图表",
-      "projectLimit": "显示部署关系最多的 {{shown}} / 共 {{total}} 个项目",
-      "scrollableDetails": "可滚动的部署关系数量明细"
+      "eyebrow": "配置关系分布",
+      "heading": "受管理技能的配置关系去向",
+      "loading": "正在加载配置关系图表",
+      "projectLimit": "显示配置关系最多的 {{shown}} / 共 {{total}} 个项目",
+      "scrollableDetails": "可滚动的配置关系数量明细"
     },
     "metrics": {
       "compactLabel": "关键统计",
       "names": {
         "agents": "个已配置 Agent",
-        "deployments": "条部署关系",
+        "deployments": "条配置关系",
         "discoveredAgents": "个发现到的 Agent",
         "projects": "个项目",
         "skills": "项技能"
       }
     },
     "page": {
-      "description": "集中库规模、部署关系去向与待处理事项的当前状态。"
+      "description": "集中库规模、配置关系去向与待处理事项的当前状态。"
     },
     "pending": {
       "badge": "{{count}} 项待处理",
@@ -3243,8 +3243,8 @@
         "governanceAria": "打开待治理关系（{{count}} 条需处理）"
       },
       "metrics": {
-        "agentsCombined": "Agent（已配置部署目标 {{configured}} 个 · 已发现 {{discovered}} 个）",
-        "deploymentRelations": "Skill 部署关系（部署到 Agent {{agentCount}} 条 · 项目 {{projectCount}} 条）",
+        "agentsCombined": "Agent（已配置目标 {{configured}} 个 · 已发现 {{discovered}} 个）",
+        "deploymentRelations": "Skill 配置关系（配置到 Agent {{agentCount}} 条 · 项目 {{projectCount}} 条）",
         "projectsManage": "管理项目",
         "skillsTotal": "技能总数",
         "unconfirmedConflicts": "待确认的关系冲突"

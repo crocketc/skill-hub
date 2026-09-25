@@ -118,7 +118,7 @@ for (const profile of sizeProfiles) {
 
     // 关系投影落地后再测量，避免占位状态引入的几何竞态。
     await expect(page.getByRole("link", { name: "2 Unconfirmed relationship conflicts" })).toBeVisible();
-    await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
     await setMaximizedMode(page, true);
 
     const metrics = await scrollMetrics(page);
@@ -139,7 +139,7 @@ for (const profile of sizeProfiles) {
     await page.goto("/__preview/overview");
 
     await expect(page.getByRole("link", { name: "2 Unconfirmed relationship conflicts" })).toBeVisible();
-    await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
     await setMaximizedMode(page, true);
 
     for (const block of await blockGeometry(page, overviewSelectors)) {
@@ -162,7 +162,7 @@ test("keeps every overview data module free of internal vertical scrolling (DEV-
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/__preview/overview");
 
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   await setMaximizedMode(page, true);
 
   const scrollableModules = await page.locator(
@@ -189,7 +189,7 @@ test("keeps a windowed overview in its natural page flow instead of applying max
   await page.setViewportSize({ width: 1462, height: 866 });
   await page.goto("/__preview/overview");
 
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   await expect(page.locator("html")).not.toHaveClass(/sh-is-window-maximized/);
 
   const metrics = await scrollMetrics(page);
@@ -202,7 +202,7 @@ test("uses the maximized remainder for overview modules instead of leaving a bla
 }) => {
   await page.setViewportSize({ width: 1462, height: 866 });
   await page.goto("/__preview/overview");
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   await expect(page.locator(".sh-overview__chart-figure")).toBeVisible();
   await expect(page.locator(".sh-overview__tag-panel")).toBeVisible();
   await setMaximizedMode(page, true);
@@ -232,7 +232,7 @@ test("fills the maximized metric band and keeps chart SVGs inside their own card
 }) => {
   await page.setViewportSize({ width: 1462, height: 866 });
   await page.goto("/__preview/overview");
-  await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   await setMaximizedMode(page, true);
 
   const geometry = await page.evaluate(() => {

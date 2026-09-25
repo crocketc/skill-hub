@@ -7,6 +7,8 @@ import type {
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { getDeploymentItems, getOverviewRelationEntries, getOverviewRelationEntryHref, getOverviewSummaryMetrics } from "./api";
+import type { OverviewDeploymentName } from "./deploymentNames";
+import type { AgentKindKey } from "../../ui/AgentPresentation";
 
 const summarySnapshot: BootstrapSnapshot = {
   initialization_state: "initialized",
@@ -122,9 +124,9 @@ it("names the five overview metrics with the frozen zh semantics and counts", as
   expect(metrics.map((metric) => metric.count)).toEqual([12, 3, 2, 18, 2]);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置部署目标 3 个 · 已发现 5 个）",
+    "Agent（已配置目标 3 个 · 已发现 5 个）",
     "管理项目",
-    "Skill 部署关系（部署到 Agent 15 条 · 项目 3 条）",
+    "Skill 配置关系（配置到 Agent 15 条 · 项目 3 条）",
     "待确认的关系冲突",
   ]);
 });
@@ -135,9 +137,9 @@ it("mirrors the frozen metric names in English with the same caliber", async () 
 
   expect(metrics.map((metric) => metric.name)).toEqual([
     "Total skills",
-    "Agents (3 configured targets · 5 discovered)",
+    "Agents (3 configured · 5 discovered)",
     "Manage projects",
-    "Skill deployment relations (15 to agents · 3 to projects)",
+    "Skill configuration relations (15 to agents · 3 to projects)",
     "Unconfirmed relationship conflicts",
   ]);
 });
@@ -190,7 +192,7 @@ it("splits deployment relations by dimension across all chart categories", async
   const metrics = getOverviewSummaryMetrics(splitSnapshot, pendingConflictWorkspace, i18n.t.bind(i18n));
 
   expect(metrics[3].count).toBe(13);
-  expect(metrics[3].name).toBe("Skill 部署关系（部署到 Agent 8 条 · 项目 5 条）");
+  expect(metrics[3].name).toBe("Skill 配置关系（配置到 Agent 8 条 · 项目 5 条）");
 });
 
 it("never renders the raw i18n key as a chart label (DEV-22-A)", async () => {
@@ -223,12 +225,50 @@ it("prefers the resolved Agent/Project name over the dimension key (DEV-22-A)", 
       { count: 2, dimension: "project", key: "project-aurora", label_code: "deployment.dimension.project" },
     ],
   };
-  const names = new Map([["codex-cli", "Codex CLI"], ["project-aurora", "Aurora"]]);
+  const names = new Map<string, OverviewDeploymentName>([
+    ["codex-cli", { brand: "openai", kinds: ["cli"] as AgentKindKey[] }],
+    ["project-aurora", "Aurora"],
+  ]);
 
+  // Agent 类别按规则呈现「品牌 · 类型」；项目仍用纯名称。
   expect(getDeploymentItems(keySnapshot, "agent", i18n.t.bind(i18n), names).map((item) => item.label))
-    .toEqual(["Codex CLI"]);
+    .toEqual(["OpenAI · 终端"]);
   expect(getDeploymentItems(keySnapshot, "project", i18n.t.bind(i18n), names).map((item) => item.label))
     .toEqual(["Aurora"]);
+});
+
+it("attaches the brand presentation fact so the detail list can render the unified presenter (2026-09-25)", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const keySnapshot: BootstrapSnapshot = {
+    ...summarySnapshot,
+    deployment_categories: [
+      { count: 3, dimension: "agent", key: "anthropic.claude-code", label_code: "deployment.dimension.agent" },
+    ],
+  };
+  const names = new Map<string, OverviewDeploymentName>([
+    ["anthropic.claude-code", { brand: "anthropic", kinds: ["cli"] as AgentKindKey[] }],
+  ]);
+
+  const items = getDeploymentItems(keySnapshot, "agent", i18n.t.bind(i18n), names);
+
+  expect(items[0].presentation).toEqual({ brand: "anthropic", kinds: ["cli"] });
+  // 品牌名由统一 presenter 的映射决定（anthropic → Claude）。
+  expect(items[0].label).toBe("Claude · 终端");
+  expect(items[0].label).not.toContain("anthropic.claude-code");
+  expect(items[0].buttonLabel).toBe("查看 Claude · 终端 的 3 条配置关系");
+});
+
+it("uses the agent-page card caliber for the discovered count when provided (2026-09-25)", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const t = i18n.t.bind(i18n);
+
+  // 覆盖值：与 Agent 页合并卡片一致（合并计 1，不展示不计）。
+  const overridden = getOverviewSummaryMetrics(summarySnapshot, null, t, 7);
+  expect(overridden[1].name).toBe("Agent（已配置目标 3 个 · 已发现 7 个）");
+
+  // 未提供（查询未就绪/旧快照）：回退发现快照口径。
+  const fallback = getOverviewSummaryMetrics(summarySnapshot, null, t);
+  expect(fallback[1].name).toBe("Agent（已配置目标 3 个 · 已发现 5 个）");
 });
 
 it("counts exactly the unconfirmed conflicts the workspace projection already selected", async () => {
@@ -253,9 +293,9 @@ it("returns well-defined empty shapes that keep the overview intact without rela
   expect(metrics).toHaveLength(5);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置部署目标 0 个 · 已发现 0 个）",
+    "Agent（已配置目标 0 个 · 已发现 0 个）",
     "管理项目",
-    "Skill 部署关系（部署到 Agent 0 条 · 项目 0 条）",
+    "Skill 配置关系（配置到 Agent 0 条 · 项目 0 条）",
     "待确认的关系冲突",
   ]);
   expect(metrics.map((metric) => metric.count)).toEqual([0, 0, 0, 0, 0]);

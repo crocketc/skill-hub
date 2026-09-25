@@ -8,8 +8,17 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import type { TFunction } from "i18next";
+import { agentKindLabel, type AgentKindKey } from "../../ui/AgentPresentation";
+import { brandDisplayName } from "../../ui/BrandTag";
+import type { OverviewDeploymentName } from "./deploymentNames";
 
 export type OverviewDimension = DeploymentDimension;
+
+/** Agent 图表类别的呈现事实（品牌 + 展示类型），由统一 presenter 语义组合。 */
+export interface OverviewAgentPresentation {
+  brand: string;
+  kinds: AgentKindKey[];
+}
 
 export interface OverviewMetric {
   href?: string;
@@ -28,6 +37,8 @@ export interface OverviewDeploymentItem {
   count: number;
   key: string;
   label: string;
+  /** Agent 类别的品牌+类型呈现事实；明细列表用它渲染统一 presenter。 */
+  presentation?: OverviewAgentPresentation;
   target: string;
 }
 
@@ -54,6 +65,21 @@ function deploymentTarget(dimension: DeploymentDimension, key: string) {
  */
 function deploymentLabel(category: DeploymentChartCategory, t: TFunction): string {
   return String(t(category.label_code as never, { defaultValue: category.label_code } as never));
+}
+
+/**
+ * 验收反馈（2026-09-25）：图表与明细中的 Agent 一律显示「品牌 · 展示类型」，
+ * 由统一 presenter 的品牌名与类型徽标文案组成，不允许裸奔 client_id。
+ */
+function agentDisplayName(
+  presentation: OverviewAgentPresentation,
+  t: TFunction,
+): string {
+  const brand = brandDisplayName(presentation.brand);
+  const kinds = presentation.kinds
+    .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))))
+    .filter(Boolean);
+  return [brand, ...kinds].filter(Boolean).join(" · ");
 }
 
 export function getOverviewMetrics(
@@ -107,13 +133,19 @@ export function getDeploymentItems(
   dimension: OverviewDimension,
   t: TFunction,
   /** 类别 key（Agent 客户端 id / 项目 id）到可读名称的映射；缺省退回翻译结果。 */
-  names?: ReadonlyMap<string, string>,
+  names?: ReadonlyMap<string, OverviewDeploymentName>,
 ): OverviewDeploymentItem[] {
   return snapshot.deployment_categories
     .filter((category) => category.dimension === dimension)
     .sort((left, right) => right.count - left.count || left.label_code.localeCompare(right.label_code))
     .map((category) => {
-      const label = names?.get(category.key) ?? deploymentLabel(category, t);
+      const name = names?.get(category.key);
+      const presentation = name && typeof name === "object" ? name : undefined;
+      const label = presentation
+        ? agentDisplayName(presentation, t)
+        : typeof name === "string" && name
+          ? name
+          : deploymentLabel(category, t);
       return {
         buttonLabel: t(`overview.chart.drilldown.${dimension}`, {
           count: category.count,
@@ -122,6 +154,7 @@ export function getDeploymentItems(
         count: category.count,
         key: category.key,
         label,
+        ...(presentation ? { presentation } : {}),
         target: deploymentTarget(dimension, category.key),
       };
     });
@@ -231,14 +264,17 @@ function deploymentRelationTotals(snapshot: BootstrapSnapshot): {
 /**
  * 概览融合后的五个指标，显示名称与口径为冻结契约：
  * 技能总数、Agent（已配置/已发现合并口径）、管理项目、
- * Skill 部署关系（按 Agent/项目拆分）、待确认的关系冲突。
+ * Skill 配置关系（按 Agent/项目拆分）、待确认的关系冲突。
  * 冲突数直接复用任务 2 工作台投影的 `cases`（已实现待确认筛选），
  * 本模块不重新实现另一套筛选规则；`conflictWorkspace` 缺省按 0 计。
+ * `discoveredCardCount`（验收反馈 2026-09-25）提供 Agent 页合并卡片口径的
+ * 已发现数；缺省退回发现快照的实例数（旧数据/查询未就绪）。
  */
 export function getOverviewSummaryMetrics(
   snapshot: BootstrapSnapshot,
   conflictWorkspace: ConflictWorkspace | null,
   t: TFunction,
+  discoveredCardCount?: number,
 ): OverviewMetric[] {
   const { agentRelations, projectRelations } = deploymentRelationTotals(snapshot);
   return [
@@ -251,11 +287,11 @@ export function getOverviewSummaryMetrics(
     {
       count: snapshot.agent_count,
       href: "/agents",
-      // “已发现”继续指发现快照口径（discovered_agent_count），
-      // 与“已配置”的部署目标口径在同一条指标内并列展示、互不混用。
+      // “已发现”优先取与 Agent 页卡片一致的合并口径（合并卡计 1，不展示的
+      // 不计）；快照实例数只作为数据未就绪时的回退。
       name: t("overview.summary.metrics.agentsCombined", {
         configured: snapshot.agent_count,
-        discovered: snapshot.discovered_agent_count,
+        discovered: discoveredCardCount ?? snapshot.discovered_agent_count,
       }),
       tone: "neutral",
     },

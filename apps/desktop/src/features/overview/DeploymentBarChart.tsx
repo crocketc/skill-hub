@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../styles/ThemeProvider";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import type { OverviewDeploymentItem, OverviewDimension } from "./api";
 
 export interface DeploymentBarChartPalette {
@@ -207,7 +208,16 @@ export function DeploymentDetailList({
                 onClick={() => navigate(item.target)}
                 type="button"
               >
-                <span>{item.label}</span>
+                {/* 验收反馈（2026-09-25）：Agent 类别用统一 presenter 呈现
+                    品牌厂商 logo + 展示类型徽标；项目等仍用纯文本名称。 */}
+                {item.presentation ? (
+                  <AgentPresentation
+                    brand={item.presentation.brand}
+                    kinds={item.presentation.kinds}
+                  />
+                ) : (
+                  <span>{item.label}</span>
+                )}
                 <strong>{` ${item.count}`}</strong>
               </button>
             </li>

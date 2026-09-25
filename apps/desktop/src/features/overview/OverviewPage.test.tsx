@@ -9,7 +9,7 @@ import type {
   SkillRelationshipCandidate,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
-import type { AgentFacade } from "../agents/api";
+import type { AgentFacade, AgentView } from "../agents/api";
 import { nativeAgentFacade } from "../agents/nativeApi";
 import type { ProjectFacade } from "../projects/api";
 import { nativeProjectFacade } from "../projects/nativeApi";
@@ -285,7 +285,7 @@ it("keeps configured and discovered agent calibers distinct inside the combined 
   // 冻结指标把两个口径并列在同一条指标名里（已配置 3 · 已发现 5），不再是
   // 两条独立钻取；口径仍分开命名、分开计数，不混用。
   expect(
-    await screen.findByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" }),
+    await screen.findByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
   ).toBeVisible();
   expect(screen.queryByRole("link", { name: "5 discovered agents" })).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "3 configured agents" })).not.toBeInTheDocument();
@@ -295,7 +295,7 @@ it("drills the combined agent metric into the agent management workspace", async
   await renderOverview();
 
   // 冻结契约：合并后的 Agent 指标统一去 /agents 管理已登记部署目标。
-  const agentMetric = screen.getByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" });
+  const agentMetric = screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" });
   expect(agentMetric).toHaveAttribute("href", "/agents");
 
   fireEvent.click(agentMetric);
@@ -328,9 +328,9 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
   // 密度结构：数字与指标名是两个可寻址元素，可访问名称仍由二者组成。
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactStats = [
-    ["3", "Agents (3 configured targets · 5 discovered)"],
+    ["3", "Agents (3 configured · 5 discovered)"],
     ["2", "Manage projects"],
-    ["18", "Skill deployment relations (15 to agents · 3 to projects)"],
+    ["18", "Skill configuration relations (15 to agents · 3 to projects)"],
     ["2", "Unconfirmed relationship conflicts"],
   ] as const;
   for (const [count, name] of compactStats) {
@@ -437,10 +437,10 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactHrefs = [
-    ["3 Agents (3 configured targets · 5 discovered)", "/agents"],
+    ["3 Agents (3 configured · 5 discovered)", "/agents"],
     ["2 Manage projects", "/projects"],
     [
-      "18 Skill deployment relations (15 to agents · 3 to projects)",
+      "18 Skill configuration relations (15 to agents · 3 to projects)",
       "/library?deployment=deployed",
     ],
     ["2 Unconfirmed relationship conflicts", "/relationships/decisions"],
@@ -457,7 +457,7 @@ it("fuses the relationship thumbnail network below the charts without replacing 
 
   // 既有内容一格不少：柱状图、标签饼图、待办摘要、指标带全部保留。
   expect(
-    await screen.findByRole("img", { name: "Deployment relation count by agent" }),
+    await screen.findByRole("img", { name: "Configuration relation count by agent" }),
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
@@ -530,7 +530,7 @@ it("renders the empty relationship state without swallowing charts or todo", asy
 
   // 空关系状态不吞没既有概览内容。
   expect(
-    screen.getByRole("img", { name: "Deployment relation count by agent" }),
+    screen.getByRole("img", { name: "Configuration relation count by agent" }),
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
@@ -550,7 +550,7 @@ it("withholds relationship counts behind placeholders while the summaries load",
 
   // 同步内容不受关系查询影响。
   expect(
-    screen.getByRole("img", { name: "Deployment relation count by agent" }),
+    screen.getByRole("img", { name: "Configuration relation count by agent" }),
   ).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
 });
@@ -563,7 +563,7 @@ it("explains unavailable relationship summaries without hiding the overview", as
   ).toBeVisible();
   expect(screen.queryByRole("link", { name: /unconfirmed conflicts/i })).not.toBeInTheDocument();
   expect(
-    screen.getByRole("img", { name: "Deployment relation count by agent" }),
+    screen.getByRole("img", { name: "Configuration relation count by agent" }),
   ).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
 });
@@ -571,18 +571,18 @@ it("explains unavailable relationship summaries without hiding the overview", as
 it("renders proportional agent deployments with a visible text equivalent and drills into its deployment workspace", async () => {
   await renderOverview();
 
-  expect(await screen.findByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
+  expect(await screen.findByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
   expect(
-    screen.getByRole("button", { name: "View Codex's 12 deployment relations" }),
+    screen.getByRole("button", { name: "View Codex's 12 configuration relations" }),
   ).toHaveTextContent("Codex 12");
   expect(
-    screen.getByRole("button", { name: "View Claude Code's 3 deployment relations" }),
+    screen.getByRole("button", { name: "View Claude Code's 3 configuration relations" }),
   ).toHaveTextContent("Claude Code 3");
-  expect(screen.getByRole("list", { name: "Deployment relation count details" })).toHaveTextContent(
+  expect(screen.getByRole("list", { name: "Configuration relation count details" })).toHaveTextContent(
     "Codex 12Claude Code 3",
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "View Codex's 12 deployment relations" }));
+  fireEvent.click(screen.getByRole("button", { name: "View Codex's 12 configuration relations" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/agents/openai.codex-cli?view=deployments",
@@ -594,11 +594,11 @@ it("switches to project relationships and drills into the truthful project desti
 
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
-  expect(await screen.findByRole("img", { name: "Deployment relation count by project" })).toBeVisible();
+  expect(await screen.findByRole("img", { name: "Configuration relation count by project" })).toBeVisible();
   expect(
-    screen.getByRole("button", { name: "View Aurora's 3 deployment relations" }),
+    screen.getByRole("button", { name: "View Aurora's 3 configuration relations" }),
   ).toHaveTextContent("Aurora 3");
-  fireEvent.click(screen.getByRole("button", { name: "View Aurora's 3 deployment relations" }));
+  fireEvent.click(screen.getByRole("button", { name: "View Aurora's 3 configuration relations" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/projects/project-aurora?view=deployments",
@@ -617,13 +617,13 @@ it("keeps deployment details in the fixed main panel while the rail stays reserv
 
   fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
 
-  const detailRegion = screen.getByRole("region", { name: "Deployment relation count details" });
+  const detailRegion = screen.getByRole("region", { name: "Configuration relation count details" });
   expect(detailRegion.parentElement).toHaveClass("sh-overview__panel");
   expect(within(detailRegion).getAllByRole("button", { name: /View Project/ })).toHaveLength(12);
   expect(
-    within(detailRegion).getByRole("region", { name: "Scrollable deployment relation details" }),
+    within(detailRegion).getByRole("region", { name: "Scrollable configuration relation details" }),
   ).toHaveAttribute("tabindex", "0");
-  expect(screen.getByText("Showing the top 10 of 12 projects")).toBeVisible();
+  expect(screen.getByText("Showing the top 10 of 12 projects by configuration relations")).toBeVisible();
   expect(document.querySelector(".sh-overview__panel .sh-overview__chart-list")).not.toBeNull();
 });
 
@@ -634,11 +634,11 @@ it("shows the pending summary without exposing the recent-operation log", async 
   // 等关系投影落地后再锁定指标带上的冲突项。
   await screen.findByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" });
   const statsList = screen.getByRole("list", { name: "Key stats" });
-  expect(within(statsList).getByRole("link", { name: "3 Agents (3 configured targets · 5 discovered)" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" })).toBeVisible();
   expect(within(statsList).getByRole("link", { name: "2 Manage projects" })).toBeVisible();
   expect(
     within(statsList).getByRole("link", {
-      name: "18 Skill deployment relations (15 to agents · 3 to projects)",
+      name: "18 Skill configuration relations (15 to agents · 3 to projects)",
     }),
   ).toBeVisible();
   expect(
@@ -658,8 +658,8 @@ it("explains when the selected deployment dimension has no relationships", async
     pending: { by_kind: {}, total: 0 },
   });
 
-  expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
-  expect(screen.queryByRole("img", { name: "Deployment relation count by agent" })).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("No configuration relations by agent yet");
+  expect(screen.queryByRole("img", { name: "Configuration relation count by agent" })).not.toBeInTheDocument();
   expect(screen.getByText("No pending items")).toBeVisible();
 });
 
@@ -674,15 +674,15 @@ it("keeps empty and zero-count states legible in the redesigned overview", async
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   expect(
-    within(statsList).getByRole("link", { name: "0 Agents (0 configured targets · 0 discovered)" }),
+    within(statsList).getByRole("link", { name: "0 Agents (0 configured · 0 discovered)" }),
   ).toBeVisible();
   expect(
     within(statsList).getByRole("link", {
-      name: "0 Skill deployment relations (0 to agents · 0 to projects)",
+      name: "0 Skill configuration relations (0 to agents · 0 to projects)",
     }),
   ).toBeVisible();
   expect(screen.getByRole("link", { name: "12 Total skills" })).toBeVisible();
-  expect(screen.getByRole("status")).toHaveTextContent("No deployment relationships by agent yet");
+  expect(screen.getByRole("status")).toHaveTextContent("No configuration relations by agent yet");
   expect(screen.getByRole("heading", { name: "No pending items" })).toBeVisible();
   expect(screen.getByText("All clear")).toBeVisible();
 });
@@ -720,7 +720,18 @@ it("renders readable Agent names in the deployment chart instead of internal i18
     ],
   };
   const agentFacade = {
-    list: async () => [{ client: "codex-cli", id: "openai.codex-cli", instance: "Codex CLI" }],
+    list: async () => [{
+      brand: "openai",
+      client: "codex-cli",
+      discoveredPaths: ["C:/Users/demo/.codex/skills"],
+      id: "openai.codex-cli",
+      instance: "Codex CLI",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible" as const,
+    }],
   } as unknown as AgentFacade;
   const projectFacade = {
     list: async () => [{ id: "project-aurora", name: "Aurora" }],
@@ -728,9 +739,73 @@ it("renders readable Agent names in the deployment chart instead of internal i18
 
   await renderOverview(keySnapshot, populatedRelationshipsFacade, { agentFacade, projectFacade });
 
-  // 名称来自 Agent/项目本身；内部 i18n 键不出现在图表明细里。
-  expect(await screen.findByText("Codex CLI")).toBeVisible();
+  // 验收反馈（2026-09-25）：Agent 明细用统一 presenter 呈现「品牌+类型」，
+  // 品牌名来自 Agent 自身（id 推导 openai → OpenAI）；内部 i18n 键与原始
+  // client_id 都不出现在图表明细里。
+  expect(await screen.findByText("OpenAI")).toBeVisible();
+  expect(screen.getByText("Terminal")).toBeVisible();
   expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
+});
+
+it("matches the overview discovered count with the agent page card caliber (2026-09-25)", async () => {
+  // 验收反馈（2026-09-25）：概览「已发现」= Agent 页卡片数——同目录的
+  // cli/desktop 合并计 1，内置只读视图单独计 1；快照实例数（5）不直接上屏。
+  const stubAgents: AgentView[] = [
+    {
+      brand: "openai",
+      client: "codex-cli",
+      discoveredPaths: ["C:/u/.codex/skills"],
+      id: "openai.codex-cli",
+      instance: "Codex CLI",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+    },
+    {
+      brand: "openai",
+      client: "codex-desktop",
+      discoveredPaths: ["C:/u/.codex/skills"],
+      id: "openai.codex-desktop",
+      instance: "Codex Desktop",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+    },
+    {
+      brand: "openai",
+      client: "codex-cli",
+      discoveredPaths: ["C:/u/.codex/skills/.system"],
+      id: "openai.codex-cli.builtin",
+      instance: "Codex CLI",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+      builtin: true,
+    },
+  ];
+  const agentFacade = { list: async () => stubAgents } as unknown as AgentFacade;
+
+  await renderOverview(overviewSnapshot, populatedRelationshipsFacade, { agentFacade });
+
+  expect(
+    await screen.findByRole("link", { name: "3 Agents (3 configured · 2 discovered)" }),
+  ).toBeVisible();
+});
+
+it("scrolls the tag list inside its panel frame when the window is maximized (2026-09-25)", () => {
+  // 验收反馈（2026-09-25）：最大化窗口下标签较多时在框内滚动，不被裁剪。
+  expect(overviewCss).toMatch(
+    /:root\.sh-is-window-maximized \.sh-overview \.sh-overview__tag-panel \{[^}]*grid-template-rows: auto minmax\(0, 1fr\)/,
+  );
+  expect(overviewCss).toMatch(
+    /:root\.sh-is-window-maximized \.sh-overview \.sh-overview__tag-layout \{[^}]*grid-template-rows: minmax\(0, 1fr\)/,
+  );
 });
 
 it("falls back to the translated dimension name when no Agent name is available (DEV-22-A)", async () => {

@@ -8,7 +8,7 @@ import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import type { RelationshipsFacade } from "../relationships/api";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
-import { useOverviewDeploymentNames } from "./deploymentNames";
+import { useOverviewDeploymentNames, useDiscoveredAgentCardCount } from "./deploymentNames";
 import { PendingSummary } from "./PendingSummary";
 import {
   RelationshipThumbnailNetwork,
@@ -183,12 +183,20 @@ export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade }
   const { t } = useTranslation();
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
   const { conflictsQuery } = useOverviewRelationshipSummaries(relationshipsFacade);
-  // DEV-22-A：图表用可读的 Agent/项目名，绝不渲染内部 i18n 键。
+  // DEV-22-A：图表用可读的 Agent/项目名，绝不渲染内部 i18n 键；
+  // 验收反馈（2026-09-25）：Agent 一律呈现「品牌+类型」。
   const deploymentNames = useOverviewDeploymentNames(agentFacade, projectFacade);
+  // 验收反馈（2026-09-25）：「已发现」与 Agent 页卡片数量同口径（合并计 1）。
+  const discoveredCardCount = useDiscoveredAgentCardCount(agentFacade);
   // 五个冻结指标（api.test.ts 锁定名称与口径）。前四项来自 bootstrap 快照
   // 同步可得；冲突项计数来自任务 2 工作台投影（异步）——未就绪时以占位符
   // 呈现且不提供携带假计数的钻取链接，绝不把 0 当作"查询还没回来"。
-  const summaryMetrics = getOverviewSummaryMetrics(snapshot, conflictsQuery.data ?? null, t);
+  const summaryMetrics = getOverviewSummaryMetrics(
+    snapshot,
+    conflictsQuery.data ?? null,
+    t,
+    discoveredCardCount,
+  );
   const conflictMetric = summaryMetrics[summaryMetrics.length - 1];
   const heroMetric =
     summaryMetrics.find((metric) => metric.tone === "accent") ?? summaryMetrics[0];
