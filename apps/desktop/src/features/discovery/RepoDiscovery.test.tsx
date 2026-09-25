@@ -120,6 +120,8 @@ it("renders the configured repositories with enabled state", async () => {
   const switches = screen.getAllByRole("switch");
   expect(switches[0]).toBeChecked();
   expect(switches[1]).not.toBeChecked();
+  // DEV-91：GitHub 文字按钮换成右上箭头图标（sourceLabel 与本页其余保持不变）。
+  expect(screen.getAllByRole("link", { name: "在 GitHub 打开 anthropics/skills" })).not.toHaveLength(0);
 });
 
 it("keeps repository setup actions in the toolbar above the cards", async () => {

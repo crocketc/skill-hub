@@ -391,7 +391,8 @@ export function RepoDiscovery({ facade, onImportDirectory }: RepoDiscoveryProps)
                       onOpen={() => void facade.openExternalUrl(`https://github.com/${key}`)}
                       target={`https://github.com/${key}`}
                     >
-                      GitHub
+                      {/* DEV-91：GitHub 文字按钮换右上箭头图标（本页其余保持原样）。 */}
+                      <Icon name="open-external" size={20} />
                     </ExternalLink>
                   }
                   statusControl={
