@@ -46,6 +46,10 @@ function directoryKey(path: string): string {
 
 function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardView[]> {
   const grouped = new Map<string, AgentCardView[]>();
+  // 验收反馈（2026-09-25）：仅发现相关目录（无任何已发现目录）的客户端
+  // 不单独出卡——同品牌已有目录卡时并入并合并类型徽标；整品牌都无目录时
+  // 全体客户端合成一张卡，避免同一品牌出现多张「仅发现相关目录」。
+  const pathlessAgents: AgentView[] = [];
   for (const agent of agents) {
     const brand = normalizeBrandKey(agent.brand);
     const paths = [...new Set(agent.discoveredPaths.map(directoryKey).filter(Boolean))];
@@ -72,6 +76,10 @@ function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardView[]> 
       existing.sharedDirectory ||= kind === "shared_directory";
       continue;
     }
+    if (paths.length === 0) {
+      pathlessAgents.push(agent);
+      continue;
+    }
     existingGroup.push({
       agent,
       agents: [agent],
@@ -79,6 +87,27 @@ function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardView[]> 
       sharedDirectory: kind === "shared_directory",
     });
     grouped.set(brand, existingGroup);
+  }
+  for (const agent of pathlessAgents) {
+    const brand = normalizeBrandKey(agent.brand);
+    const existingGroup = grouped.get(brand);
+    const kind = inferAgentKindKey(agent.client, agent.instance);
+    const existing = existingGroup?.[0];
+    if (existing) {
+      existing.agents.push(agent);
+      // 已有具体类型徽标时不再叠加 unknown 兜底徽标，避免合并卡出现「Agent」噪音。
+      if (!(kind === "unknown" && existing.kinds.length > 0)) {
+        existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
+      }
+      existing.sharedDirectory ||= kind === "shared_directory";
+      continue;
+    }
+    grouped.set(brand, [{
+      agent,
+      agents: [agent],
+      kinds: normalizeAgentKinds([kind]),
+      sharedDirectory: kind === "shared_directory",
+    }]);
   }
   return grouped;
 }

@@ -86,6 +86,72 @@ it("refreshes the card counts when a deployment commit broadcasts changed facts"
   await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
 });
 
+it("merges directory-only clients into their brand card instead of standalone cards", async () => {
+  // 验收反馈（2026-09-25）：仅发现相关目录（directory_only）的客户端
+  // 不应单独出卡；同品牌已有目录卡时并入并合并类型徽标，整品牌都无目录
+  // 时也只出一张卡。
+  const traeAgents: AgentView[] = [
+    {
+      brand: "Trae",
+      client: "trae.code",
+      discoveredPaths: ["C:/Users/demo/.trae-cn/skills"],
+      id: "trae.code",
+      instance: "TraeCode",
+      managedDeploymentCount: 1,
+      managedDeploymentRelationCount: 2,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+    },
+    {
+      brand: "Trae",
+      client: "trae.work",
+      discoveredPaths: [],
+      id: "trae.work",
+      instance: "TraeWork",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "directory_only",
+    },
+    {
+      brand: "Lore",
+      client: "lore.cli",
+      discoveredPaths: [],
+      id: "lore.cli",
+      instance: "Lore CLI",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "directory_only",
+    },
+    {
+      brand: "Lore",
+      client: "lore.ide",
+      discoveredPaths: [],
+      id: "lore.ide",
+      instance: "Lore IDE",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "directory_only",
+    },
+  ];
+
+  await renderListPage(facadeWith(), traeAgents);
+
+  expect(await screen.findByRole("heading", { name: "Trae" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Lore" })).toBeVisible();
+  expect(screen.getAllByTestId("agent-card")).toHaveLength(2);
+  // Trae 卡并入 trae.work 后仍如实展示可用；Lore 整品牌无目录，合并为
+  // 一张卡并保留诚实的「仅发现相关目录」状态。
+  expect(screen.getAllByText("仅发现相关目录")).toHaveLength(1);
+  expect(screen.getByText("可访问")).toBeVisible();
+});
+
 it("groups agents by brand and refreshes the real discovery facts", async () => {
   const user = userEvent.setup();
   const facade = facadeWith();

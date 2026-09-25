@@ -247,6 +247,7 @@ Codex 同时支持两套本地 Skill 目录：跨平台目录 `.agents/skills` /
 
 - 真机确认（Windows，2026-09-05，目录观察）：`~/.codex/skills/` 存在并含 9 个 Skill；`~/.agents/skills/` 存在并含 26 个 Skill；两个目录并存，且存在同名 Skill 在两处各自独立存放。`C:\Users\<本地用户>\Documents\Codex\` 下多个项目根目录同时存在项目级 `.codex` 与 `.agents` 目录（验证时点为空目录），佐证项目级 `.codex/skills` 路径确实生效。
 - 已确认：原生用户级 `~/.codex/skills` 与原生项目级 `{cwd}/.codex/skills`；跨平台用户级 `$HOME/.agents/skills` 与项目链路 `.agents/skills`；机器/容器级 `/etc/codex/skills`；系统内置与插件 Skill；禁用配置 `~/.codex/config.toml`；文件变化通知；符号链接目录。
+- 真机确认（Windows，2026-09-25，目录观察，人工验收反馈）：`~/.codex/skills/.system/` 存在，内含 6 个内置 Skill（imagegen、openai-docs、plugin-creator、review-agent、skill-creator、skill-installer）。即用户实测中 Built-in 不在安装目录，而以点前缀子目录 `.system` 形式位于用户级 Skills 目录内部，与用户 Skill 同根；终端（Codex CLI）与桌面端共用该用户级目录。这是对官方「Built-in 位于安装目录」表述的重要补充，其他品牌的内置目录位置对照见本表「内置 Skill」列（Cursor `~/.cursor/skills-cursor/`、TraeCode `~/.trae-cn/builtin_skills/` 与 `builtin/global/skills/`、WorkBuddy 内置插件 `skills/` 与插件缓存、DeepSeek Harness `Config.bundledSkillDir`、Kimi Code Built-in 档）。
 - 已确认但需独立建模：standalone skills 可在 ChatGPT desktop app、Codex CLI 和 Codex IDE extension 使用；插件 Skill 可在 ChatGPT 的 Chat/Work 以及 Codex 中分发使用。
 - 未确认：`.codex/skills` 与 `.agents/skills` 处于同一作用域时的同名优先级，官方文档未给出规则。
 - 源码线索：扫描深度和 App Server 的 `skills/list`、强制刷新能力。

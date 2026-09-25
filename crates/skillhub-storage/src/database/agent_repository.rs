@@ -97,6 +97,19 @@ fn merge_history(
             .iter()
             .any(|candidate| candidate.id == target.id)
         {
+            // 验收反馈（2026-09-25）：仅斜杠拼写不同的同 (profile, client,
+            // scope) 旧条目是同一物理目录的历史拼写（如旧版本把共享目录末段
+            // 写成 `/`），不是真实消失的目录；保留它们会让前端渲染出「品牌 +
+            // 不可用」的幽灵共享目录卡。这里按文件系统路径身份（分隔符统一，
+            // 大小写保持以兼容 POSIX）吸收进当前目标。
+            if merged.logical_targets.iter().any(|candidate| {
+                candidate.profile_id == target.profile_id
+                    && candidate.client_id == target.client_id
+                    && candidate.scope == target.scope
+                    && normalize_separator(&candidate.path) == normalize_separator(&target.path)
+            }) {
+                continue;
+            }
             let mut unavailable = target.clone();
             unavailable.exists = false;
             unavailable.readable = false;
@@ -121,6 +134,12 @@ fn merge_history(
     merged
 }
 
+/// DEV-5：路径的文件系统身份 = 分隔符统一为 `\`。只做分隔符归一，
+/// 不折叠大小写（POSIX 大小写敏感，此处无法感知目标平台）。
+fn normalize_separator(path: &str) -> String {
+    path.replace('/', "\\")
+}
+
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -136,4 +155,113 @@ fn database_error(error: rusqlite::Error) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("source", error.to_string())
         .with_action(RecoveryAction::Retry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skillhub_core::agent::{
+        ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
+        LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
+    };
+
+    fn target(id: &str, client: &str, path: &str, shared: bool) -> LogicalTarget {
+        LogicalTarget {
+            id: id.to_string(),
+            profile_id: "codex".to_string(),
+            client_id: client.to_string(),
+            scope: TargetScope::Global,
+            path: path.to_string(),
+            marker: "SKILL.md".to_string(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: shared,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id: format!("phys-{id}"),
+        }
+    }
+
+    fn snapshot(targets: Vec<LogicalTarget>) -> DiscoverySnapshot {
+        DiscoverySnapshot {
+            generation: "1".to_string(),
+            observed_at: "1789829830".to_string(),
+            instances: vec![ClientInstance {
+                profile_id: "codex".to_string(),
+                client_id: "codex-cli".to_string(),
+                kind: ClientKind::Cli,
+                display_name: "Codex CLI".to_string(),
+                supported_os: vec![OperatingSystem::Windows],
+                client_presence: ClientPresence::Unknown,
+            }],
+            logical_targets: targets,
+            physical_targets: vec![PhysicalTarget {
+                id: "phys-current".to_string(),
+                path: "C:\\u\\.agents\\skills".to_string(),
+                exists: true,
+                readable: true,
+                writable: true,
+                case_behavior: "insensitive".to_string(),
+                logical_target_ids: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn merge_history_drops_separator_spelled_legacy_duplicates() {
+        // 验收反馈（2026-09-25）：旧版本扫描把共享目录末段分隔符写成 `/`，
+        // 这些条目被 merge_history 永久保留且可用性被清零，前端据此渲染出
+        // 「品牌 + 不可用」的幽灵共享目录卡。同 (profile, client, scope) 下
+        // 仅斜杠拼写不同的旧条目必须被当前目标吸收，不再跨扫描残留。
+        let previous = snapshot(vec![target(
+            "codex:codex-cli:global:legacy",
+            "codex-cli",
+            "C:\\u\\.agents/skills",
+            false,
+        )]);
+        let current = snapshot(vec![target(
+            "codex:codex-cli:global:current",
+            "codex-cli",
+            "C:\\u\\.agents\\skills",
+            true,
+        )]);
+
+        let merged = merge_history(Some(&previous), &current);
+
+        assert_eq!(merged.logical_targets.len(), 1);
+        assert_eq!(
+            merged.logical_targets[0].id,
+            "codex:codex-cli:global:current"
+        );
+        assert!(merged.logical_targets[0].shared_reference);
+        assert!(merged.logical_targets[0].available);
+    }
+
+    #[test]
+    fn merge_history_still_keeps_genuinely_gone_directories_as_unavailable() {
+        // 去重只针对同路径异体拼写；真实消失的目录仍保留为不可用事实。
+        let previous = snapshot(vec![target(
+            "codex:codex-cli:global:gone",
+            "codex-cli",
+            "C:\\u\\.gone\\skills",
+            false,
+        )]);
+        let current = snapshot(vec![target(
+            "codex:codex-cli:global:current",
+            "codex-cli",
+            "C:\\u\\.agents\\skills",
+            true,
+        )]);
+
+        let merged = merge_history(Some(&previous), &current);
+
+        assert_eq!(merged.logical_targets.len(), 2);
+        let gone = merged
+            .logical_targets
+            .iter()
+            .find(|candidate| candidate.id == "codex:codex-cli:global:gone")
+            .expect("gone directory stays as an unavailable fact");
+        assert!(!gone.available);
+    }
 }

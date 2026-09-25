@@ -284,6 +284,35 @@ describe("buildAgentGroups", () => {
       .toEqual([false]);
   });
 
+  it("does not revive separator-spelled legacy variants of a shared directory as brand cards", () => {
+    // 验收反馈（2026-09-25）：merge_history 保留的旧扫描条目把
+    // `.agents/skills` 的末段分隔符写成 `/`，shared_reference 反序列化为
+    // false。前端必须按文件系统身份识别它就是共享目录本身，不能再产出
+    // 「品牌 + 不可用」的幽灵卡。
+    const cleanShared = sharedTarget("lt-codex-agents", "codex", "codex-cli", "C:\\u\\.agents\\skills", "phys-agents", true, true);
+    const ghostVariant = {
+      ...sharedTarget("lt-codex-agents-legacy", "codex", "codex-cli", "C:\\u\\.agents\\skills", "phys-agents-legacy", false, false),
+      // 仅末段分隔符不同的历史拼写；可用性已被历史合并清零。
+      path: "C:\\u\\.agents/skills",
+      exists: false,
+      readable: false,
+      writable: false,
+    };
+    const ghostSnapshot: DiscoverySnapshot = {
+      ...agentSnapshot,
+      logical_targets: [cleanShared, ghostVariant],
+      instances: agentSnapshot.instances.filter((instance) => instance.profile_id === "agent-skills" || instance.profile_id === "codex"),
+    };
+    const { available, unavailable } = buildAgentGroups(ghostSnapshot, { os: "windows" });
+    const codexCards = [...available, ...unavailable]
+      .find((group) => group.brand === "codex")?.cards ?? [];
+    expect(codexCards).toEqual([]);
+    // 共享目录本身仍以通用归属卡呈现，共享计数不因幽灵条目重复累计。
+    const generic = available.find((group) => group.brand === "agent-skills");
+    expect(generic?.cards).toHaveLength(1);
+    expect(generic?.cards[0]?.sharedClients).toBe(1);
+  });
+
   it("returns empty sections when nothing is discovered", () => {
     const empty = buildAgentGroups(
       { ...agentSnapshot, instances: [], logical_targets: [], physical_targets: [] },

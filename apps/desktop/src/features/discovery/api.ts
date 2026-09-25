@@ -548,22 +548,61 @@ export function buildAgentGroups(
     names: string[];
     available: boolean;
   }
+  // 验收反馈（2026-09-25）：merge_history 保留的旧扫描条目可能只有末段
+  // 分隔符不同（`.agents/skills` vs `.agents\skills`），且 shared_reference
+  // 反序列化为 false。目录聚合一律按文件系统路径身份（分隔符统一 + Windows
+  // 大小写折叠）归并，历史拼写变体不得再产出「品牌 + 不可用」幽灵卡。
+  const pathIdentity = (path: string): string => {
+    const unified = path.replaceAll("\\", "/");
+    return options.os === "windows" ? unified.toLowerCase() : unified;
+  };
   const byBrand = new Map<string, Map<string, PhysicalAccumulator>>();
-  const sharedByPhysical = new Map<
+  const sharedByIdentity = new Map<
     string,
-    { available: boolean; clientIds: string[]; names: string[]; path: string }
+    { physicalId: string; available: boolean; clientIds: string[]; names: string[]; path: string }
   >();
   for (const target of snapshot.logical_targets as LogicalTarget[]) {
     if (!clientIds.has(target.client_id)) continue;
     const kind = instanceKindByClient.get(target.client_id);
     if (!kind) continue;
+    if (!target.shared_reference) continue;
+    const identity = pathIdentity(target.path);
+    let shared = sharedByIdentity.get(identity);
+    if (!shared) {
+      shared = {
+        physicalId: target.physical_id,
+        available: false,
+        clientIds: [],
+        names: [],
+        path: target.path,
+      };
+      sharedByIdentity.set(identity, shared);
+    }
+    shared.available = shared.available || target.available;
+    if (!shared.clientIds.includes(target.client_id)) shared.clientIds.push(target.client_id);
     const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
-    if (target.shared_reference) {
-      // OPT-07：共享引用不产出归属卡片，聚合到通用目录卡片上。
-      let shared = sharedByPhysical.get(target.physical_id);
+    if (!shared.names.includes(clientName)) shared.names.push(clientName);
+  }
+  for (const target of snapshot.logical_targets as LogicalTarget[]) {
+    if (!clientIds.has(target.client_id)) continue;
+    const kind = instanceKindByClient.get(target.client_id);
+    if (!kind) continue;
+    const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
+    const identity = pathIdentity(target.path);
+    const isGenericOwner = target.profile_id === "agent-skills";
+    if (!isGenericOwner && (target.shared_reference || sharedByIdentity.has(identity))) {
+      // OPT-07：共享引用不产出归属卡片，聚合到通用目录卡片上；历史拼写
+      // 变体（shared_reference 缺失）按同一路径身份并入同一共享聚合。
+      let shared = sharedByIdentity.get(identity);
       if (!shared) {
-        shared = { available: false, clientIds: [], names: [], path: target.path };
-        sharedByPhysical.set(target.physical_id, shared);
+        shared = {
+          physicalId: target.physical_id,
+          available: false,
+          clientIds: [],
+          names: [],
+          path: target.path,
+        };
+        sharedByIdentity.set(identity, shared);
       }
       shared.available = shared.available || target.available;
       if (!shared.clientIds.includes(target.client_id)) shared.clientIds.push(target.client_id);
@@ -575,7 +614,7 @@ export function buildAgentGroups(
       brandGroups = new Map();
       byBrand.set(target.profile_id, brandGroups);
     }
-    let card = brandGroups.get(target.physical_id);
+    let card = brandGroups.get(identity);
     if (!card) {
       card = {
         physicalId: target.physical_id,
@@ -584,7 +623,12 @@ export function buildAgentGroups(
         names: [],
         available: false,
       };
-      brandGroups.set(target.physical_id, card);
+      brandGroups.set(identity, card);
+    }
+    // 同一路径的历史拼写各自带着不同 physical_id；可用拼写的路径优先作为展示值。
+    if (target.available && !card.available) {
+      card.physicalId = target.physical_id;
+      card.path = target.path;
     }
     if (!card.kinds.includes(kind)) card.kinds.push(kind);
     const name = instanceNameByClient.get(target.client_id);
@@ -596,14 +640,16 @@ export function buildAgentGroups(
   // shared-directory profile was not registered. The physical shared
   // directory is still one independent user-facing entity.
   const genericCards = byBrand.get("agent-skills") ?? new Map<string, PhysicalAccumulator>();
-  for (const [physicalId, shared] of sharedByPhysical) {
-    const existing = genericCards.get(physicalId);
+  for (const [identity, shared] of sharedByIdentity) {
+    const existing = [...genericCards.values()].find(
+      (candidate) => pathIdentity(candidate.path) === identity,
+    );
     if (existing) {
       existing.available = existing.available || shared.available;
       continue;
     }
-    genericCards.set(physicalId, {
-      physicalId,
+    genericCards.set(identity, {
+      physicalId: shared.physicalId,
       path: shared.path,
       kinds: ["shared_directory"],
       names: ["Agent Skills"],
@@ -616,7 +662,7 @@ export function buildAgentGroups(
   for (const [brand, cards] of byBrand) {
     const ordered = [...cards.values()]
       .map((card) => {
-        const shared = sharedByPhysical.get(card.physicalId);
+        const shared = sharedByIdentity.get(pathIdentity(card.path));
         return {
           ...card,
           kinds: [...card.kinds],
