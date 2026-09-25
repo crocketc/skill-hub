@@ -698,10 +698,10 @@
       "acp": "协议接入",
       "web": "网页端",
       "mobile": "移动端",
-        "bot": "机器人",
-        "sharedDirectory": "共享目录",
-        "unknown": "Agent",
-        "evidenceTitle": "{{kind}}：类型来自该客户端配置档案中声明的适配器证据"
+      "bot": "机器人",
+      "sharedDirectory": "共享目录",
+      "unknown": "Agent",
+      "evidenceTitle": "{{kind}}：类型来自该客户端配置档案中声明的适配器证据"
     },
     "status": {
       "accessible": "可访问",
@@ -1857,7 +1857,10 @@
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
       "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
       "technicalDetails": "技术详情",
-      "skillId": "Skill ID"
+      "skillId": "Skill ID",
+      "pairId": "部署条目",
+      "rawError": "原始错误",
+      "finalSummary": "链接部署 {{link}} · 复制部署 {{copy}} · 无需变更 {{noChange}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
     },
     "mode": {
       "label": "部署方式",
@@ -1905,6 +1908,32 @@
       "addedPartialTitle": "已添加到 Agent/项目，部分目标失败",
       "addFailedTitle": "添加到 Agent/项目失败",
       "addedSummary": "成功 {{succeeded}} 个 Skill，失败 {{failed}} 个，跳过 {{skipped}} 个"
+    },
+    "preference": {
+      "automatic": "自动选择方式",
+      "link": "链接部署",
+      "copy": "复制部署"
+    },
+    "regeneratePreview": "重新生成最终预览",
+    "groups": {
+      "selected": "按所选方式执行",
+      "recommendCopy": "建议改用复制部署",
+      "noChange": "无需变更",
+      "blocked": "无法执行",
+      "selectAll": "全选本组",
+      "confirmAll": "确认本组全部改用复制",
+      "confirmCopyHint": "勾选表示确认以复制部署落位；确认后请重新生成最终预览。",
+      "includeHint": "勾选表示纳入本批；取消勾选将排除该目标。",
+      "confirmedCopy": "已确认改用复制，将在提交时执行。"
+    },
+    "blockReason": {
+      "link_permission_unavailable": "当前账户无权创建链接部署，可改用复制部署。",
+      "link_filesystem_unsupported": "此文件的磁盘或分区不支持链接部署，可改用复制部署。",
+      "target_occupied": "目标目录已存在同名内容，无法重复添加。",
+      "path_unavailable": "目标目录当前无法访问，请确认磁盘或网络连接后重试。",
+      "shared_impact_requires_resolution": "其他 Agent 也在读取这个共享目录，需要先处理共享影响。",
+      "sharedImpactDetail": "请先在关系治理中处理共享目录的影响，再执行部署。",
+      "committedBlocked": "该目标未能执行，保持原状。"
     }
   },
   "security": {
@@ -2501,16 +2530,16 @@
         "needs_validation": "待校验",
         "blocked": "受阻",
         "withCount": "{{label}}（{{count}}）",
-      "scope_all": "全部类别",
-      "scope_source_copy": "来源副本",
-      "scope_deployment": "部署边",
-      "statusFilter": {
-        "normal": "正常",
-        "retained": "已保留",
-        "needs_validation": "待校验",
-        "needs_attention": "需关注",
-        "blocked": "受阻"
-      }
+        "scope_all": "全部类别",
+        "scope_source_copy": "来源副本",
+        "scope_deployment": "部署边",
+        "statusFilter": {
+          "normal": "正常",
+          "retained": "已保留",
+          "needs_validation": "待校验",
+          "needs_attention": "需关注",
+          "blocked": "受阻"
+        }
       },
       "importBatch": {
         "banner": "本次导入留下 {{count}} 个本地来源副本"

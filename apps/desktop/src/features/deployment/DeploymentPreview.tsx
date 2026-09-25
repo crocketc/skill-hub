@@ -3,9 +3,10 @@ import { BatchDeploymentPage } from "./BatchDeploymentPage";
 import { DeploymentDialog } from "./DeploymentDialog";
 import type {
   BatchDeploymentFacade,
-  DeploymentFacade,
-  DeploymentPlan,
-  DeploymentResult,
+  BatchDeploymentResult,
+  BatchPreviewItem,
+  DeploymentPairPreview,
+  DeploymentPreviewBatch,
   DeploymentTarget,
 } from "./api";
 
@@ -23,29 +24,43 @@ function previewTargets(targetCount = 3, longPaths = false): DeploymentTarget[] 
   }));
 }
 
-function planFor(selected: DeploymentTarget[], warnings: string[], targetWarnings: boolean): DeploymentPlan {
+function previewSkillDisplayName(skillId: string): string {
+  return skillId.replace(/^preview-skill-/, "Preview Skill ");
+}
+
+let previewPairSeq = 0;
+
+function previewPair(skillId: string, target: DeploymentTarget, overrides: Partial<DeploymentPairPreview> = {}): DeploymentPairPreview {
+  previewPairSeq += 1;
   return {
-    skillId: "preview-skill",
-    versionId: "v1",
-    warnings,
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link",
-      warnings: targetWarnings ? ["Target directory already contains a Skill with the same runtime name."] : [],
-    })),
+    pairId: `${skillId}:${target.physicalId}`,
+    skillId,
+    skillDisplayName: previewSkillDisplayName(skillId),
+    logicalTargetIds: [target.id],
+    runtimeName: "preview-skill",
+    targetLabel: target.label,
+    targetPath: target.path,
+    destinationPath: `${target.path}/preview-skill`,
+    preference: "automatic",
+    disposition: "selected_mode",
+    mode: "managed_copy",
+    fallbackMode: null,
+    blockReason: null,
+    warnings: [],
+    confirmationPreserved: false,
+    confirmationFingerprint: `preview-fp-${previewPairSeq}`,
+    technicalError: null,
+    ...overrides,
   };
 }
 
-function resultFor(plans: DeploymentPlan[], failedIds: string[] = []): DeploymentResult[] {
-  return plans.flatMap((plan) => plan.targets.map((target) => ({
-    targetId: target.targetId,
-    label: target.label,
-    status: failedIds.includes(target.targetId) ? ("failed" as const) : ("succeeded" as const),
-    message: failedIds.includes(target.targetId)
-      ? "deployment.target_not_writable"
-      : "deployment.results.message.succeeded",
-  })));
+function previewBatchOf(pairs: DeploymentPairPreview[]): DeploymentPreviewBatch {
+  return {
+    previewId: `preview-${pairs.length}-${pairs[0]?.pairId ?? "empty"}`,
+    expiresAt: "2026-09-24T01:00:00Z",
+    pairs,
+    preservedConfirmationIds: [],
+  };
 }
 
 type PreviewScenario =
@@ -88,63 +103,55 @@ function batchSkillCount(scenario: PreviewScenario): number {
   return scenario === "batch-bulk" ? 60 : 8;
 }
 
-function createSingleFacade(scenario: PreviewScenario): DeploymentFacade {
-  if (scenario === "unavailable") {
-    return {
-      listTargets: () => Promise.reject(new Error("preview.deploy_targets_unavailable")),
-      preview: () => Promise.reject(new Error("preview.unavailable")),
-      commit: () => Promise.reject(new Error("preview.unavailable")),
-    };
-  }
-  return {
-    listTargets: async () => previewTargets(3, scenario === "batch-bulk"),
-    preview: async (selected) => {
-      if (scenario === "fail-preview") throw new Error("deployment.target_not_writable");
-      return planFor(
-        selected,
-        scenario === "warning" ? ["The target directory is a junction; the Skill will deploy through it."] : [],
-        scenario === "warning",
-      );
-    },
-    commit: async (plan) => resultFor([plan], scenario === "partial" ? ["target-1"] : []),
-  };
-}
-
-/** DEV-18-A：预览也走「展示名主文案」投影，与真机行为一致。 */
-function previewSkillDisplayName(skillId: string): string {
-  return skillId.replace(/^preview-skill-/, "Preview Skill ");
+function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenario: PreviewScenario): DeploymentPairPreview[] {
+  return items.flatMap((item) => targets
+    .filter((target) => item.targetIds.includes(target.id))
+    .map((target) => {
+      const pair = previewPair(item.skillId, target);
+      if (scenario === "warning") {
+        return {
+          ...pair,
+          warnings: ["The target directory is a junction; the Skill will deploy through it."],
+        };
+      }
+      if (scenario === "partial" || scenario === "batch-partial") {
+        return { ...pair, disposition: "blocked" as const, mode: null, blockReason: "path_unavailable" as const };
+      }
+      return pair;
+    }));
 }
 
 function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
-  const skillIds = Array.from({ length: batchSkillCount(scenario) }, (_, index) => `preview-skill-${index + 1}`);
   return {
     listTargets: async () => previewTargets(3, scenario === "batch-bulk"),
-    preview: async (_skillIds, selected) => scenario === "batch-preview-fail"
-      ? {
-          failures: [{ skillId: "preview-skill-2", displayName: previewSkillDisplayName("preview-skill-2"), message: "preview.version_missing" }],
-          plans: [{
-            skillId: "preview-skill-1",
-            displayName: previewSkillDisplayName("preview-skill-1"),
-            plan: planFor(selected, [], false),
-          }],
-        }
-      : {
-          failures: [],
-          plans: skillIds.map((skillId) => ({ skillId, displayName: previewSkillDisplayName(skillId), plan: planFor(selected, [], false) })),
-        },
-    commit: async (plans) => plans.flatMap(({ skillId, displayName, plan }) => resultFor(
-      [plan],
-      scenario === "batch-partial" ? [plan.targets[0]?.targetId ?? ""] : [],
-    ).map((result) => ({ ...result, skillId, displayName }))),
+    preview: async (items) => {
+      if (scenario === "fail-preview" || scenario === "batch-preview-fail") {
+        throw new Error("deployment.target_not_writable");
+      }
+      return previewBatchOf(pairsFor(items, await previewTargets(3, scenario === "batch-bulk"), scenario));
+    },
+    commit: async (preview, selections): Promise<BatchDeploymentResult[]> => selections
+      .filter((selection) => !selection.exclude)
+      .map((selection) => {
+        const facts = preview.pairs.find((candidate) => candidate.pairId === selection.pairId);
+        return {
+          skillId: facts?.skillId ?? "",
+          displayName: facts?.skillDisplayName,
+          targetId: facts?.logicalTargetIds[0] ?? "",
+          label: facts?.targetLabel ?? "",
+          status: "succeeded" as const,
+          message: "deployment.results.status.message.succeeded",
+        };
+      }),
   };
 }
 
 /**
  * DEV-only preview for the deployment flows (T4-D). `?scenario=` selects
- * deterministic layouts: plan warnings, partial failure, preview failure,
- * target discovery failure, and the batch route with 8 or 60+ Skills and
- * long paths. Everything runs on mock facades without native or network
- * calls.
+ * deterministic layouts: pair disposition groups, partial failure, preview
+ * failure, target discovery failure, and the batch route with 8 or 60+
+ * Skills and long paths. Everything runs on mock facades without native or
+ * network calls.
  */
 export function DeploymentPreview() {
   const scenario = useMemo(previewScenario, []);
@@ -154,5 +161,5 @@ export function DeploymentPreview() {
     return <BatchDeploymentPage facade={createBatchFacade(scenario)} skillIds={skillIds} />;
   }
 
-  return <DeploymentDialog facade={createSingleFacade(scenario)} skillId="preview-skill" versionId="v1" />;
+  return <DeploymentDialog facade={createBatchFacade(scenario)} skillId="preview-skill" versionId="current" />;
 }

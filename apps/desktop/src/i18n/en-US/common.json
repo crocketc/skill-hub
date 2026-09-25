@@ -698,10 +698,10 @@
       "acp": "Protocol integration",
       "web": "Web client",
       "mobile": "Mobile",
-        "bot": "Robot",
-        "sharedDirectory": "Shared directory",
-        "unknown": "Agent",
-        "evidenceTitle": "{{kind}}: Kind comes from the adapter evidence declared in the client profile"
+      "bot": "Robot",
+      "sharedDirectory": "Shared directory",
+      "unknown": "Agent",
+      "evidenceTitle": "{{kind}}: Kind comes from the adapter evidence declared in the client profile"
     },
     "status": {
       "accessible": "Accessible",
@@ -1857,7 +1857,10 @@
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
       "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
       "technicalDetails": "Technical details",
-      "skillId": "Skill ID"
+      "skillId": "Skill ID",
+      "pairId": "Deployment entry",
+      "rawError": "Original error",
+      "finalSummary": "Link {{link}} · Copy {{copy}} · No change {{noChange}} · Excluded {{excluded}} · Still blocked {{blocked}}"
     },
     "mode": {
       "label": "Deployment mode",
@@ -1905,6 +1908,32 @@
       "addedPartialTitle": "Added to Agent/Project, some targets failed",
       "addFailedTitle": "Could not add to Agent/Project",
       "addedSummary": "{{succeeded}} Skill(s) succeeded, {{failed}} failed, {{skipped}} skipped"
+    },
+    "preference": {
+      "automatic": "Choose automatically",
+      "link": "Link deployment",
+      "copy": "Copy deployment"
+    },
+    "regeneratePreview": "Regenerate final preview",
+    "groups": {
+      "selected": "Execute as selected",
+      "recommendCopy": "Recommend copy instead",
+      "noChange": "No change needed",
+      "blocked": "Cannot execute",
+      "selectAll": "Select all in this group",
+      "confirmAll": "Confirm copy fallback for the whole group",
+      "confirmCopyHint": "Check to confirm placement as a copy, then regenerate the final preview.",
+      "includeHint": "Check to include in this batch; uncheck to exclude the target.",
+      "confirmedCopy": "Confirmed to deploy as a copy; it will run on commit."
+    },
+    "blockReason": {
+      "link_permission_unavailable": "This account may not create directory links. Copy deployment is available instead.",
+      "link_filesystem_unsupported": "This disk or partition does not support directory links. Copy deployment is available instead.",
+      "target_occupied": "The target directory already contains an entry with the same name.",
+      "path_unavailable": "The target directory is currently unreachable. Check the disk or network connection and retry.",
+      "shared_impact_requires_resolution": "Other agents also read this shared directory; resolve the shared impact first.",
+      "sharedImpactDetail": "Resolve the shared-directory impact in relationship governance before deploying.",
+      "committedBlocked": "This target was not executed and stays as it is."
     }
   },
   "security": {
@@ -2501,16 +2530,16 @@
         "needs_validation": "Needs validation",
         "blocked": "Blocked",
         "withCount": "{{label}} ({{count}})",
-      "scope_all": "All types",
-      "scope_source_copy": "Source copies",
-      "scope_deployment": "Deployment edges",
-      "statusFilter": {
-        "normal": "Normal",
-        "retained": "Retained",
-        "needs_validation": "Needs validation",
-        "needs_attention": "Needs attention",
-        "blocked": "Blocked"
-      }
+        "scope_all": "All types",
+        "scope_source_copy": "Source copies",
+        "scope_deployment": "Deployment edges",
+        "statusFilter": {
+          "normal": "Normal",
+          "retained": "Retained",
+          "needs_validation": "Needs validation",
+          "needs_attention": "Needs attention",
+          "blocked": "Blocked"
+        }
       },
       "importBatch": {
         "banner": "This import left {{count}} local source copies"

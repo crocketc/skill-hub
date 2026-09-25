@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -12,20 +12,21 @@ import { ImportShell, type ImportStatus, type ImportStep } from "../import/Impor
 import "./deployment.css";
 import {
   type BatchDeploymentFacade,
-  type BatchDeploymentPreview,
-  type BatchProjectInfo,
   type BatchDeploymentResult,
-  userFacingDeploymentMode,
-  userFacingDeploymentWarning,
-  warningsNotCoveredByTargets,
-  type DeploymentMode,
+  type BatchPreviewItem,
+  type BatchProjectInfo,
+  type DeploymentPairPreview,
+  type DeploymentPreference,
+  type DeploymentPreviewBatch,
   type DeploymentTarget,
+  groupPairsByDisposition,
+  isLinkMode,
 } from "./api";
 import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
-import { displayPath } from "../../platform/displayPath";
+import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
-import { DeploymentImpactCard } from "./DeploymentImpactCard";
+import { displayPath } from "../../platform/displayPath";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -54,13 +55,19 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const selectedSkillIds = useMemo(() => uniqueIds(skillIds), [skillIds]);
   const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<DeploymentMode>();
-  const [preview, setPreview] = useState<BatchDeploymentPreview>();
+  const [preference, setPreference] = useState<DeploymentPreference>("automatic");
+  const [preview, setPreview] = useState<DeploymentPreviewBatch>();
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [exclusionsDirty, setExclusionsDirty] = useState(false);
+  const [confirmationsDirty, setConfirmationsDirty] = useState(false);
+  const fingerprintsRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<BatchDeploymentResult[]>();
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
   const [committing, setCommitting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const planHeadingRef = useRef<HTMLHeadingElement>(null);
   const preselectedTargetId = searchParams.get("target");
   // 治理清理结果等入口只知道 Agent：?agent= 预选该 Agent 的首个可用目标。
   const preselectedAgentClientId = searchParams.get("agent");
@@ -111,31 +118,122 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     .map((agentId) => ({ project: target, agentId })));
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
-  const availableModes = selected.length === 0
-    ? []
-    : selected[0].modes.filter((candidate) => selected.every((target) => target.modes.includes(candidate)));
-  const previewBatch = async () => {
+  const groups = useMemo(
+    () => preview ? groupPairsByDisposition(preview.pairs) : [],
+    [preview],
+  );
+  // 仍待用户处理的回退确认：建议复制但尚未确认的 pair。
+  const pendingConfirmationIds = preview
+    ? preview.pairs
+      .filter((pair) => pair.disposition === "recommend_copy" && !confirmedIds.has(pair.pairId))
+      .map((pair) => pair.pairId)
+    : [];
+  const included = (pair: DeploymentPairPreview) =>
+    (pair.disposition === "selected_mode" || pair.disposition === "no_change")
+    && !excludedIds.has(pair.pairId);
+  const executableCount = preview
+    ? preview.pairs.filter((pair) => included(pair)).length + confirmedIds.size
+    : 0;
+  // 最终汇总（14.8）：链接/复制/无需变更/已排除/仍受阻分别计数。
+  const finalSummary = useMemo(() => {
+    let link = 0;
+    let copy = 0;
+    let noChange = 0;
+    let excluded = 0;
+    let blocked = 0;
+    for (const pair of preview?.pairs ?? []) {
+      if (pair.disposition === "selected_mode") {
+        if (!included(pair)) {
+          excluded += 1;
+        } else if (pair.mode && isLinkMode(pair.mode)) {
+          link += 1;
+        } else {
+          copy += 1;
+        }
+      } else if (pair.disposition === "no_change") {
+        if (included(pair)) noChange += 1;
+        else excluded += 1;
+      } else if (pair.disposition === "recommend_copy") {
+        if (confirmedIds.has(pair.pairId)) copy += 1;
+        else blocked += 1;
+      } else {
+        blocked += 1;
+      }
+    }
+    return { link, copy, noChange, excluded, blocked };
+  }, [preview, excludedIds, confirmedIds]);
+
+  const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
     setFlowError(undefined);
+    const items: BatchPreviewItem[] = selectedSkillIds.map((skillId) => ({
+      skillId,
+      targetIds: selected.map((target) => target.id),
+      preference,
+    }));
     try {
-      setPreview(await activeFacade.preview(selectedSkillIds, selected, mode));
+      const response = await activeFacade.preview(items, context);
+      fingerprintsRef.current = Object.fromEntries(
+        response.pairs.map((pair) => [pair.pairId, pair.confirmationFingerprint]),
+      );
+      setPreview(response);
       setResults(undefined);
+      // 排除项保留用户意图（后端预览不回传排除）；确认范围以后端显式判定
+      // 恢复（14.7）：指纹漂移的确认不复活，重新要求用户处理。
+      setExcludedIds((current) => new Set([...current].filter((pairId) =>
+        response.pairs.some((pair) => pair.pairId === pairId))));
+      const preserved = new Set(response.preservedConfirmationIds);
+      setConfirmedIds(new Set(response.pairs
+        .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
+        .map((pair) => pair.pairId)));
+      setExclusionsDirty(false);
+      setConfirmationsDirty(false);
+      // 重新预览后回到计划区首部（14.16）。
+      requestAnimationFrame(() => {
+        const heading = planHeadingRef.current;
+        if (!heading) return;
+        heading.focus({ preventScroll: true });
+        // jsdom 不实现 scrollIntoView；真实环境滚动到计划区首部（14.16）。
+        if (typeof heading.scrollIntoView === "function") {
+          heading.scrollIntoView({ block: "start" });
+        }
+      });
     } catch (reason) {
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
+
+  const previewBatch = async () => {
+    await runPreview();
+  };
+  const regeneratePreview = async () => {
+    const confirmations: Record<string, string> = {};
+    for (const pairId of confirmedIds) {
+      const fingerprint = fingerprintsRef.current[pairId];
+      if (fingerprint) confirmations[pairId] = fingerprint;
+    }
+    await runPreview({ confirmations, exclusions: [...excludedIds] });
+  };
+
   const commit = async () => {
-    if (!preview?.plans.length || preview.failures.length) return;
+    if (!preview || committing) return;
     setCommitting(true);
     setFlowError(undefined);
     try {
-      // 统一执行桥（任务 4）：批次进 tracker 在途投影，按已完成 Skill 推进，
-      // 结果通知深链 /operations/:id，异常 rethrow 由页面告警承接，不吞掉。
+      // 统一执行桥（任务 4）：批次进 tracker 在途投影；进度分母是可执行
+      // pair 数（14.9），结果通知深链 /operations/:id，异常 rethrow 不吞掉。
+      const selections = preview.pairs.map((pair) => ({
+        pairId: pair.pairId,
+        confirmFallback: confirmedIds.has(pair.pairId),
+        // 可执行 pair 未纳入即排除；建议复制/阻断 pair 原样提交让结果面报告。
+        exclude: excludedIds.has(pair.pairId)
+          && (pair.disposition === "selected_mode" || pair.disposition === "no_change"),
+      }));
       const committed = await runTrackedOperation<BatchDeploymentResult[]>({
         tracker,
         notifications,
         kind: "deploy",
         label: t("deployment.tracker.label"),
-        total: preview.plans.length,
+        total: executableCount,
         translate: (key, options) => String(t(key as never, options as never)),
         errorNotice: (_error, message) => ({
           tone: "danger",
@@ -161,11 +259,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           skipped: new Set(results.filter((result) => result.status === "skipped").map((result) => result.skillId)).size,
         }),
         run: async (handle) => {
-          const results = await activeFacade.commit(preview.plans, (completed) => handle.progress(completed, preview.plans.length));
-          // 后端为每个 prepare 单独铸造 operation id：批次逐 Skill prepare/commit
-          // 后各 id 互不相同。仅当结果集恰好指向一条持久化记录（单 Skill 批次）
-          // 时才 correlate；多 id 批次镜像 removal 批量的既有决定——不伪关联
-          // Skill #1 的记录，通知/深链退化为不带 action 的批量结果反馈。
+          const results = await activeFacade.commit(preview, selections, (completed) => handle.progress(completed, executableCount));
+          // 后端一个 pair 可映射到一条持久化操作；仅当结果集恰好指向一条
+          // 记录时 correlate，多 id 批次不伪关联（镜像 removal 既有决定）。
           const correlatedIds = [...new Set(results
             .map((result) => result.operationId)
             .filter((operationId): operationId is string => Boolean(operationId)))];
@@ -210,12 +306,11 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     .map((result) => [result.skillId, {
       skillId: result.skillId,
       displayName: result.displayName
-        ?? preview?.plans.find((candidate) => candidate.skillId === result.skillId)?.displayName
+        ?? preview?.pairs.find((candidate) => candidate.skillId === result.skillId)?.skillDisplayName
         ?? t("deployment.batch.unnamedSkill"),
     }]))
     .values()];
   const failedResults = results?.filter((result) => result.status === "failed") ?? [];
-  const previewFailures = preview?.failures ?? [];
   const status: ImportStatus | null =
     phase === "list-error"
       ? { kind: "failure", text: listError ?? "" }
@@ -225,9 +320,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         : phase === "targets"
           ? { kind: "info", text: t("deployment.status.selecting") }
           : phase === "plan"
-            ? previewFailures.length > 0
-              ? { kind: "failure", text: t("deployment.status.previewFailed") }
-              : { kind: "info", text: t("deployment.status.previewReady") }
+            ? { kind: "info", text: t("deployment.status.previewReady") }
             : phase === "committing"
               ? { kind: "info", text: t("deployment.batch.committing") }
               : {
@@ -237,31 +330,58 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                     : t("deployment.status.results"),
                 };
 
+  const regenerateNeeded = exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
+  const togglePair = (groupDisposition: string, pairId: string, checked: boolean) => {
+    if (groupDisposition === "recommend_copy") {
+      setConfirmationsDirty(true);
+      setConfirmedIds((current) => {
+        const update = new Set(current);
+        if (checked) update.add(pairId);
+        else update.delete(pairId);
+        return update;
+      });
+      return;
+    }
+    setExclusionsDirty(true);
+    setExcludedIds((current) => {
+      const update = new Set(current);
+      if (checked) update.delete(pairId);
+      else update.add(pairId);
+      return update;
+    });
+  };
   const footer = phase === "targets" || phase === "plan" ? (
     <>
       <div className="sh-import-wizard__actions-group sh-deployment-flow__risk-group">
         {/* 非原子批量风险提示紧邻提交动作；选择阶段与计划阶段都在操作区内可见。 */}
         <small className="sh-deployment-flow__risk">{t("deployment.batch.nonAtomicNotice")}</small>
-        {phase === "targets" || phase === "plan" ? (
-          <label>
-            <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
-            <select
-              aria-label={t("deployment.mode.label")}
-              onChange={(event) => {
-                setMode(event.currentTarget.value ? event.currentTarget.value as DeploymentMode : undefined);
-                setPreview(undefined);
-              }}
-              value={mode ?? ""}
-            >
-              <option value="">{t("deployment.mode.automatic")}</option>
-              {availableModes.map((candidate) => <option key={candidate} value={candidate}>{t(userFacingDeploymentMode(candidate))}</option>)}
-            </select>
-          </label>
-        ) : null}
+        <label>
+          <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
+          <select
+            aria-label={t("deployment.mode.label")}
+            onChange={(event) => {
+              setPreference(event.currentTarget.value as DeploymentPreference);
+              setPreview(undefined);
+            }}
+            value={preference}
+          >
+            <option value="automatic">{t("deployment.preference.automatic")}</option>
+            <option value="link">{t("deployment.preference.link")}</option>
+            <option value="copy">{t("deployment.preference.copy")}</option>
+          </select>
+        </label>
       </div>
       <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
         {phase === "targets" ? (
           <Button disabled={selected.length === 0} onClick={() => void previewBatch()} size="lg">{t("deployment.preview")}</Button>
+        ) : regenerateNeeded ? (
+          <Button
+            disabled={committing}
+            onClick={() => void regeneratePreview()}
+            size="lg"
+          >
+            {t("deployment.regeneratePreview")}
+          </Button>
         ) : (
           <>
             <Button
@@ -274,7 +394,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
               {t("actions.back")}
             </Button>
             <Button
-              disabled={committing || previewFailures.length > 0}
+              disabled={committing || executableCount === 0}
               onClick={() => void commit()}
               size="lg"
             >
@@ -318,7 +438,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
 
             return <label className="sh-deployment-target-card" data-testid="deployment-target-card" key={target.id}>
               <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
-                setMode(undefined);
+                setPreference("automatic");
                 setPreview(undefined);
                 setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
               }} type="checkbox" />
@@ -331,7 +451,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         </div>
         {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">
           <Button onClick={() => {
-            setMode(undefined);
+            setPreference("automatic");
             setPreview(undefined);
             setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.agentId)])]);
           }} variant="secondary">
@@ -343,59 +463,46 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       {preview && (phase === "plan" || phase === "committing") ? <section aria-labelledby="deployment-plan-heading" className="sh-deployment-flow__section">
         <div className="sh-section-heading">
           <div>
-            <h2 id="deployment-plan-heading">{t("deployment.plan.heading")}</h2>
+            <h2 id="deployment-plan-heading" ref={planHeadingRef} tabIndex={-1}>{t("deployment.plan.heading")}</h2>
             <p>{t("deployment.batch.planDescription")}</p>
           </div>
         </div>
         <p className="sh-deployment-impact-summary" role="status">
-          {t("deployment.batch.previewSummary", {
-            ready: preview.plans.length,
-            blocked: previewFailures.length,
+          {t("deployment.batch.finalSummary", {
+            link: finalSummary.link,
+            copy: finalSummary.copy,
+            noChange: finalSummary.noChange,
+            excluded: finalSummary.excluded,
+            blocked: finalSummary.blocked,
           })}
         </p>
-        {preview.failures.length ? <ul className="sh-notice-list" role="alert">{preview.failures.map((failure) => <li className="sh-deployment-flow__failure" key={failure.skillId}>
-          <div>
-            {/* DEV-18-A：失败行主文案用展示名（回退 runtime name）；裸 Skill
-                UUID 绝不作为首屏可见文本，只在可展开的「技术详情」区域内。 */}
-            <strong>{failure.displayName ?? t("deployment.batch.unnamedSkill")}</strong>
-            <p>{describeNativeError(
-              failure.error ?? failure.message,
-              (key, options) => String(t(key as never, options as never)),
-              "deployment.errors.generic",
-            )}</p>
-          </div>
-          <details className="sh-deployment-flow__diagnostics">
-            <summary>{t("deployment.batch.technicalDetails")}</summary>
-            <dl className="sh-deployment-flow__diagnostics-list">
-              <div>
-                <dt>{t("deployment.batch.skillId")}</dt>
-                <dd>{failure.skillId}</dd>
-              </div>
-            </dl>
-          </details>
-        </li>)}</ul> : null}
-        {/* DEV-18-A：计划区标题用展示名，裸 Skill UUID 不作为主文案。 */}
-        {preview.plans.map(({ skillId, displayName, plan }) => {
-          const planWarnings = warningsNotCoveredByTargets(plan);
-          return <section key={skillId}>
-          <h3>{displayName ?? t("deployment.batch.unnamedSkill")}</h3>
-          {planWarnings.length > 0 ? <ul className="sh-notice-list">{planWarnings.map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
-          <div className="sh-deployment-impact-list">
-            {plan.targets.map((target) => <DeploymentImpactCard
-              key={target.targetId}
-              target={target}
+        <div className="sh-disposition-groups">
+          {groups.map((group) => {
+            const selection: DispositionGroupSelection = group.disposition === "selected_mode" || group.disposition === "no_change"
+              ? "include"
+              : group.disposition === "recommend_copy" ? "confirm" : "none";
+            const selectedSet = group.disposition === "recommend_copy"
+              ? confirmedIds
+              : new Set((preview?.pairs ?? [])
+                .filter((pair) => included(pair) && pair.disposition !== "recommend_copy")
+                .map((pair) => pair.pairId));
+            return <DeploymentDispositionGroup
+              group={group}
+              key={group.key}
+              onToggle={(pairId, checked) => togglePair(group.disposition, pairId, checked)}
+              selection={selection}
+              selected={selectedSet}
               targets={targets ?? []}
-            />)}
-          </div>
-        </section>;
-        })}
+            />;
+          })}
+        </div>
       </section> : null}
       {results ? <BatchOperationSummary
         outcomes={results.map((result): BatchOutcome => ({
           id: `${result.skillId ?? "single"}:${result.targetId}`,
           label: result.skillId
             ? `${result.displayName
-              ?? preview?.plans.find((candidate) => candidate.skillId === result.skillId)?.displayName
+              ?? preview?.pairs.find((candidate) => candidate.skillId === result.skillId)?.skillDisplayName
               ?? t("deployment.batch.unnamedSkill")} · ${result.label}`
             : result.label,
           message: describeDeploymentResult(result, (key, options) => String(t(key as never, options as never))),

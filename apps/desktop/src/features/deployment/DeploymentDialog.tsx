@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useInRouterContext } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -11,22 +11,23 @@ import { ImportShell, type ImportStatus, type ImportStep } from "../import/Impor
 import { DeploymentResults } from "./DeploymentResults";
 import "./deployment.css";
 import {
-  type DeploymentFacade,
-  type DeploymentMode,
-  type DeploymentPlan,
+  type BatchDeploymentFacade,
+  type BatchPreviewItem,
+  type DeploymentPairPreview,
+  type DeploymentPreference,
+  type DeploymentPreviewBatch,
   type DeploymentResult,
   type DeploymentTarget,
-  userFacingDeploymentMode,
-  userFacingDeploymentWarning,
-  warningsNotCoveredByTargets,
+  groupPairsByDisposition,
 } from "./api";
-import { createNativeDeploymentFacade } from "./nativeApi";
+import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
-import { DeploymentImpactCard } from "./DeploymentImpactCard";
+import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
 
 export interface DeploymentDialogProps {
-  facade?: DeploymentFacade;
+  /** 单项部署复用批次预览契约：一个 Skill 的 pair 流（任务 14）。 */
+  facade?: BatchDeploymentFacade;
   skillId: string;
   versionId: string;
   runtimeName?: string;
@@ -59,13 +60,18 @@ export function DeploymentDialog({
   const manageRelationsLink = manageRelationsHref
     ?? (inRouter ? `/relationships/governance?from=library&skillId=${encodeURIComponent(skillId)}` : null);
   const activeFacade = useMemo(
-    () => facade ?? createNativeDeploymentFacade({ skillId, versionId, runtimeName }),
-    [facade, runtimeName, skillId, versionId],
+    () => facade ?? createNativeBatchDeploymentFacade(),
+    [facade],
   );
   const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<DeploymentMode>();
-  const [plan, setPlan] = useState<DeploymentPlan>();
+  const [preference, setPreference] = useState<DeploymentPreference>("automatic");
+  const [preview, setPreview] = useState<DeploymentPreviewBatch>();
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [exclusionsDirty, setExclusionsDirty] = useState(false);
+  const [confirmationsDirty, setConfirmationsDirty] = useState(false);
+  const fingerprintsRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<DeploymentResult[]>();
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
@@ -80,31 +86,69 @@ export function DeploymentDialog({
   }, [activeFacade]);
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
-  const availableModes = selected.length === 0
-    ? []
-    : selected[0].modes.filter((candidate) => selected.every((target) => target.modes.includes(candidate)));
-  const preview = async () => {
+  const groups = useMemo(
+    () => preview ? groupPairsByDisposition(preview.pairs) : [],
+    [preview],
+  );
+  const pendingConfirmationIds = preview
+    ? preview.pairs
+      .filter((pair) => pair.disposition === "recommend_copy" && !confirmedIds.has(pair.pairId))
+      .map((pair) => pair.pairId)
+    : [];
+  const included = (pair: DeploymentPairPreview) =>
+    (pair.disposition === "selected_mode" || pair.disposition === "no_change")
+    && !excludedIds.has(pair.pairId);
+  const executableCount = preview
+    ? preview.pairs.filter((pair) => included(pair)).length + confirmedIds.size
+    : 0;
+
+  const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
     setFlowError(undefined);
+    const item: BatchPreviewItem = {
+      skillId,
+      targetIds: selected.map((target) => target.id),
+      preference,
+      // 版本由调用方指定时透传；"current" 交给后端解析当前库版本。
+      versionId: versionId === "current" ? undefined : versionId,
+    };
     try {
-      setPlan(await activeFacade.preview(selected, mode));
+      const response = await activeFacade.preview([item], context);
+      fingerprintsRef.current = Object.fromEntries(
+        response.pairs.map((pair) => [pair.pairId, pair.confirmationFingerprint]),
+      );
+      setPreview(response);
       setResults(undefined);
+      setExcludedIds(new Set());
+      const preserved = new Set(response.preservedConfirmationIds);
+      setConfirmedIds(new Set(response.pairs
+        .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
+        .map((pair) => pair.pairId)));
+      setExclusionsDirty(false);
+      setConfirmationsDirty(false);
     } catch (reason) {
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
+
   const commit = async () => {
-    if (!plan) return;
+    if (!preview || committing) return;
     setFlowError(undefined);
     setCommitting(true);
     try {
       // 统一执行桥（任务 4）：提交进 tracker 在途投影，结果通知深链
       // /operations/:id，异常原样 rethrow 由页面告警承接，不吞掉。
+      const selections = preview.pairs.map((pair) => ({
+        pairId: pair.pairId,
+        confirmFallback: confirmedIds.has(pair.pairId),
+        exclude: excludedIds.has(pair.pairId)
+          && (pair.disposition === "selected_mode" || pair.disposition === "no_change"),
+      }));
       const committed = await runTrackedOperation<DeploymentResult[]>({
         tracker,
         notifications,
         kind: "deploy",
         label: t("deployment.tracker.label"),
-        total: plan.targets.length,
+        total: executableCount,
         translate: (key, options) => String(t(key as never, options as never)),
         errorNotice: (_error, message) => ({
           tone: "danger",
@@ -123,7 +167,7 @@ export function DeploymentDialog({
           skipped: results.filter((result) => result.status === "skipped").length,
         }),
         run: async (handle) => {
-          const results = await activeFacade.commit(plan);
+          const results = await activeFacade.commit(preview, selections, (completed) => handle.progress(completed, executableCount));
           const operationId = results.find((result) => result.operationId)?.operationId;
           if (operationId) handle.correlate(operationId);
           return results;
@@ -131,7 +175,9 @@ export function DeploymentDialog({
       });
       const withDisplayNames = committed.map((result) => ({
         ...result,
-        displayName: result.displayName ?? plan.displayName ?? runtimeName,
+        displayName: result.displayName
+          ?? preview.pairs.find((pair) => pair.pairId === selections.find((selection) => selection.pairId === `${result.skillId}:${result.targetId}`)?.pairId)?.skillDisplayName
+          ?? runtimeName,
       }));
       setResults(withDisplayNames);
       onCommitted?.(withDisplayNames);
@@ -142,8 +188,11 @@ export function DeploymentDialog({
     }
   };
   const retryFailed = () => {
-    setSelectedIds(results?.filter((result) => result.status === "failed").map((result) => result.targetId) ?? []);
-    setPlan(undefined);
+    const failedTargets = results
+      ?.filter((result) => result.status === "failed")
+      .map((result) => result.targetId) ?? [];
+    setSelectedIds(failedTargets);
+    setPreview(undefined);
     setResults(undefined);
   };
 
@@ -158,7 +207,7 @@ export function DeploymentDialog({
           ? "committing"
           : results
             ? "results"
-            : plan
+            : preview
               ? "plan"
               : "targets";
   const stepIndex = phase === "results" ? 3 : phase === "committing" ? 2 : phase === "plan" ? 1 : 0;
@@ -177,10 +226,7 @@ export function DeploymentDialog({
         : phase === "targets"
           ? { kind: "info", text: t("deployment.status.selecting") }
           : phase === "plan"
-            ? {
-                kind: plan?.warnings.length ? "warning" : "info",
-                text: t("deployment.status.previewReady"),
-              }
+            ? { kind: "info", text: t("deployment.status.previewReady") }
             : phase === "committing"
               ? { kind: "info", text: t("deployment.status.committing") }
               : {
@@ -190,35 +236,69 @@ export function DeploymentDialog({
                     : t("deployment.status.results"),
                 };
 
-  // 选择/计划阶段共用模式选择；纯进度与结果阶段不重复提供流程动作。
-  const showModeSelect = phase === "targets" || phase === "plan";
+  const regenerateNeeded = exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
+  const togglePair = (groupDisposition: string, pairId: string, checked: boolean) => {
+    if (groupDisposition === "recommend_copy") {
+      setConfirmationsDirty(true);
+      setConfirmedIds((current) => {
+        const update = new Set(current);
+        if (checked) update.add(pairId);
+        else update.delete(pairId);
+        return update;
+      });
+      return;
+    }
+    setExclusionsDirty(true);
+    setExcludedIds((current) => {
+      const update = new Set(current);
+      if (checked) update.delete(pairId);
+      else update.add(pairId);
+      return update;
+    });
+  };
+  const regeneratePreview = async () => {
+    const confirmations: Record<string, string> = {};
+    for (const pairId of confirmedIds) {
+      const fingerprint = fingerprintsRef.current[pairId];
+      if (fingerprint) confirmations[pairId] = fingerprint;
+    }
+    await runPreview({ confirmations, exclusions: [...excludedIds] });
+  };
+
+  // 选择/计划阶段共用偏好选择；纯进度与结果阶段不重复提供流程动作。
+  const showPreferenceSelect = phase === "targets" || phase === "plan";
   const footer = phase === "targets" || phase === "plan" ? (
     <>
-      {showModeSelect ? (
+      {showPreferenceSelect ? (
         <div className="sh-import-wizard__actions-group sh-deployment-flow__mode-group">
           <label>
             <span className="sh-visually-hidden">{t("deployment.mode.label")}</span>
             <select
               aria-label={t("deployment.mode.label")}
               onChange={(event) => {
-                setMode(event.currentTarget.value ? event.currentTarget.value as DeploymentMode : undefined);
-                setPlan(undefined);
+                setPreference(event.currentTarget.value as DeploymentPreference);
+                setPreview(undefined);
               }}
-              value={mode ?? ""}
+              value={preference}
             >
-              <option value="">{t("deployment.mode.automatic")}</option>
-              {availableModes.map((candidate) => (
-                <option key={candidate} value={candidate}>{t(userFacingDeploymentMode(candidate))}</option>
-              ))}
+              <option value="automatic">{t("deployment.preference.automatic")}</option>
+              <option value="link">{t("deployment.preference.link")}</option>
+              <option value="copy">{t("deployment.preference.copy")}</option>
             </select>
           </label>
         </div>
       ) : null}
       <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
         {phase === "targets" ? (
-          <Button disabled={selected.length === 0} onClick={() => void preview()} size="lg">{t("deployment.preview")}</Button>
+          <Button disabled={selected.length === 0} onClick={() => void runPreview()} size="lg">{t("deployment.preview")}</Button>
+        ) : regenerateNeeded ? (
+          <Button disabled={committing} onClick={() => void regeneratePreview()} size="lg">
+            {t("deployment.regeneratePreview")}
+          </Button>
         ) : (
-          <Button disabled={committing} onClick={() => void commit()} size="lg">{t("deployment.commit")}</Button>
+          <Button disabled={committing || executableCount === 0} onClick={() => void commit()} size="lg">
+            {t("deployment.commit")}
+          </Button>
         )}
       </div>
     </>
@@ -273,8 +353,8 @@ export function DeploymentDialog({
                   aria-label={target.agentClientId ?? target.label}
                   checked={selectedIds.includes(target.id)}
                   onChange={(event) => {
-                    setMode(undefined);
-                    setPlan(undefined);
+                    setPreference("automatic");
+                    setPreview(undefined);
                     setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
                   }}
                   type="checkbox"
@@ -288,7 +368,7 @@ export function DeploymentDialog({
           </div>
         </section>
       ) : null}
-      {plan && (phase === "plan" || phase === "committing") ? (
+      {preview && (phase === "plan" || phase === "committing") ? (
         <section aria-labelledby="deployment-plan-heading" className="sh-deployment-flow__section">
           <div className="sh-section-heading">
             <div>
@@ -296,15 +376,25 @@ export function DeploymentDialog({
               <p>{t("deployment.plan.description")}</p>
             </div>
           </div>
-          {warningsNotCoveredByTargets(plan).length > 0 ? <ul className="sh-notice-list">{warningsNotCoveredByTargets(plan).map((warning) => <li key={warning}>{String(t(userFacingDeploymentWarning(warning) as never, { defaultValue: userFacingDeploymentWarning(warning) } as never))}</li>)}</ul> : null}
-          <div className="sh-deployment-impact-list">
-            {plan.targets.map((target) => <DeploymentImpactCard
-              key={target.targetId}
-              skillId={skillId}
-              skillName={plan.displayName ?? runtimeName ?? t("deployment.batch.unnamedSkill")}
-              target={target}
-              targets={targets ?? []}
-            />)}
+          <div className="sh-disposition-groups">
+            {groups.map((group) => {
+              const selection: DispositionGroupSelection = group.disposition === "selected_mode" || group.disposition === "no_change"
+                ? "include"
+                : group.disposition === "recommend_copy" ? "confirm" : "none";
+              const selectedSet = group.disposition === "recommend_copy"
+                ? confirmedIds
+                : new Set(preview.pairs
+                  .filter((pair) => included(pair) && pair.disposition !== "recommend_copy")
+                  .map((pair) => pair.pairId));
+              return <DeploymentDispositionGroup
+                group={group}
+                key={group.key}
+                onToggle={(pairId, checked) => togglePair(group.disposition, pairId, checked)}
+                selection={selection}
+                selected={selectedSet}
+                targets={targets ?? []}
+              />;
+            })}
           </div>
         </section>
       ) : null}

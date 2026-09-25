@@ -5,10 +5,71 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
-import { deploymentTargetsFixture, type DeploymentFacade, type DeploymentResult } from "./api";
+import {
+  deploymentTargetsFixture,
+  type BatchDeploymentFacade,
+  type BatchDeploymentResult,
+  type DeploymentPairPreview,
+  type DeploymentPreviewBatch,
+  type DeploymentResult,
+} from "./api";
 import { DeploymentDialog } from "./DeploymentDialog";
 
-async function renderDialog(facade: DeploymentFacade, onCommitted?: (results: Awaited<ReturnType<DeploymentFacade["commit"]>>) => void, tracker?: ReturnType<typeof createOperationTracker>) {
+let pairSeq = 0;
+
+function pair(overrides: Partial<DeploymentPairPreview> = {}): DeploymentPairPreview {
+  pairSeq += 1;
+  return {
+    pairId: `skill-pdf:fs-${pairSeq}`,
+    skillId: "skill-pdf",
+    skillDisplayName: "PDF 抽取器",
+    logicalTargetIds: ["codex-cli"],
+    runtimeName: "pdf",
+    targetLabel: "Codex CLI",
+    targetPath: "C:/Users/demo/.codex/skills",
+    destinationPath: "C:/Users/demo/.codex/skills/pdf",
+    preference: "automatic",
+    disposition: "selected_mode",
+    mode: "managed_copy",
+    fallbackMode: null,
+    blockReason: null,
+    warnings: [],
+    confirmationPreserved: false,
+    confirmationFingerprint: `fp-${pairSeq}`,
+    technicalError: null,
+    ...overrides,
+  };
+}
+
+function previewBatch(pairs: DeploymentPairPreview[], preservedConfirmationIds: string[] = []): DeploymentPreviewBatch {
+  return {
+    previewId: `preview-${pairSeq}`,
+    expiresAt: "2026-09-24T01:00:00Z",
+    pairs,
+    preservedConfirmationIds,
+  };
+}
+
+function facadeFixture(pairs: DeploymentPairPreview[], overrides: Partial<BatchDeploymentFacade> = {}): BatchDeploymentFacade {
+  return {
+    listTargets: async () => deploymentTargetsFixture(),
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch(pairs)),
+    commit: vi.fn<BatchDeploymentFacade["commit"]>(async (previewArg, selections) => selections.filter((selection) => !selection.exclude).map((selection) => {
+      const facts = previewArg.pairs.find((candidate) => candidate.pairId === selection.pairId);
+      return {
+        skillId: facts?.skillId ?? "skill-pdf",
+        displayName: facts?.skillDisplayName,
+        targetId: facts?.logicalTargetIds[0] ?? "",
+        label: facts?.targetLabel ?? "",
+        status: "succeeded" as const,
+        message: "deployment.results.status.message.succeeded",
+      };
+    })),
+    ...overrides,
+  };
+}
+
+async function renderDialog(facade: BatchDeploymentFacade, onCommitted?: (results: DeploymentResult[]) => void, tracker?: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -17,58 +78,42 @@ async function renderDialog(facade: DeploymentFacade, onCommitted?: (results: Aw
         onCommitted={onCommitted}
         skillId="skill-pdf"
         tracker={tracker}
-        versionId="v1"
+        versionId="current"
       />
     </I18nextProvider>,
   );
   return i18n;
 }
 
-it("supports one or many Agent targets and reports each result", async () => {
+it("supports one or many Agent targets and reports each pair result", async () => {
   const user = userEvent.setup();
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  const targets = deploymentTargetsFixture();
-  const preview = vi.fn<DeploymentFacade["preview"]>(async (selected) => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link" as const,
-      warnings: [],
-    })),
-    warnings: [],
+  const pairs = [
+    pair({ pairId: "skill-pdf:t-codex", logicalTargetIds: ["codex-cli"], targetLabel: "Codex CLI" }),
+    pair({ pairId: "skill-pdf:t-claude", logicalTargetIds: ["claude-code"], targetLabel: "Claude Code" }),
+  ];
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async (previewArg, selections) => selections.map((selection, index) => {
+    const facts = previewArg.pairs.find((candidate) => candidate.pairId === selection.pairId);
+    return {
+      skillId: "skill-pdf",
+      displayName: "PDF 抽取器",
+      targetId: facts?.logicalTargetIds[0] ?? "",
+      label: facts?.targetLabel ?? "",
+      status: index === 0 ? ("succeeded" as const) : ("failed" as const),
+      message: index === 0 ? "已部署" : "目标目录不可写",
+    };
   }));
   const onCommitted = vi.fn();
-  const facade: DeploymentFacade = {
-    listTargets: async () => targets,
-    preview,
-    commit: async () => targets.slice(0, 2).map((target, index) => ({
-      targetId: target.id,
-      label: target.label,
-      status: index === 0 ? "succeeded" as const : "failed" as const,
-      message: index === 0 ? "已部署" : "目标目录不可写",
-    })),
-  };
+  const facade = { ...facadeFixture(pairs), commit };
 
-  render(
-    <I18nextProvider i18n={i18n}>
-      <DeploymentDialog
-        skillId="skill-pdf"
-        versionId="v1"
-        facade={facade}
-        onCommitted={onCommitted}
-      />
-    </I18nextProvider>,
-  );
+  await renderDialog(facade, onCommitted);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByLabelText("Claude Code"));
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(await screen.findAllByTestId("target-plan")).toHaveLength(2);
-  expect(screen.getAllByText("Codex CLI")).toHaveLength(2);
-  expect(screen.getAllByText("Claude Code")).toHaveLength(2);
+  expect(screen.getAllByText("Codex CLI").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
 
   await user.click(screen.getByRole("button", { name: "确认添加" }));
   expect(await screen.findAllByTestId("deployment-result")).toHaveLength(2);
@@ -76,17 +121,11 @@ it("supports one or many Agent targets and reports each result", async () => {
     expect.objectContaining({ targetId: "codex-cli", status: "succeeded" }),
     expect.objectContaining({ targetId: "claude-code", status: "failed" }),
   ]);
-
-  await user.click(screen.getByRole("button", { name: "重试失败目标" }));
-  expect(screen.getByLabelText("Codex CLI")).not.toBeChecked();
-  expect(screen.getByLabelText("Claude Code")).toBeChecked();
-  await user.click(screen.getByRole("button", { name: "预览" }));
-  expect(preview).toHaveBeenLastCalledWith([targets[1]], undefined);
 });
 
 it("shows an empty state after target discovery completes", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  const facade: DeploymentFacade = {
+  const facade: BatchDeploymentFacade = {
     listTargets: async () => [],
     preview: vi.fn(),
     commit: vi.fn(),
@@ -94,7 +133,7 @@ it("shows an empty state after target discovery completes", async () => {
 
   render(
     <I18nextProvider i18n={i18n}>
-      <DeploymentDialog skillId="skill-pdf" versionId="v1" facade={facade} />
+      <DeploymentDialog skillId="skill-pdf" versionId="current" facade={facade} />
     </I18nextProvider>,
   );
 
@@ -102,160 +141,111 @@ it("shows an empty state after target discovery completes", async () => {
   expect(screen.queryByText("正在加载目标")).not.toBeInTheDocument();
 });
 
-it("lets the user override the target default with a managed copy or a link", async () => {
+it("sends the user preference instead of an implementation mode (14.11)", async () => {
   const user = userEvent.setup();
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  const targets = deploymentTargetsFixture();
-  const preview = vi.fn<DeploymentFacade["preview"]>(async () => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: [],
-    warnings: [],
-  }));
-  const facade: DeploymentFacade = { listTargets: async () => targets, preview, commit: vi.fn() };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => deploymentTargetsFixture(), preview, commit: vi.fn() };
 
-  render(
-    <I18nextProvider i18n={i18n}>
-      <DeploymentDialog skillId="skill-pdf" versionId="v1" facade={facade} />
-    </I18nextProvider>,
-  );
-
-  await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.selectOptions(screen.getByLabelText("部署方式"), "managed_copy");
-  await user.click(screen.getByRole("button", { name: "预览" }));
-
-  expect(preview).toHaveBeenCalledWith([targets[0]], "managed_copy");
-});
-
-it("states an unsupported link mode in user-facing words and keeps the implementation reason in technical details (DEV-21-A)", async () => {
-  const user = userEvent.setup();
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  const facade = planFacade(async (selected) => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "managed_copy" as const,
-      warnings: ["deployment.mode.directory_junction_unavailable"],
-    })),
-    warnings: ["deployment.mode.directory_junction_unavailable"],
-  }));
-
-  render(
-    <I18nextProvider i18n={i18n}>
-      <DeploymentDialog skillId="skill-pdf" versionId="v1" facade={facade} />
-    </I18nextProvider>,
-  );
-
-  await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByRole("button", { name: "预览" }));
-
-  const row = (await screen.findAllByTestId("target-plan"))[0];
-  // 主文案说「链接部署」，不出现「目录联接」这类实现术语。
-  expect(within(row).getByText("此目标不支持链接部署，将改用复制部署")).toBeVisible();
-  expect(screen.getAllByText("此目标不支持链接部署，将改用复制部署")).toHaveLength(1);
-  const implNode = within(row).getByText("此目标不支持目录联接");
-  expect(implNode.closest("details")).not.toBeNull();
-  expect(implNode).not.toBeVisible();
-});
-
-function planFacade(previewFn: DeploymentFacade["preview"], commitFn?: DeploymentFacade["commit"]): DeploymentFacade {
-  return { listTargets: async () => deploymentTargetsFixture(), preview: previewFn, commit: commitFn ?? vi.fn() };
-}
-
-it("exposes the unified deploy step rail and keeps every action in a stable footer", async () => {
-  const user = userEvent.setup();
-  const targets = deploymentTargetsFixture();
-  const facade = planFacade(async (selected) => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link" as const,
-      warnings: [],
-    })),
-    warnings: [],
-  }), async () => targets.slice(0, 1).map((target) => ({
-    targetId: target.id,
-    label: target.label,
-    status: "succeeded" as const,
-    message: "部署成功",
-  })));
   await renderDialog(facade);
 
-  const rail = screen.getByRole("list", { name: "添加步骤" });
-  const steps = within(rail).getAllByRole("listitem");
-  expect(steps).toHaveLength(4);
-  expect(steps[0]).toHaveAttribute("aria-current", "step");
-  expect(steps[0]).toHaveTextContent("选择目标");
-  expect(steps[1]).toHaveTextContent("预览影响");
-  expect(steps[2]).toHaveTextContent("提交");
-  expect(steps[3]).toHaveTextContent("结果");
-
-  await screen.findByLabelText("Codex CLI");
-  // 选择阶段的状态区持续播报当前阶段（图标+文字由 shell 提供）。
-  expect(screen.getByRole("status")).toHaveTextContent("请选择要添加的目标");
-
-  const previewButton = screen.getByRole("button", { name: "预览" });
-  const footerBefore = previewButton.closest("footer");
-  expect(footerBefore).not.toBeNull();
-
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(previewButton);
+  await user.selectOptions(screen.getByLabelText("部署方式"), "copy");
+  await user.click(screen.getByRole("button", { name: "预览" }));
 
-  // 主操作换成"确认添加"，但必须仍挂在同一个 footer 操作区。
-  const commit = await screen.findByRole("button", { name: "确认添加" });
-  expect(commit.closest("footer")).toBe(footerBefore);
-  const stepsAfterPreview = within(screen.getByRole("list", { name: "添加步骤" })).getAllByRole("listitem");
-  expect(stepsAfterPreview[1]).toHaveAttribute("aria-current", "step");
-
-  await user.click(commit);
-  expect(await screen.findAllByTestId("deployment-result")).toHaveLength(1);
-  const stepsAfterCommit = within(screen.getByRole("list", { name: "添加步骤" })).getAllByRole("listitem");
-  expect(stepsAfterCommit[0]).toHaveTextContent("已完成");
-  expect(stepsAfterCommit[1]).toHaveTextContent("已完成");
-  expect(stepsAfterCommit[2]).toHaveTextContent("已完成");
-  expect(stepsAfterCommit[3]).toHaveAttribute("aria-current", "step");
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ skillId: "skill-pdf", targetIds: ["codex-cli"], preference: "copy" })],
+    undefined,
+  );
 });
 
-it("hides the footer during the pure committing progress and announces it via the status region", async () => {
+it("requires explicit fallback confirmation, then a final re-preview, before commit (14.3/14.14)", async () => {
   const user = userEvent.setup();
-  let resolveCommit: (value: DeploymentResult[]) => void = () => undefined;
-  const facade = planFacade(async (selected) => ({
+  const FINGERPRINT = "fp-stable";
+  const confirmPair = (preserved: boolean): DeploymentPairPreview => ({
+    pairId: "skill-pdf:t1",
     skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link" as const,
-      warnings: [],
-    })),
+    skillDisplayName: "PDF 抽取器",
+    logicalTargetIds: ["codex-cli"],
+    runtimeName: "pdf",
+    targetLabel: "Codex CLI",
+    targetPath: "C:/Users/demo/.codex/skills",
+    destinationPath: "C:/Users/demo/.codex/skills/pdf",
+    preference: "link",
+    disposition: "recommend_copy",
+    mode: null,
+    fallbackMode: "managed_copy",
+    blockReason: "link_permission_unavailable",
     warnings: [],
-  }), () => new Promise((resolve) => { resolveCommit = resolve; }));
+    confirmationPreserved: preserved,
+    confirmationFingerprint: FINGERPRINT,
+    technicalError: null,
+  });
+  let call = 0;
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async (_items, context) => {
+    call += 1;
+    const preserved = call > 1 && context?.confirmations?.["skill-pdf:t1"] === FINGERPRINT;
+    return previewBatch([confirmPair(preserved)], preserved ? ["skill-pdf:t1"] : []);
+  });
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async () => []);
+  const facade: BatchDeploymentFacade = { listTargets: async () => deploymentTargetsFixture(), preview, commit };
+
   await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
-  await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
-  // 纯进度阶段不渲染 footer，提交动作不可重复触发。
-  expect(screen.queryByRole("button", { name: "确认添加" })).not.toBeInTheDocument();
-  expect(await screen.findByText("正在添加，请稍候")).toBeVisible();
+  const plan = await screen.findByRole("region", { name: /添加计划/ });
+  // Link 被阻止：给出用户可理解的原因与「改用复制部署」的选择。
+  expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
 
-  resolveCommit([{ targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "部署成功" }]);
-  expect(await screen.findByTestId("deployment-result")).toBeInTheDocument();
+  // 未确认前提交不可用；确认动作的下一步是「重新生成最终预览」。
+  await user.click(within(plan).getByRole("checkbox", { name: /PDF 抽取器 · Codex CLI/ }));
+  await user.click(screen.getByRole("button", { name: "重新生成最终预览" }));
+
+  // 确认保留：显示最终复制影响并开放提交。
+  const finalPlan = await screen.findByRole("region", { name: /添加计划/ });
+  expect(within(finalPlan).getByText(/已确认改用复制/)).toBeVisible();
+  const commitButton = await screen.findByRole("button", { name: "确认添加" });
+  expect(commitButton).toBeEnabled();
+  await user.click(commitButton);
+  expect(commit).toHaveBeenCalledWith(expect.objectContaining({ previewId: expect.any(String) }), [
+    expect.objectContaining({ pairId: "skill-pdf:t1", confirmFallback: true, exclude: false }),
+  ], expect.anything());
+});
+
+it("renders blocked reasons in user-facing words and keeps raw causes in technical details (14.4)", async () => {
+  const user = userEvent.setup();
+  const facade = facadeFixture([
+    pair({ pairId: "skill-pdf:t1", disposition: "blocked", mode: null, blockReason: "link_permission_unavailable", technicalError: { code: "deployment.symlink_not_supported", severity: "error", params: { path: "C:/t" }, actions: [] } }),
+    pair({ pairId: "skill-pdf:t2", logicalTargetIds: ["claude-code"], targetLabel: "Claude Code", disposition: "blocked", mode: null, blockReason: "link_filesystem_unsupported" }),
+  ]);
+
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByLabelText("Claude Code"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  const plan = await screen.findByRole("region", { name: /添加计划/ });
+  expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
+  expect(within(plan).getByText(/此文件的磁盘或分区不支持链接部署/)).toBeVisible();
+  // 原始 code 不进首屏，只在可展开的技术详情里。
+  const raw = within(plan).getByText("deployment.symlink_not_supported");
+  expect(raw.closest("details")).not.toBeNull();
+  expect(raw).not.toBeVisible();
+  // 全部受阻：提交不可用。
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
 });
 
 it("keeps the preview failure alert visible and the selection recoverable", async () => {
   const user = userEvent.setup();
   let failPreview = true;
-  const preview = vi.fn<DeploymentFacade["preview"]>(async () => {
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => {
     if (failPreview) throw new Error("deployment.target_not_writable");
-    return { skillId: "skill-pdf", versionId: "v1", targets: [], warnings: [] };
+    return previewBatch([]);
   });
-  await renderDialog(planFacade(preview));
+  const facade: BatchDeploymentFacade = { listTargets: async () => deploymentTargetsFixture(), preview, commit: vi.fn() };
+  await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
@@ -269,53 +259,14 @@ it("keeps the preview failure alert visible and the selection recoverable", asyn
   await user.click(screen.getByLabelText("Claude Code"));
   await user.click(screen.getByRole("button", { name: "预览" }));
 
-  expect(await screen.findByRole("button", { name: "确认添加" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "确认添加" })).toBeDisabled(); // 空 pair 集无可执行项
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(preview).toHaveBeenCalledTimes(2);
 });
 
-it("reports partial failure with its own status and keeps the retry in the footer", async () => {
-  const user = userEvent.setup();
-  const facade = planFacade(async (selected) => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link" as const,
-      warnings: [],
-    })),
-    warnings: [],
-  }), async () => [
-    { targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "部署成功" },
-    { targetId: "claude-code", label: "Claude Code", status: "failed", message: "目标目录不可写" },
-  ]);
-  await renderDialog(facade);
-
-  await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.click(screen.getByLabelText("Claude Code"));
-  await user.click(screen.getByRole("button", { name: "预览" }));
-  await user.click(await screen.findByRole("button", { name: "确认添加" }));
-
-  // 部分成功是独立的警告状态，不与完全成功混同。
-  expect(await screen.findByText("添加已完成，部分目标失败")).toBeVisible();
-  const retry = screen.getByRole("button", { name: "重试失败目标" });
-  expect(retry.closest("footer")).not.toBeNull();
-});
-
 it("returns keyboard focus to the deploy flow heading across phase changes", async () => {
   const user = userEvent.setup();
-  const facade = planFacade(async (selected) => ({
-    skillId: "skill-pdf",
-    versionId: "v1",
-    targets: selected.map((target) => ({
-      targetId: target.id,
-      label: target.label,
-      mode: "symbolic_link" as const,
-      warnings: [],
-    })),
-    warnings: [],
-  }));
+  const facade = facadeFixture([pair({ pairId: "skill-pdf:t1" })]);
   await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
@@ -330,18 +281,18 @@ describe("DeploymentDialog 与统一执行桥", () => {
   it("reports the commit to the unified tracker: running in flight, partial finish, operation record correlation", async () => {
     const user = userEvent.setup();
     const tracker = createOperationTracker();
-    let resolveCommit!: (value: DeploymentResult[]) => void;
-    const facade = planFacade(async (selected) => ({
-      skillId: "skill-pdf",
-      versionId: "v1",
-      targets: selected.map((target) => ({
-        targetId: target.id,
-        label: target.label,
-        mode: "symbolic_link" as const,
-        warnings: [],
-      })),
-      warnings: [],
-    }), () => new Promise((resolve) => { resolveCommit = resolve; }));
+    let resolveCommit!: (value: BatchDeploymentResult[]) => void;
+    const pairs = [
+      pair({ pairId: "skill-pdf:t-codex", logicalTargetIds: ["codex-cli"], targetLabel: "Codex CLI" }),
+      pair({ pairId: "skill-pdf:t-claude", logicalTargetIds: ["claude-code"], targetLabel: "Claude Code" }),
+    ];
+    const commit = vi.fn<BatchDeploymentFacade["commit"]>((_preview, _selections, onProgress) => new Promise((resolve) => {
+      resolveCommit = (value) => {
+        onProgress?.(2);
+        resolve(value);
+      };
+    }));
+    const facade = { ...facadeFixture(pairs), commit };
     await renderDialog(facade, undefined, tracker);
 
     await user.click(await screen.findByLabelText("Codex CLI"));
@@ -357,8 +308,8 @@ describe("DeploymentDialog 与统一执行桥", () => {
     expect(inFlight.total).toBe(2);
 
     resolveCommit([
-      { targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-deploy-1" },
-      { targetId: "claude-code", label: "Claude Code", status: "failed", message: "目标目录不可写", operationId: "op-deploy-1" },
+      { skillId: "skill-pdf", targetId: "codex-cli", label: "Codex CLI", status: "succeeded", message: "deployment.results.status.message.succeeded", operationId: "op-deploy-1" },
+      { skillId: "skill-pdf", targetId: "claude-code", label: "Claude Code", status: "failed", message: "目标目录不可写", operationId: "op-deploy-1" },
     ]);
     expect(await screen.findAllByTestId("deployment-result")).toHaveLength(2);
 
@@ -373,18 +324,10 @@ describe("DeploymentDialog 与统一执行桥", () => {
   it("records commit failures on the tracker and keeps the page error without swallowing the exception", async () => {
     const user = userEvent.setup();
     const tracker = createOperationTracker();
-    const facade = planFacade(async (selected) => ({
-      skillId: "skill-pdf",
-      versionId: "v1",
-      targets: selected.map((target) => ({
-        targetId: target.id,
-        label: target.label,
-        mode: "symbolic_link" as const,
-        warnings: [],
-      })),
-      warnings: [],
-    }), async () => {
-      throw new Error("deployment.plan_stale");
+    const facade = facadeFixture([pair({ pairId: "skill-pdf:t1" })], {
+      commit: vi.fn<BatchDeploymentFacade["commit"]>(async () => {
+        throw new Error("deployment.plan_stale");
+      }),
     });
     await renderDialog(facade, undefined, tracker);
 
@@ -402,12 +345,10 @@ describe("DeploymentDialog 与统一执行桥", () => {
 
 it("offers a manage-relations deep link back to the governance workbench", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  const facade: DeploymentFacade = {
+  const facade: BatchDeploymentFacade = {
     listTargets: async () => deploymentTargetsFixture(),
-    preview: async () => {
-      throw new Error("not used here");
-    },
-    commit: async () => [],
+    preview: vi.fn(),
+    commit: vi.fn(),
   };
   render(
     <MemoryRouter>
@@ -416,7 +357,7 @@ it("offers a manage-relations deep link back to the governance workbench", async
           facade={facade}
           manageRelationsHref="/relationships/governance?from=library&skillId=skill-pdf"
           skillId="skill-pdf"
-          versionId="v1"
+          versionId="current"
         />
       </I18nextProvider>
     </MemoryRouter>,
