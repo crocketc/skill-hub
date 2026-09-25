@@ -94,7 +94,7 @@ export type AnalyzeSemanticDuplicates = {
 	skill_id: SkillId,
 };
 
-export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPreferences } | { type: "begin_import_batch"; payload: BeginImportBatch } | { type: "finalize_import_batch"; payload: FinalizeImportBatch } | { type: "run_relationship_check"; payload: RunRelationshipCheck } | { type: "open_official_release"; payload: OpenOfficialRelease } | { type: "open_external_url"; payload: OpenExternalUrl } | { type: "set_application_update_policy"; payload: SetApplicationUpdatePolicy } | { type: "prepare_application_update"; payload: PrepareApplicationUpdate } | { type: "download_application_update"; payload: DownloadApplicationUpdate } | { type: "install_application_update"; payload: InstallApplicationUpdate } | { type: "rollback_application_update"; payload: RollbackApplicationUpdate } | { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "save_markdown_content"; payload: SaveMarkdownContent } | { type: "save_markdown_as_copy"; payload: SaveMarkdownAsCopy } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "update_combination"; payload: UpdateCombination } | { type: "delete_combination"; payload: DeleteCombination } | { type: "rename_combination"; payload: RenameCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "prepare_original_migration"; payload: PrepareOriginalMigration } | { type: "retain_source_copy"; payload: RetainSourceCopy } | { type: "relink_source_copy"; payload: RelinkSourceCopy } | { type: "commit_original_migration"; payload: CommitOriginalMigration } | { type: "rollback_original_migration"; payload: RollbackOriginalMigration } | { type: "prepare_relation_migration"; payload: PrepareRelationMigration } | { type: "commit_relation_migration"; payload: CommitRelationMigration } | { type: "rollback_relation_migration"; payload: RollbackRelationMigration } | { type: "prepare_relation_governance_batch"; payload: PrepareRelationGovernanceBatch } | { type: "commit_relation_governance_batch"; payload: CommitRelationGovernanceBatch } | { type: "rollback_relation_governance_batch"; payload: RollbackRelationGovernanceBatch } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "analyze_conflict"; payload: AnalyzeConflict } | { type: "resolve_conflict_case"; payload: ResolveConflictCase } | { type: "translate_description"; payload: TranslateDescription } | { type: "translate_descriptions_batch"; payload: TranslateDescriptionsBatch } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "save_llm_provider"; payload: SaveLlmProvider } | { type: "delete_llm_provider"; payload: DeleteLlmProvider } | { type: "clear_llm_provider_credential"; payload: ClearLlmProviderCredential } | { type: "set_llm_provider_enabled"; payload: SetLlmProviderEnabled } | { type: "set_default_llm_provider"; payload: SetDefaultLlmProvider } | { type: "fetch_llm_models"; payload: FetchLlmModels } | { type: "test_llm_connection"; payload: TestLlmConnection } | { type: "run_import_ai_checks"; payload: RunImportAiChecks } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "prepare_restore"; payload: PrepareRestore } | { type: "commit_restore"; payload: CommitRestore } | { type: "prepare_initial_restore"; payload: PrepareInitialRestore } | { type: "commit_initial_restore"; payload: CommitInitialRestore } | { type: "run_rolling_backup"; payload: RunRollingBackup } | { type: "prepare_standard_export"; payload: PrepareStandardExport } | { type: "create_standard_export"; payload: CreateStandardExport } | { type: "prepare_uninstall"; payload: PrepareUninstall } | { type: "apply_uninstall_decision"; payload: ApplyUninstallDecision } | { type: "cancel_import"; payload: {
+export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPreferences } | { type: "begin_import_batch"; payload: BeginImportBatch } | { type: "finalize_import_batch"; payload: FinalizeImportBatch } | { type: "run_relationship_check"; payload: RunRelationshipCheck } | { type: "open_official_release"; payload: OpenOfficialRelease } | { type: "open_external_url"; payload: OpenExternalUrl } | { type: "set_application_update_policy"; payload: SetApplicationUpdatePolicy } | { type: "prepare_application_update"; payload: PrepareApplicationUpdate } | { type: "download_application_update"; payload: DownloadApplicationUpdate } | { type: "install_application_update"; payload: InstallApplicationUpdate } | { type: "rollback_application_update"; payload: RollbackApplicationUpdate } | { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "save_markdown_content"; payload: SaveMarkdownContent } | { type: "save_markdown_as_copy"; payload: SaveMarkdownAsCopy } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "update_combination"; payload: UpdateCombination } | { type: "delete_combination"; payload: DeleteCombination } | { type: "rename_combination"; payload: RenameCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "prepare_original_migration"; payload: PrepareOriginalMigration } | { type: "retain_source_copy"; payload: RetainSourceCopy } | { type: "relink_source_copy"; payload: RelinkSourceCopy } | { type: "commit_original_migration"; payload: CommitOriginalMigration } | { type: "rollback_original_migration"; payload: RollbackOriginalMigration } | { type: "prepare_relation_migration"; payload: PrepareRelationMigration } | { type: "commit_relation_migration"; payload: CommitRelationMigration } | { type: "rollback_relation_migration"; payload: RollbackRelationMigration } | { type: "prepare_relation_governance_batch"; payload: PrepareRelationGovernanceBatch } | { type: "commit_relation_governance_batch"; payload: CommitRelationGovernanceBatch } | { type: "rollback_relation_governance_batch"; payload: RollbackRelationGovernanceBatch } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "apply_source_update"; payload: ApplySourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment_preview"; payload: CommitDeploymentPreview } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "analyze_conflict"; payload: AnalyzeConflict } | { type: "resolve_conflict_case"; payload: ResolveConflictCase } | { type: "translate_description"; payload: TranslateDescription } | { type: "translate_descriptions_batch"; payload: TranslateDescriptionsBatch } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "save_llm_provider"; payload: SaveLlmProvider } | { type: "delete_llm_provider"; payload: DeleteLlmProvider } | { type: "clear_llm_provider_credential"; payload: ClearLlmProviderCredential } | { type: "set_llm_provider_enabled"; payload: SetLlmProviderEnabled } | { type: "set_default_llm_provider"; payload: SetDefaultLlmProvider } | { type: "fetch_llm_models"; payload: FetchLlmModels } | { type: "test_llm_connection"; payload: TestLlmConnection } | { type: "run_import_ai_checks"; payload: RunImportAiChecks } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "prepare_restore"; payload: PrepareRestore } | { type: "commit_restore"; payload: CommitRestore } | { type: "prepare_initial_restore"; payload: PrepareInitialRestore } | { type: "commit_initial_restore"; payload: CommitInitialRestore } | { type: "run_rolling_backup"; payload: RunRollingBackup } | { type: "prepare_standard_export"; payload: PrepareStandardExport } | { type: "create_standard_export"; payload: CreateStandardExport } | { type: "prepare_uninstall"; payload: PrepareUninstall } | { type: "apply_uninstall_decision"; payload: ApplyUninstallDecision } | { type: "cancel_import"; payload: {
 	prepared_import_id: OperationId,
 } } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "complete_onboarding"; payload: CompleteOnboarding } | { type: "activate_library_root"; payload: ActivateLibraryRoot } | { type: "set_ui_preference"; payload: SetUiPreference } | { type: "set_version_label"; payload: SetVersionLabel } | { type: "add_skill_repo"; payload: AddSkillRepo } | { type: "remove_skill_repo"; payload: RemoveSkillRepo } | { type: "refresh_skill_repo"; payload: RefreshSkillRepo } | { type: "download_repo_skill"; payload: DownloadRepoSkill } | { type: "save_search_candidates"; payload: SaveSearchCandidates } | { type: "confirm_search_candidate"; payload: ConfirmSearchCandidate } | { type: "dismiss_search_candidate"; payload: DismissSearchCandidate } | { type: "discover_agent_targets"; payload: DiscoverAgentTargets } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
@@ -102,13 +102,13 @@ export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPref
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "import_batch_started"; payload: ImportBatchStarted } | { type: "import_batch_finalized"; payload: ImportBatchFinalized } | { type: "relationship_check_report"; payload: RelationshipCheckReport } | { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "prepared_application_update"; payload: PreparedApplicationUpdate } | { type: "downloaded_application_update"; payload: DownloadedApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "operation_summary"; payload: OperationSummary } | { type: "initialization_status"; payload: InitializationStatus } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "saved_skill_content"; payload: SavedSkillContent } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "original_migration_plan"; payload: OriginalMigrationPlan } | { type: "source_copy_relation_updated"; payload: SourceCopyRelationFact } | { type: "original_migration_result"; payload: OriginalMigrationResult } | { type: "prepared_relation_migration"; payload: PreparedRelationMigration } | { type: "relation_migration_result"; payload: RelationMigrationResult } | { type: "relation_governance_batch"; payload: RelationGovernanceBatchOutcome } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "conflict_analysis"; payload: ConflictAnalysis } | { type: "conflict_resolved"; payload: ConflictResolutionOutcome } | { type: "translation_result"; payload: TranslationResult } | { type: "batch_translation_result"; payload: BatchTranslationOutcome } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "llm_provider_view"; payload: LlmProviderView } | { type: "llm_models"; payload: string[] } | { type: "connection_test"; payload: ConnectionTestResult } | { type: "import_ai_checks_report"; payload: ImportAiChecksReport } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest } | { type: "backup_created"; payload: BackupCreated } | { type: "restore_plan"; payload: RestorePlan } | { type: "restore_result"; payload: RestoreResult } | { type: "backup_retention_result"; payload: BackupRetentionResult } | { type: "export_plan"; payload: ExportPlan } | { type: "export_result"; payload: ExportResult } | { type: "uninstall_impact"; payload: UninstallImpact } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "downloaded_repo_skill"; payload: DownloadedRepoSkill } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "combination"; payload: CombinationResult };
+export type AppCommandResult = { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "import_batch_started"; payload: ImportBatchStarted } | { type: "import_batch_finalized"; payload: ImportBatchFinalized } | { type: "relationship_check_report"; payload: RelationshipCheckReport } | { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "prepared_application_update"; payload: PreparedApplicationUpdate } | { type: "downloaded_application_update"; payload: DownloadedApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "operation_summary"; payload: OperationSummary } | { type: "initialization_status"; payload: InitializationStatus } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "saved_skill_content"; payload: SavedSkillContent } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "original_migration_plan"; payload: OriginalMigrationPlan } | { type: "source_copy_relation_updated"; payload: SourceCopyRelationFact } | { type: "original_migration_result"; payload: OriginalMigrationResult } | { type: "prepared_relation_migration"; payload: PreparedRelationMigration } | { type: "relation_migration_result"; payload: RelationMigrationResult } | { type: "relation_governance_batch"; payload: RelationGovernanceBatchOutcome } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_preview_commit_result"; payload: DeploymentPreviewCommitResult } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "conflict_analysis"; payload: ConflictAnalysis } | { type: "conflict_resolved"; payload: ConflictResolutionOutcome } | { type: "translation_result"; payload: TranslationResult } | { type: "batch_translation_result"; payload: BatchTranslationOutcome } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "llm_provider_view"; payload: LlmProviderView } | { type: "llm_models"; payload: string[] } | { type: "connection_test"; payload: ConnectionTestResult } | { type: "import_ai_checks_report"; payload: ImportAiChecksReport } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest } | { type: "backup_created"; payload: BackupCreated } | { type: "restore_plan"; payload: RestorePlan } | { type: "restore_result"; payload: RestoreResult } | { type: "backup_retention_result"; payload: BackupRetentionResult } | { type: "export_plan"; payload: ExportPlan } | { type: "export_result"; payload: ExportResult } | { type: "uninstall_impact"; payload: UninstallImpact } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "downloaded_repo_skill"; payload: DownloadedRepoSkill } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "combination"; payload: CombinationResult };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
-export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "query_open_import_batch"; payload: QueryOpenImportBatch } | { type: "get_application_update_policy" } | { type: "get_skill"; payload: GetSkill } | { type: "list_skills"; payload: ListSkills } | { type: "list_versions"; payload: ListVersions } | { type: "list_skill_operations"; payload: ListSkillOperations } | { type: "list_running_llm_checks" } | { type: "list_llm_providers" } | { type: "list_translations"; payload: ListTranslations } | { type: "list_llm_provider_presets" } | { type: "check_source_updates"; payload: CheckSourceUpdates } | { type: "list_markdown_files"; payload: ListMarkdownFiles } | { type: "read_markdown_file"; payload: ReadMarkdownFile } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "search_online_sources_assisted"; payload: SearchOnlineSourcesAssisted } | { type: "get_bootstrap_snapshot" } | { type: "get_desktop_preferences" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "list_deterministic_duplicates"; payload: ListDeterministicDuplicates } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "preview_project_directory"; payload: PreviewProjectDirectory } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "discover_import_candidates"; payload: DiscoverImportCandidates } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "list_search_candidates"; payload: ListSearchCandidates } | { type: "get_ui_preference"; payload: GetUiPreference } | { type: "list_skill_repos"; payload: ListSkillRepos } | { type: "discover_repo_skills"; payload: DiscoverRepoSkills } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "list_deployment_targets"; payload: ListDeploymentTargets } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_skill_provenance"; payload: GetSkillProvenance } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "get_relationship_overview"; payload: GetRelationshipOverview } | { type: "get_relationship_removal_impact"; payload: GetRelationshipRemovalImpact } | { type: "get_skill_relationship_graph"; payload: GetSkillRelationshipGraph } | { type: "list_skill_relationship_candidates"; payload: ListSkillRelationshipCandidates } | { type: "get_conflict_workspace"; payload: GetConflictWorkspace } | { type: "list_relation_governance"; payload: ListRelationGovernance } | { type: "list_governance_history"; payload: ListGovernanceHistory } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
+export type AppQuery = { type: "check_application_update"; payload: CheckApplicationUpdate } | { type: "query_open_import_batch"; payload: QueryOpenImportBatch } | { type: "get_application_update_policy" } | { type: "get_skill"; payload: GetSkill } | { type: "list_skills"; payload: ListSkills } | { type: "list_versions"; payload: ListVersions } | { type: "list_skill_operations"; payload: ListSkillOperations } | { type: "list_running_llm_checks" } | { type: "list_llm_providers" } | { type: "list_translations"; payload: ListTranslations } | { type: "list_llm_provider_presets" } | { type: "check_source_updates"; payload: CheckSourceUpdates } | { type: "list_markdown_files"; payload: ListMarkdownFiles } | { type: "read_markdown_file"; payload: ReadMarkdownFile } | { type: "diff_versions"; payload: DiffVersions } | { type: "list_combinations"; payload: ListCombinations } | { type: "search"; payload: SearchQuery } | { type: "search_online_sources_assisted"; payload: SearchOnlineSourcesAssisted } | { type: "get_bootstrap_snapshot" } | { type: "get_desktop_preferences" } | { type: "list_pending_items"; payload: ListPendingItems } | { type: "list_deterministic_duplicates"; payload: ListDeterministicDuplicates } | { type: "get_discovery_snapshot"; payload: GetDiscoverySnapshot } | { type: "list_custom_agents"; payload: ListCustomAgents } | { type: "list_projects"; payload: ListProjects } | { type: "preview_project_directory"; payload: PreviewProjectDirectory } | { type: "list_saved_project_views"; payload: ListSavedProjectViews } | { type: "analyze_import"; payload: AnalyzeImport } | { type: "discover_import_candidates"; payload: DiscoverImportCandidates } | { type: "search_online_sources"; payload: SearchOnlineSources } | { type: "list_search_candidates"; payload: ListSearchCandidates } | { type: "get_ui_preference"; payload: GetUiPreference } | { type: "list_skill_repos"; payload: ListSkillRepos } | { type: "discover_repo_skills"; payload: DiscoverRepoSkills } | { type: "analyze_global_skill_evidence"; payload: AnalyzeGlobalSkillEvidence } | { type: "get_deployment_plan"; payload: GetDeploymentPlan } | { type: "get_deployment_batch_preview"; payload: GetDeploymentBatchPreview } | { type: "list_deployment_targets"; payload: ListDeploymentTargets } | { type: "list_deployments"; payload: ListDeployments } | { type: "get_deployment_relations"; payload: GetDeploymentRelations } | { type: "get_skill_provenance"; payload: GetSkillProvenance } | { type: "get_reconcile_plan"; payload: GetReconcilePlan } | { type: "get_removal_impact"; payload: GetRemovalImpact } | { type: "get_relationship_overview"; payload: GetRelationshipOverview } | { type: "get_relationship_removal_impact"; payload: GetRelationshipRemovalImpact } | { type: "get_skill_relationship_graph"; payload: GetSkillRelationshipGraph } | { type: "list_skill_relationship_candidates"; payload: ListSkillRelationshipCandidates } | { type: "get_conflict_workspace"; payload: GetConflictWorkspace } | { type: "list_relation_governance"; payload: ListRelationGovernance } | { type: "list_governance_history"; payload: ListGovernanceHistory } | { type: "list_recovery_candidates" } | { type: "get_call_policy"; payload: GetCallPolicy } | { type: "get_llm_safety_check_result"; payload: GetLlmSafetyCheckResult } | { type: "list_ignore_rules" } | { type: "get_basic_check_result"; payload: GetBasicCheckResult } | { type: "list_findings"; payload: ListFindings } | { type: "get_project_assembly_plan"; payload: GetProjectAssemblyPlan };
 
-export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "skill"; payload: SkillResult } | { type: "skill_page"; payload: SkillListPage } | { type: "versions"; payload: VersionResult[] } | { type: "markdown_files"; payload: MarkdownFileEntry[] } | { type: "markdown_file"; payload: MarkdownFileContent } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "pending_items"; payload: PendingItem[] } | { type: "deterministic_duplicates"; payload: DeterministicDuplicateEntry[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "project_directory_preview"; payload: ProjectDirectoryPreview } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "import_candidates"; payload: ImportCandidate[] } | { type: "open_import_batches"; payload: OpenImportBatch[] } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "ui_preference"; payload: GetUiPreferenceResult } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployment_targets"; payload: DeploymentTarget[] } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "skill_provenance"; payload: SkillProvenanceResult } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "relationship_overview"; payload: RelationshipOverview } | { type: "relationship_removal_impact"; payload: RemovalImpactFact } | { type: "skill_relationship_graph"; payload: SkillRelationshipGraphResult } | { type: "skill_relationship_candidates"; payload: SkillRelationshipCandidate[] } | { type: "conflict_workspace"; payload: ConflictWorkspace } | { type: "relation_governance_ledger"; payload: RelationGovernanceLedger } | { type: "governance_history_page"; payload: GovernanceHistoryPage } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "skill_operations"; payload: SkillOperationsResult } | { type: "running_llm_checks"; payload: LlmCheckRun[] } | { type: "llm_providers"; payload: LlmProviderView[] } | { type: "translations"; payload: TranslationView[] } | { type: "llm_provider_presets"; payload: LlmProviderPreset[] } | { type: "source_update_checks"; payload: SourceUpdateCheckOutcome[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
+export type AppQueryResult = { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "skill"; payload: SkillResult } | { type: "skill_page"; payload: SkillListPage } | { type: "versions"; payload: VersionResult[] } | { type: "markdown_files"; payload: MarkdownFileEntry[] } | { type: "markdown_file"; payload: MarkdownFileContent } | { type: "version_diff"; payload: VersionDiffResult } | { type: "combinations"; payload: CombinationResult[] } | { type: "search_results"; payload: SearchHit[] } | { type: "global_skill_evidence"; payload: UsageEvidenceAnalysis } | { type: "bootstrap_snapshot"; payload: BootstrapSnapshot } | { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "pending_items"; payload: PendingItem[] } | { type: "deterministic_duplicates"; payload: DeterministicDuplicateEntry[] } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "custom_agents"; payload: CustomAgent[] } | { type: "projects"; payload: Project[] } | { type: "project_directory_preview"; payload: ProjectDirectoryPreview } | { type: "saved_project_views"; payload: SavedProjectView[] } | { type: "import_analysis"; payload: ImportAnalysis } | { type: "import_candidates"; payload: ImportCandidate[] } | { type: "open_import_batches"; payload: OpenImportBatch[] } | { type: "source_search_page"; payload: SourceSearchPage } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "ui_preference"; payload: GetUiPreferenceResult } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "deployment_plan"; payload: DeploymentPlan } | { type: "deployment_batch_preview"; payload: DeploymentBatchPreview } | { type: "deployment_targets"; payload: DeploymentTarget[] } | { type: "deployments"; payload: DeploymentRecord[] } | { type: "deployment_relations"; payload: DeploymentRecord[] } | { type: "skill_provenance"; payload: SkillProvenanceResult } | { type: "reconcile_plan"; payload: ReconcilePlan } | { type: "removal_impact"; payload: RemovalImpact } | { type: "relationship_overview"; payload: RelationshipOverview } | { type: "relationship_removal_impact"; payload: RemovalImpactFact } | { type: "skill_relationship_graph"; payload: SkillRelationshipGraphResult } | { type: "skill_relationship_candidates"; payload: SkillRelationshipCandidate[] } | { type: "conflict_workspace"; payload: ConflictWorkspace } | { type: "relation_governance_ledger"; payload: RelationGovernanceLedger } | { type: "governance_history_page"; payload: GovernanceHistoryPage } | { type: "recovery_candidates"; payload: RecoveryCandidate[] } | { type: "skill_operations"; payload: SkillOperationsResult } | { type: "running_llm_checks"; payload: LlmCheckRun[] } | { type: "llm_providers"; payload: LlmProviderView[] } | { type: "translations"; payload: TranslationView[] } | { type: "llm_provider_presets"; payload: LlmProviderPreset[] } | { type: "source_update_checks"; payload: SourceUpdateCheckOutcome[] } | { type: "call_policy"; payload: CallPolicyResult } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "ignore_rules"; payload: IgnoreRule[] } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "findings"; payload: FindingResult[] } | { type: "assembly_plan"; payload: AssemblyPlan };
 
 export type ApplicationUpdate = {
 	available: boolean,
@@ -365,6 +365,24 @@ export type CommitDeleteSkill = {
 
 export type CommitDeployment = {
 	prepared_deployment_id: OperationId,
+};
+
+export type CommitDeploymentPreview = {
+	preview_id: string,
+	pairs: CommitDeploymentPreviewPair[],
+};
+
+/**
+ *  One pair of a trusted preview commit.  The request only ever names the
+ *  preview, the pair, an explicit fallback confirmation and an exclusion;
+ *  the backend re-plans every executable pair itself.
+ */
+export type CommitDeploymentPreviewPair = {
+	pair_id: string,
+	/**  `true` accepts the recommended managed-copy fallback. */
+	confirm_fallback: boolean,
+	/**  `true` leaves the pair out of the batch without touching any file. */
+	exclude: boolean,
 };
 
 export type CommitImport = {
@@ -739,6 +757,52 @@ export type DeleteLlmProvider = {
 	id: string,
 };
 
+/**
+ *  The server-owned result of a batch deployment preview.  `preview_id`
+ *  names the stored snapshot a later commit must reference.
+ */
+export type DeploymentBatchPreview = {
+	preview_id: string,
+	/**  RFC-3339 UTC instant after which the snapshot is refused. */
+	expires_at: string,
+	pairs: DeploymentPairPreview[],
+	/**  Pair ids whose client-held confirmation stayed valid. */
+	preserved_confirmation_ids: string[],
+};
+
+/**  One Skill × target-selection group inside a batch deployment preview. */
+export type DeploymentBatchPreviewRequestItem = {
+	skill_id: SkillId,
+	/**  Explicit version; `None` resolves the Skill's current library version. */
+	version_id: VersionId | null,
+	/**  Explicit runtime name; `None` resolves the version's declared name. */
+	runtime_name: string | null,
+	logical_target_ids: string[],
+	preference: DeploymentPreference,
+};
+
+/**
+ *  Structured, user-presentable cause for a blocked or re-planned pair.
+ *  Users see words, never OS messages: the raw OS detail stays in technical
+ *  parameters carried beside the plan.
+ */
+export type DeploymentBlockReason =
+/**  The account may not create directory links. */
+"link_permission_unavailable" |
+/**  The filesystem or volume cannot host directory links. */
+"link_filesystem_unsupported" |
+/**  Another entry owns the runtime name at the destination. */
+"target_occupied" |
+/**  The registered target path is not currently reachable. */
+"path_unavailable" |
+/**
+ *  Other agents read this shared directory; deployment needs an
+ *  explicit shared-impact decision first.
+ */
+"shared_impact_requires_resolution" |
+/**  No deployment form, not even a managed copy, is executable. */
+"copy_unavailable";
+
 export type DeploymentCapability = {
 	copy: boolean,
 	symlink: boolean,
@@ -766,6 +830,57 @@ export type DeploymentId = string;
  */
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 
+/**
+ *  Terminal outcome of one pair in a preview commit.  Excluded and unchanged
+ *  pairs perform no filesystem work but are still reported per pair.
+ */
+export type DeploymentPairCommitOutcome = "deployed" | "no_change" | "excluded" | "blocked" | "failed";
+
+export type DeploymentPairCommitResult = {
+	pair_id: string,
+	outcome: DeploymentPairCommitOutcome,
+	/**
+	 *  Child deployment operation when the pair produced one; several pairs
+	 *  of one Skill can share a single operation.
+	 */
+	operation_id: OperationId | null,
+	error: TargetOperationError | null,
+};
+
+/**
+ *  One Skill × physical-target pair of a batch deployment preview.  Pair ids
+ *  are stable UI identity derived from the Skill and the physical target;
+ *  they never authorize anything by themselves.
+ */
+export type DeploymentPairPreview = {
+	pair_id: string,
+	skill_id: SkillId,
+	skill_display_name: string,
+	version_id: VersionId,
+	runtime_name: string,
+	logical_target_ids: string[],
+	target_label: string,
+	target_path: string,
+	destination_path: string,
+	preference: DeploymentPreference,
+	disposition: DeploymentPreviewDisposition,
+	mode: DeploymentMode | null,
+	fallback_mode: DeploymentMode | null,
+	block_reason: DeploymentBlockReason | null,
+	warnings: string[],
+	/**
+	 *  `true` when a client-held confirmation still matches the recomputed
+	 *  fingerprint.  The frontend never compares fingerprints itself.
+	 */
+	confirmation_preserved: boolean,
+	confirmation_fingerprint: string,
+	/**
+	 *  Original failure code and safe parameters for the technical-details
+	 *  area only; the user-facing reason is `block_reason`.
+	 */
+	technical_error: TargetOperationError | null,
+};
+
 export type DeploymentPlan = {
 	skill_id: SkillId,
 	version_id: VersionId,
@@ -792,6 +907,42 @@ export type DeploymentPlanRequest = {
 	logical_target_ids: string[],
 	mode_override: DeploymentMode | null,
 };
+
+/**  User-facing preference for how one Skill should land on one target. */
+export type DeploymentPreference =
+/**  Keep the existing per-target automatic mode selection. */
+"automatic" |
+/**
+ *  A directory link is required; a copy is only a user-confirmed
+ *  fallback, never an automatic substitute.
+ */
+"link" |
+/**  An isolated managed copy is required. */
+"copy";
+
+export type DeploymentPreviewCommitResult = {
+	preview_id: string,
+	/**
+	 *  `true` when an identical commit was replayed from its recorded result
+	 *  instead of executing a second time.
+	 */
+	replayed: boolean,
+	pairs: DeploymentPairCommitResult[],
+};
+
+/**  What the backend proposes for one Skill × target pair. */
+export type DeploymentPreviewDisposition =
+/**  Execute the selected mode without further confirmation. */
+"selected_mode" |
+/**
+ *  The link preference cannot link; a managed copy is offered for
+ *  explicit confirmation.
+ */
+"recommend_copy" |
+/**  The same managed deployment is already in place. */
+"no_change" |
+/**  The pair cannot execute; `block_reason` carries the structured cause. */
+"blocked";
 
 export type DeploymentRecord = {
 	id: DeploymentId,
@@ -1195,6 +1346,18 @@ export type GetCallPolicy = {
  *  scans, calls AI or writes a fact.
  */
 export type GetConflictWorkspace = null;
+
+/**
+ *  Side-effect-free batch deployment preview request.  The client names
+ *  Skills, targets and a preference; confirmations map a pair id to the
+ *  confirmation fingerprint the client still holds, and exclusions list pair
+ *  ids the user removed from the batch.  Everything else stays server-owned.
+ */
+export type GetDeploymentBatchPreview = {
+	items: DeploymentBatchPreviewRequestItem[],
+	confirmations?: { [key in string]: string },
+	exclusions?: string[],
+};
 
 /**  Registered logical target IDs for a side-effect-free deployment preview. */
 export type GetDeploymentPlan = {

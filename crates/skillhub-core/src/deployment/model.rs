@@ -382,6 +382,7 @@ impl DeploymentPlanRequest {
 /// A registered-target resolver owned by the application layer.  Implementors
 /// must load facts from discovery, custom-agent registration, or project
 /// storage and verify them with the active PathPolicy before returning them.
+#[derive(Clone)]
 pub struct RegisteredTargetIndex {
     facts: BTreeMap<String, TargetFact>,
     policy: PathPolicy,

@@ -494,6 +494,59 @@ pub struct CommitDeployment {
     pub prepared_deployment_id: OperationId,
 }
 
+/// One pair of a trusted preview commit.  The request only ever names the
+/// preview, the pair, an explicit fallback confirmation and an exclusion;
+/// the backend re-plans every executable pair itself.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitDeploymentPreviewPair {
+    pub pair_id: String,
+    /// `true` accepts the recommended managed-copy fallback.
+    pub confirm_fallback: bool,
+    /// `true` leaves the pair out of the batch without touching any file.
+    pub exclude: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitDeploymentPreview {
+    pub preview_id: String,
+    pub pairs: Vec<CommitDeploymentPreviewPair>,
+}
+
+/// Terminal outcome of one pair in a preview commit.  Excluded and unchanged
+/// pairs perform no filesystem work but are still reported per pair.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentPairCommitOutcome {
+    Deployed,
+    NoChange,
+    Excluded,
+    Blocked,
+    Failed,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentPairCommitResult {
+    pub pair_id: String,
+    pub outcome: DeploymentPairCommitOutcome,
+    /// Child deployment operation when the pair produced one; several pairs
+    /// of one Skill can share a single operation.
+    pub operation_id: Option<OperationId>,
+    pub error: Option<crate::application::TargetOperationError>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentPreviewCommitResult {
+    pub preview_id: String,
+    /// `true` when an identical commit was replayed from its recorded result
+    /// instead of executing a second time.
+    pub replayed: bool,
+    pub pairs: Vec<DeploymentPairCommitResult>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct CollectDeploymentChanges {
@@ -1138,6 +1191,8 @@ pub enum AppCommand {
     ApplySourceUpdate(ApplySourceUpdate),
     #[serde(rename = "prepare_deployment")]
     PrepareDeployment(PrepareDeployment),
+    #[serde(rename = "commit_deployment_preview")]
+    CommitDeploymentPreview(CommitDeploymentPreview),
     #[serde(rename = "commit_deployment")]
     CommitDeployment(CommitDeployment),
     #[serde(rename = "collect_deployment_changes")]
@@ -1345,6 +1400,8 @@ pub enum AppCommandResult {
     AppliedSourceUpdate(crate::source::AppliedSourceUpdate),
     #[serde(rename = "prepared_deployment")]
     PreparedDeployment(Box<crate::application::PreparedDeployment>),
+    #[serde(rename = "deployment_preview_commit_result")]
+    DeploymentPreviewCommitResult(DeploymentPreviewCommitResult),
     #[serde(rename = "deployment_summary")]
     DeploymentSummary(Box<crate::application::DeploymentSummary>),
     #[serde(rename = "reconcile_result")]

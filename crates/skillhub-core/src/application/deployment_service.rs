@@ -65,7 +65,8 @@ impl From<AppError> for TargetOperationError {
             "requested_mode",
             "runtime_name",
             "target_path",
-        ];        let params = error
+        ];
+        let params = error
             .params
             .into_iter()
             .filter(|(key, value)| SAFE_KEYS.contains(&key.as_str()) && is_safe_param_value(value))
@@ -149,7 +150,47 @@ where
                     .with_param("field", "prepared_deployment")
                     .with_action(RecoveryAction::Retry)
             })?;
-        let plan = self.backend.revalidate(&prepared.plan).await?;
+        // Revalidation refutes the prepared plan as a whole (stale facts, a
+        // vanished target, an occupied destination).  Nothing has been
+        // written, so every planned target is accounted as one failed result
+        // carrying the same structured reason: the user still learns which
+        // destination refused the plan, and a fully refused commit is a
+        // rolled-back operation rather than a crashed one.
+        let plan = match self.backend.revalidate(&prepared.plan).await {
+            Ok(plan) => plan,
+            Err(error) => {
+                let targets = prepared
+                    .plan
+                    .targets
+                    .iter()
+                    .map(|target| {
+                        let mut payload = TargetOperationError::from(error.clone());
+                        if !payload.params.contains_key("path") {
+                            payload
+                                .params
+                                .insert("path".to_owned(), target.destination_path.clone());
+                        }
+                        TargetOperationResult {
+                            physical_target_id: target.physical_target_id.clone(),
+                            logical_target_ids: target.logical_target_ids.clone(),
+                            status: TargetOperationStatus::Failed,
+                            deployment_id: None,
+                            version_id: target.version_id.clone(),
+                            error_code: Some(error.code.as_str().to_owned()),
+                            error: Some(payload),
+                            residue: false,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                return Ok(DeploymentSummary {
+                    operation_id: id,
+                    skill_id: prepared.plan.skill_id,
+                    version_id: prepared.plan.version_id.clone(),
+                    targets,
+                    committed: false,
+                });
+            }
+        };
         let mut targets = Vec::with_capacity(plan.targets.len());
         for target in &plan.targets {
             if target.change == TargetChange::NoOp {

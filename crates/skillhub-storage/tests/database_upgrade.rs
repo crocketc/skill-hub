@@ -4,7 +4,7 @@ use tempfile::tempdir;
 #[test]
 fn v19_exposes_safe_governance_tables_and_indexes() {
     let db = Database::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 20);
+    assert_eq!(db.schema_version().unwrap(), 21);
     for table in [
         "import_provenance_events_v19",
         "import_batches",
@@ -92,6 +92,47 @@ fn v19_enforces_immutability_of_import_events_and_relation_history() {
     assert!(connection
         .execute("DELETE FROM relation_history_events", [])
         .is_err());
+}
+
+#[test]
+fn v21_keeps_preview_snapshots_and_commit_results_well_formed() {
+    let db = Database::open_in_memory().unwrap();
+    for table in ["deployment_preview_snapshots", "deployment_preview_commits"] {
+        assert!(db.has_table(table).unwrap(), "{table}");
+    }
+    let connection = db.connection_for_test();
+    // Snapshot status is a two-state word list and the commit table's
+    // preview reference is a real foreign key.
+    connection
+        .execute(
+            "INSERT INTO deployment_preview_snapshots
+             (preview_id, payload_json, status, created_at, expires_at)
+             VALUES ('p1', '{}', 'active', 0, 100)",
+            [],
+        )
+        .unwrap();
+    assert!(connection
+        .execute(
+            "INSERT INTO deployment_preview_snapshots
+             (preview_id, payload_json, status, created_at, expires_at)
+             VALUES ('p2', '{}', 'closed', 0, 100)",
+            [],
+        )
+        .is_err());
+    assert!(connection
+        .execute(
+            "INSERT INTO deployment_preview_commits
+             (idempotency_key, preview_id, result_json, committed_at)
+             VALUES ('k1', 'missing', '{}', 0)",
+            [],
+        )
+        .is_err());
+    let violations: i64 = connection
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(violations, 0);
 }
 
 #[test]

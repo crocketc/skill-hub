@@ -56,9 +56,10 @@ use skillhub_core::catalog::CallPolicy;
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
-    observed_path_key, path_lives_under, reconcile_observed_row, DeploymentPlanRequest,
+    observed_path_key, path_lives_under, plan_target_preview, reconcile_observed_row,
+    DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
     DeploymentRecord, DeploymentState, ExistingDeployment, ExistingOwnership,
-    RegisteredTargetIndex, TargetFact, TargetPlan, VerifiedTarget,
+    RegisteredTargetIndex, RegisteredTargetResolver, TargetFact, TargetPlan, VerifiedTarget,
 };
 use skillhub_core::duplicate::{
     build_conflict_analysis_input, conflict_case_matches_scope, parse_conflict_analysis_response,
@@ -126,6 +127,7 @@ pub struct LocalApplicationFacade {
     library_runtime: Arc<library_runtime::LibraryRuntime>,
     suggested_library_root: Option<PathBuf>,
     deployment_targets: Option<RegisteredTargetIndex>,
+    backend: Arc<LocalDeploymentBackend>,
     deployment_service: Arc<DeploymentService<LocalDeploymentBackend>>,
     removal_service: Arc<RemovalService<LocalDeploymentBackend>>,
     reconcile_service: Arc<ReconcileService<LocalDeploymentBackend>>,
@@ -218,6 +220,11 @@ struct LocalDeploymentBackend {
     database: Arc<Mutex<Database>>,
     library_runtime: Arc<library_runtime::LibraryRuntime>,
     filesystem: DeploymentFilesystem,
+    /// Target index injected in place of production discovery (tests and
+    /// embedding callers).  Revalidation must re-check against exactly the
+    /// facts the preview resolved, never against whatever the probing host
+    /// discovers.
+    injected_targets: Arc<Mutex<Option<RegisteredTargetIndex>>>,
 }
 
 #[derive(Clone)]
@@ -391,7 +398,27 @@ impl LocalDeploymentBackend {
             database,
             library_runtime,
             filesystem: DeploymentFilesystem::new(),
+            injected_targets: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Revalidation index: the injected facts when present, else the
+    /// database-registered discovery facts.
+    fn revalidation_index(&self) -> AppResult<RegisteredTargetIndex> {
+        if let Some(index) = self
+            .injected_targets
+            .lock()
+            .map_err(|_| internal("deployment.revalidate"))?
+            .clone()
+        {
+            return Ok(index);
+        }
+        let host_capabilities = self.filesystem.available_capabilities();
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("deployment.revalidate"))?;
+        registered_target_index(&database, &host_capabilities)
     }
 
     fn materialized_source(&self, target: &TargetPlan) -> AppResult<PathBuf> {
@@ -576,6 +603,82 @@ impl LocalDeploymentBackend {
 
 #[async_trait]
 impl DeploymentBackend for LocalDeploymentBackend {
+    /// Task 13B: a prepared plan is only a claim about registered reality.
+    /// Before anything is applied, the claim is re-derived from the current
+    /// registered targets, occupancy, capabilities and source version; any
+    /// drift refuses the stale plan instead of being applied blindly.
+    async fn revalidate(&self, plan: &DeploymentPlan) -> AppResult<DeploymentPlan> {
+        let index = self.revalidation_index()?;
+        let library = self.library_runtime.snapshot()?;
+        // The planned source version must still exist and still declare the
+        // runtime name agents will see.
+        let content = match library
+            .store
+            .read_file(&plan.version_id, "SKILL.md", 256 * 1024)
+        {
+            Ok((_, bytes)) => bytes,
+            Err(error) if error.code == ErrorCode::ObjectNotFound => {
+                return Err(target_changed_error("the planned source version is gone"))
+            }
+            Err(error) => return Err(error),
+        };
+        if let Some(declared) = read_frontmatter_name(&String::from_utf8_lossy(&content)) {
+            if declared != plan.runtime_name {
+                return Err(target_changed_error(
+                    "the version's declared name no longer matches the plan",
+                ));
+            }
+        }
+        for target in &plan.targets {
+            let mut candidates = index.resolve(&target.logical_target_ids).map_err(|_| {
+                target_changed_error("a registered target of the plan is no longer available")
+            })?;
+            if candidates.iter().any(|candidate| {
+                candidate.physical_target_id() != target.physical_target_id
+                    || candidate.path() != target.target_path
+            }) {
+                return Err(target_changed_error(
+                    "the registered target identity or path changed",
+                ));
+            }
+            if !target.mode.is_supported_by(candidates[0].capabilities()) {
+                return Err(target_changed_error(
+                    "the target no longer supports the planned mode",
+                ));
+            }
+            {
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("deployment.revalidate"))?;
+                attach_target_occupancy_with(&database, &plan.runtime_name, &mut candidates)?;
+            }
+            let input = DeploymentPlanInput {
+                skill_id: plan.skill_id,
+                version_id: plan.version_id.clone(),
+                runtime_name: plan.runtime_name.clone(),
+                source_path: target.source_path.clone(),
+                targets: candidates,
+                mode_override: Some(target.mode),
+                security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+            };
+            let fresh = DeploymentPlanner.plan(input)?;
+            let fresh_target = fresh
+                .targets
+                .first()
+                .ok_or_else(|| target_changed_error("the target no longer plans to an entry"))?;
+            if fresh_target.destination_path != target.destination_path
+                || fresh_target.change != target.change
+                || fresh_target.conflicts != target.conflicts
+            {
+                return Err(target_changed_error(
+                    "destination facts changed since the plan was made",
+                ));
+            }
+        }
+        Ok(plan.clone())
+    }
+
     async fn apply_target(&self, target: &TargetPlan) -> AppResult<DeploymentRecord> {
         let source = self.materialized_source(target)?;
         let mut effective = target.clone();
@@ -1754,7 +1857,7 @@ impl LocalApplicationFacade {
             library_runtime.clone(),
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
-        let removal_service = Arc::new(RemovalService::new(backend));
+        let removal_service = Arc::new(RemovalService::new(backend.clone()));
         let reconcile_service = Arc::new(ReconcileService::new(Arc::new(
             LocalDeploymentBackend::new(database.clone(), library_runtime.clone()),
         )));
@@ -1783,6 +1886,7 @@ impl LocalApplicationFacade {
             library_runtime,
             suggested_library_root: None,
             deployment_targets: None,
+            backend,
             deployment_service,
             removal_service,
             reconcile_service,
@@ -1837,7 +1941,7 @@ impl LocalApplicationFacade {
         ));
         let deployment_service = Arc::new(DeploymentService::new(backend.clone()));
         let removal_service = Arc::new(RemovalService::new(backend.clone()));
-        let reconcile_service = Arc::new(ReconcileService::new(backend));
+        let reconcile_service = Arc::new(ReconcileService::new(backend.clone()));
         let health_service = Arc::new(HealthService::new(Arc::new(LocalHealthBackend {
             database: database.clone(),
         })));
@@ -1863,6 +1967,7 @@ impl LocalApplicationFacade {
             library_runtime,
             suggested_library_root: None,
             deployment_targets: None,
+            backend,
             deployment_service,
             removal_service,
             reconcile_service,
@@ -2069,7 +2174,10 @@ impl LocalApplicationFacade {
         deployment_targets: RegisteredTargetIndex,
     ) -> Self {
         let mut facade = Self::new_with_library(database, library_root);
-        facade.deployment_targets = Some(deployment_targets);
+        facade.deployment_targets = Some(deployment_targets.clone());
+        if let Ok(mut injected) = facade.backend.injected_targets.lock() {
+            *injected = Some(deployment_targets);
+        }
         facade
     }
 
@@ -5364,6 +5472,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::PrepareDeployment(request) => {
                 return self.prepare_deployment(request.plan).await
             }
+            AppCommand::CommitDeploymentPreview(request) => {
+                return self.commit_deployment_preview(request).await
+            }
             AppCommand::CommitDeployment(request) => {
                 return self.commit_deployment(request.prepared_deployment_id).await
             }
@@ -6180,6 +6291,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .await
                 .map(AppQueryResult::ReconcilePlan),
             AppQuery::GetDeploymentPlan(request) => self.get_deployment_plan(request.request),
+            AppQuery::GetDeploymentBatchPreview(request) => {
+                self.get_deployment_batch_preview(request)
+            }
             AppQuery::ListDeploymentTargets(_) => self.list_deployment_targets(),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(
                 request.skill_id,
@@ -6497,40 +6611,705 @@ impl LocalApplicationFacade {
         )
     }
 
+    /// Task 13B: server-owned batch deployment preview.  The client names
+    /// Skills, targets and a preference; versions, runtime names, physical
+    /// identities, occupancy and capabilities are all resolved here, one pair
+    /// at a time, and the resulting snapshot is stored under a preview id a
+    /// later commit must reference.
+    fn get_deployment_batch_preview(
+        &self,
+        request: skillhub_core::api::GetDeploymentBatchPreview,
+    ) -> AppResult<AppQueryResult> {
+        let library = self.library_runtime.snapshot()?;
+        let link_permission_denied = DeploymentFilesystem::new().link_unavailability_cause()
+            == Some(skillhub_adapters::deployment::LinkUnavailableCause::Permission);
+        let now = now_epoch_seconds();
+
+        // One target index serves the whole batch; an injected index keeps
+        // preview outcomes independent of the probing host.
+        let injected = self.deployment_targets.as_ref();
+        let discovered = if injected.is_none() {
+            Some(self.discovery_target_index()?)
+        } else {
+            None
+        };
+        let resolve = |logical_id: &str| -> AppResult<Vec<VerifiedTarget>> {
+            let ids = vec![logical_id.to_owned()];
+            match injected {
+                Some(index) => index.resolve(&ids),
+                None => discovered
+                    .as_ref()
+                    .expect("discovered index exists when none is injected")
+                    .resolve(&ids),
+            }
+        };
+        let discovery_targets =
+            self.with_database("query.get_deployment_batch_preview", |database| {
+                Ok(database
+                    .agent_repository()
+                    .load()?
+                    .map(|snapshot| snapshot.logical_targets)
+                    .unwrap_or_default())
+            })?;
+
+        let mut pairs: Vec<skillhub_core::api::DeploymentPairPreview> = Vec::new();
+        for item in &request.items {
+            self.collect_batch_pair_previews(
+                item,
+                &library,
+                &resolve,
+                &discovery_targets,
+                link_permission_denied,
+                &mut pairs,
+            )?;
+        }
+        // 同一物理目标在多个条目里重复出现时保留首个 pair；顺序确定化。
+        pairs.sort_by(|left, right| left.pair_id.cmp(&right.pair_id));
+        pairs.dedup_by(|left, right| left.pair_id == right.pair_id);
+        for pair in &mut pairs {
+            pair.confirmation_preserved = request
+                .confirmations
+                .get(&pair.pair_id)
+                .map(|held| *held == pair.confirmation_fingerprint)
+                .unwrap_or(false);
+        }
+        let preserved_confirmation_ids = pairs
+            .iter()
+            .filter(|pair| pair.confirmation_preserved)
+            .map(|pair| pair.pair_id.clone())
+            .collect::<Vec<_>>();
+
+        let preview_id = OperationId::new().to_string();
+        let payload = serde_json::to_string(&pairs)
+            .map_err(|_| internal("query.get_deployment_batch_preview"))?;
+        self.with_database("query.get_deployment_batch_preview", |database| {
+            database.deployment_preview_repository().insert(
+                &skillhub_storage::DeploymentPreviewSnapshot {
+                    preview_id: preview_id.clone(),
+                    payload_json: payload,
+                    status: "active".to_owned(),
+                    created_at: now,
+                    expires_at: now + DEPLOYMENT_PREVIEW_TTL_SECONDS,
+                },
+            )
+        })?;
+        Ok(AppQueryResult::DeploymentBatchPreview(
+            skillhub_core::api::DeploymentBatchPreview {
+                preview_id,
+                expires_at: format_rfc3339_utc(now + DEPLOYMENT_PREVIEW_TTL_SECONDS),
+                pairs,
+                preserved_confirmation_ids,
+            },
+        ))
+    }
+
+    /// Resolves one request item into per-pair previews.  Every logical
+    /// target is resolved on its own so one broken target never hides the
+    /// other targets of the same Skill.
+    fn collect_batch_pair_previews(
+        &self,
+        item: &skillhub_core::api::DeploymentBatchPreviewRequestItem,
+        library: &library_runtime::LibraryContext,
+        resolve: &dyn Fn(&str) -> AppResult<Vec<VerifiedTarget>>,
+        discovery_targets: &[skillhub_core::LogicalTarget],
+        link_permission_denied: bool,
+        out: &mut Vec<skillhub_core::api::DeploymentPairPreview>,
+    ) -> AppResult<()> {
+        let (display_name, catalog_runtime_name) =
+            self.with_database("query.get_deployment_batch_preview", |database| {
+                Ok(database
+                    .catalog_repository()?
+                    .get_identity(item.skill_id)?
+                    .unwrap_or_else(|| ("Skill".into(), String::new())))
+            })?;
+        let projects = self.with_database("query.get_deployment_batch_preview", |database| {
+            database.project_repository().list()
+        })?;
+
+        // Version: explicit, else the library's current version for the Skill.
+        let version_id = match &item.version_id {
+            Some(version) => version.clone(),
+            None => library
+                .central
+                .load_portable_skill(item.skill_id)?
+                .and_then(|(_, current)| current)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "current_version")
+                        .with_action(RecoveryAction::Retry)
+                })?,
+        };
+        // Runtime name: explicit, else the version's declared SKILL.md name,
+        // else the catalog runtime name.
+        let runtime_name = match &item.runtime_name {
+            Some(name) => name.clone(),
+            None => library
+                .store
+                .read_file(&version_id, "SKILL.md", 256 * 1024)
+                .ok()
+                .and_then(|(_, bytes)| read_frontmatter_name(&String::from_utf8_lossy(&bytes)))
+                .unwrap_or(catalog_runtime_name),
+        };
+        if runtime_name.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "runtime_name")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+
+        let source_path = library
+            .root
+            .join("versions")
+            .join(item.skill_id.to_string())
+            .join(version_id.as_str());
+        let mut verified: Vec<VerifiedTarget> = Vec::new();
+        let mut failures: Vec<(String, AppError)> = Vec::new();
+        for logical_id in &item.logical_target_ids {
+            match resolve(logical_id) {
+                Ok(mut targets) => verified.append(&mut targets),
+                Err(error) => failures.push((logical_id.clone(), error)),
+            }
+        }
+        self.with_database("query.get_deployment_batch_preview", |database| {
+            attach_target_occupancy_with(database, &runtime_name, &mut verified)
+        })?;
+
+        // Group by physical identity; merged capabilities and the occupancy
+        // snapshot come from the whole group, exactly like the planner merge.
+        let mut groups: BTreeMap<String, Vec<VerifiedTarget>> = BTreeMap::new();
+        for target in verified {
+            groups
+                .entry(target.physical_target_id().to_owned())
+                .or_default()
+                .push(target);
+        }
+        for (physical_id, mut group) in groups {
+            let occupancy = group
+                .iter()
+                .flat_map(|target| target.existing().iter().cloned())
+                .collect::<Vec<_>>();
+            let capabilities = merged_capabilities_of(&group);
+            let target_path = group
+                .first()
+                .map(|target| target.path().to_owned())
+                .unwrap_or_default();
+            let group_logical_ids = group
+                .iter()
+                .flat_map(|target| target.logical_target_ids().iter().cloned())
+                .collect::<Vec<_>>();
+            let automatic = DeploymentPlanner.plan(DeploymentPlanInput::new(
+                item.skill_id,
+                version_id.clone(),
+                runtime_name.clone(),
+                source_path.to_string_lossy().into_owned(),
+                std::mem::take(&mut group),
+            ));
+            let (technical_error, mode, change, conflicts, warnings, logical_target_ids) =
+                match automatic {
+                    Ok(plan) => {
+                        let target = plan
+                            .targets
+                            .first()
+                            .expect("one physical group plans to one target");
+                        (
+                            None,
+                            Some(target.mode),
+                            target.change,
+                            target.conflicts.clone(),
+                            target.warnings.clone(),
+                            target.logical_target_ids.clone(),
+                        )
+                    }
+                    Err(error) => {
+                        // A whole-group planning failure (invalid declared
+                        // name, unusable capability set) blocks the pair; the
+                        // mapped reason stays conservative and the original
+                        // error travels as technical detail.
+                        (
+                            Some(error.into()),
+                            None,
+                            TargetChange::Create,
+                            Vec::new(),
+                            Vec::new(),
+                            group_logical_ids.clone(),
+                        )
+                    }
+                };
+            let shared = discovery_targets
+                .iter()
+                .any(|entry| entry.shared_reference && logical_target_ids.contains(&entry.id));
+            let mut facts = skillhub_core::deployment::DeploymentPairFacts {
+                skill_id: item.skill_id,
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.clone(),
+                physical_target_id: physical_id,
+                destination_path: String::new(),
+                capabilities: skillhub_core::DeploymentCapability::new(false, false, false),
+                link_permission_denied,
+                preference: item.preference,
+                mode,
+                change,
+                conflicts,
+                occupancy,
+                path_available: true,
+                requires_shared_impact_confirmation: shared,
+            };
+            if mode.is_some() {
+                facts.capabilities = capabilities;
+                facts.destination_path = Path::new(&target_path)
+                    .join(&runtime_name)
+                    .to_string_lossy()
+                    .into_owned();
+            } else {
+                // Nothing was plannable: block conservatively so the
+                // fingerprint and the reason stay consistent.
+                facts.path_available = false;
+            }
+            let decision = plan_target_preview(&facts);
+            let first_logical = logical_target_ids.first().cloned().unwrap_or_default();
+            out.push(skillhub_core::api::DeploymentPairPreview {
+                pair_id: format!("{}:{}", item.skill_id, facts.physical_target_id),
+                skill_id: item.skill_id,
+                skill_display_name: display_name.clone(),
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.clone(),
+                logical_target_ids,
+                target_label: batch_target_label(discovery_targets, &projects, &first_logical),
+                target_path,
+                destination_path: facts.destination_path.clone(),
+                preference: decision.preference,
+                disposition: decision.disposition,
+                mode: decision.mode,
+                fallback_mode: decision.fallback_mode,
+                block_reason: decision.block_reason,
+                warnings,
+                confirmation_preserved: false,
+                confirmation_fingerprint: decision.confirmation_fingerprint,
+                technical_error,
+            });
+        }
+
+        // Unresolvable logical ids stay visible as their own blocked pairs.
+        for (logical_id, error) in failures {
+            let facts = skillhub_core::deployment::DeploymentPairFacts {
+                skill_id: item.skill_id,
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.clone(),
+                physical_target_id: logical_id.clone(),
+                destination_path: String::new(),
+                capabilities: skillhub_core::DeploymentCapability::new(false, false, false),
+                link_permission_denied,
+                preference: item.preference,
+                mode: None,
+                change: TargetChange::Create,
+                conflicts: Vec::new(),
+                occupancy: Vec::new(),
+                path_available: false,
+                requires_shared_impact_confirmation: false,
+            };
+            let decision = plan_target_preview(&facts);
+            out.push(skillhub_core::api::DeploymentPairPreview {
+                pair_id: format!("{}:{}", item.skill_id, logical_id),
+                skill_id: item.skill_id,
+                skill_display_name: display_name.clone(),
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.clone(),
+                logical_target_ids: vec![logical_id.clone()],
+                target_label: batch_target_label(discovery_targets, &projects, &logical_id),
+                target_path: String::new(),
+                destination_path: String::new(),
+                preference: decision.preference,
+                disposition: decision.disposition,
+                mode: None,
+                fallback_mode: None,
+                block_reason: decision.block_reason,
+                warnings: Vec::new(),
+                confirmation_preserved: false,
+                confirmation_fingerprint: decision.confirmation_fingerprint,
+                technical_error: Some(error.into()),
+            });
+        }
+        Ok(())
+    }
+
+    /// Task 13B trusted commit protocol: the request only names the preview,
+    /// pairs, fallback confirmations and exclusions.  Every executable pair is
+    /// fingerprint-revalidated against current facts and re-planned by the
+    /// backend before the existing prepare/commit pipeline runs it.
+    async fn commit_deployment_preview(
+        &self,
+        request: skillhub_core::api::CommitDeploymentPreview,
+    ) -> AppResult<AppCommandResult> {
+        for requested in &request.pairs {
+            if requested.pair_id.trim().is_empty() {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "pair_id")
+                    .with_action(RecoveryAction::Retry));
+            }
+            if requested.exclude && requested.confirm_fallback {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "pair_id")
+                    .with_param("detail", "a pair cannot be excluded and confirmed at once")
+                    .with_action(RecoveryAction::Retry));
+            }
+        }
+        let now = now_epoch_seconds();
+        let idempotency_key = preview_commit_key(&request);
+
+        // 1. An identical earlier commit replays its recorded result.
+        let recorded = self.with_database("execute.commit_deployment_preview", |database| {
+            database
+                .deployment_preview_repository()
+                .find_commit_result(&idempotency_key)
+        })?;
+        if let Some(recorded) = recorded {
+            let mut result: skillhub_core::api::DeploymentPreviewCommitResult =
+                serde_json::from_str(&recorded)
+                    .map_err(|_| internal("execute.commit_deployment_preview"))?;
+            result.replayed = true;
+            return Ok(AppCommandResult::DeploymentPreviewCommitResult(result));
+        }
+
+        // 2. The snapshot must still exist, be active and be unexpired.
+        let snapshot = self
+            .with_database("execute.commit_deployment_preview", |database| {
+                database
+                    .deployment_preview_repository()
+                    .get_active(&request.preview_id, now)
+            })?
+            .ok_or_else(|| {
+                target_changed_error("the preview snapshot is unknown, expired or consumed")
+            })?;
+        let stored_pairs: Vec<skillhub_core::api::DeploymentPairPreview> =
+            serde_json::from_str(&snapshot.payload_json)
+                .map_err(|_| internal("execute.commit_deployment_preview"))?;
+        for requested in &request.pairs {
+            if !stored_pairs
+                .iter()
+                .any(|pair| pair.pair_id == requested.pair_id)
+            {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "pair_id")
+                    .with_param("pair_id", requested.pair_id.clone())
+                    .with_action(RecoveryAction::Retry));
+            }
+        }
+
+        // 3. Decide every pair; executable ones are re-planned server-side.
+        let link_permission_denied = DeploymentFilesystem::new().link_unavailability_cause()
+            == Some(skillhub_adapters::deployment::LinkUnavailableCause::Permission);
+        let mut fresh: Vec<(String, skillhub_core::TargetPlan)> = Vec::new();
+        let mut results: Vec<skillhub_core::api::DeploymentPairCommitResult> = Vec::new();
+        for pair in &stored_pairs {
+            let requested = request
+                .pairs
+                .iter()
+                .find(|requested| requested.pair_id == pair.pair_id);
+            let requested = match requested {
+                Some(requested) => requested,
+                None => {
+                    // Unlisted pairs count as cancelled; they touch nothing.
+                    results.push(pair_result(
+                        pair,
+                        skillhub_core::api::DeploymentPairCommitOutcome::Excluded,
+                        None,
+                        None,
+                    ));
+                    continue;
+                }
+            };
+            if requested.exclude {
+                results.push(pair_result(
+                    pair,
+                    skillhub_core::api::DeploymentPairCommitOutcome::Excluded,
+                    None,
+                    None,
+                ));
+                continue;
+            }
+            if pair.disposition == skillhub_core::deployment::DeploymentPreviewDisposition::Blocked
+            {
+                results.push(pair_result(
+                    pair,
+                    skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                    None,
+                    None,
+                ));
+                continue;
+            }
+            let confirmed_fallback = pair.disposition
+                == skillhub_core::deployment::DeploymentPreviewDisposition::RecommendCopy;
+            if confirmed_fallback && !requested.confirm_fallback {
+                // 未确认的 RecommendCopy 不进入 prepare。
+                results.push(pair_result(
+                    pair,
+                    skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                    None,
+                    None,
+                ));
+                continue;
+            }
+            let requested_mode = if confirmed_fallback {
+                pair.fallback_mode
+                    .expect("a recommend-copy pair carries its fallback mode")
+            } else {
+                pair.mode
+                    .expect("an executable pair carries its selected mode")
+            };
+            match self.replan_stored_pair(pair, requested_mode, link_permission_denied) {
+                Ok(target) => fresh.push((pair.pair_id.clone(), target)),
+                Err(error) => {
+                    let outcome = if error.code == ErrorCode::TargetChanged {
+                        skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+                    } else {
+                        skillhub_core::api::DeploymentPairCommitOutcome::Failed
+                    };
+                    results.push(pair_result(pair, outcome, None, Some(error.into())));
+                }
+            }
+        }
+
+        // 4. Group executable targets into per-Skill plans and run the
+        // existing prepare/commit pipeline (which revalidates once more).
+        let mut groups: BTreeMap<
+            (String, String, String),
+            Vec<(String, skillhub_core::TargetPlan)>,
+        > = BTreeMap::new();
+        for (pair_id, target) in fresh {
+            groups
+                .entry((
+                    target.skill_id.to_string(),
+                    target.version_id.as_str().to_owned(),
+                    target.runtime_name.clone(),
+                ))
+                .or_default()
+                .push((pair_id, target));
+        }
+        for (_, entries) in groups {
+            let mut targets = Vec::new();
+            let mut warnings = Vec::new();
+            for (_, target) in &entries {
+                targets.push(target.clone());
+                for warning in &target.warnings {
+                    if !warnings.contains(warning) {
+                        warnings.push(warning.clone());
+                    }
+                }
+            }
+            let mode = targets[0].mode;
+            let plan = skillhub_core::DeploymentPlan {
+                skill_id: targets[0].skill_id,
+                version_id: targets[0].version_id.clone(),
+                runtime_name: targets[0].runtime_name.clone(),
+                mode,
+                targets,
+                warnings,
+                conflicts: Vec::new(),
+            };
+            let prepared = self.prepare_deployment(plan).await?;
+            let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+                return Err(internal("execute.commit_deployment_preview"));
+            };
+            let operation_id = prepared.id;
+            let summary = self.commit_deployment(operation_id).await?;
+            let AppCommandResult::DeploymentSummary(summary) = summary else {
+                return Err(internal("execute.commit_deployment_preview"));
+            };
+            for (pair_id, target) in entries {
+                let stored = stored_pairs
+                    .iter()
+                    .find(|pair| pair.pair_id == pair_id)
+                    .expect("the pair came from the stored snapshot");
+                let operation = summary
+                    .targets
+                    .iter()
+                    .find(|result| result.physical_target_id == target.physical_target_id);
+                match operation {
+                    Some(result)
+                        if result.status == skillhub_core::TargetOperationStatus::Succeeded =>
+                    {
+                        let outcome = if target.change == TargetChange::NoOp {
+                            skillhub_core::api::DeploymentPairCommitOutcome::NoChange
+                        } else {
+                            skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+                        };
+                        results.push(pair_result(
+                            stored,
+                            outcome,
+                            Some(summary.operation_id),
+                            None,
+                        ));
+                    }
+                    Some(result) => {
+                        let outcome = skillhub_core::api::DeploymentPairCommitOutcome::Failed;
+                        results.push(pair_result(stored, outcome, None, result.error.clone()));
+                    }
+                    None => {
+                        results.push(pair_result(
+                            stored,
+                            skillhub_core::api::DeploymentPairCommitOutcome::Failed,
+                            None,
+                            Some(internal("execute.commit_deployment_preview").into()),
+                        ));
+                    }
+                }
+            }
+        }
+
+        let mut result = skillhub_core::api::DeploymentPreviewCommitResult {
+            preview_id: request.preview_id.clone(),
+            replayed: false,
+            pairs: results,
+        };
+        result
+            .pairs
+            .sort_by(|left, right| left.pair_id.cmp(&right.pair_id));
+
+        // 5. Only a commit that actually ran consumes the snapshot and
+        // records its idempotent result; a pure consultation (everything
+        // blocked or excluded) stays repeatable.
+        let executed_any = result.pairs.iter().any(|pair| {
+            matches!(
+                pair.outcome,
+                skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+                    | skillhub_core::api::DeploymentPairCommitOutcome::NoChange
+                    | skillhub_core::api::DeploymentPairCommitOutcome::Failed
+            )
+        });
+        if executed_any {
+            let payload = serde_json::to_string(&result)
+                .map_err(|_| internal("execute.commit_deployment_preview"))?;
+            self.with_database("execute.commit_deployment_preview", |database| {
+                let repository = database.deployment_preview_repository();
+                repository.insert_commit_result(
+                    &idempotency_key,
+                    &request.preview_id,
+                    &payload,
+                    now,
+                )?;
+                repository.consume(&request.preview_id)
+            })?;
+        }
+        Ok(AppCommandResult::DeploymentPreviewCommitResult(result))
+    }
+
+    /// Re-derives one stored pair from current registered reality, refuses on
+    /// any fingerprint drift, and re-plans with the requested effective mode.
+    fn replan_stored_pair(
+        &self,
+        pair: &skillhub_core::api::DeploymentPairPreview,
+        requested_mode: skillhub_core::DeploymentMode,
+        link_permission_denied: bool,
+    ) -> AppResult<skillhub_core::TargetPlan> {
+        let library = self.library_runtime.snapshot()?;
+        let injected = self.deployment_targets.as_ref();
+        let discovered = if injected.is_none() {
+            Some(self.discovery_target_index()?)
+        } else {
+            None
+        };
+        let resolve = |logical_id: &str| -> AppResult<Vec<VerifiedTarget>> {
+            let ids = vec![logical_id.to_owned()];
+            match injected {
+                Some(index) => index.resolve(&ids),
+                None => discovered
+                    .as_ref()
+                    .expect("discovered index exists when none is injected")
+                    .resolve(&ids),
+            }
+        };
+        let discovery_targets =
+            self.with_database("execute.commit_deployment_preview", |database| {
+                Ok(database
+                    .agent_repository()
+                    .load()?
+                    .map(|snapshot| snapshot.logical_targets)
+                    .unwrap_or_default())
+            })?;
+
+        let mut verified: Vec<VerifiedTarget> = Vec::new();
+        for logical_id in &pair.logical_target_ids {
+            match resolve(logical_id) {
+                Ok(mut targets) => verified.append(&mut targets),
+                Err(_) => {
+                    return Err(target_changed_error(
+                        "a registered target of the pair is no longer available",
+                    ))
+                }
+            }
+        }
+        self.with_database("execute.commit_deployment_preview", |database| {
+            attach_target_occupancy_with(database, &pair.runtime_name, &mut verified)
+        })?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(pair.skill_id.to_string())
+            .join(pair.version_id.as_str());
+        let automatic = DeploymentPlanner
+            .plan(DeploymentPlanInput::new(
+                pair.skill_id,
+                pair.version_id.clone(),
+                pair.runtime_name.clone(),
+                source_path.to_string_lossy().into_owned(),
+                verified.clone(),
+            ))
+            // The precise reason (occupied, vanished, renamed) belongs to the
+            // next preview; a stale commit is refused as changed facts.
+            .map_err(|_| {
+                target_changed_error("the pair no longer plans as it did at preview time")
+            })?;
+        let planned = automatic
+            .targets
+            .first()
+            .ok_or_else(|| target_changed_error("the pair no longer plans to a target"))?;
+        let shared = discovery_targets
+            .iter()
+            .any(|entry| entry.shared_reference && planned.logical_target_ids.contains(&entry.id));
+        let facts = skillhub_core::deployment::DeploymentPairFacts {
+            skill_id: pair.skill_id,
+            version_id: pair.version_id.clone(),
+            runtime_name: pair.runtime_name.clone(),
+            physical_target_id: planned.physical_target_id.clone(),
+            destination_path: planned.destination_path.clone(),
+            capabilities: merged_capabilities_of(&verified),
+            link_permission_denied,
+            preference: pair.preference,
+            mode: Some(planned.mode),
+            change: planned.change,
+            conflicts: planned.conflicts.clone(),
+            occupancy: verified
+                .iter()
+                .flat_map(|target| target.existing().iter().cloned())
+                .collect(),
+            path_available: true,
+            requires_shared_impact_confirmation: shared,
+        };
+        let rechecked = plan_target_preview(&facts);
+        if rechecked.confirmation_fingerprint != pair.confirmation_fingerprint {
+            return Err(target_changed_error(
+                "the deployment facts changed since the preview",
+            ));
+        }
+        let effective = DeploymentPlanner.plan(DeploymentPlanInput {
+            skill_id: pair.skill_id,
+            version_id: pair.version_id.clone(),
+            runtime_name: pair.runtime_name.clone(),
+            source_path: source_path.to_string_lossy().into_owned(),
+            targets: verified,
+            mode_override: Some(requested_mode),
+            security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+        })?;
+        Ok(effective
+            .targets
+            .into_iter()
+            .next()
+            .expect("one physical target re-plans to one executable target"))
+    }
+
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {
         let host_capabilities = DeploymentFilesystem::new().available_capabilities();
         self.with_database("query.get_deployment_plan", |database| {
-            let mut facts = Vec::new();
-            let mut roots = Vec::new();
-            if let Some(snapshot) = database.agent_repository().load()? {
-                for target in snapshot.logical_targets {
-                    if !target.available || !target.exists {
-                        continue;
-                    }
-                    let path = PathBuf::from(&target.path);
-                    let Ok(root) = AllowedRoot::new(&path) else {
-                        continue;
-                    };
-                    roots.push(root);
-                    facts.push(TargetFact::from_logical_target(
-                        &target,
-                        effective_target_capabilities(&target.client_id, &host_capabilities),
-                    ));
-                }
-            }
-            for project in database.project_repository().list()? {
-                let path = PathBuf::from(project.path());
-                let Ok(root) = AllowedRoot::new(&path) else {
-                    continue;
-                };
-                roots.push(root);
-                facts.push(TargetFact::from_project(
-                    &project,
-                    host_capabilities.clone(),
-                ));
-            }
-            let policy = PathPolicy::from_roots(roots)?;
-            RegisteredTargetIndex::from_facts(facts, policy)
+            registered_target_index(database, &host_capabilities)
         })
     }
 
@@ -6550,47 +7329,9 @@ impl LocalApplicationFacade {
         if targets.is_empty() {
             return Ok(());
         }
-        let rows = self.with_database("query.get_deployment_plan", |database| {
-            database.deployment_repository().list_all()
-        })?;
-        for target in targets.iter_mut() {
-            let mut existing = Vec::new();
-            for row in &rows {
-                if row.target_id != target.physical_target_id()
-                    || !row.managed
-                    || !matches!(
-                        row.state,
-                        DeploymentState::Deployed | DeploymentState::NeedsRecovery
-                    )
-                    || !occupancy_names_equal(
-                        &row.runtime_name,
-                        runtime_name,
-                        target.case_sensitive(),
-                    )
-                {
-                    continue;
-                }
-                existing.push(ExistingDeployment::managed(
-                    row.runtime_name.clone(),
-                    row.id,
-                    row.skill_id,
-                    row.version_id.clone(),
-                ));
-            }
-            if existing.is_empty()
-                && is_single_path_component(runtime_name)
-                && std::fs::symlink_metadata(Path::new(target.path()).join(runtime_name)).is_ok()
-            {
-                existing.push(ExistingDeployment::new(
-                    runtime_name,
-                    ExistingOwnership::Unknown,
-                ));
-            }
-            for entry in existing {
-                *target = target.clone().with_existing(entry);
-            }
-        }
-        Ok(())
+        self.with_database("query.get_deployment_plan", |database| {
+            attach_target_occupancy_with(database, runtime_name, targets)
+        })
     }
 
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
@@ -7071,8 +7812,8 @@ impl LocalApplicationFacade {
                         .with_param("reason", "import.fingerprint_unavailable")
                         .with_action(RecoveryAction::Retry)
                 })?;
-            let reuse_source_relation_id = self
-                .with_database("execute.commit_import.outcome", |database| {
+            let reuse_source_relation_id =
+                self.with_database("execute.commit_import.outcome", |database| {
                     self.record_import_outcome(
                         database,
                         &ImportBatchSlot {
@@ -10510,6 +11251,165 @@ fn occupancy_names_equal(left: &str, right: &str, case_sensitive: bool) -> bool 
 /// outside the verified target root.
 fn is_single_path_component(value: &str) -> bool {
     !value.is_empty() && value != "." && value != ".." && !value.contains(['\0', '/', '\\', ':'])
+}
+
+/// Builds the registered-target index from database facts only.  Shared by
+/// the facade query path and the deployment backend's commit-time
+/// revalidation so both see exactly the same registered reality.
+fn registered_target_index(
+    database: &skillhub_storage::Database,
+    host_capabilities: &skillhub_core::DeploymentCapability,
+) -> AppResult<RegisteredTargetIndex> {
+    let mut facts = Vec::new();
+    let mut roots = Vec::new();
+    if let Some(snapshot) = database.agent_repository().load()? {
+        for target in snapshot.logical_targets {
+            if !target.available || !target.exists {
+                continue;
+            }
+            let path = PathBuf::from(&target.path);
+            let Ok(root) = AllowedRoot::new(&path) else {
+                continue;
+            };
+            roots.push(root);
+            facts.push(TargetFact::from_logical_target(
+                &target,
+                effective_target_capabilities(&target.client_id, host_capabilities),
+            ));
+        }
+    }
+    for project in database.project_repository().list()? {
+        let path = PathBuf::from(project.path());
+        let Ok(root) = AllowedRoot::new(&path) else {
+            continue;
+        };
+        roots.push(root);
+        facts.push(TargetFact::from_project(
+            &project,
+            host_capabilities.clone(),
+        ));
+    }
+    let policy = PathPolicy::from_roots(roots)?;
+    RegisteredTargetIndex::from_facts(facts, policy)
+}
+
+/// Database-backed occupancy attachment over already-verified targets; see
+/// [`LocalApplicationFacade::attach_target_occupancy`] for the semantics.
+fn attach_target_occupancy_with(
+    database: &skillhub_storage::Database,
+    runtime_name: &str,
+    targets: &mut [VerifiedTarget],
+) -> AppResult<()> {
+    let rows = database.deployment_repository().list_all()?;
+    for target in targets.iter_mut() {
+        let mut existing = Vec::new();
+        for row in &rows {
+            if row.target_id != target.physical_target_id()
+                || !row.managed
+                || !matches!(
+                    row.state,
+                    DeploymentState::Deployed | DeploymentState::NeedsRecovery
+                )
+                || !occupancy_names_equal(&row.runtime_name, runtime_name, target.case_sensitive())
+            {
+                continue;
+            }
+            existing.push(ExistingDeployment::managed(
+                row.runtime_name.clone(),
+                row.id,
+                row.skill_id,
+                row.version_id.clone(),
+            ));
+        }
+        if existing.is_empty()
+            && is_single_path_component(runtime_name)
+            && std::fs::symlink_metadata(Path::new(target.path()).join(runtime_name)).is_ok()
+        {
+            existing.push(ExistingDeployment::new(
+                runtime_name,
+                ExistingOwnership::Unknown,
+            ));
+        }
+        for entry in existing {
+            *target = target.clone().with_existing(entry);
+        }
+    }
+    Ok(())
+}
+
+/// How long a stored deployment preview stays committable.  Short by design:
+/// a preview is a snapshot of facts, not a standing permission.
+const DEPLOYMENT_PREVIEW_TTL_SECONDS: i64 = 900;
+
+/// Merged capabilities over one physical-target group; the planner applies
+/// the same all-targets rule when it selects a mode.
+fn merged_capabilities_of(targets: &[VerifiedTarget]) -> skillhub_core::DeploymentCapability {
+    skillhub_core::DeploymentCapability::new(
+        targets.iter().all(|target| target.capabilities().symlink),
+        targets.iter().all(|target| target.capabilities().junction),
+        targets.iter().all(|target| target.capabilities().copy),
+    )
+}
+
+/// Best-effort user-facing target label: the discovery snapshot's Agent
+/// client for agent targets, the project name for project targets, and the
+/// logical id only as a last resort for targets that never resolved.
+fn batch_target_label(
+    discovery_targets: &[skillhub_core::LogicalTarget],
+    projects: &[skillhub_core::Project],
+    logical_id: &str,
+) -> String {
+    if let Some(target) = discovery_targets
+        .iter()
+        .find(|target| target.id == logical_id)
+    {
+        return target.client_id.clone();
+    }
+    if let Some(project) = projects
+        .iter()
+        .find(|project| project.id.to_string() == logical_id)
+    {
+        return project.name.clone();
+    }
+    logical_id.to_owned()
+}
+
+fn pair_result(
+    pair: &skillhub_core::api::DeploymentPairPreview,
+    outcome: skillhub_core::api::DeploymentPairCommitOutcome,
+    operation_id: Option<OperationId>,
+    error: Option<skillhub_core::TargetOperationError>,
+) -> skillhub_core::api::DeploymentPairCommitResult {
+    skillhub_core::api::DeploymentPairCommitResult {
+        pair_id: pair.pair_id.clone(),
+        outcome,
+        operation_id,
+        error,
+    }
+}
+
+/// Deterministic idempotency key for one preview commit: the preview id plus
+/// the sorted per-pair decision set.  Text, not a hash, so a recorded key
+/// stays readable in diagnostics.
+fn preview_commit_key(request: &skillhub_core::api::CommitDeploymentPreview) -> String {
+    let mut entries = request
+        .pairs
+        .iter()
+        .map(|pair| {
+            format!(
+                "{}|confirm:{}|exclude:{}",
+                pair.pair_id, pair.confirm_fallback, pair.exclude
+            )
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    format!("{}\n{}", request.preview_id, entries.join("\n"))
+}
+
+fn target_changed_error(detail: impl Into<String>) -> AppError {
+    AppError::new(ErrorCode::TargetChanged, Severity::Error)
+        .with_param("detail", detail.into())
+        .with_action(RecoveryAction::Retry)
 }
 
 fn journal_record(

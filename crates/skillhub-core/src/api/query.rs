@@ -408,6 +408,76 @@ pub struct GetDeploymentPlan {
     pub request: DeploymentPlanRequest,
 }
 
+/// One Skill × target-selection group inside a batch deployment preview.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentBatchPreviewRequestItem {
+    pub skill_id: SkillId,
+    /// Explicit version; `None` resolves the Skill's current library version.
+    pub version_id: Option<VersionId>,
+    /// Explicit runtime name; `None` resolves the version's declared name.
+    pub runtime_name: Option<String>,
+    pub logical_target_ids: Vec<String>,
+    pub preference: crate::deployment::DeploymentPreference,
+}
+
+/// Side-effect-free batch deployment preview request.  The client names
+/// Skills, targets and a preference; confirmations map a pair id to the
+/// confirmation fingerprint the client still holds, and exclusions list pair
+/// ids the user removed from the batch.  Everything else stays server-owned.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetDeploymentBatchPreview {
+    pub items: Vec<DeploymentBatchPreviewRequestItem>,
+    #[serde(default)]
+    pub confirmations: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub exclusions: Vec<String>,
+}
+
+/// One Skill × physical-target pair of a batch deployment preview.  Pair ids
+/// are stable UI identity derived from the Skill and the physical target;
+/// they never authorize anything by themselves.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentPairPreview {
+    pub pair_id: String,
+    pub skill_id: SkillId,
+    pub skill_display_name: String,
+    pub version_id: VersionId,
+    pub runtime_name: String,
+    pub logical_target_ids: Vec<String>,
+    pub target_label: String,
+    pub target_path: String,
+    pub destination_path: String,
+    pub preference: crate::deployment::DeploymentPreference,
+    pub disposition: crate::deployment::DeploymentPreviewDisposition,
+    pub mode: Option<DeploymentMode>,
+    pub fallback_mode: Option<DeploymentMode>,
+    pub block_reason: Option<crate::deployment::DeploymentBlockReason>,
+    pub warnings: Vec<String>,
+    /// `true` when a client-held confirmation still matches the recomputed
+    /// fingerprint.  The frontend never compares fingerprints itself.
+    pub confirmation_preserved: bool,
+    pub confirmation_fingerprint: String,
+    /// Original failure code and safe parameters for the technical-details
+    /// area only; the user-facing reason is `block_reason`.
+    pub technical_error: Option<crate::application::TargetOperationError>,
+}
+
+/// The server-owned result of a batch deployment preview.  `preview_id`
+/// names the stored snapshot a later commit must reference.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentBatchPreview {
+    pub preview_id: String,
+    /// RFC-3339 UTC instant after which the snapshot is refused.
+    pub expires_at: String,
+    pub pairs: Vec<DeploymentPairPreview>,
+    /// Pair ids whose client-held confirmation stayed valid.
+    pub preserved_confirmation_ids: Vec<String>,
+}
+
 /// A registered logical filesystem target available for deployment selection.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
@@ -862,6 +932,8 @@ pub enum AppQuery {
     AnalyzeGlobalSkillEvidence(AnalyzeGlobalSkillEvidence),
     #[serde(rename = "get_deployment_plan")]
     GetDeploymentPlan(GetDeploymentPlan),
+    #[serde(rename = "get_deployment_batch_preview")]
+    GetDeploymentBatchPreview(GetDeploymentBatchPreview),
     #[serde(rename = "list_deployment_targets")]
     ListDeploymentTargets(ListDeploymentTargets),
     #[serde(rename = "list_deployments")]
@@ -975,6 +1047,8 @@ pub enum AppQueryResult {
     RepoDiscoveryReport(crate::source::RepoDiscoveryReport),
     #[serde(rename = "deployment_plan")]
     DeploymentPlan(DeploymentPlan),
+    #[serde(rename = "deployment_batch_preview")]
+    DeploymentBatchPreview(DeploymentBatchPreview),
     #[serde(rename = "deployment_targets")]
     DeploymentTargets(Vec<DeploymentTarget>),
     #[serde(rename = "deployments")]

@@ -46,9 +46,49 @@ pub struct OwnershipProof {
 #[derive(Clone, Debug, Default)]
 pub struct DeploymentFilesystem;
 
+/// Stable cause for unavailable directory links, decided at probe time so
+/// user-facing reasons never parse OS messages after the fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkUnavailableCause {
+    /// The account may not create directory links (e.g. missing Windows
+    /// symlink privilege or developer mode).
+    Permission,
+    /// The filesystem or platform cannot host directory links.
+    Filesystem,
+}
+
 impl DeploymentFilesystem {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Probes why directory links are unavailable on this host, mirroring
+    /// [`Self::available_capabilities`].  `None` when a link can be created.
+    pub fn link_unavailability_cause(&self) -> Option<LinkUnavailableCause> {
+        let workspace = tempfile::tempdir().ok()?;
+        let source = workspace.path().join("source");
+        let destination = workspace.path().join("destination");
+        if fs::create_dir(&source).is_err() {
+            return Some(LinkUnavailableCause::Filesystem);
+        }
+        match symlink::create_dir_link(&source, &destination) {
+            Ok(()) => {
+                let materialized = fs::symlink_metadata(&destination)
+                    .map(|metadata| metadata.file_type().is_symlink())
+                    .unwrap_or(false);
+                if fs::symlink_metadata(&destination).is_ok() {
+                    let _ = symlink::remove_dir_link(&destination);
+                }
+                if materialized {
+                    None
+                } else {
+                    // A creation that reports success without materializing
+                    // (filtered or virtualized volumes) is "unsupported".
+                    Some(LinkUnavailableCause::Filesystem)
+                }
+            }
+            Err(error) => Some(classify_link_error(&error)),
+        }
     }
 
     /// Checks the running account's ability to create directory links without
@@ -440,4 +480,11 @@ fn io_error(error: io::Error) -> AppError {
         .with_param("io_kind", format!("{:?}", error.kind()))
         .with_param("detail", error.to_string())
         .with_action(RecoveryAction::Retry)
+}
+
+fn classify_link_error(error: &io::Error) -> LinkUnavailableCause {
+    match error.kind() {
+        io::ErrorKind::PermissionDenied => LinkUnavailableCause::Permission,
+        _ => LinkUnavailableCause::Filesystem,
+    }
 }

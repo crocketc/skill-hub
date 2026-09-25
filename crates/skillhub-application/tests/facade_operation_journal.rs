@@ -5,6 +5,10 @@
 //! no journal row is ever fabricated by hand.
 
 use skillhub_application::LocalApplicationFacade;
+use skillhub_core::agent::{
+    ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
+    LogicalTarget, OperatingSystem, TargetScope,
+};
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CreateIgnoreRule, CreateSkill,
     PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveSkillContent,
@@ -15,9 +19,47 @@ use skillhub_core::import::ImportCandidate;
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     AppCommand, AppQuery, ApplicationFacade, CommitImport, ErrorCode, ImportDecision,
-    OperationPhase, RecentOperationSummary, StartupRecoveryState, VersionId,
+    OperationPhase, RecentOperationSummary, StartupRecoveryState,
 };
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
+
+/// Registers one Agent target through the public discovery repository so
+/// commit-time revalidation sees the same registered facts the plan used.
+fn seed_registered_target(database: &Database, path: &std::path::Path, logical_id: &str) -> String {
+    let physical_id = skillhub_core::physical_id_for_path(path).expect("target identity");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-24T00:00:00Z".into(),
+            instances: vec![ClientInstance {
+                profile_id: "fixture".into(),
+                client_id: logical_id.into(),
+                kind: ClientKind::Cli,
+                display_name: "Fixture".into(),
+                supported_os: vec![OperatingSystem::Windows],
+                client_presence: ClientPresence::Unknown,
+            }],
+            logical_targets: vec![LogicalTarget {
+                id: logical_id.into(),
+                profile_id: "fixture".into(),
+                client_id: logical_id.into(),
+                scope: TargetScope::Global,
+                path: path.to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: physical_id.clone(),
+            }],
+            physical_targets: Vec::new(),
+        })
+        .expect("seed registered target");
+    physical_id
+}
 
 async fn recent_operations(facade: &LocalApplicationFacade) -> Vec<RecentOperationSummary> {
     let result = facade
@@ -311,10 +353,13 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
     let source = tempfile::tempdir().expect("source");
     std::fs::write(source.path().join("SKILL.md"), "# Retryable\n").expect("write source");
     let target = tempfile::tempdir().expect("target");
-    let version_id =
-        VersionId::parse("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-            .expect("version id");
-    let target_id = skillhub_core::physical_id_for_path(target.path()).expect("target id");
+    let library_root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let version_id = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version")
+        .id;
+    let target_id = seed_registered_target(&database, target.path(), "agent-codex");
     database
         .connection_for_test()
         .execute(
@@ -329,7 +374,7 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
             rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
         )
         .expect("insert target fixture");
-    let missing_parent = target.path().join("not-ready");
+    let destination = target.path().join("retryable");
     let plan = DeploymentPlan {
         skill_id: skill.id(),
         version_id: version_id.clone(),
@@ -340,11 +385,8 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
         targets: vec![TargetPlan {
             physical_target_id: target_id,
             logical_target_ids: vec!["agent-codex".into()],
-            target_path: missing_parent.to_string_lossy().into_owned(),
-            destination_path: missing_parent
-                .join("retryable")
-                .to_string_lossy()
-                .into_owned(),
+            target_path: target.path().to_string_lossy().into_owned(),
+            destination_path: destination.to_string_lossy().into_owned(),
             source_path: source.path().to_string_lossy().into_owned(),
             runtime_name: "retryable".into(),
             skill_id: skill.id(),
@@ -355,8 +397,6 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
             conflicts: Vec::new(),
         }],
     };
-    let library_root = tempfile::tempdir().expect("library root");
-    CentralLibrary::initialize(library_root.path()).expect("central library");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
 
     let prepared = facade
@@ -366,6 +406,9 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
     let AppCommandResult::PreparedDeployment(prepared) = prepared else {
         panic!("expected prepared deployment");
     };
+    // A plain file at the destination stops the copy but leaves every planning
+    // fact intact once removed, so the retry reuses the same prepared record.
+    std::fs::write(&destination, "occupied").expect("plant destination obstruction");
     let operations = recent_operations(&facade).await;
     let prepared_record = operations
         .iter()
@@ -402,7 +445,7 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
         "a failure that left no residue must not gate the next launch"
     );
 
-    std::fs::create_dir_all(&missing_parent).expect("repair target");
+    std::fs::remove_file(&destination).expect("clear destination obstruction");
     let retried = facade
         .execute(AppCommand::CommitDeployment(CommitDeployment {
             prepared_deployment_id: prepared.id,

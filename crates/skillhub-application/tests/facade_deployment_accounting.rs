@@ -32,8 +32,7 @@ struct Harness {
 /// `targets` row, a real captured version manifest.
 async fn harness(client_id: &str, markdown_name: &str) -> Harness {
     let database_dir = tempfile::tempdir().expect("database dir");
-    let database =
-        Database::open(database_dir.path().join("skillhub.sqlite")).expect("database");
+    let database = Database::open(database_dir.path().join("skillhub.sqlite")).expect("database");
     let skill = Skill::new(skillhub_core::SkillId::new(), "Demo");
     database
         .catalog_repository()
@@ -177,7 +176,9 @@ async fn commit(harness: &Harness, plan: skillhub_core::DeploymentPlan) -> Commi
 async fn undeploy(harness: &Harness, deployment_id: skillhub_core::DeploymentId) {
     let prepared = harness
         .facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy { deployment_id }))
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id,
+        }))
         .await
         .expect("prepare undeploy");
     let AppCommandResult::RemovalImpact(impact) = prepared else {
@@ -243,7 +244,10 @@ async fn deployment_commit_records_full_accounting_without_seeded_targets() {
     commit(&harness, plan).await;
 
     let deployed = harness.target_root.path().join("find-skills");
-    assert!(deployed.join("SKILL.md").is_file(), "managed copy must land");
+    assert!(
+        deployed.join("SKILL.md").is_file(),
+        "managed copy must land"
+    );
 
     let staging_root = harness
         .library_root
@@ -325,8 +329,7 @@ async fn claude_code_target_follows_host_capabilities_for_link_selection() {
         panic!("expected deployment plan");
     };
     assert_eq!(plan.targets.len(), 1);
-    let host = skillhub_adapters::deployment::DeploymentFilesystem::new()
-        .available_capabilities();
+    let host = skillhub_adapters::deployment::DeploymentFilesystem::new().available_capabilities();
     let declared = skillhub_core::DeploymentCapability::new(true, true, true);
     let expected = DeploymentMode::select(&skillhub_core::DeploymentCapability::new(
         declared.symlink && host.symlink,
@@ -387,12 +390,11 @@ async fn deployment_plan_blocks_when_folder_name_differs_from_frontmatter_name()
 async fn matching_names_produce_no_name_warning() {
     let harness = harness("anthropic.claude-code", "find-skills").await;
     let plan = managed_copy_plan(&harness).await;
-    assert!(
-        !plan.warnings
-            .iter()
-            .chain(plan.targets[0].warnings.iter())
-            .any(|warning| warning == "deployment.name_mismatch")
-    );
+    assert!(!plan
+        .warnings
+        .iter()
+        .chain(plan.targets[0].warnings.iter())
+        .any(|warning| warning == "deployment.name_mismatch"));
 }
 
 /// D-14/R-11 regression: removing a deployment only marks its row `removed`,
@@ -420,7 +422,10 @@ async fn re_adding_a_removed_skill_reuses_the_same_position() {
         panic!("expected deployment records");
     };
     undeploy(&harness, records[0].id).await;
-    assert!(!deployed.exists(), "undeploy must remove the tenant directory");
+    assert!(
+        !deployed.exists(),
+        "undeploy must remove the tenant directory"
+    );
     assert_eq!(deployment_rows(&harness)[0].1, "removed");
 
     let second = commit(&harness, managed_copy_plan(&harness).await).await;
@@ -463,8 +468,14 @@ async fn a_rejected_deployment_is_terminal_and_keeps_startup_clean() {
     std::fs::write(occupied.join("SKILL.md"), "# foreign\n").expect("foreign file");
 
     let outcome = commit_outcome(&harness, plan).await;
-    assert!(!outcome.committed, "an occupied destination rejects the add");
-    assert_eq!(outcome.error_codes, vec![Some("deployment.target_exists".into())]);
+    assert!(
+        !outcome.committed,
+        "an occupied destination rejects the add"
+    );
+    assert_eq!(
+        outcome.error_codes,
+        vec![Some("deployment.target_exists".into())]
+    );
 
     assert_eq!(
         std::fs::read_to_string(occupied.join("SKILL.md")).expect("foreign file survives"),
@@ -539,7 +550,10 @@ async fn a_storage_failure_rolls_back_the_written_target() {
         .expect("inject storage failure");
 
     let outcome = commit_outcome(&harness, managed_copy_plan(&harness).await).await;
-    assert!(!outcome.committed, "the injected failure must fail the commit");
+    assert!(
+        !outcome.committed,
+        "the injected failure must fail the commit"
+    );
     assert!(
         !deployed.exists(),
         "a failed commit must not leave the written target behind"
@@ -607,10 +621,12 @@ async fn rolling_back_recovery_removes_the_recorded_target() {
 
     harness
         .facade
-        .execute(AppCommand::ResolveRecovery(skillhub_core::ResolveRecovery {
-            operation_id,
-            action: RecoveryAction::RollbackOperation,
-        }))
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: RecoveryAction::RollbackOperation,
+            },
+        ))
         .await
         .expect("rollback the candidate");
 
@@ -708,4 +724,683 @@ async fn replanning_after_undeploy_offers_a_clean_readd() {
         plan.conflicts
     );
     assert_eq!(plan.targets[0].change, TargetChange::Create);
+}
+
+// ---------------------------------------------------------------------------
+// Task 13B: server-owned batch preview.  The client only ever names Skills,
+// targets and a preference; every fact, the disposition and the final
+// DeploymentPlan stay server-owned.  Commit carries a preview id plus per-pair
+// fallback confirmations and exclusions, and the backend re-plans everything.
+// ---------------------------------------------------------------------------
+
+use skillhub_core::agent::DeploymentCapability;
+use skillhub_core::api::{
+    CommitDeploymentPreview, CommitDeploymentPreviewPair, DeploymentBatchPreview,
+    DeploymentBatchPreviewRequestItem, DeploymentPairCommitOutcome, DeploymentPairPreview,
+    DeploymentPreviewCommitResult, GetDeploymentBatchPreview,
+};
+use skillhub_core::deployment::{
+    DeploymentBlockReason, DeploymentPreference, DeploymentPreviewDisposition,
+};
+
+struct TargetedHarness {
+    facade: LocalApplicationFacade,
+    database_dir: tempfile::TempDir,
+    #[allow(dead_code)]
+    library_root: tempfile::TempDir,
+    target_root: tempfile::TempDir,
+    skill: Skill,
+    second_skill: Skill,
+    version_id: skillhub_core::VersionId,
+    second_version_id: skillhub_core::VersionId,
+}
+
+/// A production facade with an injected registered-target index, so preview
+/// outcomes never depend on the host's own link privileges.  Two logical ids
+/// point at the same physical directory and a second Skill is captured.
+async fn targeted_harness(
+    capabilities: DeploymentCapability,
+    shared_reference: bool,
+) -> TargetedHarness {
+    use skillhub_core::deployment::{RegisteredTargetIndex, TargetFact, TargetFactSource};
+    use skillhub_core::{AllowedRoot, PathPolicy};
+
+    let database_dir = tempfile::tempdir().expect("database dir");
+    let database = Database::open(database_dir.path().join("skillhub.sqlite")).expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Demo");
+    let second_skill = Skill::new(skillhub_core::SkillId::new(), "Second");
+    let catalog = database.catalog_repository().expect("catalog repository");
+    catalog.insert(&skill).await.expect("insert skill");
+    catalog.insert(&second_skill).await.expect("insert second");
+
+    let library_root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let mut version_ids = Vec::new();
+    for current in [&skill, &second_skill] {
+        let source = tempfile::tempdir().expect("source");
+        std::fs::write(
+            source.path().join("SKILL.md"),
+            skill_markdown("find-skills"),
+        )
+        .expect("write skill markdown");
+        let version = VersionStore::from_library(&library)
+            .capture(current.id(), source.path())
+            .expect("capture");
+        library
+            .save_portable_skill(current, Some(&version.id))
+            .expect("register current version");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+                rusqlite::params![version.id.to_string(), current.id().to_string()],
+            )
+            .expect("insert version row");
+        version_ids.push(version.id);
+    }
+
+    let target_root = tempfile::tempdir().expect("target root");
+    let physical_id =
+        skillhub_core::physical_id_for_path(target_root.path()).expect("target identity");
+    let policy = PathPolicy::from_roots([AllowedRoot::new(target_root.path()).unwrap()]).unwrap();
+    let mut facts = Vec::new();
+    for logical_id in ["claude-global", "codex-global"] {
+        facts.push(
+            TargetFact::registered(
+                logical_id,
+                target_root.path(),
+                physical_id.clone(),
+                TargetFactSource::Discovery,
+                capabilities.clone(),
+            )
+            .with_case_sensitive(!cfg!(windows)),
+        );
+    }
+    if shared_reference {
+        // The registered shared-directory entry other agents read; the
+        // preview must treat deployment here as a shared-impact question.
+        let snapshot = skillhub_core::DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-09-24T00:00:00Z".into(),
+            instances: Vec::new(),
+            logical_targets: vec![skillhub_core::LogicalTarget {
+                id: "claude-global".into(),
+                profile_id: "agent-skills".into(),
+                client_id: "agent-skills.directory".into(),
+                scope: skillhub_core::TargetScope::Global,
+                path: target_root.path().to_string_lossy().into_owned(),
+                marker: "SKILL.md".into(),
+                precedence: skillhub_core::DirectoryPrecedence::Preferred,
+                shared_reference: true,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: physical_id.clone(),
+            }],
+            physical_targets: Vec::new(),
+        };
+        database
+            .agent_repository()
+            .replace(&snapshot)
+            .expect("save shared discovery");
+    }
+    let index = RegisteredTargetIndex::from_facts(facts, policy).expect("target index");
+    let facade =
+        LocalApplicationFacade::new_with_library_and_targets(database, library_root.path(), index);
+    TargetedHarness {
+        facade,
+        database_dir,
+        library_root,
+        target_root,
+        skill,
+        second_skill,
+        version_id: version_ids[0].clone(),
+        second_version_id: version_ids[1].clone(),
+    }
+}
+
+async fn batch_preview(
+    harness: &TargetedHarness,
+    items: Vec<DeploymentBatchPreviewRequestItem>,
+) -> DeploymentBatchPreview {
+    batch_preview_with_confirmations(harness, items, []).await
+}
+
+async fn batch_preview_with_confirmations(
+    harness: &TargetedHarness,
+    items: Vec<DeploymentBatchPreviewRequestItem>,
+    confirmations: impl IntoIterator<Item = (String, String)>,
+) -> DeploymentBatchPreview {
+    let response = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentBatchPreview(
+            GetDeploymentBatchPreview {
+                items,
+                confirmations: confirmations.into_iter().collect(),
+                exclusions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("batch preview");
+    let AppQueryResult::DeploymentBatchPreview(preview) = response else {
+        panic!("expected a deployment batch preview");
+    };
+    preview
+}
+
+fn find_pair<'a>(
+    preview: &'a DeploymentBatchPreview,
+    skill_id: &skillhub_core::SkillId,
+    logical_id: &str,
+) -> &'a DeploymentPairPreview {
+    preview
+        .pairs
+        .iter()
+        .find(|pair| {
+            pair.skill_id == *skill_id && pair.logical_target_ids.iter().any(|id| id == logical_id)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "pair for {logical_id} missing: {:?}",
+                preview
+                    .pairs
+                    .iter()
+                    .map(|pair| pair.pair_id.clone())
+                    .collect::<Vec<_>>()
+            )
+        })
+}
+
+fn item(
+    skill_id: skillhub_core::SkillId,
+    version_id: Option<skillhub_core::VersionId>,
+    logical_target_ids: &[&str],
+    preference: DeploymentPreference,
+) -> DeploymentBatchPreviewRequestItem {
+    DeploymentBatchPreviewRequestItem {
+        skill_id,
+        version_id,
+        runtime_name: Some("find-skills".into()),
+        logical_target_ids: logical_target_ids.iter().map(|id| id.to_string()).collect(),
+        preference,
+    }
+}
+
+async fn commit_preview(
+    harness: &TargetedHarness,
+    preview_id: &str,
+    pairs: Vec<CommitDeploymentPreviewPair>,
+) -> DeploymentPreviewCommitResult {
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview_id.into(),
+                pairs,
+            },
+        ))
+        .await
+        .expect("commit deployment preview");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected a deployment preview commit result");
+    };
+    result
+}
+
+fn fallback_pair(pair_id: &str, confirm: bool, exclude: bool) -> CommitDeploymentPreviewPair {
+    CommitDeploymentPreviewPair {
+        pair_id: pair_id.into(),
+        confirm_fallback: confirm,
+        exclude,
+    }
+}
+
+fn deployment_rows_accounting(harness: &TargetedHarness) -> Vec<(String, String, String)> {
+    let connection = rusqlite::Connection::open_with_flags(
+        harness.database_dir.path().join("skillhub.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("read connection");
+    let mut statement = connection
+        .prepare("SELECT id,state,runtime_name FROM deployments ORDER BY id")
+        .expect("deployments statement");
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .expect("deployments rows");
+    rows.map(|row| row.expect("deployment row")).collect()
+}
+
+/// 13.6: every Skill x target pair is reported on its own; one pair's failure
+/// never hides another pair of the same Skill, and several logical targets on
+/// one physical directory collapse into one pair.
+#[tokio::test]
+async fn batch_preview_reports_each_pair_independently_and_dedupes_physical_targets() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let preview = batch_preview(
+        &harness,
+        vec![
+            item(
+                harness.skill.id(),
+                Some(harness.version_id.clone()),
+                &["claude-global", "codex-global"],
+                DeploymentPreference::Automatic,
+            ),
+            item(
+                harness.skill.id(),
+                Some(harness.version_id.clone()),
+                &["not-registered"],
+                DeploymentPreference::Automatic,
+            ),
+            item(
+                harness.second_skill.id(),
+                Some(harness.second_version_id.clone()),
+                &["not-registered"],
+                DeploymentPreference::Automatic,
+            ),
+        ],
+    )
+    .await;
+
+    assert!(!preview.preview_id.is_empty());
+    assert!(
+        preview.pairs.len() == 3,
+        "physical duplicates collapse, failures stay visible: {:?}",
+        preview
+            .pairs
+            .iter()
+            .map(|pair| pair.pair_id.clone())
+            .collect::<Vec<_>>()
+    );
+
+    let healthy = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.skill.id() && pair.logical_target_ids.len() == 2)
+        .expect("merged physical pair");
+    assert_eq!(
+        healthy.disposition,
+        DeploymentPreviewDisposition::SelectedMode
+    );
+    assert_eq!(healthy.mode, Some(DeploymentMode::SymbolicLink));
+    assert_eq!(healthy.block_reason, None);
+    assert_eq!(
+        healthy.target_path,
+        harness.target_root.path().to_string_lossy()
+    );
+
+    let failed = find_pair(&preview, &harness.skill.id(), "not-registered");
+    assert_eq!(failed.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        failed.block_reason,
+        Some(DeploymentBlockReason::PathUnavailable)
+    );
+    assert!(
+        failed.technical_error.is_some(),
+        "the original failure stays available for the technical details area"
+    );
+
+    let second = find_pair(&preview, &harness.second_skill.id(), "not-registered");
+    assert_eq!(second.disposition, DeploymentPreviewDisposition::Blocked);
+}
+
+/// 13.12: the application resolves the Skill's current version and declared
+/// runtime name when the request does not pin them.
+#[tokio::test]
+async fn batch_preview_resolves_current_version_and_runtime_name_server_side() {
+    let harness = targeted_harness(DeploymentCapability::new(true, true, true), false).await;
+    let mut request_item = item(
+        harness.skill.id(),
+        None,
+        &["claude-global"],
+        DeploymentPreference::Automatic,
+    );
+    request_item.runtime_name = None;
+    let preview = batch_preview(&harness, vec![request_item]).await;
+
+    let pair = &preview.pairs[0];
+    assert_eq!(pair.version_id, harness.version_id);
+    assert_eq!(pair.runtime_name, "find-skills");
+    assert_eq!(pair.skill_display_name, "Demo");
+}
+
+/// 13.7: an explicit Link preference on a copy-only target recommends a copy;
+/// only the confirmed fallback replans to a real ManagedCopy deployment.
+#[tokio::test]
+async fn confirmed_copy_fallback_commits_through_a_replanned_managed_copy() {
+    let harness = targeted_harness(DeploymentCapability::new(false, false, true), false).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Link,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global").clone();
+    assert_eq!(
+        pair.disposition,
+        DeploymentPreviewDisposition::RecommendCopy
+    );
+    assert_eq!(pair.fallback_mode, Some(DeploymentMode::ManagedCopy));
+    assert!(!pair.confirmation_preserved);
+
+    // Re-previewing with the held confirmation marks it preserved: the facts
+    // did not move since the fingerprint was minted.  This must happen before
+    // the commit, whose own deployment changes the facts.
+    let again = batch_preview_with_confirmations(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Link,
+        )],
+        [(pair.pair_id.clone(), pair.confirmation_fingerprint.clone())],
+    )
+    .await;
+    let rechecked = find_pair(&again, &harness.skill.id(), "claude-global");
+    assert!(
+        rechecked.confirmation_preserved,
+        "unchanged facts keep the confirmation valid"
+    );
+
+    let result = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, true, false)],
+    )
+    .await;
+    assert_eq!(result.pairs.len(), 1);
+    assert_eq!(
+        result.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Deployed
+    );
+    assert!(result.pairs[0].operation_id.is_some());
+    assert!(!result.replayed);
+    assert_eq!(deployment_rows_accounting(&harness).len(), 1);
+
+    // After the deployment the facts moved, so the same held confirmation no
+    // longer matches: the backend says so instead of trusting the client.
+    let after = batch_preview_with_confirmations(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Link,
+        )],
+        [(pair.pair_id.clone(), pair.confirmation_fingerprint.clone())],
+    )
+    .await;
+    let invalidated = find_pair(&after, &harness.skill.id(), "claude-global");
+    assert!(
+        !invalidated.confirmation_preserved,
+        "a deployed pair invalidates the held confirmation"
+    );
+}
+
+/// 13.8: a RecommendCopy pair without an explicit confirmation never reaches
+/// prepare, and facts that moved since the preview refuse the old snapshot.
+#[tokio::test]
+async fn unconfirmed_or_stale_copy_fallback_never_touches_the_filesystem() {
+    let harness = targeted_harness(DeploymentCapability::new(false, false, true), false).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Link,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global").clone();
+
+    let unconfirmed = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, false, false)],
+    )
+    .await;
+    assert_eq!(
+        unconfirmed.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Blocked
+    );
+    assert!(deployment_rows_accounting(&harness).is_empty());
+
+    // The destination gets occupied after the preview: the stale snapshot
+    // must refuse the commit instead of replaying stale facts.
+    let occupied = harness.target_root.path().join("find-skills");
+    std::fs::create_dir_all(&occupied).expect("foreign directory");
+    let stale = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, true, false)],
+    )
+    .await;
+    assert_eq!(stale.pairs[0].outcome, DeploymentPairCommitOutcome::Blocked);
+    assert_eq!(
+        stale.pairs[0]
+            .error
+            .as_ref()
+            .expect("stale fingerprint reports the cause")
+            .code,
+        skillhub_core::ErrorCode::TargetChanged
+    );
+    assert!(
+        std::fs::symlink_metadata(&occupied).is_ok(),
+        "the foreign directory survives"
+    );
+    assert!(deployment_rows_accounting(&harness).is_empty());
+}
+
+/// 13.8 + 13.10: forged previews are refused, an identical commit replays its
+/// recorded result, and a consumed snapshot cannot run a second batch.
+#[tokio::test]
+async fn forged_unknown_or_replayed_preview_commits_are_refused() {
+    // ManagedCopy is the one form every host can actually write, so the
+    // committed pair's outcome never depends on local link privileges.
+    let harness = targeted_harness(DeploymentCapability::new(false, false, true), false).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Copy,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global").clone();
+    assert_eq!(pair.disposition, DeploymentPreviewDisposition::SelectedMode);
+    assert_eq!(pair.mode, Some(DeploymentMode::ManagedCopy));
+
+    let forged = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: "forged-preview-id".into(),
+                pairs: vec![fallback_pair("forged-pair", false, false)],
+            },
+        ))
+        .await;
+    assert!(forged.is_err(), "an unknown preview id is rejected");
+
+    let first = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, false, false)],
+    )
+    .await;
+    assert_eq!(
+        first.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Deployed
+    );
+
+    // The identical commit replays the recorded result instead of re-running.
+    let replay = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, false, false)],
+    )
+    .await;
+    assert!(replay.replayed);
+    assert_eq!(replay.pairs, first.pairs);
+    assert_eq!(deployment_rows_accounting(&harness).len(), 1);
+
+    // The snapshot is consumed: any further batch on it is refused.
+    let consumed = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id.clone(),
+                pairs: vec![fallback_pair(&pair.pair_id, false, true)],
+            },
+        ))
+        .await;
+    assert!(
+        consumed.is_err(),
+        "a consumed snapshot refuses further commits"
+    );
+
+    // Unknown pair ids inside a known preview are forgeries too.
+    let second = batch_preview(
+        &harness,
+        vec![item(
+            harness.second_skill.id(),
+            Some(harness.second_version_id.clone()),
+            &["codex-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let forged_pair = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: second.preview_id.clone(),
+                pairs: vec![fallback_pair("not-a-real-pair", false, false)],
+            },
+        ))
+        .await;
+    assert!(forged_pair.is_err(), "unknown pair ids are rejected");
+}
+
+/// 13.14: LocalDeploymentBackend::revalidate really re-checks registered
+/// targets, occupancy and capabilities before the prepared plan is applied.
+#[tokio::test]
+async fn commit_revalidates_registered_facts_and_refuses_stale_plans() {
+    let harness = targeted_harness(DeploymentCapability::new(true, true, true), false).await;
+    let planned = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::deployment::DeploymentPlanRequest {
+                skill_id: harness.skill.id(),
+                version_id: harness.version_id.clone(),
+                runtime_name: "find-skills".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = planned else {
+        panic!("expected deployment plan");
+    };
+    let prepared = harness
+        .facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+
+    // A foreign directory appears between prepare and commit: the stale plan
+    // must be refused instead of overwriting it.
+    let occupied = harness.target_root.path().join("find-skills");
+    std::fs::create_dir_all(&occupied).expect("foreign directory");
+    let refused = harness
+        .facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("a refused commit is a rolled-back operation, not a crash");
+    let AppCommandResult::DeploymentSummary(refused) = refused else {
+        panic!("expected a refused deployment summary");
+    };
+    assert!(!refused.committed);
+    assert_eq!(
+        refused.targets[0].error_code.as_deref(),
+        Some("deployment.target_exists"),
+        "the re-planned conflict surfaces as the refusing reason"
+    );
+    assert!(
+        std::fs::read_dir(&occupied)
+            .expect("foreign directory survives")
+            .next()
+            .is_none(),
+        "the refused commit writes nothing into the foreign directory"
+    );
+    assert!(deployment_rows_accounting(&harness).is_empty());
+
+    // Once the obstruction is gone the very same prepared plan commits.
+    std::fs::remove_dir_all(&occupied).expect("clear obstruction");
+    let committed = harness
+        .facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("commit after the obstruction is cleared");
+    let AppCommandResult::DeploymentSummary(summary) = committed else {
+        panic!("expected deployment summary");
+    };
+    assert!(summary.committed, "failures: {:?}", summary.targets);
+    assert_eq!(deployment_rows_accounting(&harness).len(), 1);
+}
+
+/// 13.4: a shared directory that other agents read blocks the pair until the
+/// shared-impact question is resolved, for every preference.
+#[tokio::test]
+async fn shared_directory_pairs_block_until_shared_impact_is_resolved() {
+    let harness = targeted_harness(DeploymentCapability::new(true, true, true), true).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    assert_eq!(pair.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        pair.block_reason,
+        Some(DeploymentBlockReason::SharedImpactRequiresResolution)
+    );
+
+    let result = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![fallback_pair(&pair.pair_id, false, false)],
+    )
+    .await;
+    assert_eq!(
+        result.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Blocked
+    );
+    assert!(deployment_rows_accounting(&harness).is_empty());
 }

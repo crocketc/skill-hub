@@ -5,6 +5,7 @@ mod catalog_repository;
 mod check_repository;
 mod combination_repository;
 mod custom_agent_repository;
+mod deployment_preview_repository;
 mod deployment_repository;
 mod desktop_settings_repository;
 mod directory_repository;
@@ -49,6 +50,7 @@ pub use catalog_repository::CatalogRepositorySqlite;
 pub use check_repository::CheckRepositorySqlite;
 pub use combination_repository::CombinationRepository;
 pub use custom_agent_repository::CustomAgentRepository;
+pub use deployment_preview_repository::{DeploymentPreviewRepository, DeploymentPreviewSnapshot};
 pub use deployment_repository::{DeploymentRepository, DeploymentRepositorySqlite};
 pub use desktop_settings_repository::DesktopSettingsRepository;
 pub use directory_repository::DirectoryRepository;
@@ -245,6 +247,10 @@ impl Database {
 
     pub fn operation_repository(&self) -> OperationRepositorySqlite<'_> {
         OperationRepositorySqlite::new(self)
+    }
+
+    pub fn deployment_preview_repository(&self) -> DeploymentPreviewRepository<'_> {
+        DeploymentPreviewRepository::new(self)
     }
 
     pub fn deployment_repository(&self) -> DeploymentRepositorySqlite<'_> {
