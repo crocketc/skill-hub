@@ -1,3 +1,4 @@
+import type { AgentKindKey } from "../../ui/AgentPresentation";
 import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
 
 export type { RelationshipOverview, RemovalImpactFact };
@@ -26,6 +27,12 @@ export interface AgentView {
    * `.codex/skills/.system`）——只读观察，不参与部署/删除。
    */
   builtin?: boolean;
+  /**
+   * 2026-09-25 验收反馈：后端 discovery 快照的权威 ClientKind。展示层
+   * 不再从 id 字符串猜类型（pi.coding-agent 等不含关键词的 id 会被
+   * 猜成 unknown →「Agent」徽标）。
+   */
+  kinds?: AgentKindKey[];
   /** First official profile reference of a custom agent, when registered. */
   officialReference: string | null;
   relations: AgentRelation[];

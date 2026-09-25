@@ -33,7 +33,9 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
     const brand = normalizeBrandKey(agent.brand);
     const paths = [...new Set(agent.discoveredPaths.map(directoryKey).filter(Boolean))];
     const existingGroup = grouped.get(brand) ?? [];
-    const kind = inferAgentKindKey(agent.client, agent.instance);
+    // 权威 kind 在 AgentView.kinds（来自 discovery 快照的 ClientKind）；
+    // 字符串推断只作为旧数据缺 kinds 时的兜底。
+    const kind = agent.kinds?.[0] ?? inferAgentKindKey(agent.client, agent.instance);
     const existing = paths.length > 0
       ? existingGroup.find((card) => {
           const cardPaths = new Set(card.agent.discoveredPaths.map(directoryKey).filter(Boolean));
@@ -70,7 +72,7 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
   for (const agent of pathlessAgents) {
     const brand = normalizeBrandKey(agent.brand);
     const existingGroup = grouped.get(brand);
-    const kind = inferAgentKindKey(agent.client, agent.instance);
+    const kind = agent.kinds?.[0] ?? inferAgentKindKey(agent.client, agent.instance);
     const existing = existingGroup?.[0];
     if (existing) {
       existing.agents.push(agent);

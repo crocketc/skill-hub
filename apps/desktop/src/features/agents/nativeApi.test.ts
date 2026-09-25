@@ -110,6 +110,26 @@ it("maps discovered clients with availability status and active deployment count
   })]);
 });
 
+it("carries the authoritative ClientKind into the view instead of id-string guesses", async () => {
+  // 2026-09-25 验收反馈：pi.coding-agent / OpenClaw / Hermes 的 id 不含
+  // cli/headless 关键词，卡片此前只能显示「Agent」；kind 的权威事实在
+  // discovery 快照的 ClientKind 里，必须随视图传递。
+  query
+    .mockResolvedValueOnce({ type: "discovery_snapshot", payload: snapshotWithTarget({
+      targetId: "pi.coding-agent.user",
+      profileId: "pi",
+      clientId: "pi.coding-agent",
+    }) })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "deployments", payload: [] });
+  // snapshotWithTarget 固定 kind: "cli"；用 headless 客户端再断言一次透传。
+  const agents = await nativeAgentFacade.list();
+  expect(agents).toEqual([expect.objectContaining({
+    id: "pi.pi.coding-agent",
+    kinds: ["cli"],
+  })]);
+});
+
 it("marks agents whose directories exist but are unavailable as inaccessible", async () => {
   query
     .mockResolvedValueOnce({

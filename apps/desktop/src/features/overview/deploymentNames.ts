@@ -72,7 +72,7 @@ export function useOverviewDeploymentNames(
     }
     // 后端按 client_id 分组；同一客户端的多个实例（含内置只读视图）共享该
     // key，类型徽标取并集。
-    const kinds = [inferAgentKindKey(agent.client, agent.instance)];
+    const kinds = agent.kinds ?? [inferAgentKindKey(agent.client, agent.instance)];
     const fact: OverviewAgentName = {
       brand: normalizeBrandKey(agent.brand || agentBrandKey(agent.id || agent.client)),
       kinds,

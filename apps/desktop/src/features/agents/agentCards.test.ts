@@ -49,3 +49,29 @@ describe("countDiscoveredAgentCards", () => {
     expect(countDiscoveredAgentCards(agents)).toBe(1);
   });
 });
+
+describe("buildAgentCardViews kind presentation", () => {
+  it("uses the backend ClientKind instead of guessing from id strings", async () => {
+    // 2026-09-25 验收反馈：pi.coding-agent / OpenClaw / Hermes 的 id 不含
+    // cli/headless 等关键词，字符串推断落到 unknown，类型徽标显示「Agent」。
+    // 权威事实在 discovery 快照的 ClientKind 里，必须随 AgentView 传递。
+    const { buildAgentCardViews } = await import("./agentCards");
+    const agents: AgentView[] = [
+      agent({ id: "pi.coding-agent", brand: "Pi", client: "pi.coding-agent", kinds: ["cli"], discoveredPaths: ["C:/u/.pi/agent/skills"] }),
+      agent({ id: "openclaw.core", brand: "OpenClaw", client: "openclaw.core", kinds: ["headless"], discoveredPaths: ["C:/u/.agents/skills"] }),
+    ];
+
+    const cards = [...buildAgentCardViews(agents)].flatMap(([, group]) => group);
+    expect(cards.map((card) => card.kinds)).toEqual([["cli"], ["headless"]]);
+  });
+
+  it("keeps string inference as the fallback when kinds are absent", async () => {
+    const { buildAgentCardViews } = await import("./agentCards");
+    const agents: AgentView[] = [
+      agent({ id: "openai.codex-cli", brand: "OpenAI", client: "codex-cli", discoveredPaths: ["C:/u/.codex/skills"] }),
+    ];
+
+    const cards = [...buildAgentCardViews(agents)].flatMap(([, group]) => group);
+    expect(cards[0].kinds).toEqual(["cli"]);
+  });
+});

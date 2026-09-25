@@ -127,7 +127,7 @@ export function AgentDetailPage({
               state: {
                 deployTarget: {
                   id: agent.id,
-                  label: `${brandDisplayName(agent.brand)} · ${t(agentKindLabelKey(inferAgentKindKey(agent.client, agent.instance)) as never)}`,
+                  label: `${brandDisplayName(agent.brand)} · ${t(agentKindLabelKey(agent.kinds?.[0] ?? inferAgentKindKey(agent.client, agent.instance)) as never)}`,
                 },
               },
             })}
@@ -155,7 +155,7 @@ export function AgentDetailPage({
           <dt>{t("agents.detail.brand")}</dt>
           <dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></dd>
         </div>
-        <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} kinds={[inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
+        <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} kinds={agent.kinds ?? [inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
         <div>
           <dt>{t("agents.pathLabel")}</dt>
           <dd>

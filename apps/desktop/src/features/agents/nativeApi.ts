@@ -116,6 +116,7 @@ function agentView(
       targets.filter((target) => target.exists).map((target) => target.path),
     ),
     builtin: builtin || undefined,
+    kinds: [instance.kind],
     officialReference: null,
     relations: targets.map((target) => relationOf(target, snapshot)),
     status: discoveredStatus(targets),
@@ -124,6 +125,8 @@ function agentView(
 
 function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): AgentView {
   const client = agent.profile.clients[0]?.id ?? "custom";
+  // 自定义 Agent 的类型跟随其登记 profile 里的声明（缺省 cli，与草稿一致）。
+  const customKind = agent.profile.clients[0]?.kind ?? "cli";
   // 自定义 Agent：逻辑 id 是 agent 自身 id，物理 id 是目录授权 id。
   const stats = managedDeploymentStats(
     [{ id: agent.id, physicalId: agent.directory.grant_id }],
@@ -137,6 +140,7 @@ function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): Agent
     managedDeploymentCount: stats.skills,
     managedDeploymentRelationCount: stats.relations,
     discoveredPaths: [agent.directory.path],
+    kinds: [customKind],
     officialReference: agent.profile.official_references[0] ?? null,
     relations: [{
       logicalLabel: agent.display_name,
