@@ -119,6 +119,9 @@ pub struct RecentOperationSummary {
     pub phase: OperationPhase,
     pub error_code: Option<String>,
     pub created_at: String,
+    /// 操作针对的用户可读对象名（如导入的 Skill 运行时名称）；无对象的
+    /// 操作为空。前端据此在标题中给出「针对什么」而不是裸 kind。
+    pub object_name: Option<String>,
     /// 目标级明细；仅带目标结果的操作（当前为部署类）非空。
     pub targets: Vec<RecentOperationTarget>,
 }

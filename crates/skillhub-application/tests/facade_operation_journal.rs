@@ -85,12 +85,16 @@ async fn recovery_state(facade: &LocalApplicationFacade) -> StartupRecoveryState
 }
 
 fn import_candidate(source: &tempfile::TempDir) -> ImportCandidate {
+    named_import_candidate(source, "Notes")
+}
+
+fn named_import_candidate(source: &tempfile::TempDir, runtime_name: &str) -> ImportCandidate {
     ImportCandidate::detected(
         SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
         source.path().to_string_lossy(),
         ".",
         "SKILL.md",
-        "Notes",
+        runtime_name,
     )
 }
 
@@ -238,6 +242,13 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
     assert_eq!(prepared_record.state, "running");
     assert_eq!(prepared_record.phase, OperationPhase::Prepared);
     assert_eq!(prepared_record.error_code, None);
+    // DEV-94：快照必须能回答「这条导入操作针对哪个 Skill」，否则操作
+    // 记录只有 kind 没有对象名，用户无法区分多条导入。
+    assert_eq!(
+        prepared_record.object_name.as_deref(),
+        Some("Notes"),
+        "prepared import must carry the candidate runtime name"
+    );
 
     let committed = facade
         .execute(AppCommand::CommitImport(CommitImport {
@@ -268,12 +279,13 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
     assert_eq!(committed_record.kind, "import_skill");
     assert_eq!(committed_record.state, "completed");
     assert_eq!(committed_record.phase, OperationPhase::Committed);
+    assert_eq!(committed_record.object_name.as_deref(), Some("Notes"));
 
     let cancelled_source = tempfile::tempdir().expect("cancelled source");
     std::fs::write(cancelled_source.path().join("SKILL.md"), "# Other\n").expect("write skill");
     let second = facade
         .execute(AppCommand::PrepareImport(PrepareImport {
-            candidate: import_candidate(&cancelled_source),
+            candidate: named_import_candidate(&cancelled_source, "Other"),
             tree_hash: None,
         }))
         .await
@@ -295,6 +307,7 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
     assert_eq!(cancelled_record.kind, "import_skill");
     assert_eq!(cancelled_record.state, "rolled_back");
     assert_eq!(cancelled_record.phase, OperationPhase::RolledBack);
+    assert_eq!(cancelled_record.object_name.as_deref(), Some("Other"));
 }
 
 #[tokio::test]

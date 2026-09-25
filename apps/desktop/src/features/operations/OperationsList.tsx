@@ -121,6 +121,12 @@ function RecentTimelineEntry({
 }) {
   const { t } = useTranslation();
   const labelKey = KIND_LABEL_KEYS[row.kind];
+  // DEV-94：快照携带 object_name 时标题带对象名（「导入技能：Notes」），
+  // 没有则退回本地化 kind 或原始 kind；技术名不裸奔进界面。
+  const label = labelKey ? t(labelKey as never) : row.kind;
+  const title = row.object_name?.trim()
+    ? (t("operations.list.objectTitle" as never, { label, name: row.object_name }) as string)
+    : label;
   const targets = row.targets ?? [];
   const succeeded = targets.filter((target) => target.error_code === null).length;
   const failed = targets.length - succeeded;
@@ -132,7 +138,7 @@ function RecentTimelineEntry({
       <div className="sh-operations-timeline__content">
         <div className="sh-operations-timeline__heading">
           <Link to={`/operations/${row.operation_id}`}>
-            {labelKey ? t(labelKey as never) : row.kind}
+            {title}
           </Link>
           <span className={`sh-status sh-status--${row.phase}`}>
             {t(`operations.phases.${row.phase}` as never)}

@@ -353,6 +353,7 @@ impl<'a> BootstrapRepository<'a> {
                 phase: parse_phase(&phase)?,
                 error_code,
                 created_at: created_at.to_string(),
+                object_name: stored_object_name(&progress_json),
                 targets: stored_target_details(&progress_json),
             });
         }
@@ -411,6 +412,20 @@ fn parse_skill(value: String) -> AppResult<SkillId> {
 /// lets `/operations/:id` say *which* target failed and where, instead of
 /// showing a bare error code. The envelope is parsed leniently: an unreadable
 /// or absent payload yields no details rather than failing the whole snapshot.
+/// Projects the user-readable object name an operation recorded. Import
+/// flows journal `{"object_name": <runtime name>}` inside the same `result`
+/// envelope as the deployment target details; an unreadable or absent
+/// payload yields `None` rather than failing the whole snapshot.
+fn stored_object_name(progress_json: &str) -> Option<String> {
+    let stored = serde_json::from_str::<serde_json::Value>(progress_json).ok()?;
+    stored
+        .get("result")?
+        .get("object_name")?
+        .as_str()
+        .map(ToOwned::to_owned)
+        .filter(|name| !name.trim().is_empty())
+}
+
 fn stored_target_details(progress_json: &str) -> Vec<RecentOperationTarget> {
     let Ok(stored) = serde_json::from_str::<serde_json::Value>(progress_json) else {
         return Vec::new();

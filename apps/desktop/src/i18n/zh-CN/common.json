@@ -2820,6 +2820,7 @@
       "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}、待处理 {{todo}}",
       "sessionFailed": "失败",
       "targetsSummary": "成功 {{succeeded}}、失败 {{failed}}",
+      "objectTitle": "{{label}}：{{name}}",
       "targetFailed": "失败于 {{path}}"
     },
     "kinds": {

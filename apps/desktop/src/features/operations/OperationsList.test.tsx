@@ -157,6 +157,29 @@ it("localizes known operation kinds as row titles and detail link text", async (
   expect(screen.queryByRole("link", { name: "deploy_skill" })).not.toBeInTheDocument();
 });
 
+// DEV-94：快照携带 object_name 时，标题链接必须包含对象名——只有「导入
+// 技术」的裸 kind 无法区分多条导入，用户需要知道操作针对哪个 Skill。
+it("includes the snapshot object name in the entry title when present", async () => {
+  await renderList({
+    async listRecentOperations() {
+      return [
+        {
+          operation_id: "op-1",
+          kind: "import_skill",
+          state: "completed",
+          phase: "committed",
+          error_code: null,
+          created_at: "2026-09-06T08:00:00Z",
+          object_name: "Notes",
+        },
+      ];
+    },
+  });
+
+  const imported = await screen.findByRole("link", { name: "导入技能：Notes" });
+  expect(imported.getAttribute("href")).toBe("/operations/op-1");
+});
+
 // DEV-94：后端 created_at 是 epoch 秒字符串，按 ISO 解析失败后不得把原始
 // 数字串回显给用户。
 it("formats epoch-second timestamps instead of echoing the raw value", async () => {

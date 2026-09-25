@@ -46,6 +46,7 @@ const overviewSnapshot: BootstrapSnapshot = {
       operation_id: "operation-1",
       phase: "committed",
       state: "completed",
+      object_name: null,
       targets: [],
     },
   ],

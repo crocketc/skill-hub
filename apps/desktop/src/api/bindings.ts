@@ -2581,6 +2581,11 @@ export type RecentOperationSummary = {
 	phase: OperationPhase,
 	error_code: string | null,
 	created_at: string,
+	/**
+	 *  操作针对的用户可读对象名（如导入的 Skill 运行时名称）；无对象的
+	 *  操作为空。前端据此在标题中给出「针对什么」而不是裸 kind。
+	 */
+	object_name: string | null,
 	/**  目标级明细；仅带目标结果的操作（当前为部署类）非空。 */
 	targets: RecentOperationTarget[],
 };

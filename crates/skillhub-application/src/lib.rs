@@ -2361,6 +2361,40 @@ impl LocalApplicationFacade {
         self.journal_write(journal_record(operation_id, kind, phase, error_code));
     }
 
+    /// Settles an import-flow record and carries the candidate runtime name
+    /// as the user-readable object (`result.object_name`). The bootstrap
+    /// snapshot projects it into `RecentOperationSummary::object_name` so an
+    /// operations entry can answer「针对哪个 Skill」without a bare kind.
+    fn journal_import(
+        &self,
+        operation_id: OperationId,
+        phase: skillhub_core::OperationPhase,
+        error_code: Option<ErrorCode>,
+        object_name: Option<String>,
+    ) {
+        let result = object_name
+            .as_deref()
+            .map(|name| serde_json::json!({ "object_name": name }));
+        self.journal_advance_with_details(
+            operation_id,
+            "import_skill",
+            phase,
+            error_code,
+            result,
+            serde_json::Value::Object(Default::default()),
+        );
+    }
+
+    /// Reads the candidate runtime name of a staged import without holding
+    /// the staging lock past the call.
+    fn staged_import_name(&self, operation_id: &OperationId) -> Option<String> {
+        self.prepared_imports
+            .lock()
+            .ok()?
+            .get(operation_id)
+            .map(|prepared| prepared.candidate.runtime_name.clone())
+    }
+
     /// [`Self::journal_advance`] plus the durable details a user needs to act:
     /// the per-object result and the data recovery reads to undo the write.
     fn journal_advance_with_details(
@@ -2401,14 +2435,18 @@ impl LocalApplicationFacade {
             let removed = self
                 .prepared_imports
                 .lock()
-                .map(|mut prepared| prepared.remove(operation_id).is_some())
-                .unwrap_or(false);
-            if removed {
-                self.journal_advance(
+                .map(|mut prepared| {
+                    prepared
+                        .remove(operation_id)
+                        .map(|entry| entry.candidate.runtime_name)
+                })
+                .unwrap_or(None);
+            if removed.is_some() {
+                self.journal_import(
                     *operation_id,
-                    "import_skill",
                     skillhub_core::OperationPhase::RolledBack,
                     None,
+                    removed,
                 );
             }
         }
@@ -7342,6 +7380,7 @@ impl LocalApplicationFacade {
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         let candidate = request.candidate;
+        let runtime_name = candidate.runtime_name.clone();
         let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
         let result = self.with_database("execute.prepare_import", |database| {
             let facts = Self::import_source_facts(database, &candidate)?;
@@ -7366,12 +7405,17 @@ impl LocalApplicationFacade {
             Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
         });
         match result.as_ref() {
-            Ok(_) => self.journal_prepared(operation_id, "import_skill"),
-            Err(error) => self.journal_advance(
+            Ok(_) => self.journal_import(
                 operation_id,
-                "import_skill",
+                skillhub_core::OperationPhase::Prepared,
+                None,
+                Some(runtime_name),
+            ),
+            Err(error) => self.journal_import(
+                operation_id,
                 skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
+                Some(runtime_name),
             ),
         }
         result
@@ -7509,14 +7553,15 @@ impl LocalApplicationFacade {
     }
 
     fn cancel_import(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
+        let prepared_name = self.staged_import_name(&prepared_import_id);
         let result = self.cancel_import_flow(prepared_import_id);
         // A cancel always ends the record as rolled_back: updated when the
         // prepared import existed, inserted as a terminal row otherwise.
-        self.journal_advance(
+        self.journal_import(
             prepared_import_id,
-            "import_skill",
             skillhub_core::OperationPhase::RolledBack,
             result.as_ref().err().map(|error| error.code),
+            prepared_name,
         );
         result
     }
@@ -7595,31 +7640,28 @@ impl LocalApplicationFacade {
         // have left residue. A prepared import can otherwise fail before any
         // central-library write (for example, at the mandatory security gate);
         // that failure remains visible in history but must not block startup.
-        let prepared_known = self
-            .prepared_imports
-            .lock()
-            .map(|prepared| prepared.contains_key(&operation_id))
-            .unwrap_or(false);
+        let prepared_name = self.staged_import_name(&operation_id);
+        let prepared_known = prepared_name.is_some();
         let result = self.commit_import_flow(request);
         match result.as_ref() {
-            Ok(_) => self.journal_advance(
+            Ok(_) => self.journal_import(
                 operation_id,
-                "import_skill",
                 skillhub_core::OperationPhase::Committed,
                 None,
+                prepared_name,
             ),
             Err(error) if prepared_known && error.severity == Severity::Critical => self
-                .journal_advance(
+                .journal_import(
                     operation_id,
-                    "import_skill",
                     skillhub_core::OperationPhase::NeedsRecovery,
                     Some(error.code),
+                    prepared_name,
                 ),
-            Err(error) => self.journal_advance(
+            Err(error) => self.journal_import(
                 operation_id,
-                "import_skill",
                 skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
+                prepared_name,
             ),
         }
         result

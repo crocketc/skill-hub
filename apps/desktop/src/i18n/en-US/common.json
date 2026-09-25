@@ -2820,6 +2820,7 @@
       "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "sessionFailed": "failed",
       "targetsSummary": "{{succeeded}} succeeded, {{failed}} failed",
+      "objectTitle": "{{label}}: {{name}}",
       "targetFailed": "Failed at {{path}}"
     },
     "kinds": {

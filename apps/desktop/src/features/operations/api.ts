@@ -26,6 +26,11 @@ export type RecentOperationRow = {
   error_code: string | null;
   created_at: string;
   /**
+   * DEV-94：快照携带的用户可读对象名（导入操作的 Skill 运行时名称）。
+   * 可选——旧测试桩与消费方可以不提供；渲染层按存在与否决定标题形态。
+   */
+  object_name?: string | null;
+  /**
    * DEV-94：快照已携带的目标级明细（当前仅部署类操作非空）。可选——旧
    * 测试桩与消费方可以不提供；渲染层按存在与否决定是否输出目标摘要。
    */
