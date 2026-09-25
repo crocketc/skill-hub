@@ -11,11 +11,22 @@ export interface AgentCardView {
   agents: AgentView[];
   kinds: AgentKindKey[];
   sharedDirectory: boolean;
+  /**
+   * DEV-88：卡内所有 agent 的 shared_reference 路径（文件系统身份归一）。
+   * 渲染层据此把对应路径行替换为「支持共享目录」chip；合卡时取并集。
+   */
+  sharedPathKeys: string[];
+}
+
+/** DEV-88：把 agent 的 shared_reference 原始路径归一为文件系统身份键。 */
+function sharedKeysOf(agent: AgentView): string[] {
+  return [...new Set((agent.sharedReferencePaths ?? []).map(directoryKey).filter(Boolean))];
 }
 
 function directoryKey(path: string): string {
   return path.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
 }
+export { directoryKey as normalizePathKey };
 
 /**
  * Agent 页卡片视图的合并规则（唯一事实源）：
@@ -45,6 +56,7 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
     if (existing) {
       existing.agents.push(agent);
       existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
+      existing.sharedPathKeys = [...new Set([...existing.sharedPathKeys, ...sharedKeysOf(agent)])];
       existing.agent = {
         ...existing.agent,
         discoveredPaths: [...new Set([...existing.agent.discoveredPaths, ...agent.discoveredPaths])],
@@ -66,6 +78,7 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
       agents: [agent],
       kinds: normalizeAgentKinds([kind]),
       sharedDirectory: kind === "shared_directory",
+      sharedPathKeys: sharedKeysOf(agent),
     });
     grouped.set(brand, existingGroup);
   }
@@ -81,6 +94,7 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
         existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
       }
       existing.sharedDirectory ||= kind === "shared_directory";
+      existing.sharedPathKeys = [...new Set([...existing.sharedPathKeys, ...sharedKeysOf(agent)])];
       continue;
     }
     grouped.set(brand, [{
@@ -88,6 +102,7 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
       agents: [agent],
       kinds: normalizeAgentKinds([kind]),
       sharedDirectory: kind === "shared_directory",
+      sharedPathKeys: sharedKeysOf(agent),
     }]);
   }
   return grouped;

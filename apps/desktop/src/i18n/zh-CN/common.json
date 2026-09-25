@@ -777,7 +777,8 @@
     "managedRelationsCount_one": "{{count}} 条部署关系",
     "managedRelationsCount_other": "{{count}} 条部署关系",
     "builtinLabel": "内置 · 只读",
-    "builtinHint": "如需调整请在对应 Agent 内手动管理；常用技能建议导入 SkillHub 统一管理。"
+    "builtinHint": "如需调整请在对应 Agent 内手动管理；常用技能建议导入 SkillHub 统一管理。",
+    "sharedDirectoryChip": "支持共享目录"
   },
   "projects": {
     "actions": {

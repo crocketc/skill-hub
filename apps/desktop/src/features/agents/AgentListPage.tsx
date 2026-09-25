@@ -15,7 +15,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
-import { buildAgentCardViews } from "./agentCards";
+import { buildAgentCardViews, normalizePathKey } from "./agentCards";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
@@ -73,6 +73,9 @@ export function AgentListPage({
       .flatMap(([, groupCards]) => groupCards),
     [agents],
   );
+  // DEV-88：共享目录卡在页面里只有一张；品牌卡上的「支持共享目录」chip
+  // 点击后定位到它。不存在时 chip 退化为纯标注（仍不显示具体路径）。
+  const sharedCardId = cards.find(({ sharedDirectory }) => sharedDirectory)?.agent.id;
 
   const rescan = async () => {
     setRefreshing(true);
@@ -144,7 +147,7 @@ export function AgentListPage({
       />
       {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : (
         <ul aria-label={t("agents.title")} className="sh-agents-page__cards">
-          {cards.map(({ agent, kinds, sharedDirectory }) => (
+          {cards.map(({ agent, kinds, sharedDirectory, sharedPathKeys }) => (
               <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
                   {/* DEV-87（2026-09-25 验收反馈）：三标签融二——左侧为品牌
@@ -169,7 +172,15 @@ export function AgentListPage({
                 <div className="sh-agent-card__paths">
                   <span className="sh-agent-card__paths-label">{t("agents.pathLabel")}</span>
                   <ul className="sh-agent-card__path-list">
-                    {agent.discoveredPaths.map((path) => <li key={path}><code className="sh-agent-card__path">{displayPath(path)}</code></li>)}
+                    {/* DEV-88（2026-09-25 验收反馈）：shared_reference 路径
+                        不展示具体路径（唯一路径在共享目录卡上），替换为
+                        「支持共享目录」chip，点击定位共享目录卡。 */}
+                    {renderCardPaths({
+                      agent,
+                      sharedPathKeys,
+                      sharedCardId,
+                      label: t("agents.sharedDirectoryChip"),
+                    })}
                   </ul>
                 </div>
                 <div className="sh-agent-card__meta">
@@ -219,6 +230,55 @@ export function AgentListPage({
       </Drawer>
     </div>
   );
+}
+
+
+/**
+ * DEV-88：卡片路径列表渲染——shared_reference 的路径行（按文件系统身份
+ * 识别，合卡后可能有多条拼法变体）只渲染一枚「支持共享目录」chip；共享
+ * 目录卡存在时 chip 可点击定位到它，具体路径只在共享目录卡上展示一次。
+ */
+function renderCardPaths({
+  agent,
+  label,
+  sharedCardId,
+  sharedPathKeys,
+}: {
+  agent: AgentView;
+  label: string;
+  sharedCardId: string | undefined;
+  sharedPathKeys: string[];
+}): JSX.Element[] {
+  const shared = new Set(sharedPathKeys);
+  const renderedShared = new Set<string>();
+  const items: JSX.Element[] = [];
+  for (const path of agent.discoveredPaths) {
+    const key = normalizePathKey(path);
+    if (shared.has(key)) {
+      if (renderedShared.has(key)) continue;
+      renderedShared.add(key);
+      items.push(
+        sharedCardId ? (
+          <li key={`shared-${key}`}>
+            <Link className="sh-agent-card__shared-chip" to={`/agents/${sharedCardId}`}>
+              {label}
+            </Link>
+          </li>
+        ) : (
+          <li key={`shared-${key}`}>
+            <span className="sh-agent-card__shared-chip">{label}</span>
+          </li>
+        ),
+      );
+      continue;
+    }
+    items.push(
+      <li key={path}>
+        <code className="sh-agent-card__path">{displayPath(path)}</code>
+      </li>,
+    );
+  }
+  return items;
 }
 
 function statusTone(status: AgentView["status"]): "info" | "neutral" | "success" | "warning" {

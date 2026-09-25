@@ -440,3 +440,56 @@ it("returns drawer focus to the card edit trigger after editing", async () => {
 
   await waitFor(() => expect(within(customItem).getByRole("button", { name: "编辑" })).toHaveFocus());
 });
+
+// DEV-88（2026-09-25 验收反馈）：品牌卡上 shared_reference 的 .agents\skills
+// 路径行渲染为「支持共享目录」chip（可点击定位共享目录卡），具体路径只在
+// 共享目录卡展示一次；非共享路径不受影响。
+it("replaces shared-reference path rows with a shared-directory chip", async () => {
+  const agents: AgentView[] = [
+    {
+      brand: "Pi",
+      client: "pi.coding-agent",
+      discoveredPaths: ["C:/Users/demo/.pi/agent/skills", "C:/Users/demo/.agents/skills"],
+      id: "pi.coding-agent",
+      instance: "Pi coding agent",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+      kinds: ["cli"],
+      sharedReferencePaths: ["C:/Users/demo/.agents/skills"],
+    },
+    {
+      brand: "Agent Skills",
+      client: "shared-directory",
+      discoveredPaths: ["C:/Users/demo/.agents/skills"],
+      id: "agent-skills.shared-directory",
+      instance: "Agent Skills",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+      kinds: ["shared_directory"],
+    },
+  ];
+
+  await renderListPage(facadeWith(), agents);
+
+  const cards = await screen.findAllByTestId("agent-card");
+  const piCard = cards.find((card) => card.textContent?.includes("Pi")) as HTMLElement;
+  // 共享目录卡：唯一仍展示 .agents\skills 具体路径的卡片。
+  const sharedCard = cards.find((card) => /\.agents.{0,3}skills/i.test(card.textContent ?? "")) as HTMLElement;
+
+  // 品牌卡：共享路径行替换为 chip，chip 指向共享目录卡。
+  const chip = within(piCard).getByRole("link", { name: "支持共享目录" });
+  expect(chip).toHaveAttribute("href", "/agents/agent-skills.shared-directory");
+  expect(within(piCard).queryByText(/\.agents.{0,3}skills/i)).not.toBeInTheDocument();
+  // 非共享路径照常展示。
+  expect(within(piCard).getByText(/\.pi.{0,3}agent.{0,3}skills/i)).toBeInTheDocument();
+
+  // 共享目录卡本体仍展示具体路径（全站唯一），不再叠加 chip。
+  expect(within(sharedCard).getByText(/\.agents.{0,3}skills/i)).toBeInTheDocument();
+  expect(within(sharedCard).queryByRole("link", { name: "支持共享目录" })).not.toBeInTheDocument();
+});

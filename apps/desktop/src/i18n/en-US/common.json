@@ -777,7 +777,8 @@
     "managedRelationsCount_one": "{{count}} deployment relation",
     "managedRelationsCount_other": "{{count}} deployment relations",
     "builtinLabel": "Built-in · read-only",
-    "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally."
+    "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally.",
+    "sharedDirectoryChip": "Shared-directory ready"
   },
   "projects": {
     "actions": {

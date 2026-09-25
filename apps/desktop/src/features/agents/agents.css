@@ -128,6 +128,24 @@
   white-space: nowrap;
 }
 
+/* DEV-88：Agent 卡上的「支持共享目录」chip（替代 .agents\skills 路径行）。 */
+.sh-agent-card__shared-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--ui-info-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.sh-agent-card__shared-chip:hover {
+  text-decoration: underline;
+}
+
 /* DEV-87：头部左侧组——品牌/类型与「内置 · 只读」徽标同排。 */
 .sh-agent-card__head-main {
   display: flex;

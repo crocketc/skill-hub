@@ -115,6 +115,15 @@ function agentView(
     discoveredPaths: dedupePathsByFsIdentity(
       targets.filter((target) => target.exists).map((target) => target.path),
     ),
+    // DEV-88：shared_reference 路径（.agents\skills 等）单独随视图传递，
+    // 渲染层把这些路径行替换为「支持共享目录」chip。
+    sharedReferencePaths: [
+      ...new Set(
+        targets
+          .filter((target) => target.exists && target.shared_reference)
+          .map((target) => target.path),
+      ),
+    ],
     builtin: builtin || undefined,
     kinds: [instance.kind],
     officialReference: null,

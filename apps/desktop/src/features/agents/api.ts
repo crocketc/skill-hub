@@ -33,6 +33,11 @@ export interface AgentView {
    * 猜成 unknown →「Agent」徽标）。
    */
   kinds?: AgentKindKey[];
+  /**
+   * DEV-88：shared_reference 的目录路径（.agents\skills 等，原始拼法）。
+   * 渲染层按文件系统身份把对应路径行替换为「支持共享目录」chip。
+   */
+  sharedReferencePaths?: string[];
   /** First official profile reference of a custom agent, when registered. */
   officialReference: string | null;
   relations: AgentRelation[];
