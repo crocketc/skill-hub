@@ -46,7 +46,7 @@ function instanceKey(instance: { profile_id: string; client_id: string }): strin
 }
 
 /**
- * 启动期后台 Agent 重扫桥（2026-09-26 验收反馈）：应用启动后异步执行一次
+ * 启动期后台 Agent 重扫桥（2026-09-25 验收反馈）：应用启动后异步执行一次
  * discover_agent_targets，发现快照里出现新的品牌/客户端时发一条通知并
  * 广播刷新。设计约束：
  * - 异步后台执行，绝不阻塞首屏；
