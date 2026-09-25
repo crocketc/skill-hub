@@ -2,6 +2,9 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
 use crate::relationship::RelationshipType;
 use crate::{AppError, AppResult, DeploymentCapability, ErrorCode, RecoveryAction, Severity};
 
@@ -456,5 +459,370 @@ fn mode_code(mode: DeploymentMode) -> &'static str {
         DeploymentMode::SymbolicLink => "symbolic_link",
         DeploymentMode::DirectoryJunction => "directory_junction",
         DeploymentMode::ManagedCopy => "managed_copy",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 13A: preference -> pair disposition.  The automatic planner above
+// stays authoritative for which mode a physical target gets; this layer only
+// turns user preference plus occupancy facts into a structured disposition
+// and a confirmation fingerprint.  Facts carry no pair id and no batch or
+// revision counter: pair ids are UI identity, never a confirmation credential.
+// ---------------------------------------------------------------------------
+
+/// User-facing preference for how one Skill should land on one target.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentPreference {
+    /// Keep the existing per-target automatic mode selection.
+    Automatic,
+    /// A directory link is required; a copy is only a user-confirmed
+    /// fallback, never an automatic substitute.
+    Link,
+    /// An isolated managed copy is required.
+    Copy,
+}
+
+/// What the backend proposes for one Skill × target pair.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentPreviewDisposition {
+    /// Execute the selected mode without further confirmation.
+    SelectedMode,
+    /// The link preference cannot link; a managed copy is offered for
+    /// explicit confirmation.
+    RecommendCopy,
+    /// The same managed deployment is already in place.
+    NoChange,
+    /// The pair cannot execute; `block_reason` carries the structured cause.
+    Blocked,
+}
+
+/// Structured, user-presentable cause for a blocked or re-planned pair.
+/// Users see words, never OS messages: the raw OS detail stays in technical
+/// parameters carried beside the plan.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentBlockReason {
+    /// The account may not create directory links.
+    LinkPermissionUnavailable,
+    /// The filesystem or volume cannot host directory links.
+    LinkFilesystemUnsupported,
+    /// Another entry owns the runtime name at the destination.
+    TargetOccupied,
+    /// The registered target path is not currently reachable.
+    PathUnavailable,
+    /// Other agents read this shared directory; deployment needs an
+    /// explicit shared-impact decision first.
+    SharedImpactRequiresResolution,
+    /// No deployment form, not even a managed copy, is executable.
+    CopyUnavailable,
+}
+
+/// Resolved facts for one Skill × physical-target pair, gathered by the
+/// application layer from verified targets, occupancy records and capability
+/// probes.  The preview decision itself stays pure.
+///
+/// The struct deliberately carries no pair id: pair ids are UI identity
+/// assigned over this immutable fact set, never a confirmation credential.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentPairFacts {
+    pub skill_id: crate::SkillId,
+    pub version_id: crate::VersionId,
+    pub runtime_name: String,
+    pub physical_target_id: String,
+    pub destination_path: String,
+    pub capabilities: DeploymentCapability,
+    /// `true` when link creation fails because the account lacks the
+    /// privilege; `false` when the filesystem itself cannot host links.
+    pub link_permission_denied: bool,
+    pub preference: DeploymentPreference,
+    /// Mode the automatic planner selected for this target, if any.
+    pub mode: Option<DeploymentMode>,
+    pub change: TargetChange,
+    pub conflicts: Vec<TargetConflict>,
+    /// Occupancy snapshot of the destination at preview time.
+    pub occupancy: Vec<ExistingDeployment>,
+    pub path_available: bool,
+    /// Other agents read this shared directory and the shared-impact
+    /// decision is still outstanding.
+    pub requires_shared_impact_confirmation: bool,
+}
+
+/// The preview decision for one pair.  Executable pairs still end up in a
+/// backend-assembled [`DeploymentPlan`]; a preview never authorizes the
+/// client to submit one.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PairPreview {
+    pub preference: DeploymentPreference,
+    pub disposition: DeploymentPreviewDisposition,
+    /// Mode to execute for selected and unchanged pairs.
+    pub mode: Option<DeploymentMode>,
+    /// Copy mode a recommend-copy pair falls back to once confirmed.
+    pub fallback_mode: Option<DeploymentMode>,
+    pub block_reason: Option<DeploymentBlockReason>,
+    /// Server-computed confirmation credential over every deployment fact
+    /// and the decision itself.  Recomputed at commit time; a stale or
+    /// forged value is rejected instead of trusted.
+    pub confirmation_fingerprint: String,
+}
+
+/// Decides one pair's disposition from resolved facts.  Blocking facts are
+/// decided in a fixed order — reachability, occupancy, shared impact — so
+/// stacked causes always surface the same reason.
+pub fn plan_target_preview(facts: &DeploymentPairFacts) -> PairPreview {
+    if !facts.path_available {
+        return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::PathUnavailable));
+    }
+    if !facts.conflicts.is_empty() {
+        return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetOccupied));
+    }
+    if facts.requires_shared_impact_confirmation {
+        return preview_with_fingerprint(
+            facts,
+            blocked(DeploymentBlockReason::SharedImpactRequiresResolution),
+        );
+    }
+
+    let link_unavailable_reason = if facts.link_permission_denied {
+        DeploymentBlockReason::LinkPermissionUnavailable
+    } else {
+        DeploymentBlockReason::LinkFilesystemUnsupported
+    };
+    let mut preview = match facts.preference {
+        DeploymentPreference::Automatic => match facts
+            .mode
+            .or_else(|| DeploymentMode::select(&facts.capabilities))
+        {
+            Some(mode) => PairPreview {
+                preference: facts.preference,
+                disposition: DeploymentPreviewDisposition::SelectedMode,
+                mode: Some(mode),
+                fallback_mode: None,
+                block_reason: None,
+                confirmation_fingerprint: String::new(),
+            },
+            None => blocked(DeploymentBlockReason::CopyUnavailable),
+        },
+        DeploymentPreference::Link => match link_mode(&facts.capabilities) {
+            Some(mode) => PairPreview {
+                preference: facts.preference,
+                disposition: DeploymentPreviewDisposition::SelectedMode,
+                mode: Some(mode),
+                fallback_mode: None,
+                block_reason: None,
+                confirmation_fingerprint: String::new(),
+            },
+            None if facts.capabilities.copy => PairPreview {
+                preference: facts.preference,
+                disposition: DeploymentPreviewDisposition::RecommendCopy,
+                mode: None,
+                fallback_mode: Some(DeploymentMode::ManagedCopy),
+                block_reason: Some(link_unavailable_reason),
+                confirmation_fingerprint: String::new(),
+            },
+            None => blocked(link_unavailable_reason),
+        },
+        DeploymentPreference::Copy => {
+            if facts.capabilities.copy {
+                PairPreview {
+                    preference: facts.preference,
+                    disposition: DeploymentPreviewDisposition::SelectedMode,
+                    mode: Some(DeploymentMode::ManagedCopy),
+                    fallback_mode: None,
+                    block_reason: None,
+                    confirmation_fingerprint: String::new(),
+                }
+            } else {
+                blocked(DeploymentBlockReason::CopyUnavailable)
+            }
+        }
+    };
+
+    // A NoOp outcome outranks mode selection: the same managed deployment is
+    // already in place whatever the preference resolves to.
+    if facts.change == TargetChange::NoOp {
+        preview.disposition = DeploymentPreviewDisposition::NoChange;
+        preview.mode = facts.mode;
+        preview.fallback_mode = None;
+        preview.block_reason = None;
+    }
+    preview_with_fingerprint(facts, preview)
+}
+
+/// The directory link form the capabilities support, or `None` when only a
+/// copy (or nothing) is available.  A link preference never accepts the
+/// managed-copy result of [`DeploymentMode::select`].
+fn link_mode(capabilities: &DeploymentCapability) -> Option<DeploymentMode> {
+    match DeploymentMode::select(capabilities) {
+        Some(DeploymentMode::ManagedCopy) | None => None,
+        Some(mode) => Some(mode),
+    }
+}
+
+fn blocked(reason: DeploymentBlockReason) -> PairPreview {
+    PairPreview {
+        preference: DeploymentPreference::Automatic,
+        disposition: DeploymentPreviewDisposition::Blocked,
+        mode: None,
+        fallback_mode: None,
+        block_reason: Some(reason),
+        confirmation_fingerprint: String::new(),
+    }
+}
+
+fn preview_with_fingerprint(facts: &DeploymentPairFacts, mut preview: PairPreview) -> PairPreview {
+    preview.preference = facts.preference;
+    preview.confirmation_fingerprint = confirmation_fingerprint(facts, &preview);
+    preview
+}
+
+/// Binds every deployment fact plus the decision itself into one credential.
+/// Any change to skill, version, runtime name, physical target, destination,
+/// preference, outcome, occupancy snapshot or capability invalidates it, and
+/// nothing that varies independently of these facts (pair ids, batch order,
+/// relationship revisions) can enter.
+fn confirmation_fingerprint(facts: &DeploymentPairFacts, preview: &PairPreview) -> String {
+    let mut canonical = String::from("deployment-confirmation-v1\n");
+    canonical.push_str(facts.skill_id.to_string().as_str());
+    canonical.push('\n');
+    canonical.push_str(facts.version_id.as_str());
+    canonical.push('\n');
+    canonical.push_str(&facts.runtime_name);
+    canonical.push('\n');
+    canonical.push_str(&facts.physical_target_id);
+    canonical.push('\n');
+    canonical.push_str(&facts.destination_path);
+    canonical.push('\n');
+    canonical.push_str(&format!(
+        "links:{}/{}/{} permission_denied:{}\n",
+        facts.capabilities.symlink as u8,
+        facts.capabilities.junction as u8,
+        facts.capabilities.copy as u8,
+        facts.link_permission_denied as u8
+    ));
+    canonical.push_str(preference_word(facts.preference));
+    canonical.push('\n');
+    canonical.push_str(change_word(facts.change));
+    canonical.push('\n');
+
+    let mut conflicts = facts
+        .conflicts
+        .iter()
+        .map(|conflict| {
+            format!(
+                "{}|{}|{}|{}",
+                conflict.physical_target_id,
+                conflict_reason_word(&conflict.reason),
+                ownership_word(&conflict.existing_ownership),
+                conflict.runtime_name
+            )
+        })
+        .collect::<Vec<_>>();
+    conflicts.sort();
+    canonical.push_str(&format!("conflicts:{}\n", conflicts.join(";")));
+
+    let mut occupancy = facts
+        .occupancy
+        .iter()
+        .map(|existing| {
+            format!(
+                "{}|{}|{}|{}",
+                existing.runtime_name,
+                ownership_word(&existing.ownership),
+                existing
+                    .skill_id
+                    .as_ref()
+                    .map(|skill_id| skill_id.to_string())
+                    .unwrap_or_else(|| "-".into()),
+                existing
+                    .version_id
+                    .as_ref()
+                    .map(|version_id| version_id.as_str().to_owned())
+                    .unwrap_or_else(|| "-".into()),
+            )
+        })
+        .collect::<Vec<_>>();
+    occupancy.sort();
+    canonical.push_str(&format!("occupancy:{}\n", occupancy.join(";")));
+
+    canonical.push_str(&format!("path_available:{}\n", facts.path_available as u8));
+    canonical.push_str(&format!(
+        "shared_impact_outstanding:{}\n",
+        facts.requires_shared_impact_confirmation as u8
+    ));
+
+    canonical.push_str(disposition_word(preview.disposition));
+    canonical.push('\n');
+    canonical.push_str(&format!(
+        "mode:{}\n",
+        preview.mode.map(mode_code).unwrap_or("-")
+    ));
+    canonical.push_str(&format!(
+        "fallback:{}\n",
+        preview.fallback_mode.map(mode_code).unwrap_or("-")
+    ));
+    canonical.push_str(&format!(
+        "reason:{}\n",
+        preview.block_reason.map(block_reason_word).unwrap_or("-")
+    ));
+
+    format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()))
+}
+
+fn preference_word(preference: DeploymentPreference) -> &'static str {
+    match preference {
+        DeploymentPreference::Automatic => "automatic",
+        DeploymentPreference::Link => "link",
+        DeploymentPreference::Copy => "copy",
+    }
+}
+
+fn disposition_word(disposition: DeploymentPreviewDisposition) -> &'static str {
+    match disposition {
+        DeploymentPreviewDisposition::SelectedMode => "selected_mode",
+        DeploymentPreviewDisposition::RecommendCopy => "recommend_copy",
+        DeploymentPreviewDisposition::NoChange => "no_change",
+        DeploymentPreviewDisposition::Blocked => "blocked",
+    }
+}
+
+fn block_reason_word(reason: DeploymentBlockReason) -> &'static str {
+    match reason {
+        DeploymentBlockReason::LinkPermissionUnavailable => "link_permission_unavailable",
+        DeploymentBlockReason::LinkFilesystemUnsupported => "link_filesystem_unsupported",
+        DeploymentBlockReason::TargetOccupied => "target_occupied",
+        DeploymentBlockReason::PathUnavailable => "path_unavailable",
+        DeploymentBlockReason::SharedImpactRequiresResolution => {
+            "shared_impact_requires_resolution"
+        }
+        DeploymentBlockReason::CopyUnavailable => "copy_unavailable",
+    }
+}
+
+fn change_word(change: TargetChange) -> &'static str {
+    match change {
+        TargetChange::Create => "create",
+        TargetChange::NoOp => "no_op",
+    }
+}
+
+fn conflict_reason_word(reason: &TargetConflictReason) -> &'static str {
+    match reason {
+        TargetConflictReason::RuntimeNameAlreadyExists => "runtime_name_already_exists",
+        TargetConflictReason::OwnershipUnknown => "ownership_unknown",
+        TargetConflictReason::ManagedByAnotherSkill => "managed_by_another_skill",
+    }
+}
+
+fn ownership_word(ownership: &ExistingOwnership) -> &'static str {
+    match ownership {
+        ExistingOwnership::Managed => "managed",
+        ExistingOwnership::Unknown => "unknown",
+        ExistingOwnership::AgentBuiltin => "agent_builtin",
+        ExistingOwnership::Plugin => "plugin",
+        ExistingOwnership::OtherTool => "other_tool",
     }
 }

@@ -8,9 +8,12 @@ use skillhub_core::agent::{
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
-    plan_relation_conversion, DeploymentMode, DeploymentPlanInput, DeploymentPlanRequest,
-    DeploymentPlanner, ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
-    RegisteredTargetIndex, RelationConversionFacts, TargetFact, TargetFactSource, VerifiedTarget,
+    plan_relation_conversion, plan_target_preview, DeploymentBlockReason, DeploymentMode,
+    DeploymentPairFacts, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
+    DeploymentPreference, DeploymentPreviewDisposition, ExistingDeployment, ExistingOwnership,
+    ObservedMatchState, ObservedOrigin, RegisteredTargetIndex, RelationConversionFacts,
+    TargetChange, TargetConflict, TargetConflictReason, TargetFact, TargetFactSource,
+    VerifiedTarget,
 };
 use skillhub_core::relationship::classifier::{
     classify_directory_capability, classify_observed_relation,
@@ -1228,4 +1231,501 @@ fn shared_reference_without_other_consumers_needs_no_confirmation() {
     .expect("a solo shared reference is plannable");
     assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
     assert!(!plan.requires_shared_impact_confirmation);
+}
+
+// ---------------------------------------------------------------------------
+// Task 13A: preference -> pair disposition.  The planner keeps owning the
+// per-target mode choice; the preview layer turns user preference plus
+// occupancy facts into a structured disposition and a confirmation
+// fingerprint.  Facts deliberately carry no pair id and no batch or revision
+// counter: a pair id is UI identity, never a confirmation credential.
+// ---------------------------------------------------------------------------
+
+fn verified_target_in(
+    workspace: &TempDir,
+    dir_name: &str,
+    logical_id: &str,
+    capability: DeploymentCapability,
+) -> VerifiedTarget {
+    let target_path = workspace.path().join(dir_name);
+    std::fs::create_dir_all(&target_path).unwrap();
+    let physical_id = physical_id_for_path(&target_path).unwrap();
+    let policy = PathPolicy::from_roots([AllowedRoot::new(workspace.path()).unwrap()]).unwrap();
+    let fact = TargetFact::registered(
+        logical_id,
+        target_path,
+        physical_id,
+        TargetFactSource::Discovery,
+        capability,
+    );
+    VerifiedTarget::from_fact(fact, &policy).unwrap()
+}
+
+fn pair_facts(capability: DeploymentCapability) -> DeploymentPairFacts {
+    DeploymentPairFacts {
+        skill_id: SkillId::new(),
+        version_id: VersionId::parse(&format!("sha256:{}", "e".repeat(64))).unwrap(),
+        runtime_name: "pdf".into(),
+        physical_target_id: "fs:target-1".into(),
+        destination_path: "/agents/skills/pdf".into(),
+        capabilities: capability,
+        link_permission_denied: false,
+        preference: DeploymentPreference::Automatic,
+        mode: None,
+        change: TargetChange::Create,
+        conflicts: Vec::new(),
+        occupancy: Vec::new(),
+        path_available: true,
+        requires_shared_impact_confirmation: false,
+    }
+}
+
+#[test]
+fn preference_and_disposition_words_are_stable_on_the_wire() {
+    assert_eq!(
+        serde_json::to_value(DeploymentPreference::Automatic).unwrap(),
+        serde_json::json!("automatic")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreference::Link).unwrap(),
+        serde_json::json!("link")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreference::Copy).unwrap(),
+        serde_json::json!("copy")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreviewDisposition::SelectedMode).unwrap(),
+        serde_json::json!("selected_mode")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreviewDisposition::RecommendCopy).unwrap(),
+        serde_json::json!("recommend_copy")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreviewDisposition::NoChange).unwrap(),
+        serde_json::json!("no_change")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentPreviewDisposition::Blocked).unwrap(),
+        serde_json::json!("blocked")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::LinkPermissionUnavailable).unwrap(),
+        serde_json::json!("link_permission_unavailable")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::LinkFilesystemUnsupported).unwrap(),
+        serde_json::json!("link_filesystem_unsupported")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::TargetOccupied).unwrap(),
+        serde_json::json!("target_occupied")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::PathUnavailable).unwrap(),
+        serde_json::json!("path_unavailable")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::SharedImpactRequiresResolution).unwrap(),
+        serde_json::json!("shared_impact_requires_resolution")
+    );
+    assert_eq!(
+        serde_json::to_value(DeploymentBlockReason::CopyUnavailable).unwrap(),
+        serde_json::json!("copy_unavailable")
+    );
+}
+
+#[test]
+fn automatic_preference_keeps_independent_per_target_mode_selection() {
+    let workspace = tempdir().unwrap();
+    let linked = verified_target_in(
+        &workspace,
+        "skills-link",
+        "logical-link",
+        capabilities(true, false, true),
+    );
+    let copied = verified_target_in(
+        &workspace,
+        "skills-copy",
+        "logical-copy",
+        capabilities(false, false, true),
+    );
+    let request = DeploymentPlanInput::new(
+        SkillId::new(),
+        VersionId::parse(&format!("sha256:{}", "b".repeat(64))).unwrap(),
+        "pdf",
+        "/SkillHub/library/pdf--abc",
+        vec![linked, copied],
+    );
+
+    // The existing planner stays authoritative for the automatic path and
+    // keeps selecting one mode per physical target.
+    let plan = DeploymentPlanner.plan(request).unwrap();
+    assert_eq!(plan.targets.len(), 2);
+    let modes: Vec<DeploymentMode> = plan.targets.iter().map(|target| target.mode).collect();
+    assert_eq!(
+        modes.len(),
+        2,
+        "different physical targets keep independent automatic modes"
+    );
+    assert!(modes.contains(&DeploymentMode::SymbolicLink));
+    assert!(modes.contains(&DeploymentMode::ManagedCopy));
+
+    for target in &plan.targets {
+        let link_capable = target.target_path.ends_with("skills-link");
+        let preview = plan_target_preview(&DeploymentPairFacts {
+            physical_target_id: target.physical_target_id.clone(),
+            destination_path: target.destination_path.clone(),
+            capabilities: if link_capable {
+                capabilities(true, false, true)
+            } else {
+                capabilities(false, false, true)
+            },
+            mode: Some(target.mode),
+            ..pair_facts(capabilities(true, false, true))
+        });
+        assert_eq!(
+            preview.disposition,
+            DeploymentPreviewDisposition::SelectedMode
+        );
+        assert_eq!(preview.mode, Some(target.mode));
+        assert_eq!(preview.block_reason, None);
+    }
+}
+
+#[test]
+fn explicit_link_preference_recommends_confirmed_copy_and_never_automates_it() {
+    // Links unavailable, copy works: the pair becomes a recommendation the
+    // user must confirm, never an automatic managed copy.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, true),
+        link_permission_denied: true,
+        preference: DeploymentPreference::Link,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(
+        preview.disposition,
+        DeploymentPreviewDisposition::RecommendCopy
+    );
+    assert_ne!(
+        preview.disposition,
+        DeploymentPreviewDisposition::SelectedMode
+    );
+    assert_eq!(preview.mode, None);
+    assert_eq!(preview.fallback_mode, Some(DeploymentMode::ManagedCopy));
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::LinkPermissionUnavailable)
+    );
+
+    // A working link preference stays a selected mode.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(true, true, true),
+        preference: DeploymentPreference::Link,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(
+        preview.disposition,
+        DeploymentPreviewDisposition::SelectedMode
+    );
+    assert_eq!(preview.mode, Some(DeploymentMode::SymbolicLink));
+
+    // Junction-only hosts keep the link preference executable.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, true, true),
+        preference: DeploymentPreference::Link,
+        ..pair_facts(capabilities(false, true, true))
+    });
+    assert_eq!(
+        preview.disposition,
+        DeploymentPreviewDisposition::SelectedMode
+    );
+    assert_eq!(preview.mode, Some(DeploymentMode::DirectoryJunction));
+
+    // Neither link nor copy available: blocked, with the permission cause
+    // structured instead of parsed out of an OS message.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, false),
+        link_permission_denied: true,
+        preference: DeploymentPreference::Link,
+        ..pair_facts(capabilities(false, false, false))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::LinkPermissionUnavailable)
+    );
+
+    // A filesystem that rejects links reports its own cause.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, false),
+        link_permission_denied: false,
+        preference: DeploymentPreference::Link,
+        ..pair_facts(capabilities(false, false, false))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::LinkFilesystemUnsupported)
+    );
+}
+
+#[test]
+fn copy_preference_blocks_only_when_copy_is_unavailable() {
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, true),
+        preference: DeploymentPreference::Copy,
+        mode: Some(DeploymentMode::ManagedCopy),
+        ..pair_facts(capabilities(false, false, true))
+    });
+    assert_eq!(
+        preview.disposition,
+        DeploymentPreviewDisposition::SelectedMode
+    );
+    assert_eq!(preview.mode, Some(DeploymentMode::ManagedCopy));
+
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, false),
+        preference: DeploymentPreference::Copy,
+        ..pair_facts(capabilities(false, false, false))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::CopyUnavailable)
+    );
+
+    // Automatic with no capability at all cannot fall back either.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        capabilities: capabilities(false, false, false),
+        ..pair_facts(capabilities(false, false, false))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::CopyUnavailable)
+    );
+}
+
+#[test]
+fn unchanged_pairs_and_blockers_carry_structured_reasons() {
+    // Same managed deployment of the same skill and version: nothing to do.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        change: TargetChange::NoOp,
+        mode: Some(DeploymentMode::SymbolicLink),
+        ..pair_facts(capabilities(true, false, true))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::NoChange);
+    assert_eq!(preview.mode, Some(DeploymentMode::SymbolicLink));
+    assert_eq!(preview.block_reason, None);
+
+    // Occupied runtime names block regardless of the preferred mode, for
+    // every ownership fact that makes replacement unsafe.
+    for (reason, ownership) in [
+        (
+            TargetConflictReason::RuntimeNameAlreadyExists,
+            ExistingOwnership::OtherTool,
+        ),
+        (
+            TargetConflictReason::OwnershipUnknown,
+            ExistingOwnership::Unknown,
+        ),
+        (
+            TargetConflictReason::ManagedByAnotherSkill,
+            ExistingOwnership::Managed,
+        ),
+    ] {
+        let preview = plan_target_preview(&DeploymentPairFacts {
+            conflicts: vec![TargetConflict {
+                physical_target_id: "fs:target-1".into(),
+                target_path: "/agents/skills".into(),
+                runtime_name: "pdf".into(),
+                reason,
+                existing_ownership: ownership,
+            }],
+            ..pair_facts(capabilities(true, true, true))
+        });
+        assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+        assert_eq!(
+            preview.block_reason,
+            Some(DeploymentBlockReason::TargetOccupied)
+        );
+    }
+
+    // The registered path stopped being reachable before the preview.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        path_available: false,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::PathUnavailable)
+    );
+
+    // Deploying into a shared directory other agents read needs an explicit
+    // user decision first.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        requires_shared_impact_confirmation: true,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::SharedImpactRequiresResolution)
+    );
+}
+
+#[test]
+fn stacked_block_facts_resolve_in_a_fixed_order() {
+    let conflict = TargetConflict {
+        physical_target_id: "fs:target-1".into(),
+        target_path: "/agents/skills".into(),
+        runtime_name: "pdf".into(),
+        reason: TargetConflictReason::OwnershipUnknown,
+        existing_ownership: ExistingOwnership::Unknown,
+    };
+    // Reachability is decided before occupancy and shared impact.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        path_available: false,
+        conflicts: vec![conflict.clone()],
+        requires_shared_impact_confirmation: true,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::PathUnavailable)
+    );
+
+    // Occupancy is decided before shared impact.
+    let preview = plan_target_preview(&DeploymentPairFacts {
+        conflicts: vec![conflict],
+        requires_shared_impact_confirmation: true,
+        ..pair_facts(capabilities(true, true, true))
+    });
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::TargetOccupied)
+    );
+}
+
+#[test]
+fn confirmation_fingerprint_changes_only_when_a_deployment_fact_changes() {
+    let facts = pair_facts(capabilities(true, false, true));
+    let fingerprint = plan_target_preview(&facts).confirmation_fingerprint;
+    assert_eq!(
+        plan_target_preview(&facts).confirmation_fingerprint,
+        fingerprint,
+        "recomputing identical facts keeps the fingerprint stable"
+    );
+
+    let mut changed = facts.clone();
+    changed.skill_id = SkillId::new();
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another skill invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.version_id = VersionId::parse(&format!("sha256:{}", "f".repeat(64))).unwrap();
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another version invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.runtime_name = "pdf-tool".into();
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another runtime name invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.physical_target_id = "fs:target-2".into();
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another physical target invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.destination_path = "/agents/other/pdf".into();
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another destination invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.preference = DeploymentPreference::Copy;
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "another preference invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.change = TargetChange::NoOp;
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "a changed outcome invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.capabilities = capabilities(false, false, true);
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "changed capabilities invalidate the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed
+        .occupancy
+        .push(ExistingDeployment::new("pdf", ExistingOwnership::Unknown));
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "a changed occupancy snapshot invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.path_available = false;
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "an unreachable path invalidates the confirmation"
+    );
+
+    let mut changed = facts.clone();
+    changed.requires_shared_impact_confirmation = true;
+    assert_ne!(
+        plan_target_preview(&changed).confirmation_fingerprint,
+        fingerprint,
+        "newly discovered shared impact invalidates the confirmation"
+    );
+}
+
+#[test]
+fn confirmation_fingerprint_binds_facts_never_pair_identity_or_batch_order() {
+    // The fact struct carries no pair id, batch position, or relationship
+    // revision counter, so a UI-assigned pair id cannot become a confirmation
+    // credential: rebuilding the same facts anywhere in the batch yields the
+    // same fingerprint.
+    let facts = pair_facts(capabilities(true, false, true));
+    let first = plan_target_preview(&facts).confirmation_fingerprint;
+    let rebuilt = DeploymentPairFacts {
+        occupancy: Vec::new(),
+        ..facts.clone()
+    };
+    assert_eq!(
+        plan_target_preview(&rebuilt).confirmation_fingerprint,
+        first
+    );
+    assert_eq!(plan_target_preview(&facts).confirmation_fingerprint, first);
 }
