@@ -6,7 +6,6 @@ import { onDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
-import { BrandTag, normalizeBrandKey } from "../../ui/BrandTag";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
@@ -59,8 +58,13 @@ export function AgentListPage({
     setRevision((current) => current + 1);
   }), []);
 
-  const agentGroups = useMemo(
-    () => [...buildAgentCardViews(agents ?? [])].sort(([left], [right]) => left.localeCompare(right)),
+  // 2026-09-25 验收反馈：卡片整页平铺。品牌分组标题在卡片自带品牌+
+  // 类型标识后是冗余的，且分组网格每组只剩一两张卡，页面仍是纵向堆叠；
+  // 拍平为单一网格后按品牌排序保持相邻。
+  const cards = useMemo(
+    () => [...buildAgentCardViews(agents ?? [])]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([, groupCards]) => groupCards),
     [agents],
   );
 
@@ -132,17 +136,9 @@ export function AgentListPage({
         headingLevel="h1"
         title={t("agents.title")}
       />
-      {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : agentGroups.map(([brand, cards]) => (
-        <section aria-labelledby={`agent-brand-${brand}`} className="sh-agents-page__brand" key={brand}>
-          <h2 id={`agent-brand-${brand}`}>
-            {normalizeBrandKey(brand) === "agent-skills" ? (
-              <AgentPresentation sharedDirectory />
-            ) : (
-              <BrandTag brand={cards[0]?.agent.brand ?? brand} />
-            )}
-          </h2>
-          <ul className="sh-agents-page__cards">
-            {cards.map(({ agent, kinds, sharedDirectory }) => (
+      {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : (
+        <ul aria-label={t("agents.title")} className="sh-agents-page__cards">
+          {cards.map(({ agent, kinds, sharedDirectory }) => (
               <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
                   <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
@@ -190,9 +186,8 @@ export function AgentListPage({
                 ) : null}
               </li>
             ))}
-          </ul>
-        </section>
-      ))}
+        </ul>
+      )}
       <Drawer
         onOpenChange={(open) => { if (!open) setFormState(undefined); }}
         open={formState !== undefined}

@@ -143,13 +143,31 @@ it("merges directory-only clients into their brand card instead of standalone ca
 
   await renderListPage(facadeWith(), traeAgents);
 
-  expect(await screen.findByRole("heading", { name: "Trae" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Lore" })).toBeVisible();
+  expect((await screen.findAllByText("Trae")).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Lore").length).toBeGreaterThan(0);
   expect(screen.getAllByTestId("agent-card")).toHaveLength(2);
   // Trae 卡并入 trae.work 后仍如实展示可用；Lore 整品牌无目录，合并为
   // 一张卡并保留诚实的「仅发现相关目录」状态。
   expect(screen.getAllByText("仅发现相关目录")).toHaveLength(1);
   expect(screen.getByText("可访问")).toBeVisible();
+});
+
+it("tiles every agent card in a single page-level grid", async () => {
+  // 2026-09-25 验收反馈：按品牌分组渲染时每组的网格只剩一两张卡，
+  // 页面仍是纵向堆叠。卡片自带品牌+类型标识，品牌分组标题冗余——
+  // 整页一个网格平铺才真正减少滚动。
+  await renderListPage(facadeWith());
+
+  await screen.findAllByTestId("agent-card");
+  expect(document.querySelectorAll(".sh-agents-page__cards")).toHaveLength(1);
+  expect(document.querySelectorAll(".sh-agents-page__brand")).toHaveLength(0);
+  const cards = screen.getAllByTestId("agent-card");
+  expect(cards).toHaveLength(2);
+  // 品牌键字母序与旧分组排序一致：Acme 卡在 OpenAI 卡之前。
+  expect(cards[0].textContent).toContain("Acme");
+  expect(cards[1].textContent).toContain("OpenAI");
+  // 品牌标识随卡展示，不依赖分组标题。
+  expect(document.querySelector(".sh-agent-card .sh-brand-tag--openai")).not.toBeNull();
 });
 
 it("renders built-in directories as separate read-only cards with guidance", async () => {
@@ -185,20 +203,19 @@ it("renders built-in directories as separate read-only cards with guidance", asy
 
   await renderListPage(facadeWith(), builtinAgents);
 
-  expect(await screen.findByRole("heading", { name: "OpenAI" })).toBeVisible();
-  expect(screen.getAllByTestId("agent-card")).toHaveLength(2);
+  expect((await screen.findAllByTestId("agent-card"))).toHaveLength(2);
   expect(screen.getByText("内置")).toBeVisible();
   expect(screen.getByText(/由平台自带管理/)).toBeVisible();
 });
 
-it("groups agents by brand and refreshes the real discovery facts", async () => {
+it("refreshes discovery facts and keeps every agent visible", async () => {
   const user = userEvent.setup();
   const facade = facadeWith();
 
   renderListPage(facade);
 
-  expect(await screen.findByRole("heading", { name: "OpenAI" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Acme" })).toBeVisible();
+  expect((await screen.findAllByTestId("agent-card")).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
   expect(screen.getByText("可访问")).toBeVisible();
   expect(screen.getByText("自定义 Agent")).toBeVisible();
   expect(screen.getByText("2 个 Skill · 5 条部署关系")).toBeVisible();
@@ -222,25 +239,20 @@ it("records agent rescans in the unified operation tracker", async () => {
     </MemoryRouter>,
   );
 
-  await screen.findByRole("heading", { name: "OpenAI" });
+  await screen.findAllByTestId("agent-card");
   await user.click(screen.getByRole("button", { name: "重新扫描" }));
 
   await waitFor(() => expect(tracker.getSnapshot()[0]?.status).toBe("success"));
   expect(tracker.getSnapshot()[0]).toMatchObject({ kind: "agent_rescan", total: 1 });
 });
 
-it("renders brand group headings as branded color tags", async () => {
+it("keeps brand identity on each tiled card", async () => {
   renderListPage(facadeWith());
 
-  const openaiHeading = await screen.findByRole("heading", { name: "OpenAI" });
-  expect(openaiHeading.querySelector(".sh-brand-tag")).toHaveClass(
-    "sh-brand-tag--openai",
-  );
-
-  const acmeHeading = screen.getByRole("heading", { name: "Acme" });
-  const acmeTag = acmeHeading.querySelector(".sh-brand-tag");
-  expect(acmeTag).toHaveClass("sh-brand-tag--neutral");
-  expect(acmeTag).toHaveAttribute("title", "Acme");
+  await screen.findAllByTestId("agent-card");
+  const openaiTag = document.querySelector(".sh-agent-card .sh-brand-tag--openai");
+  expect(openaiTag).not.toBeNull();
+  expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
 });
 
 it("aggregates duplicate deployment relations by unique skill per agent", async () => {
@@ -284,7 +296,7 @@ it("offers an explicit custom agent creation entry with the filled values", asyn
   const facade = facadeWith();
 
   renderListPage(facade);
-  await screen.findByRole("heading", { name: "OpenAI" });
+  await screen.findAllByTestId("agent-card");
 
   await user.click(screen.getByRole("button", { name: "新增自定义 Agent" }));
   expect(await screen.findByText("自定义 Agent 只记录你选择的全局 Skill 目录，并标记为未验证自定义目标。")).toBeVisible();
@@ -311,7 +323,7 @@ it("edits a custom agent through its list entry with prefilled values", async ()
   const facade = facadeWith();
 
   renderListPage(facade);
-  await screen.findByRole("heading", { name: "Acme" });
+  await screen.findAllByTestId("agent-card");
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
@@ -338,7 +350,7 @@ it("removes a custom agent only after explicit confirmation", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
-  await screen.findByRole("heading", { name: "Acme" });
+  await screen.findAllByTestId("agent-card");
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
@@ -358,7 +370,7 @@ it("does not offer custom agent actions for discovered agents", async () => {
   const facade = facadeWith();
 
   renderListPage(facade, discoveredOnly);
-  await screen.findByRole("heading", { name: "OpenAI" });
+  await screen.findAllByTestId("agent-card");
 
   expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
@@ -390,7 +402,7 @@ it("returns drawer focus to the trigger that opened it", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
-  await screen.findByRole("heading", { name: "OpenAI" });
+  await screen.findAllByTestId("agent-card");
 
   await user.click(screen.getByRole("button", { name: "新增自定义 Agent" }));
   expect(await screen.findByRole("dialog")).toBeVisible();
@@ -405,7 +417,7 @@ it("returns drawer focus to the card edit trigger after editing", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
-  await screen.findByRole("heading", { name: "Acme" });
+  await screen.findAllByTestId("agent-card");
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");

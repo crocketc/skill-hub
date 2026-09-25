@@ -14,21 +14,11 @@
   gap: var(--space-2);
 }
 
-.sh-agents-page__brand {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-3);
-}
-
-.sh-agents-page__brand > h2 {
-  margin: 0;
-  font-size: var(--font-size-lg);
-  line-height: 1.25;
-}
-
 /* 实体卡片网格：验收反馈（2026-09-25）改为多行多列平铺——按容器宽度
    auto-fill 自动排满列，减少纵向滚动；336px 列宽下限保证 1180px 容器
-   仍为 3 列、760px 为 2 列，卡片大小与既有断点一致。 */
+   仍为 3 列、760px 为 2 列，卡片大小与既有断点一致。品牌不再分组出
+   标题行：卡片自带品牌+类型标识，每组网格只剩一两张卡等于没有平铺，
+   整页单一网格才是真平铺。 */
 .sh-agents-page__cards {
   display: grid;
   padding: 0;
