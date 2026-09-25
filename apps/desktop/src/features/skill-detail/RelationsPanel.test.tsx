@@ -1,9 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
-import type { RemovalImpactFact } from "../../api/bindings";
+import type { GovernanceHistoryEntry, RemovalImpactFact } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import type { SkillRelation } from "./api";
 import { RelationsPanel } from "./RelationsPanel";
@@ -94,14 +94,16 @@ const impact: RemovalImpactFact = {
 async function renderPanel(props: Partial<Parameters<typeof RelationsPanel>[0]> = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
-      <RelationsPanel
-        onLoadRemovalImpact={vi.fn(async () => impact)}
-        relations={legacyRelations}
-        relationship={relationship}
-        {...props}
-      />
-    </I18nextProvider>,
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <RelationsPanel
+          onLoadRemovalImpact={vi.fn(async () => impact)}
+          relations={legacyRelations}
+          relationship={relationship}
+          {...props}
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -177,4 +179,56 @@ it("offers a governance deep link per governed relation when a builder is provid
   expect(relCopyLink?.getAttribute("href")).toBe(
     "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-copy",
   );
+});
+
+// —— 任务 12C（12.6/12.13）：Skill 详情列出最近的不可变来源事件摘要 ——
+
+function sourceEvent(overrides: Partial<GovernanceHistoryEntry>): GovernanceHistoryEntry {
+  return {
+    relation_id: "rel-copy",
+    skill_id: "skill-pdf",
+    skill_display_name: "PDF 阅读器",
+    agent: { client_id: "codex-cli" },
+    path: "C:/agents/codex/skills/pdf-reader",
+    scope: "agent",
+    project_id: null,
+    action: "clean_source_copy",
+    result: "committed",
+    reason: null,
+    operation_id: "op-1",
+    occurred_at: "1727123456000",
+    ...overrides,
+  };
+}
+
+it("lists recent immutable source events newest-first with a view-all entry", async () => {
+  await renderPanel({
+    historyHref: "/relationships/governance/history",
+    sourceEvents: [
+      sourceEvent({
+        relation_id: "rel-new",
+        action: "retain_source_copy",
+        result: "retained",
+        occurred_at: "1727123500000",
+      }),
+      sourceEvent({ occurred_at: "1727123400000" }),
+    ],
+  });
+
+  const section = screen.getByTestId("source-events");
+  const items = within(section).getAllByTestId("source-event");
+  expect(items).toHaveLength(2);
+  // 新事件在前：保留动作先于清理动作。
+  expect(items[0]?.textContent).toContain("保留来源副本");
+  expect(items[1]?.textContent).toContain("清理来源副本");
+  // 摘要只做展示；治理动作经「查看全部」/既有深链进入治理页，不在详情页复制流程。
+  expect(
+    within(section).getByRole("link", { name: "查看治理历史" }),
+  ).toHaveAttribute("href", "/relationships/governance/history");
+});
+
+it("omits the source events section when no events are provided", async () => {
+  await renderPanel({});
+
+  expect(screen.queryByTestId("source-events")).not.toBeInTheDocument();
 });

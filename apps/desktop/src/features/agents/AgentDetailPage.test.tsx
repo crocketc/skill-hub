@@ -1,11 +1,18 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
-import { expect, it, vi } from "vitest";
-import type { RelationshipOverview } from "../../api/bindings";
+import { afterEach, expect, it, vi } from "vitest";
+import type {
+  GovernanceHistoryEntry,
+  RelationshipOverview,
+  RelationGovernanceRow,
+} from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
+import type { RelationGovernanceFacade } from "../relationships/governance/api";
+import { governanceContextCheckStorageKey } from "../relationships/governance/useRelationshipContextCheck";
 import { type AgentFacade, type AgentView, agentFixture, customAgentFixture } from "./api";
 import { AgentDetailPage } from "./AgentDetailPage";
 import { RelationsView } from "./RelationsView";
@@ -41,14 +48,22 @@ function facadeWith(agent: AgentView, overrides: Partial<AgentFacade> = {}): Age
   };
 }
 
-async function renderDetailPage(facade: AgentFacade) {
+async function renderDetailPage(facade: AgentFacade, governanceFacade?: RelationGovernanceFacade) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <MemoryRouter initialEntries={["/agents/custom-reviewer"]}>
-      <I18nextProvider i18n={i18n}>
-        <AgentDetailPage agentId="custom-reviewer" facade={facade} picker={pickingPicker} />
-      </I18nextProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/agents/custom-reviewer"]}>
+        <I18nextProvider i18n={i18n}>
+          <AgentDetailPage
+            agentId="custom-reviewer"
+            facade={facade}
+            governanceFacade={governanceFacade}
+            picker={pickingPicker}
+          />
+        </I18nextProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -210,4 +225,81 @@ it("keeps the rest of the detail page usable when relationship facts are unavail
   expect(await screen.findByText("目录关系事实暂不可用。")).toBeVisible();
   // 其余页面区块不受影响。
   expect(screen.getByText("Agent 级忽略需要原生契约支持，暂未提供。")).toBeVisible();
+});
+
+// —— 任务 12C（12.7/12.14）：Agent 详情页顶层一次 Light check ——
+
+function governanceLedgerRow(relationId: string): RelationGovernanceRow {
+  return {
+    relation: {
+      kind: "deployment" as const,
+      fact: {
+        relation_id: relationId,
+        skill_id: "skill-pdf",
+        agent_client_id: "codex-cli",
+        path: "C:/agents/codex-cli/skills/pdf-reader",
+        path_key: "c:/agents/codex-cli/skills/pdf-reader",
+        directory_node_id: null,
+        relationship: "managed_copy" as const,
+        file_representation: "copy" as const,
+        ownership: "skillhub_managed" as const,
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "sha256:aaa",
+        origin: "import" as const,
+        match_state: "content_verified" as const,
+        active: true,
+        observed_at: "1737600000000",
+        released_at: null,
+      },
+    },
+    skill_display_name: "PDF 阅读器",
+    status: "normal" as const,
+    readiness: "eligible_to_centralize" as const,
+    primary_action: "centralize_management" as const,
+    blockers: [],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: true,
+      rollback_available: true,
+    },
+  };
+}
+
+describe("AgentDetailPage context check (12C)", () => {
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("runs one light context check for the current agent at the top level", async () => {
+    const governanceFacade = {
+      listGovernance: vi.fn(async () => ({
+        rows: [governanceLedgerRow("r-agent-dep-1")],
+        counts: { all: 1, eligible_to_centralize: 0, needs_validation: 0, blocked: 0 },
+        bucket: "all" as const,
+        total: 1,
+        relationship_revision: "rev-1",
+        last_verified_at: null,
+      })),
+      revalidate: vi.fn(async () => ({ items: [], relationship_revision: "rev-2" })),
+      listHistory: vi.fn(async () => ({
+        items: [] as GovernanceHistoryEntry[],
+        total: 0,
+        page: 1,
+        page_size: 5,
+      })),
+    } as unknown as RelationGovernanceFacade;
+    await renderDetailPage(facadeWith(agentFixture()), governanceFacade);
+
+    expect(await screen.findByText("已发现客户端和 Skill 目录")).toBeVisible();
+    await waitFor(() => expect(governanceFacade.revalidate).toHaveBeenCalledTimes(1));
+    expect(governanceFacade.revalidate).toHaveBeenCalledWith(["r-agent-dep-1"], "light");
+    expect(
+      sessionStorage.getItem(governanceContextCheckStorageKey("agent:Codex family")),
+    ).toBe("1");
+  });
 });

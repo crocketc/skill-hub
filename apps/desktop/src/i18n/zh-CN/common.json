@@ -1547,6 +1547,9 @@
         "empty": "尚未登记部署关系事实。",
         "sharedAgent": "目标 Agent：{{agent}}",
         "loadError": "关系事实暂不可用；部署与来源信息可能不完整。"
+      },
+      "sourceEvents": {
+        "heading": "最近来源动态"
       }
     },
     "provenance": {

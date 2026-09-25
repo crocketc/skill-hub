@@ -6,6 +6,13 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
 import { buildSkillRelationshipViews } from "../relationshipGovernance/relationshipGovernance";
+import {
+  relationIdOf,
+  type RelationGovernanceFacade,
+} from "../relationships/governance/api";
+import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
+import { relationshipsKeys } from "../relationships/api";
+import { useRelationshipContextCheck } from "../relationships/governance/useRelationshipContextCheck";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import {
   type MarkdownFacade,
@@ -56,6 +63,8 @@ import type { SkillRelation } from "./api";
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
   markdownFacade?: MarkdownFacade;
+  /** 任务 12C：治理门面（上下文自动检查 + 来源事件摘要）；缺省用原生实现。 */
+  governanceFacade?: RelationGovernanceFacade;
   removalFacade?: RemovalFacade;
   refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
@@ -104,6 +113,7 @@ function SkillTrajectory({
 export function SkillDetailPage({
   facade,
   markdownFacade = nativeMarkdownFacade,
+  governanceFacade = nativeGovernanceFacade,
   removalFacade,
   refreshSnapshot,
   tracker = operationTracker,
@@ -148,6 +158,27 @@ export function SkillDetailPage({
     queryFn: () => facade.getRelationshipOverview(skillId),
     queryKey: skillDetailKeys.relationship(skillId),
   });
+  // 任务 12C：当前 Skill 的可管理关系台账 + 最近来源事件摘要（只读）。
+  const governanceLedgerQuery = useQuery({
+    queryFn: () => governanceFacade.listGovernance({ skill_id: skillId }),
+    queryKey: relationshipsKeys.governance({ skill_id: skillId }),
+  });
+  const governedRelationIds = (governanceLedgerQuery.data?.rows ?? []).map((row) =>
+    relationIdOf(row.relation),
+  );
+  useRelationshipContextCheck({
+    facade: governanceFacade,
+    scope: `skill:${skillId}`,
+    relationIds: governedRelationIds,
+    enabled: governanceLedgerQuery.isSuccess && governedRelationIds.length > 0,
+  });
+  const sourceEventsQuery = useQuery({
+    queryFn: () => governanceFacade.listHistory({ skillId, page: 1, pageSize: 5 }),
+    queryKey: relationshipsKeys.governanceHistory({ page: 1, pageSize: 5, skillId }),
+  });
+  const sourceEvents = [...(sourceEventsQuery.data?.items ?? [])].sort(
+    (left, right) => Number(right.occurred_at) - Number(left.occurred_at),
+  );
   const requirementsQuery = useQuery({
     queryFn: () => facade.getRequirements(skillId),
     queryKey: skillDetailKeys.requirements(skillId),
@@ -400,10 +431,12 @@ export function SkillDetailPage({
                 <RelationsPanel
                   governanceHref={(relation) =>
                     `/relationships/governance?from=library&skillId=${encodeURIComponent(skillId)}&relationId=${encodeURIComponent(relation.relationId)}`}
+                  historyHref="/relationships/governance/history"
                   onLoadRemovalImpact={loadRelationshipRemovalImpact}
                   onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
                   relationship={relationshipViews}
                   relations={relationsQuery.data}
+                  sourceEvents={sourceEvents}
                 />
               ) : null}
             </div>

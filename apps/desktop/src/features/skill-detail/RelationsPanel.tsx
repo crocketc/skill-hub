@@ -1,10 +1,15 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import type { RemovalImpactFact } from "../../api/bindings";
+import type { GovernanceHistoryEntry, RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { RelationshipRemovalImpactView } from "../relationshipGovernance/RelationshipRemovalImpactView";
+import {
+  formatGovernanceHistoryTime,
+  governanceHistoryActionLabelKey,
+  governanceHistoryResultLabelKey,
+} from "../relationships/governance/GovernanceHistoryTable";
 import {
   fingerprintLabelKey,
   ownershipLabelKey,
@@ -23,14 +28,20 @@ export interface RelationsPanelProps {
   onLoadRemovalImpact?: (relationId: string) => Promise<RemovalImpactFact>;
   /** 提供时每条治理关系行都有「管理关系」深链，指向治理页并携带 relationId。 */
   governanceHref?: (relation: RelationshipView) => string;
+  /** 任务 12.13：最近 N 条不可变来源事件（治理历史）；只读摘要，不复制治理流程。 */
+  sourceEvents?: readonly GovernanceHistoryEntry[];
+  /** 「查看全部」分页入口指向治理历史页。 */
+  historyHref?: string;
 }
 
 export function RelationsPanel({
   governanceHref,
+  historyHref,
   onLoadRemovalImpact,
   onUndeploy,
   relations,
   relationship,
+  sourceEvents,
 }: RelationsPanelProps) {
   const { t } = useTranslation();
   const groups = new Map<string, SkillRelation[]>();
@@ -110,6 +121,40 @@ export function RelationsPanel({
               ))}
             </ul>
           )}
+        </section>
+      ) : null}
+      {sourceEvents && sourceEvents.length > 0 ? (
+        <section data-testid="source-events">
+          <p><strong>{t("skillDetail.relations.sourceEvents.heading")}</strong></p>
+          {/* 时间倒序由调用方保证；这里只做只读摘要，治理动作在治理页执行。 */}
+          <ul>
+            {sourceEvents.map((entry) => (
+              <li data-testid="source-event" key={`${entry.relation_id}-${entry.occurred_at}`}>
+                <span>{formatGovernanceHistoryTime(entry.occurred_at)}</span>
+                <span>
+                  {(() => {
+                    const actionKey = governanceHistoryActionLabelKey(entry.action);
+                    return actionKey ? t(actionKey as never) : entry.action;
+                  })()}
+                </span>
+                <span>
+                  {(() => {
+                    const resultKey = governanceHistoryResultLabelKey(entry.result);
+                    return resultKey ? t(resultKey as never) : entry.result;
+                  })()}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {historyHref ? (
+            <Link
+              className="sh-governance__row-link"
+              data-testid="source-events-view-all"
+              to={historyHref}
+            >
+              {t("relationships.governance.history.link")}
+            </Link>
+          ) : null}
         </section>
       ) : null}
     </div>

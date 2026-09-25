@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import {
@@ -22,6 +22,12 @@ import { createMockSkillDetailFacade } from "./testFixtures";
 import type { RemovalFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
+import type {
+  GovernanceHistoryEntry,
+  RelationGovernanceRow,
+} from "../../api/bindings";
+import type { RelationGovernanceFacade } from "../relationships/governance/api";
+import { governanceContextCheckStorageKey } from "../relationships/governance/useRelationshipContextCheck";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
@@ -30,6 +36,7 @@ interface RenderDetailOptions {
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
   tracker?: OperationTracker;
+  governanceFacade?: RelationGovernanceFacade;
 }
 
 async function renderDetail({
@@ -39,6 +46,7 @@ async function renderDetail({
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
   tracker,
+  governanceFacade,
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
@@ -50,11 +58,11 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -641,5 +649,154 @@ describe("Task 7: governed relationship sections", () => {
     // 既有部署关系行与从目标移除入口不受影响，页面没有虚假的空事实声明。
     expect(screen.getAllByTestId("physical-target").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("governed-relations")).not.toBeInTheDocument();
+  });
+});
+
+// —— 任务 12C（12.7/12.13）：详情页顶层一次 Light check + 最近来源事件摘要 ——
+
+function governanceLedgerRow(relationId: string, kind: "deployment" | "source_copy"): RelationGovernanceRow {
+  return {
+    relation:
+      kind === "deployment"
+        ? {
+            kind: "deployment" as const,
+            fact: {
+              relation_id: relationId,
+              skill_id: "skill-pdf",
+              agent_client_id: "codex",
+              path: "C:/agents/codex/skills/pdf-reader",
+              path_key: "c:/agents/codex/skills/pdf-reader",
+              directory_node_id: null,
+              relationship: "managed_copy" as const,
+              file_representation: "copy" as const,
+              ownership: "skillhub_managed" as const,
+              link_target_path: null,
+              link_target_path_key: null,
+              link_target_directory_id: null,
+              content_fingerprint: "sha256:aaa",
+              origin: "import" as const,
+              match_state: "content_verified" as const,
+              active: true,
+              observed_at: "1737600000000",
+              released_at: null,
+            },
+          }
+        : {
+            kind: "source_copy" as const,
+            fact: {
+              relation_id: relationId,
+              skill_id: "skill-pdf",
+              latest_provenance_id: "prov-1",
+              source_class: "agent_local" as const,
+              source_path: "C:/agents/codex/skills/pdf-reader",
+              source_path_key: "c-agents-codex-skills-pdf-reader",
+              physical_source_id: "phys-1",
+              source_container_id: null,
+              directory_node_id: null,
+              agent_client_id: "codex",
+              expected_fingerprint: "sha256:aaa",
+              current_fingerprint: "sha256:aaa",
+              decision: "pending" as const,
+              health: "normal" as const,
+              active: true,
+              last_verified_at: null,
+              archived_at: null,
+              archive_reason: null,
+            },
+          },
+    skill_display_name: "PDF Reader",
+    status: "normal" as const,
+    readiness: "eligible_to_centralize" as const,
+    primary_action: "centralize_management" as const,
+    blockers: [],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: true,
+      rollback_available: true,
+    },
+  };
+}
+
+function governanceStub(options: {
+  rows: RelationGovernanceRow[];
+  history?: GovernanceHistoryEntry[];
+}): RelationGovernanceFacade {
+  return {
+    listGovernance: vi.fn(async () => ({
+      rows: options.rows,
+      counts: { all: options.rows.length, eligible_to_centralize: 0, needs_validation: 0, blocked: 0 },
+      bucket: "all" as const,
+      total: options.rows.length,
+      relationship_revision: "rev-1",
+      last_verified_at: null,
+    })),
+    revalidate: vi.fn(async () => ({ items: [], relationship_revision: "rev-2" })),
+    listHistory: vi.fn(async () => ({
+      items: options.history ?? [],
+      total: options.history?.length ?? 0,
+      page: 1,
+      page_size: 5,
+    })),
+  } as unknown as RelationGovernanceFacade;
+}
+
+describe("SkillDetailPage context check and source events (12C)", () => {
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("runs one light context check for the current skill at the top level", async () => {
+    const governanceFacade = governanceStub({
+      rows: [
+        governanceLedgerRow("r-dep-1", "deployment"),
+        governanceLedgerRow("r-src-1", "source_copy"),
+      ],
+    });
+    await renderDetail({ governanceFacade });
+
+    expect(await screen.findByTestId("governed-relations")).toBeVisible();
+    await waitFor(() => expect(governanceFacade.revalidate).toHaveBeenCalledTimes(1));
+    expect(governanceFacade.revalidate).toHaveBeenCalledWith(
+      ["r-dep-1", "r-src-1"],
+      "light",
+    );
+    expect(
+      sessionStorage.getItem(governanceContextCheckStorageKey("skill:skill-pdf")),
+    ).toBe("1");
+  });
+
+  it("lists recent immutable source events with a view-all entry", async () => {
+    const governanceFacade = governanceStub({
+      rows: [governanceLedgerRow("r-dep-1", "deployment")],
+      history: [
+        {
+          relation_id: "r-dep-1",
+          skill_id: "skill-pdf",
+          skill_display_name: "PDF Reader",
+          agent: { client_id: "codex" },
+          path: "C:/agents/codex/skills/pdf-reader",
+          scope: "agent",
+          project_id: null,
+          action: "retain_source_copy",
+          result: "retained",
+          reason: null,
+          operation_id: "op-1",
+          occurred_at: "1727123456000",
+        },
+      ],
+    });
+    await renderDetail({ governanceFacade });
+
+    const section = await screen.findByTestId("source-events");
+    expect(within(section).getAllByTestId("source-event")).toHaveLength(1);
+    expect(within(section).getByTestId("source-event").textContent).toContain(
+      "Keep source copy",
+    );
+    expect(
+      within(section).getByRole("link", { name: "View governance history" }),
+    ).toHaveAttribute("href", "/relationships/governance/history");
   });
 });

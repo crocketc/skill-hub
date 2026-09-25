@@ -1547,6 +1547,9 @@
         "empty": "No deployment relationship facts are registered yet.",
         "sharedAgent": "Target agent: {{agent}}",
         "loadError": "Relationship facts are unavailable; deployment and source details may be incomplete."
+      },
+      "sourceEvents": {
+        "heading": "Recent source activity"
       }
     },
     "provenance": {

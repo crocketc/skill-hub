@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { DataState } from "../../ui/DataState";
 import { Button } from "../../ui/Button";
+import { relationshipsKeys } from "../relationships/api";
+import {
+  relationIdOf,
+  type RelationGovernanceFacade,
+} from "../relationships/governance/api";
+import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
+import { useRelationshipContextCheck } from "../relationships/governance/useRelationshipContextCheck";
 import { type ProjectAssemblyPlanView, type ProjectFacade, type ProjectPhysicalTargetView, type ProjectView, unavailableProjectFacade } from "./api";
 import { ProjectAccessPanel } from "./ProjectAccessPanel";
 import { ProjectAssemblyPlanGroups } from "./ProjectAssemblyPlanGroups";
@@ -17,11 +25,18 @@ import "./projects.css";
 export interface ProjectDetailPageProps {
   projectId?: string;
   facade?: ProjectFacade;
+  /** 任务 12C：治理门面（顶层一次 Light 上下文检查）；缺省用原生实现。 */
+  governanceFacade?: RelationGovernanceFacade;
   /** B2：解除管理落点；宿主注入原生实现，缺省时区块不渲染（降级环境）。 */
   managedDeploymentOps?: ProjectManagedDeploymentsOps;
 }
 
-export function ProjectDetailPage({ projectId = "default", facade = unavailableProjectFacade, managedDeploymentOps }: ProjectDetailPageProps) {
+export function ProjectDetailPage({
+  projectId = "default",
+  facade = unavailableProjectFacade,
+  governanceFacade = nativeGovernanceFacade,
+  managedDeploymentOps,
+}: ProjectDetailPageProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [project, setProject] = useState<ProjectView>();
@@ -35,6 +50,20 @@ export function ProjectDetailPage({ projectId = "default", facade = unavailableP
   const [saveError, setSaveError] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(false);
+  // 任务 12C（12.7/12.14）：页面顶层对该项目的可管理关系做一次 Light check。
+  const governanceLedgerQuery = useQuery({
+    queryFn: () => governanceFacade.listGovernance({ project_id: projectId }),
+    queryKey: relationshipsKeys.governance({ project_id: projectId }),
+  });
+  const governedRelationIds = (governanceLedgerQuery.data?.rows ?? []).map((row) =>
+    relationIdOf(row.relation),
+  );
+  useRelationshipContextCheck({
+    facade: governanceFacade,
+    scope: `project:${projectId}`,
+    relationIds: governedRelationIds,
+    enabled: governanceLedgerQuery.isSuccess && governedRelationIds.length > 0,
+  });
   useEffect(() => {
     let active = true;
     void facade.get(projectId).then((value) => {

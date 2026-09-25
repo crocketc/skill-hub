@@ -60,7 +60,12 @@ export const relationshipsKeys = {
     [relationshipsKeys.root, "conflicts", params] as const,
   governance: (params: RelationshipGovernanceParams = {}) =>
     [relationshipsKeys.root, "governance", params] as const,
-  governanceHistory: (params: { page: number; pageSize: number }) =>
+  governanceHistory: (params: {
+    page: number;
+    pageSize: number;
+    /** 任务 12C：Skill 详情页按 skill 过滤的摘要查询与治理历史页分开缓存。 */
+    skillId?: string | null;
+  }) =>
     [relationshipsKeys.root, "governance-history", params] as const,
 };
 

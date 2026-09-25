@@ -27,20 +27,32 @@ const KNOWN_RESULTS = new Set([
   "failed",
 ]);
 
-function actionLabelKey(action: string): string | null {
+/** 动作展示键；已知词表走 i18n，未知值由调用方原样展示（诚实降级）。 */
+export function governanceHistoryActionLabelKey(action: string): string | null {
   return KNOWN_ACTIONS.has(action)
     ? `relationships.governance.history.action.${action}`
     : null;
 }
 
-function formatTime(occurredAt: string): string {
-  // occurred_at 是写盘时固化的 epoch 毫秒（跨 IPC 以字符串承载）。
+/** 结果展示键；语义同上。 */
+export function governanceHistoryResultLabelKey(result: string): string | null {
+  return KNOWN_RESULTS.has(result)
+    ? `relationships.governance.history.result.${result}`
+    : null;
+}
+
+/** occurred_at 是写盘时固化的 epoch 毫秒（跨 IPC 以字符串承载）。 */
+export function formatGovernanceHistoryTime(occurredAt: string): string {
   const date = new Date(Number(occurredAt));
   if (Number.isNaN(date.getTime())) return occurredAt;
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatTime(occurredAt: string): string {
+  return formatGovernanceHistoryTime(occurredAt);
 }
 
 export function GovernanceHistoryTable({
@@ -68,7 +80,6 @@ export function GovernanceHistoryTable({
         </thead>
         <tbody>
           {entries.map((entry) => {
-            const actionKey = actionLabelKey(entry.action);
             const externalRemoved = entry.result === "archived" && entry.reason === "external_removed";
             const failed = entry.result === "failed";
             return (
@@ -84,7 +95,10 @@ export function GovernanceHistoryTable({
                   })}
                 </td>
                 <td data-testid={`governance-history-action-${entry.relation_id}`}>
-                  {actionKey ? t(actionKey as never) : entry.action}
+                  {(() => {
+                    const key = governanceHistoryActionLabelKey(entry.action);
+                    return key ? t(key as never) : entry.action;
+                  })()}
                 </td>
                 <td data-testid={`governance-history-result-${entry.relation_id}`}>
                   {externalRemoved ? (
@@ -92,9 +106,10 @@ export function GovernanceHistoryTable({
                     <span>{t("relationships.governance.history.externalRemoved")}</span>
                   ) : (
                     <span>
-                      {KNOWN_RESULTS.has(entry.result)
-                        ? t(`relationships.governance.history.result.${entry.result}` as never)
-                        : entry.result}
+                      {(() => {
+                        const key = governanceHistoryResultLabelKey(entry.result);
+                        return key ? t(key as never) : entry.result;
+                      })()}
                     </span>
                   )}
                   {failed && entry.reason ? <span>{entry.reason}</span> : null}

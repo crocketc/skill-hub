@@ -30,6 +30,8 @@ interface HookProps {
   scope: string;
   relationIds: readonly string[];
   enabled: boolean;
+  /** 任务 12.7：去重键携带关系修订/检查代次；变化后同会话可再查一次。 */
+  dedupeToken?: string;
 }
 
 function useTwoChecks(first: HookProps, second: HookProps, facade: RelationGovernanceFacade): void {
@@ -119,11 +121,11 @@ describe("useRelationshipContextCheck（任务 11.6）", () => {
     expect(facade.revalidate).toHaveBeenCalledTimes(2);
   });
 
-  it("still invalidates the ledger when the automatic check fails", async () => {
+  it("still invalidates the ledger when the automatic check fails, and does not mark it done", async () => {
     const facade = makeFacade({
       revalidate: vi.fn().mockRejectedValue(new Error("probe failed")),
     });
-    const { invalidateSpy } = render(
+    const { invalidateSpy, view } = render(
       { scope: "all", relationIds: ["r1"], enabled: true },
       facade,
     );
@@ -132,5 +134,41 @@ describe("useRelationshipContextCheck（任务 11.6）", () => {
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: relationshipsKeys.root,
     }));
+    // 任务 12.7：失败不标记完成——同会话重挂载后仍会再次发起检查。
+    expect(sessionStorage.getItem(governanceContextCheckStorageKey("all"))).toBeNull();
+    view.unmount();
+    const second = render(
+      { scope: "all", relationIds: ["r1"], enabled: true },
+      facade,
+    );
+    await waitFor(() => expect(facade.revalidate).toHaveBeenCalledTimes(2));
+    second.view.unmount();
+  });
+
+  it("keys session memory by scope plus dedupe token (12.7)", async () => {
+    const facade = makeFacade();
+    const { view } = render(
+      { scope: "skill:pdf", relationIds: ["r1"], enabled: true, dedupeToken: "rev-1" },
+      facade,
+    );
+
+    await waitFor(() => expect(facade.revalidate).toHaveBeenCalledTimes(1));
+    expect(
+      sessionStorage.getItem(governanceContextCheckStorageKey("skill:pdf@rev-1")),
+    ).toBe("1");
+    // 同 scope 同 token 不重放。
+    view.rerender(
+      { scope: "skill:pdf", relationIds: ["r1"], enabled: true, dedupeToken: "rev-1" },
+    );
+    expect(facade.revalidate).toHaveBeenCalledTimes(1);
+
+    // 修订推进（检查代次变化）后，同一会话允许再检查一次。
+    view.rerender(
+      { scope: "skill:pdf", relationIds: ["r1"], enabled: true, dedupeToken: "rev-2" },
+    );
+    await waitFor(() => expect(facade.revalidate).toHaveBeenCalledTimes(2));
+    expect(
+      sessionStorage.getItem(governanceContextCheckStorageKey("skill:pdf@rev-2")),
+    ).toBe("1");
   });
 });

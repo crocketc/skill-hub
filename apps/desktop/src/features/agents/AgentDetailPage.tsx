@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import type { RelationshipOverview } from "../../api/bindings";
 import { Button } from "../../ui/Button";
@@ -14,6 +15,13 @@ import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { relationshipsKeys } from "../relationships/api";
+import {
+  relationIdOf,
+  type RelationGovernanceFacade,
+} from "../relationships/governance/api";
+import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
+import { useRelationshipContextCheck } from "../relationships/governance/useRelationshipContextCheck";
 import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFacade } from "./api";
 import { DirectoryMatrix } from "./DirectoryMatrix";
 import { CustomAgentForm } from "./CustomAgentForm";
@@ -25,10 +33,17 @@ import { displayPath } from "../../platform/displayPath";
 export interface AgentDetailPageProps {
   agentId?: string;
   facade?: AgentFacade;
+  /** 任务 12C：治理门面（顶层一次 Light 上下文检查）；缺省用原生实现。 */
+  governanceFacade?: RelationGovernanceFacade;
   picker?: DirectoryPicker;
 }
 
-export function AgentDetailPage({ agentId = "default", facade = unavailableAgentFacade, picker = desktopDirectoryPicker }: AgentDetailPageProps) {
+export function AgentDetailPage({
+  agentId = "default",
+  facade = unavailableAgentFacade,
+  governanceFacade = nativeGovernanceFacade,
+  picker = desktopDirectoryPicker,
+}: AgentDetailPageProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [agent, setAgent] = useState<AgentView>();
@@ -39,6 +54,22 @@ export function AgentDetailPage({ agentId = "default", facade = unavailableAgent
   const [relationshipOverview, setRelationshipOverview] = useState<RelationshipOverview>();
   const [relationshipUnavailable, setRelationshipUnavailable] = useState(false);
   const agentClientId = agent?.client;
+
+  // 任务 12C（12.7/12.14）：页面顶层对该 Agent 的可管理关系做一次 Light check。
+  const governanceLedgerQuery = useQuery({
+    enabled: Boolean(agentClientId),
+    queryFn: () => governanceFacade.listGovernance({ agent_client_id: agentClientId ?? "" }),
+    queryKey: relationshipsKeys.governance({ agent_client_id: agentClientId ?? "" }),
+  });
+  const governedRelationIds = (governanceLedgerQuery.data?.rows ?? []).map((row) =>
+    relationIdOf(row.relation),
+  );
+  useRelationshipContextCheck({
+    facade: governanceFacade,
+    scope: `agent:${agentClientId ?? ""}`,
+    relationIds: governedRelationIds,
+    enabled: governanceLedgerQuery.isSuccess && governedRelationIds.length > 0,
+  });
 
   useEffect(() => {
     let active = true;
