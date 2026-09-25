@@ -2163,12 +2163,13 @@
   "relationshipGovernance": {
     "relationship": {
       "import_copy": "Import copy",
-      "shared_directory_read": "Shared directory direct read",
-      "shared_directory_reference": "Shared directory link reference",
       "managed_copy": "Copy deployment",
       "managed_link": "Link deployment",
       "observed_copy": "Observed copy",
       "observed_link": "Observed link",
+      "shared_directory_read": "Shared directory direct read",
+      "shared_directory_reference": "Shared directory link reference",
+      "source_copy": "Source copy",
       "unknown": "Relationship unconfirmed"
     },
     "fileRepresentation": {
@@ -2204,7 +2205,13 @@
     "fingerprint": {
       "content_verified": "Content verified",
       "name_only": "Name only (unverified)",
-      "diverged": "Content diverged"
+      "diverged": "Content diverged",
+      "normal": "Content verified",
+      "needs_validation": "Needs re-validation",
+      "content_changed": "Content changed",
+      "permission_limited": "Permission limited",
+      "managed_occupied": "Managed directory occupied",
+      "operation_failed": "Last operation failed"
     },
     "minimalAction": {
       "remove_current_agent_target": "Recommended: remove only this agent's target",
@@ -2522,10 +2529,8 @@
         "project": "Back to project details"
       },
       "deployEntry": {
-        "eyebrow": "Regular add entry",
-        "title": "Add to Agent/Project",
-        "description": "Putting a new Skill into an Agent/Project uses the regular add flow and stays separate from the governance actions below; this ledger only handles established relationship edges.",
-        "action": "Add to Agent/Project"
+        "action": "Add to Agent/Project",
+        "hint": "This ledger only handles established relationship edges; new skills go through the regular add flow, separate from governance here."
       },
       "filters": {
         "label": "Quick filters",
@@ -2534,16 +2539,8 @@
         "needs_validation": "Needs validation",
         "blocked": "Blocked",
         "withCount": "{{label}} ({{count}})",
-        "scope_all": "All types",
-        "scope_source_copy": "Source copies",
-        "scope_deployment": "Deployment edges",
-        "statusFilter": {
-          "normal": "Normal",
-          "retained": "Retained",
-          "needs_validation": "Needs validation",
-          "needs_attention": "Needs attention",
-          "blocked": "Blocked"
-        }
+        "scopeLabel": "Type",
+        "statusLabel": "Status"
       },
       "importBatch": {
         "banner": "This import left {{count}} local source copies"
@@ -2565,7 +2562,13 @@
       },
       "source": {
         "scan": "Found by scan",
-        "import": "Registered by import"
+        "import": "Registered by import",
+        "agent_local": "Agent-local copy",
+        "user_local": "User-local copy",
+        "registered_project": "Registered project copy",
+        "online": "Online import copy",
+        "central_library": "Central library copy",
+        "legacy_unclassified": "Unclassified source"
       },
       "readiness": {
         "eligible_to_centralize": "Ready to centralize",
@@ -2591,8 +2594,8 @@
       },
       "impact": {
         "noOtherConsumers": "No other shared consumers",
-        "otherConsumers_one": "Shared consumers: {{count}} ({{agents}})",
-        "otherConsumers_other": "Shared consumers: {{count}} ({{agents}})",
+        "otherConsumers_one": "{{count}} other shared consumer",
+        "otherConsumers_other": "{{count}} other shared consumers",
         "rollbackAvailable": "Rollback available",
         "rollbackUnavailable": "No rollback available"
       },
@@ -2727,7 +2730,19 @@
         "all": "Relationships are in good shape; there is no relationship change to handle.",
         "filtered": "No relationships under this filter."
       },
-      "manageRelations": "Manage relations"
+      "manageRelations": "Manage relations",
+      "scope": {
+        "all": "All types",
+        "source_copy": "Source copies",
+        "deployment": "Deployment edges"
+      },
+      "statusFilter": {
+        "normal": "Normal",
+        "retained": "Retained",
+        "needs_validation": "Needs validation",
+        "needs_attention": "Needs attention",
+        "blocked": "Blocked"
+      }
     }
   },
   "operations": {

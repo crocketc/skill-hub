@@ -67,3 +67,44 @@ it("formats file sizes through Intl for the active locale", () => {
   expect(formatFileSize(1536, "en-US")).toBe("1.5 kB");
   expect(formatFileSize(1536, "zh-CN")).toBe("1.5 kB");
 });
+
+it("ships readable copy for every governance workbench vocabulary the UI maps to", () => {
+  // 治理工作台的筛选与行词表按动态键拼接（scope.${x} / statusFilter.${x} /
+  // source.${x} / fingerprint.${x}）；任一缺失都会让 i18next 把键名直接
+  // 渲染给用户（2026-09-25 验收缺陷）。
+  const requiredKeys = [
+    "relationships.governance.scope.all",
+    "relationships.governance.scope.source_copy",
+    "relationships.governance.scope.deployment",
+    "relationships.governance.statusFilter.normal",
+    "relationships.governance.statusFilter.retained",
+    "relationships.governance.statusFilter.needs_validation",
+    "relationships.governance.statusFilter.needs_attention",
+    "relationships.governance.statusFilter.blocked",
+    "relationships.governance.source.scan",
+    "relationships.governance.source.import",
+    "relationships.governance.source.agent_local",
+    "relationships.governance.source.user_local",
+    "relationships.governance.source.registered_project",
+    "relationships.governance.source.online",
+    "relationships.governance.source.central_library",
+    "relationships.governance.source.legacy_unclassified",
+    "relationshipGovernance.relationship.source_copy",
+    "relationshipGovernance.relationship.import_copy",
+    "relationshipGovernance.fingerprint.content_verified",
+    "relationshipGovernance.fingerprint.name_only",
+    "relationshipGovernance.fingerprint.diverged",
+    "relationshipGovernance.fingerprint.normal",
+    "relationshipGovernance.fingerprint.needs_validation",
+    "relationshipGovernance.fingerprint.content_changed",
+    "relationshipGovernance.fingerprint.permission_limited",
+    "relationshipGovernance.fingerprint.managed_occupied",
+    "relationshipGovernance.fingerprint.operation_failed",
+  ];
+  const zhKeys = flattenTranslationKeys(zhCN);
+  const enKeys = flattenTranslationKeys(enUS);
+  for (const key of requiredKeys) {
+    expect(zhKeys).toContain(key);
+    expect(enKeys).toContain(key);
+  }
+});

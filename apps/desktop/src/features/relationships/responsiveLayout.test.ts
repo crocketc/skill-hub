@@ -64,8 +64,14 @@ describe("relationship workbench layout at a compact 800x600 window", () => {
   });
 
   it("keeps the governance table inside its scrollable panel", () => {
+    // 2026-09-25 重设后的画布契约：.sh-governance 是两行网格的唯一画布
+    // （纵向 flex、min-height 0），清单是其中的弹性滚动区——
+    // 不再用 60vh 魔数限高，头部/工具条钉顶、清单吃满剩余高度。
     expect(governanceCss).toMatch(
-      /\.sh-governance__list\s*\{[\s\S]*?max-height:\s*60vh[\s\S]*?overflow-x:\s*auto[\s\S]*?overflow-y:\s*auto/,
+      /\.sh-governance\s*\{[\s\S]*?flex-direction:\s*column[\s\S]*?min-height:\s*0/,
+    );
+    expect(governanceCss).toMatch(
+      /\.sh-governance__list\s*\{[\s\S]*?flex:\s*1 1 auto[\s\S]*?min-height:\s*0[\s\S]*?overflow-x:\s*auto[\s\S]*?overflow-y:\s*auto/,
     );
   });
 });

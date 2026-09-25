@@ -170,16 +170,16 @@ export function GovernanceRelationTable({
                 <td>
                   <span>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</span>
                   {row.blockers.length > 0 ? (
-                    <ul
+                    /* 受阻原因是一行浅色说明：整句列表会把行高撑到三四倍，
+                       扫读清单时噪声远大于信息（2026-09-25 重设）。 */
+                    <p
                       className="sh-governance__blockers"
                       data-testid={`governance-blockers-${relationId}`}
                     >
-                      {row.blockers.map((blocker) => (
-                        <li key={blocker}>
-                          {t(`relationships.governance.blockers.${blocker}` as never)}
-                        </li>
-                      ))}
-                    </ul>
+                      {row.blockers
+                        .map((blocker) => t(`relationships.governance.blockers.${blocker}` as never))
+                        .join(" ")}
+                    </p>
                   ) : null}
                 </td>
                 <td className="sh-governance__actions">

@@ -1,32 +1,101 @@
-/* 关系治理工作台样式（任务 8）。仅使用 --ui-* / --space-* 语义 token，不写死主题色。 */
+/* 关系治理工作台样式（2026-09-25 重设）。
+ * 画布契约：.sh-governance 是 .sh-relationships 两行网格的唯一画布子元素，
+ * 自身是纵向 flex——头部与筛选工具条钉顶，清单是唯一弹性滚动区。
+ * 仅使用 --ui-* / --space-* 语义 token，不写死主题色。 */
+.sh-governance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
 .sh-governance__source-bar {
   display: flex;
   justify-content: flex-start;
 }
 
-.sh-governance__eyebrow {
-  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
-  font-size: 0.85rem;
-  margin: 0;
-}
-
-.sh-governance__deploy-entry {
-  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
-  border-radius: var(--space-2);
+/* 头部：一行说明 + 治理历史入口，一行独立提示 + 普通添加入口。
+   两个次级入口都收在行尾，不再用整块推广卡占据首屏。 */
+.sh-governance__head {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-4);
+  gap: var(--space-1);
 }
 
-.sh-governance__deploy-entry h2 {
+.sh-governance__head-row {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.sh-governance__intro {
+  color: var(--ui-ink-muted);
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+  margin: 0;
+  min-width: 0;
+}
+
+.sh-governance__history-link,
+.sh-governance__hint-link {
+  color: var(--ui-accent-strong);
+  flex: 0 0 auto;
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+
+.sh-governance__history-link:hover,
+.sh-governance__hint-link:hover {
+  text-decoration: underline;
+}
+
+.sh-governance__hint {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
   margin: 0;
 }
 
+.sh-governance__hint-link {
+  margin-left: var(--space-2);
+}
+
+.sh-governance__import-banner {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* 筛选工具条：桶分段（账本的四个区）在左，类别/状态分组与搜索在右。
+   分组整体换行，绝不从组中间断开。 */
 .sh-governance__filters {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-2) var(--space-4);
+}
+
+.sh-governance__buckets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.sh-governance__chip-group {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.sh-governance__chip-label {
+  color: var(--ui-ink-muted);
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  margin-right: var(--space-1);
 }
 
 .sh-governance__search {
@@ -35,40 +104,73 @@
   margin-left: auto;
 }
 
+/* 清单：唯一弹性滚动区；表头随滚动吸附在容器顶。 */
 .sh-governance__list {
-  max-height: 60vh;
+  flex: 1 1 auto;
   max-width: 100%;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .sh-governance__table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
 }
 
 .sh-governance__table th,
 .sh-governance__table td {
-  border-bottom: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border-bottom: 1px solid var(--ui-border-subtle);
   padding: var(--space-2);
   text-align: left;
   vertical-align: top;
+}
+
+.sh-governance__table thead th {
+  background: var(--ui-surface);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.sh-governance__table tbody tr:hover td {
+  background: var(--ui-hover-surface);
+}
+
+/* 来源列只有一个短语，不换行；换行只留给路径与受阻原因。 */
+.sh-governance__table td[data-testid^="governance-source-"] {
+  white-space: nowrap;
+}
+
+.sh-governance__table td[data-testid^="governance-impact-"] {
+  min-width: 10rem;
 }
 
 .sh-governance__table td > * {
   display: block;
 }
 
+.sh-governance__table code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .sh-governance__readiness {
-  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
-  font-size: 0.85rem;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
 }
 
 .sh-governance__blockers {
-  color: var(--ui-text-muted, var(--ui-text-secondary, inherit));
-  font-size: 0.85rem;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
   margin: var(--space-1) 0 0;
-  padding-left: var(--space-4);
+  max-width: 24rem;
 }
 
 .sh-governance__actions {
@@ -86,8 +188,18 @@
   gap: var(--space-3);
 }
 
+/* 预览/结果面板容器：面板打开时清单收缩让位；面板自身过高时内部滚动，
+   保证「确认执行」永远可达。 */
+.sh-governance__flows {
+  display: grid;
+  flex: 0 1 auto;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .sh-governance__dialog {
-  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border: 1px solid var(--ui-border);
   border-radius: var(--space-2);
   display: grid;
   gap: var(--space-3);
@@ -139,7 +251,7 @@
 }
 
 .sh-governance__batch-items li {
-  border: 1px solid var(--ui-border, var(--ui-border-subtle, currentColor));
+  border: 1px solid var(--ui-border);
   border-radius: var(--space-2);
   display: grid;
   gap: var(--space-2);

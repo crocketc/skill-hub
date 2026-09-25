@@ -738,6 +738,10 @@ export function RelationshipGovernancePage({
 
   return (
     <RelationshipsLayout scope="governance">
+      {/* 工作台是 .sh-relationships 两行网格的唯一画布子元素：页签行 +
+          画布行。治理页的块级内容一旦直接散落在网格里，画布行会被
+          压缩，内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。 */}
+      <div className="sh-governance">
       {deepLink.from ? (
         <div className="sh-governance__source-bar">
           <Button onClick={() => navigate(-1)} size="sm" variant="ghost">
@@ -746,76 +750,92 @@ export function RelationshipGovernancePage({
         </div>
       ) : null}
 
-      <section className="sh-governance__deploy-entry" data-testid="governance-deploy-entry">
-        <p className="sh-governance__eyebrow">{t("relationships.governance.deployEntry.eyebrow")}</p>
-        <h2>{t("relationships.governance.deployEntry.title")}</h2>
-        <p>{t("relationships.governance.deployEntry.description")}</p>
-        <Link className="sh-button sh-button--secondary sh-button--sm" to="/deploy">
-          {t("relationships.governance.deployEntry.action")}
-        </Link>
-      </section>
-
-      <p>{t("relationships.governance.description")}</p>
-
-      {deepLink.from === "import" ? (
-        <p className="sh-governance__import-banner" data-testid="governance-import-banner" role="status">
-          {t("relationships.governance.importBatch.banner", { count: sourceCopyCount })}
+      <header className="sh-governance__head">
+        <div className="sh-governance__head-row">
+          <p className="sh-governance__intro">{t("relationships.governance.description")}</p>
+          <Link
+            className="sh-governance__history-link"
+            data-testid="governance-history-link"
+            to="/relationships/governance/history"
+          >
+            {t("relationships.governance.history.link")}
+          </Link>
+        </div>
+        <p className="sh-governance__hint" data-testid="governance-deploy-entry">
+          {t("relationships.governance.deployEntry.hint")}
+          <Link className="sh-governance__hint-link" to="/deploy">
+            {t("relationships.governance.deployEntry.action")}
+          </Link>
         </p>
-      ) : null}
+        {deepLink.from === "import" ? (
+          <p className="sh-governance__import-banner" data-testid="governance-import-banner" role="status">
+            {t("relationships.governance.importBatch.banner", { count: sourceCopyCount })}
+          </p>
+        ) : null}
+      </header>
 
       <div aria-label={t("relationships.governance.filters.label")} className="sh-governance__filters" role="group">
-        {GOVERNANCE_BUCKETS.map((bucket) => (
-          <Button
-            aria-pressed={deepLink.bucket === bucket}
-            data-testid={`governance-bucket-${bucket}`}
-            key={bucket}
-            onClick={() => applyParams({ bucket })}
-            size="sm"
-            variant={deepLink.bucket === bucket ? "primary" : "secondary"}
-          >
-            {t("relationships.governance.filters.withCount", {
-              count: counts ? counts[bucket] : 0,
-              label: t(`relationships.governance.filters.${bucket}` as never),
-            })}
-          </Button>
-        ))}
-        {(["all", "source_copy", "deployment"] as const).map((scope) => (
-          <Button
-            aria-pressed={deepLink.scope === scope}
-            data-testid={`governance-scope-${scope}`}
-            key={`scope-${scope}`}
-            onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
-            size="sm"
-            variant={deepLink.scope === scope ? "primary" : "secondary"}
-          >
-            {t(`relationships.governance.scope.${scope}` as never)}
-          </Button>
-        ))}
-        {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
-          <Button
-            // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
-            // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
-            aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
-            data-testid={`governance-status-${status}`}
-            key={`status-${status}`}
-            onClick={() =>
-              applyParams({
-                status:
-                  deepLink.status.length === 1 && deepLink.status[0] === status
-                    ? null
-                    : status,
-              })
-            }
-            size="sm"
-            variant={
-              deepLink.status.length === 1 && deepLink.status[0] === status
-                ? "primary"
-                : "secondary"
-            }
-          >
-            {t(`relationships.governance.statusFilter.${status}` as never)}
-          </Button>
-        ))}
+        <div className="sh-governance__buckets" role="group">
+          {GOVERNANCE_BUCKETS.map((bucket) => (
+            <Button
+              aria-pressed={deepLink.bucket === bucket}
+              className="sh-governance__bucket"
+              data-testid={`governance-bucket-${bucket}`}
+              key={bucket}
+              onClick={() => applyParams({ bucket })}
+              size="sm"
+              variant={deepLink.bucket === bucket ? "primary" : "secondary"}
+            >
+              {t("relationships.governance.filters.withCount", {
+                count: counts ? counts[bucket] : 0,
+                label: t(`relationships.governance.filters.${bucket}` as never),
+              })}
+            </Button>
+          ))}
+        </div>
+        <div className="sh-governance__chip-group" role="group">
+          <span className="sh-governance__chip-label">{t("relationships.governance.filters.scopeLabel")}</span>
+          {(["all", "source_copy", "deployment"] as const).map((scope) => (
+            <Button
+              aria-pressed={deepLink.scope === scope}
+              data-testid={`governance-scope-${scope}`}
+              key={`scope-${scope}`}
+              onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
+              size="sm"
+              variant={deepLink.scope === scope ? "primary" : "secondary"}
+            >
+              {t(`relationships.governance.scope.${scope}` as never)}
+            </Button>
+          ))}
+        </div>
+        <div className="sh-governance__chip-group" role="group">
+          <span className="sh-governance__chip-label">{t("relationships.governance.filters.statusLabel")}</span>
+          {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
+            <Button
+              // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
+              // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
+              aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
+              data-testid={`governance-status-${status}`}
+              key={`status-${status}`}
+              onClick={() =>
+                applyParams({
+                  status:
+                    deepLink.status.length === 1 && deepLink.status[0] === status
+                      ? null
+                      : status,
+                })
+              }
+              size="sm"
+              variant={
+                deepLink.status.length === 1 && deepLink.status[0] === status
+                  ? "primary"
+                  : "secondary"
+              }
+            >
+              {t(`relationships.governance.statusFilter.${status}` as never)}
+            </Button>
+          ))}
+        </div>
         <form
           className="sh-governance__search"
           onSubmit={(event) => {
@@ -845,11 +865,6 @@ export function RelationshipGovernancePage({
         <DataState message={t("relationships.governance.loading")} state="loading" />
       ) : null}
 
-      <div className="sh-governance__history-topbar">
-        <Link data-testid="governance-history-link" to="/relationships/governance/history">
-          {t("relationships.governance.history.link")}
-        </Link>
-      </div>
       {ledgerQuery.isSuccess ? (
         visibleRows.length === 0 ? (
           <p role="status">
@@ -909,6 +924,9 @@ export function RelationshipGovernancePage({
         )
       ) : null}
 
+      {/* 预览/结果面板：清单是 flex 画布里的弹性滚动区，面板打开时
+          清单收缩让位，面板始终紧跟工具条可见，不必滚动寻找。 */}
+      <div className="sh-governance__flows">
       {single ? (
         single.resultText ? (
           <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
@@ -1016,7 +1034,9 @@ export function RelationshipGovernancePage({
           running={batchFlow.running}
           sharedConfirmedIds={new Set(batchFlow.sharedConfirmedIds)}
         />
-      ) : null}
+        ) : null}
+      </div>
+      </div>
     </RelationshipsLayout>
   );
 }

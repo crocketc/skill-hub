@@ -2163,12 +2163,13 @@
   "relationshipGovernance": {
     "relationship": {
       "import_copy": "导入副本",
-      "shared_directory_read": "共享目录直接读取",
-      "shared_directory_reference": "共享目录链接引用",
       "managed_copy": "复制部署",
       "managed_link": "链接部署",
       "observed_copy": "识别到的复制副本",
       "observed_link": "识别到的链接",
+      "shared_directory_read": "共享目录直接读取",
+      "shared_directory_reference": "共享目录链接引用",
+      "source_copy": "来源副本",
       "unknown": "关系待确认"
     },
     "fileRepresentation": {
@@ -2204,7 +2205,13 @@
     "fingerprint": {
       "content_verified": "内容一致",
       "name_only": "仅同名（未验证）",
-      "diverged": "内容已分叉"
+      "diverged": "内容已分叉",
+      "normal": "内容一致",
+      "needs_validation": "待校验",
+      "content_changed": "内容已变化",
+      "permission_limited": "权限受限",
+      "managed_occupied": "被受管目录占用",
+      "operation_failed": "上次操作失败"
     },
     "minimalAction": {
       "remove_current_agent_target": "建议只移除当前 Agent 的目标",
@@ -2522,10 +2529,8 @@
         "project": "返回项目详情"
       },
       "deployEntry": {
-        "eyebrow": "普通添加入口",
-        "title": "添加到 Agent/项目",
-        "description": "把新的 Skill 放到 Agent/项目走普通添加流程，与下方治理操作相互独立；这份清单只处理已建立的关系边。",
-        "action": "添加到 Agent/项目"
+        "action": "添加到 Agent/项目",
+        "hint": "这份清单只处理已建立的关系边；新的 Skill 走普通添加流程，与这里的治理操作相互独立。"
       },
       "filters": {
         "label": "快捷筛选",
@@ -2534,16 +2539,8 @@
         "needs_validation": "待校验",
         "blocked": "受阻",
         "withCount": "{{label}}（{{count}}）",
-        "scope_all": "全部类别",
-        "scope_source_copy": "来源副本",
-        "scope_deployment": "部署边",
-        "statusFilter": {
-          "normal": "正常",
-          "retained": "已保留",
-          "needs_validation": "待校验",
-          "needs_attention": "需关注",
-          "blocked": "受阻"
-        }
+        "scopeLabel": "类别",
+        "statusLabel": "状态"
       },
       "importBatch": {
         "banner": "本次导入留下 {{count}} 个本地来源副本"
@@ -2565,7 +2562,13 @@
       },
       "source": {
         "scan": "扫描发现",
-        "import": "导入登记"
+        "import": "导入登记",
+        "agent_local": "Agent 本地副本",
+        "user_local": "用户本地副本",
+        "registered_project": "项目登记副本",
+        "online": "在线导入副本",
+        "central_library": "集中库副本",
+        "legacy_unclassified": "未分类来源"
       },
       "readiness": {
         "eligible_to_centralize": "可纳入集中库管理",
@@ -2591,8 +2594,8 @@
       },
       "impact": {
         "noOtherConsumers": "没有其他共享消费者",
-        "otherConsumers_one": "共享消费者：{{count}} 个（{{agents}}）",
-        "otherConsumers_other": "共享消费者：{{count}} 个（{{agents}}）",
+        "otherConsumers_one": "共享消费者：{{count}} 个",
+        "otherConsumers_other": "共享消费者：{{count}} 个",
         "rollbackAvailable": "可回退",
         "rollbackUnavailable": "不可回退"
       },
@@ -2727,7 +2730,19 @@
         "all": "当前关系状态良好，没有需要处理的关系变更。",
         "filtered": "该筛选下没有关系。"
       },
-      "manageRelations": "管理关系"
+      "manageRelations": "管理关系",
+      "scope": {
+        "all": "全部类别",
+        "source_copy": "来源副本",
+        "deployment": "部署边"
+      },
+      "statusFilter": {
+        "normal": "正常",
+        "retained": "已保留",
+        "needs_validation": "待校验",
+        "needs_attention": "需关注",
+        "blocked": "受阻"
+      }
     }
   },
   "operations": {

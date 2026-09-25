@@ -426,6 +426,50 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(rowAction("managed:dep-eligible").textContent).toContain("纳入集中库管理");
     expect(rowAction("managed:dep-undeploy").textContent).toContain("从 Agent/项目移除");
   });
+
+  it("renders scope and status filters as readable grouped toggles, not raw keys", async () => {
+    // 2026-09-25 验收缺陷回归：scope/statusFilter 词表缺失时整排按钮
+    // 直接渲染 relationships.governance.* 键名。
+    await renderGovernanceApp();
+    await waitRows();
+
+    for (const name of ["全部类别", "来源副本", "部署边"]) {
+      expect(screen.getByRole("button", { name })).toBeVisible();
+    }
+    // 行内动作也会出现「受阻」按钮、桶页签带计数，名字会撞；
+    // 用 testid 断言每个状态 chip 的可见文案就是词表值而非键名。
+    const statusLabels: Record<string, string> = {
+      normal: "正常",
+      retained: "已保留",
+      needs_validation: "待校验",
+      needs_attention: "需关注",
+      blocked: "受阻",
+    };
+    for (const [status, label] of Object.entries(statusLabels)) {
+      expect(screen.getByTestId(`governance-status-${status}`)).toHaveTextContent(label);
+      expect(screen.getByTestId(`governance-status-${status}`).textContent).not.toContain("relationships.governance");
+    }
+    expect(screen.getByTestId("governance-scope-all")).toHaveTextContent("全部类别");
+    expect(screen.getByTestId("governance-scope-source_copy")).toHaveTextContent("来源副本");
+    expect(screen.getByTestId("governance-scope-deployment")).toHaveTextContent("部署边");
+    expect(screen.getByText("类别")).toBeVisible();
+    expect(screen.getByText("状态")).toBeVisible();
+  });
+
+  it("keeps the workbench as the single canvas child of the relationships grid", async () => {
+    // 布局契约回归：.sh-relationships 是两行网格（页签 + 画布）；
+    // 治理页的块级子元素一旦直接散落在网格里，画布行会被压缩，
+    // 内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。
+    await renderGovernanceApp();
+    await waitRows();
+
+    const grid = document.querySelector(".sh-relationships");
+    expect(grid).not.toBeNull();
+    expect(grid!.children).toHaveLength(2);
+    expect(grid!.children[0].className).toContain("sh-relationships__nav");
+    expect(grid!.children[1].className).toContain("sh-governance");
+    expect(grid!.children[1].className).not.toContain("sh-governance__");
+  });
 });
 
 describe("RelationshipGovernancePage 单条治理", () => {
