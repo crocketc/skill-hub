@@ -695,7 +695,7 @@ type: "failed",
     operationRef.current += 1;
     abortRef.current?.abort();
     await facade.cancel();
-    notify({ tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
+    notify({ source: "import", tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
     dispatch({ type: "cancelled" });
   };
 
@@ -812,7 +812,7 @@ type: "failed",
     // 先作废当前操作序号：在途分析的结果（成功/失败/进度）全部被守卫丢弃。
     operationRef.current += 1;
     await facade.cancel();
-    notify({ tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
+    notify({ source: "import", tone: "info", title: t("importWorkflow.notifications.cancelledTitle") });
     dispatch({ type: "analysis_cancelled" });
   };
 

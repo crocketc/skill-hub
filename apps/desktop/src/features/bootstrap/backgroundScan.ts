@@ -16,6 +16,8 @@ export interface AppNotice {
   title: string;
   detail?: string;
   action?: AppNoticeAction;
+  /** DEV-92：功能域分组（与 ui/notifications 的展示语义字段对齐）。 */
+  source?: "library" | "deployment" | "import" | "discovery" | "governance" | "system";
 }
 
 export type NotifyFunction = (notice: AppNotice) => string;

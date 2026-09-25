@@ -141,6 +141,7 @@ export function useNotices() {
     })),
     pushNotice: (input: NoticeInput): string =>
       notify({
+        source: "system",
         detailNode: input.detail,
         kind: input.kind,
         title: input.message,

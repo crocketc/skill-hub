@@ -40,6 +40,16 @@
       "info": "提示",
       "warning": "警告",
       "danger": "失败"
+    },
+    "viewAll": "查看全部",
+    "collapse": "收起",
+    "sources": {
+      "library": "技能库",
+      "deployment": "部署",
+      "import": "导入",
+      "discovery": "发现",
+      "governance": "关系治理",
+      "system": "系统"
     }
   },
   "markdown": {

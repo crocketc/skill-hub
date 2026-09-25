@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nextProvider } from "react-i18next";
@@ -323,6 +323,8 @@ describe("NotificationBell and history drawer", () => {
 
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
     const drawer = screen.getByRole("dialog", { name: "Notifications" });
+    // DEV-92：多条时默认折叠为层叠视图，筛选在展开态操作。
+    await user.click(within(drawer).getByRole("button", { name: "View all" }));
 
     // 先把旧条目标为已读，再产生一条新通知，让未读筛选有可区分的集合。
     await user.click(within(drawer).getByRole("button", { name: "Mark all as read" }));
@@ -494,6 +496,8 @@ describe("history drawer marks an entry read on activation", () => {
     act(() => {
       handles.current?.notify({ tone: "success", title: "unread entry" });
     });
+    // DEV-92：先展开（筛选控件在展开态），再切未读筛选。
+    await user.click(within(drawer).getByRole("button", { name: "View all" }));
     await user.click(within(drawer).getByRole("button", { name: "Unread" }));
     expect(within(drawer).getByText("unread entry")).toBeVisible();
 
@@ -504,8 +508,11 @@ describe("history drawer marks an entry read on activation", () => {
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
 
-    // 重新打开（筛选保持“未读”）：该条从未读列表消失，仅剩空态提示。
+    // 重新打开：浮层回到折叠态；展开并切到“未读”后，该条已从未读列表
+    // 消失，仅剩空态提示（筛选不跨开关持久是 DEV-92 的既定行为）。
     const reopened = await openHistoryDrawer();
+    await user.click(within(reopened).getByRole("button", { name: "View all" }));
+    await user.click(within(reopened).getByRole("button", { name: "Unread" }));
     expect(within(reopened).getByText("No unread notifications.")).toBeVisible();
     // 切回“全部”：两条历史都保留且均已读。
     await user.click(within(reopened).getByRole("button", { name: "All" }));
@@ -671,5 +678,106 @@ describe("operation notices deep link to the operation record", () => {
     // 抽屉是模态的，先关闭再回看背后的操作记录页。
     await user.keyboard("{Escape}");
     expect(await screen.findByRole("link", { name: "commit_deployment" })).toBeVisible();
+  });
+});
+
+describe("DEV-92 notification popover", () => {
+  it("stacks collapsed history: latest card visible, older entries behind edges", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      // 通知按时间倒序展示：最后通知的「newest」位于栈顶。
+      handles.current?.notify({ tone: "warning", title: "oldest", source: "library" });
+      handles.current?.notify({ tone: "info", title: "middle", source: "library" });
+      handles.current?.notify({ tone: "success", title: "newest", source: "library" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    const popover = screen.getByRole("dialog", { name: "Notifications" });
+
+    // 最新一条完整展示；层叠上缘至多两条；旧条目标题不直接出现。
+    expect(within(popover).getByText("newest")).toBeVisible();
+    expect(within(popover).getAllByTestId("notification-stack-edge")).toHaveLength(2);
+    expect(within(popover).queryByText("older entry")).toBeNull();
+    expect(within(popover).queryByText("middle")).toBeNull();
+
+    // 展开切换：View all 展示全量；Collapse 回到层叠。
+    await user.click(within(popover).getByRole("button", { name: "View all" }));
+    expect(within(popover).getByText("middle")).toBeVisible();
+    expect(within(popover).getByText("oldest")).toBeVisible();
+    await user.click(within(popover).getByRole("button", { name: "Collapse" }));
+    expect(within(popover).getByText("newest")).toBeVisible();
+    expect(within(popover).queryByText("middle")).toBeNull();
+  });
+
+  it("groups expanded history by functional domain with local labels", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({ tone: "info", title: "discovery fact", source: "discovery" });
+      handles.current?.notify({ tone: "success", title: "library fact", source: "library" });
+      handles.current?.notify({ tone: "danger", title: "no source" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    await user.click(screen.getByRole("button", { name: "View all" }));
+    const popover = screen.getByRole("dialog", { name: "Notifications" });
+
+    expect(within(popover).getByText("Discovery")).toBeVisible();
+    expect(within(popover).getByText("Skill library")).toBeVisible();
+    // 缺省 source 归入 System 组。
+    expect(within(popover).getByText("System")).toBeVisible();
+  });
+
+  it("renders per-entry times and keeps the read activation semantics in expanded view", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({
+        tone: "danger",
+        title: "timed entry",
+        detail: "with detail",
+        source: "deployment",
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    const popover = screen.getByRole("dialog", { name: "Notifications" });
+    expect(within(popover).getByRole("time")).toBeVisible();
+
+    // 折叠态本体点击：标已读并收起浮层（与旧抽屉语义一致）。
+    await user.click(
+      within(popover).getByRole("button", { name: 'Mark "timed entry" as read' }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(handles.current?.unreadCount()).toBe(0);
+  });
+
+  it("animates the popover from the top-right and skips motion when reduced", async () => {
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    const popover = screen.getByRole("dialog", { name: "Notifications" });
+    // 进入后处于 open 态；CSS 由 data-state 驱动右上角进出场（transform-origin
+    // 与 closing 态由 CSS 契约测试锁定）。本壳层是减少动效环境：进入即 open。
+    expect(popover).toHaveAttribute("data-state", "open");
+
+    await user.click(within(popover).getByRole("button", { name: "Close" }));
+    // 减少动效下关闭瞬时完成：浮层直接卸载。
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull(),
+    );
+  });
+
+  it("keeps the popover CSS contract: blur, top-right origin, stack edges", () => {
+    expect(notificationCss).toContain("backdrop-filter");
+    expect(notificationCss).toContain("transform-origin: top right");
+    expect(notificationCss).toContain(".sh-notification-popover__edge");
+    expect(notificationCss).toContain('.sh-notification-popover[data-state="closing"]');
+    expect(notificationCss).toContain('[data-reduced-motion="true"]');
   });
 });

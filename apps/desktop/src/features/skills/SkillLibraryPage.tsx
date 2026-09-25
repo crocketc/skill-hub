@@ -725,7 +725,7 @@ export function SkillLibraryPage({
         });
       },
       () =>
-        notify({
+        notify({ source: "library",
           kind: "saved-view-delete",
           title: t("skillLibrary.savedViews.deleteError"),
           tone: "danger",
@@ -793,7 +793,7 @@ export function SkillLibraryPage({
           navigate({ pathname: "/deploy", search: `?${search.toString()}` });
         },
         () =>
-          notify({
+          notify({ source: "library",
             kind: "batch",
             title: t("skillLibrary.page.batch.error"),
             tone: "danger",
@@ -806,7 +806,7 @@ export function SkillLibraryPage({
     const intent = { action, target: selectionToBatchTarget(selection) };
     void facade.emitBatchIntent(intent).catch((error: unknown) => {
       if (request !== batchRequestRef.current) return;
-      notify({
+      notify({ source: "library",
         kind: "batch",
         title: isSkillLibraryUnavailable(error)
           ? t("skillLibrary.page.batch.unconnected")
@@ -855,7 +855,7 @@ export function SkillLibraryPage({
       await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
       const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
       // 全局通知契约：成功 toast 自动消退（本体保留在会话历史）；失败走危险通道。
-      notify({
+      notify({ source: "library",
         detailNode: <BatchOperationSummary outcomes={outcomes} />,
         kind: "batch-tags",
         title: t(
@@ -867,7 +867,7 @@ export function SkillLibraryPage({
       });
     } catch {
       if (request === batchRequestRef.current) {
-        notify({
+        notify({ source: "library",
           kind: "batch-tags",
           title: t("skillLibrary.page.batch.error"),
           tone: "danger",
@@ -893,7 +893,7 @@ export function SkillLibraryPage({
           name: names.get(entry.skillId) ?? entry.skillId,
         }));
         // 来源更新检查结果随全局通知展示（详情面板随通知展开，历史保留）。
-        notify({
+        notify({ source: "library",
           detailNode: <SourceUpdateCheckSummary reports={reports} />,
           kind: "batch",
           title: t("skillLibrary.page.sourceUpdates.title"),
@@ -902,7 +902,7 @@ export function SkillLibraryPage({
       })
       .catch((error: unknown) => {
         if (request !== batchRequestRef.current) return;
-        notify({
+        notify({ source: "library",
           kind: "batch",
           title: isSkillLibraryUnavailable(error)
             ? t("skillLibrary.page.batch.unconnected")
@@ -922,7 +922,7 @@ export function SkillLibraryPage({
     const checkFacade = facade.checkSourceUpdates;
     void checkFacade([skillId])
       .then((entries) => {
-        notify({
+        notify({ source: "library",
           detailNode: <SourceUpdateCheckSummary reports={entries.map((entry) => ({ ...entry, name: skillName || skillId }))} />,
           kind: "batch",
           title: t("skillLibrary.page.sourceUpdates.title"),
@@ -930,7 +930,7 @@ export function SkillLibraryPage({
         });
       })
       .catch(() => {
-        notify({ kind: "batch", title: t("skillLibrary.page.batch.unconnected"), tone: "danger" });
+        notify({ source: "library", kind: "batch", title: t("skillLibrary.page.batch.unconnected"), tone: "danger" });
       });
   };
 
@@ -944,7 +944,7 @@ export function SkillLibraryPage({
         state: { exportSkillIds: skills.map((skill) => skill.id) },
       }),
       () =>
-        notify({
+        notify({ source: "library",
           kind: "batch",
           title: t("skillLibrary.page.batch.error"),
           tone: "danger",
@@ -985,7 +985,7 @@ export function SkillLibraryPage({
       const message = t("removal.batch.loadError");
       setBatchRemovalError(message);
       // 影响读取失败：抽屉内与全局通知双通道可见，不静默。
-      notify({ kind: "removal-summary", title: message, tone: "danger" });
+      notify({ source: "library", kind: "removal-summary", title: message, tone: "danger" });
     } finally {
       setBatchRemovalLoading(false);
     }

@@ -10,12 +10,11 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { createPortal } from "react-dom";
 import { Link, useInRouterContext } from "react-router-dom";
 import { Button } from "./Button";
-import { Drawer } from "./Drawer";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
-import { StatusBadge } from "./StatusBadge";
 import { usePrefersReducedMotion } from "./reducedMotion";
 import "./notificationCenter.css";
 
@@ -31,6 +30,19 @@ import "./notificationCenter.css";
 
 export type AppNoticeTone = "success" | "info" | "warning" | "danger";
 
+/**
+ * DEV-92（2026-09-25 验收反馈）：通知按功能域分组展示（用户裁决：按功能域，
+ * 不按品牌/Skill）。source 是展示语义字段——分组、组图标、组名；撤销用的
+ * `kind` 桥接字段不承担展示语义，两者不混用。缺省归入 "system"。
+ */
+export type NoticeSource =
+  | "library"
+  | "deployment"
+  | "import"
+  | "discovery"
+  | "governance"
+  | "system";
+
 export interface AppNotice {
   tone: AppNoticeTone;
   /** 已本地化的用户可读标题。 */
@@ -39,6 +51,8 @@ export interface AppNotice {
   detail?: string;
   /** 可选跳转（react-router path），点击后关闭抽屉/toast 并导航。 */
   action?: { label: string; to: string };
+  /** 功能域分组（DEV-92）；缺省 system。 */
+  source?: NoticeSource;
 }
 
 export interface AppNoticeRecord extends AppNotice {
@@ -304,14 +318,34 @@ export function NotificationBell() {
   );
 }
 
-const toneI18nKey = {
-  success: "notifications.tones.success",
-  info: "notifications.tones.info",
-  warning: "notifications.tones.warning",
-  danger: "notifications.tones.danger",
-} as const;
+/** DEV-92：浮层出场/退场动画时长（ms）；减少动效时跳过动画阶段。 */
+export const NOTICE_POPUP_EXIT_MS = 180;
 
-/** 会话历史抽屉：筛选（未读/全部）、全部标为已读、清空。 */
+/** 通知卡片时间：今天显 HH:mm，今年显 M/D，跨年显 YYYY/M/D。 */
+function formatNoticeTime(createdAt: number, language: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) {
+    return new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit" }).format(date);
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric" }).format(date);
+  }
+  return new Intl.DateTimeFormat(language, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
+}
+
+/**
+ * DEV-92 透明浮层（替代右侧全高抽屉）：顶栏铃铛下方的毛玻璃浮层，
+ * 从右上角动态进入、关闭时向右上角退出；折叠态展示层叠卡片（最新一条
+ * 完整 + 至多两条上缘），可展开为按功能域分组的完整历史（未读/全部筛选、
+ * 全部标已读、清空能力保留）。消息本体激活仍先标已读再收起浮层。
+ */
 export function NotificationHistoryDrawer({
   open,
   onOpenChange,
@@ -321,52 +355,240 @@ export function NotificationHistoryDrawer({
   onOpenChange: (open: boolean) => void;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { clear, markAllRead, markRead, notices, unreadCount } = useAppNotifications();
+  const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const visible =
-    filter === "unread" ? notices.filter((notice) => !notice.read) : notices;
-  // 历史项激活（点击消息本体或 action 链接）：先把该条标记为已读，再关闭
-  // 抽屉或交给 Link 默认导航；markRead 幂等，重复激活不报错。
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  const [phase, setPhase] = useState<"closed" | "entering" | "open" | "closing">("closed");
+  const [anchor, setAnchor] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
+
+  // 进入：mount → entering →（下一帧）open；退出：open/entering → closing →
+  // 动画结束卸载。减少动效时两段动画都瞬时完成。
+  useEffect(() => {
+    if (open) {
+      const bellRect = returnFocusRef.current?.getBoundingClientRect();
+      if (bellRect) {
+        setAnchor({ top: bellRect.bottom + 8, right: Math.max(8, window.innerWidth - bellRect.right) });
+      }
+      setPhase("entering");
+      const timer = setTimeout(() => setPhase("open"), reducedMotionRef.current ? 0 : 16);
+      return () => clearTimeout(timer);
+    }
+    setPhase((current) => {
+      if (current !== "open" && current !== "entering") return current;
+      const timer = setTimeout(() => setPhase("closed"), reducedMotionRef.current ? 0 : NOTICE_POPUP_EXIT_MS);
+      // setTimeout 句柄只需要在卸载/重入时清理一次；phase 已推进。
+      void timer;
+      return "closing";
+    });
+    return undefined;
+  }, [open, reducedMotion, returnFocusRef]);
+
+  useEffect(() => {
+    if (!open) {
+      setExpanded(false);
+      setFilter("all");
+      setCollapsedGroups(new Set());
+    }
+  }, [open]);
+
+  const requestClose = useCallback(() => {
+    onOpenChange(false);
+    returnFocusRef.current?.focus();
+  }, [onOpenChange, returnFocusRef]);
+
+  // Esc 关闭 + 浮层外点击关闭（铃铛按钮自洽：click 在按钮上，由其 toggle 处理）。
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") requestClose();
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(".sh-notification-popover, .sh-notification-bell")) return;
+      requestClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onMouseDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [open, requestClose]);
+
+  if (phase === "closed") return null;
+
+  // 历史项激活（点击消息本体或 action 链接）：先把该条标记为已读，再收起
+  // 浮层或交给 Link 默认导航；markRead 幂等，重复激活不报错。
   const readAndClose = (id: string) => {
     markRead(id);
-    onOpenChange(false);
+    requestClose();
   };
 
-  return (
-    <Drawer
-      closeLabel={t("actions.close")}
-      description={t("notifications.drawerTitle")}
-      onOpenChange={onOpenChange}
-      open={open}
-      returnFocusRef={returnFocusRef}
-      title={t("notifications.drawerTitle")}
+  const filterVisible = filter === "unread" ? notices.filter((notice) => !notice.read) : notices;
+  const grouped = new Map<NoticeSource, AppNoticeRecord[]>();
+  for (const notice of filterVisible) {
+    const key = notice.source ?? "system";
+    grouped.set(key, [...(grouped.get(key) ?? []), notice]);
+  }
+  const stackEdges = Math.min(notices.length - 1, 2);
+  const latest = notices[0];
+  const language = i18n.resolvedLanguage ?? i18n.language ?? "en";
+
+  const renderCard = (notice: AppNoticeRecord) => (
+    <li className="sh-notification-popover__item" key={notice.id}>
+      {/* 消息本体是可聚焦按钮（点击/回车先标已读再收起浮层）；action 链接
+          是交互元素不能嵌进按钮，保持为兄弟节点；detailNode 含流内容，同样
+          留在按钮外。 */}
+      <button
+        aria-label={t("notifications.markOneRead", { title: notice.title })}
+        className={[
+          "sh-notification-popover__card",
+          notice.read ? "" : "sh-notification-popover__card--unread",
+        ].filter(Boolean).join(" ")}
+        onClick={() => readAndClose(notice.id)}
+        type="button"
+      >
+        <span className="sh-notification-popover__card-head">
+          <span className={`sh-notification-popover__dot sh-notification-popover__dot--${notice.tone}`} aria-hidden="true" />
+          <span className="sh-notification-popover__title">{notice.title}</span>
+          <time className="sh-notification-popover__time" dateTime={new Date(notice.createdAt).toISOString()}>
+            {formatNoticeTime(notice.createdAt, language)}
+          </time>
+        </span>
+        {notice.detail ? (
+          <span className="sh-notification-popover__detail">{notice.detail}</span>
+        ) : null}
+      </button>
+      {notice.detailNode}
+      {notice.action ? (
+        <Link
+          className="sh-notification-popover__action"
+          onClick={() => readAndClose(notice.id)}
+          to={notice.action.to}
+        >
+          {notice.action.label}
+        </Link>
+      ) : null}
+    </li>
+  );
+
+  return createPortal(
+    <div
+      aria-label={t("notifications.drawerTitle")}
+      className="sh-notification-popover"
+      data-reduced-motion={String(reducedMotion)}
+      data-state={phase}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") requestClose();
+      }}
+      role="dialog"
+      style={{ top: anchor.top, right: anchor.right }}
     >
-      <div className="sh-notification-history">
-        <div className="sh-notification-history__controls">
-          <div
-            aria-label={t("notifications.drawerTitle")}
-            className="sh-notification-history__filter"
-            role="group"
-          >
-            <Button
-              aria-pressed={filter === "unread"}
-              onClick={() => setFilter("unread")}
-              size="sm"
-              variant="ghost"
-            >
-              {t("notifications.filterUnread")}
+      <header className="sh-notification-popover__header">
+        <h2 className="sh-notification-popover__heading">{t("notifications.drawerTitle")}</h2>
+        {unreadCount > 0 ? (
+          <span className="sh-notification-popover__count">
+            {t("notifications.buttonWithUnread", { count: unreadCount })}
+          </span>
+        ) : null}
+        <IconButton
+          aria-label={t("actions.close")}
+          className="sh-notification-popover__close"
+          icon="close"
+          label={t("actions.close")}
+          onClick={requestClose}
+        />
+      </header>
+
+      {notices.length === 0 ? (
+        <p className="sh-notification-popover__empty" role="status">
+          {t("notifications.emptyHistory")}
+        </p>
+      ) : !expanded ? (
+        <>
+          {/* 折叠态：最新一条完整展示，其下至多两条只露出卡片上缘（层叠）。 */}
+          <ul className="sh-notification-popover__stack">
+            <div aria-hidden="true" className="sh-notification-popover__edge" data-testid="notification-stack-edge" />
+            {stackEdges > 1 ? (
+              <div aria-hidden="true" className="sh-notification-popover__edge" data-testid="notification-stack-edge" />
+            ) : null}
+            {latest ? (
+              <li className="sh-notification-popover__item">
+                <button
+                  aria-label={t("notifications.markOneRead", { title: latest.title })}
+                  className={[
+                    "sh-notification-popover__card",
+                    latest.read ? "" : "sh-notification-popover__card--unread",
+                  ].filter(Boolean).join(" ")}
+                  onClick={() => readAndClose(latest.id)}
+                  type="button"
+                >
+                  <span className="sh-notification-popover__card-head">
+                    <span className={`sh-notification-popover__dot sh-notification-popover__dot--${latest.tone}`} aria-hidden="true" />
+                    <span className="sh-notification-popover__title">{latest.title}</span>
+                    <time className="sh-notification-popover__time" dateTime={new Date(latest.createdAt).toISOString()}>
+                      {formatNoticeTime(latest.createdAt, language)}
+                    </time>
+                  </span>
+                  {latest.detail ? (
+                    <span className="sh-notification-popover__detail">{latest.detail}</span>
+                  ) : null}
+                </button>
+                {latest.detailNode}
+                {latest.action ? (
+                  <Link
+                    className="sh-notification-popover__action"
+                    onClick={() => readAndClose(latest.id)}
+                    to={latest.action.to}
+                  >
+                    {latest.action.label}
+                  </Link>
+                ) : null}
+              </li>
+            ) : null}
+          </ul>
+          <footer className="sh-notification-popover__footer">
+            <Button onClick={markAllRead} size="sm" variant="ghost">
+              {t("notifications.markAllRead")}
             </Button>
-            <Button
-              aria-pressed={filter === "all"}
-              onClick={() => setFilter("all")}
-              size="sm"
-              variant="ghost"
-            >
-              {t("notifications.filterAll")}
+            <Button disabled={notices.length === 0} onClick={clear} size="sm" variant="ghost">
+              {t("notifications.clearAll")}
             </Button>
-          </div>
-          <div className="sh-notification-history__actions">
+            <Button aria-expanded="true" onClick={() => setExpanded(true)} size="sm" variant="secondary">
+              {t("notifications.viewAll")}
+            </Button>
+          </footer>
+        </>
+      ) : (
+        <>
+          <div className="sh-notification-popover__controls">
+            <div
+              aria-label={t("notifications.drawerTitle")}
+              className="sh-notification-popover__filter"
+              role="group"
+            >
+              <Button
+                aria-pressed={filter === "unread"}
+                onClick={() => setFilter("unread")}
+                size="sm"
+                variant="ghost"
+              >
+                {t("notifications.filterUnread")}
+              </Button>
+              <Button
+                aria-pressed={filter === "all"}
+                onClick={() => setFilter("all")}
+                size="sm"
+                variant="ghost"
+              >
+                {t("notifications.filterAll")}
+              </Button>
+            </div>
             <Button
               disabled={unreadCount === 0}
               onClick={markAllRead}
@@ -379,64 +601,52 @@ export function NotificationHistoryDrawer({
               {t("notifications.clearAll")}
             </Button>
           </div>
-        </div>
-        {visible.length === 0 ? (
-          <p className="sh-notification-history__empty" role="status">
-            {notices.length === 0
-              ? t("notifications.emptyHistory")
-              : t("notifications.emptyUnread")}
-          </p>
-        ) : (
-          <ul className="sh-notification-history__list">
-            {visible.map((notice) => (
-              <li
-                className={[
-                  "sh-notification-history__item",
-                  notice.read ? "" : "sh-notification-history__item--unread",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                key={notice.id}
-              >
-                {/* 消息本体是可聚焦按钮（点击/回车先标已读再关抽屉）；
-                    action 链接是交互元素不能嵌进按钮，保持为兄弟节点；
-                    detailNode 含 section/h2 等流内容，同样留在按钮外。 */}
-                <button
-                  aria-label={t("notifications.markOneRead", { title: notice.title })}
-                  className="sh-notification-history__item-body"
-                  onClick={() => readAndClose(notice.id)}
-                  type="button"
-                >
-                  <span className="sh-notification-history__item-head">
-                    <StatusBadge tone={notice.tone}>
-                      {t(toneI18nKey[notice.tone])}
-                    </StatusBadge>
-                    <span className="sh-notification-history__item-title">
-                      {notice.title}
-                    </span>
-                  </span>
-                  {notice.detail ? (
-                    <span className="sh-notification-history__item-detail">
-                      {notice.detail}
-                    </span>
-                  ) : null}
-                </button>
-                {notice.detailNode}
-                {notice.action ? (
-                  <Link
-                    className="sh-notification-history__item-action"
-                    onClick={() => readAndClose(notice.id)}
-                    to={notice.action.to}
-                  >
-                    {notice.action.label}
-                  </Link>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </Drawer>
+          {filterVisible.length === 0 ? (
+            <p className="sh-notification-popover__empty" role="status">
+              {notices.length === 0 ? t("notifications.emptyHistory") : t("notifications.emptyUnread")}
+            </p>
+          ) : (
+            <div className="sh-notification-popover__groups">
+              {[...grouped].map(([source, groupNotices]) => {
+                const collapsed = collapsedGroups.has(source);
+                return (
+                  <section className="sh-notification-popover__group" key={source}>
+                    <h3 className="sh-notification-popover__group-head">
+                      <button
+                        aria-expanded={!collapsed}
+                        className="sh-notification-popover__group-toggle"
+                        onClick={() => setCollapsedGroups((current) => {
+                          const next = new Set(current);
+                          if (next.has(source)) {
+                            next.delete(source);
+                          } else {
+                            next.add(source);
+                          }
+                          return next;
+                        })}
+                        type="button"
+                      >
+                        <span>{t(`notifications.sources.${source}`)}</span>
+                        <span aria-hidden="true" className="sh-notification-popover__group-count">{groupNotices.length}</span>
+                      </button>
+                    </h3>
+                    {!collapsed ? (
+                      <ul className="sh-notification-popover__list">{groupNotices.map(renderCard)}</ul>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+          )}
+          <footer className="sh-notification-popover__footer">
+            <Button aria-expanded="true" onClick={() => setExpanded(false)} size="sm" variant="secondary">
+              {t("notifications.collapse")}
+            </Button>
+          </footer>
+        </>
+      )}
+    </div>,
+    document.body,
   );
 }
 

@@ -40,6 +40,16 @@
       "info": "Info",
       "warning": "Warning",
       "danger": "Failure"
+    },
+    "viewAll": "View all",
+    "collapse": "Collapse",
+    "sources": {
+      "library": "Skill library",
+      "deployment": "Deployment",
+      "import": "Import",
+      "discovery": "Discovery",
+      "governance": "Governance",
+      "system": "System"
     }
   },
   "markdown": {

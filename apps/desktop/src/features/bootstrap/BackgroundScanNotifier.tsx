@@ -30,6 +30,7 @@ export function BackgroundScanNotifier({ notify }: { notify: NotifyFunction }) {
     if (state.status === "completed") {
       markBackgroundScanReported();
       notify({
+        source: "discovery",
         tone: "success",
         title: t("onboarding.backgroundScanCompleteTitle"),
         detail: t("onboarding.backgroundScanCompleteDetail", {
@@ -42,6 +43,7 @@ export function BackgroundScanNotifier({ notify }: { notify: NotifyFunction }) {
     if (state.status === "failed") {
       markBackgroundScanReported();
       notify({
+        source: "discovery",
         tone: "warning",
         title: t("onboarding.backgroundScanFailedTitle"),
         detail: describeNativeError(

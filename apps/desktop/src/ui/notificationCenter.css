@@ -135,12 +135,181 @@
 }
 
 /* 会话历史抽屉：筛选/动作行 + 纵向通知列表。 */
-.sh-notification-history {
-  display: grid;
-  gap: var(--space-4);
+
+.sh-notification-history__filter,
+
+/* 历史项消息本体是按钮：整块可点击（先标记已读再关闭抽屉），键盘可达；
+   重置按钮默认外观贴合卡片内容，焦点环沿用 base.css 的全局 :focus-visible。 */
+
+
+/* —— DEV-92（2026-09-25 验收反馈）：消息透明浮层 ——
+   顶栏铃铛下方锚定的毛玻璃浮层；从右上角进入（transform-origin 右上），
+   关闭向右上退出；折叠态层叠卡片 + 展开分组。 */
+
+.sh-notification-popover {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(32rem, calc(100vh - 6rem));
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 72%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  overflow-y: auto;
+  transform-origin: top right;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.sh-notification-history__controls {
+.sh-notification-popover[data-state="entering"],
+.sh-notification-popover[data-state="closing"] {
+  opacity: 0;
+  transform: scale(0.92) translateY(-8px);
+}
+
+.sh-notification-popover[data-reduced-motion="true"] {
+  transition: none;
+}
+
+.sh-notification-popover__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-notification-popover__heading {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 700;
+}
+
+.sh-notification-popover__count {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.sh-notification-popover__close {
+  flex: 0 0 auto;
+}
+
+.sh-notification-popover__empty {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.sh-notification-popover__stack {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
+  list-style: none;
+}
+
+/* 层叠上缘：卡片堆叠的“下一层”，只露出顶部边缘。 */
+.sh-notification-popover__edge {
+  height: 0.6rem;
+  margin: 0 var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.sh-notification-popover__item {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sh-notification-popover__card {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sh-notification-popover__card:hover {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-notification-popover__card--unread {
+  border-color: var(--ui-accent);
+}
+
+.sh-notification-popover__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-notification-popover__dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--ui-ink-muted);
+}
+
+.sh-notification-popover__dot--success { background: var(--color-success); }
+.sh-notification-popover__dot--warning { background: var(--color-warning); }
+.sh-notification-popover__dot--danger { background: var(--color-danger); }
+.sh-notification-popover__dot--info { background: var(--color-info); }
+
+.sh-notification-popover__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.sh-notification-popover__card--unread .sh-notification-popover__title {
+  font-weight: 750;
+}
+
+.sh-notification-popover__time {
+  flex: 0 0 auto;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-notification-popover__detail {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.sh-notification-popover__action {
+  justify-self: start;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.sh-notification-popover__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.sh-notification-popover__controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -148,89 +317,50 @@
   gap: var(--space-2);
 }
 
-.sh-notification-history__filter,
-.sh-notification-history__actions {
-  display: flex;
-  align-items: center;
+.sh-notification-popover__filter {
+  display: inline-flex;
   gap: var(--space-1);
 }
 
-.sh-notification-history__filter .sh-button[aria-pressed="true"] {
-  border-color: var(--ui-selected-border);
-  background: var(--ui-selected-surface);
-  color: var(--ui-accent-strong);
+.sh-notification-popover__groups {
+  display: grid;
+  gap: var(--space-3);
 }
 
-.sh-notification-history__list {
+.sh-notification-popover__group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-notification-popover__group-head {
+  margin: 0;
+}
+
+.sh-notification-popover__group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sh-notification-popover__group-count {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-notification-popover__list {
   display: grid;
   gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.sh-notification-history__item {
-  display: grid;
-  gap: var(--space-1);
-  border: 1px solid var(--ui-border-subtle);
-  border-left: 3px solid var(--ui-accent);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  background: var(--ui-surface);
-}
-
-.sh-notification-history__item--unread {
-  border-left-color: var(--ui-accent-strong);
-  background: var(--ui-hover-surface);
-}
-
-/* 历史项消息本体是按钮：整块可点击（先标记已读再关闭抽屉），键盘可达；
-   重置按钮默认外观贴合卡片内容，焦点环沿用 base.css 的全局 :focus-visible。 */
-.sh-notification-history__item-body {
-  display: grid;
-  gap: var(--space-1);
-  width: 100%;
-  border: none;
-  padding: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sh-notification-history__item-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.sh-notification-history__item-title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-weight: 650;
-}
-
-.sh-notification-history__item-detail {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-sm);
-}
-
-.sh-notification-history__item-action {
-  justify-self: start;
-  color: var(--ui-accent-strong);
-  font-size: var(--font-size-sm);
-  font-weight: 650;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
-
-.sh-notification-history__empty {
-  margin: 0;
-  padding: var(--space-5) 0;
-  color: var(--ui-ink-muted);
-  text-align: center;
 }

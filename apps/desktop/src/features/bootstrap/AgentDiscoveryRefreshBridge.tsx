@@ -82,6 +82,7 @@ export function AgentDiscoveryRefreshBridge({
 
         const brands = [...new Set(fresh.map((instance) => brandDisplayName(normalizeBrandKey(instance.profile_id))))].join("、");
         notify({
+          source: "discovery",
           tone: "info",
           title: t("bootstrap.agentRefresh.newTitle"),
           detail: t("bootstrap.agentRefresh.newDetail", { count: fresh.length, brands }),
