@@ -25,6 +25,15 @@ export type RecentOperationRow = {
   phase: OperationPhase;
   error_code: string | null;
   created_at: string;
+  /**
+   * DEV-94：快照已携带的目标级明细（当前仅部署类操作非空）。可选——旧
+   * 测试桩与消费方可以不提供；渲染层按存在与否决定是否输出目标摘要。
+   */
+  targets?: ReadonlyArray<{
+    physical_target_id: string;
+    path: string | null;
+    error_code: string | null;
+  }>;
 };
 
 export interface RecentOperationsReader {

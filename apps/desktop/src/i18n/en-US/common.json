@@ -2802,7 +2802,18 @@
       "errorCode": "Error code: {{code}}",
       "sessionRunning": "running ({{completed}}/{{total}})",
       "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
-      "sessionFailed": "failed"
+      "sessionFailed": "failed",
+      "targetsSummary": "{{succeeded}} succeeded, {{failed}} failed",
+      "targetFailed": "Failed at {{path}}"
+    },
+    "kinds": {
+      "delete_skill": "Delete skill",
+      "deploy_skill": "Deploy skill",
+      "import_skill": "Import skill",
+      "migrate_original": "Migrate original directory",
+      "relink_source_copy": "Relink source copy",
+      "undeploy_skill": "Undeploy skill",
+      "uninstall_skill": "Uninstall skill"
     }
   },
   "settings": {

@@ -121,3 +121,89 @@ it("reports read failures instead of pretending an empty history", async () => {
 
   expect(await screen.findByRole("alert")).toBeVisible();
 });
+
+// DEV-94：kind 是内部技术名（import_skill 等），不得裸奔进界面——标题与
+// 详情链接都要用本地化操作名；未知 kind 才回退原文（加映射前的兜底）。
+it("localizes known operation kinds as row titles and detail link text", async () => {
+  await renderList({
+    async listRecentOperations() {
+      return [
+        {
+          operation_id: "op-1",
+          kind: "import_skill",
+          state: "committed",
+          phase: "committed",
+          error_code: null,
+          created_at: "2026-09-06T08:00:00Z",
+        },
+        {
+          operation_id: "op-2",
+          kind: "deploy_skill",
+          state: "failed",
+          phase: "needs_recovery",
+          error_code: "deployment.target_conflict",
+          created_at: "2026-09-06T07:00:00Z",
+        },
+      ];
+    },
+  });
+
+  const imported = await screen.findByRole("link", { name: "导入技能" });
+  expect(imported.getAttribute("href")).toBe("/operations/op-1");
+  expect(screen.getByRole("link", { name: "部署技能" }).getAttribute("href")).toBe(
+    "/operations/op-2",
+  );
+  expect(screen.queryByRole("link", { name: "import_skill" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "deploy_skill" })).not.toBeInTheDocument();
+});
+
+// DEV-94：后端 created_at 是 epoch 秒字符串，按 ISO 解析失败后不得把原始
+// 数字串回显给用户。
+it("formats epoch-second timestamps instead of echoing the raw value", async () => {
+  await renderList({
+    async listRecentOperations() {
+      return [
+        {
+          operation_id: "op-1",
+          kind: "import_skill",
+          state: "committed",
+          phase: "committed",
+          error_code: null,
+          created_at: "1789890340",
+        },
+      ];
+    },
+  });
+
+  const time = await screen.findByRole("time");
+  expect(time).toHaveAttribute("dateTime", "1789890340");
+  expect(time.textContent).toMatch(/^\d{4}年/);
+  expect(screen.queryByText("1789890340")).not.toBeInTheDocument();
+});
+
+// DEV-94：部署类操作快照已携带 targets 结果明细（前端此前丢弃）。有条目
+// 时渲染「成功 N、失败 M」摘要，失败目标给出路径，不再只有一行技术名。
+it("summarizes per-target results when the snapshot carries them", async () => {
+  await renderList({
+    async listRecentOperations() {
+      return [
+        {
+          operation_id: "op-1",
+          kind: "deploy_skill",
+          state: "partial",
+          phase: "committed",
+          error_code: null,
+          created_at: "2026-09-06T08:00:00Z",
+          targets: [
+            { physical_target_id: "t1", path: "C:\\agents\\codex\\skills\\tdd", error_code: null },
+            { physical_target_id: "t2", path: "C:\\agents\\pi\\skills\\tdd", error_code: "deployment.target_conflict" },
+          ],
+        },
+      ];
+    },
+  });
+
+  const entry = await screen.findByRole("listitem");
+  expect(within(entry).getByText("成功 1、失败 1")).toBeVisible();
+  expect(within(entry).getByText(/C:\\agents\\pi\\skills\\tdd/)).toBeVisible();
+});

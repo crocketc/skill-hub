@@ -10,6 +10,21 @@ import { PHASE_PRESENTATION } from "./phasePresentation";
 import { type RecentOperationRow, type RecentOperationsReader } from "./api";
 import "./operations.css";
 
+/**
+ * DEV-94：操作 kind 是内部技术名（import_skill 等），按「技术标识不进界面」
+ * 约定映射为本地化操作名；不在表内的 kind（后端新增而映射未跟上）回退原文，
+ * 由补映射修复，不在渲染层编造文案。
+ */
+const KIND_LABEL_KEYS: Record<string, string> = {
+  delete_skill: "operations.kinds.delete_skill",
+  deploy_skill: "operations.kinds.deploy_skill",
+  import_skill: "operations.kinds.import_skill",
+  migrate_original: "operations.kinds.migrate_original",
+  relink_source_copy: "operations.kinds.relink_source_copy",
+  undeploy_skill: "operations.kinds.undeploy_skill",
+  uninstall_skill: "operations.kinds.uninstall_skill",
+};
+
 export interface OperationsListProps {
   /** 持久化的最近操作（BootstrapSnapshot.recent_operations）。 */
   recent?: RecentOperationsReader;
@@ -26,8 +41,7 @@ export interface OperationsListProps {
  */
 export function OperationsList({ recent, tracker }: OperationsListProps) {
   const { t, i18n } = useTranslation();
-  const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
-  const tracked = useTrackedOperations(tracker);
+  const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);  const tracked = useTrackedOperations(tracker);
   const [rows, setRows] = useState<RecentOperationRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,29 +98,66 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
       ) : (
         <ol aria-label={t("operations.list.timeline")} className="sh-operations-timeline">
           {rows.map((row, index) => (
-            <li className="sh-operations-timeline__entry" key={row.operation_id}>
-              <span aria-hidden="true" className={`sh-operations-timeline__marker sh-operations-timeline__marker--${PHASE_PRESENTATION[row.phase].tone}`}>
-                <Icon name={PHASE_PRESENTATION[row.phase].icon} />
-              </span>
-              <div className="sh-operations-timeline__content">
-                <div className="sh-operations-timeline__heading">
-                  <Link to={`/operations/${row.operation_id}`}>{row.kind}</Link>
-                  <span className={`sh-status sh-status--${row.phase}`}>
-                    {t(`operations.phases.${row.phase}` as never)}
-                  </span>
-                </div>
-                {row.error_code ? (
-                  <p className="sh-operations-timeline__error">{t("operations.list.errorCode", { code: row.error_code })}</p>
-                ) : null}
-                <time className="sh-operations-timeline__time" dateTime={row.created_at}>
-                  {formattedTimes[index]}
-                </time>
-              </div>
-            </li>
+            <RecentTimelineEntry
+              formattedTime={formattedTimes[index]}
+              key={row.operation_id}
+              row={row}
+            />
           ))}
         </ol>
       )}
     </section>
+  );
+}
+
+/** DEV-94：单条持久化操作的时间线条目——本地化操作名标题、阶段徽标、
+ *  本地化时间、目标结果摘要（快照携带 targets 时）。 */
+function RecentTimelineEntry({
+  formattedTime,
+  row,
+}: {
+  formattedTime: string;
+  row: RecentOperationRow;
+}) {
+  const { t } = useTranslation();
+  const labelKey = KIND_LABEL_KEYS[row.kind];
+  const targets = row.targets ?? [];
+  const succeeded = targets.filter((target) => target.error_code === null).length;
+  const failed = targets.length - succeeded;
+  return (
+    <li className="sh-operations-timeline__entry">
+      <span aria-hidden="true" className={`sh-operations-timeline__marker sh-operations-timeline__marker--${PHASE_PRESENTATION[row.phase].tone}`}>
+        <Icon name={PHASE_PRESENTATION[row.phase].icon} />
+      </span>
+      <div className="sh-operations-timeline__content">
+        <div className="sh-operations-timeline__heading">
+          <Link to={`/operations/${row.operation_id}`}>
+            {labelKey ? t(labelKey as never) : row.kind}
+          </Link>
+          <span className={`sh-status sh-status--${row.phase}`}>
+            {t(`operations.phases.${row.phase}` as never)}
+          </span>
+        </div>
+        {targets.length > 0 ? (
+          <>
+            <p>{t("operations.list.targetsSummary", { succeeded, failed })}</p>
+            {targets
+              .filter((target) => target.error_code !== null && target.path)
+              .map((target) => (
+                <p className="sh-operations-timeline__error" key={target.physical_target_id}>
+                  {t("operations.list.targetFailed", { path: target.path })}
+                </p>
+              ))}
+          </>
+        ) : null}
+        {row.error_code ? (
+          <p className="sh-operations-timeline__error">{t("operations.list.errorCode", { code: row.error_code })}</p>
+        ) : null}
+        <time className="sh-operations-timeline__time" dateTime={row.created_at}>
+          {formattedTime}
+        </time>
+      </div>
+    </li>
   );
 }
 
@@ -163,7 +214,14 @@ function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; 
 
 function formatTimes(values: string[], locale: SupportedLocale): string[] {
   return values.map((value) => {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : formatDateTime(date, locale);
+    // DEV-94：后端 created_at 落库为 epoch 秒字符串（如 1789890340），
+    // 按 ISO 解析会得到 Invalid Date 并把原始数字串回显给用户；10 位纯
+    // 数字按秒转 Date。彻底解析不了的显示「—」，不回显原始值。
+    const epochSeconds = /^\d{10}$/.test(value) ? Number(value) : null;
+    const date =
+      epochSeconds !== null
+        ? new Date(epochSeconds * 1000)
+        : new Date(value);
+    return Number.isNaN(date.getTime()) ? "—" : formatDateTime(date, locale);
   });
 }

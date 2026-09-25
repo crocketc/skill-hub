@@ -2802,7 +2802,18 @@
       "errorCode": "错误码：{{code}}",
       "sessionRunning": "进行中（{{completed}}/{{total}}）",
       "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}、待处理 {{todo}}",
-      "sessionFailed": "失败"
+      "sessionFailed": "失败",
+      "targetsSummary": "成功 {{succeeded}}、失败 {{failed}}",
+      "targetFailed": "失败于 {{path}}"
+    },
+    "kinds": {
+      "delete_skill": "删除技能",
+      "deploy_skill": "部署技能",
+      "import_skill": "导入技能",
+      "migrate_original": "迁移原始目录",
+      "relink_source_copy": "重连来源副本",
+      "undeploy_skill": "解除部署",
+      "uninstall_skill": "卸载技能"
     }
   },
   "settings": {
