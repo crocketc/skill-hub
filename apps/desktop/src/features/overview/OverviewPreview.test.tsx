@@ -78,7 +78,7 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
     screen.getByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" }),
   ).toBeVisible();
   expect(
-    screen.getByRole("link", { name: "Open relationship governance (9 relation edges)" }),
+    screen.getByRole("link", { name: "Open needs-governance relations (5 to handle)" }),
   ).toBeVisible();
   expect(screen.queryByText("–")).not.toBeInTheDocument();
 });

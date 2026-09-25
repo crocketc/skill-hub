@@ -118,7 +118,8 @@ export function RelationshipGovernancePage({
     skill_id: deepLink.skillId ?? undefined,
     text: deepLink.text || undefined,
     // 任务 11：状态与批次过滤直达后端；scope 由前端按行类别收敛。
-    statuses: deepLink.status ? [deepLink.status] : undefined,
+    // 任务 12.6：状态过滤是并集列表（概览“待治理”深链携带三个需处理状态）。
+    statuses: deepLink.status.length > 0 ? deepLink.status : undefined,
     batch_id: deepLink.batchId ?? undefined,
   } as const;
   const ledgerQuery = useQuery({
@@ -134,8 +135,9 @@ export function RelationshipGovernancePage({
     } else if (deepLink.scope === "deployment") {
       filtered = filtered.filter((row) => row.relation.kind === "deployment");
     }
-    if (deepLink.status) {
-      filtered = filtered.filter((row) => row.status === deepLink.status);
+    if (deepLink.status.length > 0) {
+      const allowed = new Set(deepLink.status);
+      filtered = filtered.filter((row) => allowed.has(row.status));
     }
     return filtered;
   }, [deepLink.scope, deepLink.status, rows]);
@@ -791,12 +793,25 @@ export function RelationshipGovernancePage({
         ))}
         {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
           <Button
-            aria-pressed={deepLink.status === status}
+            // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
+            // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
+            aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
             data-testid={`governance-status-${status}`}
             key={`status-${status}`}
-            onClick={() => applyParams({ status: deepLink.status === status ? null : status })}
+            onClick={() =>
+              applyParams({
+                status:
+                  deepLink.status.length === 1 && deepLink.status[0] === status
+                    ? null
+                    : status,
+              })
+            }
             size="sm"
-            variant={deepLink.status === status ? "primary" : "secondary"}
+            variant={
+              deepLink.status.length === 1 && deepLink.status[0] === status
+                ? "primary"
+                : "secondary"
+            }
           >
             {t(`relationships.governance.statusFilter.${status}` as never)}
           </Button>

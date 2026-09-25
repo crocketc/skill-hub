@@ -175,7 +175,7 @@ it("renders the three entries with counts taken from the frozen api aggregation"
     screen.getByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" }),
   ).toBeVisible();
   expect(
-    screen.getByRole("link", { name: "Open relationship governance (7 relation edges)" }),
+    screen.getByRole("link", { name: "Open needs-governance relations (3 to handle)" }),
   ).toBeVisible();
 
   // 视觉结构沿用概览统计的两行卡：数字 + 入口名。
@@ -198,8 +198,8 @@ it("deep-links each entry to its frozen relationship subpage route", async () =>
     screen.getByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" }),
   ).toHaveAttribute("href", "/relationships/decisions");
   expect(
-    screen.getByRole("link", { name: "Open relationship governance (7 relation edges)" }),
-  ).toHaveAttribute("href", "/relationships/governance");
+    screen.getByRole("link", { name: "Open needs-governance relations (3 to handle)" }),
+  ).toHaveAttribute("href", "/relationships/governance?status=needs_validation,needs_attention,blocked");
 });
 
 it("keeps every entry navigable when all relationship counts are zero", async () => {
@@ -215,7 +215,7 @@ it("keeps every entry navigable when all relationship counts are zero", async ()
     screen.getByRole("link", { name: "Open conflict workspace (0 unconfirmed conflicts)" }),
   ).toBeVisible();
   expect(
-    screen.getByRole("link", { name: "Open relationship governance (0 relation edges)" }),
+    screen.getByRole("link", { name: "Open needs-governance relations (0 to handle)" }),
   ).toBeVisible();
   expect(screen.getByText("No relationship facts to display yet.")).toBeVisible();
 });

@@ -177,8 +177,11 @@ export interface GovernanceDeepLink {
   relationId: string | null;
   /** 行类别过滤（计划 9.5）：source_copy / deployment / all。 */
   scope: GovernanceScopeParam;
-  /** 行状态过滤（计划 9.5）：五状态词表之外的值忽略。 */
-  status: (typeof GOVERNANCE_STATUSES)[number] | null;
+  /**
+   * 行状态过滤（计划 9.5/12.6）：五状态词表的并集列表（逗号分隔解析）；
+   * 空数组表示不过滤，词表之外的值逐个丢弃。
+   */
+  status: (typeof GOVERNANCE_STATUSES)[number][];
   /** 导入批次过滤（计划 9.5）：只显示该批次映射的关系。 */
   batchId: string | null;
 }
@@ -194,6 +197,13 @@ export function parseGovernanceSearchParams(searchParams: URLSearchParams): Gove
   const fromParam = searchParams.get("from");
   const scopeParam = searchParams.get("scope");
   const statusParam = searchParams.get("status");
+  const status = (statusParam ?? "")
+    .split(/[,，]/)
+    .map((candidate) => candidate.trim())
+    .flatMap((candidate) => {
+      const known = GOVERNANCE_STATUSES.find((status) => status === candidate);
+      return known ? [known] : [];
+    });
   return {
     from: GOVERNANCE_SOURCES.find((candidate) => candidate === fromParam) ?? null,
     bucket: GOVERNANCE_BUCKETS.find((candidate) => candidate === bucketParam) ?? "all",
@@ -204,7 +214,7 @@ export function parseGovernanceSearchParams(searchParams: URLSearchParams): Gove
     conflictId: searchParams.get("conflictId"),
     relationId: searchParams.get("relationId"),
     scope: GOVERNANCE_SCOPES.find((candidate) => candidate === scopeParam) ?? "all",
-    status: GOVERNANCE_STATUSES.find((candidate) => candidate === statusParam) ?? null,
+    status,
     batchId: searchParams.get("batch"),
   };
 }

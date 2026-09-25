@@ -166,10 +166,13 @@ it("keeps the fixed metric order, accent hero and frozen drill-down targets", as
 
 it("maps each relation entry key to its frozen relationship subpage route", async () => {
   // 任务 5 路由即状态：图谱入口不带 skillId（条目只携带稳定 key，页面不伪造
-  // 选中态）；冲突与治理各进自己的子页。
+  // 选中态）；冲突与治理各进自己的子页。任务 12.6：治理深链携带与计数
+  // 同一口径的状态并集（需处理 = 待校验 + 需关注 + 受阻）。
   expect(getOverviewRelationEntryHref("graph")).toBe("/relationships");
   expect(getOverviewRelationEntryHref("conflicts")).toBe("/relationships/decisions");
-  expect(getOverviewRelationEntryHref("governance")).toBe("/relationships/governance");
+  expect(getOverviewRelationEntryHref("governance")).toBe(
+    "/relationships/governance?status=needs_validation,needs_attention,blocked",
+  );
 });
 
 it("splits deployment relations by dimension across all chart categories", async () => {
@@ -283,7 +286,10 @@ it("builds the three relationship thumbnail entries from task 1/2 aggregates", a
   expect(zhEntries).toEqual([
     { count: 2, key: "graph", label: "关系图谱" },
     { count: 2, key: "conflicts", label: "冲突处理" },
-    { count: 7, key: "governance", label: "关系治理" },
+    // 任务 12.6/12.16：治理入口只计需处理可管理关系（status_needs_validation
+    // + status_needs_attention + status_blocked，全部来自服务端 counts，不在
+    // 前端重算状态）。fixture：2 + 0 + 1 = 3。
+    { count: 3, key: "governance", label: "待治理" },
   ]);
 
   const enI18n = await createSkillHubI18n(["en-US"]);
@@ -299,6 +305,25 @@ it("builds the three relationship thumbnail entries from task 1/2 aggregates", a
   expect(enEntries.map((entry) => entry.label)).toEqual([
     "Relationship graph",
     "Conflict workspace",
-    "Relationship governance",
+    "Needs governance",
   ]);
+});
+
+it("counts needs-attention relations in the needs-governance entry", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const entries = getOverviewRelationEntries(
+    {
+      governanceLedger: {
+        ...governanceLedger,
+        counts: {
+          ...governanceLedger.counts,
+          status_needs_attention: 4,
+        },
+      },
+    },
+    i18n.t.bind(i18n),
+  );
+
+  // 2 待校验 + 4 需关注 + 1 受阻 = 7。
+  expect(entries.find((entry) => entry.key === "governance")?.count).toBe(7);
 });

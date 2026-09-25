@@ -475,7 +475,7 @@ it("fuses the relationship thumbnail network below the charts without replacing 
   ).toBeVisible();
   expect(
     within(relations).getByRole("link", {
-      name: "Open relationship governance (7 relation edges)",
+      name: "Open needs-governance relations (3 to handle)",
     }),
   ).toBeVisible();
 });
@@ -492,8 +492,8 @@ it("deep-links the three relationship entries into their subpages", async () => 
     screen.getByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" }),
   ).toHaveAttribute("href", "/relationships/decisions");
   expect(
-    screen.getByRole("link", { name: "Open relationship governance (7 relation edges)" }),
-  ).toHaveAttribute("href", "/relationships/governance");
+    screen.getByRole("link", { name: "Open needs-governance relations (3 to handle)" }),
+  ).toHaveAttribute("href", "/relationships/governance?status=needs_validation,needs_attention,blocked");
 
   fireEvent.click(screen.getByRole("link", { name: "Open relationship graph (2 skills with displayable relations)" }));
 

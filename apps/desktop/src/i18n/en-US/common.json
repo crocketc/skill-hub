@@ -3206,8 +3206,8 @@
         "conflictsAria": "Open conflict workspace ({{count}} unconfirmed conflicts)",
         "graph": "Relationship graph",
         "graphAria": "Open relationship graph ({{count}} skills with displayable relations)",
-        "governance": "Relationship governance",
-        "governanceAria": "Open relationship governance ({{count}} relation edges)"
+        "governance": "Needs governance",
+        "governanceAria": "Open needs-governance relations ({{count}} to handle)"
       },
       "metrics": {
         "agentsCombined": "Agents ({{configured}} configured targets · {{discovered}} discovered)",

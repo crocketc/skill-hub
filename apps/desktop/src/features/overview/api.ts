@@ -176,12 +176,16 @@ export type OverviewRelationEntryKey = "conflicts" | "graph" | "governance";
  * 任务 9 页面切片接线的深链目标（路由由任务 5 交付，URL 即状态）。
  * 图谱入口固定不带 skillId：缩略条目只携带稳定 key，概览不伪造
  * 图谱选中态——skillId 深链由技能详情等持有事实的入口发起。
+ * 任务 12.6：治理深链携带与计数同一口径的状态并集（需处理可管理关系）。
  */
 export function getOverviewRelationEntryHref(key: OverviewRelationEntryKey): string {
   if (key === "graph") {
     return "/relationships";
   }
-  return key === "conflicts" ? "/relationships/decisions" : "/relationships/governance";
+  if (key === "governance") {
+    return "/relationships/governance?status=needs_validation,needs_attention,blocked";
+  }
+  return "/relationships/decisions";
 }
 
 export interface OverviewRelationEntry {
@@ -283,7 +287,7 @@ export function getOverviewSummaryMetrics(
 
 /**
  * 关系缩略区域的三个入口计数：图谱（有关系事实的 Skill 数，任务 1）、
- * 冲突处理（待确认冲突数，任务 2 投影）、治理（已建立关系边数，治理台账）。
+ * 冲突处理（待确认冲突数，任务 2 投影）、待治理（需处理可管理关系数）。
  * 输入缺省时返回 0 计数的完整条目，页面仍可渲染占位。
  */
 export function getOverviewRelationEntries(
@@ -302,7 +306,13 @@ export function getOverviewRelationEntries(
       label: t("overview.summary.entries.conflicts"),
     },
     {
-      count: source.governanceLedger?.total ?? 0,
+      // 任务 12.6/12.16：只计需处理可管理关系（待校验/需关注/受阻三个状态
+      // 计数全部来自统一台账 counts，概览不在前端重算关系状态）。
+      count: source.governanceLedger
+        ? source.governanceLedger.counts.status_needs_validation
+          + source.governanceLedger.counts.status_needs_attention
+          + source.governanceLedger.counts.status_blocked
+        : 0,
       key: "governance",
       label: t("overview.summary.entries.governance"),
     },
