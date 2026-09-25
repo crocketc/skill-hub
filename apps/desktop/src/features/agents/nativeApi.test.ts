@@ -28,6 +28,7 @@ function snapshotWithTarget(overrides: Partial<{
   profileId: string;
   clientId: string;
   available: boolean;
+  exists: boolean;
   physicalId: string;
 }>): DiscoverySnapshot {
   const targetId = overrides.targetId ?? "openai.codex-cli.user";
@@ -50,7 +51,7 @@ function snapshotWithTarget(overrides: Partial<{
       path: "C:/Users/Test/.codex/skills",
       marker: "SKILL.md",
       precedence: "preferred",
-      exists: overrides.available ?? true,
+      exists: overrides.exists ?? overrides.available ?? true,
       readable: overrides.available ?? true,
       writable: overrides.available ?? true,
       available: overrides.available ?? true,
@@ -109,11 +110,11 @@ it("maps discovered clients with availability status and active deployment count
   })]);
 });
 
-it("marks agents whose targets are not available as inaccessible", async () => {
+it("marks agents whose directories exist but are unavailable as inaccessible", async () => {
   query
     .mockResolvedValueOnce({
       type: "discovery_snapshot",
-      payload: snapshotWithTarget({ available: false }),
+      payload: snapshotWithTarget({ exists: true, available: false }),
     })
     .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
     .mockResolvedValueOnce({
@@ -126,6 +127,26 @@ it("marks agents whose targets are not available as inaccessible", async () => {
   expect(agents).toEqual([expect.objectContaining({
     status: "inaccessible",
     managedDeploymentCount: 1,
+  })]);
+});
+
+it("marks clients whose candidate directories do not exist as directory-only without paths", async () => {
+  // 验收反馈（2026-09-25）：Antigravity 声明的用户级目录 ~/.gemini/config/skills
+  // 在本机不存在（exists=false），不是「当前不可访问」这种真实告警；语义应为
+  // 仅发现相关目录，路径不出卡，便于并入品牌内真实目录卡。
+  query
+    .mockResolvedValueOnce({
+      type: "discovery_snapshot",
+      payload: snapshotWithTarget({ exists: false, available: false }),
+    })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "deployments", payload: [] });
+
+  const agents = await nativeAgentFacade.list();
+
+  expect(agents).toEqual([expect.objectContaining({
+    status: "directory_only",
+    discoveredPaths: [],
   })]);
 });
 

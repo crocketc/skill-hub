@@ -39,9 +39,16 @@ function managedDeploymentStats(targets: TargetIdPair[], deployments: Deployment
   return countManagedDeployments(deployments, deploymentTargetIdSpace(targets));
 }
 
+/**
+ * 验收反馈（2026-09-25）：状态只依据「真实存在的目录」判定——
+ * 候选目录不存在（exists=false）是"本机未发现该客户端的技能目录"，
+ * 不是需要用户注意的故障；目录存在但不可用才是「当前不可访问」。
+ * 卡片路径同样只展示真实存在的目录，幽灵候选路径不进用户界面。
+ */
 function discoveredStatus(targets: LogicalTarget[]): AgentStatus {
-  if (!targets.length) return "directory_only";
-  return targets.some((target) => target.available) ? "accessible" : "inaccessible";
+  const existing = targets.filter((target) => target.exists);
+  if (!existing.length) return "directory_only";
+  return existing.some((target) => target.available) ? "accessible" : "inaccessible";
 }
 
 /**
@@ -80,7 +87,10 @@ function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRe
       managedDeploymentRelationCount: stats.relations,
       // DEV-5：同一物理目录只展示一条——按「斜杠统一 + Windows 大小写折叠」
       // 的文件系统身份去重（快照层已按 physical_id 归并，这里是展示层兜底）。
-      discoveredPaths: dedupePathsByFsIdentity(targets.map((target) => target.path)),
+      // 只展示真实存在的目录：不存在的候选路径不进用户界面。
+      discoveredPaths: dedupePathsByFsIdentity(
+        targets.filter((target) => target.exists).map((target) => target.path),
+      ),
       officialReference: null,
       relations: targets.map((target) => relationOf(target, snapshot)),
       status: discoveredStatus(targets),
