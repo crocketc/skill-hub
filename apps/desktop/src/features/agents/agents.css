@@ -26,26 +26,16 @@
   line-height: 1.25;
 }
 
-/* 实体卡片网格：容器 ≥1180px 3 列，≥760px 2 列，其余 1 列。 */
+/* 实体卡片网格：验收反馈（2026-09-25）改为多行多列平铺——按容器宽度
+   auto-fill 自动排满列，减少纵向滚动；336px 列宽下限保证 1180px 容器
+   仍为 3 列、760px 为 2 列，卡片大小与既有断点一致。 */
 .sh-agents-page__cards {
   display: grid;
   padding: 0;
   margin: 0;
   gap: var(--space-3);
   list-style: none;
-  grid-template-columns: 1fr;
-}
-
-@container workspace (min-width: 760px) {
-  .sh-agents-page__cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container workspace (min-width: 1180px) {
-  .sh-agents-page__cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
 }
 
 /* 实体卡片：10px 圆角，最多一级浅阴影。 */
@@ -133,6 +123,24 @@
   gap: var(--space-2);
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
+}
+
+/* 2026-09-25：内置技能目录的「内置」徽标与只读边界提示。 */
+.sh-agent-card__builtin {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-agent-card__builtin-hint {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .sh-agent-card__actions {

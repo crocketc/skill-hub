@@ -425,6 +425,25 @@
   font-weight: 600;
 }
 
+/* 2026-09-25：内置技能目录的「内置」徽标与只读边界提示。 */
+.sh-discovery-workbench__agent-builtin {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-xs);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-discovery-workbench__agent-builtin-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
 /* OPT-07：官方产品名与共享引用说明行；两者都是次级证据文本。 */
 .sh-discovery-workbench__agent-names {
   color: var(--ui-ink);

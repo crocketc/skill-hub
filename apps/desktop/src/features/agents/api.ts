@@ -21,6 +21,11 @@ export interface AgentView {
   managedDeploymentCount: number;
   /** Raw deployment relation count kept as auxiliary context. */
   managedDeploymentRelationCount: number;
+  /**
+   * 2026-09-25 验收裁决：`true` 标记内置技能目录视图（如
+   * `.codex/skills/.system`）——只读观察，不参与部署/删除。
+   */
+  builtin?: boolean;
   /** First official profile reference of a custom agent, when registered. */
   officialReference: string | null;
   relations: AgentRelation[];

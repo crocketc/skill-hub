@@ -150,6 +150,74 @@ it("marks clients whose candidate directories do not exist as directory-only wit
   })]);
 });
 
+it("splits existing built-in directories into separate builtin views", async () => {
+  // 2026-09-25 验收裁决：内置技能目录（.codex/skills/.system）独立成只读
+  // 「内置」视图，不混入用户级（终端/桌面端）目录的路径与计数；本机不存在的
+  // 内置候选完全不产出视图。
+  const snapshot = snapshotWithTarget({});
+  snapshot.logical_targets.push({
+    id: "openai.codex-cli.builtin",
+    profile_id: "openai",
+    client_id: "codex-cli",
+    scope: "global",
+    path: "C:/Users/Test/.codex/skills/.system",
+    marker: "SKILL.md",
+    precedence: "may_coexist",
+    builtin: true,
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    physical_id: "physical-system",
+  });
+  snapshot.logical_targets.push({
+    id: "openai.codex-cli.builtin-missing",
+    profile_id: "openai",
+    client_id: "codex-cli",
+    scope: "global",
+    path: "C:/Users/Test/.cursor/skills-cursor",
+    marker: "SKILL.md",
+    precedence: "may_coexist",
+    builtin: true,
+    exists: false,
+    readable: false,
+    writable: false,
+    available: false,
+    physical_id: "physical-cursor-builtin",
+  });
+  snapshot.physical_targets.push({
+    id: "physical-system",
+    path: "C:/Users/Test/.codex/skills/.system",
+    exists: true,
+    readable: true,
+    writable: true,
+    case_behavior: "insensitive",
+    logical_target_ids: ["openai.codex-cli.builtin"],
+  });
+  query
+    .mockResolvedValueOnce({ type: "discovery_snapshot", payload: snapshot })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "deployments", payload: deployments("openai.codex-cli.user", ["deployed"]) });
+
+  const agents = await nativeAgentFacade.list();
+
+  const normal = agents.find((agent) => agent.id === "openai.codex-cli");
+  const builtin = agents.find((agent) => agent.id === "openai.codex-cli.builtin");
+  expect(normal).toEqual(expect.objectContaining({
+    discoveredPaths: ["C:/Users/Test/.codex/skills"],
+    status: "accessible",
+    managedDeploymentCount: 1,
+  }));
+  expect(normal?.builtin).toBeFalsy();
+  expect(builtin).toEqual(expect.objectContaining({
+    discoveredPaths: ["C:/Users/Test/.codex/skills/.system"],
+    status: "accessible",
+    builtin: true,
+    // 内置目录只读观察：部署计数恒为 0。
+    managedDeploymentCount: 0,
+  }));
+});
+
 it("marks registered custom agents as custom with their granted directory", async () => {
   query
     .mockResolvedValueOnce({ type: "discovery_snapshot", payload: emptySnapshot })

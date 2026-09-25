@@ -18,11 +18,30 @@
       ],
       "path_candidates": [
         {
+          "path": "{user_home}/.codex/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.codex/skills/.system",
+          "scope": "global",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md",
+          "builtin": true
+        },
+        {
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "preferred",
           "marker": "SKILL.md",
           "shared_reference": true
+        },
+        {
+          "path": "{project_root}/.codex/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
         },
         {
           "path": "{project_root}/.agents/skills",
@@ -38,6 +57,47 @@
         "symlink": true,
         "junction": true,
         "limitations": []
+      },
+      "call_policy": "unknown"
+    },
+    {
+      "id": "openai.codex-desktop",
+      "kind": "desktop",
+      "display_name": "Codex Desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.codex/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.codex/skills/.system",
+          "scope": "global",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md",
+          "builtin": true
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md",
+          "shared_reference": true
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "symlink_support_unconfirmed"
+        ]
       },
       "call_policy": "unknown"
     },

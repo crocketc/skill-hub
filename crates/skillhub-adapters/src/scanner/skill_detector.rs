@@ -226,6 +226,13 @@ impl SkillDetector {
             if metadata.file_type().is_symlink() {
                 continue;
             }
+            // 2026-09-25 验收裁决：点前缀子目录是平台内置/隐藏层（如 Codex
+            // `.system`）的约定，扫描宿主根时不得把其中的技能归入用户级
+            // 目标；同一目录作为独立扫描根时不受影响（入口在根上，不经过
+            // 这里的 entry 过滤）。
+            if metadata.is_dir() && entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
             if metadata.is_dir() {
                 self.walk_directory(state, &path, depth + 1)?;
             }

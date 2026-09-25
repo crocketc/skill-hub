@@ -497,6 +497,11 @@ export interface AgentTargetCard {
   sharedClients: number;
   /** OPT-07：共享引用客户端的官方产品名（提示与诊断用）。 */
   sharedClientNames: string[];
+  /**
+   * 2026-09-25 验收裁决：内置技能目录（平台只读，如 `.codex/skills/.system`）
+   * 独立成「内置」类型卡片；本机不存在的内置候选不出卡（平台自管，缺席非故障）。
+   */
+  builtin: boolean;
 }
 
 /** P1-06：一个品牌（profile）的分组；组内可用卡片在前、不可用置底。 */
@@ -547,6 +552,7 @@ export function buildAgentGroups(
     kinds: ClientKind[];
     names: string[];
     available: boolean;
+    builtin: boolean;
   }
   // 验收反馈（2026-09-25）：merge_history 保留的旧扫描条目可能只有末段
   // 分隔符不同（`.agents/skills` vs `.agents\skills`），且 shared_reference
@@ -587,6 +593,9 @@ export function buildAgentGroups(
     if (!clientIds.has(target.client_id)) continue;
     const kind = instanceKindByClient.get(target.client_id);
     if (!kind) continue;
+    // 2026-09-25 验收裁决：内置候选目录不存在时保持安静——平台自管的目录
+    // 缺席是正常状态，不产生「不可用」噪音卡片。
+    if (target.builtin && !target.exists) continue;
     const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
     const identity = pathIdentity(target.path);
     const isGenericOwner = target.profile_id === "agent-skills";
@@ -622,9 +631,12 @@ export function buildAgentGroups(
         kinds: [],
         names: [],
         available: false,
+        builtin: true,
       };
       brandGroups.set(identity, card);
     }
+    // 同一目录身份上混有普通条目时不再是内置卡；纯内置条目保持内置标记。
+    card.builtin = card.builtin && target.builtin === true;
     // 同一路径的历史拼写各自带着不同 physical_id；可用拼写的路径优先作为展示值。
     if (target.available && !card.available) {
       card.physicalId = target.physical_id;
@@ -654,6 +666,7 @@ export function buildAgentGroups(
       kinds: ["shared_directory"],
       names: ["Agent Skills"],
       available: shared.available,
+      builtin: false,
     });
   }
   if (genericCards.size > 0) byBrand.set("agent-skills", genericCards);

@@ -321,6 +321,61 @@ describe("buildAgentGroups", () => {
     expect(empty.available).toEqual([]);
     expect(empty.unavailable).toEqual([]);
   });
+
+  it("keeps existing built-in directories as separate read-only builtin cards", () => {
+    // 2026-09-25 验收裁决：内置技能目录独立成「内置」类型卡片；同目录多
+    // 客户端合并为一张；不存在的内置目录（平台自管，本机未随装）不渲染。
+    const builtinTarget = (
+      id: string,
+      profileId: string,
+      clientId: string,
+      path: string,
+      physicalId: string,
+      available: boolean,
+      exists = true,
+    ) => ({
+      ...target("x", profileId, clientId, path, physicalId, available),
+      id,
+      builtin: true,
+      exists,
+      readable: exists && available,
+      writable: exists && available,
+    });
+    const builtinSnapshot: DiscoverySnapshot = {
+      generation: "1",
+      observed_at: "1789114968",
+      instances: [
+        { profile_id: "openai", client_id: "openai.codex-cli", display_name: "Codex CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+        { profile_id: "openai", client_id: "openai.codex-desktop", display_name: "Codex Desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+        { profile_id: "cursor", client_id: "cursor.editor", display_name: "Cursor", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+      ],
+      logical_targets: [
+        target("lt-codex-user", "openai", "openai.codex-cli", "C:/u/.codex/skills", "phys-codex-user", true),
+        builtinTarget("lt-codex-sys-cli", "openai", "openai.codex-cli", "C:/u/.codex/skills/.system", "phys-codex-system", true),
+        builtinTarget("lt-codex-sys-desktop", "openai", "openai.codex-desktop", "C:/u/.codex/skills/.system", "phys-codex-system", true),
+        builtinTarget("lt-cursor-builtin", "cursor", "cursor.editor", "C:/u/.cursor/skills-cursor", "phys-cursor-builtin", false, false),
+      ],
+      physical_targets: [
+        physical("phys-codex-user", "C:/u/.codex/skills"),
+        physical("phys-codex-system", "C:/u/.codex/skills/.system"),
+      ],
+    };
+    const { available } = buildAgentGroups(builtinSnapshot, { os: "windows" });
+    const openai = available.find((group) => group.brand === "openai");
+    expect(openai).toBeDefined();
+    expect(openai!.cards).toHaveLength(2);
+    const userCard = openai!.cards.find((card) => !card.builtin);
+    expect(userCard).toMatchObject({ path: "C:/u/.codex/skills", available: true });
+    const builtinCard = openai!.cards.find((card) => card.builtin);
+    expect(builtinCard).toMatchObject({
+      path: "C:/u/.codex/skills/.system",
+      physicalId: "phys-codex-system",
+      available: true,
+    });
+    // 本机不存在的内置目录不出卡：cursor 品牌整体不渲染。
+    expect(available.find((group) => group.brand === "cursor")).toBeUndefined();
+    expect(unavailable.find((group) => group.brand === "cursor")).toBeUndefined();
+  });
 });
 
 /**

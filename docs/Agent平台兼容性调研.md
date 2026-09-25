@@ -248,6 +248,7 @@ Codex 同时支持两套本地 Skill 目录：跨平台目录 `.agents/skills` /
 - 真机确认（Windows，2026-09-05，目录观察）：`~/.codex/skills/` 存在并含 9 个 Skill；`~/.agents/skills/` 存在并含 26 个 Skill；两个目录并存，且存在同名 Skill 在两处各自独立存放。`C:\Users\<本地用户>\Documents\Codex\` 下多个项目根目录同时存在项目级 `.codex` 与 `.agents` 目录（验证时点为空目录），佐证项目级 `.codex/skills` 路径确实生效。
 - 已确认：原生用户级 `~/.codex/skills` 与原生项目级 `{cwd}/.codex/skills`；跨平台用户级 `$HOME/.agents/skills` 与项目链路 `.agents/skills`；机器/容器级 `/etc/codex/skills`；系统内置与插件 Skill；禁用配置 `~/.codex/config.toml`；文件变化通知；符号链接目录。
 - 真机确认（Windows，2026-09-25，目录观察，人工验收反馈）：`~/.codex/skills/.system/` 存在，内含 6 个内置 Skill（imagegen、openai-docs、plugin-creator、review-agent、skill-creator、skill-installer）。即用户实测中 Built-in 不在安装目录，而以点前缀子目录 `.system` 形式位于用户级 Skills 目录内部，与用户 Skill 同根；终端（Codex CLI）与桌面端共用该用户级目录。这是对官方「Built-in 位于安装目录」表述的重要补充，其他品牌的内置目录位置对照见本表「内置 Skill」列（Cursor `~/.cursor/skills-cursor/`、TraeCode `~/.trae-cn/builtin_skills/` 与 `builtin/global/skills/`、WorkBuddy 内置插件 `skills/` 与插件缓存、DeepSeek Harness `Config.bundledSkillDir`、Kimi Code Built-in 档）。
+- SkillHub 落地（2026-09-25，验收裁决）：`openai` profile 已按真机结论登记 `~/.codex/skills`（用户级，终端/桌面端共用）与 `~/.codex/skills/.system`（`builtin=true`，只读内置）以及项目级 `.codex/skills`；并补登 Codex Desktop（openai.codex-desktop）客户端。内置条目全局、可共存优先级，不进部署目标；扫描用户级目录时排除点前缀嵌套（`.system` 以独立内置卡呈现），避免同一内置 Skill 重复归卡。
 - 已确认但需独立建模：standalone skills 可在 ChatGPT desktop app、Codex CLI 和 Codex IDE extension 使用；插件 Skill 可在 ChatGPT 的 Chat/Work 以及 Codex 中分发使用。
 - 未确认：`.codex/skills` 与 `.agents/skills` 处于同一作用域时的同名优先级，官方文档未给出规则。
 - 源码线索：扫描深度和 App Server 的 `skills/list`、强制刷新能力。
@@ -289,6 +290,7 @@ Cursor 已采用 Agent Skills，并兼容 `.agents`、Cursor、Claude 和 Codex 
 - 真机确认（Windows，2026-09-05，目录观察）：`~/.cursor/skills` 存在并含 2 个 Skill；内置目录 `~/.cursor/skills-cursor/` 存在并含 5 个 Skill（create-rule、create-skill、create-subagent、migrate-to-skills、update-cursor-settings）。
 - 已确认：用户级 `~/.cursor/skills`、`~/.agents/skills`；项目级 `.cursor/skills`、`.agents/skills`；官方明确为兼容目的另行加载 Claude 与 Codex 目录，即 `.claude/skills/`、`.codex/skills/`、`~/.claude/skills/`、`~/.codex/skills/`；skills 根目录下可递归组织子目录（如 `.cursor/skills/shipping/deploy-staging/SKILL.md`），Skill 名取自直接包含 `SKILL.md` 的目录而非上层分类目录；嵌套项目子目录中的 Skill 仅作用于该子目录内的文件；frontmatter 支持 `paths` 字段限定作用范围；`/create-skill`、`/migrate-to-skills` 等内置能力。
 - 内置目录边界：`~/.cursor/skills-cursor/` 由 Cursor 自动管理，官方明确提示不得在其中新建或修改内容；SkillHub 只能观察、参与重复检测，不写入、不覆盖、不删除。
+- SkillHub 落地（2026-09-25）：`cursor` profile 已将 `~/.cursor/skills-cursor` 以 `builtin=true` 登记为只读内置候选；发现页/Agent 页以「内置」卡片呈现，不参与部署与删除。
 - 必须验证：Cursor editor 与 Cursor CLI 是否完全共享发现链路，多目录（含 Claude/Codex 兼容目录）同时存在时的遮蔽顺序、Customize 中禁用状态、Marketplace 安装位置、Windows 目录联接和当前会话刷新。
 - 结论：完整适配候选，标记“已测试文件管理接入”前验证项较多。
 
@@ -357,6 +359,7 @@ TraeCode 官方文档已明确使用 `SKILL.md`，支持全局、项目、内置
 - 真机确认（Windows，2026-09-05，目录观察）：中国版用户级 `~/.trae-cn/skills` 存在并含 19 个 Skill；全球版用户级 `~/.trae/skills` 存在并含 5 个 Skill，两者在本机并存；中国版内置目录 `~/.trae-cn/builtin_skills/` 含 5 项（TRAE-code-review、TRAE-debugger、TRAE-generate-mini-app、TRAE-security-review、`_shared`）；另有 `~/.trae-cn/builtin/global/skills/` 含 7 项（skill-creator、dynamic-ui、digital-avatar-creator、TRAE-computer-use、TRAE-code-mode-orchestrator、TRAE-browseruse、TRAE-browseruse-external）。
 - 已确认：项目 `.trae/skills`；Windows/macOS 全局 `~/.trae-cn/skills`；可选 `.agents/skills`；`.trae` 同名优先于 `.agents`；内置 Skill；UI 创建、导入、启停和删除。
 - 内置目录边界：`builtin_skills/` 与 `builtin/global/skills/` 随客户端分发并由其维护，SkillHub 只观察、参与重复检测，不写入、不覆盖、不删除。
+- SkillHub 落地（2026-09-25）：`trae` profile 已将 `~/.trae-cn/builtin_skills` 与 `~/.trae-cn/builtin/global/skills` 以 `builtin=true` 登记为只读内置候选；两目录的相互优先级仍按「必须验证」项处理。
 - 必须验证：全球版 `~/.trae` 与中国版 `~/.trae-cn` 是按发版渠道二选一还是可以并存（本机两者并存，需确认实际生效者）、两个内置目录的加载语义与相互优先级、全局与项目同名顺序、禁用状态文件 `~/.trae-cn/skill-config.json` 的实际结构、热刷新、软链接以及 TraeCode/旧 TRAE IDE 的迁移。
 - 结论：完整适配候选。
 
@@ -661,6 +664,7 @@ Windows 必须分别验证：
 ### 6.7 初始化与项目扫描边界
 
 - 初始化只扫描集中库、`~/.agents/skills`、已发现客户端的已知用户级目录、可访问的内置或插件目录和用户自选目录，不遍历全盘。
+- 2026-09-25 起的扫描边界：profile 以 `builtin=true` 声明内置目录（如 `.codex/skills/.system`、`skills-cursor`、`builtin_skills`），内置目录作为独立只读扫描根，其技能不进品牌用户级卡；扫描任意宿主根时点前缀嵌套目录（`.system` 一类平台内置层）整体跳过，防止同一 Skill 双重归卡。WorkBuddy/DeepSeek Harness/Kimi 的内置目录位于安装目录或含变量段，暂无法以稳定占位符表达，未登记。
 - 未注册项目不自动扫描；项目注册后按对应 Agent 的原生目录、`.agents/skills`、父级和嵌套规则扫描。
 - 用户可以选择一个上级文件夹有限发现候选项目，结果先预览，不读取 Agent 对话或项目历史。
 - 仅发现 `.agents/skills` 不能推断项目正在使用哪些 Agent，项目与 Agent 关联由用户确认。

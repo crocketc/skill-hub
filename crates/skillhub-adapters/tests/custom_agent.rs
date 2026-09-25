@@ -21,6 +21,7 @@ fn profile(path: &str) -> AgentProfile {
                 precedence: DirectoryPrecedence::Preferred,
                 marker: "SKILL.md".into(),
                 shared_reference: false,
+                builtin: false,
             }],
             skill_marker: "SKILL.md".into(),
             deployment: DeploymentCapability {

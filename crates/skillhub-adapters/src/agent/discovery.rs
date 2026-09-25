@@ -77,6 +77,7 @@ impl DiscoverAgents {
                             marker: candidate.marker.clone(),
                             precedence: candidate.precedence.clone(),
                             shared_reference: candidate.shared_reference,
+                            builtin: candidate.builtin,
                             exists,
                             readable,
                             writable,

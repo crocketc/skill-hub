@@ -24,6 +24,13 @@
           "marker": "SKILL.md"
         },
         {
+          "path": "{user_home}/.cursor/skills-cursor",
+          "scope": "global",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md",
+          "builtin": true
+        },
+        {
           "path": "{user_home}/.agents/skills",
           "scope": "global",
           "precedence": "lower_priority_copy",

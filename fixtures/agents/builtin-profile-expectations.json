@@ -6,7 +6,10 @@
     ],
     "openai": [
       "{project_root}/.agents/skills",
-      "{user_home}/.agents/skills"
+      "{project_root}/.codex/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/.codex/skills",
+      "{user_home}/.codex/skills/.system"
     ],
     "anthropic": [
       "{project_root}/.claude/skills",
@@ -25,7 +28,8 @@
       "{project_root}/.claude/skills",
       "{project_root}/.cursor/skills",
       "{user_home}/.agents/skills",
-      "{user_home}/.cursor/skills"
+      "{user_home}/.cursor/skills",
+      "{user_home}/.cursor/skills-cursor"
     ],
     "github-copilot": [
       "{project_root}/.agents/skills",
@@ -53,6 +57,8 @@
     "trae": [
       "{project_root}/.agents/skills",
       "{project_root}/.trae/skills",
+      "{user_home}/.trae-cn/builtin/global/skills",
+      "{user_home}/.trae-cn/builtin_skills",
       "{user_home}/.trae-cn/skills"
     ],
     "qoder": [

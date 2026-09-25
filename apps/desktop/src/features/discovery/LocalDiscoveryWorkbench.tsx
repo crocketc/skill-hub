@@ -295,12 +295,17 @@ function AgentCard({
           kinds={card.kinds}
           sharedDirectory={card.kinds.includes("shared_directory")}
         />
+        {/* 2026-09-25 验收裁决：内置技能目录标注「内置」，只读边界随卡说明。 */}
+        {card.builtin ? <span className="sh-discovery-workbench__agent-builtin">{t("discovery.workbench.builtinLabel")}</span> : null}
         {!card.available ? (
           <span className="sh-discovery-workbench__agent-unavailable-label">
             {t("discovery.workbench.agentUnavailable")}
           </span>
         ) : null}
       </div>
+      {card.builtin ? (
+        <p className="sh-discovery-workbench__agent-builtin-hint">{t("discovery.workbench.builtinHint")}</p>
+      ) : null}
       {/* OPT-07：共享引用只改归属展示，不改变目录可用性语义。 */}
       {card.sharedClients > 0 ? (
         <p className="sh-discovery-workbench__agent-shared" title={card.sharedClientNames.join(" / ")}>

@@ -52,6 +52,7 @@ fn discovery_target(scope: &ScanScope) -> LogicalTarget {
         marker: scope.marker.clone(),
         precedence: DirectoryPrecedence::Preferred,
         shared_reference: false,
+        builtin: false,
         exists: true,
         readable: true,
         writable: true,
@@ -125,6 +126,48 @@ fn scanner_recognizes_only_the_profile_marker_inside_registered_roots() {
         .discovered
         .iter()
         .all(|skill| !skill.path.contains("wrong-case")));
+}
+
+#[test]
+fn dot_prefixed_nested_directories_are_excluded_from_the_host_root_scan() {
+    // 2026-09-25 验收裁决：Codex 用户级 skills 目录内嵌的 `.system` 内置
+    // 技能不得被扫描进用户级（终端/桌面端）目标；同一目录作为独立扫描根
+    // （内置只读卡片）时必须照常发现。点前缀是内置/隐藏层的平台约定。
+    let workspace = tempdir().unwrap();
+    let root = workspace.path().join("skills");
+    std::fs::create_dir_all(root.join("user-skill")).unwrap();
+    std::fs::create_dir_all(root.join(".system/builtin-skill")).unwrap();
+    std::fs::write(root.join("user-skill/SKILL.md"), "name: user-skill\n").unwrap();
+    std::fs::write(
+        root.join(".system/builtin-skill/SKILL.md"),
+        "name: builtin-skill\n",
+    )
+    .unwrap();
+
+    let mut service = ScanService::new();
+
+    // 用户级根扫描：.system 内的技能不得出现在结果中。
+    let host = scan_scope(&mut service, ScanScope::new(root.clone()));
+    assert_eq!(
+        host.discovered.len(),
+        1,
+        "dot-prefixed nested directory must not leak into the host root scan"
+    );
+    assert_eq!(host.discovered[0].relative_path, "user-skill");
+    assert!(host
+        .discovered
+        .iter()
+        .all(|skill| !skill.path.contains(".system")));
+
+    // 同一点前缀目录自己作为扫描根（内置卡片）：照常发现。
+    let builtin_root = root.join(".system");
+    let builtin = scan_scope(&mut service, ScanScope::new(builtin_root));
+    assert_eq!(
+        builtin.discovered.len(),
+        1,
+        "the dot-prefixed directory as its own scan root must still be scanned"
+    );
+    assert_eq!(builtin.discovered[0].relative_path, "builtin-skill");
 }
 
 #[test]

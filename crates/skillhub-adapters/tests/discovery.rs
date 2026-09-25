@@ -65,7 +65,9 @@ fn two_clients_pointing_to_same_directory_share_one_physical_target() {
         .collect::<Vec<_>>();
     assert_eq!(
         logical.len(),
-        2,
+        3,
+        // 2026-09-25：openai 品牌 codex-cli / codex-ide / codex-desktop 三个
+        // 客户端都引用同一共享目录，各留一条 logical target。
         "logical targets: {:?}",
         logical
             .iter()
@@ -183,6 +185,7 @@ fn symlinked_directory_is_merged_by_filesystem_identity() {
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
         shared_reference: false,
+        builtin: false,
     };
     let client = |id: &str, path: PathCandidate| AgentClient {
         id: id.into(),
@@ -264,6 +267,7 @@ fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
             precedence: DirectoryPrecedence::Preferred,
             marker: "SKILL.md".into(),
             shared_reference: false,
+            builtin: false,
         }],
         skill_marker: "SKILL.md".into(),
         deployment: DeploymentCapability {
@@ -313,7 +317,12 @@ fn zcode_desktop_is_available_in_agents_skills_and_shares_one_physical_target_wi
     let codex = snapshot
         .logical_targets
         .iter()
-        .find(|target| target.profile_id == "openai" && target.client_id == "openai.codex-cli")
+        .find(|target| {
+            target.profile_id == "openai"
+                && target.client_id == "openai.codex-cli"
+                && (target.path.ends_with(".agents\\skills")
+                    || target.path.ends_with(".agents/skills"))
+        })
         .expect("codex-cli logical target");
     assert!(codex.available);
     assert_eq!(
@@ -481,6 +490,7 @@ fn spelling_variants_of_one_directory_collapse_to_one_logical_target_per_client_
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
         shared_reference: false,
+        builtin: false,
     };
     let client = AgentClient {
         id: "fixture.user".into(),
@@ -525,4 +535,81 @@ fn spelling_variants_of_one_directory_collapse_to_one_logical_target_per_client_
     );
     assert_eq!(snapshot.physical_targets.len(), 1);
     assert_eq!(snapshot.physical_targets[0].logical_target_ids.len(), 1);
+}
+
+#[test]
+fn builtin_candidates_flow_into_logical_targets_as_platform_read_only_roots() {
+    // 2026-09-25 验收裁决：内置技能目录在 profile 候选层声明（builtin=true），
+    // 发现层必须原样落到 LogicalTarget，供只读内置卡片与部署门控消费；
+    // 普通候选默认 builtin=false，存量快照反序列化也不受影响。
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".codex/skills/.system")).unwrap();
+
+    use skillhub_core::agent::{
+        AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability,
+        DirectoryPrecedence, PathCandidate, TargetScope,
+    };
+    let candidate = |path: &str, builtin: bool| PathCandidate {
+        path: path.into(),
+        scope: TargetScope::Global,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+        shared_reference: false,
+        builtin,
+    };
+    let client = AgentClient {
+        id: "fixture.cli".into(),
+        display_name: "Fixture".into(),
+        kind: ClientKind::Cli,
+        supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
+        path_candidates: vec![
+            candidate("{user_home}/.codex/skills", false),
+            candidate("{user_home}/.codex/skills/.system", true),
+        ],
+        skill_marker: "SKILL.md".into(),
+        deployment: DeploymentCapability {
+            copy: true,
+            symlink: false,
+            junction: false,
+            limitations: vec![],
+        },
+        call_policy: CallPolicy::Unknown,
+    };
+    let catalog = skillhub_core::agent::ProfileCatalog {
+        profiles: vec![AgentProfile {
+            profile_version: 1,
+            research_date: "2026-09-25".into(),
+            official_references: vec!["https://example.com".into()],
+            brand: "Fixture".into(),
+            clients: vec![client],
+        }],
+    };
+
+    let snapshot = DiscoverAgents::new(catalog)
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    assert_eq!(snapshot.logical_targets.len(), 2);
+    let builtin = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| target.path.ends_with(".system"))
+        .expect("builtin candidate expands to a logical target");
+    assert!(
+        builtin.builtin,
+        "builtin candidate must stay marked builtin"
+    );
+    assert!(builtin.available, "existing builtin directory is available");
+    let user = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| !target.path.ends_with(".system"))
+        .expect("user-level candidate expands to a logical target");
+    assert!(!user.builtin, "plain candidates must not be marked builtin");
+
+    let json = serde_json::to_string(&snapshot).unwrap();
+    assert!(
+        json.contains("\"builtin\":true"),
+        "builtin flag must be serialized for downstream consumers"
+    );
 }

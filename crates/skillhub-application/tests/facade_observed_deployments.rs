@@ -54,6 +54,7 @@ fn register_agent_target(database: &Database, root: &std::path::Path) {
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
+                builtin: false,
                 exists: true,
                 readable: true,
                 writable: true,

@@ -7,12 +7,7 @@ import { operationTracker, type OperationTracker } from "../../platform/operatio
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { BrandTag, normalizeBrandKey } from "../../ui/BrandTag";
-import {
-  AgentPresentation,
-  inferAgentKindKey,
-  normalizeAgentKinds,
-  type AgentKindKey,
-} from "../../ui/AgentPresentation";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
@@ -20,6 +15,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
+import { buildAgentCardViews } from "./agentCards";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
@@ -32,85 +28,6 @@ export interface AgentListPageProps {
 }
 
 type CustomAgentFormState = { mode: "create" } | { agent: AgentView; mode: "edit" };
-
-interface AgentCardView {
-  agent: AgentView;
-  agents: AgentView[];
-  kinds: AgentKindKey[];
-  sharedDirectory: boolean;
-}
-
-function directoryKey(path: string): string {
-  return path.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
-}
-
-function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardView[]> {
-  const grouped = new Map<string, AgentCardView[]>();
-  // 验收反馈（2026-09-25）：仅发现相关目录（无任何已发现目录）的客户端
-  // 不单独出卡——同品牌已有目录卡时并入并合并类型徽标；整品牌都无目录时
-  // 全体客户端合成一张卡，避免同一品牌出现多张「仅发现相关目录」。
-  const pathlessAgents: AgentView[] = [];
-  for (const agent of agents) {
-    const brand = normalizeBrandKey(agent.brand);
-    const paths = [...new Set(agent.discoveredPaths.map(directoryKey).filter(Boolean))];
-    const existingGroup = grouped.get(brand) ?? [];
-    const kind = inferAgentKindKey(agent.client, agent.instance);
-    const existing = paths.length > 0
-      ? existingGroup.find((card) => {
-          const cardPaths = new Set(card.agent.discoveredPaths.map(directoryKey).filter(Boolean));
-          return paths.some((path) => cardPaths.has(path));
-        })
-      : undefined;
-    if (existing) {
-      existing.agents.push(agent);
-      existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
-      existing.agent = {
-        ...existing.agent,
-        discoveredPaths: [...new Set([...existing.agent.discoveredPaths, ...agent.discoveredPaths])],
-        managedDeploymentCount: Math.max(existing.agent.managedDeploymentCount, agent.managedDeploymentCount),
-        managedDeploymentRelationCount: Math.max(
-          existing.agent.managedDeploymentRelationCount,
-          agent.managedDeploymentRelationCount,
-        ),
-      };
-      existing.sharedDirectory ||= kind === "shared_directory";
-      continue;
-    }
-    if (paths.length === 0) {
-      pathlessAgents.push(agent);
-      continue;
-    }
-    existingGroup.push({
-      agent,
-      agents: [agent],
-      kinds: normalizeAgentKinds([kind]),
-      sharedDirectory: kind === "shared_directory",
-    });
-    grouped.set(brand, existingGroup);
-  }
-  for (const agent of pathlessAgents) {
-    const brand = normalizeBrandKey(agent.brand);
-    const existingGroup = grouped.get(brand);
-    const kind = inferAgentKindKey(agent.client, agent.instance);
-    const existing = existingGroup?.[0];
-    if (existing) {
-      existing.agents.push(agent);
-      // 已有具体类型徽标时不再叠加 unknown 兜底徽标，避免合并卡出现「Agent」噪音。
-      if (!(kind === "unknown" && existing.kinds.length > 0)) {
-        existing.kinds = normalizeAgentKinds([...existing.kinds, kind]);
-      }
-      existing.sharedDirectory ||= kind === "shared_directory";
-      continue;
-    }
-    grouped.set(brand, [{
-      agent,
-      agents: [agent],
-      kinds: normalizeAgentKinds([kind]),
-      sharedDirectory: kind === "shared_directory",
-    }]);
-  }
-  return grouped;
-}
 
 export function AgentListPage({
   facade = unavailableAgentFacade,
@@ -237,7 +154,12 @@ export function AgentListPage({
                     />
                   </Link>
                   <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
+                  {/* 2026-09-25 验收裁决：内置技能目录标注「内置」徽标与只读提示。 */}
+                  {agent.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
                 </div>
+                {agent.builtin ? (
+                  <p className="sh-agent-card__builtin-hint">{t("agents.builtinHint")}</p>
+                ) : null}
                 <div className="sh-agent-card__paths">
                   <span className="sh-agent-card__paths-label">{t("agents.pathLabel")}</span>
                   <ul className="sh-agent-card__path-list">

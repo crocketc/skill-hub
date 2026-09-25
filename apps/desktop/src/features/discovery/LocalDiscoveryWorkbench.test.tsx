@@ -462,6 +462,66 @@ it("shows exactly one generic ownership card for the shared agents directory", a
   expect(screen.getByText("共享目录")).toBeVisible();
 });
 
+// 2026-09-25 验收裁决：真实存在的内置技能目录独立成「内置」只读卡片，
+// 明确告知用户 SkillHub 不部署/不删除，手动管理与集中管理的边界。
+it("renders existing built-in directories as read-only builtin cards with guidance", async () => {
+  const builtinSnapshot: DiscoverySnapshot = {
+    ...agentGroupSnapshot,
+    instances: [
+      { profile_id: "openai", client_id: "openai-codex-cli", display_name: "Codex CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    ],
+    logical_targets: [
+      {
+        id: "lt-codex-user",
+        profile_id: "openai",
+        client_id: "openai-codex-cli",
+        scope: "global",
+        path: "C:/u/.codex/skills",
+        marker: "SKILL.md",
+        precedence: "preferred",
+        shared_reference: false,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: "phys-codex-user",
+      },
+      {
+        id: "lt-codex-system",
+        profile_id: "openai",
+        client_id: "openai-codex-cli",
+        scope: "global",
+        path: "C:/u/.codex/skills/.system",
+        marker: "SKILL.md",
+        precedence: "may_coexist",
+        shared_reference: false,
+        builtin: true,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: "phys-codex-system",
+      },
+    ],
+    physical_targets: [
+      { id: "phys-codex-user", path: "C:/u/.codex/skills", exists: true, readable: true, writable: true, case_behavior: "sensitive", logical_target_ids: ["lt-codex-user"] },
+      { id: "phys-codex-system", path: "C:/u/.codex/skills/.system", exists: true, readable: true, writable: true, case_behavior: "sensitive", logical_target_ids: ["lt-codex-system"] },
+    ],
+  };
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{ getDiscoverySnapshot: async () => builtinSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+      />
+    </I18nextProvider>,
+  );
+
+  await screen.findByText("发现的 Agent 目录");
+  expect(screen.getByText("C:\\u\\.codex\\skills\\.system")).toBeVisible();
+  expect(screen.getByText("内置")).toBeVisible();
+  expect(screen.getByText(/由平台自带管理/)).toBeVisible();
+});
+
 // M-18：扫描/摘要/审查并导入固定在首屏工作区面板；Agent 目录盘点降级为
 // 可折叠次级区，列表独占滚动所有者——操作不依赖滚动到底。
 it("pins scan actions and summary in a panel above a collapsible agent inventory", async () => {

@@ -857,6 +857,7 @@ mod path_grant_tests {
                             precedence: skillhub_core::DirectoryPrecedence::Preferred,
                             marker: "SKILL.md".into(),
                             shared_reference: false,
+                            builtin: false,
                         }],
                         skill_marker: "SKILL.md".into(),
                         deployment: skillhub_core::DeploymentCapability {

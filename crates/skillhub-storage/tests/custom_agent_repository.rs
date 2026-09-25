@@ -21,6 +21,7 @@ fn profile(path: &str) -> AgentProfile {
                 scope: TargetScope::Global,
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
+                builtin: false,
                 marker: "SKILL.md".into(),
             }],
             skill_marker: "SKILL.md".into(),

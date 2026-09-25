@@ -70,32 +70,56 @@ function dedupePathsByFsIdentity(paths: string[]): string[] {
 }
 
 function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRecord[]): AgentView[] {
-  return snapshot.instances.map((instance) => {
+  const views: AgentView[] = [];
+  for (const instance of snapshot.instances) {
     const targets = snapshot.logical_targets.filter(
       (target) => target.profile_id === instance.profile_id && target.client_id === instance.client_id,
     );
-    const stats = managedDeploymentStats(
+    // 2026-09-25 验收裁决：内置技能目录拆成独立的只读视图——路径、状态与
+    // 计数都不混入用户级（终端/桌面端）目录；不存在的内置候选保持安静。
+    const builtinTargets = targets.filter((target) => target.builtin && target.exists);
+    const userTargets = targets.filter((target) => !target.builtin);
+    views.push(agentView(instance, userTargets, deployments, false, snapshot));
+    if (builtinTargets.length > 0) {
+      views.push(agentView(instance, builtinTargets, deployments, true, snapshot));
+    }
+  }
+  return views;
+}
+
+function agentView(
+  instance: DiscoverySnapshot["instances"][number],
+  targets: LogicalTarget[],
+  deployments: DeploymentRecord[],
+  builtin: boolean,
+  snapshot: DiscoverySnapshot,
+): AgentView {
+  const stats = builtin
+    ? { skills: 0, relations: 0 }
+    : managedDeploymentStats(
       targets.map((target) => ({ id: target.id, physicalId: target.physical_id })),
       deployments,
     );
-    return {
-      id: `${instance.profile_id}.${instance.client_id}`,
-      brand: instance.profile_id,
-      client: instance.client_id,
-      instance: instance.client_id,
-      managedDeploymentCount: stats.skills,
-      managedDeploymentRelationCount: stats.relations,
-      // DEV-5：同一物理目录只展示一条——按「斜杠统一 + Windows 大小写折叠」
-      // 的文件系统身份去重（快照层已按 physical_id 归并，这里是展示层兜底）。
-      // 只展示真实存在的目录：不存在的候选路径不进用户界面。
-      discoveredPaths: dedupePathsByFsIdentity(
-        targets.filter((target) => target.exists).map((target) => target.path),
-      ),
-      officialReference: null,
-      relations: targets.map((target) => relationOf(target, snapshot)),
-      status: discoveredStatus(targets),
-    };
-  });
+  return {
+    id: builtin ? `${instance.profile_id}.${instance.client_id}.builtin` : `${instance.profile_id}.${instance.client_id}`,
+    brand: instance.profile_id,
+    client: instance.client_id,
+    // OPT-07：官方产品名逐客户端核验；概览图表等消费方依赖它获得可读名称，
+    // 不能把技术 client_id 当展示名。旧快照缺 display_name 时退回 client_id。
+    instance: instance.display_name || instance.client_id,
+    managedDeploymentCount: stats.skills,
+    managedDeploymentRelationCount: stats.relations,
+    // DEV-5：同一物理目录只展示一条——按「斜杠统一 + Windows 大小写折叠」
+    // 的文件系统身份去重（快照层已按 physical_id 归并，这里是展示层兜底）。
+    // 只展示真实存在的目录：不存在的候选路径不进用户界面。
+    discoveredPaths: dedupePathsByFsIdentity(
+      targets.filter((target) => target.exists).map((target) => target.path),
+    ),
+    builtin: builtin || undefined,
+    officialReference: null,
+    relations: targets.map((target) => relationOf(target, snapshot)),
+    status: discoveredStatus(targets),
+  };
 }
 
 function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): AgentView {

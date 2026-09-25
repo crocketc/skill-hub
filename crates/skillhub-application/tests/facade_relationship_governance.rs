@@ -5219,6 +5219,7 @@ mod retain_and_cleanup_prepare {
                     marker: "SKILL.md".into(),
                     precedence: DirectoryPrecedence::Preferred,
                     shared_reference: false,
+                    builtin: false,
                     exists: true,
                     readable: true,
                     writable: true,

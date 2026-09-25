@@ -471,6 +471,68 @@ fn brand_profiles_reference_agents_skills_without_claiming_ownership() {
     );
 }
 
+/// 2026-09-25 验收裁决：真机确认的内置技能目录必须在 profile 层以
+/// `builtin=true` 登记为只读平台目录；内置条目一律全局、可共存优先级，
+/// 不参与部署与删除。WorkBuddy/DeepSeek Harness/Kimi 的内置目录位于安装
+/// 目录或含变量段，无法以稳定占位符表达，本轮不登记（见调研文档）。
+#[test]
+fn builtin_directories_are_declared_as_read_only_platform_candidates() {
+    let catalog = ProfileCatalog::builtin();
+    let builtin_paths = |client_id: &str| -> Vec<String> {
+        catalog
+            .profiles
+            .iter()
+            .flat_map(|profile| profile.clients.iter())
+            .filter(|client| client.id == client_id)
+            .flat_map(|client| client.path_candidates.iter())
+            .filter(|candidate| candidate.builtin)
+            .map(|candidate| candidate.path.clone())
+            .collect()
+    };
+    for client_id in ["openai.codex-cli", "openai.codex-desktop"] {
+        assert_eq!(
+            builtin_paths(client_id),
+            vec!["{user_home}/.codex/skills/.system".to_string()],
+            "codex cli/desktop must declare exactly the nested .system built-in directory: {client_id}"
+        );
+    }
+    assert_eq!(
+        builtin_paths("cursor.editor"),
+        vec!["{user_home}/.cursor/skills-cursor".to_string()],
+    );
+    assert_eq!(
+        builtin_paths("trae.code"),
+        vec![
+            "{user_home}/.trae-cn/builtin_skills".to_string(),
+            "{user_home}/.trae-cn/builtin/global/skills".to_string(),
+        ],
+    );
+    let builtin_count = catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter())
+        .flat_map(|client| client.path_candidates.iter())
+        .filter(|candidate| candidate.builtin)
+        .count();
+    assert_eq!(
+        builtin_count, 5,
+        "only the real-machine confirmed built-in directories may be declared"
+    );
+    let all_builtin = catalog
+        .profiles
+        .iter()
+        .flat_map(|profile| profile.clients.iter())
+        .flat_map(|client| client.path_candidates.iter())
+        .filter(|candidate| candidate.builtin);
+    for candidate in all_builtin {
+        assert!(
+            candidate.scope == skillhub_core::agent::TargetScope::Global
+                && candidate.precedence == skillhub_core::agent::DirectoryPrecedence::MayCoexist,
+            "builtin entries stay global may_coexist read-only references"
+        );
+    }
+}
+
 #[test]
 fn researched_client_boundaries_are_kept_as_separate_profiles() {
     let catalog = ProfileCatalog::builtin();

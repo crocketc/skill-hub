@@ -152,6 +152,45 @@ it("merges directory-only clients into their brand card instead of standalone ca
   expect(screen.getByText("可访问")).toBeVisible();
 });
 
+it("renders built-in directories as separate read-only cards with guidance", async () => {
+  // 2026-09-25 验收裁决：内置技能目录（如 .codex/skills/.system）独立成
+  // 「内置」类型卡片；只读边界与手动管理提示随卡说明。
+  const builtinAgents: AgentView[] = [
+    {
+      brand: "OpenAI",
+      client: "codex-cli",
+      discoveredPaths: ["C:/Users/demo/.codex/skills"],
+      id: "openai.codex-cli",
+      instance: "Codex CLI",
+      managedDeploymentCount: 1,
+      managedDeploymentRelationCount: 2,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+    },
+    {
+      brand: "OpenAI",
+      client: "codex-cli",
+      discoveredPaths: ["C:/Users/demo/.codex/skills/.system"],
+      id: "openai.codex-cli.builtin",
+      instance: "Codex CLI",
+      managedDeploymentCount: 0,
+      managedDeploymentRelationCount: 0,
+      officialReference: null,
+      relations: [],
+      status: "accessible",
+      builtin: true,
+    },
+  ];
+
+  await renderListPage(facadeWith(), builtinAgents);
+
+  expect(await screen.findByRole("heading", { name: "OpenAI" })).toBeVisible();
+  expect(screen.getAllByTestId("agent-card")).toHaveLength(2);
+  expect(screen.getByText("内置")).toBeVisible();
+  expect(screen.getByText(/由平台自带管理/)).toBeVisible();
+});
+
 it("groups agents by brand and refreshes the real discovery facts", async () => {
   const user = userEvent.setup();
   const facade = facadeWith();

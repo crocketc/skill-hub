@@ -34,7 +34,8 @@
         "scope": {"enum": ["global", "project", "extra"]},
         "precedence": {"enum": ["preferred", "lower_priority_copy", "may_coexist", "unknown"]},
         "marker": {"type": "string", "minLength": 1},
-        "shared_reference": {"type": "boolean"}
+        "shared_reference": {"type": "boolean"},
+        "builtin": {"type": "boolean"}
       }
     },
     "deployment": {

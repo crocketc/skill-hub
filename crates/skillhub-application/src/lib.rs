@@ -6391,6 +6391,11 @@ impl LocalApplicationFacade {
                     let mut targets = Vec::new();
                     let mut targets_by_physical_id = BTreeMap::new();
                     for target in snapshot.logical_targets {
+                        // 2026-09-25 验收裁决：内置技能目录只读观察，绝不作为
+                        // 部署目标出现在选择清单中。
+                        if target.builtin {
+                            continue;
+                        }
                         targets_by_physical_id
                             .entry(target.physical_id.clone())
                             .or_insert_with(Vec::new)
@@ -11265,6 +11270,11 @@ fn registered_target_index(
     if let Some(snapshot) = database.agent_repository().load()? {
         for target in snapshot.logical_targets {
             if !target.available || !target.exists {
+                continue;
+            }
+            // 2026-09-25 验收裁决：内置目录不进注册目标索引，按逻辑 id 直接
+            // 请求部署计划同样被拒（resolve 报 ObjectNotFound）。
+            if target.builtin {
                 continue;
             }
             let path = PathBuf::from(&target.path);

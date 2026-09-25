@@ -285,6 +285,7 @@ fn directory_capability_is_deterministic_and_does_not_use_directory_existence() 
                 precedence: DirectoryPrecedence::Preferred,
                 marker: "SKILL.md".into(),
                 shared_reference: true,
+                builtin: false,
             }],
             skill_marker: "SKILL.md".into(),
             deployment: DeploymentCapability::new(true, false, true),
@@ -321,6 +322,7 @@ fn native_profile_candidate_is_supported_but_shared_candidate_is_only_unknown() 
                     precedence: DirectoryPrecedence::Preferred,
                     marker: "SKILL.md".into(),
                     shared_reference: false,
+                    builtin: false,
                 }],
                 skill_marker: "SKILL.md".into(),
                 deployment: DeploymentCapability::new(true, false, true),
@@ -337,6 +339,7 @@ fn native_profile_candidate_is_supported_but_shared_candidate_is_only_unknown() 
                     precedence: DirectoryPrecedence::Preferred,
                     marker: "SKILL.md".into(),
                     shared_reference: true,
+                    builtin: false,
                 }],
                 skill_marker: "SKILL.md".into(),
                 deployment: DeploymentCapability::new(true, false, true),
@@ -921,6 +924,7 @@ fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators()
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
         shared_reference: false,
+        builtin: false,
     };
     assert!(path_matches_candidate(&posix, "/home/ada/.codex/skills/"));
     assert!(!path_matches_candidate(&posix, "/home/Ada/.codex/skills/"));
@@ -935,6 +939,7 @@ fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators()
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
         shared_reference: false,
+        builtin: false,
     };
     assert!(path_matches_candidate(
         &windows,

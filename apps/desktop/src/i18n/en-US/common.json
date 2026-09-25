@@ -576,7 +576,9 @@
       "excludeConfirmDescription": "SkillHub discovery and scans will ignore {{path}}. Nothing in the directory is deleted or modified; undo anytime from the ignore rules in Settings.",
       "excludeConfirm": "Exclude",
       "excludeFailed": "Failed to exclude ({{code}}); the directory is unchanged.",
-      "excludedNotice": "Excluded {{path}}. Restore it from the ignore rules in Settings."
+      "excludedNotice": "Excluded {{path}}. Restore it from the ignore rules in Settings.",
+      "builtinLabel": "Built-in",
+      "builtinHint": "Managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally."
     },
     "search": {
       "label": "Search skills.sh",
@@ -768,7 +770,9 @@
     "managedSkillsCount_one": "{{count}} managed skill",
     "managedSkillsCount_other": "{{count}} managed skills",
     "managedRelationsCount_one": "{{count}} deployment relation",
-    "managedRelationsCount_other": "{{count}} deployment relations"
+    "managedRelationsCount_other": "{{count}} deployment relations",
+    "builtinLabel": "Built-in",
+    "builtinHint": "This built-in skill directory is managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally."
   },
   "projects": {
     "actions": {

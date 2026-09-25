@@ -49,6 +49,7 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
+                builtin: false,
                 exists: true,
                 readable: true,
                 writable: true,

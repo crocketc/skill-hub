@@ -2084,6 +2084,12 @@ export type LogicalTarget = {
 	 *  before OPT-20260914-07.
 	 */
 	shared_reference?: boolean,
+	/**
+	 *  `true` for platform-managed built-in skill directories declared by the
+	 *  profile（内置目录：只读观察，不进部署目标）。Defaults to `false` for
+	 *  snapshots persisted before the builtin rollout.
+	 */
+	builtin?: boolean,
 	exists: boolean,
 	readable: boolean,
 	writable: boolean,
@@ -2320,6 +2326,13 @@ export type PathCandidate = {
 	 *  persisted profiles and custom agents keep loading unchanged.
 	 */
 	shared_reference?: boolean,
+	/**
+	 *  2026-09-25 验收裁决：`true` marks a platform-managed built-in skill
+	 *  directory（如 Codex 的 `.codex/skills/.system`、Cursor 的
+	 *  `skills-cursor`）。内置目录只读观察：不进部署目标、不参与删除；
+	 *  用户级扫描同时排除其嵌套点前缀子目录，避免同一技能重复归卡。
+	 */
+	builtin?: boolean,
 };
 
 /**  Opaque identifier issued by the native file picker. */

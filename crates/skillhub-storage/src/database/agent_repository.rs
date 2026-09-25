@@ -175,6 +175,7 @@ mod tests {
             marker: "SKILL.md".to_string(),
             precedence: DirectoryPrecedence::Preferred,
             shared_reference: shared,
+            builtin: false,
             exists: true,
             readable: true,
             writable: true,

@@ -38,6 +38,7 @@ fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
             marker: "SKILL.md".into(),
             precedence: skillhub_core::agent::DirectoryPrecedence::Preferred,
             shared_reference: false,
+            builtin: false,
             exists: available,
             readable: available,
             writable: available,

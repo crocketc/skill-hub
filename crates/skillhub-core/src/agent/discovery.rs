@@ -36,6 +36,11 @@ pub struct LogicalTarget {
     /// before OPT-20260914-07.
     #[serde(default)]
     pub shared_reference: bool,
+    /// `true` for platform-managed built-in skill directories declared by the
+    /// profile（内置目录：只读观察，不进部署目标）。Defaults to `false` for
+    /// snapshots persisted before the builtin rollout.
+    #[serde(default)]
+    pub builtin: bool,
     pub exists: bool,
     pub readable: bool,
     pub writable: bool,

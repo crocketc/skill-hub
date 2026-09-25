@@ -576,7 +576,9 @@
       "excludeConfirmDescription": "将在 SkillHub 的发现与扫描中忽略 {{path}}；不会删除或修改该目录中的任何文件，可随时在设置的忽略规则中撤销。",
       "excludeConfirm": "确认排除",
       "excludeFailed": "排除失败（{{code}}），目录保持不变。",
-      "excludedNotice": "已排除 {{path}}。可在设置的忽略规则中恢复。"
+      "excludedNotice": "已排除 {{path}}。可在设置的忽略规则中恢复。",
+      "builtinLabel": "内置",
+      "builtinHint": "该目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -768,7 +770,9 @@
     "managedSkillsCount_one": "{{count}} 个 Skill",
     "managedSkillsCount_other": "{{count}} 个 Skill",
     "managedRelationsCount_one": "{{count}} 条部署关系",
-    "managedRelationsCount_other": "{{count}} 条部署关系"
+    "managedRelationsCount_other": "{{count}} 条部署关系",
+    "builtinLabel": "内置",
+    "builtinHint": "内置技能目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。"
   },
   "projects": {
     "actions": {
