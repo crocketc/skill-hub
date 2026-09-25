@@ -660,7 +660,12 @@
       "enabledState": "Enabled",
       "disabledState": "Paused",
       "justNow": "Just now",
-      "unsupportedAction": "Per-repository refresh is not available in this environment."
+      "unsupportedAction": "Per-repository refresh is not available in this environment.",
+      "addTitle": "Add a skill repository",
+      "urlLabel": "Repository URL",
+      "listTitle": "Added repositories",
+      "candidatesChip": "{{count}} skills identified",
+      "removeAria": "Remove {{repo}}"
     },
     "card": {
       "status": {

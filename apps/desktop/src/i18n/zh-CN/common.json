@@ -660,7 +660,12 @@
       "enabledState": "已启用",
       "disabledState": "已暂停",
       "justNow": "刚刚",
-      "unsupportedAction": "当前环境不支持逐仓刷新。"
+      "unsupportedAction": "当前环境不支持逐仓刷新。",
+      "addTitle": "添加技能仓库",
+      "urlLabel": "仓库 URL",
+      "listTitle": "已添加的仓库",
+      "candidatesChip": "识别到 {{count}} 个技能",
+      "removeAria": "移除 {{repo}}"
     },
     "card": {
       "status": {

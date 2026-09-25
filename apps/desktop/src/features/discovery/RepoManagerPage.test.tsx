@@ -4,7 +4,6 @@ import { createSkillHubI18n } from "../../i18n";
 import type { RepoDiscoveryReport, SkillRepoView } from "../../api/bindings";
 import { RepoManagerPage } from "./RepoManagerPage";
 import type { DiscoveryFacade } from "./api";
-import repositoryCardCss from "../shared/repository-card/repository-card.css?raw";
 
 const scannedRecently = new Date(Date.now() - 30_000).toISOString();
 const scannedOlder = new Date(Date.now() - 120_000).toISOString();
@@ -86,21 +85,22 @@ function renderPage(facade: DiscoveryFacade) {
   );
 }
 
-it("renders repositories with branch, scan time, candidate count and failure reason", async () => {
+// DEV-91：管理页行卡为整宽横排——左（名称 / 分支 / 识别数）右（启停 + 图标操作）。
+it("renders wide repository rows with branch, candidate chip and scan facts", async () => {
   renderPage(baseFacade());
 
   expect(await screen.findByText("anthropics/skills")).toBeVisible();
   expect(screen.getByText("JimLiu/baoyu-skills")).toBeVisible();
   expect(screen.getAllByTestId("repository-card")).toHaveLength(3);
-  expect(document.querySelectorAll(".sh-repo-manager__row")).toHaveLength(0);
+  // DEV-91：整宽单列行卡（截图布局），不再多列网格。
+  expect(document.querySelector(".sh-repo-manager__cards")).not.toBeNull();
   // 空分支用“默认分支”哨兵文案而不是露出空串。
   expect(screen.getAllByText("main")).toHaveLength(2);
   expect(screen.getByText("默认分支")).toBeVisible();
 
-  // 最近一次扫描时间、候选数与失败原因（分类文案，不露原始错误串）。
-  expect(screen.getAllByText("上次扫描")).toHaveLength(3);
+  // DEV-91：候选数以「识别到 N 个技能」chip 呈现；扫描时间与失败分类文案保留。
+  expect(screen.getByText("识别到 3 个技能")).toBeVisible();
   expect(screen.getByText("30秒钟前")).toBeVisible();
-  expect(screen.getByText("3 个候选 Skill")).toBeVisible();
   expect(screen.getByText(/仓库或分支不存在/)).toBeVisible();
   expect(screen.queryByText(/DOWNLOAD_FAILED/)).not.toBeInTheDocument();
   // 从未扫描的仓库如实显示，不伪造扫描结果。
@@ -112,30 +112,36 @@ it("renders repositories with branch, scan time, candidate count and failure rea
   expect(switches[1]).not.toBeChecked();
   expect(switches[2]).toBeChecked();
 
-  // 审查 m1（2026-09-14）：GitHub 外链的可访问名走 openOnGithub 键，
-  // 不再只有裸的可见文案 “GitHub”。
+  // DEV-91：GitHub 文字按钮换成右上箭头图标——可访问名沿用 openOnGithub
+  // 键（ExternalLink 触发器保持 role=link 语义），裸 "GitHub" 文案不再出现。
   expect(screen.getByRole("link", { name: "在 GitHub 打开 anthropics/skills" })).toBeVisible();
+  expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
+
+  // DEV-91：刷新与移除同为图标按钮，可访问名各自携带仓库坐标。
+  expect(screen.getByRole("button", { name: "刷新 anthropics/skills" })).toBeVisible();
+  for (const repo of ["anthropics/skills", "cexll/myclaude", "JimLiu/baoyu-skills"]) {
+    expect(screen.getByRole("button", { name: `移除 ${repo}` })).toBeVisible();
+  }
 });
 
-it("keeps repository cards keyboard reachable and responsive across viewports", async () => {
+it("keeps repository rows keyboard reachable with icon-only actions", async () => {
   renderPage(baseFacade());
 
   const cards = await screen.findAllByTestId("repository-card");
   expect(cards[0].querySelector("input[role='switch']")).toBeInTheDocument();
-  expect(cards[0].querySelector("button")).toBeInTheDocument();
-  expect(repositoryCardCss).toContain("@container (min-width: 760px)");
-  expect(repositoryCardCss).toContain("@container (min-width: 1180px)");
-  expect(repositoryCardCss).toContain("@media (max-width: 48rem)");
+  // 图标按钮必须有可访问名（IconButton 强制 label），不靠可见文案。
+  expect(cards[0].querySelector("button[aria-label]")).toBeInTheDocument();
 });
 
-it("parses a full GitHub URL into coordinates and submits the add", async () => {
+it("parses a full GitHub URL and a separate branch field into coordinates", async () => {
   const addSkillRepo = vi.fn(async () => defaultViews);
   renderPage(baseFacade({ addSkillRepo }));
 
-  const input = await screen.findByLabelText("仓库地址");
-  fireEvent.change(input, { target: { value: "https://github.com/octocat/skills/tree/main" } });
+  const url = await screen.findByLabelText("仓库 URL");
+  fireEvent.change(url, { target: { value: "https://github.com/octocat/skills/tree/main" } });
   await click(screen.getByRole("button", { name: "添加仓库" }));
 
+  // DEV-91：分支拆成独立输入框；URL 携带 /tree/分支 且分支框留空时沿用解析值。
   expect(addSkillRepo).toHaveBeenCalledWith({
     owner: "octocat",
     name: "skills",
@@ -144,12 +150,45 @@ it("parses a full GitHub URL into coordinates and submits the add", async () => 
   });
 });
 
+it("lets the branch field override the branch embedded in the URL", async () => {
+  const addSkillRepo = vi.fn(async () => defaultViews);
+  renderPage(baseFacade({ addSkillRepo }));
+
+  const url = await screen.findByLabelText("仓库 URL");
+  fireEvent.change(url, { target: { value: "https://github.com/octocat/skills/tree/main" } });
+  fireEvent.change(screen.getByLabelText("分支"), { target: { value: "dev" } });
+  await click(screen.getByRole("button", { name: "添加仓库" }));
+
+  expect(addSkillRepo).toHaveBeenCalledWith({
+    owner: "octocat",
+    name: "skills",
+    branch: "dev",
+    enabled: true,
+  });
+});
+
+it("submits an empty branch for the backend default when neither source names one", async () => {
+  const addSkillRepo = vi.fn(async () => defaultViews);
+  renderPage(baseFacade({ addSkillRepo }));
+
+  const url = await screen.findByLabelText("仓库 URL");
+  fireEvent.change(url, { target: { value: "octocat/skills" } });
+  await click(screen.getByRole("button", { name: "添加仓库" }));
+
+  expect(addSkillRepo).toHaveBeenCalledWith({
+    owner: "octocat",
+    name: "skills",
+    branch: "",
+    enabled: true,
+  });
+});
+
 it("shows an inline error and skips the backend for unparseable addresses", async () => {
   const addSkillRepo = vi.fn(async () => defaultViews);
   renderPage(baseFacade({ addSkillRepo }));
 
-  const input = await screen.findByLabelText("仓库地址");
-  fireEvent.change(input, { target: { value: "https://gitlab.com/a/b" } });
+  const url = await screen.findByLabelText("仓库 URL");
+  fireEvent.change(url, { target: { value: "https://gitlab.com/a/b" } });
   await click(screen.getByRole("button", { name: "添加仓库" }));
 
   expect(addSkillRepo).not.toHaveBeenCalled();
@@ -176,7 +215,8 @@ it("removes a repository only after an explicit confirmation", async () => {
   renderPage(baseFacade({ removeSkillRepo }));
 
   await screen.findByText("anthropics/skills");
-  await click(screen.getAllByRole("button", { name: "移除" })[0]);
+  // DEV-91：垃圾桶图标按钮，可访问名携带仓库坐标；确认弹窗链路不变。
+  await click(screen.getAllByRole("button", { name: "移除 anthropics/skills" })[0]);
   expect(removeSkillRepo).not.toHaveBeenCalled();
 
   await click(await screen.findByRole("button", { name: "确认移除" }));
@@ -203,19 +243,13 @@ it("refreshes a single repository with a busy state and reloads the kept scan st
     .mockResolvedValueOnce(refreshedViews);
   renderPage(baseFacade({ listSkillRepos, refreshSkillRepo }));
 
-  // 审查 m2（2026-09-14）：可访问名带仓库坐标（refreshAria），可见文案固定
-  // 为“刷新”（refresh 键），两者不再混用同一键。
+  // DEV-91：刷新收为图标按钮；可访问名保持稳定（aria-label 不随 busy 切换）。
   const refreshButton = await screen.findByRole("button", { name: "刷新 anthropics/skills" });
-  expect(refreshButton).toHaveAccessibleName("刷新 anthropics/skills");
-  expect(refreshButton).toHaveTextContent("刷新");
   await click(refreshButton);
 
-  // 刷新进行中：可访问名保持稳定（aria-label 不随文案切换），可见文案切到
-  // “正在刷新…”，按钮进入 busy 且不能重复触发。
   expect(refreshSkillRepo).toHaveBeenCalledWith("anthropics", "skills");
   const refreshingButton = screen.getByRole("button", { name: "刷新 anthropics/skills" });
   expect(refreshingButton).toBeDisabled();
-  expect(refreshingButton).toHaveTextContent("正在刷新");
 
   await act(async () => {
     resolveRefresh(refreshedReport);
@@ -223,7 +257,7 @@ it("refreshes a single repository with a busy state and reloads the kept scan st
   });
 
   await waitFor(() => expect(listSkillRepos).toHaveBeenCalledTimes(2));
-  expect(await screen.findByText("7 个候选 Skill")).toBeVisible();
+  expect(await screen.findByText("识别到 7 个技能")).toBeVisible();
 });
 
 it("surfaces a readable alert when the per-repo refresh fails", async () => {
@@ -296,13 +330,13 @@ it("runs a removal only once even when the confirm action is retried in flight",
 
   // 第一次确认：进入在途（对话框随 Radix Action 关闭）。
   let row = (await screen.findByText("anthropics/skills")).closest("li") as HTMLElement;
-  await click(within(row).getByRole("button", { name: "移除" }));
+  await click(within(row).getByRole("button", { name: "移除 anthropics/skills" }));
   await click(screen.getByRole("button", { name: "确认移除" }));
   expect(removeSkillRepo).toHaveBeenCalledTimes(1);
 
   // 在途期间重新打开确认框再确认：守卫忽略重入，确认钮保持禁用。
   row = (screen.getByText("anthropics/skills")).closest("li") as HTMLElement;
-  await click(within(row).getByRole("button", { name: "移除" }));
+  await click(within(row).getByRole("button", { name: "移除 anthropics/skills" }));
   const confirm = screen.getByRole("button", { name: "确认移除" });
   expect(confirm).toBeDisabled();
   await click(confirm);

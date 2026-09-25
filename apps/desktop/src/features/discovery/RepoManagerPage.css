@@ -1,5 +1,8 @@
 /* D4 仓库管理页（/discovery/repositories）。只使用既有 token 与组件类，
-   不引入新的视觉体系：结构（添加卡 + 逐仓行）承载信息，装饰保持克制。 */
+   不引入新的视觉体系。DEV-91（2026-09-25 验收反馈）：添加表单卡片化
+   （标题 + 仓库 URL / 分支双字段），仓库条目改整宽横排行卡——左（名称 /
+   分支 / 识别数）右（启停 + 图标操作），布局与本页耦合，不影响仓库
+   发现页继续使用的 shared/repository-card。 */
 
 .sh-repo-manager__alert {
   margin: 0;
@@ -7,11 +10,10 @@
   font-size: var(--font-size-sm);
 }
 
-/* 添加表单：一张安静的卡，Enter 与按钮同路。 */
+/* 添加表单：一张安静的卡，字段纵向铺满卡宽，Enter 与按钮同路。 */
 .sh-repo-manager__add {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--ui-border-subtle);
@@ -19,16 +21,119 @@
   background: var(--ui-surface-subtle);
 }
 
-.sh-repo-manager__add .sh-input {
-  flex: 1 1 18rem;
-  min-width: 0;
+.sh-repo-manager__add-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 650;
 }
 
 .sh-repo-manager__input-error {
-  flex-basis: 100%;
   margin: 0;
   color: var(--ui-warning-foreground);
   font-size: var(--font-size-xs);
 }
 
-/* 仓库条目复用 shared/repository-card；管理页仅保留添加表单样式。 */
+/* 列表标题与整宽单列行卡：覆盖 shared 多列网格，仅作用本页。 */
+.sh-repo-manager__cards {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.sh-repo-manager__list-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-md);
+  font-weight: 650;
+}
+
+.sh-repo-manager__cards .sh-repository-cards {
+  grid-template-columns: 1fr;
+}
+
+.sh-repo-manager__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-repo-manager__card--disabled {
+  background: var(--ui-surface-subtle);
+}
+
+.sh-repo-manager__card-main {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-repo-manager__card-title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.sh-repo-manager__card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-repo-manager__branch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-xs);
+  overflow-wrap: anywhere;
+}
+
+.sh-repo-manager__chip {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-weight: 600;
+}
+
+.sh-repo-manager__scan-time {
+  white-space: nowrap;
+}
+
+.sh-repo-manager__scan-error {
+  flex-basis: 100%;
+  color: var(--ui-warning-foreground);
+}
+
+.sh-repo-manager__card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 窄容器纵排：操作组换行到信息下方，仍保持可点按面积。 */
+@container (max-width: 40rem) {
+  .sh-repo-manager__card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sh-repo-manager__card-actions {
+    justify-content: flex-end;
+  }
+}

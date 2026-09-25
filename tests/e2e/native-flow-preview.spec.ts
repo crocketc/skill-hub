@@ -413,7 +413,8 @@ test("online and repository discovery expose deterministic result states", async
   // 两张仓库卡都有「Last scan」字段；逐一限定到各自卡片内断言。
   const anthropicCard = page.getByLabel("anthropics/skills", { exact: true });
   await expect(anthropicCard.getByText("Last scan")).toBeVisible();
-  await expect(anthropicCard.getByText("3 candidate Skills")).toBeVisible();
+  // DEV-91（2026-09-25 验收反馈）：候选数改为「识别到 N 个技能」chip。
+  await expect(anthropicCard.getByText("3 skills identified")).toBeVisible();
   const composioCard = page.getByLabel("ComposioHQ/awesome-claude-skills", { exact: true });
   await expect(composioCard.getByText("Never scanned")).toBeVisible();
 
