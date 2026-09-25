@@ -4,6 +4,25 @@ import { expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { DeploymentResults } from "./DeploymentResults";
 
+it("renders the committed-blocked outcome as its user-facing copy, not a raw key", async () => {
+  // nativeApi 把 blocked pair 投影为 failed + committedBlocked 文案键；
+  // 结果面必须解析键文案，而不是把键名当未知错误码回显（跨层回归发现）。
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DeploymentResults results={[{
+        targetId: "codex-global",
+        label: "Codex CLI",
+        status: "failed",
+        message: "deployment.blockReason.committedBlocked",
+      }]} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("该目标未能执行，保持原状。")).toBeVisible();
+  expect(screen.queryByText(/deployment\.blockReason/)).not.toBeInTheDocument();
+});
+
 it("renders a structured target failure as localized, actionable text", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(

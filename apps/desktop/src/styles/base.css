@@ -4433,7 +4433,7 @@ a {
   font-weight: 650;
 }
 
-.sh-project-registration input {
+.sh-project-registration input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   min-height: 2.25rem;
   padding: 0 var(--space-3);

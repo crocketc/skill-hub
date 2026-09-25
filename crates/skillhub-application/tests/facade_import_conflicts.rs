@@ -784,3 +784,82 @@ async fn legacy_establish_managed_relation_is_rejected_without_writes() {
     assert_eq!(events, 0, "no event was written");
     let _ = batch_id;
 }
+
+/// 15.8 跨层回归：进程重启后打开的导入批次仍然可查询恢复。批次列表来自
+/// 持久化存储，新 facade 实例（模拟重启）必须看到未终结批次；终结后消失。
+#[tokio::test]
+async fn open_import_batches_survive_a_facade_restart_and_clear_after_finalize() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Notes\n");
+    let batch_id = begin_batch(&facade).await;
+
+    async fn find_open(
+        facade: &LocalApplicationFacade,
+        batch_id: &str,
+    ) -> skillhub_core::api::OpenImportBatch {
+        let result = facade
+            .query(AppQuery::QueryOpenImportBatch(
+                skillhub_core::api::QueryOpenImportBatch {},
+            ))
+            .await
+            .expect("open batches");
+        let AppQueryResult::OpenImportBatches(batches) = result else {
+            panic!("expected open import batches");
+        };
+        batches
+            .into_iter()
+            .find(|batch| batch.batch_id == batch_id)
+            .expect("batch is still open")
+    }
+
+    // 同一实例与重启后的新实例都看到该批次。
+    let seen = find_open(&facade, &batch_id).await;
+    assert_eq!(seen.batch_id, batch_id);
+
+    drop(facade);
+    let restarted = facade_with(workspace.path());
+    let seen_after_restart = find_open(&restarted, &batch_id).await;
+    assert_eq!(seen_after_restart.batch_id, batch_id);
+    assert!(
+        seen_after_restart.started_at > 0,
+        "started_at is a real epoch value"
+    );
+
+    // 终结后批次不再出现在打开列表。
+    let prepared = prepare(&restarted, source.path(), "Notes").await;
+    let _ = commit_in_batch(
+        &restarted,
+        &prepared,
+        ImportDecision::CopyIntoLibrary,
+        &batch_id,
+        "acq|restart|notes",
+    )
+    .await
+    .expect("commit in reopened batch");
+    let AppCommandResult::ImportBatchFinalized(_) = restarted
+        .execute(AppCommand::FinalizeImportBatch(
+            skillhub_core::api::FinalizeImportBatch {
+                batch_id: batch_id.clone(),
+            },
+        ))
+        .await
+        .expect("finalize")
+    else {
+        panic!("expected batch finalization");
+    };
+    let result = restarted
+        .query(AppQuery::QueryOpenImportBatch(
+            skillhub_core::api::QueryOpenImportBatch {},
+        ))
+        .await
+        .expect("open batches");
+    let AppQueryResult::OpenImportBatches(remaining) = result else {
+        panic!("expected open import batches");
+    };
+    assert!(
+        !remaining.iter().any(|batch| batch.batch_id == batch_id),
+        "finalized batch leaves the open list"
+    );
+}

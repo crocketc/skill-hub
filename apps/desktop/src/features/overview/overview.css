@@ -490,6 +490,14 @@
   gap: var(--space-1);
 }
 
+/* 最大化布局在窄容器（<60rem，如 800×600）也强制四列指标网格；hero 的
+   跨行声明原本只存在于 60rem 容器查询里，窄容器最大化时 hero 会挤进
+   统计列，把整行撑到换行高度并重新制造根滚动。这里与 M-20 契约对齐：
+   最大化时 hero 始终独占第一行。 */
+:root.sh-is-window-maximized .sh-overview .sh-overview__hero {
+  grid-column: 1 / -1;
+}
+
 :root.sh-is-window-maximized .sh-overview .sh-overview__hero,
 :root.sh-is-window-maximized .sh-overview .sh-overview__stat {
   min-height: 2.75rem;
@@ -614,6 +622,48 @@
   :root.sh-is-window-maximized .sh-overview .sh-overview__rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: minmax(0, 1fr);
+  }
+
+  /* 800×600 实测（DEV-25/DEV-66 回归）：面板内容（节头 84 + 图 48 + 明细
+     154）超出 1fr 轨道约 40px。只压密度、不减信息：维度切换与明细列表
+     保持可用，图表细条仍可见，明细数据完整呈现。 */
+  :root.sh-is-window-maximized .sh-overview .sh-overview__section-head {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__toggle {
+    gap: var(--space-1);
+    padding: 0;
+    background: transparent;
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__chart-figure {
+    height: 2rem;
+    padding: var(--space-1) 0;
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__panel > .sh-overview__details {
+    padding-top: var(--space-1);
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__details-head {
+    gap: var(--space-1);
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__panel .sh-overview__chart-list {
+    gap: var(--space-1);
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__chart-link {
+    min-height: 0;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-xs);
+  }
+
+  :root.sh-is-window-maximized .sh-overview .sh-overview__relation {
+    flex-direction: row;
+    align-items: center;
   }
 }
 

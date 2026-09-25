@@ -70,18 +70,69 @@ test.describe("deployment flow shell", () => {
     await expect(flowStatus(page, SINGLE_FLOW_REGION)).toContainText("Adding finished");
   });
 
-  test("reports partial failure with its own status and keeps the retry in the footer", async ({ page }) => {
+  test("keeps blocked pairs visible without letting them hold back the rest", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=partial");
 
     await page.getByLabel("Preview Agent 1").check();
+    await page.getByLabel("Preview Agent 2").check();
     await page.getByRole("button", { name: "Preview" }).click();
-    await page.getByRole("button", { name: "Confirm and add" }).click();
+
+    // 15.6：受阻 pair 进入「Cannot execute」组并给出原因；可执行项照常提交。
+    const blockedGroup = page.getByTestId("disposition-group").filter({ hasText: "Cannot execute" });
+    await expect(blockedGroup).toBeVisible();
+    await expect(
+      blockedGroup.getByText("The target directory is currently unreachable. Check the disk or network connection and retry."),
+    ).toBeVisible();
+    await expect(page.getByTestId("disposition-group").filter({ hasText: "Execute as selected" })).toBeVisible();
+
+    const commitButton = page.getByRole("button", { name: "Confirm and add" });
+    await expect(commitButton).toBeEnabled();
+    await commitButton.click();
 
     await expect(page.getByText("Adding finished with failed targets")).toBeVisible();
+    // blocked pair 投影为失败结果，但文案如实说明「未执行、保持原状」。
+    await expect(page.getByText("This target was not executed and stays as it is.")).toBeVisible();
     const retry = page.getByRole("button", { name: "Retry failed targets" });
     await expect(retry).toBeVisible();
     await expect(page.locator("footer").getByRole("button", { name: "Retry failed targets" })).toBeVisible();
+
+    // 恢复路径：重试只带回失败目标的选择。
+    await retry.click();
+    await expect(page.getByLabel("Preview Agent 2")).toBeChecked();
+    await expect(page.getByLabel("Preview Agent 1")).not.toBeChecked();
+  });
+
+  test("requires an explicit copy confirmation when link deployment is unavailable", async ({ page }) => {
+    // 15.6：链接受阻不静默降级——未确认前主操作是「Regenerate final preview」，
+    // 不提供直接提交；确认后必须二次预览（服务端指纹校验）才能提交。
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=fallback");
+
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByLabel("Preview Agent 2").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Recommend copy instead" });
+    await expect(copyGroup).toBeVisible();
+    await expect(
+      copyGroup.getByText("This account may not create directory links. Copy deployment is available instead."),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Regenerate final preview" })).toBeVisible();
+
+    await copyGroup.getByRole("checkbox", { name: "Preview Skill · Preview Agent 1" }).check();
+    await expect(copyGroup.getByTestId("confirmed-copy")).toBeVisible();
+    await page.getByRole("button", { name: "Regenerate final preview" }).click();
+
+    // 二次预览后确认被保留（指纹一致），提交解锁且无需再次确认。
+    await expect(copyGroup.getByTestId("confirmed-copy")).toBeVisible();
+    const commitButton = page.getByRole("button", { name: "Confirm and add" });
+    await expect(commitButton).toBeEnabled();
+    await commitButton.click();
+
+    await expect(page.getByText("Adding finished", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("deployment-result")).toHaveCount(2);
   });
 
   test("keeps the target discovery failure alert reachable", async ({ page }) => {
@@ -115,25 +166,69 @@ test.describe("batch deployment flow", () => {
     await expect(footer.getByRole("button", { name: "Confirm and add" })).toBeVisible();
     // DEV-18-A：计划区主文案是展示名，裸 Skill UUID 不出现在首屏。
     await expect(page.getByText("Preview Skill 8")).toBeVisible();
-    await expect(page.getByText("preview-skill-8")).toHaveCount(0);
+    await expect(page.getByText("preview-skill-8").first()).toBeHidden();
   });
 
-  test("blocks the commit when a batch preview fails", async ({ page }) => {
+  test("confirms the copy fallback per reason group and regenerates before commit", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=batch-fallback");
+
+    await expect(page.getByRole("heading", { name: "Add 2 Skills" })).toBeVisible();
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    // 五桶汇总如实呈现：未确认的回退计入「Still blocked」，不计为复制。
+    await expect(page.getByText("Link 0 · Copy 0 · No change 0 · Excluded 0 · Still blocked 2")).toBeVisible();
+
+    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Recommend copy instead" });
+    await expect(copyGroup).toBeVisible();
+    await page.getByRole("checkbox", { name: "Confirm copy fallback for the whole group" }).check();
+    await expect(copyGroup.getByTestId("confirmed-copy")).toHaveCount(2);
+
+    // 确认后必须重新生成最终预览；确认经指纹校验被保留。
+    await page.getByRole("button", { name: "Regenerate final preview" }).click();
+    await expect(page.getByText("Link 0 · Copy 2 · No change 0 · Excluded 0 · Still blocked 0")).toBeVisible();
+    await expect(copyGroup.getByTestId("confirmed-copy")).toHaveCount(2);
+
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+    await expect(page.getByText("Adding finished", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("batch-summary")).toContainText("2 succeeded");
+  });
+
+  test("excludes an individual pair and reports it as skipped after commit", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=batch");
+
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    const group = page.getByTestId("disposition-group").filter({ hasText: "Execute as selected" });
+    await expect(group.getByTestId("disposition-row")).toHaveCount(8);
+    await group.getByRole("checkbox", { name: "Preview Skill 1 · Preview Agent 1" }).uncheck();
+
+    // 排除与确认一样改变提交范围：必须经「Regenerate final preview」落地。
+    await page.getByRole("button", { name: "Regenerate final preview" }).click();
+    await expect(page.getByText("Link 0 · Copy 7 · No change 0 · Excluded 1 · Still blocked 0")).toBeVisible();
+
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+    await expect(page.getByText("Adding finished", { exact: true })).toBeVisible();
+    const summary = page.getByTestId("batch-summary");
+    await expect(summary).toContainText("7 succeeded");
+    await expect(summary).toContainText("1 skipped");
+    await expect(summary.getByTestId("batch-outcome-skipped")).toHaveCount(1);
+  });
+
+  test("keeps the commit unreachable when the batch preview fails", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch-preview-fail");
 
     await page.getByLabel("Preview Agent 1").check();
     await page.getByRole("button", { name: "Preview" }).click();
 
-    // DEV-18-A：失败行主文案是展示名；裸 UUID 只在技术详情内。
-    await expect(page.getByRole("alert")).toContainText("Preview Skill 2");
-    const alert = page.getByRole("alert");
-    await expect(alert.getByText("preview-skill-2")).toBeHidden();
-    await alert.getByText("Technical details").click();
-    await expect(alert.getByText("preview-skill-2")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
-    // 批量流程壳（标题含数量）自己的状态区。
-    await expect(flowStatus(page, "Add 8 Skills")).toContainText("commit is blocked");
+    // 一次 IPC 预览整体失败：告警诚实呈现，计划区与提交入口都不出现。
+    await expect(page.getByRole("alert")).toContainText("not writable");
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toHaveCount(0);
+    await expect(page.getByTestId("disposition-group")).toHaveCount(0);
   });
 });
 
@@ -194,6 +289,7 @@ test.describe("deployment width matrix", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/deployment?scenario=partial");
       await page.getByLabel("Preview Agent 1").check();
+      await page.getByLabel("Preview Agent 2").check();
       await page.getByRole("button", { name: "Preview" }).click();
       await page.getByRole("button", { name: "Confirm and add" }).click();
       await expect(page.getByText("Adding finished with failed targets")).toBeVisible();

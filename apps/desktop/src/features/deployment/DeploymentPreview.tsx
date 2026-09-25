@@ -25,15 +25,14 @@ function previewTargets(targetCount = 3, longPaths = false): DeploymentTarget[] 
 }
 
 function previewSkillDisplayName(skillId: string): string {
-  return skillId.replace(/^preview-skill-/, "Preview Skill ");
+  const match = skillId.match(/^preview-skill(?:-(\d+))?$/);
+  return match ? `Preview Skill${match[1] ? ` ${match[1]}` : ""}` : skillId;
 }
 
-let previewPairSeq = 0;
-
 function previewPair(skillId: string, target: DeploymentTarget, overrides: Partial<DeploymentPairPreview> = {}): DeploymentPairPreview {
-  previewPairSeq += 1;
+  const pairId = `${skillId}:${target.physicalId}`;
   return {
-    pairId: `${skillId}:${target.physicalId}`,
+    pairId,
     skillId,
     skillDisplayName: previewSkillDisplayName(skillId),
     logicalTargetIds: [target.id],
@@ -48,7 +47,9 @@ function previewPair(skillId: string, target: DeploymentTarget, overrides: Parti
     blockReason: null,
     warnings: [],
     confirmationPreserved: false,
-    confirmationFingerprint: `preview-fp-${previewPairSeq}`,
+    // 指纹按 pairId 确定性派生：重新预览携带同指纹时后端语义（保留确认）
+    // 才能在 mock 上复现（14.7）。
+    confirmationFingerprint: `preview-fp-${pairId}`,
     technicalError: null,
     ...overrides,
   };
@@ -70,10 +71,12 @@ type PreviewScenario =
   | "fail-preview"
   | "unavailable"
   | "empty"
+  | "fallback"
   | "batch"
   | "batch-bulk"
   | "batch-preview-fail"
-  | "batch-partial";
+  | "batch-partial"
+  | "batch-fallback";
 
 const scenarios: readonly PreviewScenario[] = [
   "default",
@@ -82,13 +85,21 @@ const scenarios: readonly PreviewScenario[] = [
   "fail-preview",
   "unavailable",
   "empty",
+  "fallback",
   "batch",
   "batch-bulk",
   "batch-preview-fail",
   "batch-partial",
+  "batch-fallback",
 ];
 
-const BATCH_SCENARIOS: readonly PreviewScenario[] = ["batch", "batch-bulk", "batch-preview-fail", "batch-partial"];
+const BATCH_SCENARIOS: readonly PreviewScenario[] = [
+  "batch",
+  "batch-bulk",
+  "batch-preview-fail",
+  "batch-partial",
+  "batch-fallback",
+];
 
 function isBatchScenario(scenario: PreviewScenario): boolean {
   return BATCH_SCENARIOS.includes(scenario);
@@ -100,6 +111,7 @@ function previewScenario(): PreviewScenario {
 }
 
 function batchSkillCount(scenario: PreviewScenario): number {
+  if (scenario === "batch-fallback") return 2;
   return scenario === "batch-bulk" ? 60 : 8;
 }
 
@@ -114,8 +126,23 @@ function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenar
           warnings: ["The target directory is a junction; the Skill will deploy through it."],
         };
       }
+      // 部分受阻：target-2 不可达（blocked 不拖住其余可执行项）。
       if (scenario === "partial" || scenario === "batch-partial") {
-        return { ...pair, disposition: "blocked" as const, mode: null, blockReason: "path_unavailable" as const };
+        return target.id === "target-2"
+          ? { ...pair, disposition: "blocked" as const, mode: null, blockReason: "path_unavailable" as const }
+          : pair;
+      }
+      // 回退确认：target-1 无法建链，后端建议改用复制（不静默降级，14.5）。
+      if (scenario === "fallback" || scenario === "batch-fallback") {
+        return target.id === "target-1"
+          ? {
+              ...pair,
+              disposition: "recommend_copy" as const,
+              mode: null,
+              fallbackMode: "managed_copy" as const,
+              blockReason: "link_permission_unavailable" as const,
+            }
+          : pair;
       }
       return pair;
     }));
@@ -123,26 +150,53 @@ function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenar
 
 function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
   return {
-    listTargets: async () => previewTargets(3, scenario === "batch-bulk"),
-    preview: async (items) => {
+    listTargets: async () => {
+      if (scenario === "unavailable") {
+        throw new Error("preview.deploy_targets_unavailable");
+      }
+      return previewTargets(3, scenario === "batch-bulk");
+    },
+    preview: async (items, context) => {
       if (scenario === "fail-preview" || scenario === "batch-preview-fail") {
         throw new Error("deployment.target_not_writable");
       }
-      return previewBatchOf(pairsFor(items, await previewTargets(3, scenario === "batch-bulk"), scenario));
+      const pairs = pairsFor(items, await previewTargets(3, scenario === "batch-bulk"), scenario);
+      // 镜像后端裁决（14.7）：持有指纹与当前指纹一致才保留确认。
+      const held = context?.confirmations ?? {};
+      const preservedIds = new Set(pairs
+        .filter((pair) => held[pair.pairId] === pair.confirmationFingerprint)
+        .map((pair) => pair.pairId));
+      return {
+        ...previewBatchOf(pairs),
+        preservedConfirmationIds: [...preservedIds],
+        pairs: pairs.map((pair) => ({
+          ...pair,
+          confirmationPreserved: preservedIds.has(pair.pairId),
+        })),
+      };
     },
-    commit: async (preview, selections): Promise<BatchDeploymentResult[]> => selections
-      .filter((selection) => !selection.exclude)
-      .map((selection) => {
-        const facts = preview.pairs.find((candidate) => candidate.pairId === selection.pairId);
-        return {
-          skillId: facts?.skillId ?? "",
-          displayName: facts?.skillDisplayName,
-          targetId: facts?.logicalTargetIds[0] ?? "",
-          label: facts?.targetLabel ?? "",
-          status: "succeeded" as const,
-          message: "deployment.results.status.message.succeeded",
-        };
-      }),
+    // 镜像生产结果投影：excluded→skipped、blocked/未确认回退→failed、
+    // 其余→succeeded；结果行覆盖全部提交 selections（含排除项）。
+    commit: async (preview, selections): Promise<BatchDeploymentResult[]> => selections.map((selection) => {
+      const facts = preview.pairs.find((candidate) => candidate.pairId === selection.pairId);
+      const blocked = facts?.disposition === "blocked"
+        || (facts?.disposition === "recommend_copy" && !selection.confirmFallback);
+      const status = selection.exclude
+        ? "skipped" as const
+        : blocked ? "failed" as const : "succeeded" as const;
+      return {
+        skillId: facts?.skillId ?? "",
+        displayName: facts?.skillDisplayName,
+        targetId: facts?.logicalTargetIds[0] ?? "",
+        label: facts?.targetLabel ?? "",
+        status,
+        message: selection.exclude
+          ? "deployment.results.status.message.skipped"
+          : blocked
+            ? "deployment.blockReason.committedBlocked"
+            : "deployment.results.status.message.succeeded",
+      };
+    }),
   };
 }
 

@@ -49,7 +49,7 @@ const statNames = [
 const relationEntryNames = [
   "Open relationship graph (4 skills with displayable relations)",
   "Open conflict workspace (2 unconfirmed conflicts)",
-  "Open relationship governance (9 relation edges)",
+  "Open needs-governance relations (5 to handle)",
 ] as const;
 
 test.use({ locale: "en-US" });
@@ -122,7 +122,11 @@ test("exposes the three relationship thumbnail entries with frozen deep links", 
   const conflictsEntry = page.getByRole("link", { name: relationEntryNames[1] });
   await expect(conflictsEntry).toHaveAttribute("href", "/relationships/decisions");
   const governanceEntry = page.getByRole("link", { name: relationEntryNames[2] });
-  await expect(governanceEntry).toHaveAttribute("href", "/relationships/governance");
+    // 48220057 起治理入口只覆盖「需处理」口径，深链携带同一状态并集。
+  await expect(governanceEntry).toHaveAttribute(
+    "href",
+    "/relationships/governance?status=needs_validation,needs_attention,blocked",
+  );
 
   // 深链真实可达：点击冲突入口导航到冲突处理页。
   await conflictsEntry.click();
@@ -198,8 +202,13 @@ test.describe("overview stays free of horizontal overflow", () => {
       expect(panels[index]!.height, `overview panel ${index} must remain measurable`).toBeGreaterThan(0);
     }
 
-    const tagDetails = page.locator(".sh-overview__tag-details-scroll");
-    await expect(tagDetails).toHaveCSS("overflow-y", "visible");
+    // fb57b7b6 起标签分布改为静态面板（无 tag-details-scroll 滚动容器）。
+    // 「不得内部滚动」的现行等价事实：标签面板不暴露滚动条；内容完整性
+    // 由 overview-height 的 DEV-25 无裁剪断言单独守护。
+    const tagPanel = page.locator(".sh-overview__tag-panel");
+    await expect(tagPanel).toBeVisible();
+    const tagOverflowY = await tagPanel.evaluate((element) => getComputedStyle(element).overflowY);
+    expect(["visible", "clip", "hidden"]).toContain(tagOverflowY);
     await expectNoRootHorizontalOverflow(page);
   });
 });

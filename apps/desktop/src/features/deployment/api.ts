@@ -86,6 +86,10 @@ export function describeDeploymentResult(
     return describeNativeError(result.error, translate, "deployment.errors.generic");
   }
   if (result.status === "failed") {
+    // 失败消息可能是稳定文案键（如 blocked 投影的 committedBlocked）：
+    // 先按键翻译；未命中（自由文本）再按错误码/原文呈现，键名不裸奔。
+    const keyed = translate(result.message, { defaultValue: "" });
+    if (keyed) return keyed;
     return describeNativeError(result.message, translate, "deployment.errors.generic");
   }
   return translate(result.message, { defaultValue: result.message });

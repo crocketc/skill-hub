@@ -145,7 +145,51 @@ async function installNativePreview(page: Page) {
             { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", tags: ["automation"], matched_alias: null, relationship_count: 1, relationship_revision: "preview-rel-1", last_verified_at: null },
           ]);
           case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
-          case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
+          case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1, status_normal: 1, status_retained: 0, status_needs_validation: 1, status_needs_attention: 0, status_blocked: 1, source_copies: 1, deployments: 2 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
+          case "get_deployment_batch_preview": {
+            // 任务 13B/14 契约：预览按 Skill × 物理目标 pair 返回结构化处置。
+            // find-skills 场景的占用组合（→ Claude Code）仍以 target_occupied
+            // 演练阻断组；其余 pair 按所选方式执行。
+            const previewTargets = {
+              "codex-target": { label: "Codex CLI", path: "C:/Preview/.agents", physical: "codex-physical" },
+              "claude-target": { label: "Claude Code", path: "C:/Preview/.claude", physical: "claude-physical" },
+            };
+            const nameOf = (skillId: string) => skillItems.find((item) => item.skill_id === skillId)?.display_name ?? skillId;
+            const versionOf = (skillId: string) => skillItems.find((item) => item.skill_id === skillId)?.current_version ?? "v1";
+            const pairs = query.payload.items.flatMap((item: { skill_id: string; logical_target_ids: string[] }) =>
+              item.logical_target_ids.map((targetId: string) => {
+                const target = previewTargets[targetId];
+                const occupied = targetId === "claude-target";
+                return {
+                  pair_id: `${item.skill_id}:${target.physical}`,
+                  skill_id: item.skill_id,
+                  skill_display_name: nameOf(item.skill_id),
+                  version_id: versionOf(item.skill_id),
+                  runtime_name: item.skill_id,
+                  logical_target_ids: [targetId],
+                  target_label: target.label,
+                  target_path: target.path,
+                  destination_path: `${target.path}/${item.skill_id}`,
+                  preference: item.preference,
+                  disposition: occupied ? "blocked" : "selected_mode",
+                  mode: occupied ? null : "managed_copy",
+                  fallback_mode: null,
+                  block_reason: occupied ? "target_occupied" : null,
+                  warnings: [],
+                  confirmation_preserved: false,
+                  confirmation_fingerprint: `preview-fp-${item.skill_id}-${targetId}`,
+                  technical_error: null,
+                };
+              }));
+            const previewId = "preview-native-1";
+            const now = Date.now();
+            return ok("deployment_batch_preview", {
+              preview_id: previewId,
+              expires_at: new Date(now + 600000).toISOString(),
+              pairs,
+              preserved_confirmation_ids: pairs.filter((pair) => pair.confirmation_preserved).map((pair) => pair.pair_id),
+            });
+          }
           case "get_deployment_plan": {
             // DEV-18：占用组合（真实场景 find-skills → Claude Code，目标目录
             // 已有同名副本）在规划期即被 D-11 占用识别拒绝。mock 以结构化
@@ -208,6 +252,20 @@ async function installNativePreview(page: Page) {
           case "resolve_recovery": return ok("operation_summary", operationSummary);
           case "set_ui_preference": return ok("operation_summary", operationSummary);
           case "prepare_deployment": return ok("prepared_deployment", { id: "prepared-deploy-1", operation_id: "op-deploy-1", plan: args.command.payload.plan });
+          case "commit_deployment_preview": {
+            // 13B：提交只携带 preview_id + pair 意见（confirm_fallback/exclude），
+            // 后端 revalidate 语义在 mock 上投影为：exclude→excluded，其余→deployed。
+            return ok("deployment_preview_commit_result", {
+              preview_id: action.payload.preview_id,
+              replayed: false,
+              pairs: action.payload.pairs.map((pair: { pair_id: string; confirm_fallback: boolean; exclude: boolean }) => ({
+                pair_id: pair.pair_id,
+                outcome: pair.exclude ? "excluded" : "deployed",
+                operation_id: pair.exclude ? null : "op-deploy-1",
+                error: null,
+              })),
+            });
+          }
           case "commit_deployment": return ok("deployment_summary", { operation_id: "op-deploy-1", skill_id: args.command.payload.prepared_deployment_id, version_id: "v1", committed: true, targets: [{ logical_target_ids: ["codex-target"], physical_target_id: "codex-physical", status: "succeeded", error_code: null, residue: false }] });
           case "check_source_update": return ok("upstream_check_result", { skill_id: "pdf-reader", state: "update_available", local_version: "v1", upstream_version: "v2", upstream_label: "v2.0.0" });
           case "apply_source_update": return ok("applied_source_update", { skill_id: "pdf-reader", decision: args.command.payload.decision, new_version: args.command.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
@@ -268,8 +326,10 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
   await expect(
     page.getByRole("link", { name: "Open conflict workspace (1 unconfirmed conflicts)" }),
   ).toBeVisible();
+  // 任务 10/12 后治理缩略入口的口径是「待处理关系数」
+  // （stub: status_needs_validation 1 + status_blocked 1 = 2）。
   await expect(
-    page.getByRole("link", { name: "Open relationship governance (3 relation edges)" }),
+    page.getByRole("link", { name: "Open needs-governance relations (2 to handle)" }),
   ).toBeVisible();
   await expect(page.getByText("documents")).toBeVisible();
   await page.getByRole("radio", { name: "Projects" }).check();
@@ -334,7 +394,8 @@ test("online and repository discovery expose deterministic result states", async
   await expect(page.getByText("PDF Reader")).toBeVisible();
 
   await page.goto("/discovery/repo");
-  await expect(page.getByText("anthropics/skills@main")).toBeVisible();
+  // 仓库卡片标题是 owner/name；branch 独立成行展示（分支不再拼进标题）。
+  await expect(page.getByText("anthropics/skills", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Scan repositories" }).click();
   await expect(page.getByText("PDF Reader")).toBeVisible();
   // T6（830eb1d）：逐仓失败分类转译——404 命中 notFound 文案、原始错误串
@@ -349,9 +410,12 @@ test("online and repository discovery expose deterministic result states", async
   await page.goto("/discovery/repositories");
   await expect(page.getByRole("heading", { name: "Repository management" })).toBeVisible();
   await expect(page.getByText("anthropics/skills", { exact: true })).toBeVisible();
-  await expect(page.getByText("Last scan")).toBeVisible();
-  await expect(page.getByText("3 candidate Skills")).toBeVisible();
-  await expect(page.getByText("Never scanned")).toBeVisible();
+  // 两张仓库卡都有「Last scan」字段；逐一限定到各自卡片内断言。
+  const anthropicCard = page.getByLabel("anthropics/skills", { exact: true });
+  await expect(anthropicCard.getByText("Last scan")).toBeVisible();
+  await expect(anthropicCard.getByText("3 candidate Skills")).toBeVisible();
+  const composioCard = page.getByLabel("ComposioHQ/awesome-claude-skills", { exact: true });
+  await expect(composioCard.getByText("Never scanned")).toBeVisible();
 
 });
 
@@ -450,18 +514,21 @@ test("deployment target selection exposes unavailable and non-atomic batch bound
 });
 
 test("preview occupancy conflict renders readable guidance instead of [object Object]", async ({ page }) => {
-  // DEV-18 回归护栏：占用组合（find-skills → Claude Code 的同款失败）必须
-  // 给出可读文案 + 「纳入集中库管理」引导，且不阻塞在不可读错误上。
+  // DEV-18 回归护栏（任务 14 pair UX 后）：占用组合在「无法执行」分组给出
+  // 用户可读的阻断原因，裸错误对象/内部标识不进入首屏；无确认门槛时
+  // 提交保持禁用（不可执行项不能混进批次）。
   await installNativePreview(page);
   await page.goto("/deploy?skill=pdf-reader");
   await page.getByLabel("Claude Code").check();
   await page.getByRole("button", { name: "Preview" }).click();
 
-  const alert = page.getByRole("alert");
-  await expect(alert).toContainText("pdf-reader");
-  await expect(alert).toContainText(/target directory already contains/i);
-  await expect(alert).toContainText(/central library management/i);
-  await expect(alert).not.toContainText("[object Object]");
+  const blockedGroup = page.getByTestId("disposition-group").filter({ hasText: "Cannot execute" });
+  await expect(blockedGroup).toContainText("PDF Reader");
+  await expect(blockedGroup).toContainText(/target directory already contains/i);
+  await expect(blockedGroup).not.toContainText("[object Object]");
+  // 内部 pair id 只折叠在技术详情内（技术标识不进首屏）。
+  const technical = blockedGroup.locator("details");
+  await expect(technical).toContainText("pdf-reader:claude-physical");
   await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
 });
 
@@ -472,7 +539,9 @@ test("conflict workbench keeps members readable, actions reachable and preview s
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/relationships/decisions");
 
-  await expect(page.getByRole("heading", { level: 1, name: "Skill relations" })).toBeVisible();
+  // DEV-67：模块标题由顶栏承载；断言顶栏 + 页签导航可达。
+  await expect(page.locator(".sh-app-shell__title")).toHaveText("Skill relations");
+  await expect(page.getByRole("navigation", { name: "Relationship sections" })).toBeVisible();
 
   // ① 成员列表：两个成员路径以统一展示形态可读，且都在视口内。
   const memberCodes = page.locator("code", { hasText: "find-skills" });
@@ -501,10 +570,9 @@ test("relationship module exposes in-page navigation with counts between the thr
   await installNativePreview(page);
   await page.goto("/relationships");
 
-  const moduleHeading = page.getByRole("heading", { level: 1, name: "Skill relations" });
-  await expect(moduleHeading).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1, name: "Skill graph" })).toHaveCount(0);
-  await expect(page.locator("header.sh-page-header").getByRole("navigation", { name: "Relationship sections" })).toBeVisible();
+  // DEV-67：模块标题由 AppShell 顶栏承载，页内只有页签导航。
+  await expect(page.locator(".sh-app-shell__title")).toHaveText("Skill relations");
+  await expect(page.getByRole("navigation", { name: "Relationship sections" })).toBeVisible();
 
   const nav = page.getByRole("navigation", { name: "Relationship sections" });
   await expect(nav.getByRole("link", { name: "Skill graph" })).toHaveAttribute("aria-current", "page");
@@ -514,12 +582,12 @@ test("relationship module exposes in-page navigation with counts between the thr
 
   await nav.getByRole("link", { name: "Conflict decisions" }).click();
   await expect(page).toHaveURL(/\/relationships\/decisions$/);
-  await expect(moduleHeading).toBeVisible();
+  // 顶栏标题按模块固定（Skill relations），子页切换只体现为页签高亮与 URL。
   await expect(nav.getByRole("link", { name: "Conflict decisions" })).toHaveAttribute("aria-current", "page");
 
   await nav.getByRole("link", { name: "Relationship governance" }).click();
   await expect(page).toHaveURL(/\/relationships\/governance$/);
-  await expect(moduleHeading).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Relationship governance" })).toHaveAttribute("aria-current", "page");
 
   // 概览卡片深链入口保持不变。
   await page.goto("/");
@@ -564,7 +632,9 @@ test("project detail shows access, agent associations, and assembly status", asy
   await installNativePreview(page);
   await page.goto("/projects/project-aurora");
   await expect(page.getByRole("heading", { name: "Aurora" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "openai · codex" })).toBeChecked();
+  // Agent 呈现约定后：勾选项可访问名是 client_id，可见文案是品牌+类型徽标。
+  await expect(page.getByRole("checkbox", { name: "codex" })).toBeChecked();
+  await expect(page.getByText("OpenAI")).toBeVisible();
   await expect(page.getByText(/Already satisfied/)).toBeVisible();
   await expect(page.getByText(/Conflict needs a choice/)).toBeVisible();
 });

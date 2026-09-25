@@ -29,12 +29,16 @@ test("agent detail shows the directory matrix with recognition and relation fact
   await expect(shared.getByText("/Users/preview/.agents/skills")).toBeVisible();
   await expect(shared.getByText("通用共享目录")).toBeVisible();
   await expect(shared.getByText("已确认支持")).toBeVisible();
-  await expect(shared.getByText(/共享消费者：trae\.code/)).toBeVisible();
+  // 共享消费者按「品牌厂商 + 展示类型」呈现（Agent 呈现约定），
+  // 裸 client_id 不进入界面。
+  await expect(shared.getByText("共享消费者：")).toBeVisible();
+  await expect(shared.getByLabel("Trae · 终端").first()).toBeVisible();
+  await expect(shared.getByText("trae.code")).toHaveCount(0);
 
   // 关系行按用户语义命名；其他 Agent 的复制部署显式标注归属。
   await expect(shared.getByText("共享目录直接读取")).toBeVisible();
   await expect(shared.getByText("复制部署")).toBeVisible();
-  await expect(shared.getByText("归属 Agent：trae.code")).toBeVisible();
+  await expect(shared.getByText("归属 Agent：")).toBeVisible();
   // 技术形态只在技术详情内出现。
   await expect(shared.getByText(/符号链接/)).toHaveCount(0);
 
@@ -46,9 +50,10 @@ test("agent detail shows the directory matrix with recognition and relation fact
     .click();
   await expect(page.getByText("移除影响预览")).toBeVisible();
   await expect(page.getByText("最小影响动作")).toBeVisible();
-  await expect(
-    page.getByText("其他识别该目录的 Agent：trae.code"),
-  ).toBeVisible();
+  // 其他消费者按品牌 + 展示类型呈现，裸 client_id 不进界面。
+  await expect(page.getByText("其他识别该目录的 Agent：")).toBeVisible();
+  await expect(page.getByLabel("Trae · 终端").first()).toBeVisible();
+  await expect(page.getByText("trae.code")).toHaveCount(0);
 });
 
 test("skill detail surfaces provenance sources, governed relations and removal impact", async ({

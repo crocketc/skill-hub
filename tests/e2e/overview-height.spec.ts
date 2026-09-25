@@ -66,10 +66,8 @@ async function setMaximizedMode(page: import("@playwright/test").Page, maximized
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   }));
   await page.waitForFunction(() =>
-    [
-      ".sh-overview__chart-canvas",
-      ".sh-overview__tag-chart-canvas",
-    ].every((selector) => {
+    // fb57b7b6 起标签分布图改为静态面板（无 canvas），仅部署图需要等重测。
+    [".sh-overview__chart-canvas"].every((selector) => {
       const canvas = document.querySelector<HTMLElement>(selector);
       return canvas !== null && canvas.scrollHeight <= canvas.clientHeight + 2;
     }),
@@ -206,7 +204,7 @@ test("uses the maximized remainder for overview modules instead of leaving a bla
   await page.goto("/__preview/overview");
   await expect(page.getByRole("img", { name: "Deployment relation count by agent" })).toBeVisible();
   await expect(page.locator(".sh-overview__chart-figure")).toBeVisible();
-  await expect(page.locator(".sh-overview__tag-chart")).toBeVisible();
+  await expect(page.locator(".sh-overview__tag-panel")).toBeVisible();
   await setMaximizedMode(page, true);
 
   const geometry = await page.evaluate(() => {
@@ -240,9 +238,9 @@ test("fills the maximized metric band and keeps chart SVGs inside their own card
   const geometry = await page.evaluate(() => {
     const metrics = document.querySelector<HTMLElement>(".sh-overview__metrics");
     const stats = [...document.querySelectorAll<HTMLElement>(".sh-overview__stat")];
+    // 标签分布图已是静态面板（无 SVG），只校验仍存在的部署图 SVG。
     const chartPairs = [
       [".sh-overview__chart-figure", ".sh-overview__chart-canvas svg"],
-      [".sh-overview__tag-chart", ".sh-overview__tag-chart-canvas svg"],
     ] as const;
     if (!metrics || stats.length === 0) throw new Error("overview geometry is missing");
     const metricsRect = metrics.getBoundingClientRect();

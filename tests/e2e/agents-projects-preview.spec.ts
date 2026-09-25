@@ -169,8 +169,9 @@ test("registration drawer agent list scrolls internally without horizontal overf
   const agentList = registration.locator(".sh-project-registration__agent-list");
   await expect(agentList).toBeVisible();
 
-  // 超长无空格标签可折行可读：名称行高度超过单行（>24px）且列表内部纵向滚动。
-  const longLabel = agentList.getByText(/deepseek-harness · deepseek-harness/);
+  // 超长无空格标签可折行可读：品牌呈现约定下未知品牌回退按原文展示长串，
+  // 名称行高度超过单行（>24px）且列表内部纵向滚动。
+  const longLabel = agentList.getByText(/Deepseek Harness · Deepseek Harness\.local Agent\.with\.an\.extremely/i);
   await expect(longLabel).toBeVisible();
   const labelBox = (await longLabel.boundingBox())!;
   expect(labelBox.height, "a long unbroken agent label must wrap onto multiple lines").toBeGreaterThan(24);

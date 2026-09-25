@@ -241,6 +241,8 @@
 /* DEV-14：Agent 勾选列表——内部纵向滚动（不撑破抽屉、不产生根级横向溢出），
    行内复选框定宽、名称可任意折行；不可用项的原因经 CheckboxField description 呈现。 */
 .sh-project-registration__agent-list {
+  /* minmax(0, 1fr)：列宽锁定容器，长品牌徽标不得撑破列表（DEV-14 回归）。 */
+  grid-template-columns: minmax(0, 1fr);
   display: grid;
   gap: var(--space-1);
   max-height: 13rem;
@@ -248,6 +250,26 @@
   overflow-y: auto;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-md);
+}
+
+/* DEV-14：Agent 呈现约定后主文案是品牌徽标；未知品牌回退的超长名在本
+   列表按散文折行（与相邻 label 一致），徽标仍保持品牌+类型的组合形态；
+   其他界面的品牌徽标维持 nowrap 紧凑呈现不受影响。 */
+.sh-project-registration .sh-checkbox-field__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sh-project-registration .sh-agent-presentation {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sh-project-registration .sh-agent-presentation .sh-brand-tag {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .sh-project-registration .sh-checkbox-field__label,

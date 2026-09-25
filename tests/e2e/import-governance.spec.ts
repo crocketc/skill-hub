@@ -1,27 +1,28 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Task 5/9 导入关系治理阶段预览验收（DEV-only
+ * Task 11 起导入与关系治理分离后的导入治理链路预览验收（DEV-only
  * /__preview/import-wizard?scenario=governance）。
  * 只断言公开角色、可访问名称与确定性事实；全部跑在 mock facade 上。
- * 覆盖：分析后先确认冲突、再进入治理阶段（5 步流程）、分组确认门槛、单项覆盖、
- * AI 不可用诚实提示、提交后待处理摘要与治理待办入口。
+ * 导入侧：冲突步诚实呈现（含 AI 未配置信号）→ 提交 → 摘要呈现本次导入
+ * 的治理待办深链、来源副本整理 CTA 与原件保护事实。
+ * 边界：治理页内行为（保留后可查、清理预览完整影响、成功后部署入口）
+ * 属于治理页组件测试与真机人工验收范围；E2E 只锁定入口契约——
+ * 深链按钮只指向本次导入产生的待办，不把浏览器 fixture 当作真实治理状态。
  */
 
 test.use({ locale: "zh-CN" });
 
 const PREVIEW = "/__preview/import-wizard?scenario=governance";
 
-function wizard(page: import("@playwright/test").Page) {
-  return page.getByRole("region", { name: "导入 Skill" });
-}
-
-test("routes the import through the governance phase before conflicts", async ({
+test("lands the import on a summary with the governance task deep link and organize CTA", async ({
   page,
 }) => {
   await page.goto(PREVIEW);
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
-  await page.getByRole("button", { name: "读取该来源的候选" }).click();
+  await page
+    .getByRole("button", { name: "读取该来源的候选" })
+    .click();
   await page
     .getByRole("button", { name: "继续选择候选" })
     .click({ timeout: 10_000 });
@@ -29,62 +30,33 @@ test("routes the import through the governance phase before conflicts", async ({
   await page.getByRole("checkbox", { name: /Browser Helper/ }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();
 
-  // 冲突确认先于治理阶段；点击明确入口后进入治理，步骤条为 5 步。
+  // 冲突步首屏：结论区先行播报；AI 不可用是真实信号，提示诚实且可继续。
   await expect(
-    page.getByRole("heading", { name: "处理需要确认的冲突" }),
+    page.getByRole("status", { name: "本次导入的冲突结论" }),
   ).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "继续确认关系影响" }).click();
-  const heading = page.getByRole("heading", { name: "确认导入后的关系处理" });
-  await expect(heading).toBeVisible({ timeout: 10_000 });
-  const rail = page.getByRole("list", { name: "导入步骤" });
-  await expect(rail.getByRole("listitem")).toHaveCount(5);
-  await expect(rail.getByText("关系治理")).toBeVisible();
-
-  // AI 不可用是真实信号（预览环境无已配置供应商），提示诚实且不伪造入口。
   await expect(
-    page.getByText("AI 建议未配置；已保留确定性关系判断。"),
+    page.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
   ).toBeVisible();
 
-  // 分组按类别聚合：通用目录直接读取 + 同名不同内容，各自带影响与回退说明。
-  await expect(page.getByText("通用目录直接读取")).toBeVisible();
-  await expect(page.getByText("同名不同内容")).toBeVisible();
-  await expect(
-    page.getByText("1 个 Skill 将导入集中库。受影响 Agent：Trae。"),
-  ).toBeVisible();
-  await expect(
-    page.getByText("回退方式：共享目录原件不会被本操作修改。"),
-  ).toBeVisible();
-
-  // 确认门槛：未显式选择任何分组动作时主按钮保持禁用。
-  const confirm = page.getByRole("button", { name: "确认关系处理" });
-  await expect(confirm).toBeDisabled();
-
-  // 展开成员并做单项覆盖（单项优先于分组动作）。
-  await page.getByRole("button", { name: "展开 1 个项目" }).first().click();
-  await page
-    .getByRole("radio", { name: "PDF Reader：先不导入，记为待办" })
-    .first()
-    .click();
-  await page
-    .getByRole("radio", { name: "先不导入，记为待办" })
-    .last()
-    .click();
-  await expect(confirm).toBeEnabled();
-  await confirm.click();
-
-  // 治理确认后进入既有冲突阶段（该场景无需强制决策，可直接提交）。
-  await page.getByRole("button", { name: "提交导入" }).click();
+  // 本次导入无强制冲突决策，提交直接可用。
+  const commit = page.getByRole("button", { name: "提交导入" });
+  await expect(commit).toBeEnabled();
+  await commit.click();
 
   const summary = page.getByRole("region", { name: "导入 Skill" });
   await expect(
-    summary.getByText("导入完成，有待处理事项").or(summary.getByText("导入已完成")),
+    summary.getByText("部分候选项需要关注，下面逐项列出处理结果。"),
   ).toBeVisible({ timeout: 10_000 });
+  // 本次导入产生的唯一治理待办（共享目录影响确认）深链；不显示其他来源。
+  await expect(
+    summary.getByRole("button", { name: "查看治理待办 task:preview-governance" }),
+  ).toBeVisible();
+  // AgentLocal/UserLocal 导入携带可管理来源副本 → 提供整理 CTA。
+  await expect(
+    summary.getByRole("button", { name: "整理来源副本" }),
+  ).toBeVisible();
+  // 原件保护事实：导入不删源，清理必须在关系治理中单独确认。
+  await expect(summary.getByText(/原始副本保持不变/)).toBeVisible();
+  // 待处理项如实计数，不静默吞掉。
   await expect(summary.getByText(/待处理 1/)).toBeVisible();
-  await expect(
-    summary.getByRole("button", { name: /查看治理待办 task:preview-governance/ }),
-  ).toBeVisible();
-  // 原文件保护：导入不删源，摘要明示原始副本保持不变。
-  await expect(
-    summary.getByText(/原始副本保持不变/),
-  ).toBeVisible();
 });

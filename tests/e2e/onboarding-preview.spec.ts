@@ -51,7 +51,7 @@ async function reachScanStep(page: import("@playwright/test").Page, scenario: st
   // 重新发现流程里第 1 步与第 2 步共用同一条确认状态：进入兼容性步骤时
   // 确认框已经是勾选状态，直接识别 Agent。
   await page.getByRole("button", { name: "识别 Agent" }).click();
-  await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
   await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
@@ -80,7 +80,7 @@ test("exposes the unified step rail and keeps the primary action at 44px with a 
 
   // 到达最后一步后，底部操作区整体边缘保持稳定（主操作区内、不跳动）。
   await confirmCompatibility(page);
-  await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
   await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   const finish = page.getByRole("button", { name: "完成初始化" });
@@ -104,10 +104,10 @@ test("rediscovery retries discovery and scan failures without losing library sta
   await expect(page.getByText("D:\\very-long-library-root-segment")).toBeVisible();
 
   await page.getByRole("button", { name: "重试" }).click();
-  await expect(page.getByRole("checkbox", { name: "Codex", exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "OpenAI · 终端" })).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
 
-  await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
   await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
@@ -198,7 +198,7 @@ test("offers the background hand-off while a scan keeps running and finishes hon
 
   await page.getByRole("button", { name: "继续" }).click();
   await confirmCompatibility(page);
-  await page.getByRole("checkbox", { name: "Codex", exact: true }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
   await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
@@ -316,9 +316,24 @@ test("keeps brand chip text readable across all nine themes", async ({ page }) =
 
     // 采样页面上全部品牌芯片的文字/背景对比度（grok-night 走 color-mix
     // 混合路径），任一芯片低于 AA 都算失败——不是只测第一个品牌。
+    // 测量工具（2026-09-25 升级）：
+    // ① 现代色彩函数 color(srgb r g b / a) 的分量是 0..1 浮点，不能按 0..255 解析；
+    // ② 文字/背景可能带 alpha，须先与有效背景合成再算对比度；
+    // ③ 芯片自身背景可能透明，须沿祖先链找到第一个非透明背景。
     const ratios = await chips.evaluateAll((nodes) => {
-      const parse = (value: string) =>
-        (value.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map((part) => Number(part));
+      const parseColor = (value: string): [number, number, number, number] | null => {
+        const fn = value.match(/^rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,\/]\s*([\d.]+))?\)$/i);
+        if (fn) {
+          const [, r, g, b, a] = fn;
+          return [Number(r), Number(g), Number(b), a === undefined ? 1 : Number(a!)];
+        }
+        const srgb = value.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/i);
+        if (srgb) {
+          const [, r, g, b, a] = srgb;
+          return [Number(r) * 255, Number(g) * 255, Number(b) * 255, a === undefined ? 1 : Number(a!)];
+        }
+        return null;
+      };
       const luminance = (r: number, g: number, b: number) => {
         const [lr, lg, lb] = [r, g, b].map((channel) => {
           const v = channel / 255;
@@ -326,16 +341,42 @@ test("keeps brand chip text readable across all nine themes", async ({ page }) =
         });
         return 0.2126 * lr! + 0.7152 * lg! + 0.0722 * lb!;
       };
-      return nodes.map((node) => {
-        const [fr, fg, fb] = parse(getComputedStyle(node).color);
-        const [br, bg, bb] = parse(getComputedStyle(node).backgroundColor);
-        const textLum = luminance(fr!, fg!, fb!);
-        const backgroundLum = luminance(br!, bg!, bb!);
-        return (
-          (Math.max(textLum, backgroundLum) + 0.05) /
-          (Math.min(textLum, backgroundLum) + 0.05)
-        );
-      });
+      const composite = (
+        fg: [number, number, number, number],
+        bg: [number, number, number],
+      ): [number, number, number] => {
+        const alpha = Math.min(Math.max(fg[3], 0), 1);
+        return [0, 1, 2].map((index) =>
+          fg[index]! * alpha + bg[index]! * (1 - alpha),
+        ) as [number, number, number];
+      };
+      const effectiveBackground = (node: Element): [number, number, number] => {
+        let current: Element | null = node;
+        while (current) {
+          const parsed = parseColor(getComputedStyle(current).backgroundColor);
+          if (parsed && parsed[3]! >= 1) return [parsed[0]!, parsed[1]!, parsed[2]!];
+          current = current.parentElement;
+        }
+        return [255, 255, 255];
+      };
+      return nodes
+        // WCAG 1.4.3 豁免禁用控件：禁用目标里的品牌芯片不参与 AA 采样。
+        .filter((node) => !(node.closest("label")?.querySelector("input:disabled")))
+        .map((node) => {
+        const foreground = parseColor(getComputedStyle(node).color);
+        const background = parseColor(getComputedStyle(node).backgroundColor);
+        if (!foreground || !background) return 21;
+        const base = background[3]! >= 1
+          ? [background[0]!, background[1]!, background[2]!] as [number, number, number]
+          : composite(background, effectiveBackground(node.parentElement));
+        const textColor = composite(foreground, base);
+          const textLum = luminance(...textColor);
+          const backgroundLum = luminance(...base);
+          return (
+            (Math.max(textLum, backgroundLum) + 0.05) /
+            (Math.min(textLum, backgroundLum) + 0.05)
+          );
+        });
     });
     expect(ratios.length, `${theme.name} brand chip count`).toBeGreaterThanOrEqual(1);
     const worst = Math.min(...ratios);
