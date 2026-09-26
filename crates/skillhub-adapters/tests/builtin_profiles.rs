@@ -221,6 +221,16 @@ fn link_capabilities_are_true_only_when_documented_or_probe_verified() {
         "anthropic.claude-code",
         "zcode.desktop",
         "openclaw.agent",
+        // 2026-09-26 真机实证（junction-probe 探针 Skill）：六处 junction 全部
+        // 出现在技能列表、调用返回探针字符串、共享目录与专属目录去重为一个条目。
+        "agent-skills.shared-directory",
+        "cursor.editor",
+        "cursor.cli",
+        "github-copilot.cli",
+        "github-copilot.ide",
+        "google.gemini-cli",
+        "kimi.code",
+        "trae.code",
     ];
     for profile in catalog.profiles {
         for client in profile.clients {
@@ -477,6 +487,8 @@ fn brand_profiles_reference_agents_skills_without_claiming_ownership() {
 /// `builtin=true` 登记为只读平台目录；内置条目一律全局、可共存优先级，
 /// 不参与部署与删除。WorkBuddy/DeepSeek Harness/Kimi 的内置目录位于安装
 /// 目录或含变量段，无法以稳定占位符表达，本轮不登记（见调研文档）。
+/// 2026-09-26：豆包工作内置目录经用户真机核实位于用户 AppData 下，
+/// 可用 `{user_home}` 占位符稳定表达，追加登记（内置条目 5 → 6）。
 #[test]
 fn builtin_directories_are_declared_as_read_only_platform_candidates() {
     let catalog = ProfileCatalog::builtin();
@@ -509,6 +521,12 @@ fn builtin_directories_are_declared_as_read_only_platform_candidates() {
             "{user_home}/.trae-cn/builtin/global/skills".to_string(),
         ],
     );
+    assert_eq!(
+        builtin_paths("doubao-work.desktop"),
+        vec![
+            "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.skills".to_string(),
+        ],
+    );
     let builtin_count = catalog
         .profiles
         .iter()
@@ -517,7 +535,7 @@ fn builtin_directories_are_declared_as_read_only_platform_candidates() {
         .filter(|candidate| candidate.builtin)
         .count();
     assert_eq!(
-        builtin_count, 5,
+        builtin_count, 6,
         "only the real-machine confirmed built-in directories may be declared"
     );
     let all_builtin = catalog

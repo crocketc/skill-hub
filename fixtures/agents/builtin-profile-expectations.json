@@ -117,7 +117,10 @@
       "{user_home}/.dsh/skills"
     ],
     "doubao": [
-      "{user_home}/.agents/skills"
+      "{project_root}/skills",
+      "{user_home}/.agents/skills",
+      "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.skills",
+      "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.user_skills"
     ]
   }
 }

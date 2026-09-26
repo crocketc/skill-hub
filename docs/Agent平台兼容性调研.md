@@ -406,6 +406,7 @@ Kimi Code 支持目录型和扁平型 Skill，兼容 `.agents/skills`，支持�
 - 已确认（官方产品文档）：用户级 `$KIMI_CODE_HOME/skills`（默认 `~/.kimi-code/skills`）与 `~/.agents/skills`；项目级 `.kimi-code/skills` 与 `.agents/skills`；`extra_skill_dirs`；Project > User > Extra > Built-in；Flow Skill（`type: flow`）与手动/自动调用；扁平 Markdown 单文件亦可作为 Skill，名称取文件名。
 - 官方文档分歧（并列记录，不自行取舍）：开源仓库文档将候选目录改为“品牌组 + 通用组”双组机制。用户级品牌组为 `~/.kimi/skills/` > `~/.claude/skills/` > `~/.codex/skills/`，通用组为 `~/.config/agents/skills/`（推荐）> `~/.agents/skills/`；项目级同构，品牌组为 `.kimi/skills/` > `.claude/skills/` > `.codex/skills/`，通用组为 `.agents/skills/`。两组各自选取后合并加载，品牌组优先；`merge_all_available_skills` 默认为 `true` 时品牌组全部加载并按 kimi > claude > codex 解析同名。这与产品文档的 `$KIMI_CODE_HOME/skills` 表述不一致，本文两套并列，留待实测裁定。
 - 关键影响：按仓库文档，Kimi Code 会读取 Claude 与 Codex 的用户级 Skill 目录。本机 `~/.claude/skills`（16 个）与 `~/.codex/skills`（9 个）均存在，因此同一份 Skill 可能被 Kimi Code、Claude Code、Codex 同时发现；重复检测必须结合内容哈希与文件身份判断，不能仅按 Skill 名称或目录计数。
+- 真机确认（Windows，2026-09-26，Junction 探针）：`~/.kimi-code/skills` 与 `~/.agents/skills` 两处 junction 入口均出现在技能列表、调用返回探针字符串，且两处同名时列表只显示一个条目（见 5.25）。junction 声明升级为 `true`。
 - 必须验证：两套官方表述何者在实际版本中生效、`merge_all_available_skills` 的实际默认值与同名解析结果、Windows/macOS 安装路径、扁平与目录型冲突、Flow Skill 是否需要特殊类型标记、当前会话刷新、插件格式和链接行为。
 - 结论：完整适配候选。
 
@@ -475,7 +476,7 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 本文中的 Hermes 指 Nous Research Hermes Agent。它具有用户、项目、外部目录、插件、官方 Hub、信任和安全扫描机制。
 
-- 已确认：`~/.hermes/skills`、项目 `.hermes/skills` 和 `.agents/skills`、项目 trust、`skills.external_dirs`、Project > Local > External、Hub 安装更新卸载和插件命名空间。
+- 已确认：`~/.hermes/skills`、项目 `.hermes/skills` 和 `.agents/skills`、项目 trust、`skills.external_dirs`、Project > Local > External、Hub 安装更新卸载和插件命名空间。用户观察（2026-09-26）：Hermes 与 OpenClaw 同样存在「工作区技能」概念，与豆包工作的工作区目录同构，跨 Agent 的工作区 scope 建模可互相参照。
 - 必须验证：Windows 原生实际根目录、external dirs 热刷新、Skill 目录链接、调用日志以及不同 profile 的启停状态。
 - 结论：完整适配候选。
 
@@ -517,14 +518,15 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 - 已确认（官方产品资料/官方消息转引）：豆包工作提供面向 Windows 和 macOS 的桌面入口；豆包桌面端可从“技能·连接器·伙伴”进入技能、连接器和工作伙伴/小队；支持创建自定义技能，技能与连接器数量按公开消息为 200+。
 - 已确认（官方产品资料/官方消息转引）：工作任务可选择本地电脑或云电脑；本地模式需要用户授权指定文件夹，Agent 可在授权范围内处理本地文件。该授权范围是任务执行沙箱/工作区边界，不是全局或项目 Skill 根目录。
-- 已确认（Windows 真机，2026-09-25，第二轮目录核实）：内置/工作区 Skill 目录实际位于 `%LOCALAPPDATA%\DoubaoWork\User Data\Default\.doubaowork\agent_mode\workspace\.skills\`，实测含 106 个带 `SKILL.md` 的目录型 Skill；同层 `.user_skills\` 与用户工作区 `~DoubaoWork\skills\` 为空。该 AppData 路径随安装与账号 profile（`Default`）变化，不作为稳定公开契约写入 profile，仅作研究记录。
+- 已确认（Windows 真机，2026-09-25，第二轮目录核实）：内置/工作区 Skill 目录实际位于 `%LOCALAPPDATA%\DoubaoWork\User Data\Default\.doubaowork\agent_mode\workspace\.skills\`，实测含 106 个带 `SKILL.md` 的目录型 Skill；同层 `.user_skills\` 与用户工作区 `~DoubaoWork\skills\` 为空。~~该 AppData 路径随安装与账号 profile（`Default`）变化，不作为稳定公开契约写入 profile~~（2026-09-26 更新：用户再次真机确认四个目录后，profile 已按「内置只读观察 + 用户目录 + 工作区目录」登记，见下）。
+- 已确认（Windows 真机，2026-09-26，用户逐项确认）：豆包工作本机 Skill 目录共四处——`%LOCALAPPDATA%\DoubaoWork\User Data\Default\.doubaowork\agent_mode\workspace\.skills`（系统内置技能目录）、同层 `.user_skills`（用户自定义技能目录）、`~DoubaoWork\skills`（工作区技能目录）、`~/.agents/skills`（全局 Agent 技能目录）。据此 profile 新增：内置目录以 `builtin=true`（global，may_coexist，只观察不写入，对齐 Cursor `skills-cursor` 先例）登记；`.user_skills` 以 global preferred 登记；工作区目录以 `{project_root}/skills`（project scope）登记——「工作区技能」按项目路径建模，与 OpenClaw 的 Workspace 层、Hermes 的项目目录同构。`internal_skill_dirs_not_public_contract` 限制随登记移除。
 - 已确认（Windows 真机，2026-09-16，目录观察）：通过 UI 导入的 PDF Skill 落在应用工作区的 `.user_skills/pdf/`，目录包含 `SKILL.md`、参考资料和脚本；应用工作区另有 `.skills/` 目录，实测包含大量目录型 `SKILL.md` Skill。该内部路径应视为当前版本的本机观察结果，不直接等同于稳定公开 API。
 - 已确认（Windows 真机，2026-09-16，行为反查）：豆包工作能够自动发现、识别并正常调用用户级 `~/.agents/skills` 共享目录中的 Skill。该结论证明 `.agents/skills` 可作为豆包工作的本地 Skill 来源；但尚未证明豆包工作会把该目录作为可写部署目标，或支持项目级 `.agents/skills` 的完整优先级规则。
 - 已确认（公开使用资料，非稳定目录契约）：技能可以通过界面选择、管理或导入，连接器需要单独授权，工作伙伴是独立的专业 Agent 形态；三者的在线/账号资产与本地文件 Skill 应分开建模。
 - 未确认：项目级 Skill 根目录、项目根识别、`.doubaowork` 内部目录是否长期稳定、同名优先级、市场/导入后的所有权、启停落盘、刷新/重开会话行为、符号链接与 Windows Directory Junction、macOS 实际路径及调用记录。
 - 重要边界：云电脑与本地电脑是两个执行环境；本地电脑中授权或安装的 Skill 不能默认视为云电脑可见，反之亦然。手机端的远程派单和任务查看也不等于手机端拥有本地 Skill 文件目录。
 - SkillHub 接入建议：维持部分文件管理接入候选；可记录 `.agents/skills` 为已确认可读取、可识别、可调用的本地 Skill 来源，并把 `.user_skills/<name>/` 记录为 Windows 当前版本的内部用户 Skill 存储观察项。外部写入部署、项目级目录和解除部署仍需保守处理，不覆盖平台技能市场、连接器资产或未确认的内部目录。
-- 调研结论：豆包工作已于 2026-09-25 建立独立的 `doubao-work` profile（`crates/skillhub-adapters/profiles/doubao.json`，内置客户端 `doubao-work.desktop`，品牌图标取自官方 CDN 一手素材）；profile 仅声明用户级共享目录 `{user_home}/.agents/skills`（preferred，shared_reference，部署采用受控复制），不声明内部 AppData 目录。项目级规则、优先级、刷新、符号链接/Junction、macOS 实际路径仍待测试，不能复用 TraeCode、TraeWork、WorkBuddy 或普通豆包的路径规则。
+- 调研结论：豆包工作已于 2026-09-25 建立独立的 `doubao-work` profile（`crates/skillhub-adapters/profiles/doubao.json`，内置客户端 `doubao-work.desktop`，品牌图标取自官方 CDN 一手素材）。2026-09-26 起profile 登记四个真机确认目录（内置只读、`.user_skills`、工作区 project scope、共享目录 shared_reference），部署仍采用受控复制——符号链接/Junction 对豆包未经探针验证，维持未确认。优先级、刷新、macOS 实际路径仍待测试，不能复用 TraeCode、TraeWork、WorkBuddy 或普通豆包的路径规则。
 
 主要来源：[豆包工作产品入口](https://www.doubao.com/work)、[豆包电脑版下载页](https://www.doubao.com/download/desktop)、[豆包官方关于工作任务升级的消息](https://weibo.com/2/detail/5334423399565762)、[豆包工作任务上线技能/连接器/工作伙伴的公开报道（转引豆包官方消息）](https://www.ithome.com/0/992/607.htm)、[火山引擎开发者社区补充文章（非产品规范）](https://developer.volcengine.com/articles/7675658258166022195)、Windows 真机目录观察与行为反查（2026-09-16；2026-09-25 第二轮内置目录核实）。真机证据只覆盖当前 Windows 安装和当前账号/客户端状态；用户 Skill 内容不纳入项目记录，内部目录不视为官方稳定契约。
 
@@ -555,6 +557,16 @@ Grok 品牌下至少需要拆分三个客户端 profile。Grok Build 是 xAI 官
 - 结论：有限接入候选，只展示能力边界和官方帮助链接，不套用 Grok Build 目录。
 
 主要来源：[Grok Build 概览](https://docs.x.ai/build/overview)、[Grok Build Skills、Plugins 与 Marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)、[Grok Build CLI Reference](https://docs.x.ai/build/cli/reference)、[xAI Grok Build 官方仓库 Skills 指南](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/08-skills.md)、[Grok consumer Skills 发布说明](https://x.ai/news/grok-skills)、[Grok consumer 概览](https://docs.x.ai/grok/overview)、[Grok Bot Skills 与 Routines](https://docs.x.ai/grok-bot/skills-routines-and-automations)、[Grok Bot 入门](https://docs.x.ai/grok-bot/get-started)。资料复核日期：2026-08-21。
+
+### 5.25 Windows 目录联接真机探针实证（2026-09-26，跨客户端）
+
+采用 skills.sh 安装器的同构做法（Windows 上 Node `fs.symlink(..., 'junction')`，无需管理员或开发者模式）做了一次跨客户端探针实验：在 `~/.skillhub-junction-test/junction-probe` 放置一个含 `SKILL.md` 的探针 Skill，并在各 Agent 技能目录创建指向它的目录联接，由用户在真机逐个验证。结果：
+
+- **全部通过**：Kimi Code（`~/.kimi-code/skills`）、Cursor（`~/.cursor/skills`）、Trae（`~/.trae-cn/skills`）、Gemini CLI（`~/.gemini/skills`）、GitHub Copilot（`~/.copilot/skills`）及共享目录 `~/.agents/skills` —— junction-probe 均出现在技能列表，调用返回探针字符串（JUNCTION-OK-0926）。
+- **共享目录去重**：Kimi 同时读到专属目录与共享目录两处 junction 入口时，列表只显示一个条目，未重复出卡。
+- **profile 落地**：上述客户端的 `junction` 声明由 `false + junction_support_unconfirmed` 升级为 `true`，与 DEV-21 的「真机探针实证」通道一致；`builtin_profiles.rs` 的 junction 验证名单同步扩充。
+- **未覆盖**：Hermes 与 Gemini Antigravity（本机未安装对应目录）、豆包工作（本轮未建探针，junction 仍维持未确认）；这些客户端的 junction 声明不变，待装机后补测。
+- **现场清理**：6 处 junction 入口与探针正本已全部删除，验证时点各 Agent 目录无残留。
 
 ---
 

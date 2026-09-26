@@ -1,6 +1,6 @@
 {
   "profile_version": 1,
-  "research_date": "2026-09-25",
+  "research_date": "2026-09-26",
   "official_references": [
     "https://www.doubao.com/work",
     "https://www.doubao.com/download/desktop"
@@ -11,8 +11,30 @@
       "id": "doubao-work.desktop",
       "kind": "desktop",
       "display_name": "豆包工作",
-      "supported_os": ["windows", "macos"],
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
       "path_candidates": [
+        {
+          "path": "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.skills",
+          "scope": "global",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md",
+          "builtin": true
+        },
+        {
+          "path": "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.user_skills",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/skills",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
         {
           "path": "{user_home}/.agents/skills",
           "scope": "global",
@@ -30,7 +52,6 @@
           "runtime_loading_unknown",
           "symlink_support_unconfirmed",
           "junction_support_unconfirmed",
-          "internal_skill_dirs_not_public_contract",
           "macos_support_unconfirmed"
         ]
       },

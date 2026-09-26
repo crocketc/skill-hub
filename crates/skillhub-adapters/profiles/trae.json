@@ -1,6 +1,6 @@
 {
   "profile_version": 1,
-  "research_date": "2026-09-23",
+  "research_date": "2026-09-26",
   "official_references": [
     "https://docs.trae.cn/ide_skills",
     "https://www.trae.ai/changelog",
@@ -55,10 +55,8 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
-        "limitations": [
-          "junction_support_unconfirmed"
-        ]
+        "junction": true,
+        "limitations": []
       },
       "call_policy": "unknown"
     },

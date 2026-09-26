@@ -1,6 +1,6 @@
 {
   "profile_version": 1,
-  "research_date": "2026-09-23",
+  "research_date": "2026-09-26",
   "official_references": [
     "https://prod.cursor.com/docs/skills",
     "https://docs.cursor.com/en/cli/overview",
@@ -61,10 +61,8 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
-        "limitations": [
-          "junction_support_unconfirmed"
-        ]
+        "junction": true,
+        "limitations": []
       },
       "call_policy": "unknown"
     },
@@ -100,10 +98,8 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
-        "limitations": [
-          "junction_support_unconfirmed"
-        ]
+        "junction": true,
+        "limitations": []
       },
       "call_policy": "unknown"
     }
