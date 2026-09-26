@@ -24,6 +24,7 @@
     "retry": "重试"
   },
   "notifications": {
+    "expandStack": "展开 {{count}} 条通知",
     "regionLabel": "通知",
     "buttonLabel": "通知",
     "buttonWithUnread": "通知，{{count}} 条未读",
@@ -588,7 +589,8 @@
       "excludeFailed": "排除失败（{{code}}），目录保持不变。",
       "excludedNotice": "已排除 {{path}}。可在设置的忽略规则中恢复。",
       "builtinLabel": "内置",
-      "builtinHint": "该目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。"
+      "builtinHint": "该目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。",
+      "rescanResult": "已扫描 {{clients}} 个 Agent、{{targets}} 个部署目标"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -1869,7 +1871,8 @@
         "runtimeNameExists": "目标中已有同名 Skill，无法直接添加。",
         "ownershipUnknown": "无法确认目标内容的归属，添加前需要检查。",
         "managedByAnotherSkill": "目标已由其他 Skill 管理，无法直接添加。"
-      }
+      },
+      "fallbackMode": "回退方式"
     },
     "batch": {
       "heading": "添加 {{count}} 个 Skill",
@@ -1883,9 +1886,6 @@
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
       "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
       "technicalDetails": "技术详情",
-      "skillId": "Skill ID",
-      "pairId": "部署条目",
-      "rawError": "原始错误",
       "finalSummary": "链接部署 {{link}} · 复制部署 {{copy}} · 无需变更 {{noChange}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
     },
     "mode": {
@@ -2029,7 +2029,7 @@
     "loadError": "无法读取删除影响，请稍后重试。",
     "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
-    "retained": "保留：SkillHub 之外的原文件不受影响；目标副本按上方选择逐条处理。",
+    "retained": "保留：SkillHub 之外的原文件不受影响；每个目标上的副本按你为该行选择的方式处理。",
     "recovery": "恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。",
     "choiceLabel": "目标副本处理方式",
     "choose": "选择处理方式",
@@ -2045,7 +2045,7 @@
       "heading": "检查批量删除影响",
       "description": "已选择从库中删除 {{count}} 个 Skill。请先处理每个部署关系。",
       "noDeployments": "没有部署关系，可以直接删除。",
-      "continue": "继续并强制删除",
+      "continue": "继续删除",
       "forceConfirm": "强制删除 {{count}} 个 Skill",
       "loadError": "无法读取批量删除影响，请稍后重试。",
       "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。",
@@ -2060,11 +2060,13 @@
         "pinnedVersions": "固定版本：{{count}} 项",
         "relatedSkills": "相关 Skill",
         "unknownExternalReferences": "未知外部引用（仅提示，不会修改）"
-      }
+      },
+      "deleteAll": "确认删除"
     },
     "tracker": {
       "batchLabel": "移出技能库"
-    }
+    },
+    "dependentsLabel": "依赖项目"
   },
   "undeploy": {
     "eyebrow": "从 Agent/项目移除",
@@ -2088,7 +2090,7 @@
   "pending": {
     "eyebrow": "待处理事项",
     "heading": "完成待处理事项",
-    "description": "每个事项都提供直接的后续操作；未完成的工作会持续显示。",
+    "description": "集中处理安全发现、试用到期、技能冲突、关系治理和异常恢复。完成处理后，事项会自动移出列表。",
     "loading": "正在加载待处理事项",
     "empty": "没有待处理事项",
     "listHeading": "需要关注的事项",
@@ -2110,7 +2112,9 @@
     "kinds": {
       "trial_due": "待确认试用",
       "security_finding": "安全发现",
-      "recovery": "恢复事项"
+      "recovery": "恢复事项",
+      "conflict": "技能冲突",
+      "governance": "关系治理"
     },
     "actions": {
       "recheck": "重新检查",
@@ -2119,7 +2123,9 @@
       "defer": "暂缓",
       "ignore": "忽略",
       "deferReason": "暂缓 {{days}} 天，到期后再提醒",
-      "ignoreReason": "永久忽略该待处理事项"
+      "ignoreReason": "永久忽略该待处理事项",
+      "open": "去处理",
+      "refresh": "刷新待办"
     },
     "defer": {
       "durationLabel": "暂缓时长",
@@ -2142,7 +2148,7 @@
       "ignoreConfirmDescription": "所选 {{count}} 项将从待处理列表中永久隐藏；你可以在下方“处理历史”里撤销。",
       "ignoreConfirmConfirm": "确认批量忽略",
       "progress": "正在处理 {{completed}}/{{total}}",
-      "noBatchContract": "转换、重查与恢复暂无批量契约，请逐条处理。"
+      "noBatchContract": "可批量暂缓或忽略提醒；冲突、治理及恢复事项请逐项处理。"
     },
     "history": {
       "heading": "处理历史",
@@ -2150,7 +2156,8 @@
       "undo": "撤销",
       "createdAt": "创建于",
       "deferUntil": "暂缓截止",
-      "permanent": "永久"
+      "permanent": "永久",
+      "entry": "待办提醒记录"
     },
     "savedView": {
       "loadFailed": "视图偏好未能恢复，本次会话使用默认筛选。",
@@ -2161,7 +2168,19 @@
     },
     "errors": {
       "generic": "操作失败（{{code}}）。请稍后重试。"
-    }
+    },
+    "requiredAction": "请进入对应页面完成处理",
+    "loadFailed": "待办来源未能完整读取，请重试。",
+    "reasons": {
+      "conflict": "有待确认的技能冲突，需要选择处理方式。",
+      "needs_validation": "关系信息需要重新校验或确认。",
+      "needs_attention": "关系发生变化，需要检查并处理。",
+      "blocked": "关系处理受阻，请查看原因和可用的解决方式。",
+      "recovery": "有未完成的操作，请进入恢复页面核对后处理。",
+      "security_finding": "当前版本存在尚未处理的安全发现，请查看详情或重新检查。",
+      "trial_due": "试用已到期，请决定是否转为常规技能。"
+    },
+    "count": "共 {{count}} 项待办"
   },
   "recovery": {
     "eyebrow": "恢复",
@@ -2171,7 +2190,6 @@
     "acknowledge": "确认恢复",
     "noCandidates": "当前没有需要恢复的操作。",
     "candidatesHeading": "需要恢复的操作",
-    "candidateLabel": "选择操作 {{id}}",
     "resolved": "已恢复：这次未完成的改动已撤销。",
     "errors": {
       "generic": "恢复失败（错误码：{{code}}）。请重试；若持续失败，请把该错误码提供给支持人员。"
@@ -2180,7 +2198,8 @@
       "records": "操作记录",
       "backupRestore": "备份恢复",
       "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
-    }
+    },
+    "unknownOperation": "未知操作"
   },
   "relationshipGovernance": {
     "relationship": {
@@ -2350,7 +2369,6 @@
       "fitView": "适配内容（整体居中）",
       "unknownSkill": "未确认 Skill 身份",
       "technicalDetails": "技术详情",
-      "centerIdLabel": "Skill 标识",
       "collapsedSummary_one": "已折叠或隐藏 {{count}} 项",
       "collapsedSummary_other": "已折叠或隐藏 {{count}} 项",
       "collapsedNodeLabel_one": "已折叠 {{count}} 项",
@@ -2403,7 +2421,6 @@
       "revisionLabel": "关系事实修订",
       "detailsRelationship": "关系类型",
       "detailsState": "状态",
-      "detailsRelationId": "关系 ID",
       "inaccessible": "不可访问",
       "needsValidation": "待校验",
       "viewSkill": "查看 Skill",
@@ -2773,7 +2790,6 @@
     "loading": "正在加载操作",
     "progressLabel": "操作进度",
     "technicalDetails": "技术细节",
-    "operationId": "操作 ID",
     "phases": {
       "planned": "已计划",
       "prepared": "已准备",
@@ -2816,6 +2832,7 @@
       "error": "操作记录读取失败：{{error}}",
       "state": "状态：{{state}}",
       "errorCode": "错误码：{{code}}",
+      "errorFailure": "操作未能完成（{{code}}）。",
       "sessionRunning": "进行中（{{completed}}/{{total}}）",
       "sessionCompleted": "成功 {{succeeded}}、失败 {{failed}}、跳过 {{skipped}}、待处理 {{todo}}",
       "sessionFailed": "失败",
@@ -2872,7 +2889,7 @@
       "themeSaveError": "主题未能保存，已恢复为原来的设置。",
       "themeSaved": "已保存主题设置",
       "reducedMotion": "始终减少动效",
-      "reducedMotionDescription": "开启后界面过渡与提示动效改为即时出现、即时消失；系统已开启减少动效时无需重复设置。"
+      "reducedMotionDescription": "开启后 SkillHub 界面过渡与提示动效改为即时出现、即时消失；此设置独立于 Windows 动画偏好。"
     },
     "library": {
       "heading": "技能库",
@@ -3277,7 +3294,9 @@
         "security_finding_one": "{{count}} 个安全问题",
         "security_finding_other": "{{count}} 个安全问题",
         "trial_due_one": "{{count}} 个试用待确认",
-        "trial_due_other": "{{count}} 个试用待确认"
+        "trial_due_other": "{{count}} 个试用待确认",
+        "conflict": "{{count}} 组技能冲突",
+        "governance": "{{count}} 条关系待治理"
       },
       "none": "没有待处理事项",
       "title": "{{count}} 项待处理"
@@ -3412,7 +3431,8 @@
     },
     "notices": {
       "viewRecord": "查看操作记录",
-      "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。"
+      "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
+      "batchResult": "成功 {{succeeded}}、失败 {{failed}}"
     }
   }
 }

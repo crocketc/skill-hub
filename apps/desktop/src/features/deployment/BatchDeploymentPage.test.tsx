@@ -539,7 +539,7 @@ it("moves focus to the preview heading after a (re-)preview (14.16)", async () =
   expect(screen.getByRole("heading", { name: /添加计划/ })).toHaveFocus();
 });
 
-it("maps the skill UUID to a display name in pair rows and keeps the raw id in technical details (DEV-18-A)", async () => {
+it("maps the skill UUID to a display name and never renders the raw id (DEV-18-A + DEV-99)", async () => {
   const user = userEvent.setup();
   const facade = batchFacade(() => previewBatch([pair({ pairId: "sku-0001-aaaa:t1", skillId: "sku-0001-aaaa", skillDisplayName: "PDF 抽取器" })]));
 
@@ -549,10 +549,9 @@ it("maps the skill UUID to a display name in pair rows and keeps the raw id in t
 
   const plan = await screen.findByRole("region", { name: /添加计划/ });
   expect(within(plan).getByText("PDF 抽取器")).toBeVisible();
-  // 裸 UUID 仅出现在「技术详情」可展开区域内，不作为主文案。
-  const idNode = within(plan).getByText("sku-0001-aaaa");
-  expect(idNode.closest("details")).not.toBeNull();
-  expect(idNode).not.toBeVisible();
+  // DEV-99：内部 id 全面退出界面——技术详情折叠区也不展示。
+  expect(within(plan).queryByText("sku-0001-aaaa")).toBeNull();
+  expect(within(plan).queryByText("Skill ID")).toBeNull();
 });
 
 it("renders every blocked reason in user-facing words and keeps raw causes in technical details (14.4)", async () => {
@@ -576,10 +575,8 @@ it("renders every blocked reason in user-facing words and keeps raw causes in te
   expect(within(plan).getByText(/目标目录已存在同名内容/)).toBeVisible();
   expect(within(plan).getByText(/目标目录当前无法访问/)).toBeVisible();
   expect(within(plan).getByText(/其他 Agent 也在读取这个共享目录/)).toBeVisible();
-  // 原始 code 只进技术详情；首屏不可见。
-  const raw = within(plan).getByText("deployment.symlink_not_supported");
-  expect(raw.closest("details")).not.toBeNull();
-  expect(raw).not.toBeVisible();
+  // DEV-99：原始 code 不进界面（含技术详情折叠区）。
+  expect(within(plan).queryByText("deployment.symlink_not_supported")).toBeNull();
 });
 
 it("swaps the target list for the plan panel at the preview step and supports going back", async () => {

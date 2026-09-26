@@ -12,6 +12,7 @@ import { nativeProjectFacade } from "../features/projects/nativeApi";
 import { nativeRemovalFacade } from "../features/removal/nativeApi";
 import { nativeSecurityFacade } from "../features/security/nativeApi";
 import { nativePendingFacade } from "../features/pending/nativeApi";
+import type { PendingKind } from "../features/pending/api";
 import { nativeOperationFacade } from "../features/operations/nativeApi";
 import { nativeBackupFacade } from "../features/backup/nativeApi";
 import { nativeSettingsFacade } from "../features/settings/nativeApi";
@@ -32,6 +33,7 @@ import { DiscoveryRoute } from "./DiscoveryRoute";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
 import { skillDetailKeys } from "../features/skill-detail/api";
+import { useSkillHubReducedMotion } from "../ui/reducedMotion";
 import { desktopDiscoveryFacade } from "../features/discovery/api";
 import {
   SkillLibraryPreview,
@@ -189,6 +191,20 @@ function SkillDetailRoute() {
   return <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} /></RouteSuspense>;
 }
 
+function RecoveryRoute() {
+  const [params] = useSearchParams();
+  const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
+  return <RouteSuspense><RecoveryPage facade={nativeOperationFacade} initialOperationId={params.get("operationId") ?? undefined} onResolved={refreshSnapshot} /></RouteSuspense>;
+}
+
+function PendingRoute() {
+  const [params] = useSearchParams();
+  const value = params.get("kind");
+  const kinds: PendingKind[] = ["trial_due", "security_finding", "conflict", "governance", "recovery"];
+  const initialKind = kinds.find((kind) => kind === value);
+  return <RouteSuspense><PendingPage key={initialKind ?? "all"} facade={nativePendingFacade} initialKind={initialKind} /></RouteSuspense>;
+}
+
 function DeploymentRoute() {
   const { skillId } = useParams();
   const effectiveSkillId = skillId ?? "unknown";
@@ -287,7 +303,7 @@ export const appRouter = createBrowserRouter([
     element: <DesktopApp />,
     path: "/",
     children: [
-      { index: true, element: <RouteSuspense><OverviewPage /></RouteSuspense> },
+      { index: true, element: <RouteSuspense><OverviewPage pendingFacade={nativePendingFacade} /></RouteSuspense> },
       {
         path: "library",
         element: <SkillLibraryRoute />,
@@ -319,10 +335,10 @@ export const appRouter = createBrowserRouter([
       { path: "agents/:agentKey", element: <AgentDetailRoute /> },
       { path: "projects", element: <ProjectListRoute /> },
       { path: "projects/:projectKey", element: <ProjectDetailRoute /> },
-      { path: "pending", element: <RouteSuspense><PendingPage facade={nativePendingFacade} /></RouteSuspense> },
+      { path: "pending", element: <PendingRoute /> },
       { path: "operations/:operationId", element: <OperationRoute /> },
       { path: "operations", element: <RouteSuspense><OperationsRecordsPage /></RouteSuspense> },
-      { path: "recovery", element: <RouteSuspense><RecoveryPage facade={nativeOperationFacade} /></RouteSuspense> },
+      { path: "recovery", element: <RecoveryRoute /> },
       { path: "settings", element: <RouteSuspense><SettingsPage facade={nativeSettingsFacade} /></RouteSuspense> },
       { path: "settings/data-protection", element: <RouteSuspense><DataProtectionPage facade={nativeBackupFacade} /></RouteSuspense> },
     ],
@@ -370,9 +386,10 @@ export const appRouter = createBrowserRouter([
 ]);
 
 export function AppRouter() {
+  const reducedMotion = useSkillHubReducedMotion();
   return (
     <ThemeProvider>
-      <MotionConfig reducedMotion="user">
+      <MotionConfig reducedMotion={reducedMotion ? "always" : "never"}>
         <I18nextProvider i18n={skillHubI18n}>
           <QueryClientProvider client={queryClient}>
             <RouterProvider router={appRouter} />

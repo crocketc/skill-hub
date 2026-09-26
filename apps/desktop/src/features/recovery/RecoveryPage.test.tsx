@@ -8,6 +8,28 @@ import { createSkillHubI18n } from "../../i18n";
 import { RecoveryPage } from "./RecoveryPage";
 import type { OperationFacade, OperationState } from "../operations/api";
 
+it("opens the requested recovery directly and refreshes the startup state after resolution", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const onResolved = vi.fn(async () => undefined);
+  const resolveRecovery = vi.fn(async () => undefined);
+  const facade = createFacade({
+    listRecoveryCandidates: async () => [
+      { operationId: "op-first", actions: ["rollback_operation"], kind: "deploy_skill", objectName: null, createdAt: "1789890340" },
+      { operationId: "op-requested", actions: ["rollback_operation"], kind: "delete_skill", objectName: "Notes", createdAt: "1789890341" },
+    ],
+    resolveRecovery,
+  });
+  render(<MemoryRouter><I18nextProvider i18n={i18n}><RecoveryPage facade={facade} initialOperationId="op-requested" onResolved={onResolved} /></I18nextProvider></MemoryRouter>);
+  // DEV-98：候选与摘要用「本地化操作名：对象名」呈现，技术 id 和原始 kind
+  // 不再出现在界面（operation id 只作为内部 value）。
+  expect(await screen.findByRole("radio", { name: "删除技能：Notes" })).toBeChecked();
+  expect(screen.queryByText(/op-requested/)).toBeNull();
+  expect(screen.queryByText("delete_skill")).toBeNull();
+  await userEvent.setup().click(screen.getByRole("button", { name: "确认恢复" }));
+  expect(resolveRecovery).toHaveBeenCalledWith("op-requested", "rollback_operation");
+  expect(onResolved).toHaveBeenCalledOnce();
+});
+
 const operation: OperationState = {
   operationId: "op-recover",
   phase: "needs_recovery",
@@ -72,15 +94,18 @@ it("lists every recovery candidate so the gate always has an exit", async () => 
   await renderPage(createFacade({
     async listRecoveryCandidates() {
       return [
-        { operationId: "op-first", actions: ["rollback_operation"] },
+        { operationId: "op-first", actions: ["rollback_operation"], kind: "import_skill", objectName: "Writer", createdAt: "1789890340" },
         { operationId: "op-second", actions: ["rollback_operation"] },
       ];
     },
   }));
 
   await user.click(screen.getByRole("tab", { name: "备份恢复" }));
-  expect(screen.getByLabelText("选择操作 op-first")).toBeVisible();
-  expect(screen.getByLabelText("选择操作 op-second")).toBeVisible();
+  // DEV-98：有快照事实的候选显示「操作名：对象名」；缺快照的如实标注未知操作，
+  // 两种情况都不暴露技术 id。
+  expect(screen.getByLabelText("导入技能：Writer")).toBeVisible();
+  expect(screen.getByLabelText("未知操作")).toBeVisible();
+  expect(screen.queryByText(/op-first/)).toBeNull();
 });
 
 it("recovers the selected candidate through resolve_recovery", async () => {

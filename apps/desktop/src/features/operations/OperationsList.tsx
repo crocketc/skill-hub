@@ -6,24 +6,10 @@ import { formatDateTime, resolveLocale, type SupportedLocale } from "../../i18n"
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
 import { useTrackedOperations, type OperationTracker, type TrackedOperation } from "../../platform/operationTracker";
+import { formatOperationTimes, localizeErrorCode, operationKindLabel } from "./labels";
 import { PHASE_PRESENTATION } from "./phasePresentation";
 import { type RecentOperationRow, type RecentOperationsReader } from "./api";
 import "./operations.css";
-
-/**
- * DEV-94：操作 kind 是内部技术名（import_skill 等），按「技术标识不进界面」
- * 约定映射为本地化操作名；不在表内的 kind（后端新增而映射未跟上）回退原文，
- * 由补映射修复，不在渲染层编造文案。
- */
-const KIND_LABEL_KEYS: Record<string, string> = {
-  delete_skill: "operations.kinds.delete_skill",
-  deploy_skill: "operations.kinds.deploy_skill",
-  import_skill: "operations.kinds.import_skill",
-  migrate_original: "operations.kinds.migrate_original",
-  relink_source_copy: "operations.kinds.relink_source_copy",
-  undeploy_skill: "operations.kinds.undeploy_skill",
-  uninstall_skill: "operations.kinds.uninstall_skill",
-};
 
 export interface OperationsListProps {
   /** 持久化的最近操作（BootstrapSnapshot.recent_operations）。 */
@@ -63,7 +49,7 @@ export function OperationsList({ recent, tracker }: OperationsListProps) {
 
   // 记录列表规模为数十行，直接逐行格式化；无测量证据不做记忆化
   // （计划第 2 节：性能优化必须有可复现的前后证据）。
-  const formattedTimes = formatTimes(
+  const formattedTimes = formatOperationTimes(
     rows?.map((row) => row.created_at) ?? [],
     locale,
   );
@@ -120,10 +106,9 @@ function RecentTimelineEntry({
   row: RecentOperationRow;
 }) {
   const { t } = useTranslation();
-  const labelKey = KIND_LABEL_KEYS[row.kind];
   // DEV-94：快照携带 object_name 时标题带对象名（「导入技能：Notes」），
   // 没有则退回本地化 kind 或原始 kind；技术名不裸奔进界面。
-  const label = labelKey ? t(labelKey as never) : row.kind;
+  const label = operationKindLabel(row.kind, (key) => String(t(key as never)));
   const title = row.object_name?.trim()
     ? (t("operations.list.objectTitle" as never, { label, name: row.object_name }) as string)
     : label;
@@ -157,7 +142,8 @@ function RecentTimelineEntry({
           </>
         ) : null}
         {row.error_code ? (
-          <p className="sh-operations-timeline__error">{t("operations.list.errorCode", { code: row.error_code })}</p>
+          // DEV-99：错误码不独立成值，映射为可读失败说明（码值仅作括注）。
+          <p className="sh-operations-timeline__error">{localizeErrorCode(row.error_code, (key, options) => String(t(key as never, options as never)))}</p>
         ) : null}
         <time className="sh-operations-timeline__time" dateTime={row.created_at}>
           {formattedTime}
@@ -216,18 +202,4 @@ function SessionTimelineEntry({ locale, operation }: { locale: SupportedLocale; 
       </div>
     </li>
   );
-}
-
-function formatTimes(values: string[], locale: SupportedLocale): string[] {
-  return values.map((value) => {
-    // DEV-94：后端 created_at 落库为 epoch 秒字符串（如 1789890340），
-    // 按 ISO 解析会得到 Invalid Date 并把原始数字串回显给用户；10 位纯
-    // 数字按秒转 Date。彻底解析不了的显示「—」，不回显原始值。
-    const epochSeconds = /^\d{10}$/.test(value) ? Number(value) : null;
-    const date =
-      epochSeconds !== null
-        ? new Date(epochSeconds * 1000)
-        : new Date(value);
-    return Number.isNaN(date.getTime()) ? "—" : formatDateTime(date, locale);
-  });
 }

@@ -15,6 +15,7 @@ import {
   type TooltipComponentOption,
 } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
+import { brandChartColor } from "../../ui/brandChartColor";
 import type { DeploymentBarChartRuntimeProps } from "./DeploymentBarChart";
 import { observeChartContainerResize } from "./chartContainerResize";
 
@@ -91,7 +92,9 @@ function buildChartOption({
         data: items.map((item) => ({
           itemStyle: {
             borderRadius: isHorizontal ? [0, 8, 8, 0] : [10, 10, 0, 0],
-            color: palette.barColor,
+            color: item.presentation
+              ? brandChartColor(item.presentation.brand)
+              : palette.barColor,
           },
           name: item.label,
           target: item.target,

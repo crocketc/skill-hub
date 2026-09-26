@@ -4,8 +4,8 @@ import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { Icon } from "../../ui/Icon";
 import { RemovalShell } from "./RemovalShell";
+import { RemovalDeploymentTarget, RemovalImpactMatrix } from "./RemovalImpactPieces";
 import { displayPath } from "../../platform/displayPath";
-import { AgentPresentation } from "../../ui/AgentPresentation";
 
 interface RemovalImpactDialogProps {
   error?: string;
@@ -45,12 +45,11 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
       title={t("removal.heading", { name: impact.skillName })}
     >
       <p>{t("removal.description")}</p>
-      {impact.dependentProjects.length > 0 ? <p className="sh-notice">{t("removal.dependents", { projects: impact.dependentProjects.join(", ") })}</p> : null}
       <div className="sh-workflow-list">
         {impact.deployments.map((deployment) => (
           <label className="sh-workflow-list__item" key={deployment.id}>
-            <span>{deployment.agentId ? <AgentPresentation agentId={deployment.agentId} brand={deployment.brand} sharedDirectory={deployment.sharedDirectory} /> : <strong>{deployment.label}</strong>}<small>{displayPath(deployment.path)}</small></span>
-            <select aria-label={`${t("removal.choiceLabel")}：${deployment.label}`} value={choices[deployment.id] ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [deployment.id]: event.target.value as RemovalChoice }))}>
+            <RemovalDeploymentTarget deployment={deployment} />
+            <select aria-label={`${t("removal.choiceLabel")}：${displayPath(deployment.path)}`} value={choices[deployment.id] ?? ""} onChange={(event) => setChoices((current) => ({ ...current, [deployment.id]: event.target.value as RemovalChoice }))}>
               <option value="">{t("removal.choose")}</option>
               <option value="keep_deployed">{t("removal.choices.keep")}</option>
               <option value="remove_deployment">{t("removal.choices.remove")}</option>
@@ -59,6 +58,8 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
           </label>
         ))}
       </div>
+      {/* DEV-97：影响矩阵与批量删除共用同一结构化呈现。 */}
+      <RemovalImpactMatrix impact={impact} />
       {/* P1-15：提交前固定说明保留什么与恢复方式（如实提示仅备份可恢复）。 */}
       <div className="sh-removal-flow__disclaimer">
         <p>{t("removal.retained")}</p>

@@ -3,8 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { RemovalShell } from "./RemovalShell";
-import { displayPath } from "../../platform/displayPath";
-import { AgentPresentation } from "../../ui/AgentPresentation";
+import { RemovalDeploymentTarget, RemovalImpactMatrix } from "./RemovalImpactPieces";
 
 interface BatchRemovalImpactDialogProps {
   error?: string;
@@ -28,6 +27,7 @@ export function BatchRemovalImpactDialog({
   const [armed, setArmed] = useState(false);
   const complete = impacts.every((impact) => impact.deployments.every((deployment) => choices[impact.operationId ?? ""]?.[deployment.id]));
   const count = impacts.length;
+  const anyDeployments = impacts.some((impact) => impact.deployments.length > 0);
   const confirmChoices = () => {
     void onConfirm(Object.fromEntries(
       impacts.map((impact) => [impact.operationId ?? "", choices[impact.operationId ?? ""] ?? {}]),
@@ -56,7 +56,8 @@ export function BatchRemovalImpactDialog({
               </Button>
             ) : (
               <Button disabled={!complete || submitting} onClick={() => setArmed(true)} size="lg" variant="danger">
-                {t("removal.batch.continue")}
+                {/* DEV-97：没有部署关系时语义就是删除本身；有部署关系才谈“继续”。 */}
+                {anyDeployments ? t("removal.batch.continue") : t("removal.batch.deleteAll")}
               </Button>
             )}
           </div>
@@ -75,11 +76,10 @@ export function BatchRemovalImpactDialog({
       {impacts.map((impact) => (
         <section className="sh-removal-impact__skill" key={impact.operationId ?? impact.skillId}>
           <h3>{impact.skillName}</h3>
-          {impact.dependentProjects.length > 0 ? <p className="sh-notice">{t("removal.dependents", { projects: impact.dependentProjects.join(", ") })}</p> : null}
           {impact.deployments.length === 0 ? <p>{t("removal.batch.noDeployments")}</p> : null}
           {impact.deployments.map((deployment) => (
             <label className="sh-workflow-list__item" key={deployment.id}>
-              <span>{deployment.agentId ? <AgentPresentation agentId={deployment.agentId} brand={deployment.brand} sharedDirectory={deployment.sharedDirectory} /> : <strong>{deployment.label}</strong>}<small>{displayPath(deployment.path)}</small></span>
+              <RemovalDeploymentTarget deployment={deployment} />
               <select
                 aria-label={`${t("removal.choiceLabel")}: ${deployment.label}`}
                 onChange={(event) => setChoices((current) => ({
@@ -98,32 +98,9 @@ export function BatchRemovalImpactDialog({
               </select>
             </label>
           ))}
-          {/* QA-001：完整影响矩阵逐项提示；未知外部内容只提示、不修改。 */}
-          {impact.declaredDependencies.length > 0 ? (
-            <p className="sh-notice">
-              {`${t("removal.batch.impact.declaredDependencies")}: ${impact.declaredDependencies.join(", ")}`}
-            </p>
-          ) : null}
-          {impact.combinations.length > 0 ? (
-            <p className="sh-notice">
-              {`${t("removal.batch.impact.combinations")}: ${impact.combinations.join(", ")}`}
-            </p>
-          ) : null}
-          {impact.pinnedVersions.length > 0 ? (
-            <p className="sh-notice">
-              {t("removal.batch.impact.pinnedVersions", { count: impact.pinnedVersions.length })}
-            </p>
-          ) : null}
-          {impact.relatedSkills.length > 0 ? (
-            <p className="sh-notice">
-              {`${t("removal.batch.impact.relatedSkills")}: ${impact.relatedSkills.join(", ")}`}
-            </p>
-          ) : null}
-          {impact.unknownExternalReferences.length > 0 ? (
-            <p className="sh-notice">
-              {`${t("removal.batch.impact.unknownExternalReferences")}: ${impact.unknownExternalReferences.join(", ")}`}
-            </p>
-          ) : null}
+          {/* QA-001：完整影响矩阵逐项提示（DEV-97 结构化呈现，共享组件）；
+              未知外部内容只提示、不修改。 */}
+          <RemovalImpactMatrix impact={impact} />
         </section>
       ))}
       {error ? <p role="alert">{error}</p> : null}

@@ -145,8 +145,9 @@ test.describe("long text and multiple providers", () => {
   });
 
   test("drawer keeps long drafts on a single column at 800px", async ({ page }) => {
-    // 减少动态效果下抽屉直接到达终态，避免动画进行中测量几何。
+    // 开启 SkillHub 自身的减少动效开关，让抽屉直接到达终态后测量几何。
     await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
     await page.setViewportSize({ width: 800, height: 900 });
     const tablist = await openSettings(page, "?scenario=long-text");
     await tablist.getByRole("tab", { name: "Network & AI" }).click();

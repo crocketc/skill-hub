@@ -79,6 +79,7 @@ test("applies each theme with its registered accent, canvas weight, and color sc
 
 test("keeps icon buttons at a 40px click target with visible focus", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
   await page.goto("/__preview/ui-foundations");
 
   const deleteButton = page.getByRole("button", { name: "删除技能" });

@@ -12,7 +12,8 @@ const recent: RecentOperationsReader = {
     return [
       {
         operation_id: "op-1",
-        kind: "import",
+        kind: "import_skill",
+        object_name: "示例包",
         state: "committed",
         phase: "committed",
         error_code: null,
@@ -20,7 +21,8 @@ const recent: RecentOperationsReader = {
       },
       {
         operation_id: "op-2",
-        kind: "deployment",
+        kind: "deploy_skill",
+        object_name: "PDF 抽取器",
         state: "failed",
         phase: "needs_recovery",
         error_code: "deployment.target_conflict",
@@ -66,9 +68,9 @@ it("lists recent native operations with links to their detail pages", async () =
 
   const rows = await screen.findAllByRole("listitem");
   expect(rows.length).toBeGreaterThanOrEqual(2);
-  const detail = screen.getByRole("link", { name: "import" });
+  const detail = screen.getByRole("link", { name: "导入技能：示例包" });
   expect(detail.getAttribute("href")).toBe("/operations/op-1");
-  const failedDetail = screen.getByRole("link", { name: "deployment" });
+  const failedDetail = screen.getByRole("link", { name: "部署技能：PDF 抽取器" });
   expect(failedDetail.getAttribute("href")).toBe("/operations/op-2");
   expect(screen.getByText(/deployment\.target_conflict/)).toBeVisible();
 });
@@ -83,7 +85,8 @@ it("renders a structured timeline whose entries expose phase, error code, and lo
   // 阶段语义：不再展示原始 state 字符串，而是可读的阶段徽标（图标＋文字）。
   expect(within(entries[0]).getByText("已提交")).toBeInTheDocument();
   expect(within(entries[1]).getByText("需要恢复")).toBeInTheDocument();
-  expect(within(entries[1]).getByText(/错误码：deployment\.target_conflict/)).toBeInTheDocument();
+  // DEV-99：错误码不独立成值——映射为可读失败说明，码值只作括注。
+  expect(within(entries[1]).getByText(/操作未能完成（deployment\.target_conflict）/)).toBeInTheDocument();
 
   // 时间必须经 Intl.DateTimeFormat 本地化，原始 ISO 只保留在 dateTime 属性里。
   const times = within(timeline).getAllByRole("time");

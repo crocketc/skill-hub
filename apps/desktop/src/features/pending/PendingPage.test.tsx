@@ -6,6 +6,7 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import { AppNotificationsProvider } from "../../ui/notifications";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 import { PendingPage } from "./PendingPage";
+import { MemoryRouter } from "react-router-dom";
 
 function fakeFacade(overrides: Partial<PendingFacade> = {}): PendingFacade {
   return {
@@ -44,6 +45,39 @@ const findingItem: PendingItem = {
   risk: "high",
   affectedDeployments: 3,
 };
+
+it("links required work to its source without exposing identifiers or offering ignore", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = fakeFacade({ list: async () => [{
+    id: "conflict:internal-case", subject: "internal-case", kind: "conflict",
+    code: "conflict", message: "pending.reasons.conflict", displayName: "Notes",
+    href: "/relationships/decisions?conflictId=internal-case", canSnooze: false,
+  }] });
+  render(<MemoryRouter><I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider></MemoryRouter>);
+  expect(await screen.findByText("Notes")).toBeVisible();
+  expect(screen.getByRole("link", { name: "去处理" })).toHaveAttribute("href", "/relationships/decisions?conflictId=internal-case");
+  expect(screen.queryByText("internal-case")).not.toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "选择 Notes" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "批量暂缓 7 天" })).toBeDisabled();
+});
+
+it("refreshes resolved work on window focus and retries a failed source", async () => {
+  const list = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([trialItem]).mockResolvedValue([]);
+  await renderPage(fakeFacade({ list }));
+  fireEvent.click(await screen.findByRole("button", { name: "刷新待办" }));
+  expect(await screen.findByText("skill-a")).toBeVisible();
+  fireEvent(window, new Event("focus"));
+  expect(await screen.findByText("没有待处理事项")).toBeVisible();
+});
+
+it("keeps the explicit overview category ahead of a saved filter", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = fakeFacade({ loadSavedView: async () => "trial_due", list: async () => [trialItem] });
+  render(<I18nextProvider i18n={i18n}><PendingPage facade={facade} initialKind="conflict" /></I18nextProvider>);
+  expect(await screen.findByLabelText("事项类型")).toHaveValue("conflict");
+  expect(screen.queryByText("skill-a")).not.toBeInTheDocument();
+});
 
 async function renderPage(facade: PendingFacade) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -220,7 +254,8 @@ it("renders handled history and undoes an entry", async () => {
   await renderPage(fakeFacade({ listHandled, unignore }));
 
   await screen.findByText("处理历史");
-  await screen.findByText("trial_due:skill-a:trial");
+  await screen.findByText("待办提醒记录");
+  expect(screen.queryByText("trial_due:skill-a:trial")).not.toBeInTheDocument();
   expect(screen.getByText("暂缓 7 天后再提醒")).toBeInTheDocument();
   // T4-A：历史时间戳必须经 Intl.DateTimeFormat 本地化，不再展示原始 ISO 字符串。
   expect(screen.queryByText(/2026-09-01T10:00:00/)).not.toBeInTheDocument();
@@ -391,10 +426,12 @@ it("projects the batch onto the tracker and reports a counted success notice", a
 });
 
 it("reports a mid-batch failure readably in notice, page and tracker terminal state", async () => {
+  let firstDeferred = false;
   const defer = vi.fn(async (_items: PendingItem[], _days: number, _reason: string) => {
     if (defer.mock.calls.length === 2) throw { code: "io.denied" };
+    firstDeferred = true;
   });
-  const list = vi.fn(async () => [trialItem, findingItem]);
+  const list = vi.fn(async () => firstDeferred ? [findingItem] : [trialItem, findingItem]);
   const tracker = await renderBridgedPage(fakeFacade({ list, defer }));
   await screen.findByText("skill-a");
 
@@ -415,7 +452,8 @@ it("reports a mid-batch failure readably in notice, page and tracker terminal st
   });
   // 首错即停：第二项失败后不再继续，但已完成的第一项保留（刷新反映真实进度）。
   expect(defer).toHaveBeenCalledTimes(2);
-  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByText("skill-a")).not.toBeInTheDocument());
+  expect(screen.getByText("skill-b")).toBeVisible();
 });
 
 it("notifies a successful handled-entry undo through the bridge", async () => {
@@ -424,7 +462,7 @@ it("notifies a successful handled-entry undo through the bridge", async () => {
   ]);
   const unignore = vi.fn(async () => undefined);
   await renderBridgedPage(fakeFacade({ listHandled, unignore }));
-  await screen.findByText("trial_due:skill-a:trial");
+  await screen.findByText("待办提醒记录");
 
   fireEvent.click(screen.getByRole("button", { name: "撤销" }));
 

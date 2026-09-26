@@ -1,10 +1,27 @@
 import type { RecoveryAction } from "../../api/bindings";
 
 export type OperationPhase = "planned" | "prepared" | "applying" | "verifying" | "committed" | "needs_recovery" | "rolled_back";
-export type OperationState = { operationId: string; phase: OperationPhase; completed: number; total: number; message: string };
+export type OperationState = {
+  operationId: string;
+  phase: OperationPhase;
+  completed: number;
+  total: number;
+  message: string;
+  /** DEV-98：可读标签字段（来自 recent_operations 快照），技术 id 不进界面。 */
+  kind?: string;
+  objectName?: string | null;
+  createdAt?: string;
+};
 
 /** 需要用户处置的未完成操作：启动恢复闸门的候选。 */
-export type RecoveryCandidate = { operationId: string; actions: RecoveryAction[] };
+export type RecoveryCandidate = {
+  operationId: string;
+  actions: RecoveryAction[];
+  /** DEV-98：来自 recent_operations 快照的展示事实；快照未命中时缺省。 */
+  kind?: string;
+  objectName?: string | null;
+  createdAt?: string;
+};
 
 export interface OperationFacade {
   get(operationId: string): Promise<OperationState>;

@@ -72,19 +72,12 @@ function OpenDrawerHarness({ children, title }: OpenDrawerHarnessProps) {
 }
 
 function mockReducedMotion(reduced: boolean) {
-  vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
-    matches: query === "(prefers-reduced-motion: reduce)" ? reduced : false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })));
+  if (reduced) localStorage.setItem("skillhub.reduced-motion", "true");
+  else localStorage.removeItem("skillhub.reduced-motion");
 }
 
 afterEach(() => {
+  localStorage.removeItem("skillhub.reduced-motion");
   vi.unstubAllGlobals();
 });
 

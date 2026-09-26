@@ -23,18 +23,8 @@ export function DeploymentResults({ results, targets = [] }: { results: Deployme
               {result.skillId ? <span>{`${result.displayName ?? t("deployment.batch.unnamedSkill")} · `}{targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label}</span> : (targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label)}
               <p>{describeDeploymentResult(result, (key, options) => String(t(key as never, options as never)))}</p>
             </div>
-            {/* 裸 UUID 只在可展开的技术详情区域内（DEV-18-A）。 */}
-            {result.skillId ? (
-              <details className="sh-deployment-flow__diagnostics">
-                <summary>{t("deployment.batch.technicalDetails")}</summary>
-                <dl className="sh-deployment-flow__diagnostics-list">
-                  <div>
-                    <dt>{t("deployment.batch.skillId")}</dt>
-                    <dd>{result.skillId}</dd>
-                  </div>
-                </dl>
-              </details>
-            ) : null}
+            {/* DEV-99：内部 ID 全面退出界面（含技术详情折叠区）——结果行
+                只保留用户可读的展示名、目标呈现与状态。 */}
             <span className={`sh-status sh-status--${result.status}`}>
               <Icon aria-hidden="true" name={statusIcons[result.status]} size={16} />
               {t(`deployment.results.status.${result.status}`)}

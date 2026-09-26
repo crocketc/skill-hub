@@ -5,6 +5,7 @@ import { describeNativeError } from "../../api/nativeErrors";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
+import { readableAgentIdName } from "../../ui/AgentPresentation";
 import { buildSkillRelationshipViews } from "../relationshipGovernance/relationshipGovernance";
 import {
   relationIdOf,
@@ -262,7 +263,14 @@ export function SkillDetailPage({
   const startUndeploy = async (relation: SkillRelation) => {
     setUndeployError(undefined);
     try {
-      setUndeployImpact(await effectiveRemovalFacade.prepareUndeploy(relation.id, relation.label));
+      // DEV-97：relation.label 来自后端目标 label（技术 client_id），
+      // 确认标题呈现品牌显示名；共享目录与项目关系保持可读名称。
+      const targetName = relation.kind === "agent"
+        ? relation.sharedDirectory
+          ? t("agents.sharedBrand")
+          : readableAgentIdName(relation.agentClientId ?? relation.label)
+        : relation.label;
+      setUndeployImpact(await effectiveRemovalFacade.prepareUndeploy(relation.id, targetName));
     } catch (reason) {
       setUndeployError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "undeploy.loadError"));
     }

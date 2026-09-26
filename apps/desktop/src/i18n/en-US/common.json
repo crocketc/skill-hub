@@ -24,6 +24,7 @@
     "retry": "Retry"
   },
   "notifications": {
+    "expandStack": "Expand {{count}} notifications",
     "regionLabel": "Notifications",
     "buttonLabel": "Notifications",
     "buttonWithUnread": "Notifications, {{count}} unread",
@@ -588,7 +589,8 @@
       "excludeFailed": "Failed to exclude ({{code}}); the directory is unchanged.",
       "excludedNotice": "Excluded {{path}}. Restore it from the ignore rules in Settings.",
       "builtinLabel": "Built-in",
-      "builtinHint": "Managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally."
+      "builtinHint": "Managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally.",
+      "rescanResult": "Scanned {{clients}} agents and {{targets}} deployment targets"
     },
     "search": {
       "label": "Search skills.sh",
@@ -1869,7 +1871,8 @@
         "runtimeNameExists": "A Skill with the same name already exists in the target.",
         "ownershipUnknown": "The target ownership could not be confirmed; review it before adding.",
         "managedByAnotherSkill": "The target is managed by another Skill and cannot be added directly."
-      }
+      },
+      "fallbackMode": "Fallback mode"
     },
     "batch": {
       "heading": "Add {{count}} Skills",
@@ -1883,9 +1886,6 @@
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
       "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
       "technicalDetails": "Technical details",
-      "skillId": "Skill ID",
-      "pairId": "Deployment entry",
-      "rawError": "Original error",
       "finalSummary": "Link {{link}} · Copy {{copy}} · No change {{noChange}} · Excluded {{excluded}} · Still blocked {{blocked}}"
     },
     "mode": {
@@ -2029,7 +2029,7 @@
     "loadError": "Deletion impact could not be loaded. Try again.",
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
-    "retained": "Kept: files outside SkillHub are never touched; target copies follow the per-target choices above.",
+    "retained": "Kept: files outside SkillHub are never touched; each target copy follows the choice you make for its row.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
     "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
@@ -2045,7 +2045,7 @@
       "heading": "Review batch deletion impact",
       "description": "{{count}} Skills are selected for deletion from the library. Handle every deployment relationship first.",
       "noDeployments": "No deployment relations need handling.",
-      "continue": "Continue to force deletion",
+      "continue": "Continue deletion",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
       "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again.",
@@ -2060,11 +2060,13 @@
         "pinnedVersions": "Pinned versions: {{count}}",
         "relatedSkills": "Related skills",
         "unknownExternalReferences": "Unknown external references (reported only, never modified)"
-      }
+      },
+      "deleteAll": "Delete"
     },
     "tracker": {
       "batchLabel": "Remove from library"
-    }
+    },
+    "dependentsLabel": "Dependent projects"
   },
   "undeploy": {
     "eyebrow": "Remove from Agent/Project",
@@ -2088,7 +2090,7 @@
   "pending": {
     "eyebrow": "Pending work",
     "heading": "Close the loop on pending items",
-    "description": "Each item exposes a direct follow-up action; unresolved work stays visible.",
+    "description": "Handle security findings, expired trials, skill conflicts, relationship governance and recovery. Resolved items leave the list automatically.",
     "loading": "Loading pending items",
     "empty": "No pending items",
     "listHeading": "Items needing attention",
@@ -2110,7 +2112,9 @@
     "kinds": {
       "trial_due": "Trial review",
       "security_finding": "Security finding",
-      "recovery": "Recovery"
+      "recovery": "Recovery",
+      "conflict": "Skill conflicts",
+      "governance": "Relationship governance"
     },
     "actions": {
       "recheck": "Recheck",
@@ -2119,7 +2123,9 @@
       "defer": "Defer",
       "ignore": "Ignore",
       "deferReason": "Deferred for {{days}} days; remind me when it is due",
-      "ignoreReason": "Permanently ignore this pending item"
+      "ignoreReason": "Permanently ignore this pending item",
+      "open": "Open task",
+      "refresh": "Refresh pending tasks"
     },
     "defer": {
       "durationLabel": "Defer duration",
@@ -2142,7 +2148,7 @@
       "ignoreConfirmDescription": "The {{count}} selected items will be hidden from the pending list; you can undo this in the handled history below.",
       "ignoreConfirmConfirm": "Ignore selected permanently",
       "progress": "Processing {{completed}}/{{total}}",
-      "noBatchContract": "Convert, recheck and recovery have no batch contract yet; handle them one by one."
+      "noBatchContract": "Defer or ignore eligible reminders together. Handle conflicts, governance and recovery individually."
     },
     "history": {
       "heading": "Handled history",
@@ -2150,7 +2156,8 @@
       "undo": "Undo",
       "createdAt": "Created",
       "deferUntil": "Deferred until",
-      "permanent": "Permanent"
+      "permanent": "Permanent",
+      "entry": "Pending reminder"
     },
     "savedView": {
       "loadFailed": "The saved view could not be restored; the default filter is used for this session.",
@@ -2161,7 +2168,19 @@
     },
     "errors": {
       "generic": "The operation failed ({{code}}). Please try again later."
-    }
+    },
+    "requiredAction": "Complete this item on its handling page",
+    "loadFailed": "Could not load every pending source. Please retry.",
+    "reasons": {
+      "conflict": "Review this skill conflict and choose a resolution.",
+      "needs_validation": "This relationship needs validation or confirmation.",
+      "needs_attention": "This relationship changed and needs attention.",
+      "blocked": "This relationship is blocked. Review the reason and available actions.",
+      "recovery": "An operation needs recovery. Review it on the recovery page.",
+      "security_finding": "The current version has unresolved security findings. Review the details or run a new check.",
+      "trial_due": "This trial has expired. Decide whether to keep it as a regular Skill."
+    },
+    "count": "{{count}} pending tasks"
   },
   "recovery": {
     "eyebrow": "Recovery",
@@ -2171,7 +2190,6 @@
     "acknowledge": "Confirm recovery",
     "noCandidates": "Nothing needs recovery right now.",
     "candidatesHeading": "Operations requiring recovery",
-    "candidateLabel": "Select operation {{id}}",
     "resolved": "Recovered: the unfinished change has been undone.",
     "errors": {
       "generic": "Recovery failed (error code: {{code}}). Retry; if it keeps failing, pass the code to support."
@@ -2180,7 +2198,8 @@
       "records": "Operation records",
       "backupRestore": "Backup & restore",
       "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
-    }
+    },
+    "unknownOperation": "Unknown operation"
   },
   "relationshipGovernance": {
     "relationship": {
@@ -2350,7 +2369,6 @@
       "fitView": "Fit content (center all)",
       "unknownSkill": "Skill identity unconfirmed",
       "technicalDetails": "Technical details",
-      "centerIdLabel": "Skill identity",
       "collapsedSummary_one": "{{count}} item hidden or folded",
       "collapsedSummary_other": "{{count}} items hidden or folded",
       "collapsedNodeLabel_one": "{{count}} folded",
@@ -2403,7 +2421,6 @@
       "revisionLabel": "Relationship facts revision",
       "detailsRelationship": "Relationship",
       "detailsState": "State",
-      "detailsRelationId": "Relation ID",
       "inaccessible": "Inaccessible",
       "needsValidation": "Needs validation",
       "viewSkill": "View Skill",
@@ -2773,7 +2790,6 @@
     "loading": "Loading operation",
     "progressLabel": "Operation progress",
     "technicalDetails": "Technical details",
-    "operationId": "Operation ID",
     "phases": {
       "planned": "Planned",
       "prepared": "Prepared",
@@ -2816,6 +2832,7 @@
       "error": "Failed to read operation records: {{error}}",
       "state": "State: {{state}}",
       "errorCode": "Error code: {{code}}",
+      "errorFailure": "The operation did not complete ({{code}}).",
       "sessionRunning": "running ({{completed}}/{{total}})",
       "sessionCompleted": "{{succeeded}} succeeded, {{failed}} failed, {{skipped}} skipped, {{todo}} need attention",
       "sessionFailed": "failed",
@@ -2872,7 +2889,7 @@
       "themeSaveError": "The theme could not be saved, so the previous setting was restored.",
       "themeSaved": "Theme setting saved",
       "reducedMotion": "Always reduce motion",
-      "reducedMotionDescription": "Interface transitions and notices appear and disappear instantly. No need to enable this if your system already reduces motion."
+      "reducedMotionDescription": "When on, SkillHub transitions and notices appear and disappear instantly. This setting is independent of Windows animation preferences."
     },
     "library": {
       "heading": "Library",
@@ -3277,7 +3294,9 @@
         "security_finding_one": "{{count}} security finding",
         "security_finding_other": "{{count}} security findings",
         "trial_due_one": "{{count}} trial due",
-        "trial_due_other": "{{count}} trials due"
+        "trial_due_other": "{{count}} trials due",
+        "conflict": "{{count}} skill conflicts",
+        "governance": "{{count}} relationships need attention"
       },
       "none": "No pending items",
       "title": "{{count}} pending items"
@@ -3412,7 +3431,8 @@
     },
     "notices": {
       "viewRecord": "View operation record",
-      "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening."
+      "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
+      "batchResult": "Succeeded {{succeeded}}, failed {{failed}}"
     }
   }
 }

@@ -8,6 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 async function installNativePreview(page: Page) {
   await page.addInitScript(() => {
     let callbackId = 0;
+    let conflictResolved = false;
     const callbacks = new Map<number, (payload: unknown) => void>();
     const bootstrap = {
       initialization_state: "initialized",
@@ -26,7 +27,8 @@ async function installNativePreview(page: Page) {
       project_count: 1,
       recent_operations: [{
         operation_id: "op-import-1",
-        kind: "import",
+        kind: "import_skill",
+        object_name: "Fixture pack",
         state: "committed",
         phase: "committed",
         error_code: null,
@@ -98,7 +100,7 @@ async function installNativePreview(page: Page) {
       { skill_id: "pdf-reader", display_name: "PDF Reader", runtime_name: "pdf-reader", original_description: "Read PDFs", translated_description: null, user_note: null, tags: ["documents"], license: "MIT", lifecycle: "Normal", trial_due: null, author: "anthropics", source_kind: "github", source_locator: "anthropics/skills", current_version: "v1", current_version_label: "v1", agent_deployment_count: 1, agent_deployment_target_ids: ["codex-target"], project_deployment_count: 0, basic_check: "passed", ai_check: "not_checked", high_risk_count: 1 },
       { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", original_description: "Write release notes", translated_description: null, user_note: null, tags: ["automation"], license: "MIT", lifecycle: "Normal", trial_due: null, author: "skill-hub", source_kind: "local", source_locator: "C:/Preview/release-notes", current_version: "v2", current_version_label: "v2", agent_deployment_count: 0, agent_deployment_target_ids: [], project_deployment_count: 1, basic_check: "passed", ai_check: "not_checked", high_risk_count: 0 },
     ];
-    const skillOperations = { skill_id: "pdf-reader", entries: [{ operation_id: "op-import-1", kind: "import", phase: "committed", error_code: null }], filtered: false, limitation: "skill_dimension_not_recorded" };
+    const skillOperations = { skill_id: "pdf-reader", entries: [{ operation_id: "op-import-1", kind: "import_skill", phase: "committed", error_code: null }], filtered: false, limitation: "skill_dimension_not_recorded" };
     const pending = [{ subject: "pdf-reader", kind: "security_finding", code: "secret-like-string", message_code: "pending.messages.securityFinding", due_date: null, risk: "high", affected_deployments: 1 }];
     const ignoreRules = [{ id: "ignore-1", subject: { type: "exact_pending", value: "security_finding:pdf-reader:secret-like-string" }, reason: "preview rule", created_at: "2026-09-08T08:00:00Z", defer_until: null }];
     const project = { id: "project-aurora", name: "Aurora", device_path: "C:/Preview/Aurora", physical_id: "aurora-physical", logical: { identity_hint: "C:/Preview/Aurora", note: "Preview project" }, tags: [{ name: "demo" }, { name: "Rust" }], agent_ids: ["codex-target"], created_at: "2026-09-08T08:00:00Z", updated_at: "2026-09-08T08:00:00Z" };
@@ -144,7 +146,7 @@ async function installNativePreview(page: Page) {
             { skill_id: "pdf-reader", display_name: "PDF Reader", runtime_name: "pdf-reader", tags: ["documents"], matched_alias: null, relationship_count: 2, relationship_revision: "preview-rel-1", last_verified_at: null },
             { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", tags: ["automation"], matched_alias: null, relationship_count: 1, relationship_revision: "preview-rel-1", last_verified_at: null },
           ]);
-          case "get_conflict_workspace": return ok("conflict_workspace", { cases: [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
+          case "get_conflict_workspace": return ok("conflict_workspace", { cases: conflictResolved ? [] : [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
           case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1, status_normal: 1, status_retained: 0, status_needs_validation: 1, status_needs_attention: 0, status_blocked: 1, source_copies: 1, deployments: 2 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
           case "get_deployment_batch_preview": {
             // 任务 13B/14 契约：预览按 Skill × 物理目标 pair 返回结构化处置。
@@ -229,6 +231,10 @@ async function installNativePreview(page: Page) {
           combinationCommands.push(action.type);
         }
         switch (action.type) {
+          case "resolve_conflict_case": {
+            conflictResolved = true;
+            return ok("conflict_resolved", { conflict_id: action.payload.conflict_id, decision: action.payload.decision, decided_at: "2026-09-26T09:00:00Z", conclusion: "distinct_skill", governance: null, relationship_revision: "preview-rel-2" });
+          }
           case "scan_targets": return ok("scan_result", { discovered: [{ fingerprint: "same" }, { fingerprint: "same" }], errors: [{ path: "C:/Preview/missing", reason: "unreadable" }] });
           case "discover_agent_targets": return ok("discovery_snapshot", discovery);
           case "add_skill_repo":
@@ -439,10 +445,33 @@ test("agents and projects expose inspectable records and guarded forms", async (
   await expect(page.getByRole("status")).toContainText("No projects");
 });
 
+test("unified pending follows a conflict to resolution and updates overview totals", async ({ page }, testInfo) => {
+  await installNativePreview(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "2 pending items" })).toBeVisible();
+  await page.getByRole("link", { name: "1 skill conflicts", exact: true }).click();
+  await page.getByLabel("Item type").selectOption("all");
+  await page.screenshot({ path: testInfo.outputPath("unified-pending.png"), fullPage: true });
+  await page.getByLabel("Item type").selectOption("conflict");
+  await expect(page.getByRole("button", { name: "Ignore", exact: true })).toHaveCount(0);
+  const go = page.getByRole("link", { name: "Open task" });
+  await expect(go).toHaveAttribute("href", /relationships\/decisions\?conflictId=/);
+  await go.click();
+  await expect(page).toHaveURL(/relationships\/decisions\?conflictId=/);
+  await page.getByRole("button", { name: "Keep as separate Skills", exact: true }).click();
+  await expect(page.getByText("No conflicts are waiting for your review.")).toBeVisible();
+  await page.getByRole("link", { name: "Pending", exact: true }).click();
+  await page.getByLabel("Item type").selectOption("conflict");
+  await expect(page.getByText("No pending items match this filter")).toBeVisible();
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "1 pending items" })).toBeVisible();
+});
+
 test("pending, recovery, and security routes expose state boundaries", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/pending");
-  await expect(page.getByText("pdf-reader", { exact: true })).toBeVisible();
+  await expect(page.locator(".sh-pending__list").getByText("PDF Reader", { exact: true })).toBeVisible();
+  await expect(page.getByText("pdf-reader", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/High risk/)).toBeVisible();
   await page.getByLabel("Item type").selectOption("recovery");
   await expect(page.getByRole("status")).toContainText("No pending items match this filter");
@@ -527,9 +556,9 @@ test("preview occupancy conflict renders readable guidance instead of [object Ob
   await expect(blockedGroup).toContainText("PDF Reader");
   await expect(blockedGroup).toContainText(/target directory already contains/i);
   await expect(blockedGroup).not.toContainText("[object Object]");
-  // 内部 pair id 只折叠在技术详情内（技术标识不进首屏）。
-  const technical = blockedGroup.locator("details");
-  await expect(technical).toContainText("pdf-reader:claude-physical");
+  // DEV-99：内部 pair id 全面退出界面——技术详情折叠区也不再展示原始标识。
+  await expect(blockedGroup.locator("details")).toHaveCount(0);
+  await expect(blockedGroup).not.toContainText("pdf-reader:claude-physical");
   await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
 });
 
@@ -643,9 +672,9 @@ test("project detail shows access, agent associations, and assembly status", asy
 test("operations records link to a committed operation detail", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/operations");
-  await page.getByRole("link", { name: "import" }).click();
+  await page.getByRole("link", { name: "Import skill: Fixture pack" }).click();
   await expect(page).toHaveURL(/\/operations\/op-import-1$/);
-  await expect(page.getByRole("heading", { name: "Operation status" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Import skill: Fixture pack" })).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "100");
 });
 

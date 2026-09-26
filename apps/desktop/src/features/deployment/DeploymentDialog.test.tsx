@@ -229,10 +229,10 @@ it("renders blocked reasons in user-facing words and keeps raw causes in technic
   const plan = await screen.findByRole("region", { name: /添加计划/ });
   expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
   expect(within(plan).getByText(/此文件的磁盘或分区不支持链接部署/)).toBeVisible();
-  // 原始 code 不进首屏，只在可展开的技术详情里。
-  const raw = within(plan).getByText("deployment.symlink_not_supported");
-  expect(raw.closest("details")).not.toBeNull();
-  expect(raw).not.toBeVisible();
+  // DEV-99：原始 code/内部 ID 全面退出界面——技术详情折叠区也不得展示。
+  expect(within(plan).queryByText("deployment.symlink_not_supported")).toBeNull();
+  expect(within(plan).queryByText("Skill ID")).toBeNull();
+  expect(within(plan).queryByText("部署条目")).toBeNull();
   // 全部受阻：提交不可用。
   expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
 });

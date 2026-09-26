@@ -31,6 +31,8 @@ vi.mock("../api/bindings", async (importOriginal) => {
       if (query.type === "list_custom_agents") return { type: "custom_agents" as const, payload: [] };
       if (query.type === "list_deployments") return { type: "deployments" as const, payload: [] };
       if (query.type === "list_projects") return { type: "projects" as const, payload: [] };
+      if (query.type === "list_recovery_candidates") return { type: "recovery_candidates" as const, payload: [] };
+      if (query.type === "get_conflict_workspace") return { type: "conflict_workspace" as const, payload: { cases: [], handled: [], handled_count: 0, relationship_revision: "test", last_verified_at: null } };
       // 任务 6 图谱画布：路由级环境没有候选事实，返回空候选让页面渲染发现 CTA 空态。
       if (query.type === "list_skill_relationship_candidates") {
         return { type: "skill_relationship_candidates" as const, payload: [] };
@@ -91,7 +93,7 @@ vi.mock("../api/bindings", async (importOriginal) => {
   };
 });
 
-/** 记录生产入口 MotionConfig 的配置，锁定“减少动效跟随系统”的契约。 */
+/** 记录生产入口 MotionConfig 的配置，锁定 SkillHub 开关独立控制动效的契约。 */
 const motionConfigProps: Array<{ reducedMotion?: unknown }> = [];
 vi.mock("motion/react", async (importOriginal) => {
   const original = await importOriginal<typeof import("motion/react")>();
@@ -146,6 +148,7 @@ it("accepts a DOM AbortSignal in the native Request constructor", () => {
 
 afterEach(() => {
   queryClient.clear();
+  motionConfigProps.length = 0;
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
   document.documentElement.removeAttribute("lang");
@@ -168,8 +171,7 @@ it("wires theme, language, data and motion providers at the production entry wit
   });
 });
 
-it("follows the system reduced-motion preference at the production entry (TC-GR-09-M02)", async () => {
-  // v0.2.0 契约是“跟随系统减少动效”（US-057），不提供应用内开关。
+it("keeps motion enabled at the production entry when the SkillHub switch is off", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
   await appRouter.navigate("/");
@@ -177,7 +179,19 @@ it("follows the system reduced-motion preference at the production entry (TC-GR-
   render(<AppRouter />);
 
   expect(await screen.findAllByRole("link", { name: "0 Total skills" })).toHaveLength(1);
-  expect(motionConfigProps.some((props) => props.reducedMotion === "user")).toBe(true);
+  expect(motionConfigProps.some((props) => props.reducedMotion === "never")).toBe(true);
+});
+
+it("lets the SkillHub switch disable MotionConfig animations", async () => {
+  mockBrowserPreferences();
+  localStorage.setItem("skillhub.reduced-motion", "true");
+  await skillHubI18n.changeLanguage("en-US");
+  await appRouter.navigate("/");
+
+  render(<AppRouter />);
+
+  expect(await screen.findAllByRole("link", { name: "0 Total skills" })).toHaveLength(1);
+  expect(motionConfigProps.some((props) => props.reducedMotion === "always")).toBe(true);
 });
 
 it("surfaces an unavailable state when the native Skill library result is not connected", async () => {
@@ -407,7 +421,8 @@ it("renders real operation records at /operations and keeps the single operation
     .mockResolvedValue([
       {
         operation_id: "op-42",
-        kind: "import",
+        kind: "import_skill",
+        object_name: "示例包",
         state: "committed",
         phase: "committed",
         error_code: null,
@@ -421,7 +436,7 @@ it("renders real operation records at /operations and keeps the single operation
   render(<AppRouter />);
 
   expect(await screen.findByRole("heading", { name: "操作记录" })).toBeVisible();
-  expect(await screen.findByRole("link", { name: "import" })).toHaveAttribute(
+  expect(await screen.findByRole("link", { name: "导入技能：示例包" })).toHaveAttribute(
     "href",
     "/operations/op-42",
   );
@@ -491,10 +506,9 @@ it("renders the three relationships routes with honest placeholders and module t
   await act(async () => {
     await appRouter.navigate("/relationships/decisions");
   });
-  // 任务 7 已接入真实冲突处理工作台：路由 mock 不提供工作台投影查询，
-  // 页面诚实呈现读取失败，而不是“尚未提供”占位。
+  // Unified pending now shares this real empty workspace projection.
   expect(
-    await screen.findByText("The conflict workspace cannot be read right now."),
+    await screen.findByText("No conflicts are waiting for your review."),
   ).toBeVisible();
 
   await act(async () => {

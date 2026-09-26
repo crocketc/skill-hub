@@ -63,31 +63,33 @@ export function DeploymentImpactCard({ pair, targets }: DeploymentImpactCardProp
       {visibleWarnings.length > 0 ? <ul className="sh-deployment-impact-card__warnings">
         {visibleWarnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}
       </ul> : null}
-      <details className="sh-deployment-flow__diagnostics">
-        <summary>{t("deployment.batch.technicalDetails")}</summary>
-        <dl className="sh-deployment-flow__diagnostics-list">
-          <div><dt>{t("deployment.batch.skillId")}</dt><dd>{pair.skillId}</dd></div>
-          <div><dt>{t("deployment.batch.pairId")}</dt><dd>{pair.pairId}</dd></div>
-          {pair.mode ? <div><dt>{t("deployment.mode.technical")}</dt><dd>{t(`deployment.mode.${pair.mode}`)}</dd></div> : null}
-          {pair.fallbackMode ? <div><dt>{t("deployment.mode.technical")}</dt><dd>{t(`deployment.mode.${pair.fallbackMode}`)}</dd></div> : null}
-          {pair.technicalError ? <div>
-            <dt>{t("deployment.batch.rawError")}</dt>
-            <dd>{pair.technicalError.code}</dd>
-          </div> : null}
-          {pair.technicalError ? Object.entries(pair.technicalError.params).map(([key, value]) => <div key={key}>
-            <dt>{key}</dt>
-            <dd>{String(value)}</dd>
-          </div>) : null}
-          {pair.logicalTargetIds.length > 1 ? <div>
-            <dt>{t("deployment.plan.logicalTargets")}</dt>
-            <dd>{pair.logicalTargetIds.join("、")}</dd>
-          </div> : null}
-          {pair.warnings.filter(isImplementationWarning).map((warning) => <div key={warning}>
-            <dt>{t("deployment.mode.technical")}</dt>
-            <dd>{String(t(warning as never, { defaultValue: warning } as never))}</dd>
-          </div>)}
-        </dl>
-      </details>
+      {/* DEV-99：「技术详情」只收纳用户可读的次要事实（部署方式、回退方式、
+          目标能力说明）；内部 ID、原始错误 code/params 属于日志，不进界面。 */}
+      {pair.mode || pair.fallbackMode ? (
+        <details className="sh-deployment-flow__diagnostics">
+          <summary>{t("deployment.batch.technicalDetails")}</summary>
+          <dl className="sh-deployment-flow__diagnostics-list">
+            {pair.mode ? <div>
+              <dt>{t("deployment.mode.label")}</dt>
+              <dd>{t(`deployment.mode.${pair.mode}`)}</dd>
+            </div> : null}
+            {pair.fallbackMode ? <div>
+              <dt>{t("deployment.plan.fallbackMode")}</dt>
+              <dd>{t(`deployment.mode.${pair.fallbackMode}`)}</dd>
+            </div> : null}
+            {pair.warnings.filter(isImplementationWarning).length > 0 ? <div>
+              <dt>{t("deployment.mode.technical")}</dt>
+              <dd>
+                <ul className="sh-deployment-impact-card__capability-notes">
+                  {pair.warnings.filter(isImplementationWarning).map((warning) => (
+                    <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div> : null}
+          </dl>
+        </details>
+      ) : null}
     </article>
   );
 }

@@ -169,11 +169,12 @@ describe("SkillLibraryPage", () => {
     expect(region.scrollTop).toBe(120);
 
     // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
+    // DEV-97：下拉名称改用规范化路径标识行，不再暴露技术 label。
     fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling: Codex CLI" }),
+      within(dialog).getByRole("combobox", { name: "Target copy handling: C:\\codex" }),
       { target: { value: "keep_deployed" } },
     );
-    fireEvent.click(within(dialog).getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }),
     );
@@ -266,7 +267,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     // QA-001：二次点击确认取代 FORCE DELETE 文本输入。
     fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
 
@@ -292,7 +293,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     // 提交在途：确认后、结果前，tracker 已出现 running 批量移除任务。
     const confirmButton = screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" });
@@ -331,7 +332,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to force deletion" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" }));
 
     const summary = await screen.findByTestId("batch-summary");

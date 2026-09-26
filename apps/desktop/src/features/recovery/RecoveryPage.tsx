@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
+import { resolveLocale } from "../../i18n";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
+import { formatOperationTimes, localizeErrorCode, operationObjectTitle } from "../operations/labels";
 import { OperationsList } from "../operations/OperationsList";
 import { OperationPhaseStatus } from "../operations/OperationPhaseStatus";
 import { nativeRecentOperations, type RecentOperationsReader } from "../operations/nativeApi";
@@ -30,11 +32,11 @@ const PANEL_IDS: Record<RecoveryTab, string> = {
  * 而不是只认「最新一条」。处置走 `resolve_recovery`（统一回滚语义，用户可见
  * 文案只说「恢复」，不出现「回滚」）。
  */
-export function RecoveryPage({ facade = unavailableOperationFacade, recent = nativeRecentOperations }: { facade?: OperationFacade; recent?: RecentOperationsReader }) {
+export function RecoveryPage({ facade = unavailableOperationFacade, recent = nativeRecentOperations, initialOperationId, onResolved }: { facade?: OperationFacade; recent?: RecentOperationsReader; initialOperationId?: string; onResolved?: () => Promise<void> }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<RecoveryTab>("records");
+  const [tab, setTab] = useState<RecoveryTab>(initialOperationId ? "backupRestore" : "records");
   const [candidates, setCandidates] = useState<RecoveryCandidate[]>();
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialOperationId);
   const [operation, setOperation] = useState<OperationState>();
   const [error, setError] = useState<string>();
   const [resolved, setResolved] = useState(false);
@@ -77,6 +79,7 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
       await facade.resolveRecovery(selectedId, "rollback_operation");
       setResolved(true);
       await loadCandidates();
+      await onResolved?.();
     } catch (reason: unknown) {
       setError(describe(reason));
     } finally {
@@ -169,6 +172,10 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, error, resol
   onConfirm: () => void;
 }) {
   const { t } = useTranslation();
+  const translate = useCallback(
+    (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never)),
+    [t],
+  );
   if (error) return <DataState message={error} state="unavailable" />;
   if (!candidates) return <DataState message={t("recovery.loading")} state="loading" />;
   if (candidates.length === 0) {
@@ -185,19 +192,24 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, error, resol
       <p className="sh-eyebrow">{t("recovery.tabs.backupRestoreHint")}</p>
       <fieldset className="sh-recovery__candidates">
         <legend>{t("recovery.candidatesHeading")}</legend>
-        {candidates.map((candidate) => (
-          <label key={candidate.operationId}>
-            <input
-              aria-label={t("recovery.candidateLabel", { id: candidate.operationId })}
-              checked={candidate.operationId === selectedId}
-              name="recovery-candidate"
-              onChange={() => onSelect(candidate.operationId)}
-              type="radio"
-              value={candidate.operationId}
-            />
-            {candidate.operationId}
-          </label>
-        ))}
+        {candidates.map((candidate) => {
+          // DEV-98：候选按「本地化操作名：对象名」呈现；快照未命中的如实标注
+          // 未知操作。operation id 只作为内部 value，不进可见文案。
+          const title = operationObjectTitle(candidate.kind, candidate.objectName, translate) || t("recovery.unknownOperation");
+          return (
+            <label key={candidate.operationId}>
+              <input
+                aria-label={title}
+                checked={candidate.operationId === selectedId}
+                name="recovery-candidate"
+                onChange={() => onSelect(candidate.operationId)}
+                type="radio"
+                value={candidate.operationId}
+              />
+              {title}
+            </label>
+          );
+        })}
       </fieldset>
       {operation ? <OperationSummary operation={operation} /> : <DataState message={t("recovery.loading")} state="loading" />}
       <div className="sh-recovery__actions">
@@ -209,13 +221,28 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, error, resol
 }
 
 function OperationSummary({ operation }: { operation: OperationState }) {
+  const { t, i18n } = useTranslation();
+  const translate = useCallback(
+    (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never)),
+    [t],
+  );
+  // DEV-98：标题用「本地化操作名：对象名」+ 本地化时间；message 只有在携带
+  // 真实错误码（≠裸 kind）时才映射为可读失败说明，原始 kind 不进界面。
+  const title = operationObjectTitle(operation.kind, operation.objectName, translate) || t("recovery.unknownOperation");
+  const time = operation.createdAt
+    ? formatOperationTimes([operation.createdAt], resolveLocale([i18n.resolvedLanguage ?? i18n.language]))[0]
+    : undefined;
+  const errorCode = operation.kind && operation.message && operation.message !== operation.kind
+    ? localizeErrorCode(operation.message, translate)
+    : undefined;
   return (
     <div className="sh-operation-summary">
       <div className="sh-recovery__summary-heading">
-        <strong>{operation.operationId}</strong>
+        <strong>{title}</strong>
         <OperationPhaseStatus phase={operation.phase} />
+        {time ? <time>{time}</time> : null}
       </div>
-      <p>{operation.message}</p>
+      {errorCode ? <p>{errorCode}</p> : <p>{operation.kind ? null : operation.message}</p>}
     </div>
   );
 }

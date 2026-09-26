@@ -124,3 +124,49 @@
   background: var(--ui-danger-background);
   color: var(--ui-danger-foreground);
 }
+
+/* DEV-97：影响矩阵结构化呈现——每个维度一行、值逐条列出，
+   供单删/批量/共享目录等全部删除呈现面复用。 */
+.sh-removal-impact__matrix {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-removal-impact__dimension {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-removal-impact__dimension-label {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-removal-impact__values {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.sh-removal-impact__target {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-removal-impact__target small {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}

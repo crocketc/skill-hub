@@ -32,7 +32,7 @@ test("renders a structured operation timeline with phases and localized times", 
 
   await expect(entries.nth(0).getByText("Committed")).toBeVisible();
   await expect(entries.nth(1).getByText("Needs recovery")).toBeVisible();
-  await expect(entries.nth(1).getByText(/Error code: deployment\.target_conflict/)).toBeVisible();
+  await expect(entries.nth(1).getByText(/The operation did not complete \(deployment\.target_conflict\)/)).toBeVisible();
   await expect(entries.nth(2).getByText("Undone")).toBeVisible();
 
   // Raw ISO timestamps only live in the machine-readable dateTime attribute.
@@ -57,13 +57,14 @@ test("links a persisted record to its operation detail page", async ({ page }) =
   await page.goto("/__preview/operations-records");
 
   // 详情路由属于生产边界：预览只断言链接契约，详情呈现走专属预览路由。
-  const link = page.getByRole("link", { name: "import" });
+  // DEV-99：链接可达名是「本地化操作名：对象名」，不再是裸 kind。
+  const link = page.getByRole("link", { name: "Import skill: Fixture pack" });
   await expect(link).toHaveAttribute("href", "/operations/op-import-1");
-  const failureLink = page.getByRole("link", { name: "deployment" });
+  const failureLink = page.getByRole("link", { name: "Deploy skill: PDF extractor" });
   await expect(failureLink).toHaveAttribute("href", "/operations/op-deploy-9");
 
   await page.goto("/__preview/operation-progress");
-  await expect(page.getByRole("heading", { name: "Operation status" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Import skill: Fixture pack" })).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "100");
 });
 
@@ -102,7 +103,7 @@ test.describe("operations 9-theme matrix at 1280x900", () => {
       await expect(entries.nth(0).getByText("Committed")).toBeVisible();
       await expect(entries.nth(1).getByText("Needs recovery")).toBeVisible();
 
-      const link = page.getByRole("link", { name: "import" });
+      const link = page.getByRole("link", { name: "Import skill: Fixture pack" });
       await link.focus();
       const focused = await page.evaluate(() => document.activeElement?.tagName ?? "");
       expect(focused).toBe("A");

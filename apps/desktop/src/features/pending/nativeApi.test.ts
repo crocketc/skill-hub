@@ -12,7 +12,12 @@ beforeEach(() => {
 });
 
 it("maps derived pending work to stable page identities", async () => {
-  query.mockResolvedValue({
+  query.mockImplementation(async (request) => {
+    if (request.type === "get_conflict_workspace") return { type: "conflict_workspace", payload: { cases: [] } } as never;
+    if (request.type === "list_relation_governance") return { type: "relation_governance_ledger", payload: { rows: [] } } as never;
+    if (request.type === "list_recovery_candidates") return { type: "recovery_candidates", payload: [] };
+    if (request.type === "get_skill") return { type: "skill", payload: { display_name: "PDF Reader" } } as never;
+    return {
     type: "pending_items",
     payload: [{
       subject: "pdf-reader",
@@ -22,6 +27,7 @@ it("maps derived pending work to stable page identities", async () => {
       risk: "high",
       affected_deployments: 2,
     }],
+    };
   });
 
   await expect(nativePendingFacade.list()).resolves.toEqual([{
@@ -29,10 +35,12 @@ it("maps derived pending work to stable page identities", async () => {
     subject: "pdf-reader",
     kind: "security_finding",
     code: "finding-7",
-    message: "pending.securityFinding",
+    message: "pending.reasons.security_finding",
     dueDate: null,
     risk: "high",
     affectedDeployments: 2,
+    displayName: "PDF Reader",
+    href: "/library/pdf-reader/security",
   }]);
 });
 
@@ -122,7 +130,7 @@ it("lists handled entries only for exact_pending ignore rules", async () => {
     ],
   } as never);
   await expect(nativePendingFacade.listHandled()).resolves.toEqual([
-    { id: "rule-1", pendingId: "trial_due:skill-a:trial", reason: "稍后处理", createdAt: "2026-09-01T10:00:00+08:00", deferUntil: "2026-09-08" },
+    { id: "rule-1", pendingId: "trial_due:skill-a:trial", displayName: null, reason: "稍后处理", createdAt: "2026-09-01T10:00:00+08:00", deferUntil: "2026-09-08" },
   ]);
 });
 

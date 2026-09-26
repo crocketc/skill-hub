@@ -2,7 +2,25 @@ import { executeCommand, queryApplication, type PendingItem as NativePendingItem
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 
 const SAVED_VIEW_KEY = "pending.view.kind";
-const SAVED_VIEW_KINDS = ["all", "trial_due", "security_finding", "recovery"];
+const SAVED_VIEW_KINDS = ["all", "trial_due", "security_finding", "recovery", "conflict", "governance"];
+
+async function skillNames(ids: string[]): Promise<Map<string, string | null>> {
+  return new Map(await Promise.all([...new Set(ids)].map(async (id) => {
+    // Deleted/unavailable object names must never fall back to displaying UUIDs.
+    try {
+      const result = await queryApplication({ type: "get_skill", payload: { skill_id: id } });
+      return [id, result.type === "skill" ? result.payload.display_name : null] as const;
+    } catch {
+      return [id, null] as const;
+    }
+  })));
+}
+
+function requireSnoozable(items: PendingItem[]) {
+  if (items.some((item) => item.canSnooze === false || ["recovery", "conflict", "governance"].includes(item.kind))) {
+    throw new Error("This item must be handled at its source.");
+  }
+}
 
 function pendingItem(item: NativePendingItem): PendingItem {
   return {
@@ -54,13 +72,58 @@ async function resolveRecoverableOperation(operationId: string): Promise<void> {
 
 export const nativePendingFacade: PendingFacade = {
   async list() {
-    const result = await queryApplication({ type: "list_pending_items", payload: null });
-    if (result.type !== "pending_items") {
-      throw new Error("list_pending_items returned an unexpected native result.");
+    const [result, conflicts, governance, recovery] = await Promise.all([
+      queryApplication({ type: "list_pending_items", payload: null }),
+      queryApplication({ type: "get_conflict_workspace", payload: null }),
+      queryApplication({ type: "list_relation_governance", payload: { filters: {} } }),
+      queryApplication({ type: "list_recovery_candidates" }),
+    ]);
+    if (result.type !== "pending_items" || conflicts.type !== "conflict_workspace"
+      || governance.type !== "relation_governance_ledger" || recovery.type !== "recovery_candidates") {
+      throw new Error("Unified pending sources returned an unexpected result.");
     }
-    return result.payload.map(pendingItem);
+    const names = await skillNames([
+      ...result.payload.filter((item) => item.kind !== "recovery").map((item) => item.subject),
+      ...conflicts.payload.cases.flatMap((item) => item.case.member_skill_ids),
+    ]);
+    const items: PendingItem[] = result.payload.filter((item) => item.kind !== "recovery").map((item) => ({
+      ...pendingItem(item), displayName: names.get(item.subject) ?? null,
+      message: `pending.reasons.${item.kind}`,
+      href: `/library/${encodeURIComponent(item.subject)}${item.kind === "security_finding" ? "/security" : ""}`,
+    }));
+    for (const { case: conflict } of conflicts.payload.cases) {
+      const labels = [...new Set(conflict.member_skill_ids.flatMap((id) => names.get(id) ? [names.get(id)!] : []))];
+      items.push({
+        id: `conflict:${conflict.conflict_id}`, subject: conflict.conflict_id,
+        kind: "conflict", code: "conflict", message: "pending.reasons.conflict",
+        displayName: labels.join(" / ") || null, canSnooze: false,
+        href: `/relationships/decisions?${new URLSearchParams({ conflictId: conflict.conflict_id })}`,
+      });
+    }
+    for (const row of governance.payload.rows) {
+      if (!row.relation.fact.active || !["needs_validation", "needs_attention", "blocked"].includes(row.status)) continue;
+      const fact = row.relation.fact;
+      items.push({
+        id: `governance:${fact.relation_id}`, subject: fact.relation_id,
+        kind: "governance", code: row.status, message: `pending.reasons.${row.status}`,
+        displayName: row.skill_display_name, canSnooze: false,
+        path: row.relation.kind === "source_copy" ? row.relation.fact.source_path : row.relation.fact.path,
+        href: `/relationships/governance?${new URLSearchParams({ relationId: fact.relation_id, ...(fact.skill_id ? { skillId: fact.skill_id } : {}) })}`,
+      });
+    }
+    for (const candidate of recovery.payload) {
+      items.push({
+        id: `recovery:${candidate.operation_id}`, subject: candidate.operation_id,
+        kind: "recovery", code: "needs_recovery", message: "pending.reasons.recovery",
+        displayName: null, canSnooze: false, href: `/recovery?${new URLSearchParams({ operationId: candidate.operation_id })}`,
+      });
+    }
+    const priority = { recovery: 0, conflict: 1, governance: 2, security_finding: 3, trial_due: 4 };
+    return [...new Map(items.map((item) => [item.id, item])).values()]
+      .sort((a, b) => priority[a.kind] - priority[b.kind] || a.id.localeCompare(b.id));
   },
   async resolve(item) {
+    if (item.kind === "conflict" || item.kind === "governance") throw new Error("Open the item's handling page.");
     if (item.kind === "security_finding") {
       const versionId = await currentVersion(item.subject);
       const result = await executeCommand({ type: "set_finding_disposition", payload: { skill_id: item.subject, version_id: versionId, kind: "basic", finding_id: item.code, disposition: "acknowledged", high_risk_confirmed: true } });
@@ -88,10 +151,12 @@ export const nativePendingFacade: PendingFacade = {
     await resolveRecoverableOperation(item.subject);
   },
   async defer(items, days, reason) {
+    requireSnoozable(items);
     const deferUntil = localDateDaysFromNow(days);
     await Promise.all(items.map((item) => createPendingIgnoreRule(item, reason, deferUntil)));
   },
   async ignore(items, reason) {
+    requireSnoozable(items);
     await Promise.all(items.map((item) => createPendingIgnoreRule(item, reason, null)));
   },
   async listHandled() {
@@ -99,11 +164,18 @@ export const nativePendingFacade: PendingFacade = {
     if (result.type !== "ignore_rules") {
       throw new Error("list_ignore_rules returned an unexpected native result.");
     }
-    return result.payload
-      .filter((rule): rule is typeof rule & { subject: { type: "exact_pending"; value: string } } => rule.subject.type === "exact_pending")
+    const rules = result.payload
+      .filter((rule): rule is typeof rule & { subject: { type: "exact_pending"; value: string } } => rule.subject.type === "exact_pending");
+    const subjectOf = (value: string) => /^(?:trial_due|security_finding):([^:]+):/.exec(value)?.[1];
+    const names = await skillNames(rules.flatMap((rule) => {
+      const id = subjectOf(rule.subject.value);
+      return id ? [id] : [];
+    }));
+    return rules
       .map((rule): HandledEntry => ({
         id: rule.id,
         pendingId: rule.subject.value,
+        displayName: names.get(subjectOf(rule.subject.value) ?? "") ?? null,
         reason: rule.reason,
         createdAt: rule.created_at,
         deferUntil: rule.defer_until,

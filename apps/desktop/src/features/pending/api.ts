@@ -1,4 +1,4 @@
-export type PendingKind = "trial_due" | "security_finding" | "recovery";
+export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance";
 export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
   id: string;
@@ -6,6 +6,12 @@ export type PendingItem = {
   kind: PendingKind;
   code: string;
   message: string;
+  /** Readable object name; identifiers stay in subject/id only. */
+  displayName?: string | null;
+  href?: string;
+  path?: string;
+  /** Required decisions and recovery must be resolved at their source. */
+  canSnooze?: boolean;
   /** 试用到期日（YYYY-MM-DD），仅试用项携带。 */
   dueDate?: string | null;
   /** 风险档位，由检查发现严重级别映射；无数据时缺省。 */
@@ -17,6 +23,7 @@ export type PendingItem = {
 export type HandledEntry = {
   id: string;
   pendingId: string;
+  displayName?: string | null;
   reason: string;
   createdAt: string;
   deferUntil: string | null;

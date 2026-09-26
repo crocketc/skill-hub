@@ -15,7 +15,7 @@ import { Link, useInRouterContext } from "react-router-dom";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
-import { usePrefersReducedMotion } from "./reducedMotion";
+import { useSkillHubReducedMotion } from "./reducedMotion";
 import "./notificationCenter.css";
 
 /**
@@ -111,7 +111,7 @@ export function AppNotificationsProvider({ children }: { children: ReactNode }) 
   const [toast, setToast] = useState<ToastState>(EMPTY_TOAST_STATE);
   const nextIdRef = useRef(0);
   const timersRef = useRef(new Map<string, Array<ReturnType<typeof setTimeout>>>());
-  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotion = useSkillHubReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
 
@@ -301,7 +301,7 @@ export function NotificationBell() {
         aria-label={label}
         icon="bell"
         label={label}
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
         ref={bellRef}
       />
       {unreadCount > 0 ? (
@@ -317,9 +317,6 @@ export function NotificationBell() {
     </span>
   );
 }
-
-/** DEV-92：浮层出场/退场动画时长（ms）；减少动效时跳过动画阶段。 */
-export const NOTICE_POPUP_EXIT_MS = 180;
 
 /** 通知卡片时间：今天显 HH:mm，今年显 M/D，跨年显 YYYY/M/D。 */
 function formatNoticeTime(createdAt: number, language: string): string {
@@ -340,9 +337,18 @@ function formatNoticeTime(createdAt: number, language: string): string {
   }).format(date);
 }
 
+/** DEV-96：功能域徽标——每张历史卡片标注通知所属模块（缺省系统），
+ * 与展开态分组使用同一套本地化文案，折叠态也能回答「属于哪个模块」。 */
+function NoticeSourceBadge({ source }: { source: NoticeSource }) {
+  const { t } = useTranslation();
+  return (
+    <span className="sh-notification-popover__source">{t(`notifications.sources.${source}`)}</span>
+  );
+}
+
 /**
- * DEV-92 透明浮层（替代右侧全高抽屉）：顶栏铃铛下方的毛玻璃浮层，
- * 从右上角动态进入、关闭时向右上角退出；折叠态展示层叠卡片（最新一条
+ * DEV-92 透明浮层（替代右侧全高抽屉）：贴齐顶栏下方和窗口右侧，
+ * 打开时由右向左滑入、关闭时向右滑出；折叠态展示层叠卡片（最新一条
  * 完整 + 至多两条上缘），可展开为按功能域分组的完整历史（未读/全部筛选、
  * 全部标已读、清空能力保留）。消息本体激活仍先标已读再收起浮层。
  */
@@ -361,32 +367,23 @@ export function NotificationHistoryDrawer({
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
   const [phase, setPhase] = useState<"closed" | "entering" | "open" | "closing">("closed");
-  const [anchor, setAnchor] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
-  const reducedMotion = usePrefersReducedMotion();
-  const reducedMotionRef = useRef(reducedMotion);
-  reducedMotionRef.current = reducedMotion;
+  const reducedMotion = useSkillHubReducedMotion();
 
-  // 进入：mount → entering →（下一帧）open；退出：open/entering → closing →
-  // 动画结束卸载。减少动效时两段动画都瞬时完成。
+  // 进入/退出都由 CSS keyframes 驱动；退出动画结束事件负责卸载。
+  // 减少动效时直接进入/退出终态。
   useEffect(() => {
     if (open) {
-      const bellRect = returnFocusRef.current?.getBoundingClientRect();
-      if (bellRect) {
-        setAnchor({ top: bellRect.bottom + 8, right: Math.max(8, window.innerWidth - bellRect.right) });
+      if (reducedMotion) {
+        setPhase("open");
+      } else {
+        setPhase("entering");
       }
-      setPhase("entering");
-      const timer = setTimeout(() => setPhase("open"), reducedMotionRef.current ? 0 : 16);
-      return () => clearTimeout(timer);
+      return undefined;
     }
-    setPhase((current) => {
-      if (current !== "open" && current !== "entering") return current;
-      const timer = setTimeout(() => setPhase("closed"), reducedMotionRef.current ? 0 : NOTICE_POPUP_EXIT_MS);
-      // setTimeout 句柄只需要在卸载/重入时清理一次；phase 已推进。
-      void timer;
-      return "closing";
-    });
+    if (reducedMotion) setPhase("closed");
+    else setPhase((current) => current === "closed" || current === "closing" ? current : "closing");
     return undefined;
-  }, [open, reducedMotion, returnFocusRef]);
+  }, [open, reducedMotion]);
 
   useEffect(() => {
     if (!open) {
@@ -420,7 +417,12 @@ export function NotificationHistoryDrawer({
     };
   }, [open, requestClose]);
 
-  if (phase === "closed") return null;
+  // Mount in the entering state in the same render that opens the panel so the
+  // CSS keyframe starts on the element's first rendered frame.
+  const visiblePhase = phase === "closed" && open
+    ? reducedMotion ? "open" : "entering"
+    : phase;
+  if (visiblePhase === "closed") return null;
 
   // 历史项激活（点击消息本体或 action 链接）：先把该条标记为已读，再收起
   // 浮层或交给 Link 默认导航；markRead 幂等，重复激活不报错。
@@ -455,6 +457,7 @@ export function NotificationHistoryDrawer({
       >
         <span className="sh-notification-popover__card-head">
           <span className={`sh-notification-popover__dot sh-notification-popover__dot--${notice.tone}`} aria-hidden="true" />
+          <NoticeSourceBadge source={notice.source ?? "system"} />
           <span className="sh-notification-popover__title">{notice.title}</span>
           <time className="sh-notification-popover__time" dateTime={new Date(notice.createdAt).toISOString()}>
             {formatNoticeTime(notice.createdAt, language)}
@@ -482,12 +485,19 @@ export function NotificationHistoryDrawer({
       aria-label={t("notifications.drawerTitle")}
       className="sh-notification-popover"
       data-reduced-motion={String(reducedMotion)}
-      data-state={phase}
+      data-state={visiblePhase}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.animationName === "sh-notification-popover-enter" && visiblePhase === "entering") {
+          setPhase("open");
+        } else if (event.animationName === "sh-notification-popover-exit" && visiblePhase === "closing") {
+          setPhase("closed");
+        }
+      }}
       onKeyDown={(event) => {
         if (event.key === "Escape") requestClose();
       }}
       role="dialog"
-      style={{ top: anchor.top, right: anchor.right }}
     >
       <header className="sh-notification-popover__header">
         <h2 className="sh-notification-popover__heading">{t("notifications.drawerTitle")}</h2>
@@ -513,23 +523,23 @@ export function NotificationHistoryDrawer({
         <>
           {/* 折叠态：最新一条完整展示，其下至多两条只露出卡片上缘（层叠）。 */}
           <ul className="sh-notification-popover__stack">
-            <div aria-hidden="true" className="sh-notification-popover__edge" data-testid="notification-stack-edge" />
-            {stackEdges > 1 ? (
-              <div aria-hidden="true" className="sh-notification-popover__edge" data-testid="notification-stack-edge" />
-            ) : null}
             {latest ? (
               <li className="sh-notification-popover__item">
                 <button
-                  aria-label={t("notifications.markOneRead", { title: latest.title })}
+                  aria-label={notices.length > 1
+                    ? t("notifications.expandStack", { count: notices.length })
+                    : t("notifications.markOneRead", { title: latest.title })}
+                  aria-expanded={notices.length > 1 ? false : undefined}
                   className={[
                     "sh-notification-popover__card",
                     latest.read ? "" : "sh-notification-popover__card--unread",
                   ].filter(Boolean).join(" ")}
-                  onClick={() => readAndClose(latest.id)}
+                  onClick={() => notices.length > 1 ? setExpanded(true) : readAndClose(latest.id)}
                   type="button"
                 >
                   <span className="sh-notification-popover__card-head">
                     <span className={`sh-notification-popover__dot sh-notification-popover__dot--${latest.tone}`} aria-hidden="true" />
+                    <NoticeSourceBadge source={latest.source ?? "system"} />
                     <span className="sh-notification-popover__title">{latest.title}</span>
                     <time className="sh-notification-popover__time" dateTime={new Date(latest.createdAt).toISOString()}>
                       {formatNoticeTime(latest.createdAt, language)}
@@ -551,6 +561,15 @@ export function NotificationHistoryDrawer({
                 ) : null}
               </li>
             ) : null}
+            {Array.from({ length: stackEdges }, (_, index) => (
+              <li
+                aria-hidden="true"
+                className="sh-notification-popover__edge"
+                data-testid="notification-stack-edge"
+                data-layer={index + 1}
+                key={`stack-edge-${index}`}
+              />
+            ))}
           </ul>
           <footer className="sh-notification-popover__footer">
             <Button onClick={markAllRead} size="sm" variant="ghost">
@@ -699,7 +718,7 @@ function ToastRegionContent({
   onDismiss: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotion = useSkillHubReducedMotion();
   if (toast.stackIds.length === 0) {
     return null;
   }

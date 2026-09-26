@@ -459,15 +459,16 @@ test.describe("overview honors the theme contract at 1280x900", () => {
   }
 });
 
-test("renders without continuous motion when the system prefers reduced motion", async ({
+test("renders without continuous motion when SkillHub's reduced-motion switch is on", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
   await page.goto("/__preview/overview");
 
   await expect(page.getByRole("img", { name: "Configuration relation count by agent" })).toBeVisible();
-  // base.css 的全局减少动效守卫把时长钳制到 0.01ms；这里断言概览没有任何
-  // 超过感知阈值的过渡或动画（图表动画本就关闭）。
+  // SkillHub 开关把时长钳制到 0.01ms；同时设置系统 reduce，确保此行为由
+  // 应用内设置控制。
   const freeOfMotion = await page.waitForFunction(() => {
     const motionBudgetSeconds = 0.05;
     for (const element of document.querySelectorAll("main *")) {
@@ -484,5 +485,4 @@ test("renders without continuous motion when the system prefers reduced motion",
   });
   expect(await freeOfMotion.jsonValue()).toBe(true);
 });
-
 

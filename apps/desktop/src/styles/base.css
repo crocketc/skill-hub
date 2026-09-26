@@ -1,5 +1,18 @@
 @import "./theme.css";
 
+/* Keep copyable text, with a quiet selection instead of the OS blue fill. */
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  color: var(--color-text);
+}
+
+@media (forced-colors: active) {
+  ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -1187,10 +1200,8 @@ a {
   cursor: default;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .sh-task-summary__spinner {
-    animation: none;
-  }
+.sh-app-shell[data-reduced-motion="true"] .sh-task-summary__spinner {
+  animation: none;
 }
 
 .sh-app-shell__topbar-context .sh-button--secondary,
@@ -1820,15 +1831,14 @@ a {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+[data-reduced-motion="true"],
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 .sh-skill-library {

@@ -13,6 +13,7 @@ import {
 import { BrandLogo } from "../ui/BrandLogo";
 import { IconButton } from "../ui/IconButton";
 import { WindowControls } from "../ui/WindowControls";
+import { useSkillHubReducedMotion } from "../ui/reducedMotion";
 import {
   AppNotificationsProvider,
   NotificationBell,
@@ -180,6 +181,7 @@ function AgentDiscoveryBridge({ enabled }: { enabled: boolean }) {
 }
 
 export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellProps) {
+  const reducedMotion = useSkillHubReducedMotion();
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -237,7 +239,10 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
         <BackgroundScanBridge />
         {/* 初始化完成后启动一次后台 Agent 重扫；向导自己负责首次发现。 */}
         <AgentDiscoveryBridge enabled={snapshot.initialization_state === "initialized"} />
-        <div className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+        <div
+          className={`sh-app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
+          data-reduced-motion={String(reducedMotion)}
+        >
           <a className="sh-skip-link" href="#main-content">
             {t("appShell.skipToContent")}
           </a>

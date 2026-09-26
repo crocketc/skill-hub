@@ -1,4 +1,4 @@
-import { executeCommand, queryApplication } from "../../api/bindings";
+import { executeCommand, queryApplication, type RecentOperationSummary } from "../../api/bindings";
 import type { OperationFacade, OperationState, RecentOperationRow, RecentOperationsReader } from "./api";
 
 export type { RecentOperationsReader, RecentOperationRow };
@@ -24,6 +24,10 @@ export const nativeOperationFacade: OperationFacade = {
       completed: item.phase === "committed" || item.phase === "rolled_back" ? 1 : 0,
       total: 1,
       message: item.error_code ?? item.kind,
+      // DEV-98：展示事实与 message 同源（recent_operations 快照）。
+      kind: item.kind,
+      objectName: item.object_name,
+      createdAt: item.created_at,
     };
     return state;
   },
@@ -34,7 +38,27 @@ export const nativeOperationFacade: OperationFacade = {
   async listRecoveryCandidates() {
     const result = await queryApplication({ type: "list_recovery_candidates" });
     if (result.type !== "recovery_candidates") throw new Error("recovery query returned an unexpected result");
-    return result.payload.map((candidate) => ({ operationId: candidate.operation_id, actions: candidate.actions }));
+    // DEV-98：从 recent_operations 快照补展示事实（kind/object_name/created_at），
+    // 让恢复页按「本地化操作名：对象名」呈现而不是裸 id；快照读不到时保持裸候选。
+    let summaries = new Map<string, RecentOperationSummary>();
+    try {
+      const snapshot = await queryApplication({ type: "get_bootstrap_snapshot" });
+      if (snapshot.type === "bootstrap_snapshot") {
+        summaries = new Map(snapshot.payload.recent_operations.map((item) => [item.operation_id, item]));
+      }
+    } catch {
+      // 展示事实是增强，不阻塞恢复候选本身。
+    }
+    return result.payload.map((candidate) => {
+      const item = summaries.get(candidate.operation_id);
+      return {
+        operationId: candidate.operation_id,
+        actions: candidate.actions,
+        kind: item?.kind,
+        objectName: item?.object_name,
+        createdAt: item?.created_at,
+      };
+    });
   },
   async resolveRecovery(operationId, action) {
     const candidates = await queryApplication({ type: "list_recovery_candidates" });

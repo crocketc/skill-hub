@@ -73,12 +73,12 @@ describe("always-reduce-motion preference", () => {
     const toggle = screen.getByRole("switch", { name: "始终减少动效" });
     expect(toggle).not.toBeChecked();
     expect(toggle).toHaveAccessibleDescription(
-      "开启后界面过渡与提示动效改为即时出现、即时消失；系统已开启减少动效时无需重复设置。",
+      "开启后 SkillHub 界面过渡与提示动效改为即时出现、即时消失；此设置独立于 Windows 动画偏好。",
     );
   });
 
   it("persists the user choice on and back off through the shared store", async () => {
-    stubMatchMediaReducedMotion(false);
+    stubMatchMediaReducedMotion(true);
     const user = userEvent.setup();
     const i18n = await createSkillHubI18n(["zh-CN"]);
     renderGeneral({ execute: async () => undefined }, i18n);

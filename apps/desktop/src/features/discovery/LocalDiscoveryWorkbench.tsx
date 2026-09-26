@@ -99,9 +99,18 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
         notifications,
         kind: "discovery_scan",
         label: t("discovery.workbench.rescan"),
+        source: "discovery",
         total: 1,
         translate: (key, options) => String(t(key as never, options as never)),
-        successNotice: () => ({ tone: "success", title: t("discovery.workbench.rescan") }),
+        successNotice: ({ snap: current }) => ({
+          tone: "success",
+          title: t("discovery.workbench.rescan"),
+          // DEV-96：成功通知回答「结果是什么」——扫描读到的实时事实。
+          detail: t("discovery.workbench.rescanResult", {
+            clients: current.instances.length,
+            targets: current.physical_targets.length,
+          }),
+        }),
         errorNotice: (_error, message) => ({ tone: "danger", title: t("discovery.workbench.scanFailed"), detail: message }),
         run: async () => ({
           result: await facade.scanTargets([]),

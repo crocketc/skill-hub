@@ -89,6 +89,7 @@ export function AgentListPage({
         run: async () => {
           await facade.rescan();
         },
+        source: "discovery",
         successNotice: () => ({ tone: "success", title: t("agents.actions.rescan") }),
         total: 1,
         tracker,

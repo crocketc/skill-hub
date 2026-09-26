@@ -48,7 +48,7 @@ it("renders a structured target failure as localized, actionable text", async ()
   expect(screen.queryByText("deployment.target_exists")).not.toBeInTheDocument();
 });
 
-it("renders the resolved display name as the primary label and keeps the raw Skill id in technical details (DEV-18-A)", async () => {
+it("renders the resolved display name as the primary label and never renders the raw Skill id (DEV-18-A + DEV-99)", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
@@ -65,8 +65,8 @@ it("renders the resolved display name as the primary label and keeps the raw Ski
 
   // 主文案是展示名，不是内部 Skill UUID。
   expect(await screen.findByText("PDF 抽取器 · Codex CLI")).toBeVisible();
-  // 裸 UUID 只出现在可展开的技术详情区域内。
-  expect(screen.getByText("8f1c0b2e-4a9d-4f77-9a1e-2b6d5c3e7a10").closest("details")).not.toBeNull();
+  // DEV-99：内部 id 全面退出界面——技术详情折叠区也不展示。
+  expect(screen.queryByText("8f1c0b2e-4a9d-4f77-9a1e-2b6d5c3e7a10")).not.toBeInTheDocument();
 });
 
 it("resolves the native success result key through the existing translation tree", async () => {

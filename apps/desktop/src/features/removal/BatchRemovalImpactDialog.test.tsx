@@ -48,7 +48,9 @@ it("requires impact choices and a second click confirmation without typed phrase
   const { onConfirm } = await renderDialog();
 
   expect(screen.getByText(/2 Skills are selected for deletion from the library\./)).toBeVisible();
-  expect(screen.getByRole("button", { name: "Continue to force deletion" })).toBeDisabled();
+  // DEV-97：存在部署关系时动词是“继续删除”，风险语义由红色主按钮、
+  // 二次确认与非原子提示承载，不再自称“强制”。
+  expect(screen.getByRole("button", { name: "Continue deletion" })).toBeDisabled();
 
   fireEvent.change(screen.getByRole("combobox", { name: "Target copy handling: Codex" }), {
     target: { value: "remove_deployment" },
@@ -57,7 +59,7 @@ it("requires impact choices and a second click confirmation without typed phrase
   // QA-001：二次点击确认取代 FORCE DELETE 文本输入——
   // 第一次点击"继续"只武装确认按钮，第二次点击才真正提交。
   expect(screen.queryByRole("textbox")).toBeNull();
-  const proceed = screen.getByRole("button", { name: "Continue to force deletion" });
+  const proceed = screen.getByRole("button", { name: "Continue deletion" });
   fireEvent.click(proceed);
   expect(onConfirm).not.toHaveBeenCalled();
 
@@ -69,17 +71,25 @@ it("requires impact choices and a second click confirmation without typed phrase
   });
 });
 
-it("shows the extra impact dimensions per skill", async () => {
+it("shows the extra impact dimensions per skill as structured entries", async () => {
   await renderDialog();
 
-  expect(screen.getByText(/Combinations: Cleanup combo/)).toBeVisible();
-  expect(screen.getByText(/Demo Project/)).toBeVisible();
-  expect(screen.getByText(/Declared dependencies: python 3\.11 runtime/)).toBeVisible();
-  expect(screen.getByText(/Related skills: Notes packager/)).toBeVisible();
+  // DEV-97：影响矩阵逐维度结构化呈现，每条值独占一行，不再拼成长段。
+  const dimension = (label: RegExp) =>
+    screen.getByText(label).closest("li") as HTMLElement;
   expect(
-    screen.getByText(/Unknown external references \(reported only, never modified\): \/agents\/root\/notes/),
-  ).toBeVisible();
-  expect(screen.getByText(/Pinned versions: 1/)).toBeVisible();
+    within(dimension(/Dependent projects/)).getByRole("listitem"),
+  ).toHaveTextContent("Demo Project");
+  expect(
+    within(dimension(/Declared dependencies/)).getByRole("listitem"),
+  ).toHaveTextContent("python 3.11 runtime");
+  expect(
+    within(dimension(/Related skills/)).getByRole("listitem"),
+  ).toHaveTextContent("Notes packager");
+  expect(
+    within(dimension(/Unknown external references/)).getAllByRole("listitem"),
+  ).toHaveLength(1);
+  expect(screen.getByText("Pinned versions: 1")).toBeVisible();
 });
 
 it("reports an executing state while the batch is submitting", async () => {
@@ -87,7 +97,7 @@ it("reports an executing state while the batch is submitting", async () => {
 
   const busy = screen.getByRole("status");
   expect(busy).toHaveTextContent("Deleting 2 Skills…");
-  expect(screen.getByRole("button", { name: "Continue to force deletion" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Continue deletion" })).toBeDisabled();
 });
 
 it("keeps the non-atomic batch risk adjacent to the forced-deletion action", async () => {
@@ -97,7 +107,7 @@ it("keeps the non-atomic batch risk adjacent to the forced-deletion action", asy
   const actions = risk.closest("footer");
   expect(actions).not.toBeNull();
   expect(
-    within(actions as HTMLElement).getByRole("button", { name: "Continue to force deletion" }),
+    within(actions as HTMLElement).getByRole("button", { name: "Continue deletion" }),
   ).toBeInTheDocument();
 });
 

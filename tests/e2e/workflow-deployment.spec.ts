@@ -243,8 +243,9 @@ test.describe("removal confirmations", () => {
     await expect(dialog.getByRole("heading", { name: /Delete PDF Reader from the library/ })).toBeFocused();
     const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
     await expect(confirm).toBeDisabled();
-    await dialog.getByRole("combobox", { name: /Target copy handling：Codex CLI/ }).selectOption("remove_deployment");
-    await dialog.getByRole("combobox", { name: /Target copy handling：Claude Code/ }).selectOption("keep_deployed");
+    // DEV-97：单目标确认的选项可达名是「Target copy handling：规范化目标路径」。
+    await dialog.getByRole("combobox", { name: /Target copy handling：.*\.codex/ }).selectOption("remove_deployment");
+    await dialog.getByRole("combobox", { name: /Target copy handling：.*\.claude/ }).selectOption("keep_deployed");
     await expect(confirm).toBeEnabled();
   });
 
@@ -253,7 +254,7 @@ test.describe("removal confirmations", () => {
     await page.goto("/__preview/removal?scenario=batch");
 
     const dialog = page.getByRole("dialog");
-    const proceed = page.getByRole("button", { name: "Continue to force deletion" });
+    const proceed = page.getByRole("button", { name: "Continue deletion" });
     await expect(proceed).toBeDisabled();
     await dialog.getByRole("combobox", { name: /Target copy handling: Codex CLI/ }).selectOption("remove_deployment");
     await expect(proceed).toBeEnabled();
@@ -261,7 +262,7 @@ test.describe("removal confirmations", () => {
     // 非原子批量风险与强制删除动作相邻（同一 footer 操作区）。
     const actions = dialog.locator("footer");
     await expect(actions).toContainText(/not atomic/i);
-    await expect(actions.getByRole("button", { name: "Continue to force deletion" })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Continue deletion" })).toBeVisible();
 
     await proceed.click();
     await expect(page.getByRole("button", { name: /Click again to confirm deleting 2 Skills/ })).toBeVisible();

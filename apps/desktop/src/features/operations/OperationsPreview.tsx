@@ -5,11 +5,14 @@ import { OperationsRecordsPage } from "./OperationsRecordsPage";
 import { OperationProgress } from "./OperationProgress";
 import type { RecentOperationRow, RecentOperationsReader } from "./api";
 
-/** Deterministic persisted-operation rows; timestamps exercise Intl formatting. */
+/** Deterministic persisted-operation rows; timestamps exercise Intl formatting.
+ *  DEV-99：kind/object_name 与真实 IPC 契约对齐（import_skill 等），
+ *  渲染层据此输出「本地化操作名：对象名」，预览不再泄漏裸 kind。 */
 const ROWS: RecentOperationRow[] = [
   {
     operation_id: "op-import-1",
-    kind: "import",
+    kind: "import_skill",
+    object_name: "Fixture pack",
     state: "committed",
     phase: "committed",
     error_code: null,
@@ -17,7 +20,8 @@ const ROWS: RecentOperationRow[] = [
   },
   {
     operation_id: "op-deploy-9",
-    kind: "deployment",
+    kind: "deploy_skill",
+    object_name: "PDF extractor",
     state: "failed",
     phase: "needs_recovery",
     error_code: "deployment.target_conflict",
@@ -25,7 +29,8 @@ const ROWS: RecentOperationRow[] = [
   },
   {
     operation_id: "op-removal-3",
-    kind: "removal",
+    kind: "delete_skill",
+    object_name: "Legacy notes",
     state: "rolled_back",
     phase: "rolled_back",
     error_code: null,
@@ -78,7 +83,10 @@ export function OperationProgressPreview() {
       phase: "committed" as const,
       completed: 1,
       total: 1,
-      message: "import.finished",
+      message: "",
+      // DEV-99：预览同样走「本地化操作名：对象名」标题契约。
+      kind: "import_skill",
+      objectName: "Fixture pack",
     }),
     listRecoveryCandidates: async () => [],
     resolveRecovery: async () => undefined,

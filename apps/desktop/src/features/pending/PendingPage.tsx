@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { displayPath } from "../../platform/displayPath";
 import { describeNativeError } from "../../api/nativeErrors";
 import { formatDateTime, resolveLocale } from "../../i18n";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -15,6 +17,7 @@ import { Select } from "../../ui/Select";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type HandledEntry, type PendingFacade, type PendingItem, type PendingKind, type PendingRisk, unavailablePendingFacade } from "./api";
 import "./pending.css";
+import { usePendingItems } from "./usePendingItems";
 
 /** 批量暂缓固定 7 天：批量契约只覆盖安全的暂缓/忽略，不覆盖转换/重查/恢复。 */
 const BATCH_DEFER_DAYS = 7;
@@ -29,7 +32,8 @@ const RISK_ICONS: Record<PendingRisk, IconName> = {
 export function PendingPage({
   facade = unavailablePendingFacade,
   tracker = operationTracker,
-}: { facade?: PendingFacade; tracker?: OperationTracker }) {
+  initialKind,
+}: { facade?: PendingFacade; tracker?: OperationTracker; initialKind?: PendingKind }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
   const notifications = useOptionalAppNotifications();
@@ -38,11 +42,10 @@ export function PendingPage({
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : formatDateTime(date, locale);
   };
-  const [items, setItems] = useState<PendingItem[]>();
-  const [error, setError] = useState<string>();
+  const { items, error, reload } = usePendingItems(facade, tracker);
   // T4-A：单条/批量处置失败只在列表区播报并保持列表可用，不再整页替换。
   const [actionError, setActionError] = useState<string>();
-  const [kind, setKind] = useState<PendingKind | "all">("all");
+  const [kind, setKind] = useState<PendingKind | "all">(initialKind ?? "all");
   const [processingItemId, setProcessingItemId] = useState<string>();
   const [deferDays, setDeferDays] = useState<7 | 30>(7);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -59,13 +62,12 @@ export function PendingPage({
   const translate = (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never));
   const deferReason = (days: number) => t("pending.actions.deferReason", { days });
   const ignoreReason = () => t("pending.actions.ignoreReason");
-  const reload = () => void facade.list().then(setItems).catch((reason: unknown) => setError(describe(reason)));
   const reloadHandled = () => void facade.listHandled()
     .then((entries) => setHandled(entries))
     .catch((reason: unknown) => setHandledError(describe(reason)));
-  useEffect(reload, [facade]);
   useEffect(reloadHandled, [facade]);
   useEffect(() => {
+    if (initialKind) return;
     let cancelled = false;
     facade.loadSavedView()
       .then((saved) => {
@@ -76,13 +78,14 @@ export function PendingPage({
         if (!cancelled) setSavedViewIssue("load");
       });
     return () => { cancelled = true; };
-  }, [facade]);
-  if (error) return <DataState message={error} state="unavailable" />;
+  }, [facade, initialKind]);
+  if (error) return <><DataState message={describe(error)} state="unavailable" /><Button onClick={reload}>{t("pending.actions.refresh")}</Button></>;
   if (!items) return <DataState message={t("pending.loading")} state="loading" />;
   const visibleItems = kind === "all" ? items : items.filter((item) => item.kind === kind);
   const busy = Boolean(processingItemId) || Boolean(batchProgress);
-  const selectedCount = items.filter((item) => selectedIds.includes(item.id)).length;
-  const allVisibleSelected = visibleItems.length > 0 && visibleItems.every((item) => selectedIds.includes(item.id));
+  const selectable = visibleItems.filter((item) => item.canSnooze !== false && item.kind !== "recovery");
+  const selectedCount = items.filter((item) => item.canSnooze !== false && item.kind !== "recovery" && selectedIds.includes(item.id)).length;
+  const allVisibleSelected = selectable.length > 0 && selectable.every((item) => selectedIds.includes(item.id));
   const changeKind = (next: PendingKind | "all") => {
     kindChangedRef.current = true;
     setKind(next);
@@ -93,7 +96,7 @@ export function PendingPage({
     : [...current, id]);
   const toggleAll = () => setSelectedIds(allVisibleSelected
     ? []
-    : [...new Set([...selectedIds, ...visibleItems.map((item) => item.id)])]);
+    : [...new Set([...selectedIds, ...selectable.map((item) => item.id)])]);
   // 统一执行桥（任务 4）：单条处置是单次同步写入，走 instant——不占在途顶栏，
   // 但成功/失败都留下通知；失败描述与页面局部提示同源。
   const runOne = (item: PendingItem, action: { kind: string; label: string; perform: (target: PendingItem) => Promise<void> }) => {
@@ -118,7 +121,7 @@ export function PendingPage({
   // 已完成项经刷新反映到列表（部分成功保留成功项），失败描述三端同源。
   const runBatch = (action: "defer" | "ignore") => {
     if (busy || !items.length) return;
-    const selected = items.filter((item) => selectedIds.includes(item.id));
+    const selected = items.filter((item) => item.canSnooze !== false && item.kind !== "recovery" && selectedIds.includes(item.id));
     if (!selected.length) return;
     setActionError(undefined);
     setBatchProgress({ completed: 0, total: selected.length });
@@ -172,14 +175,16 @@ export function PendingPage({
       describeError: describe,
       run: () => facade.unignore(entry.id),
     }).then(
-      () => reloadHandled(),
+      () => { reloadHandled(); reload(); },
       (reason: unknown) => setHandledError(describe(reason)),
     ).finally(() => setUndoingId(undefined));
   };
   return <PageFrame width="wide"><div className="sh-workflow-page sh-pending">
-    <PageHeader description={t("pending.description")} headingLevel="h1" title={t("pending.heading")} />
+    <PageHeader description={t("pending.description")} headingLevel="h1" title={t("pending.heading")}
+      actions={<Button onClick={reload} size="sm" variant="secondary">{t("pending.actions.refresh")}</Button>} />
     <section aria-labelledby="pending-list-heading" className="sh-workflow-card sh-pending__card">
       <h2 id="pending-list-heading">{t("pending.listHeading")}</h2>
+      <p>{t("pending.count", { count: items.length })}</p>
       {items.length ? <>
         <div className="sh-pending__toolbar">
           <Field label={t("pending.filters.kind")}>
@@ -191,6 +196,8 @@ export function PendingPage({
               <option value="trial_due">{t("pending.kinds.trial_due")}</option>
               <option value="security_finding">{t("pending.kinds.security_finding")}</option>
               <option value="recovery">{t("pending.kinds.recovery")}</option>
+              <option value="conflict">{t("pending.kinds.conflict")}</option>
+              <option value="governance">{t("pending.kinds.governance")}</option>
             </Select>
           </Field>
           {savedViewIssue ? <p role="status">{savedViewIssue === "load" ? t("pending.savedView.loadFailed") : t("pending.savedView.saveFailed")}</p> : null}
@@ -201,7 +208,7 @@ export function PendingPage({
             <input
               aria-label={t("pending.batch.selectAll")}
               checked={allVisibleSelected}
-              disabled={busy}
+              disabled={busy || selectable.length === 0}
               onChange={toggleAll}
               type="checkbox"
             />
@@ -225,6 +232,8 @@ export function PendingPage({
         </div>
         {visibleItems.length ? <ul className="sh-pending__list">
           {visibleItems.map((item) => {
+            const name = "displayName" in item ? item.displayName || t(`pending.kinds.${item.kind}`) : item.subject;
+            const canSnooze = item.canSnooze !== false && item.kind !== "recovery";
             // 每类事项的“建议操作”：试用到期→转为常规、安全发现→重新检查、恢复事项→确认恢复。
             const suggested = item.kind === "trial_due"
               ? { kind: "pending_convert", label: t("pending.actions.convert"), perform: (target: PendingItem) => facade.convert(target) }
@@ -233,16 +242,16 @@ export function PendingPage({
                 : { kind: "pending_recover", label: t("pending.actions.recover"), perform: (target: PendingItem) => facade.recover(target) };
             return <li className="sh-pending-item" key={item.id}>
               <input
-                aria-label={t("pending.batch.selectItem", { subject: item.subject })}
+                aria-label={t("pending.batch.selectItem", { subject: name })}
                 checked={selectedIds.includes(item.id)}
                 className="sh-pending-item__select"
-                disabled={busy}
+                disabled={busy || !canSnooze}
                 onChange={() => toggleItem(item.id)}
                 type="checkbox"
               />
               <div className="sh-pending-item__main">
                 <div className="sh-pending-item__identity">
-                  <strong className="sh-pending-item__subject">{item.subject}</strong>
+                  <strong className="sh-pending-item__subject">{name}</strong>
                   {item.risk ? (
                     <span className={`sh-pending-item__risk sh-pending-item__risk--${item.risk}`}>
                       <Icon aria-hidden="true" name={RISK_ICONS[item.risk]} />
@@ -251,6 +260,8 @@ export function PendingPage({
                   ) : null}
                 </div>
                 <p className="sh-pending-item__message">{t(item.message, { defaultValue: item.code })}</p>
+                <small>{t(`pending.kinds.${item.kind}`)}</small>
+                {item.path ? <p className="sh-pending-item__path">{displayPath(item.path)}</p> : null}
                 <div className="sh-pending-item__facts">
                   {item.kind === "trial_due" && item.dueDate ? (
                     <small className="sh-pending-item__fact">
@@ -266,16 +277,17 @@ export function PendingPage({
                   ) : null}
                 </div>
               </div>
-              <div aria-label={t("pending.item.actionsGroup", { subject: item.subject })} className="sh-pending-item__actions" role="group">
-                <Button
+              <div aria-label={t("pending.item.actionsGroup", { subject: name })} className="sh-pending-item__actions" role="group">
+                {item.href ? <Link className="sh-button sh-button--secondary" to={item.href}>{t("pending.actions.open")}</Link> : null}
+                {canSnooze || !item.href ? <Button
                   disabled={busy}
                   loading={processingItemId === item.id}
                   onClick={() => void runOne(item, suggested)}
                   size="sm"
                 >
                   {suggested.label}
-                </Button>
-                <Select
+                </Button> : null}
+                {canSnooze ? <><Select
                   aria-label={t("pending.defer.durationLabel")}
                   className="sh-pending-item__defer-days"
                   disabled={busy}
@@ -303,6 +315,7 @@ export function PendingPage({
                   trigger={<Button disabled={busy} size="sm" variant="secondary">{t("pending.actions.ignore")}</Button>}
                   variant="danger"
                 />
+                </> : <small>{t("pending.requiredAction")}</small>}
               </div>
             </li>;
           })}
@@ -315,7 +328,7 @@ export function PendingPage({
       {!handled ? <DataState message={t("pending.loading")} state="loading" /> : handled.length ? <ul className="sh-workflow-list">
         {handled.map((entry) => <li className="sh-workflow-list__item" key={entry.id}>
           <div className="sh-pending-item__info">
-            <strong>{entry.pendingId}</strong>
+            <strong>{entry.displayName || t("pending.history.entry")}</strong>
             <p>{entry.reason}</p>
             <small>{`${t("pending.history.createdAt")}：${formatTimestamp(entry.createdAt)} · ${t("pending.history.deferUntil")}：${entry.deferUntil ?? t("pending.history.permanent")}`}</small>
           </div>

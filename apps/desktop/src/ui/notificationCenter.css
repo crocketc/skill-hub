@@ -3,7 +3,7 @@
    - 进入从右滑入；展示 NOTICE_TOAST_DURATION_MS 后在栈位上滑出并移除，
      下方消息上移补位（DOM 移除驱动）；
    - z-index 梯度：跳转链接 60 > toast 55 > 抽屉 50 > 遮罩 40 > 批量条 20；
-   - data-reduced-motion="true"（系统或用户偏好）时进入/退出均即时出现、
+   - data-reduced-motion="true"（SkillHub 应用内开关）时进入/退出均即时出现、
      即时消失，信息不依赖动画表达。 */
 .sh-notification-center {
   position: fixed;
@@ -142,38 +142,62 @@
    重置按钮默认外观贴合卡片内容，焦点环沿用 base.css 的全局 :focus-visible。 */
 
 
-/* —— DEV-92（2026-09-25 验收反馈）：消息透明浮层 ——
-   顶栏铃铛下方锚定的毛玻璃浮层；从右上角进入（transform-origin 右上），
-   关闭向右上退出；折叠态层叠卡片 + 展开分组。 */
+/* —— DEV-92（2026-09-25 验收反馈）：消息毛玻璃浮层 ——
+   固定贴齐顶栏下缘与窗口右侧；中性灰半透明玻璃，水平滑入/滑出；
+   折叠态在最新通知下方露出旧卡片上缘，展开态按功能域分组。 */
 
 .sh-notification-popover {
   position: fixed;
   z-index: 60;
+  top: calc(var(--topbar-height) + var(--space-2));
+  right: var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   width: min(24rem, calc(100vw - 2rem));
   max-height: min(32rem, calc(100vh - 6rem));
   padding: var(--space-4);
-  border: 1px solid var(--ui-border);
+  border: 1px solid rgb(255 255 255 / 30%);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-surface) 72%, transparent);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  background: rgb(32 32 32 / 16%);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 12%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   overflow-y: auto;
-  transform-origin: top right;
-  transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.sh-notification-popover[data-state="entering"],
+.sh-notification-popover[data-state="entering"] {
+  animation: sh-notification-popover-enter 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 .sh-notification-popover[data-state="closing"] {
-  opacity: 0;
-  transform: scale(0.92) translateY(-8px);
+  animation: sh-notification-popover-exit 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .sh-notification-popover[data-reduced-motion="true"] {
-  transition: none;
+  animation: none;
+}
+
+@keyframes sh-notification-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateX(2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sh-notification-popover-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(2.5rem);
+  }
 }
 
 .sh-notification-popover__header {
@@ -208,23 +232,35 @@
 
 .sh-notification-popover__stack {
   position: relative;
-  display: grid;
-  gap: var(--space-2);
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0 var(--space-2) var(--space-2);
   list-style: none;
 }
 
-/* 层叠上缘：卡片堆叠的“下一层”，只露出顶部边缘。 */
+/* 旧通知的卡片面错位叠在最新通知下方，露出约一行高度。 */
 .sh-notification-popover__edge {
-  height: 0.6rem;
-  margin: 0 var(--space-3);
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  flex: 0 0 1.25rem;
+  height: 1.25rem;
+  margin: -0.45rem var(--space-3) 0;
   border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.sh-notification-popover__edge[data-layer="2"] {
+  z-index: 0;
+  margin-right: var(--space-5);
+  margin-left: var(--space-5);
 }
 
 .sh-notification-popover__item {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: var(--space-1);
 }
@@ -270,6 +306,17 @@
 .sh-notification-popover__dot--warning { background: var(--color-warning); }
 .sh-notification-popover__dot--danger { background: var(--color-danger); }
 .sh-notification-popover__dot--info { background: var(--color-info); }
+
+/* DEV-96：功能域徽标——小号弱化标签，声明通知属于哪个模块。 */
+.sh-notification-popover__source {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(127 127 127 / 14%);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
 
 .sh-notification-popover__title {
   flex: 1 1 auto;

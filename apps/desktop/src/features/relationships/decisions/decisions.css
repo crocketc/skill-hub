@@ -192,10 +192,8 @@
   gap: var(--space-3);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .sh-conflict-page *,
-  .sh-conflict-page *::before,
-  .sh-conflict-page *::after {
-    transition: none !important;
-  }
+.sh-app-shell[data-reduced-motion="true"] .sh-conflict-page *,
+.sh-app-shell[data-reduced-motion="true"] .sh-conflict-page *::before,
+.sh-app-shell[data-reduced-motion="true"] .sh-conflict-page *::after {
+  transition: none !important;
 }

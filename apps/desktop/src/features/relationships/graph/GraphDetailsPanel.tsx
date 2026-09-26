@@ -152,19 +152,18 @@ export function GraphDetailsPanel({
             </dd>
           </div>
           <VerifiedLine lastVerifiedAt={lastVerifiedAt} />
-          <details className="sh-graph-details__technical">
-            <summary>{t("relationships.graph.technicalDetails")}</summary>
-            <dl>
-              <div>
-                <dt>{t("relationships.graph.revisionLabel")}</dt>
-                <dd>{relationshipRevision}</dd>
-              </div>
-              <div>
-                <dt>{t("relationships.graph.centerIdLabel")}</dt>
-                <dd>{centerSkillId}</dd>
-              </div>
-            </dl>
-          </details>
+          {relationshipRevision ? (
+            <details className="sh-graph-details__technical">
+              <summary>{t("relationships.graph.technicalDetails")}</summary>
+              {/* DEV-99：Skill ID 不进界面，技术详情只保留用户可读的修订号。 */}
+              <dl>
+                <div>
+                  <dt>{t("relationships.graph.revisionLabel")}</dt>
+                  <dd>{relationshipRevision}</dd>
+                </div>
+              </dl>
+            </details>
+          ) : null}
         </dl>
         <div className="sh-graph-details__actions">
           <Link
@@ -189,15 +188,10 @@ export function GraphDetailsPanel({
             <h3>{t(edgeTypeLabelKey(selectedEdge.edge))}</h3>
             <dl>
               <EdgeFacts projected={selectedEdge} />
-              {selectedEdge.governanceRelationId ? (
-                <details className="sh-graph-details__technical">
-                  <summary>{t("relationships.graph.technicalDetails")}</summary>
-                  <div>
-                    <dt>{t("relationships.graph.detailsRelationId")}</dt>
-                    <dd>{selectedEdge.governanceRelationId}</dd>
-                  </div>
-                </details>
-              ) : null}
+              {/*
+                DEV-99：治理关系 id 不进界面（含技术详情折叠区）；需要技术
+                对账时经「去治理」深链跳转，id 只存在于路由参数中。
+              */}
             </dl>
             {/*
               任务 12.12：只有可管理（当前来源副本/部署 relation 存在）才给

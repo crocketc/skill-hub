@@ -2,6 +2,7 @@ import { expect, test } from "./fixtures";
 
 test("keyboard focus and reduced motion remain visible in the preview shell", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
   await page.goto("/__preview/skill-library");
   await page.keyboard.press("Tab");
   await expect(page.locator(":focus")).toBeVisible();

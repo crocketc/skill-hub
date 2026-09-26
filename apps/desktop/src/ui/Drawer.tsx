@@ -7,7 +7,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "./IconButton";
-import { usePrefersReducedMotion } from "./reducedMotion";
+import { useSkillHubReducedMotion } from "./reducedMotion";
 
 interface DrawerBaseProps {
   children: ReactNode;
@@ -51,7 +51,7 @@ export function Drawer({
   trigger,
 }: DrawerProps) {
   const { t } = useTranslation();
-  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotion = useSkillHubReducedMotion();
   const resolvedCloseLabel = closeLabel ?? t("actions.close");
 
   return (

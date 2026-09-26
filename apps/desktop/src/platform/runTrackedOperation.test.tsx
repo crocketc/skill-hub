@@ -406,4 +406,114 @@ describe("runTrackedOperation", () => {
     expect(tracker.getSnapshot()).toEqual([]);
     expect(notifications.notify).toHaveBeenCalledTimes(1);
   });
+
+  // DEV-96：通知必须能回答「属于哪个模块」——桥统一注入 source，
+  // 调用方显式给的值优先，不得被桥覆盖。
+  it("injects the flow source into success, failure and needs-user notices unless the caller set one", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "agent_rescan",
+      label: "重新扫描",
+      source: "discovery",
+      translate: (key) => `t:${key}`,
+      successNotice: () => ({ tone: "success", title: "重新扫描" }),
+      run: async () => null,
+    });
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "remove",
+      label: "从 Agent 移除",
+      source: "library",
+      translate: (key) => `t:${key}`,
+      run: async () => {
+        throw new Error("write protected");
+      },
+    }).catch(() => undefined);
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "restore",
+      label: "恢复备份",
+      source: "system",
+      translate: (key) => `t:${key}`,
+      run: async (handle) => {
+        handle.needsUser("recovery.confirmRequired");
+        return null;
+      },
+    });
+
+    const [success, failure, blocked] = notifications.notify.mock.calls
+      .map((call) => call[0] as AppNoticeInput);
+    expect(success.source).toBe("discovery");
+    expect(failure.source).toBe("library");
+    expect(blocked.source).toBe("system");
+
+    // 调用方显式给出的 source 优先于桥的缺省注入。
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "deploy",
+      label: "添加到 Agent",
+      source: "deployment",
+      translate: (key) => `t:${key}`,
+      successNotice: () => ({ tone: "success", title: "已添加", source: "library" }),
+      run: async () => null,
+    });
+    const override = notifications.notify.mock.calls.at(-1)![0] as AppNoticeInput;
+    expect(override.source).toBe("library");
+  });
+
+  it("leaves notices without a flow source untouched so the history groups them as system", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "ai_check",
+      label: "AI 检查",
+      translate: (key) => `t:${key}`,
+      run: async () => null,
+    });
+
+    const notice = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    expect(notice.source).toBeUndefined();
+  });
+
+  // DEV-96：批量结果必须回答「结果是什么」——多单位或有失败时，桥为
+  // 未写 detail 的成功通知补「成功 N、失败 M」；调用方自己的 detail 不被覆盖。
+  it("adds a batch result summary detail to multi-unit or partial success notices", async () => {
+    const tracker = createOperationTracker();
+    const notifications = stubNotifications();
+
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "deploy",
+      label: "批量添加到 Agent",
+      total: 3,
+      translate: (key, options) => `t:${key}:${JSON.stringify(options)}`,
+      summarize: () => ({ succeeded: 2, failed: 1, skipped: 0 }),
+      run: async () => null,
+    });
+    await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "deploy",
+      label: "添加到 Agent",
+      translate: (key) => `t:${key}`,
+      successNotice: () => ({ tone: "success", title: "已添加", detail: "自定义说明" }),
+      run: async () => null,
+    });
+
+    const batch = notifications.notify.mock.calls[0][0] as AppNoticeInput;
+    expect(batch.detail).toBe('t:tasks.notices.batchResult:{"succeeded":2,"failed":1}');
+    const single = notifications.notify.mock.calls[1][0] as AppNoticeInput;
+    expect(single.detail).toBe("自定义说明");
+  });
 });

@@ -1,15 +1,11 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * M-04 减少动效偏好：有效减少动效 = 系统 `prefers-reduced-motion: reduce`
- * || 用户开关。用户开关走与 ThemeProvider 外观偏好同款的 localStorage 持久化
- * 模式（key 记录"用户显式开启"，缺省=跟随系统），经 useSyncExternalStore
- * 暴露——不需要 Provider，任何组件（设置页、抽屉、toast）都能直接消费。
+ * SkillHub 减少动效偏好由应用内开关独立控制，不读取操作系统
+ * `prefers-reduced-motion`，避免 Windows 动画设置覆盖应用内选择。
  */
 
 export const REDUCED_MOTION_STORAGE_KEY = "skillhub.reduced-motion";
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
 function readStoredUserPreference(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -51,37 +47,7 @@ export function useUserReducedMotion(): boolean {
   return useSyncExternalStore(subscribeUserReducedMotion, readStoredUserPreference);
 }
 
-function systemPrefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(REDUCED_MOTION_QUERY).matches
-  );
-}
-
-function subscribeSystemReducedMotion(listener: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return () => undefined;
-  }
-  const media = window.matchMedia(REDUCED_MOTION_QUERY);
-  media.addEventListener("change", listener);
-  return () => {
-    media.removeEventListener("change", listener);
-  };
-}
-
-/** 系统层的"减少动效"设置（TC-GR-09 M-04）。 */
-export function useSystemPrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeSystemReducedMotion,
-    systemPrefersReducedMotion,
-  );
-}
-
-/** 有效减少动效：系统开启或用户开关开启，二者取或。
- *  注意不能写 `a() || b()`：短路会在开关切换时跳过第二个 hook。 */
-export function usePrefersReducedMotion(): boolean {
-  const user = useUserReducedMotion();
-  const system = useSystemPrefersReducedMotion();
-  return user || system;
+/** SkillHub 内减少动效的唯一开关；默认播放应用自身动效。 */
+export function useSkillHubReducedMotion(): boolean {
+  return useUserReducedMotion();
 }

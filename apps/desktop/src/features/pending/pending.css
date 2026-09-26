@@ -57,6 +57,16 @@
   padding: 0;
 }
 
+.sh-pending-item__path {
+  overflow-wrap: anywhere;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-pending-item__actions > a {
+  text-decoration: none;
+}
+
 .sh-pending-item {
   align-items: start;
   border: 1px solid var(--ui-border-subtle);

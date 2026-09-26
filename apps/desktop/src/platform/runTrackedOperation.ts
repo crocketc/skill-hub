@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { describeNativeError, isStructuredNativeError } from "../api/nativeErrors";
 import { skillHubI18n } from "../i18n";
-import type { AppNoticeInput, AppNotifications } from "../ui/notifications";
+import type { AppNoticeInput, AppNotifications, NoticeSource } from "../ui/notifications";
 import {
   operationTracker,
   type BeginTrackedOperation,
@@ -46,6 +46,9 @@ export interface RunTrackedOperationOptions<T> {
   kind: string;
   /** 已本地化的操作名（调用方负责译文，桥不再造句）。 */
   label: string;
+  /** DEV-96：流程功能域，注入本流程的全部通知（通知卡片模块徽标）。
+   *  通知钩子显式给出的 source 优先。 */
+  source?: NoticeSource;
   /** 未知总数传 0/缺省：百分比未知是合法状态。 */
   total?: number;
   parentId?: string;
@@ -120,12 +123,40 @@ function withDeepLink(
   };
 }
 
+/** DEV-96：通知必须能回答「属于哪个模块」。桥把流程级 source 注入所有
+ *  通知；调用方在通知钩子里显式给出的值优先。 */
+function withSource(notice: AppNoticeInput, source: NoticeSource | undefined): AppNoticeInput {
+  if (!source || notice.source) return notice;
+  return { ...notice, source };
+}
+
+/** DEV-96：通知必须能回答「结果是什么」。多单位或存在失败时，为调用方
+ *  未写 detail 的成功通知补「成功 N、失败 M」；单单位全成功不补（避免噪音），
+ *  调用方自己的 detail 永不覆盖。 */
+function withResultSummary(
+  notice: AppNoticeInput,
+  summary: TrackedResultSummary | null,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): AppNoticeInput {
+  if (notice.detail || !summary) return notice;
+  const units = summary.succeeded + summary.failed + (summary.skipped ?? 0);
+  if (units <= 1 && summary.failed === 0) return notice;
+  return {
+    ...notice,
+    detail: translate("tasks.notices.batchResult", {
+      succeeded: summary.succeeded,
+      failed: summary.failed,
+    }),
+  };
+}
+
 export async function runTrackedOperation<T>(
   options: RunTrackedOperationOptions<T>,
 ): Promise<T> {
   const {
     kind,
     label,
+    source,
     total = 0,
     parentId,
     canCancel,
@@ -190,7 +221,7 @@ export async function runTrackedOperation<T>(
           : { tone: "info", title: label, detail: phase ?? undefined };
         // 阻塞在用户动作上时立即通知，不等命令结束。
         if (notice) {
-          notifications.notify(withDeepLink(notice, correlatedHref, translate));
+          notifications.notify(withSource(withDeepLink(notice, correlatedHref, translate), source));
         }
       }
     },
@@ -217,7 +248,13 @@ export async function runTrackedOperation<T>(
             title: label,
           };
       if (notice) {
-        notifications.notify(withDeepLink(notice, correlatedHref, translate));
+        // DEV-96：先补结果摘要与模块归属，再挂缺省深链。
+        const enriched = withDeepLink(
+          withSource(withResultSummary(notice, summary, translate), source),
+          correlatedHref,
+          translate,
+        );
+        notifications.notify(enriched);
       }
     }
     if (queryClient && invalidateQueryKeys) {
@@ -242,7 +279,7 @@ export async function runTrackedOperation<T>(
         ? errorNotice(error, message)
         : { tone: "danger", title: label, detail: message };
       if (notice) {
-        notifications.notify(withDeepLink(notice, correlatedHref, translate));
+        notifications.notify(withSource(withDeepLink(notice, correlatedHref, translate), source));
       }
     }
     // 异常不吞掉：记账完成后调用方仍拿到原始错误。

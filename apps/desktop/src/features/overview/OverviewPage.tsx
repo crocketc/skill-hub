@@ -7,6 +7,7 @@ import { Icon, type IconName } from "../../ui/Icon";
 import { PageFrame } from "../../ui/PageFrame";
 import { PageHeader } from "../../ui/PageHeader";
 import type { RelationshipsFacade } from "../relationships/api";
+import type { PendingFacade } from "../pending/api";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
 import { useOverviewDeploymentNames, useDiscoveredAgentCardCount } from "./deploymentNames";
 import { PendingSummary } from "./PendingSummary";
@@ -31,6 +32,7 @@ import "./overview.css";
 const compactStatIcons: IconName[] = ["agents", "projects", "deploy", "warning"];
 
 export interface OverviewPageProps {
+  pendingFacade?: Pick<PendingFacade, "list">;
   /**
    * 测试与预览桩的接缝：缺省使用原生只读关系门面。概览是纯浏览查询，
    * 不经 runTrackedOperation（无写入、无顶栏任务）。
@@ -178,7 +180,7 @@ function TagDistributionPanel({
   );
 }
 
-export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade }: OverviewPageProps) {
+export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade, pendingFacade }: OverviewPageProps) {
   const { snapshot } = useOutletContext<BootstrapOutletContext>();
   const { t } = useTranslation();
   const [dimension, setDimension] = useState<OverviewDimension>("agent");
@@ -279,7 +281,7 @@ export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade }
 
           <div className="sh-overview__rail">
             <TagDistributionPanel items={tagItems} />
-            <PendingSummary snapshot={snapshot} />
+            <PendingSummary snapshot={snapshot} facade={pendingFacade} />
           </div>
         </section>
       </section>

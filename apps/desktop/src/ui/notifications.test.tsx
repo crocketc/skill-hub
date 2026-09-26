@@ -16,7 +16,6 @@ import {
   useAppNotifications,
   type AppNotice,
 } from "./notifications";
-import { stubMatchMediaReducedMotion } from "./testMatchMedia";
 import notificationCss from "./notificationCenter.css?raw";
 
 interface HarnessHandles {
@@ -115,15 +114,35 @@ function toastTitles(region: HTMLElement): string[] {
   );
 }
 
+function firePopoverAnimationEnd(element: HTMLElement, animationName: string) {
+  const event = new Event("animationend", { bubbles: true });
+  Object.defineProperty(event, "animationName", { value: animationName });
+  fireEvent(element, event);
+}
+
 async function openHistoryDrawer() {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /Notifications/ }));
-  return screen.getByRole("dialog", { name: "Notifications" });
+  const drawer = screen.getByRole("dialog", { name: "Notifications" });
+  if (drawer.getAttribute("data-state") === "entering") {
+    act(() => firePopoverAnimationEnd(drawer, "sh-notification-popover-enter"));
+  }
+  return drawer;
+}
+
+function finishPopoverExitAnimation() {
+  const drawer = screen.queryByRole("dialog", { name: "Notifications" });
+  if (drawer?.getAttribute("data-state") === "closing") {
+    act(() => {
+      firePopoverAnimationEnd(drawer, "sh-notification-popover-exit");
+    });
+  }
 }
 
 describe("AppNotificationsProvider toasts", () => {
   afterEach(() => {
     vi.useRealTimers();
+    localStorage.removeItem("skillhub.reduced-motion");
     handles.current = null;
   });
 
@@ -273,7 +292,7 @@ describe("AppNotificationsProvider toasts", () => {
 
   it("renders toasts in the instant state when reduced motion is effective", async () => {
     vi.useFakeTimers();
-    stubMatchMediaReducedMotion(true);
+    localStorage.setItem("skillhub.reduced-motion", "true");
     await renderNotificationShell();
 
     act(() => {
@@ -292,6 +311,10 @@ describe("AppNotificationsProvider toasts", () => {
 });
 
 describe("NotificationBell and history drawer", () => {
+  afterEach(() => {
+    localStorage.removeItem("skillhub.reduced-motion");
+  });
+
   it("announces the unread count and clears it through mark-all-read", async () => {
     const user = userEvent.setup();
     await renderNotificationShell();
@@ -311,6 +334,41 @@ describe("NotificationBell and history drawer", () => {
 
     expect(bell).toHaveAttribute("aria-label", "Notifications");
     expect(handles.current?.unreadCount()).toBe(0);
+  });
+
+  // DEV-96：每张历史卡片（折叠态与展开态）都标注功能域徽标，缺省归入系统，
+  // 让用户不展开分组也能看出通知属于哪个模块。
+  it("labels every history card with its functional domain badge", async () => {
+    localStorage.setItem("skillhub.reduced-motion", "true");
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({ tone: "success", title: "quiet system notice" });
+      handles.current?.notify({
+        source: "discovery",
+        tone: "success",
+        title: "rescan completed",
+      });
+    });
+
+    const drawer = await openHistoryDrawer();
+    // 折叠态：最新一条完整展示，卡片头部带「Discovery」徽标。
+    expect(within(drawer).getByText("rescan completed")).toBeVisible();
+    expect(within(drawer).getByText("Discovery")).toBeVisible();
+
+    // 展开态：全部卡片都带徽标；未声明 source 的如实标注 System。
+    await user.click(within(drawer).getByRole("button", { name: "Expand 2 notifications" }));
+    const systemCard = within(drawer).getByRole("button", {
+      name: 'Mark "quiet system notice" as read',
+    });
+    expect(within(systemCard).getByText("System")).toBeVisible();
+    const discoveryCard = within(drawer).getByRole("button", {
+      name: 'Mark "rescan completed" as read',
+    });
+    expect(within(discoveryCard).getByText("Discovery")).toBeVisible();
+
+    localStorage.removeItem("skillhub.reduced-motion");
   });
 
   it("filters the history between unread and all entries", async () => {
@@ -381,6 +439,9 @@ describe("NotificationBell and history drawer", () => {
 });
 
 describe("history drawer marks an entry read on activation", () => {
+  beforeEach(() => localStorage.setItem("skillhub.reduced-motion", "true"));
+  afterEach(() => localStorage.removeItem("skillhub.reduced-motion"));
+
   it("marks the entry read and closes the drawer when the message body is clicked", async () => {
     const user = userEvent.setup();
     await renderNotificationShell();
@@ -403,6 +464,7 @@ describe("history drawer marks an entry read on activation", () => {
       }),
     );
 
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     // 角标随已读同步清零；历史保留，记录只标已读不删除。
     expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
@@ -425,6 +487,7 @@ describe("history drawer marks an entry read on activation", () => {
     const drawer = await openHistoryDrawer();
     await user.click(within(drawer).getByRole("link", { name: "View operation" }));
 
+    finishPopoverExitAnimation();
     expect(screen.getByText("page@/library")).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(handles.current?.unreadCount()).toBe(0);
@@ -446,6 +509,7 @@ describe("history drawer marks an entry read on activation", () => {
     body.focus();
     await user.keyboard("{Enter}");
 
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(handles.current?.unreadCount()).toBe(0);
     expect(handles.current?.noticeCount()).toBe(1);
@@ -468,6 +532,7 @@ describe("history drawer marks an entry read on activation", () => {
     await user.click(
       within(drawer).getByRole("button", { name: 'Mark "import finished" as read' }),
     );
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
 
     // 第二次：本体重复激活不报错，状态保持已读。
@@ -475,6 +540,7 @@ describe("history drawer marks an entry read on activation", () => {
     await user.click(
       within(reopened).getByRole("button", { name: 'Mark "import finished" as read' }),
     );
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
 
     // 第三次：action 链接重复触发同样幂等。
@@ -505,6 +571,7 @@ describe("history drawer marks an entry read on activation", () => {
     await user.click(
       within(drawer).getByRole("button", { name: 'Mark "unread entry" as read' }),
     );
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
 
@@ -632,6 +699,7 @@ describe("operation notices deep link to the operation record", () => {
   });
 
   afterEach(() => {
+    localStorage.removeItem("skillhub.reduced-motion");
     handles.current = null;
   });
 
@@ -682,6 +750,29 @@ describe("operation notices deep link to the operation record", () => {
 });
 
 describe("DEV-92 notification popover", () => {
+  beforeEach(() => localStorage.setItem("skillhub.reduced-motion", "true"));
+  afterEach(() => localStorage.removeItem("skillhub.reduced-motion"));
+
+  it("toggles closed from the bell and completes the horizontal exit animation", async () => {
+    localStorage.removeItem("skillhub.reduced-motion");
+    const user = userEvent.setup();
+    await renderNotificationShell();
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    await user.click(bell);
+    const popover = screen.getByRole("dialog", { name: "Notifications" });
+    expect(popover).toHaveAttribute("data-state", "entering");
+    act(() => firePopoverAnimationEnd(popover, "sh-notification-popover-enter"));
+    await waitFor(() => expect(popover).toHaveAttribute("data-state", "open"));
+
+    await user.click(bell);
+    expect(popover).toHaveAttribute("data-state", "closing");
+    act(() => firePopoverAnimationEnd(popover, "sh-notification-popover-exit"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull(),
+    );
+  });
+
   it("stacks collapsed history: latest card visible, older entries behind edges", async () => {
     const user = userEvent.setup();
     await renderNotificationShell();
@@ -698,17 +789,30 @@ describe("DEV-92 notification popover", () => {
 
     // 最新一条完整展示；层叠上缘至多两条；旧条目标题不直接出现。
     expect(within(popover).getByText("newest")).toBeVisible();
-    expect(within(popover).getAllByTestId("notification-stack-edge")).toHaveLength(2);
+    const latestCard = within(popover).getByRole("button", { name: "Expand 3 notifications" });
+    expect(latestCard).toHaveAttribute("aria-expanded", "false");
+    const edges = within(popover).getAllByTestId("notification-stack-edge");
+    expect(edges).toHaveLength(2);
+    expect(latestCard.compareDocumentPosition(edges[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(edges[0].compareDocumentPosition(edges[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(popover).queryByText("older entry")).toBeNull();
     expect(within(popover).queryByText("middle")).toBeNull();
 
-    // 展开切换：View all 展示全量；Collapse 回到层叠。
-    await user.click(within(popover).getByRole("button", { name: "View all" }));
+    // 点击层叠卡片仅展开，不关闭浮层，也不把最新通知标为已读。
+    await user.click(latestCard);
     expect(within(popover).getByText("middle")).toBeVisible();
     expect(within(popover).getByText("oldest")).toBeVisible();
+    expect(handles.current?.unreadCount()).toBe(3);
     await user.click(within(popover).getByRole("button", { name: "Collapse" }));
     expect(within(popover).getByText("newest")).toBeVisible();
     expect(within(popover).queryByText("middle")).toBeNull();
+    within(popover).getByRole("button", { name: "Expand 3 notifications" }).focus();
+    await user.keyboard("{Enter}");
+    expect(within(popover).getByText("oldest")).toBeVisible();
+    expect(handles.current?.unreadCount()).toBe(3);
+    await user.click(within(popover).getByRole("button", { name: 'Mark "newest" as read' }));
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(handles.current?.unreadCount()).toBe(2);
   });
 
   it("groups expanded history by functional domain with local labels", async () => {
@@ -725,10 +829,11 @@ describe("DEV-92 notification popover", () => {
     await user.click(screen.getByRole("button", { name: "View all" }));
     const popover = screen.getByRole("dialog", { name: "Notifications" });
 
-    expect(within(popover).getByText("Discovery")).toBeVisible();
-    expect(within(popover).getByText("Skill library")).toBeVisible();
-    // 缺省 source 归入 System 组。
-    expect(within(popover).getByText("System")).toBeVisible();
+    // DEV-96：组标题与卡片徽标同文案——每个来源恰好出现两次
+    //（分组标题 + 卡片徽标），缺省 source 归入 System 组。
+    expect(within(popover).getAllByText("Discovery")).toHaveLength(2);
+    expect(within(popover).getAllByText("Skill library")).toHaveLength(2);
+    expect(within(popover).getAllByText("System")).toHaveLength(2);
   });
 
   it("renders per-entry times and keeps the read activation semantics in expanded view", async () => {
@@ -752,19 +857,21 @@ describe("DEV-92 notification popover", () => {
     await user.click(
       within(popover).getByRole("button", { name: 'Mark "timed entry" as read' }),
     );
+    finishPopoverExitAnimation();
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(handles.current?.unreadCount()).toBe(0);
   });
 
   it("animates the popover from the top-right and skips motion when reduced", async () => {
     const user = userEvent.setup();
+    localStorage.setItem("skillhub.reduced-motion", "true");
     await renderNotificationShell();
 
     await user.click(screen.getByRole("button", { name: /Notifications/ }));
     const popover = screen.getByRole("dialog", { name: "Notifications" });
-    // 进入后处于 open 态；CSS 由 data-state 驱动右上角进出场（transform-origin
-    // 与 closing 态由 CSS 契约测试锁定）。本壳层是减少动效环境：进入即 open。
+    // 减少动效时直接进入终态，动画由浏览器环境偏好禁用。
     expect(popover).toHaveAttribute("data-state", "open");
+    expect(popover).toHaveAttribute("data-reduced-motion", "true");
 
     await user.click(within(popover).getByRole("button", { name: "Close" }));
     // 减少动效下关闭瞬时完成：浮层直接卸载。
@@ -773,10 +880,21 @@ describe("DEV-92 notification popover", () => {
     );
   });
 
-  it("keeps the popover CSS contract: blur, top-right origin, stack edges", () => {
-    expect(notificationCss).toContain("backdrop-filter");
-    expect(notificationCss).toContain("transform-origin: top right");
+  it("keeps the popover attached to the top-right edge with translucent glass and horizontal motion", () => {
+    expect(notificationCss).toContain("top: calc(var(--topbar-height) + var(--space-2))");
+    expect(notificationCss).toContain("right: var(--space-3)");
+    expect(notificationCss).not.toContain("color-mix(in srgb, var(--color-surface)");
+    expect(notificationCss).toContain("backdrop-filter: blur(6px);");
+    expect(notificationCss).toContain("animation: sh-notification-popover-enter 280ms");
+    expect(notificationCss).toContain("animation: sh-notification-popover-exit 280ms");
+    expect(notificationCss).toContain("@keyframes sh-notification-popover-enter");
+    expect(notificationCss).toContain("@keyframes sh-notification-popover-exit");
+    expect(notificationCss).toContain("transform: translateX(2.5rem)");
+    expect(notificationCss).not.toContain("transform-origin: top right");
+    expect(notificationCss).not.toContain("translateY(-8px)");
     expect(notificationCss).toContain(".sh-notification-popover__edge");
+    expect(notificationCss).toContain("height: 1.25rem");
+    expect(notificationCss).toContain("margin: -0.45rem var(--space-3) 0");
     expect(notificationCss).toContain('.sh-notification-popover[data-state="closing"]');
     expect(notificationCss).toContain('[data-reduced-motion="true"]');
   });

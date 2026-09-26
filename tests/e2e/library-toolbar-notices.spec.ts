@@ -82,6 +82,108 @@ test("batch tag results toast leaves after 2s and stays reachable in the history
   await expect(page.getByRole("dialog", { name: "Notifications" })).toHaveCount(0);
 });
 
+test("clicking a notification stack expands all notices without marking them read", async ({ page }, testInfo) => {
+  await page.goto(LIBRARY_ROUTE);
+  for (const tag of ["review", "glass-check"]) {
+    await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+    await page.getByRole("button", { name: "Add tags", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add tags" });
+    await dialog.getByRole("textbox", { name: "Tags" }).fill(tag);
+    await dialog.getByRole("button", { name: "Add tags" }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  const bell = page.getByRole("button", { name: "Notifications, 2 unread", exact: true });
+  await bell.click();
+  const popover = page.getByRole("dialog", { name: "Notifications" });
+  await expect(popover).toHaveAttribute("data-state", "open");
+  await popover.screenshot({ path: testInfo.outputPath("notification-stack.png") });
+  await popover.getByRole("button", { name: "Expand 2 notifications" }).click();
+  await expect(popover.getByText("Batch tag update finished", { exact: true })).toHaveCount(2);
+  await expect(bell).toBeVisible();
+  await expect(popover.getByRole("button", { name: "Collapse", exact: true })).toBeVisible();
+  await popover.screenshot({ path: testInfo.outputPath("notification-expanded.png") });
+});
+
+test("notification popover aligns to the window edge, uses frosted glass, and slides in/out", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // SkillHub's own motion switch controls this surface, independently of the OS media preference.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(LIBRARY_ROUTE);
+  await page.evaluate(() => localStorage.removeItem("skillhub.reduced-motion"));
+  await page.evaluate(() => {
+    type Frame = { name: string; x: number };
+    const events: { starts: Frame[]; ends: Frame[] } = { starts: [], ends: [] };
+    (window as Window & { popoverAnimationEvents?: typeof events }).popoverAnimationEvents = events;
+    const record = (kind: "starts" | "ends", event: AnimationEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.matches(".sh-notification-popover")) return;
+      events[kind].push({ name: event.animationName, x: target.getBoundingClientRect().left });
+    };
+    document.addEventListener("animationstart", (event) => record("starts", event as AnimationEvent), true);
+    document.addEventListener("animationend", (event) => record("ends", event as AnimationEvent), true);
+  });
+  await page.getByRole("button", { name: /Notifications/ }).click();
+
+  const popover = page.getByRole("dialog", { name: "Notifications" });
+  await expect(popover).toBeVisible();
+  await expect(popover).toHaveAttribute("data-reduced-motion", "false");
+  await expect.poll(() => page.evaluate(() =>
+    (window as Window & { popoverAnimationEvents?: { starts: unknown[] } }).popoverAnimationEvents?.starts.length ?? 0,
+  )).toBe(1);
+  await expect(popover).toHaveAttribute("data-state", "open");
+  await expect.poll(() => popover.evaluate((element) =>
+    element.getBoundingClientRect().right <= window.innerWidth,
+  )).toBe(true);
+  const rendered = await popover.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const alphaMatch = style.backgroundColor.match(/(?:,|\/)\s*([\d.]+)(%)?\s*\)$/);
+    return {
+      rightGap: window.innerWidth - rect.right,
+      top: rect.top,
+      topStyle: style.top,
+      background: style.backgroundColor,
+      backgroundAlpha: alphaMatch
+        ? Number(alphaMatch[1]) / (alphaMatch[2] ? 100 : 1)
+        : 1,
+      backdropFilter: style.backdropFilter,
+    };
+  });
+
+  expect(rendered.rightGap).toBeGreaterThanOrEqual(8);
+  expect(rendered.rightGap).toBeLessThanOrEqual(16);
+  expect(rendered.top).toBeCloseTo(Number.parseFloat(rendered.topStyle), 0);
+  expect(rendered.top).toBeGreaterThanOrEqual(48);
+  expect(rendered.background).toMatch(/rgba?\(|color\(/);
+  expect(rendered.backgroundAlpha).toBeCloseTo(0.16, 2);
+  expect(rendered.background).toBe("rgba(32, 32, 32, 0.16)");
+  expect(rendered.backdropFilter).toContain("blur(6px)");
+
+  const enterFrames = await page.evaluate(() =>
+    (window as Window & { popoverAnimationEvents?: { starts: { name: string; x: number }[]; ends: { name: string; x: number }[] } }).popoverAnimationEvents,
+  );
+  const enterStart = enterFrames?.starts.find((frame) => frame.name === "sh-notification-popover-enter");
+  const enterEnd = enterFrames?.ends.find((frame) => frame.name === "sh-notification-popover-enter");
+  expect(enterStart).toBeDefined();
+  expect(enterEnd).toBeDefined();
+  expect(enterStart!.x).toBeGreaterThan(enterEnd!.x);
+
+  // 第二次点铃铛也应触发同一条向右滑出的关闭动画。
+  await page.getByRole("button", { name: /Notifications/ }).click();
+  await expect(popover).toHaveAttribute("data-state", "closing");
+  await expect(popover).toHaveCount(0);
+  const exitFrames = await page.evaluate(() =>
+    (window as Window & { popoverAnimationEvents?: { starts: { name: string; x: number }[]; ends: { name: string; x: number }[] } }).popoverAnimationEvents,
+  );
+  const exitStart = exitFrames?.starts.find((frame) => frame.name === "sh-notification-popover-exit");
+  const exitEnd = exitFrames?.ends.find((frame) => frame.name === "sh-notification-popover-exit");
+  expect(exitStart).toBeDefined();
+  expect(exitEnd).toBeDefined();
+  expect(exitEnd!.x).toBeGreaterThan(exitStart!.x);
+});
+
 test("batch bar never covers the card pagination", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 700 });
   await page.goto(`${LIBRARY_ROUTE}?total=80`);
