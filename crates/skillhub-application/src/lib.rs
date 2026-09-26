@@ -1851,6 +1851,7 @@ impl LocalApplicationFacade {
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
         let database = Arc::new(Mutex::new(database));
+        Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
@@ -1930,6 +1931,7 @@ impl LocalApplicationFacade {
     pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
+        Self::sweep_stale_journal(&database);
         let central = CentralLibrary::initialize(&library_root)
             .expect("new_with_library requires a valid central library");
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
@@ -2302,6 +2304,26 @@ impl LocalApplicationFacade {
     // only ever contain the stable kind, the phase and a whitelisted error
     // code — never skill content, credentials or raw error payloads.
     // ------------------------------------------------------------------
+
+    /// DEV-101：`planned`/`prepared` 行的可提交状态只活在进程内存里，上一个
+    /// 会话残留的这类行永远无法提交，却会让启动恢复闸门永远亮着（用户每次
+    /// 取消删除/部署确认框都会留下一条）。四类 prepare 都是只读检查或内存
+    /// 计划，没有磁盘副作用需要回滚，故在会话打开时直接结算为 `rolled_back`；
+    /// `applying` 及之后的行可能有真实磁盘效果，保持原样交给启动恢复闸门处置。
+    /// 每个持有 `Database` 的构造路径都必须调用本函数。
+    fn sweep_stale_journal(database: &Mutex<Database>) {
+        let locked = database
+            .lock()
+            .map_err(|_| internal("journal.sweep_stale"))
+            .expect("journal sweep requires the database lock");
+        locked
+            .connection_for_test()
+            .execute(
+                "UPDATE operations SET phase='rolled_back', state='rolled_back', updated_at=strftime('%s','now') WHERE phase IN ('planned','prepared')",
+                [],
+            )
+            .expect("settle stale planned/prepared journal rows from the previous session");
+    }
 
     /// Starts a single-step flow with a `planned` record.
     fn journal_begin(&self, operation_id: OperationId, kind: &'static str) {
@@ -11926,8 +11948,15 @@ mod tests {
     #[tokio::test]
     async fn facade_repairs_unfinished_operation_and_requires_valid_ignore_removal() {
         let database = Database::open_in_memory().unwrap();
+        // DEV-101：先构造 facade 再种行。跨会话残留的 planned 行已被启动
+        // 清扫结算，不再作为恢复候选；本测试覆盖的是「本会话内」未完成
+        // 操作的修复闭环，行必须在构造之后写入。
         let operation_id = skillhub_core::OperationId::new();
-        database
+        let facade = LocalApplicationFacade::new(database);
+        facade
+            .database_for_tests()
+            .lock()
+            .unwrap()
             .operation_repository()
             .insert(&OperationRecord::planned(
                 operation_id,
@@ -11936,7 +11965,6 @@ mod tests {
             ))
             .await
             .unwrap();
-        let facade = LocalApplicationFacade::new(database);
 
         let candidates = facade
             .query(AppQuery::ListRecoveryCandidates)

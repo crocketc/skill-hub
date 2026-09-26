@@ -512,3 +512,156 @@ async fn remove_ignore_rule_is_journalled_as_a_committed_record() {
     assert_eq!(record.phase, OperationPhase::Committed);
     assert_eq!(record.error_code, None);
 }
+
+/// DEV-101：`prepared`/`planned` 行的可提交状态只活在进程内存里——上一个
+/// 会话残留的这类行永远无法提交（prepared 缓存随进程消失），却会让启动
+/// 恢复闸门永远亮着。新会话打开时必须把它们结算为 `rolled_back`（四类
+/// prepare 都是只读检查/内存计划，不落盘，无磁盘副作用需要回滚）；
+/// `applying` 及之后的行可能有真实磁盘效果，必须保持为恢复候选。
+#[tokio::test]
+async fn stale_planned_and_prepared_rows_settle_as_rolled_back_on_startup() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("app.sqlite");
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).expect("central library");
+
+    let prepared_id = {
+        let database = Database::open(&database_path).expect("database");
+        let skill = Skill::new(skillhub_core::SkillId::new(), "StalePrepared");
+        database
+            .catalog_repository()
+            .expect("catalog repository")
+            .insert(&skill)
+            .await
+            .expect("insert skill");
+        let source = tempfile::tempdir().expect("source");
+        std::fs::write(source.path().join("SKILL.md"), "# StalePrepared\n").expect("write source");
+        let target = tempfile::tempdir().expect("target");
+        let library = CentralLibrary::initialize(workspace.path().join("capture-library"))
+            .expect("capture library");
+        let version_id = VersionStore::from_library(&library)
+            .capture(skill.id(), source.path())
+            .expect("capture version")
+            .id;
+        let target_id = seed_registered_target(&database, target.path(), "agent-codex");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+                rusqlite::params![version_id.to_string(), skill.id().to_string()],
+            )
+            .expect("insert version fixture");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+                rusqlite::params![target_id, target.path().to_string_lossy().into_owned()],
+            )
+            .expect("insert target fixture");
+        let plan = DeploymentPlan {
+            skill_id: skill.id(),
+            version_id: version_id.clone(),
+            runtime_name: "stale-prepared".into(),
+            mode: DeploymentMode::ManagedCopy,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+            targets: vec![TargetPlan {
+                physical_target_id: target_id,
+                logical_target_ids: vec!["agent-codex".into()],
+                target_path: target.path().to_string_lossy().into_owned(),
+                destination_path: target.path().join("stale-prepared").to_string_lossy().into_owned(),
+                source_path: source.path().to_string_lossy().into_owned(),
+                runtime_name: "stale-prepared".into(),
+                skill_id: skill.id(),
+                version_id: version_id.clone(),
+                mode: DeploymentMode::ManagedCopy,
+                change: TargetChange::Create,
+                warnings: Vec::new(),
+                conflicts: Vec::new(),
+            }],
+        };
+        let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+            .expect("facade before crash");
+        let prepared = facade
+            .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+            .await
+            .expect("prepare deployment");
+        let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+            panic!("expected prepared deployment");
+        };
+        prepared.id
+        // facade 就此丢弃：模拟「prepare 之后应用被关闭/崩溃」，prepared 行残留。
+    };
+
+    // 'planned' 行同理：单步流程 begin 后进程即终止，行永远停在 planned。
+    // 崩溃现场无法经公共命令制造，参照 facade_deployment_accounting 的做法
+    // 以夹具行模拟。
+    {
+        let database = Database::open(&database_path).expect("database for fixtures");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,inverse_json,error_code,created_at,updated_at) \
+                 VALUES('3f2a9e70-5f83-4b1c-9a55-0f1e2d3c4b5a','deploy_skill','running','planned','fixture','{}',NULL,0,0)",
+                [],
+            )
+            .expect("seed a stale planned fixture row");
+    }
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("facade after crash");
+    let operations = recent_operations(&facade).await;
+    let phase_of = |id: &str| {
+        operations
+            .iter()
+            .find(|record| record.operation_id.to_string() == id)
+            .map(|record| (record.phase, record.state.to_owned()))
+    };
+
+    // 上个会话的 prepared/planned 全部结算为 rolled_back。
+    assert_eq!(
+        phase_of(prepared_id.to_string().as_str()),
+        Some((OperationPhase::RolledBack, "rolled_back".to_owned())),
+        "a prepared row from a previous session must settle as rolled_back"
+    );
+    assert_eq!(
+        phase_of("3f2a9e70-5f83-4b1c-9a55-0f1e2d3c4b5a"),
+        Some((OperationPhase::RolledBack, "rolled_back".to_owned())),
+        "a planned row from a previous session must settle as rolled_back"
+    );
+
+    // prepared/planned 全部收尾后，启动恢复闸门放行。
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::Clean,
+        "stale prepared/planned rows alone must not gate startup"
+    );
+
+    // 'applying' 行代表可能已写盘的中断，必须不受清扫影响并继续闸住启动。
+    // 单独重开一次会话，保证前面的 Clean 判定不受本夹具行干扰。
+    {
+        let database = Database::open(&database_path).expect("database for fixtures");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,inverse_json,error_code,created_at,updated_at) \
+                 VALUES('7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d','deploy_skill','running','applying','fixture','{}',NULL,0,0)",
+                [],
+            )
+            .expect("seed an applying fixture row");
+    }
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("facade after an applying crash");
+    let operations = recent_operations(&facade).await;
+    let applying = operations
+        .iter()
+        .find(|record| record.operation_id.to_string() == "7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d")
+        .expect("the applying row must survive the sweep");
+    assert_eq!(applying.phase, OperationPhase::Applying);
+    assert_eq!(applying.state, "running");
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::InProgress,
+        "an applying row without recovery data reports InProgress and still gates startup (NeedsRecovery is reserved for rows carrying recovery_data)"
+    );
+}
