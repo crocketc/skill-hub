@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-- 代码验收基线：`0b1eebb1`（当前候选 HEAD，2026-09-24；导入部署关系治理实施计划 15/15 收口，验证证据见 `8d4adaff` 与 `docs/development/自动化测试说明-2026-09-24.md`）
+- 代码验收基线：`0b1eebb1`（当前候选 HEAD，2026-09-24；导入部署关系治理实施计划 15/15 收口，验证证据见 `8d4adaff` 与 `docs/development/自动化测试说明-2026-09-27.md`）
 - 浏览器自动化基线：`0b1eebb1`（`pnpm test:e2e` 404/404）
 - 日期：2026-09-24
 - 说明：来源副本治理、治理历史、部署预览 pair 契约（分组处置/确认指纹/过期裁决）与导入治理分离已完成代码与自动化；全量自动化在当前 HEAD 全绿。双平台真机取证（人工清单流程 A—H）、真实供应商验证与签名更新取证仍待人工（发布门槛第 3/4 条）。
@@ -38,7 +38,7 @@
 | 前端生产构建 | 通过 | `pnpm build:frontend`（2026-09-24；仅既有大 chunk 提示） |
 | 发布静态预检 | 通过 | `pnpm verify:release`、`node scripts/verify_atomic_test_catalog.mjs`（349 条）、`pnpm test:release`、`node scripts/verify_frontend_lifecycle_scripts.mjs` 均通过（2026-09-24 于 `0b1eebb1`） |
 | i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0（2026-09-24 于 `0b1eebb1`）；zh/en 键集 parity 由前端测试覆盖 |
-| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-09-24.md` |
+| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-09-27.md` |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
