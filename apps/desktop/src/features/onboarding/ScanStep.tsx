@@ -12,6 +12,7 @@ interface ScanStepProps {
    */
   onScan?: () => void;
   onContinueInBackground?: () => void;
+  continueInBackgroundLabel?: string;
   onOpenImport?: (roots: string[]) => void;
   scanResult?: ScanResult;
   scanInBackground?: boolean;
@@ -23,6 +24,7 @@ interface ScanStepProps {
 export function ScanStep({
   isScanning,
   onContinueInBackground,
+  continueInBackgroundLabel,
   onOpenImport,
   onScan,
   scanInBackground = false,
@@ -69,7 +71,7 @@ export function ScanStep({
       ) : null}
       {isScanning && onContinueInBackground ? (
         <Button onClick={onContinueInBackground} variant="secondary">
-          {t("onboarding.scanContinueInBackground")}
+          {continueInBackgroundLabel ?? t("onboarding.scanContinueInBackground")}
         </Button>
       ) : null}
       {scanResult ? (

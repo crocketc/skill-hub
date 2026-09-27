@@ -902,6 +902,10 @@ pub enum AppQuery {
     GetDesktopPreferences,
     #[serde(rename = "list_pending_items")]
     ListPendingItems(ListPendingItems),
+    #[serde(rename = "get_pending_workspace")]
+    GetPendingWorkspace,
+    #[serde(rename = "list_pending_confirmations")]
+    ListPendingConfirmations,
     #[serde(rename = "list_deterministic_duplicates")]
     ListDeterministicDuplicates(ListDeterministicDuplicates),
     #[serde(rename = "get_discovery_snapshot")]
@@ -1017,6 +1021,10 @@ pub enum AppQueryResult {
     DesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "pending_items")]
     PendingItems(Vec<crate::pending::PendingItem>),
+    #[serde(rename = "pending_workspace")]
+    PendingWorkspace(crate::pending::PendingWorkspace),
+    #[serde(rename = "pending_confirmations")]
+    PendingConfirmations(Vec<crate::pending::PendingConfirmation>),
     #[serde(rename = "deterministic_duplicates")]
     DeterministicDuplicates(Vec<DeterministicDuplicateEntry>),
     #[serde(rename = "discovery_snapshot")]

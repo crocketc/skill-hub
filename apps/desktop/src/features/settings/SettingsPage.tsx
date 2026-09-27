@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import { DataState } from "../../ui/DataState";
 import { PageHeader } from "../../ui/PageHeader";
@@ -34,7 +34,11 @@ export function SettingsPage({ facade = unavailableSettingsFacade, initialSettin
   const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsSnapshot | undefined>(initialSettings);
   const [error, setError] = useState<string>();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("general");
+  const [params] = useSearchParams();
+  const requestedSection = params.get("section");
+  const [chosenSection, setActiveSection] = useState<SettingsSectionId>();
+  const activeSection = chosenSection ?? (["general", "dataProtection", "networkAi", "automation", "libraryMaintenance", "appUpdate"].includes(requestedSection ?? "") ? requestedSection as SettingsSectionId : "general");
+  useEffect(() => { setActiveSection(undefined); }, [requestedSection]);
   const updateLlmProvider = useCallback((providerLabel: string) => {
     setSettings((current) =>
       current

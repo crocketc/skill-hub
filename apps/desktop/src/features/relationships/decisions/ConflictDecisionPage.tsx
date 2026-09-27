@@ -83,7 +83,7 @@ export function ConflictDecisionPage({
   const selectedId =
     conflictIdParam && visibleQueue.some((entry) => entry.case.conflict_id === conflictIdParam)
       ? conflictIdParam
-      : visibleQueue[0]?.case.conflict_id ?? null;
+      : conflictIdParam ? null : visibleQueue[0]?.case.conflict_id ?? null;
   const selectedIndex = visibleQueue.findIndex((entry) => entry.case.conflict_id === selectedId);
   const selectedEntry = selectedIndex >= 0 ? visibleQueue[selectedIndex] : null;
 
@@ -184,6 +184,7 @@ export function ConflictDecisionPage({
           })}
         </span>
       </p>
+      {conflictIdParam && !selectedEntry ? <p role="status">{t("pending.linkResolved")}</p> : null}
       <div className="sh-conflict-page__chips" role="group" aria-label={t("relationships.decisions.chipsLabel")}>
         <Button
           aria-pressed={!categoryParam}

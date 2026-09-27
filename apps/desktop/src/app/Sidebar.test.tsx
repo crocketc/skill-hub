@@ -26,6 +26,14 @@ async function renderSidebar(entry = "/library/skill-pdf", collapsed = false) {
 }
 
 describe("Sidebar", () => {
+  it("shows a capped pending badge while preserving the navigation label", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const view = render(<I18nextProvider i18n={i18n}><MemoryRouter><Sidebar pendingCount={120} /></MemoryRouter></I18nextProvider>);
+    expect(screen.getByRole("link", { name: "Pending" })).toHaveTextContent("99+");
+    view.rerender(<I18nextProvider i18n={i18n}><MemoryRouter><Sidebar pendingCount={0} /></MemoryRouter></I18nextProvider>);
+    expect(screen.queryByText("99+")).not.toBeInTheDocument();
+    expect(view.container.querySelector(".sh-sidebar__pending-count")).toBeNull();
+  });
   it("exposes every primary and utility destination", async () => {
     await renderSidebar();
 

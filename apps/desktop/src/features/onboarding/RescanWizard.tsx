@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -16,8 +16,11 @@ import { CompatibilityStep } from "./CompatibilityStep";
 import { ScanStep } from "./ScanStep";
 import { WizardShell, type WizardStep } from "./WizardShell";
 import { displayPath } from "../../platform/displayPath";
+import { beginBackgroundScan, resetBackgroundScan } from "../bootstrap/backgroundScan";
 
 export interface RescanWizardProps {
+  /** Allows the slow-scan handoff state to be reached deterministically in previews. */
+  scanSlowAfterMs?: number;
   libraryPath: string;
   operations?: OnboardingOperations;
   runtime?: BootstrapRuntime;
@@ -33,6 +36,7 @@ export function RescanWizard({
   onCancel,
   onComplete,
   onOpenImport,
+  scanSlowAfterMs = 10_000,
 }: RescanWizardProps) {
   const { t } = useTranslation();
   const describe = (error: unknown) =>
@@ -43,13 +47,35 @@ export function RescanWizard({
     );
   const [step, setStep] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
-  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanSlow, setScanSlow] = useState(false);
+  const [scanInBackground, setScanInBackground] = useState(false);
   const [scanState, setScanState] = useState<InitializationScanState | null>(null);
   const [operationError, setOperationError] = useState<{ kind: "discover" | "scan"; message: string } | null>(null);
+  const mountedRef = useRef(true);
+  const scanHandleRef = useRef<Promise<InitializationScanState> | null>(null);
+  const scanStartedAtRef = useRef<number | null>(null);
+  const scanScopeIdsRef = useRef<string[]>([]);
+  const scanSettledRef = useRef(true);
+  const handedOffRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const pendingScan = scanHandleRef.current;
+      if (pendingScan && !scanSettledRef.current && !handedOffRef.current) {
+        beginBackgroundScan(
+          pendingScan,
+          scanScopeIdsRef.current,
+          scanStartedAtRef.current ?? Date.now(),
+        );
+      }
+    };
+  }, []);
 
   const discover = async () => {
     setIsDiscovering(true);
@@ -58,7 +84,6 @@ export function RescanWizard({
       const result = await operations.discoverAgents();
       setTargets(result.targets);
       setSelectedTargetIds([]);
-      setSelectionConfirmed(false);
     } catch (error) {
       setOperationError({ kind: "discover", message: describe(error) });
     } finally {
@@ -67,21 +92,73 @@ export function RescanWizard({
   };
 
   const scan = async () => {
+    if (isScanning || scanInBackground) return;
     setIsScanning(true);
+    setScanSlow(false);
+    setScanInBackground(false);
+    setScanState(null);
     setOperationError(null);
+    handedOffRef.current = false;
+    scanSettledRef.current = false;
+    scanStartedAtRef.current = Date.now();
+    scanScopeIdsRef.current = [...selectedTargetIds];
+    resetBackgroundScan();
     try {
-      setScanState(await runtime.runInitializationScan(selectedTargetIds));
+      const attempt = runtime.runInitializationScan(selectedTargetIds);
+      scanHandleRef.current = attempt;
+      const result = await attempt;
+      scanSettledRef.current = true;
+      if (!mountedRef.current) return;
+      resetBackgroundScan();
+      if (handedOffRef.current) setScanInBackground(false);
+      setScanState(result);
+      if (result.kind === "in_progress") {
+        beginBackgroundScan(
+          Promise.resolve(result),
+          scanScopeIdsRef.current,
+          scanStartedAtRef.current ?? Date.now(),
+        );
+        setScanInBackground(true);
+      }
     } catch (error) {
+      scanSettledRef.current = true;
+      if (!mountedRef.current) return;
+      resetBackgroundScan();
+      if (handedOffRef.current) setScanInBackground(false);
       setOperationError({ kind: "scan", message: describe(error) });
     } finally {
-      setIsScanning(false);
+      if (mountedRef.current) setIsScanning(false);
     }
+  };
+
+  useEffect(() => {
+    if (!isScanning || scanInBackground) return;
+    const timer = window.setTimeout(() => setScanSlow(true), scanSlowAfterMs);
+    return () => window.clearTimeout(timer);
+  }, [isScanning, scanInBackground, scanSlowAfterMs]);
+
+  const continueScanInBackground = () => {
+    const pendingScan = scanHandleRef.current;
+    if (!pendingScan || scanSettledRef.current || handedOffRef.current) return;
+    handedOffRef.current = true;
+    beginBackgroundScan(
+      pendingScan,
+      scanScopeIdsRef.current,
+      scanStartedAtRef.current ?? Date.now(),
+    );
+    setScanInBackground(true);
+    setIsScanning(false);
+  };
+
+  const leaveWizard = (callback?: () => void) => {
+    continueScanInBackground();
+    callback?.();
   };
 
   const canContinue = step === 0
     ? confirmed
     : step === 1
-      ? targets !== null && (targets.length === 0 || (selectedTargetIds.length > 0 && selectionConfirmed))
+      ? targets !== null && (targets.length === 0 || selectedTargetIds.length > 0)
       : false;
 
   const rediscoverySteps = (current: number): WizardStep[] => [
@@ -102,7 +179,7 @@ export function RescanWizard({
   const footer = (
     <>
       <div className="sh-onboarding__actions-group">
-        {onCancel ? <Button onClick={onCancel} variant="secondary">{t("onboarding.rescanCancel")}</Button> : null}
+        {onCancel ? <Button onClick={() => leaveWizard(onCancel)} variant="secondary">{t("onboarding.rescanCancel")}</Button> : null}
         {step > 0 ? <Button onClick={() => setStep((current) => current - 1)} variant="secondary">{t("onboarding.back")}</Button> : null}
       </div>
       <div className="sh-onboarding__actions-group sh-onboarding__actions-group--primary">
@@ -118,15 +195,20 @@ export function RescanWizard({
         ) : null}
         {step === 2 ? (
           <Button
+            disabled={scanInBackground}
             loading={isScanning}
             onClick={() => void scan()}
-            variant={scanState ? "secondary" : "primary"}
+            variant={scanState || scanInBackground ? "secondary" : "primary"}
           >
-            {scanState ? t("onboarding.rescanScan") : t("onboarding.startReadOnlyScan")}
+            {scanInBackground
+              ? t("onboarding.rescanScanInBackground")
+              : scanState
+                ? t("onboarding.rescanScan")
+                : t("onboarding.startReadOnlyScan")}
           </Button>
         ) : null}
         {step === 2 && onComplete ? (
-          <Button onClick={onComplete} size="lg">{t("onboarding.rescanComplete")}</Button>
+          <Button onClick={() => leaveWizard(onComplete)} size="lg">{t("onboarding.rescanComplete")}</Button>
         ) : null}
       </div>
     </>
@@ -163,19 +245,21 @@ export function RescanWizard({
         <CompatibilityStep
           confirmed={confirmed}
           isDiscovering={isDiscovering}
-          selectionConfirmed={selectionConfirmed}
           selectedTargetIds={selectedTargetIds}
           targets={targets}
           onConfirmChange={setConfirmed}
           onDiscover={() => void discover()}
-          onSelectionConfirmChange={setSelectionConfirmed}
           onTargetSelectionChange={(id, selected) => setSelectedTargetIds((current) => selected ? [...current, id] : current.filter((item) => item !== id))}
           onSelectAllAvailable={() => setSelectedTargetIds(targets?.filter((target) => target.availability === "available").map((target) => target.id) ?? [])}
         />
       ) : (
         <ScanStep
+          continueInBackgroundLabel={t("onboarding.rescanContinueInBackground")}
           isScanning={isScanning}
+          onContinueInBackground={scanSlow ? continueScanInBackground : undefined}
           scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
+          scanStartedAt={scanStartedAtRef.current ?? undefined}
+          scanInBackground={scanInBackground}
         />
       )}
       {operationError ? (

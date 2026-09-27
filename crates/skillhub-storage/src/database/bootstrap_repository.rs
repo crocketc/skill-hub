@@ -18,6 +18,21 @@ pub struct BootstrapRepository<'a> {
 }
 
 impl<'a> BootstrapRepository<'a> {
+    pub fn has_verified_backup(&self) -> AppResult<bool> {
+        self.database.connection.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key='backup.verified_once' AND value_json='true')", [], |row| row.get(0)).map_err(error)
+    }
+
+    pub fn mark_backup_verified(&self) -> AppResult<()> {
+        self.database.connection.execute("INSERT INTO settings(key,value_json,updated_at) VALUES('backup.verified_once','true',strftime('%s','now')) ON CONFLICT(key) DO UPDATE SET value_json='true',updated_at=excluded.updated_at", []).map_err(error)?;
+        Ok(())
+    }
+    /// Durable success evidence, including imports whose Skill was later removed.
+    pub fn has_successful_import(&self) -> AppResult<bool> {
+        self.database.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_batch_items WHERE status='succeeded' AND skill_id IS NOT NULL)",
+            [], |row| row.get(0),
+        ).map_err(error)
+    }
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
     }

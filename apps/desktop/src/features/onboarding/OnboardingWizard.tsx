@@ -96,7 +96,6 @@ export function OnboardingWizard({
   const [scanInBackground, setScanInBackground] = useState(false);
   const [scanState, setScanState] = useState<InitializationScanState | null>(null);
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
-  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [completionSnapshot, setCompletionSnapshot] = useState<CompletionSnapshot | null>(null);
@@ -148,7 +147,6 @@ export function OnboardingWizard({
       const result = await operations.discoverAgents();
       setTargets(result.targets);
       setSelectedTargetIds([]);
-      setSelectionConfirmed(false);
     } catch (caught) {
       setError(describe(caught));
     } finally {
@@ -277,14 +275,13 @@ export function OnboardingWizard({
     setSelectedTargetIds((current) =>
       selected ? [...current, targetId] : current.filter((id) => id !== targetId),
     );
-    setSelectionConfirmed(false);
   };
 
   const canContinue =
     step === 0
       ? Boolean(nativeLibraryPath)
       : step === 1
-        ? targets !== null && (targets.length === 0 || (selectedTargetIds.length > 0 && selectionConfirmed))
+        ? targets !== null && (targets.length === 0 || selectedTargetIds.length > 0)
         : false;
 
   const scannedRoots = scanState?.kind === "completed" ? scanState.result.roots : [];
@@ -302,16 +299,13 @@ export function OnboardingWizard({
       <CompatibilityStep
         confirmed={compatibilityConfirmed}
         isDiscovering={isDiscovering}
-        selectionConfirmed={selectionConfirmed}
         selectedTargetIds={selectedTargetIds}
         targets={targets}
         onConfirmChange={setCompatibilityConfirmed}
         onDiscover={() => void discoverAgents()}
-        onSelectionConfirmChange={setSelectionConfirmed}
         onTargetSelectionChange={selectTarget}
         onSelectAllAvailable={() => {
           setSelectedTargetIds(targets?.filter((target) => target.availability === "available").map((target) => target.id) ?? []);
-          setSelectionConfirmed(false);
         }}
       />
     ) : (

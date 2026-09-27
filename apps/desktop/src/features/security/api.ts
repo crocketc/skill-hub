@@ -24,6 +24,7 @@ export type SecurityPreferences = {
   dataScope: string;
 };
 export interface SecurityFacade {
+  resolveVersion?(skillId: string, versionId: string): Promise<string>;
   getChecks(skillId: string, versionId: string): Promise<SecurityCheck[]>;
   listFindings(skillId: string, versionId: string): Promise<SecurityFinding[]>;
   setFindingDisposition(

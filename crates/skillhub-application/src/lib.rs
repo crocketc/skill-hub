@@ -1,6 +1,7 @@
 //! Shared application boundary implementations.
 
 mod external_link;
+mod pending_workspace;
 pub mod library_runtime;
 mod relationship_governance_batch;
 mod relationship_governance_service;
@@ -5675,12 +5676,21 @@ impl ApplicationFacade for LocalApplicationFacade {
                 ));
             }
             AppCommand::CreateIgnoreRule(request) => {
+                if let skillhub_core::ignore::IgnoreSubject::ExactPending(id) = &request.subject {
+                    if id.starts_with("work:") {
+                        return self.dismiss_pending_work(skillhub_core::pending::DismissPendingWork {
+                            item_id: id.clone(), defer_until: request.defer_until, reason: request.reason,
+                        }).await;
+                    }
+                }
                 return self
                     .ignore_service
                     .create(request.subject, request.reason, request.defer_until)
                     .await
                     .map(AppCommandResult::IgnoreRule);
             }
+            AppCommand::DismissPendingWork(request) => return self.dismiss_pending_work(request).await,
+            AppCommand::ConfirmPendingWork(request) => return self.confirm_pending_work(request).await,
             AppCommand::RemoveIgnoreRule(request) => {
                 return self.remove_ignore_rule(request.rule_id).await;
             }
@@ -5808,6 +5818,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let package = service.create(&input, &plan, &decisions)?;
                 let verification = service.verify(&package)?;
+                self.with_database("pending.backup.completed", |database| database.bootstrap_repository().mark_backup_verified())?;
                 return Ok(AppCommandResult::BackupCreated(BackupCreated {
                     path: package.root.to_string_lossy().into_owned(),
                     manifest: verification.manifest,
@@ -5821,6 +5832,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(Path::to_path_buf)
                     .unwrap_or_else(|| PathBuf::from("."));
                 let verification = BackupService::new(destination).verify(&package)?;
+                self.with_database("pending.backup.verified", |database| database.bootstrap_repository().mark_backup_verified())?;
                 return Ok(AppCommandResult::BackupManifest(verification.manifest));
             }
             AppCommand::PrepareRestore(request) => {
@@ -5860,6 +5872,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let package = backup.create(&input, &plan, &decisions)?;
                 backup.verify(&package)?;
+                self.with_database("pending.backup.completed", |database| database.bootstrap_repository().mark_backup_verified())?;
                 let retention =
                     RetentionService::new(library.root.join(".skillhub").join("backups"))
                         .apply(request.retention)?;
@@ -6104,6 +6117,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                     items, &rules, self.today,
                 )))
             }
+            AppQuery::GetPendingWorkspace => self.pending_workspace().await.map(AppQueryResult::PendingWorkspace),
+            AppQuery::ListPendingConfirmations => self.with_database("pending.confirmations", |database| database.governance_task_repository().list_confirmations()).map(AppQueryResult::PendingConfirmations),
             AppQuery::GetSkill(request) => {
                 let skill_id = request.skill_id;
                 let current_version = self

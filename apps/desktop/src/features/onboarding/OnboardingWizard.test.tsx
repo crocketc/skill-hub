@@ -177,7 +177,7 @@ it("reports missing native discovery and completion seams without a fake success
   expect(screen.queryByText("初始化已完成")).not.toBeInTheDocument();
 });
 
-it("shows discovery targets without deploying and requires selection confirmation", async () => {
+it("shows discovery targets without deploying and requires a compatible target selection", async () => {
   const discoverAgents = vi.fn(async () => ({
     targets: [
       { id: "codex", label: "Codex", availability: "available" as const },
@@ -203,8 +203,6 @@ it("shows discovery targets without deploying and requires selection confirmatio
   const missing = screen.getByRole("checkbox", { name: "Missing Agent · Agent" });
   expect(missing).toBeDisabled();
   await click(screen.getByRole("checkbox", { name: "Codex · Agent" }));
-  expect(screen.getByRole("button", { name: "继续" })).toBeDisabled();
-  await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目"));
   expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
 });
 
@@ -285,7 +283,6 @@ it("selects all available targets and scans only the confirmed targets", async (
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("button", { name: "全选可用目标" }));
-  await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   expect(runInitializationScan).toHaveBeenCalledWith(["codex", "claude"]);
@@ -696,7 +693,6 @@ it("shows a completion summary with honest counts and enters the app only on an 
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));
   await click(screen.getByRole("checkbox", { name: "Codex · Agent" }));
-  await click(screen.getByLabelText("我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByRole("button", { name: "开始只读扫描" }));
   await click(screen.getByRole("button", { name: "完成初始化" }));

@@ -17,6 +17,7 @@ import { Select } from "../../ui/Select";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type HandledEntry, type PendingFacade, type PendingItem, type PendingKind, type PendingRisk, unavailablePendingFacade } from "./api";
 import "./pending.css";
+import { pendingKinds, actionableCount, canSnoozePendingItem } from "./workspace";
 import { usePendingItems } from "./usePendingItems";
 
 /** 批量暂缓固定 7 天：批量契约只覆盖安全的暂缓/忽略，不覆盖转换/重查/恢复。 */
@@ -33,7 +34,8 @@ export function PendingPage({
   facade = unavailablePendingFacade,
   tracker = operationTracker,
   initialKind,
-}: { facade?: PendingFacade; tracker?: OperationTracker; initialKind?: PendingKind }) {
+  initialSubjects = [],
+}: { facade?: PendingFacade; tracker?: OperationTracker; initialKind?: PendingKind; initialSubjects?: string[] }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale([i18n.resolvedLanguage ?? i18n.language]);
   const notifications = useOptionalAppNotifications();
@@ -42,7 +44,7 @@ export function PendingPage({
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : formatDateTime(date, locale);
   };
-  const { items, error, reload } = usePendingItems(facade, tracker);
+  const { items, error, unavailableSources, reload } = usePendingItems(facade, tracker);
   // T4-A：单条/批量处置失败只在列表区播报并保持列表可用，不再整页替换。
   const [actionError, setActionError] = useState<string>();
   const [kind, setKind] = useState<PendingKind | "all">(initialKind ?? "all");
@@ -79,12 +81,13 @@ export function PendingPage({
       });
     return () => { cancelled = true; };
   }, [facade, initialKind]);
-  if (error) return <><DataState message={describe(error)} state="unavailable" /><Button onClick={reload}>{t("pending.actions.refresh")}</Button></>;
+  if (error && !items) return <><DataState message={describe(error)} state="unavailable" /><Button onClick={reload}>{t("pending.actions.refresh")}</Button></>;
   if (!items) return <DataState message={t("pending.loading")} state="loading" />;
-  const visibleItems = kind === "all" ? items : items.filter((item) => item.kind === kind);
+  const scopedItems = initialSubjects.length ? items.filter((item) => initialSubjects.includes(item.subject)) : items;
+  const visibleItems = kind === "all" ? scopedItems : scopedItems.filter((item) => item.kind === kind);
   const busy = Boolean(processingItemId) || Boolean(batchProgress);
-  const selectable = visibleItems.filter((item) => item.canSnooze !== false && item.kind !== "recovery");
-  const selectedCount = items.filter((item) => item.canSnooze !== false && item.kind !== "recovery" && selectedIds.includes(item.id)).length;
+  const selectable = visibleItems.filter((item) => canSnoozePendingItem(item));
+  const selectedCount = items.filter((item) => canSnoozePendingItem(item) && selectedIds.includes(item.id)).length;
   const allVisibleSelected = selectable.length > 0 && selectable.every((item) => selectedIds.includes(item.id));
   const changeKind = (next: PendingKind | "all") => {
     kindChangedRef.current = true;
@@ -113,7 +116,7 @@ export function PendingPage({
       describeError: describe,
       run: () => action.perform(item),
     }).then(
-      () => reload(),
+      () => { reloadHandled(); },
       (reason: unknown) => setActionError(describe(reason)),
     ).finally(() => setProcessingItemId(undefined));
   };
@@ -121,7 +124,7 @@ export function PendingPage({
   // 已完成项经刷新反映到列表（部分成功保留成功项），失败描述三端同源。
   const runBatch = (action: "defer" | "ignore") => {
     if (busy || !items.length) return;
-    const selected = items.filter((item) => item.canSnooze !== false && item.kind !== "recovery" && selectedIds.includes(item.id));
+    const selected = items.filter((item) => canSnoozePendingItem(item) && selectedIds.includes(item.id));
     if (!selected.length) return;
     setActionError(undefined);
     setBatchProgress({ completed: 0, total: selected.length });
@@ -154,7 +157,7 @@ export function PendingPage({
     }).then(
       () => {
         setSelectedIds([]);
-        reload();
+        reloadHandled();
       },
       (reason: unknown) => {
         setActionError(describe(reason));
@@ -175,7 +178,7 @@ export function PendingPage({
       describeError: describe,
       run: () => facade.unignore(entry.id),
     }).then(
-      () => { reloadHandled(); reload(); },
+      () => { reloadHandled(); },
       (reason: unknown) => setHandledError(describe(reason)),
     ).finally(() => setUndoingId(undefined));
   };
@@ -184,7 +187,9 @@ export function PendingPage({
       actions={<Button onClick={reload} size="sm" variant="secondary">{t("pending.actions.refresh")}</Button>} />
     <section aria-labelledby="pending-list-heading" className="sh-workflow-card sh-pending__card">
       <h2 id="pending-list-heading">{t("pending.listHeading")}</h2>
-      <p>{t("pending.count", { count: items.length })}</p>
+      <p>{t("pending.count", { count: actionableCount(items) })} · {t("pending.recommendedCount", { count: items.filter((item) => item.recommended).length })}</p>
+      {error || unavailableSources.length ? <p role="alert">{t("pending.partial")}</p> : null}
+      {initialSubjects.length ? <p>{visibleItems.length ? t("pending.relatedScope") : t("pending.linkResolved")} <Link to="/pending">{t("pending.showAll")}</Link></p> : null}
       {items.length ? <>
         <div className="sh-pending__toolbar">
           <Field label={t("pending.filters.kind")}>
@@ -193,11 +198,7 @@ export function PendingPage({
               value={kind}
             >
               <option value="all">{t("pending.filters.all")}</option>
-              <option value="trial_due">{t("pending.kinds.trial_due")}</option>
-              <option value="security_finding">{t("pending.kinds.security_finding")}</option>
-              <option value="recovery">{t("pending.kinds.recovery")}</option>
-              <option value="conflict">{t("pending.kinds.conflict")}</option>
-              <option value="governance">{t("pending.kinds.governance")}</option>
+              {pendingKinds.map((value) => <option key={value} value={value}>{t(`pending.kinds.${value}`)}</option>)}
             </Select>
           </Field>
           {savedViewIssue ? <p role="status">{savedViewIssue === "load" ? t("pending.savedView.loadFailed") : t("pending.savedView.saveFailed")}</p> : null}
@@ -232,14 +233,14 @@ export function PendingPage({
         </div>
         {visibleItems.length ? <ul className="sh-pending__list">
           {visibleItems.map((item) => {
-            const name = "displayName" in item ? item.displayName || t(`pending.kinds.${item.kind}`) : item.subject;
-            const canSnooze = item.canSnooze !== false && item.kind !== "recovery";
+            const name = "displayName" in item ? item.displayName || t(`pending.kinds.${item.kind}`) : t(`pending.kinds.${item.kind}`);
+            const canSnooze = canSnoozePendingItem(item);
             // 每类事项的“建议操作”：试用到期→转为常规、安全发现→重新检查、恢复事项→确认恢复。
             const suggested = item.kind === "trial_due"
               ? { kind: "pending_convert", label: t("pending.actions.convert"), perform: (target: PendingItem) => facade.convert(target) }
-              : item.kind === "security_finding"
+              : (item.kind === "security_finding" || item.kind === "basic_check")
                 ? { kind: "pending_recheck", label: t("pending.actions.recheck"), perform: (target: PendingItem) => facade.recheck(target) }
-                : { kind: "pending_recover", label: t("pending.actions.recover"), perform: (target: PendingItem) => facade.recover(target) };
+                : item.kind === "recovery" ? { kind: "pending_recover", label: t("pending.actions.recover"), perform: (target: PendingItem) => facade.recover(target) } : null;
             return <li className="sh-pending-item" key={item.id}>
               <input
                 aria-label={t("pending.batch.selectItem", { subject: name })}
@@ -259,8 +260,8 @@ export function PendingPage({
                     </span>
                   ) : null}
                 </div>
-                <p className="sh-pending-item__message">{t(item.message, { defaultValue: item.code })}</p>
-                <small>{t(`pending.kinds.${item.kind}`)}</small>
+                <p className="sh-pending-item__message">{t(item.message, { defaultValue: t(`pending.kinds.${item.kind}`) })}</p>
+                <small>{t(`pending.kinds.${item.kind}`)}{item.recommended ? ` · ${t("pending.recommended")}` : ""}</small>
                 {item.path ? <p className="sh-pending-item__path">{displayPath(item.path)}</p> : null}
                 <div className="sh-pending-item__facts">
                   {item.kind === "trial_due" && item.dueDate ? (
@@ -278,8 +279,9 @@ export function PendingPage({
                 </div>
               </div>
               <div aria-label={t("pending.item.actionsGroup", { subject: name })} className="sh-pending-item__actions" role="group">
-                {item.href ? <Link className="sh-button sh-button--secondary" to={item.href}>{t("pending.actions.open")}</Link> : null}
-                {canSnooze || !item.href ? <Button
+                {item.href ? <Link className="sh-button sh-button--secondary" to={item.href} state={item.kind === "import_skills" && item.sourceRoots?.length ? { initialSources: item.sourceRoots, onboardingImport: true } : undefined}>{t("pending.actions.open")}</Link> : null}
+                {item.canConfirm && facade.confirm ? <ConfirmDialog cancelLabel={t("actions.cancel")} confirmLabel={t("pending.confirmHandled")} title={t("pending.confirmHandled")} description={t("pending.confirmDescription")} onConfirm={() => runOne(item, { kind: "pending_confirm", label: t("pending.confirmHandled"), perform: (target) => facade.confirm!(target, t("pending.confirmReason")) })} trigger={<Button disabled={busy} size="sm" variant="secondary">{t("pending.confirmHandled")}</Button>} /> : null}
+                {suggested && (canSnooze || !item.href) ? <Button
                   disabled={busy}
                   loading={processingItemId === item.id}
                   onClick={() => void runOne(item, suggested)}
@@ -320,7 +322,7 @@ export function PendingPage({
             </li>;
           })}
         </ul> : <p role="status">{t("pending.filteredEmpty")}</p>}
-      </> : <DataState message={t("pending.empty")} state="empty" />}
+      </> : !error && !unavailableSources.length ? <DataState message={t("pending.empty")} state="empty" /> : null}
     </section>
     <section aria-labelledby="pending-history-heading" className="sh-workflow-card sh-pending__card">
       <h2 id="pending-history-heading">{t("pending.history.heading")}</h2>
@@ -330,10 +332,10 @@ export function PendingPage({
           <div className="sh-pending-item__info">
             <strong>{entry.displayName || t("pending.history.entry")}</strong>
             <p>{entry.reason}</p>
-            <small>{`${t("pending.history.createdAt")}：${formatTimestamp(entry.createdAt)} · ${t("pending.history.deferUntil")}：${entry.deferUntil ?? t("pending.history.permanent")}`}</small>
+            {entry.confirmed ? <small>{t("pending.confirmReason")} · {formatTimestamp(entry.createdAt)}</small> : <small>{`${t("pending.history.createdAt")}：${formatTimestamp(entry.createdAt)} · ${t("pending.history.deferUntil")}：${entry.deferUntil ?? t("pending.history.permanent")}`}</small>}
           </div>
           <div className="sh-workflow-actions">
-            <Button disabled={Boolean(undoingId)} loading={undoingId === entry.id} onClick={() => void undo(entry)} size="sm" variant="secondary">{t("pending.history.undo")}</Button>
+            {!entry.confirmed ? <Button disabled={Boolean(undoingId)} loading={undoingId === entry.id} onClick={() => void undo(entry)} size="sm" variant="secondary">{t("pending.history.undo")}</Button> : null}
           </div>
         </li>)}
       </ul> : <p role="status">{t("pending.history.empty")}</p>}

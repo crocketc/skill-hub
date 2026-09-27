@@ -1229,6 +1229,10 @@ pub enum AppCommand {
     RestoreOriginalCallPolicy(RestoreOriginalCallPolicy),
     #[serde(rename = "create_ignore_rule")]
     CreateIgnoreRule(CreateIgnoreRule),
+    #[serde(rename = "dismiss_pending_work")]
+    DismissPendingWork(crate::pending::DismissPendingWork),
+    #[serde(rename = "confirm_pending_work")]
+    ConfirmPendingWork(crate::pending::ConfirmPendingWork),
     #[serde(rename = "remove_ignore_rule")]
     RemoveIgnoreRule(RemoveIgnoreRule),
     #[serde(rename = "run_llm_safety_check")]

@@ -1,3 +1,5 @@
+import { clearSessionSelectedSources } from "../features/import/sessionSources";
+import { clearWizardSession } from "../features/import/wizardSession";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
@@ -143,7 +145,7 @@ async function commitSingleCandidateImport(user: ReturnType<typeof userEvent.set
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -153,13 +155,14 @@ async function commitAllCandidateImport(user: ReturnType<typeof userEvent.setup>
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 }
 
 beforeEach(() => {
+  clearSessionSelectedSources(); clearWizardSession();
   queryClient.clear();
 });
 
@@ -259,7 +262,7 @@ it("renders the onboarding handoff import without the manual add-source action",
   expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
   expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
 
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });
 
@@ -301,7 +304,7 @@ it("opens independent governance from the production import completion page", as
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
@@ -363,7 +366,7 @@ it("opens governance scoped to this import's source copies via the batch deep li
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));

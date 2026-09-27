@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { GovernanceTaskFact } from "../../api/bindings";
+import type { DiscoveredSkill, GovernanceTaskFact } from "../../api/bindings";
 import { ImportWizard } from "../import/ImportWizard";
 import { type ImportBatchSummary, type ImportFacade, type ImportResult } from "../import/api";
 import { nativeImportFacade } from "../import/nativeApi";
@@ -41,6 +41,7 @@ export interface DiscoveryPageProps {
   governanceTaskId?: string;
   governanceTasks?: GovernanceTaskFact[];
   governanceTasksLoading?: boolean;
+  governanceTasksUnavailable?: boolean;
   onOpenLibrary?: () => void;
   /** 导入完成后，打开独立的关系治理工作台；携带本次导入的批次上下文。 */
   onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
@@ -63,8 +64,8 @@ interface WizardController {
   openWizardWithDirectory: (directory: string) => void;
   /** P1-04：在线单 Skill 专用安装——下载目录为唯一来源的受限向导。 */
   openWizardWithSingleSkill: (directory: string) => void;
-  /** P1-04：把本次扫描候选目录作为向导来源（审查并导入链路）。 */
-  openWizardWithCandidates: (candidatePaths: string[]) => void;
+  /** 把本次扫描的物理目标作为导入来源；候选 Skill 留给下一步选择。 */
+  openWizardWithCandidates: (candidates: DiscoveredSkill[]) => void;
   openImportWizard: () => void;
   closeWizard: () => void;
 }
@@ -130,6 +131,7 @@ export function DiscoveryPage({
   governanceTaskId,
   governanceTasks = [],
   governanceTasksLoading = false,
+  governanceTasksUnavailable = false,
   onOpenLibrary,
   onOpenGovernance,
   onOpenGovernanceTask,
@@ -188,23 +190,24 @@ export function DiscoveryPage({
     setWizardVariantOverride(null);
     setShowImport(true);
   };
-  // P1-04：审查并导入——本次扫描发现的候选目录即向导来源，默认全选；
-  // 每个候选以 SKILL.md 所在目录（DiscoveredSkill.path）为单位，绝不
-  // 要求用户从零重新选择目录。
-  const openWizardWithCandidates = (candidatePaths: string[]) => {
+  // 审查并导入：第一步以 Agent 实际 Skill 物理目标（扫描候选的 root）
+  // 作为来源；导入向导再从每个目标解析 SKILL.md 候选，留给第二步逐项选择。
+  const openWizardWithCandidates = (candidates: DiscoveredSkill[]) => {
     if (importRunning) {
       setImportBlocked(true);
       return;
     }
     setImportBlocked(false);
-    const directories = Array.from(new Set(candidatePaths.map((path) => path.trim()).filter(Boolean)));
+    const directories = Array.from(new Set(
+      candidates.map((candidate) => candidate.root.trim()).filter(Boolean),
+    ));
     if (directories.length === 0) {
       openImportWizard();
       return;
     }
     setWizardSources(directories);
     setWizardGuideOverride(
-      t("discovery.workbench.reviewImportGuide", { count: directories.length }),
+      t("discovery.workbench.reviewImportGuide", { count: candidates.length }),
     );
     setShowImport(true);
   };
@@ -241,6 +244,7 @@ export function DiscoveryPage({
       governanceTaskId={governanceTaskId}
       governanceTasks={governanceTasks}
       governanceTasksLoading={governanceTasksLoading}
+      governanceTasksUnavailable={governanceTasksUnavailable}
       onOpenLibrary={onOpenLibrary}
       onOpenGovernance={onOpenGovernance}
       onOpenGovernanceTask={onOpenGovernanceTask}
@@ -310,6 +314,7 @@ interface DiscoveryModulePageProps {
   governanceTaskId?: string;
   governanceTasks: GovernanceTaskFact[];
   governanceTasksLoading: boolean;
+  governanceTasksUnavailable: boolean;
   onOpenLibrary?: () => void;
   onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
@@ -334,6 +339,7 @@ function DiscoveryModulePage({
   governanceTaskId,
   governanceTasks,
   governanceTasksLoading,
+  governanceTasksUnavailable,
   onOpenLibrary,
   onOpenGovernance,
   onOpenGovernanceTask,
@@ -371,6 +377,7 @@ function DiscoveryModulePage({
         {view === "local" && governanceTaskId ? (
           <GovernanceTaskList
             loading={governanceTasksLoading}
+            unavailable={governanceTasksUnavailable}
             selectedTaskId={governanceTaskId}
             tasks={governanceTasks}
           />
@@ -388,9 +395,8 @@ function DiscoveryModulePage({
           {facade ? (
             <LocalDiscoveryWorkbench
               facade={facade}
-              // P1-04：审查并导入以候选的 SKILL.md 所在目录为单位带入向导。
-              onReviewCandidates={(candidates) =>
-                wizard.openWizardWithCandidates(candidates.map((candidate) => candidate.path))}
+              // 来源按 Agent 实际 Skill 物理目标合并；第二步再逐项选择候选 Skill。
+              onReviewCandidates={wizard.openWizardWithCandidates}
             />
           ) : null}
         </>
@@ -417,10 +423,12 @@ function DiscoveryModulePage({
 
 function GovernanceTaskList({
   loading,
+  unavailable,
   selectedTaskId,
   tasks,
 }: {
   loading: boolean;
+  unavailable: boolean;
   selectedTaskId: string;
   tasks: GovernanceTaskFact[];
 }) {
@@ -430,8 +438,10 @@ function GovernanceTaskList({
       <p className="sh-discovery-subpage__eyebrow">{t("discovery.governanceTasks.eyebrow")}</p>
       <h2 id="governance-task-list-title">{t("discovery.governanceTasks.title")}</h2>
       {loading ? <p role="status">{t("discovery.governanceTasks.loading")}</p> : null}
-      {!loading && tasks.length === 0 ? <p>{t("discovery.governanceTasks.empty")}</p> : null}
-      {!loading ? (
+      {unavailable ? <p role="alert">{t("pending.partial")}</p> : null}
+      {!loading && !unavailable && selectedTaskId && !tasks.some((task) => task.task_id === selectedTaskId) ? <p role="status">{t("pending.linkResolved")}</p> : null}
+      {!loading && !unavailable && tasks.length === 0 ? <p>{t("discovery.governanceTasks.empty")}</p> : null}
+      {!loading && !unavailable ? (
         <ul aria-label={t("discovery.governanceTasks.title")}>
           {tasks.map((task) => {
             const selected = task.task_id === selectedTaskId;
@@ -442,8 +452,8 @@ function GovernanceTaskList({
                 key={task.task_id}
               >
                 <details open={selected}>
-                  <summary>{task.task_id}</summary>
-                  <p>{task.detail}</p>
+                  <summary>{t(`pending.taskKinds.${task.kind}`)}</summary>
+                  <p>{t(`pending.taskInstructions.${task.kind}`)}</p>
                   <span>{task.resolved ? t("discovery.governanceTasks.resolved") : t("discovery.governanceTasks.unresolved")}</span>
                 </details>
               </li>

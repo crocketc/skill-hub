@@ -1,3 +1,4 @@
+import { governanceDestination } from "../../pending/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -314,6 +315,7 @@ export function RelationshipGovernancePage({
     if (ids.length === 0) return;
     setRevalidateBusy((current) => new Set([...current, ...ids]));
     void runTrackedOperation<RelationshipCheckReport>({
+      targetHref: governanceDestination(ids),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -358,6 +360,7 @@ export function RelationshipGovernancePage({
     phaseLabel: string,
   ) => {
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
+      targetHref: governanceDestination(relationIds),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -510,6 +513,7 @@ export function RelationshipGovernancePage({
   const retainSourceCopyRow = useCallback((row: RelationGovernanceRow) => {
     const relationId = relationIdOf(row.relation);
     void runTrackedOperation({
+      targetHref: governanceDestination([relationId]),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -560,6 +564,7 @@ export function RelationshipGovernancePage({
     const batchId = single.outcome.batch_id;
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
+      targetHref: governanceDestination([relationId]),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -597,6 +602,7 @@ export function RelationshipGovernancePage({
   const confirmSingleUndeploy = useCallback((flow: SingleFlowState) => {
     setSingle((current) => current ? { ...current, busy: true, error: null } : current);
     void runTrackedOperation({
+      targetHref: governanceDestination([relationIdOf(flow.row.relation)]),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -680,6 +686,7 @@ export function RelationshipGovernancePage({
     const batchId = batchFlow.result.batch_id;
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
     void runTrackedOperation<RelationGovernanceBatchOutcome>({
+      targetHref: governanceDestination([relationId]),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -713,6 +720,7 @@ export function RelationshipGovernancePage({
 
   // 深链 relationId：进入页面后按行的最恰当动作直接打开治理预览（仅一次）。
   const pendingRelationIdRef = useRef<string | null>(deepLink.relationId);
+  useEffect(() => { pendingRelationIdRef.current = deepLink.relationId; }, [deepLink.relationId]);
   useEffect(() => {
     if (!ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
     const relationId = pendingRelationIdRef.current;
@@ -738,6 +746,7 @@ export function RelationshipGovernancePage({
 
   return (
     <RelationshipsLayout scope="governance">
+      {ledgerQuery.isSuccess && deepLink.relationId && !visibleRows.some((row) => relationIdOf(row.relation) === deepLink.relationId) ? <p role="status">{t("pending.linkResolved")}</p> : null}
       {/* 工作台是 .sh-relationships 两行网格的唯一画布子元素：页签行 +
           画布行。治理页的块级内容一旦直接散落在网格里，画布行会被
           压缩，内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。 */}

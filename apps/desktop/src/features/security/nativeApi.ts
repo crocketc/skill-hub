@@ -37,6 +37,7 @@ async function resolvedVersion(skillId: string, versionId: string): Promise<stri
 }
 
 export const nativeSecurityFacade: SecurityFacade = {
+  resolveVersion: resolvedVersion,
   async getChecks(skillId, versionId) {
     const resolved = await resolvedVersion(skillId, versionId);
     const [basic, llm] = await Promise.all([

@@ -1359,6 +1359,22 @@ pub struct GovernanceTaskRepository<'a> {
 }
 
 impl<'a> GovernanceTaskRepository<'a> {
+    pub fn confirm_handled(&self, task_id: &str, record: &skillhub_core::pending::PendingConfirmation, now: i64) -> AppResult<()> {
+        let transaction = self.database.connection.unchecked_transaction().map_err(database_error)?;
+        self.resolve(task_id, now)?;
+        let json = serde_json::to_string(record).map_err(|_| invalid_record())?;
+        transaction.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+            params![format!("pending.confirmed.{}", record.item_id), json, now],
+        ).map_err(database_error)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    pub fn list_confirmations(&self) -> AppResult<Vec<skillhub_core::pending::PendingConfirmation>> {
+        let mut statement = self.database.connection.prepare("SELECT value_json FROM settings WHERE key LIKE 'pending.confirmed.%' ORDER BY updated_at DESC").map_err(database_error)?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(database_error)?;
+        rows.map(|row| serde_json::from_str(&row.map_err(database_error)?).map_err(|_| invalid_record())).collect()
+    }
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
     }

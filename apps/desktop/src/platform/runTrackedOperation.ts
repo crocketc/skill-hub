@@ -1,3 +1,4 @@
+import { emitPendingFactsChanged } from "./pendingEvents";
 import type { QueryClient } from "@tanstack/react-query";
 import { describeNativeError, isStructuredNativeError } from "../api/nativeErrors";
 import { skillHubI18n } from "../i18n";
@@ -119,7 +120,7 @@ function withDeepLink(
   if (!targetHref || notice.action) return notice;
   return {
     ...notice,
-    action: { label: translate("tasks.notices.viewRecord"), to: targetHref },
+    action: { label: translate(targetHref.startsWith("/operations/") ? "tasks.notices.viewRecord" : "pending.actions.open"), to: targetHref },
   };
 }
 
@@ -202,7 +203,7 @@ export async function runTrackedOperation<T>(
   const handle: TrackedOperationHandle = {
     trackedId,
     correlate(relatedOperationId, relatedHref) {
-      correlatedHref = relatedHref ?? `/operations/${relatedOperationId}`;
+      correlatedHref = relatedHref ?? initialHref ?? `/operations/${relatedOperationId}`;
       if (mode === "phased") {
         tracker.attach(trackedId, { operationId: relatedOperationId, targetHref: correlatedHref });
       }
@@ -262,8 +263,10 @@ export async function runTrackedOperation<T>(
         void queryClient.invalidateQueries({ queryKey: [...queryKey] });
       }
     }
+    emitPendingFactsChanged();
     return result;
   } catch (error) {
+    emitPendingFactsChanged();
     const message = describeError(error);
     // 已确认的取消不是失败：终态不落 failed，也不得发失败通知。取消是用户
     // 主动动作，在途顶栏已经显示 cancelled；再补一条 danger 通知等于把取消

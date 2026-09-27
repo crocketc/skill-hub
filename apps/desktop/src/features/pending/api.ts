@@ -1,4 +1,4 @@
-export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance";
+export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update";
 export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
   id: string;
@@ -12,6 +12,12 @@ export type PendingItem = {
   path?: string;
   /** Required decisions and recovery must be resolved at their source. */
   canSnooze?: boolean;
+  recommended?: boolean;
+  versionId?: string;
+  findingId?: string;
+  checkKind?: string;
+  sourceRoots?: string[];
+  canConfirm?: boolean;
   /** 试用到期日（YYYY-MM-DD），仅试用项携带。 */
   dueDate?: string | null;
   /** 风险档位，由检查发现严重级别映射；无数据时缺省。 */
@@ -27,9 +33,12 @@ export type HandledEntry = {
   reason: string;
   createdAt: string;
   deferUntil: string | null;
+  confirmed?: boolean;
 };
 export interface PendingFacade {
   list(): Promise<PendingItem[]>;
+  workspace?(): Promise<{ items: PendingItem[]; unavailableSources: string[] }>;
+  confirm?(item: PendingItem, reason: string): Promise<void>;
   resolve(item: PendingItem): Promise<void>;
   recheck(item: PendingItem): Promise<void>;
   convert(item: PendingItem): Promise<void>;

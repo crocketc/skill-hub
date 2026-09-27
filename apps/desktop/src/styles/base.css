@@ -2112,7 +2112,7 @@ a {
 .sh-metadata-panel input:focus,
 .sh-metadata-panel textarea:focus {
   border-color: var(--color-focus);
-  outline: 2px solid var(--color-accent-soft);
+  outline: 2px solid var(--color-accent-strong);
   outline-offset: 1px;
 }
 
@@ -5075,3 +5075,8 @@ a {
   cursor: pointer;
   font-weight: 650;
 }
+
+.sh-sidebar__pending-count { margin-inline-start: auto; min-width: 1.4rem; padding: 0.1rem 0.35rem; border-radius: 1rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; background: var(--color-accent-soft); color: var(--color-accent-strong); text-align: center; }
+.sh-sidebar.is-collapsed .sh-sidebar__pending-count { position: absolute; top: 0.15rem; right: 0.15rem; font-size: 0.65rem; }
+.sh-sidebar__link { position: relative; }
+.sh-pending-focus { outline: 2px solid var(--color-accent-strong); outline-offset: 2px; }

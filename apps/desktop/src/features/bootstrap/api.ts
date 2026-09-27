@@ -61,6 +61,10 @@ export interface CompatibilityTarget {
   profileId?: string;
   /** Client form factor when the snapshot provides it. */
   kind?: string | null;
+  /** Exact supported Skill directory reported by Agent discovery. */
+  path?: string;
+  /** Native file-system target identity; kept with the scope for grouped selection. */
+  physicalId?: string;
   availability: "available" | "unavailable";
 }
 
@@ -111,6 +115,8 @@ export const desktopOnboardingOperations: OnboardingOperations = {
       label: target.client_id,
       profileId: target.profile_id,
       kind: kindByClient.get(`${target.profile_id}:${target.client_id}`) ?? null,
+      path: target.path,
+      physicalId: target.physical_id,
       availability: target.available && target.exists && target.readable
         ? ("available" as const)
         : ("unavailable" as const),

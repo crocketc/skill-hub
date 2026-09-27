@@ -231,6 +231,12 @@ impl<'a> SourceRepository<'a> {
     }
 
     pub fn record_update_check(&self, check: &UpstreamCheckResult) -> AppResult<()> {
+        let transaction = self.database.connection.unchecked_transaction().map_err(error)?;
+        let snapshot = serde_json::to_string(check).map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
+        transaction.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,strftime('%s','now')) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+            rusqlite::params![format!("source.observation.{}", check.skill_id), snapshot],
+        ).map_err(error)?;
         self.database
             .connection
             .execute(
@@ -241,8 +247,15 @@ impl<'a> SourceRepository<'a> {
                     check.upstream_label,
                 ],
             )
-            .map(|_| ())
-            .map_err(error)
+            .map_err(error)?;
+        transaction.commit().map_err(error)
+    }
+
+    pub fn last_update_check(&self, skill_id: SkillId) -> AppResult<Option<UpstreamCheckResult>> {
+        let raw: Option<String> = self.database.connection.query_row(
+            "SELECT value_json FROM settings WHERE key=?1", [format!("source.observation.{skill_id}")], |row| row.get(0),
+        ).optional().map_err(error)?;
+        raw.map(|value| serde_json::from_str(&value).map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))).transpose()
     }
 }
 

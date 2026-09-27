@@ -28,7 +28,7 @@ function fakeFacade(overrides: Partial<PendingFacade> = {}): PendingFacade {
 
 const trialItem: PendingItem = {
   id: "trial_due:skill-a:trial",
-  subject: "skill-a",
+  subject: "skill-a", displayName: "skill-a",
   kind: "trial_due",
   code: "trial",
   message: "trial",
@@ -38,13 +38,15 @@ const trialItem: PendingItem = {
 
 const findingItem: PendingItem = {
   id: "security_finding:skill-b:finding-7",
-  subject: "skill-b",
+  subject: "skill-b", displayName: "skill-b",
   kind: "security_finding",
   code: "finding-7",
   message: "finding",
   risk: "high",
   affectedDeployments: 3,
 };
+
+const optionalItem: PendingItem = { ...findingItem, id: "work:ai_setup:settings:first", kind: "ai_setup", recommended: true };
 
 it("links required work to its source without exposing identifiers or offering ignore", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -96,7 +98,7 @@ it("keeps a single page-level h1 for the pending heading outline", async () => {
 
 it("does not offer a generic delete action for pending work", async () => {
   await renderPage(fakeFacade({
-    list: async () => [{ id: "trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],
+    list: async () => [{ id: "trial", subject: "skill-a", displayName: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],
   }));
   await screen.findByText("skill-a");
   expect(screen.queryByRole("button", { name: "移除" })).not.toBeInTheDocument();
@@ -105,8 +107,8 @@ it("does not offer a generic delete action for pending work", async () => {
 it("filters pending work by its actual kind", async () => {
   await renderPage(fakeFacade({
     list: async () => [
-      { id: "trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial" },
-      { id: "recovery", subject: "未完成部署", kind: "recovery", code: "recovery", message: "recovery" },
+      { id: "trial", subject: "skill-a", displayName: "skill-a", kind: "trial_due", code: "trial", message: "trial" },
+      { id: "recovery", subject: "未完成部署", displayName: "未完成部署", kind: "recovery", code: "recovery", message: "recovery" },
     ],
   }));
   await screen.findByText("skill-a");
@@ -121,7 +123,7 @@ it("prevents duplicate pending actions while one item is being processed", async
   let release: (() => void) | undefined;
   const convert = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
   await renderPage(fakeFacade({
-    list: async () => [{ id: "trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],
+    list: async () => [{ id: "trial", subject: "skill-a", displayName: "skill-a", kind: "trial_due", code: "trial", message: "trial" }],
     convert,
   }));
   const action = await screen.findByRole("button", { name: "转为常规" });
@@ -173,7 +175,7 @@ it("defers a single item for the chosen days with a generated reason and refresh
 it("ignores a single item permanently only after an explicit confirmation", async () => {
   const ignore = vi.fn(async () => undefined);
   await renderPage(fakeFacade({
-    list: async () => [findingItem],
+    list: async () => [optionalItem],
     ignore,
   }));
   await screen.findByText("skill-b");
@@ -186,7 +188,7 @@ it("ignores a single item permanently only after an explicit confirmation", asyn
   await act(async () => {});
   await waitFor(() => expect(ignore).toHaveBeenCalledTimes(1));
   expect(ignore).toHaveBeenCalledWith(
-    [expect.objectContaining({ id: "security_finding:skill-b:finding-7" })],
+    [expect.objectContaining({ id: "work:ai_setup:settings:first" })],
     expect.stringMatching(/\S/),
   );
 });
@@ -195,7 +197,7 @@ it("defers every selected item from the batch bar with visible progress", async 
   const gates: Array<() => void> = [];
   const defer = vi.fn((_items: PendingItem[], _days: number, _reason: string) => new Promise<void>((resolve) => { gates.push(resolve); }));
   await renderPage(fakeFacade({
-    list: async () => [trialItem, findingItem],
+    list: async () => [trialItem, optionalItem],
     defer,
   }));
   await screen.findByText("skill-a");
@@ -214,7 +216,7 @@ it("defers every selected item from the batch bar with visible progress", async 
   await waitFor(() => expect(screen.queryByText(/正在处理/)).not.toBeInTheDocument());
   expect(defer).toHaveBeenCalledTimes(2);
   const deferredIds = defer.mock.calls.map((call) => call[0][0]?.id).sort();
-  expect(deferredIds).toEqual(["security_finding:skill-b:finding-7", "trial_due:skill-a:trial"]);
+  expect(deferredIds).toEqual(["trial_due:skill-a:trial", "work:ai_setup:settings:first"]);
   for (const call of defer.mock.calls) {
     expect(call[1]).toBe(7);
     expect(String(call[2]).trim()).not.toBe("");
@@ -224,7 +226,7 @@ it("defers every selected item from the batch bar with visible progress", async 
 it("requires confirmation before batch permanent ignore and does nothing on cancel", async () => {
   const ignore = vi.fn(async (_items: PendingItem[], _reason: string) => undefined);
   await renderPage(fakeFacade({
-    list: async () => [trialItem, findingItem],
+    list: async () => [trialItem, optionalItem],
     ignore,
   }));
   await screen.findByText("skill-a");
@@ -243,7 +245,7 @@ it("requires confirmation before batch permanent ignore and does nothing on canc
 
   await waitFor(() => expect(ignore).toHaveBeenCalledTimes(2));
   const ignoredIds = ignore.mock.calls.map((call) => call[0][0]?.id).sort();
-  expect(ignoredIds).toEqual(["security_finding:skill-b:finding-7", "trial_due:skill-a:trial"]);
+  expect(ignoredIds).toEqual(["trial_due:skill-a:trial", "work:ai_setup:settings:first"]);
 });
 
 it("renders handled history and undoes an entry", async () => {
@@ -286,7 +288,7 @@ it("restores the saved view on mount and persists kind changes", async () => {
   await renderPage(fakeFacade({
     list: async () => [
       trialItem,
-      { id: "recovery:op-2:recovery", subject: "未完成部署", kind: "recovery", code: "recovery", message: "recovery" },
+      { id: "recovery:op-2:recovery", subject: "未完成部署", displayName: "未完成部署", kind: "recovery", code: "recovery", message: "recovery" },
     ],
     loadSavedView,
     saveSavedView,
@@ -309,8 +311,8 @@ it("exposes each item's suggested actions as a named group after its risk and im
 
   const group = screen.getByRole("group", { name: "处理 skill-b 的建议操作" });
   expect(within(group).getByRole("button", { name: "重新检查" })).toBeInTheDocument();
-  expect(within(group).getByRole("button", { name: "暂缓" })).toBeInTheDocument();
-  expect(within(group).getByRole("button", { name: "忽略" })).toBeInTheDocument();
+  expect(within(group).queryByRole("button", { name: "暂缓" })).not.toBeInTheDocument();
+  expect(within(group).queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
 });
 
 it("keeps the list usable and reports one failed action without replacing the page", async () => {
@@ -330,7 +332,7 @@ it("keeps the list usable and reports one failed action without replacing the pa
 });
 
 it("announces how many items are selected in the batch bar", async () => {
-  await renderPage(fakeFacade({ list: async () => [trialItem, findingItem] }));
+  await renderPage(fakeFacade({ list: async () => [trialItem, optionalItem] }));
   await screen.findByText("skill-a");
 
   fireEvent.click(screen.getByLabelText("选择 skill-a"));
@@ -397,7 +399,7 @@ it("renders a structured single-write failure readably and identically in notice
 it("projects the batch onto the tracker and reports a counted success notice", async () => {
   const gates: Array<() => void> = [];
   const defer = vi.fn((_items: PendingItem[], _days: number, _reason: string) => new Promise<void>((resolve) => { gates.push(resolve); }));
-  const tracker = await renderBridgedPage(fakeFacade({ list: async () => [trialItem, findingItem], defer }));
+  const tracker = await renderBridgedPage(fakeFacade({ list: async () => [trialItem, optionalItem], defer }));
   await screen.findByText("skill-a");
 
   fireEvent.click(screen.getByLabelText("选择 skill-a"));
@@ -431,7 +433,7 @@ it("reports a mid-batch failure readably in notice, page and tracker terminal st
     if (defer.mock.calls.length === 2) throw { code: "io.denied" };
     firstDeferred = true;
   });
-  const list = vi.fn(async () => firstDeferred ? [findingItem] : [trialItem, findingItem]);
+  const list = vi.fn(async () => firstDeferred ? [optionalItem] : [trialItem, optionalItem]);
   const tracker = await renderBridgedPage(fakeFacade({ list, defer }));
   await screen.findByText("skill-a");
 
@@ -469,4 +471,22 @@ it("notifies a successful handled-entry undo through the bridge", async () => {
   const toast = await screen.findByTestId("notice-success");
   expect(toast).toHaveTextContent("撤销");
   await waitFor(() => expect(listHandled).toHaveBeenCalledTimes(2));
+});
+
+it("records manual confirmation for an advisory without resolving a safety finding", async () => {
+  const item: PendingItem = { id: "work:followup:task", subject: "task", displayName: "Import reminder", kind: "governance_followup", code: "followup", message: "pending.reasons.governance_followup", canConfirm: true };
+  let confirmed = false;
+  const confirm = vi.fn(async () => { confirmed = true; });
+  const resolve = vi.fn(async () => undefined);
+  await renderBridgedPage(fakeFacade({
+    list: async () => confirmed ? [findingItem] : [item, findingItem], confirm, resolve,
+    listHandled: async () => confirmed ? [{ id: item.id, pendingId: item.id, reason: "用户确认已人工处理", createdAt: "2026-09-28T00:00:00Z", deferUntil: null, confirmed: true }] : [],
+  }));
+  fireEvent.click(await screen.findByRole("button", { name: "确认已人工处理" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "确认已人工处理" }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(item, "用户确认已人工处理"));
+  await waitFor(() => expect(screen.queryByText("Import reminder")).not.toBeInTheDocument());
+  expect(screen.getByText("skill-b")).toBeVisible();
+  expect(resolve).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "撤销" })).not.toBeInTheDocument();
 });

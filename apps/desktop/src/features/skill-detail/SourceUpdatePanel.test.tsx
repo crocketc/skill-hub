@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
@@ -43,9 +44,9 @@ async function renderPanelWithBridge(
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const view = render(
     <I18nextProvider i18n={i18n}>
-      <AppNotificationsProvider>
+      <MemoryRouter><AppNotificationsProvider>
         <SourceUpdatePanel facade={facade} skillId="s1" tracker={tracker} />
-      </AppNotificationsProvider>
+      </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   return { ...view, tracker };

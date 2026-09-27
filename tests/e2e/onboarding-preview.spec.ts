@@ -51,8 +51,7 @@ async function reachScanStep(page: import("@playwright/test").Page, scenario: st
   // 重新发现流程里第 1 步与第 2 步共用同一条确认状态：进入兼容性步骤时
   // 确认框已经是勾选状态，直接识别 Agent。
   await page.getByRole("button", { name: "识别 Agent" }).click();
-  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
   await expect(page.getByRole("heading", { name: "扫描预览" })).toBeVisible();
@@ -80,8 +79,7 @@ test("exposes the unified step rail and keeps the primary action at 44px with a 
 
   // 到达最后一步后，底部操作区整体边缘保持稳定（主操作区内、不跳动）。
   await confirmCompatibility(page);
-  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   const finish = page.getByRole("button", { name: "完成初始化" });
   await expect(finish).toBeVisible();
@@ -104,11 +102,10 @@ test("rediscovery retries discovery and scan failures without losing library sta
   await expect(page.getByText("D:\\very-long-library-root-segment")).toBeVisible();
 
   await page.getByRole("button", { name: "重试" }).click();
-  await expect(page.getByRole("checkbox", { name: "OpenAI · 终端" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" })).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
 
-  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
 
@@ -116,6 +113,80 @@ test("rediscovery retries discovery and scan failures without losing library sta
   await page.getByRole("button", { name: "重试" }).click();
   await expect(page.getByRole("heading", { name: "扫描预览" })).toBeVisible();
   await expect(page.getByText("发现 60 个 Skill")).toBeVisible();
+});
+
+test("groups rediscovery Agent cards by supported path and scrolls the list inside the wizard", async ({ page }) => {
+  await page.setViewportSize({ width: 1087, height: 719 });
+  await page.goto("/__preview/onboarding/rescan");
+  await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
+  await page.getByRole("button", { name: "识别 Agent" }).click();
+
+  await expect(page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" })).toBeVisible();
+  await expect(page.getByText("8 个路径卡片 · 8 个可用目标")).toBeVisible();
+  await expect(page.locator(".sh-onboarding__target-card")).toHaveCount(8);
+  expect((await page.locator(".sh-onboarding__frame").boundingBox())!.width).toBeGreaterThan(1000);
+  const identifyButton = await page.getByRole("button", { name: "识别 Agent" }).boundingBox();
+  const pathCount = await page.locator(".sh-onboarding__target-count").boundingBox();
+  expect(identifyButton).not.toBeNull();
+  expect(pathCount).not.toBeNull();
+  expect(identifyButton!.x).toBeGreaterThan(pathCount!.x);
+
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
+  await expect(page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '继续' })).toBeEnabled();
+  const layout = await page.evaluate(() => ({
+    pageHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+    targetScrollHeight: document.querySelector(".sh-onboarding__target-scroll")?.scrollHeight ?? 0,
+    targetClientHeight: document.querySelector(".sh-onboarding__target-scroll")?.clientHeight ?? 0,
+    footerBottom: document.querySelector("main footer")?.getBoundingClientRect().bottom ?? 0,
+  }));
+  expect(layout.pageHeight).toBe(layout.viewportHeight);
+  expect(layout.targetClientHeight).toBeGreaterThanOrEqual(160);
+  expect(layout.targetScrollHeight).toBeGreaterThan(layout.targetClientHeight);
+  expect(layout.footerBottom).toBeLessThanOrEqual(layout.viewportHeight);
+});
+
+test("keeps rediscovery step text inset from the card edge at a narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 692, height: 719 });
+  await page.goto("/__preview/onboarding/rescan");
+  const inset = await page.evaluate(() => {
+    const card = document.querySelector(".sh-onboarding__body > .sh-onboarding__card");
+    const heading = card?.querySelector("h1");
+    if (!card || !heading) return null;
+    return heading.getBoundingClientRect().left - card.getBoundingClientRect().left;
+  });
+  expect(inset).not.toBeNull();
+  expect(inset).toBeGreaterThanOrEqual(16);
+});
+
+test("aligns Agent discovery with its confirmation row and shows path cards in multiple columns at 750px", async ({ page }) => {
+  await page.setViewportSize({ width: 750, height: 719 });
+  await page.goto("/__preview/onboarding/rescan");
+  await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
+  await page.getByRole("button", { name: "识别 Agent" }).click();
+
+  const layout = await page.evaluate(() => {
+    const confirmation = document.querySelector(".sh-onboarding__confirm-row .sh-checkbox-field");
+    const button = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "识别 Agent");
+    const grid = document.querySelector(".sh-onboarding__target-grid");
+    const cards = [...document.querySelectorAll(".sh-onboarding__target-card")];
+    if (!confirmation || !button || !grid || !cards[0] || !cards[1]) return null;
+    const confirmationBox = confirmation.getBoundingClientRect();
+    const buttonBox = button.getBoundingClientRect();
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(" ").length,
+      confirmationButtonCenterDelta: Math.abs((confirmationBox.top + confirmationBox.height / 2) - (buttonBox.top + buttonBox.height / 2)),
+      firstRowCardOffset: cards[1].getBoundingClientRect().left - cards[0].getBoundingClientRect().left,
+    };
+  });
+
+  expect(layout).not.toBeNull();
+  expect(layout!.columns).toBe(2);
+  expect(layout!.confirmationButtonCenterDelta).toBeLessThanOrEqual(16);
+  expect(layout!.firstRowCardOffset).toBeGreaterThan(0);
 });
 
 test("keeps 60 discovered entries in an internal scroll without page overflow at 800px", async ({ page }) => {
@@ -198,8 +269,7 @@ test("offers the background hand-off while a scan keeps running and finishes hon
 
   await page.getByRole("button", { name: "继续" }).click();
   await confirmCompatibility(page);
-  await page.getByRole("checkbox", { name: "OpenAI · 终端" }).click();
-  await page.getByRole("checkbox", { name: "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目" }).click();
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "开始只读扫描" }).click();
 

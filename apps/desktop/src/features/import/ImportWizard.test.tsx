@@ -81,7 +81,7 @@ it("exposes the unified step rail and keeps the primary action in a stable foote
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(parse);
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
 
   const railAfter = screen.getByRole("list", { name: "导入步骤" });
   const stepsAfter = within(railAfter).getAllByRole("listitem");
@@ -96,15 +96,17 @@ it("exposes the unified step rail and keeps the primary action in a stable foote
 });
 
 it("automatically previews onboarding sources and continues directly to candidates", async () => {
+  const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   await renderGuidedWizard(facade, "onboarding");
 
-  const sourceList = await screen.findByRole("list", { name: "已选来源" });
-  expect(await within(sourceList).findAllByText("2 个候选")).toHaveLength(2);
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(
     expect.arrayContaining(["C:/codex/skills", "C:/claude/skills"]),
   );
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  const sourceList = await screen.findByRole("list", { name: "已选来源" });
+  expect(await within(sourceList).findAllByText("2 个候选")).toHaveLength(2);
   expect(screen.queryByRole("button", { name: "读取已选目录候选" })).not.toBeInTheDocument();
 });
 
@@ -123,8 +125,9 @@ it("returns the onboarding footer to an actionable idle state when the source te
   const facade = createMockImportFacade({ scenario: "safe-local" });
   await renderGuidedWizard(facade, "onboarding");
 
-  // 自动预览完成：门槛继续可用。
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  // 自动预览完成后直接进入候选选择；返回来源页可继续编辑路径。
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
 
   // 编辑来源输入框：陈旧预览状态作废，页脚必须回到可操作的空闲态，
   // 绝不永久停留在"正在解析…"（E2E 发现的页脚卡死）。
@@ -134,7 +137,7 @@ it("returns the onboarding footer to an actionable idle state when the source te
 
   // 显式重新获取后流程照常前进（0 候选不放行的门不受影响）。
   await user.click(acquire);
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
 });
 
 it("discards in-flight onboarding previews when the source text is edited and stays actionable", async () => {
@@ -157,7 +160,7 @@ it("discards in-flight onboarding previews when the source text is edited and st
   const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
   expect(acquire).toBeEnabled();
 
-  // 迟到的预览完成被请求序号守卫丢弃：不得借陈旧终结把流程拖回门槛页。
+  // 迟到的预览完成被请求序号守卫丢弃：不得借陈旧终结提前进入候选页。
   await act(async () => {
     for (const resolve of resolvers.splice(0)) resolve([]);
   });
@@ -166,7 +169,7 @@ it("discards in-flight onboarding previews when the source text is edited and st
   // 用户显式重新获取后流程前进。
   facade.acquireCandidates = healthyAcquire;
   await user.click(acquire);
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
 });
 
 it("keeps the onboarding footer actionable after repeated quick edits of the source text", async () => {
@@ -174,7 +177,8 @@ it("keeps the onboarding footer actionable after repeated quick edits of the sou
   const facade = createMockImportFacade({ scenario: "safe-local" });
   await renderGuidedWizard(facade, "onboarding");
 
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
 
   // 连续两次快速编辑：状态转移确定，页脚保持可操作空闲态。
   await user.type(screen.getByLabelText("来源"), "-a");
@@ -183,7 +187,7 @@ it("keeps the onboarding footer actionable after repeated quick edits of the sou
   expect(acquire).toBeEnabled();
 
   await user.click(acquire);
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
 });
 
 it("keeps the onboarding footer actionable when every auto-previewed source is deselected mid-preview", async () => {
@@ -224,6 +228,23 @@ it("scans pre-selected sources automatically in the standard wizard and on re-ch
   expect(acquire.mock.calls.length).toBeGreaterThan(callsBefore);
 });
 
+it("continues directly to candidate selection after background previews without reading selected sources again", async () => {
+  const user = userEvent.setup();
+  const facade = await renderGuidedWizard();
+
+  const sourceList = screen.getByRole("list", { name: "已选来源" });
+  expect(await within(sourceList).findAllByText("2 个候选")).toHaveLength(2);
+  const callsAfterPreview = [...facade.calls.acquiredSources];
+  const continueButton = await screen.findByRole("button", { name: "继续下一步" });
+  expect(continueButton).toBeEnabled();
+
+  await user.click(continueButton);
+
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "继续选择候选" })).not.toBeInTheDocument();
+  expect(facade.calls.acquiredSources).toEqual(callsAfterPreview);
+});
+
 it("drops the stale preview completion when a toggled source restarts its preview mid-flight", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
@@ -253,7 +274,7 @@ it("drops the stale preview completion when a toggled source restarts its previe
   await act(async () => {
     resolvers.splice(0).forEach((resolve) => resolve([]));
   });
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
 });
 
 it("reports a per-source scan failure with its own reason and single-source retry", async () => {
@@ -272,16 +293,12 @@ it("reports a per-source scan failure with its own reason and single-source retr
   await user.clear(screen.getByLabelText("来源"));
   await user.type(screen.getByLabelText("来源"), "C:/broken/skills");
   await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
 
-  // 统一来源确认列表：成功来源显示候选数；失败来源显示自己的原因，不影响其他目录。
+  // 后台预览直接呈现各来源状态：成功来源显示候选数；失败来源显示原因。
   const sourceList = screen.getByRole("list", { name: "已选来源" });
   expect(await within(sourceList).findAllByText("2 个候选")).toHaveLength(2);
   expect(within(sourceList).getAllByText("2 个候选")).toHaveLength(2);
   expect(within(sourceList).getByText("simulated per-source failure")).toBeVisible();
-  // 其他目录的候选仍可继续，不被失败目录拖累。
-  expect(screen.getByRole("button", { name: "继续选择候选" })).toBeEnabled();
-
   // 修复后单独重试：只重新扫描失败的那一个目录。
   facade.acquireCandidates = healthyAcquire;
   await user.click(screen.getByRole("button", { name: "重新扫描 C:/broken/skills" }));
@@ -291,7 +308,7 @@ it("reports a per-source scan failure with its own reason and single-source retr
   expect(within(sourceList).getAllByText("2 个候选")).toHaveLength(3);
 });
 
-it("keeps the gate honest when every source fails and offers per-source retry", async () => {
+it("keeps all-failed sources visible and offers per-source retry", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   facade.acquireCandidates = vi.fn(async () => {
@@ -304,7 +321,6 @@ it("keeps the gate honest when every source fails and offers per-source retry", 
 
   const sourceList = await screen.findByRole("list", { name: "已选来源" });
   expect(await within(sourceList).findByText("simulated total failure")).toBeVisible();
-  expect(screen.getByRole("button", { name: "继续选择候选" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "重新扫描 C:/skills/pdf" })).toBeEnabled();
 });
 
@@ -355,7 +371,7 @@ it("returns a partially failed summary to a fresh run through the retry CTA", as
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -376,11 +392,8 @@ it("keeps keyboard focus on the flow heading across phase changes", async () => 
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  // 阶段切换时原主操作卸载；焦点必须落回稳定目标，不能丢失到 body。
-  await screen.findByRole("button", { name: "继续选择候选" });
-  expect(document.activeElement).toBe(document.body);
-
-  await user.click(screen.getByRole("button", { name: "继续选择候选" }));
+  // 阶段切换时原主操作卸载；焦点直接落回稳定标题。
+  await screen.findByRole("button", { name: "分析冲突" });
   expect(screen.getByRole("heading", { name: "导入 Skill" })).toHaveFocus();
 });
 
@@ -391,7 +404,7 @@ it("announces phase progress through the persistent status region", async () => 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
 
-  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "选择要导入的 Skill" })).toBeVisible();
 });
 
 it("parses npx text without executing it and reaches candidate selection", async () => {
@@ -401,7 +414,7 @@ it("parses npx text without executing it and reaches candidate selection", async
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
 
   expect(await screen.findByText("仅解析来源，不会执行 npx 命令")).toBeVisible();
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.executedCommands).toEqual([]);
 });
 
@@ -411,7 +424,7 @@ it("suggests takeover for Agent-owned candidates and requires explicit selection
   await renderWizard(facade);
   await user.type(screen.getByLabelText("来源"), "C:\\Agents\\codex\\skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -425,7 +438,7 @@ it("leads the governance and conflicts steps with a readable summary strip (DEV-
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -444,7 +457,7 @@ it("requires a candidate selection before analyzing", async () => {
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
 
   const analyze = screen.getByRole("button", { name: "分析冲突" });
   expect(analyze).toBeDisabled();
@@ -458,7 +471,7 @@ it("keeps commit disabled until every required conflict has an explicit decision
 
   await user.type(screen.getByLabelText("来源"), "C:/skills/pdf");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -482,23 +495,25 @@ it("acquires candidates from every selected scanned source", async () => {
   const user = userEvent.setup();
   const facade = await renderGuidedWizard();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
 
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
-  expect(screen.getByText("候选项已准备好")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "选择要导入的 Skill" })).toBeVisible();
 });
 
 it("removes one source from the unified confirmation list and keeps the other source", async () => {
   const user = userEvent.setup();
   await renderGuidedWizard();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
-  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  expect(await screen.findByRole("heading", { name: "选择要导入的 Skill" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  expect(await screen.findByRole("heading", { name: "从哪里查找 Skill？" })).toBeVisible();
 
   await user.click(screen.getByRole("button", { name: "移除已选来源 C:/codex/skills" }));
 
-  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "从哪里查找 Skill？" })).toBeVisible();
   const sourceList = screen.getByRole("list", { name: "已选来源" });
   expect(within(sourceList).getByText("C:\\claude\\skills")).toBeVisible();
   expect(within(sourceList).getByRole("checkbox", { name: "C:/codex/skills" })).not.toBeChecked();
@@ -508,8 +523,10 @@ it("removes all selected sources from the unified confirmation list in one actio
   const user = userEvent.setup();
   await renderGuidedWizard();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
-  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  expect(await screen.findByRole("heading", { name: "选择要导入的 Skill" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  expect(await screen.findByRole("heading", { name: "从哪里查找 Skill？" })).toBeVisible();
 
   await user.click(screen.getByRole("button", { name: "全部清空" }));
 
@@ -530,14 +547,14 @@ it("adds a manual directory alongside scanned sources for mixed import", async (
 
   expect(await screen.findByRole("button", { name: "添加到已选来源" })).toBeDisabled();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   // DEV-13：挂载即自动解析已选来源（codex/claude 各一次），手动目录在
-  // 添加时解析一次；随后批量读取因输入编辑作废过预览缓存而重扫已选来源。
+  // 添加时解析一次；继续时复用全部目录的后台预览缓存。
   const acquired = facade.calls.acquiredSources;
   expect(acquired.filter((source) => source === "C:/windsurf/skills")).toHaveLength(1);
-  expect(acquired.filter((source) => source === "C:/codex/skills")).toHaveLength(2);
-  expect(acquired.filter((source) => source === "C:/claude/skills")).toHaveLength(2);
+  expect(acquired.filter((source) => source === "C:/codex/skills")).toHaveLength(1);
+  expect(acquired.filter((source) => source === "C:/claude/skills")).toHaveLength(1);
 });
 
 it("shows a manually added directory in the selected list while silently previewing", async () => {
@@ -584,17 +601,17 @@ it("silently previews a newly selected source and reports its skill count", asyn
   await user.type(screen.getByLabelText("来源"), "C:/new/skills");
   await user.click(screen.getByRole("button", { name: "添加到已选来源" }));
 
-  expect(await screen.findByText("1 个候选")).toBeVisible();
+  expect(await screen.findAllByText("1 个候选")).toHaveLength(3);
   expect(screen.getByRole("list", { name: "已选来源" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "读取已选目录候选" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "继续下一步" })).toBeEnabled();
 });
 
 it("keeps a selected source visible with its scan result after returning to the source step", async () => {
   const user = userEvent.setup();
   await renderGuidedWizard();
 
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   // 返回上一步：已选来源与每个目录的候选数仍然可见。
   await user.click(screen.getByRole("button", { name: "上一步" }));
 
@@ -745,8 +762,8 @@ it("restores scan results and candidate selection after the wizard remounts", as
       </I18nextProvider>
     </TestShell>,
   );
-  await user.click(await screen.findByRole("button", { name: "读取已选目录候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   const pdfCheckbox = screen.getAllByRole("checkbox", { name: /PDF/ })[0];
   await user.click(pdfCheckbox);
   expect(pdfCheckbox).toBeChecked();
@@ -761,8 +778,8 @@ it("restores scan results and candidate selection after the wizard remounts", as
     </TestShell>,
   );
 
-  // 恢复停在扫描结果门槛步；继续后勾选原样，且全程未重新扫描。
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  // 恢复直接进入候选页；勾选原样，且全程未重新扫描。
+  await screen.findByRole("button", { name: "分析冲突" });
   const restoredCheckboxes = await screen.findAllByRole("checkbox", { name: /PDF/ });
   expect(restoredCheckboxes[0]).toBeChecked();
   expect(facade.calls.acquiredSources).toHaveLength(callsBeforeRemount);
@@ -807,7 +824,7 @@ it("automatically acquires onboarding sources without a second read action", asy
   // 初始化导入不再提供“添加到已选来源”。
   expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
 
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
 });
 
@@ -830,11 +847,13 @@ it("adds the picked local directory to the onboarding selection without the manu
     </TestShell>,
   );
 
+  await screen.findByRole("button", { name: "分析冲突" });
+  await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
   expect(screen.queryByRole("button", { name: "添加到已选来源" })).not.toBeInTheDocument();
 
   // 手动选择的目录自动进入已选来源，并与初始化来源一起静默解析。
-  expect(await screen.findByRole("button", { name: "继续选择候选" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: "分析冲突" })).toBeVisible();
   expect(facade.calls.acquiredSources).toEqual(expect.arrayContaining([
     "C:/picked/skills",
     "C:/codex/skills",
@@ -855,12 +874,13 @@ it("keeps the acquire action available and shows per-source counts when the sour
   );
 
   expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("");
-  const acquire = screen.getByRole("button", { name: "读取已选目录候选" });
-  expect(acquire).toBeEnabled();
-  await user.click(acquire);
+  const continueButton = await screen.findByRole("button", { name: "继续下一步" });
+  expect(continueButton).toBeEnabled();
+  await user.click(continueButton);
 
   expect(facade.calls.acquiredSources).toEqual(["C:/codex/skills", "C:/claude/skills"]);
-  expect(await screen.findByText("候选项已准备好")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "选择要导入的 Skill" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
   const sourceList = screen.getByRole("list", { name: "已选来源" });
   expect(within(sourceList).getAllByText("2 个候选")).toHaveLength(2);
 });
@@ -886,7 +906,7 @@ it("normalizes every initialization source before displaying and acquiring it", 
   expect(screen.getByRole("textbox", { name: "来源" })).toHaveValue("C:\\Users\\demo\\.claude\\skills");
   expect(screen.getByRole("checkbox", { name: "C:\\Users\\demo\\.claude\\skills" })).toBeChecked();
   expect(screen.getByRole("checkbox", { name: "C:\\Users\\demo\\.codex\\skills" })).toBeChecked();
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
 
   expect(facade.calls.acquiredSources).toEqual([
     "C:\\Users\\demo\\.claude\\skills",
@@ -930,7 +950,7 @@ it("adds a directory from the native picker without clearing selected scan sourc
   );
 
   await user.click(screen.getByRole("button", { name: "选择本地目录" }));
-  await user.click(screen.getByRole("button", { name: "读取已选目录候选" }));
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
 
   // DEV-13：本机选取的目录解析一次；挂载时已选来源自动解析过，批量读取
   // 视预览缓存是否命中可能重扫，因此只断言它们都参与了获取。
@@ -946,14 +966,14 @@ it("requires a fresh conflict decision when retrying an import", async () => {
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("radio", { name: "独立导入" }));
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -1009,7 +1029,7 @@ it("submits directly after conflicts even when analysis reports relationship gro
 
   await user.type(screen.getByLabelText("来源"), "C:/skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -1044,7 +1064,7 @@ it("does not add a governance step after returning to candidates and reanalyzing
 
   await user.type(screen.getByLabelText("来源"), "C:/skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await screen.findByRole("heading", { name: "处理需要确认的冲突" });
@@ -1075,7 +1095,7 @@ it("counts todo results as attention in the status, notification, and tracked su
 
   await user.type(screen.getByLabelText("来源"), "C:/skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -1115,7 +1135,7 @@ it("drives the unified tracker through queued, running and failed when the commi
 
   await user.type(screen.getByLabelText("来源"), "C:/skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -1156,7 +1176,7 @@ it("keeps the commit running in the global tracker after the wizard unmounts", a
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -1198,7 +1218,7 @@ it("refuses to commit while another import is still running", async () => {
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
@@ -1229,7 +1249,7 @@ it("shows candidate progress while commit is in flight", async () => {
 
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -1247,7 +1267,7 @@ describe("global notifications for import outcomes", () => {
     await renderWizard(facade);
     await user.type(screen.getByLabelText("来源"), "C:/incoming");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     await screen.findByRole("button", { name: "提交导入" });
@@ -1331,7 +1351,7 @@ describe("conflict analysis progress", () => {
     await renderWizard(facade);
     await user.type(screen.getByLabelText("来源"), "C:/incoming");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   }
 
@@ -1496,7 +1516,7 @@ describe("AI import pre-check", () => {
     await renderWizard(facade);
     await user.type(screen.getByLabelText("来源"), "C:\\skills\\pdf");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     await screen.findByRole("button", { name: "提交导入" });
@@ -1625,7 +1645,7 @@ describe("AI import pre-check", () => {
 
     await user.type(screen.getByLabelText("来源"), "C:/skills");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
@@ -1644,7 +1664,7 @@ describe("AI import pre-check", () => {
 
     await user.type(screen.getByLabelText("来源"), "C:/skills");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+    await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
     expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
@@ -1677,7 +1697,7 @@ it("hands the exact batch context to the governance entry without showing the ba
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
@@ -1709,7 +1729,7 @@ it("closes the wizard for later without touching retain or cleanup decisions", a
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("来源"), "C:/incoming");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-  await user.click(await screen.findByRole("button", { name: "继续选择候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));

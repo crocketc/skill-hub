@@ -12,48 +12,22 @@ beforeEach(() => {
 });
 
 it("maps derived pending work to stable page identities", async () => {
-  query.mockImplementation(async (request) => {
-    if (request.type === "get_conflict_workspace") return { type: "conflict_workspace", payload: { cases: [] } } as never;
-    if (request.type === "list_relation_governance") return { type: "relation_governance_ledger", payload: { rows: [] } } as never;
-    if (request.type === "list_recovery_candidates") return { type: "recovery_candidates", payload: [] };
-    if (request.type === "get_skill") return { type: "skill", payload: { display_name: "PDF Reader" } } as never;
-    return {
-    type: "pending_items",
-    payload: [{
-      subject: "pdf-reader",
-      kind: "security_finding",
-      code: "finding-7",
-      message_code: "pending.securityFinding",
-      risk: "high",
-      affected_deployments: 2,
-    }],
-    };
-  });
-
+  query.mockResolvedValue({ type: "pending_workspace", payload: { unavailable_sources: [], items: [{
+    id: "work:security_finding:pdf-reader:v1:finding-7", subject: "pdf-reader", kind: "security_finding",
+    message_code: "pending.reasons.security_finding", display_name: "PDF Reader", can_defer: false, can_ignore: false,
+    recommended: false, can_confirm: false, version_id: "v1", finding_id: "finding-7", check_kind: "basic", risk: "high", path: null, due_date: null, source_roots: [],
+  }] } });
   await expect(nativePendingFacade.list()).resolves.toEqual([{
-    id: "security_finding:pdf-reader:finding-7",
-    subject: "pdf-reader",
-    kind: "security_finding",
-    code: "finding-7",
-    message: "pending.reasons.security_finding",
-    dueDate: null,
-    risk: "high",
-    affectedDeployments: 2,
-    displayName: "PDF Reader",
-    href: "/library/pdf-reader/security",
+    id: "work:security_finding:pdf-reader:v1:finding-7", subject: "pdf-reader", kind: "security_finding", code: "security_finding",
+    message: "pending.reasons.security_finding", displayName: "PDF Reader", canSnooze: false, canConfirm: false, recommended: false,
+    versionId: "v1", findingId: "finding-7", checkKind: "basic", risk: "high", path: undefined, dueDate: null,
+    sourceRoots: [], href: "/library/pdf-reader/security?version=v1&kind=basic&finding=finding-7",
   }]);
 });
 
-it("resolves a security finding through the matching typed command", async () => {
-  query.mockResolvedValueOnce({ type: "skill", payload: { current_version: "version-1" } as never });
-  vi.mocked(executeCommand).mockResolvedValue({ type: "basic_check_result", payload: {} as never });
-  await nativePendingFacade.resolve({
-    id: "security_finding:skill:finding-7", subject: "skill", kind: "security_finding", code: "finding-7", message: "finding",
-  });
-  expect(executeCommand).toHaveBeenCalledWith(expect.objectContaining({
-    type: "set_finding_disposition",
-    payload: expect.objectContaining({ skill_id: "skill", version_id: "version-1", finding_id: "finding-7", disposition: "acknowledged" }),
-  }));
+it("requires the finding workflow instead of silently acknowledging risk", async () => {
+  await expect(nativePendingFacade.resolve({ id: "finding", subject: "skill", kind: "security_finding", code: "finding", message: "finding" })).rejects.toThrow();
+  expect(executeCommand).not.toHaveBeenCalled();
 });
 
 /**
@@ -105,30 +79,20 @@ it("defers each item through an exact_pending ignore rule with a local due date"
   }
 });
 
-it("ignores items permanently by deferring with a null due date", async () => {
+it("skips optional suggestions through the backend's eligibility check", async () => {
   vi.mocked(executeCommand).mockResolvedValue({ type: "ignore_rule", payload: {} as never });
-  await nativePendingFacade.ignore(
-    [{ id: "security_finding:skill-b:finding-7", subject: "skill-b", kind: "security_finding", code: "finding-7", message: "finding" }],
-    "永久忽略该待处理事项",
-  );
-  expect(executeCommand).toHaveBeenCalledWith({
-    type: "create_ignore_rule",
-    payload: {
-      subject: { type: "exact_pending", value: "security_finding:skill-b:finding-7" },
-      reason: "永久忽略该待处理事项",
-      defer_until: null,
-    },
-  });
+  await nativePendingFacade.ignore([{ id: "work:ai_setup:settings:first", subject: "settings", kind: "ai_setup", code: "ai_setup", message: "setup", recommended: true }], "skip");
+  expect(executeCommand).toHaveBeenCalledWith({ type: "dismiss_pending_work", payload: { item_id: "work:ai_setup:settings:first", reason: "skip", defer_until: null } });
 });
 
 it("lists handled entries only for exact_pending ignore rules", async () => {
-  query.mockResolvedValue({
+  query.mockImplementation(async (request) => request.type === "list_pending_confirmations" ? { type: "pending_confirmations", payload: [] } : ({
     type: "ignore_rules",
     payload: [
       { id: "rule-1", subject: { type: "exact_pending", value: "trial_due:skill-a:trial" }, reason: "稍后处理", created_at: "2026-09-01T10:00:00+08:00", defer_until: "2026-09-08" },
       { id: "rule-2", subject: { type: "exact_path", value: "C:/drafts" }, reason: "路径忽略", created_at: "2026-09-01T10:00:00+08:00", defer_until: null },
     ],
-  } as never);
+  } as never));
   await expect(nativePendingFacade.listHandled()).resolves.toEqual([
     { id: "rule-1", pendingId: "trial_due:skill-a:trial", displayName: null, reason: "稍后处理", createdAt: "2026-09-01T10:00:00+08:00", deferUntil: "2026-09-08" },
   ]);

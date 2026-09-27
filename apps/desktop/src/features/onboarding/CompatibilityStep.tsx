@@ -1,172 +1,181 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { buildAgentCardViews } from "../agents/agentCards";
+import type { AgentView } from "../agents/api";
 import { Button } from "../../ui/Button";
-import { AgentPresentation, agentKindLabel, isAgentKindKey } from "../../ui/AgentPresentation";
-import { brandDisplayName, BrandTag } from "../../ui/BrandTag";
+import { AgentPresentation, agentKindLabel, isAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
+import { brandDisplayName } from "../../ui/BrandTag";
 import { CheckboxField } from "../../ui/CheckboxField";
+import { displayPath } from "../../platform/displayPath";
 import type { CompatibilityTarget } from "../bootstrap/api";
 
 interface CompatibilityStepProps {
   confirmed: boolean;
   isDiscovering: boolean;
-  selectionConfirmed: boolean;
   selectedTargetIds: string[];
   targets: CompatibilityTarget[] | null;
   onConfirmChange: (confirmed: boolean) => void;
   onDiscover: () => void;
-  onSelectionConfirmChange: (confirmed: boolean) => void;
   onTargetSelectionChange: (targetId: string, selected: boolean) => void;
   onSelectAllAvailable: () => void;
+}
+
+interface CompatibilityCardGroup {
+  brand: string;
+  kinds: AgentKindKey[];
+  path?: string;
+  sharedDirectory: boolean;
+  targets: CompatibilityTarget[];
+}
+
+function cardGroupsFor(targets: CompatibilityTarget[]): CompatibilityCardGroup[] {
+  const targetsById = new Map(targets.map((target) => [target.id, target]));
+  const views: AgentView[] = targets.map((target) => ({
+    id: target.id,
+    brand: target.profileId ?? target.label,
+    client: target.label,
+    discoveredPaths: target.path ? [target.path] : [],
+    instance: target.label,
+    managedDeploymentCount: 0,
+    managedDeploymentRelationCount: 0,
+    officialReference: null,
+    relations: [],
+    status: target.availability === "available" ? "accessible" : "inaccessible",
+    kinds: target.kind && isAgentKindKey(target.kind) ? [target.kind] : undefined,
+  }));
+
+  // Use the Agent page's card builder so directory identity and merged kind
+  // decisions remain the same across the discovery entry points.
+  return [...buildAgentCardViews(views).entries()].flatMap(([brand, cards]) =>
+    cards.map((card) => ({
+      brand: card.agent.brand || brand,
+      kinds: card.kinds,
+      path: card.agent.discoveredPaths[0],
+      sharedDirectory: card.sharedDirectory,
+      targets: card.agents.flatMap((agent) => {
+        const target = targetsById.get(agent.id);
+        return target ? [target] : [];
+      }),
+    })),
+  );
 }
 
 export function CompatibilityStep({
   confirmed,
   isDiscovering,
-  selectionConfirmed,
   selectedTargetIds,
   targets,
   onConfirmChange,
   onDiscover,
-  onSelectionConfirmChange,
   onTargetSelectionChange,
   onSelectAllAvailable,
 }: CompatibilityStepProps) {
   const { t } = useTranslation();
-  const brandGroups = useMemo(() => {
-    if (!targets) return [];
-    const byBrand = new Map<string, CompatibilityTarget[]>();
-    for (const target of targets) {
-      const key = target.profileId ?? "";
-      const list = byBrand.get(key) ?? [];
-      list.push(target);
-      byBrand.set(key, list);
-    }
-    return [...byBrand.entries()].map(([brand, items]) => ({ brand, items }));
-  }, [targets]);
-  // Grouped rendering only when the snapshot actually carries brand keys.
-  const hasBrands = brandGroups.some((group) => group.brand !== "");
+  const cardGroups = useMemo(() => targets ? cardGroupsFor(targets) : [], [targets]);
+  const availableCount = targets?.filter((target) => target.availability === "available").length ?? 0;
 
   return (
-    <section aria-labelledby="compatibility-step-title" className="sh-onboarding__card">
-      <h1 id="compatibility-step-title">{t("onboarding.compatibilityTitle")}</h1>
-      <p>{t("onboarding.compatibilityDescription")}</p>
-      <CheckboxField
-        checked={confirmed}
-        label={t("onboarding.compatibilityConfirmation")}
-        onChange={(event) => onConfirmChange(event.target.checked)}
-      />
-      <Button
-        disabled={!confirmed}
-        loading={isDiscovering}
-        onClick={onDiscover}
-      >
-        {t("onboarding.discoverAgents")}
-      </Button>
+    <section aria-labelledby="compatibility-step-title" className="sh-onboarding__card sh-onboarding__compatibility">
+      <div className="sh-onboarding__step-heading">
+        <h1 id="compatibility-step-title">{t("onboarding.compatibilityTitle")}</h1>
+        <p>{t("onboarding.compatibilityDescription")}</p>
+      </div>
+      <div className="sh-onboarding__confirm-row">
+        <CheckboxField
+          checked={confirmed}
+          label={t("onboarding.compatibilityConfirmation")}
+          onChange={(event) => onConfirmChange(event.target.checked)}
+        />
+        <div className="sh-onboarding__step-actions">
+          <Button disabled={!confirmed} loading={isDiscovering} onClick={onDiscover}>
+            {t("onboarding.discoverAgents")}
+          </Button>
+          {targets && targets.length > 0 ? (
+            <span className="sh-onboarding__target-count">
+              {t("onboarding.compatibilityPathCount", { count: cardGroups.length, available: availableCount })}
+            </span>
+          ) : null}
+        </div>
+      </div>
       {targets && targets.length === 0 ? <p>{t("onboarding.noCompatibleTargets")}</p> : null}
       {targets && targets.length > 0 ? (
         <fieldset className="sh-onboarding__targets">
           <legend>{t("onboarding.compatibilityTargets")}</legend>
-          {targets.some((target) => target.availability === "available") ? (
-            <Button onClick={onSelectAllAvailable} size="sm" variant="secondary">
-              {t("onboarding.selectAllAvailable")}
-            </Button>
-          ) : null}
-          {hasBrands ? (
-            brandGroups.map((group) => (
-              <div className="sh-onboarding__brand-group" key={group.brand || "__other"}>
-                <p className="sh-onboarding__brand">
-                  {group.brand ? (
-                    <BrandTag brand={group.brand} />
-                  ) : (
-                    t("onboarding.brandOther")
-                  )}
-                </p>
-                {group.items.map((target) => (
-                  <TargetCheckbox
-                    key={target.id}
-                    target={target}
-                    selectedTargetIds={selectedTargetIds}
-                    onTargetSelectionChange={onTargetSelectionChange}
-                  />
-                ))}
-              </div>
-            ))
-          ) : (
-            targets.map((target) => (
-              <TargetCheckbox
-                key={target.id}
-                target={target}
-                selectedTargetIds={selectedTargetIds}
-                onTargetSelectionChange={onTargetSelectionChange}
-              />
-            ))
-          )}
+          <div className="sh-onboarding__target-list-header">
+            <p>{t("onboarding.compatibilityPathHelper")}</p>
+            {availableCount > 0 ? (
+              <Button onClick={onSelectAllAvailable} size="sm" variant="secondary">
+                {t("onboarding.selectAllAvailable")}
+              </Button>
+            ) : null}
+          </div>
+          <div aria-label={t("onboarding.compatibilityTargets")} className="sh-onboarding__target-scroll">
+            <div className="sh-onboarding__target-grid">
+              {cardGroups.map((group) => (
+                <TargetCard
+                  group={group}
+                  key={group.brand + ":" + (group.path ?? "pathless") + ":" + group.targets.map((target) => target.id).join(",")}
+                  selectedTargetIds={selectedTargetIds}
+                  onTargetSelectionChange={onTargetSelectionChange}
+                />
+              ))}
+            </div>
+          </div>
         </fieldset>
-      ) : null}
-      {selectedTargetIds.length > 0 ? (
-        <CheckboxField
-          checked={selectionConfirmed}
-          label={t("onboarding.selectionConfirmation")}
-          onChange={(event) => onSelectionConfirmChange(event.target.checked)}
-        />
       ) : null}
     </section>
   );
 }
 
-function TargetCheckbox({
-  target,
+function TargetCard({
+  group,
   selectedTargetIds,
   onTargetSelectionChange,
 }: {
-  target: CompatibilityTarget;
+  group: CompatibilityCardGroup;
   selectedTargetIds: string[];
   onTargetSelectionChange: (targetId: string, selected: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const kindKey = target.kind && isClientKind(target.kind)
-    ? (`onboarding.clientKind.${target.kind}` as const)
-    : null;
-  const description = [
-    kindKey ? t(kindKey) : null,
-    target.availability === "unavailable" ? t("onboarding.unavailable") : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const selectableTargets = group.targets.filter((target) => target.availability === "available");
+  const selectableIds = selectableTargets.map((target) => target.id);
+  const checked = selectableIds.length > 0 && selectableIds.every((id) => selectedTargetIds.includes(id));
+  const unavailable = selectableIds.length === 0;
+  const kindLabels = group.kinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+  const presentationLabel = group.sharedDirectory
+    ? String(t("agents.kind.sharedDirectory"))
+    : kindLabels.join("/") || String(t("agents.kind.unknown"));
+  const ariaLabel = brandDisplayName(group.brand) + " · " + presentationLabel;
+  const description = unavailable
+    ? String(t("onboarding.unavailable"))
+    : kindLabels.join(" · ");
+
   return (
-    <CheckboxField
-      ariaLabel={`${brandDisplayName(target.profileId ?? target.label)} · ${
-        target.kind && isAgentKindKey(target.kind)
-          ? agentKindLabel(target.kind, (key) => String(t(key as never)))
-          : t("agents.kind.unknown")
-      }`}
-      checked={selectedTargetIds.includes(target.id)}
-      description={description || undefined}
-      disabled={target.availability === "unavailable"}
-      label={
-        <AgentPresentation
-          agentId={target.label}
-          brand={target.profileId}
-          kinds={target.kind && isAgentKindKey(target.kind) ? [target.kind] : undefined}
-        />
-      }
-      onChange={(event) => onTargetSelectionChange(target.id, event.target.checked)}
-    />
+    <div className="sh-onboarding__target-card" data-selected={checked ? "true" : "false"} data-unavailable={unavailable ? "true" : "false"}>
+      <CheckboxField
+        ariaLabel={ariaLabel}
+        checked={checked}
+        description={description || undefined}
+        disabled={unavailable}
+        label={(
+          <span className="sh-onboarding__target-card-content">
+            <span className="sh-onboarding__target-card-heading">
+              <AgentPresentation
+                agentId={group.brand}
+                brand={group.brand}
+                kinds={group.kinds}
+                sharedDirectory={group.sharedDirectory}
+              />
+            </span>
+            <code className="sh-onboarding__target-path">
+              {group.path ? displayPath(group.path) : t("onboarding.targetPathUnavailable")}
+            </code>
+          </span>
+        )}
+        onChange={(event) => {
+          for (const id of selectableIds) onTargetSelectionChange(id, event.target.checked);
+        }}
+      />
+    </div>
   );
-}
-
-const clientKindKeys = {
-  cli: true,
-  desktop: true,
-  ide_extension: true,
-  tui: true,
-  headless: true,
-  acp: true,
-  web: true,
-  mobile: true,
-  bot: true,
-} as const;
-
-function isClientKind(kind: string): kind is keyof typeof clientKindKeys {
-  return kind in clientKindKeys;
 }

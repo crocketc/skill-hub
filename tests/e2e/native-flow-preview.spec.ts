@@ -102,6 +102,10 @@ async function installNativePreview(page: Page) {
     ];
     const skillOperations = { skill_id: "pdf-reader", entries: [{ operation_id: "op-import-1", kind: "import_skill", phase: "committed", error_code: null }], filtered: false, limitation: "skill_dimension_not_recorded" };
     const pending = [{ subject: "pdf-reader", kind: "security_finding", code: "secret-like-string", message_code: "pending.messages.securityFinding", due_date: null, risk: "high", affected_deployments: 1 }];
+    const pendingWorkspace = [
+      { id: "work:security_finding:pdf-reader:v1:run-1:finding-1", kind: "security_finding", subject: "pdf-reader", display_name: "PDF Reader", message_code: "pending.reasons.security_finding", recommended: false, can_defer: false, can_ignore: false, can_confirm: false, version_id: "v1", finding_id: "finding-1", check_kind: "basic", path: null, due_date: null, risk: "high", source_roots: [] },
+      { id: "work:conflict:preview-conflict:active", kind: "conflict", subject: "import-conflict:same_name_different_content:find-skills", display_name: "PDF Reader / Release Notes", message_code: "pending.reasons.conflict", recommended: false, can_defer: false, can_ignore: false, can_confirm: false, version_id: null, finding_id: null, check_kind: null, path: null, due_date: null, risk: null, source_roots: [] },
+    ];
     const ignoreRules = [{ id: "ignore-1", subject: { type: "exact_pending", value: "security_finding:pdf-reader:secret-like-string" }, reason: "preview rule", created_at: "2026-09-08T08:00:00Z", defer_until: null }];
     const project = { id: "project-aurora", name: "Aurora", device_path: "C:/Preview/Aurora", physical_id: "aurora-physical", logical: { identity_hint: "C:/Preview/Aurora", note: "Preview project" }, tags: [{ name: "demo" }, { name: "Rust" }], agent_ids: ["codex-target"], created_at: "2026-09-08T08:00:00Z", updated_at: "2026-09-08T08:00:00Z" };
     const preferences = { network_enabled: true, llm_provider: "", data_scope: "explicit_selection", language: "en-US", theme: "light", density: "standard", automation_per_skill: false, automation_batch: false, automation_global: false, backup_location: null, backup_retention_days: 30 };
@@ -203,6 +207,8 @@ async function installNativePreview(page: Page) {
             return ok("deployment_plan", { skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, runtime_name: query.payload.request.runtime_name, mode: "symbolic_link", targets: [{ physical_target_id: "codex-physical", logical_target_ids: ["codex-target"], target_path: "C:/Preview/.agents", destination_path: "C:/Preview/.agents/pdf-reader", source_path: "C:/Preview/SkillHub/skills/pdf-reader", runtime_name: query.payload.request.runtime_name, skill_id: query.payload.request.skill_id, version_id: query.payload.request.version_id, mode: "symbolic_link", change: "no_op", warnings: [], conflicts: [] }], warnings: [], conflicts: [] });
           }
           case "list_pending_items": return ok("pending_items", pending);
+          case "get_pending_workspace": return ok("pending_workspace", { items: pendingWorkspace.filter((item) => !conflictResolved || item.kind !== "conflict"), unavailable_sources: [] });
+          case "list_pending_confirmations": return ok("pending_confirmations", []);
           case "list_ignore_rules": return ok("ignore_rules", ignoreRules);
           case "get_ui_preference": return ok("ui_preference", { key: query.payload?.key, value_json: JSON.stringify({ kind: "all" }) });
           case "list_custom_agents": return ok("custom_agents", []);

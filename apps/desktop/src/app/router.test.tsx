@@ -38,6 +38,8 @@ vi.mock("../api/bindings", async (importOriginal) => {
         return { type: "skill_relationship_candidates" as const, payload: [] };
       }
       if (query.type === "list_pending_items") return { type: "pending_items" as const, payload: [] };
+      if (query.type === "get_pending_workspace") return { type: "pending_workspace" as const, payload: { items: [], unavailable_sources: [] } };
+      if (query.type === "list_pending_confirmations") return { type: "pending_confirmations" as const, payload: [] };
       if (query.type === "get_desktop_preferences") return {
         type: "desktop_preferences" as const,
         payload: {

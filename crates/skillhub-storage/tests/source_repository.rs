@@ -2,6 +2,47 @@ use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{SkillId, SourceRole};
 use skillhub_storage::Database;
 
+#[test]
+fn update_observation_preserves_versions_for_occurrence_scoped_reminders() {
+    let database = Database::open_in_memory().unwrap();
+    let skill_id = SkillId::new();
+    insert_skill(&database, skill_id);
+    let check = skillhub_core::source::UpstreamCheckResult::new(
+        skill_id,
+        skillhub_core::source::SourceState::UpdateAvailable,
+    )
+    .with_versions(
+        Some(format!("sha256:{}", "a".repeat(64)).parse().unwrap()),
+        Some(format!("sha256:{}", "b".repeat(64)).parse().unwrap()),
+    );
+    database
+        .source_repository()
+        .record_update_check(&check)
+        .unwrap();
+    assert_eq!(
+        database
+            .source_repository()
+            .last_update_check(skill_id)
+            .unwrap(),
+        Some(check)
+    );
+    let next = skillhub_core::source::UpstreamCheckResult::new(
+        skill_id,
+        skillhub_core::source::SourceState::UpToDate,
+    );
+    database
+        .source_repository()
+        .record_update_check(&next)
+        .unwrap();
+    assert_eq!(
+        database
+            .source_repository()
+            .last_update_check(skill_id)
+            .unwrap(),
+        Some(next)
+    );
+}
+
 fn insert_skill(database: &Database, skill_id: SkillId) {
     database
         .connection_for_test()

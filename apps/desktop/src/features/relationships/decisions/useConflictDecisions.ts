@@ -162,6 +162,7 @@ export function useResolveConflict(options: {
       // 统一执行桥（任务 4）：即时写入命令不进在途投影、不闪顶栏，
       // 结果/失败经通知中心反馈；异常原样 rethrow，绝不吞掉。
       const outcome = await runTrackedOperation({
+        targetHref: `/relationships/decisions?${new URLSearchParams({ conflictId: input.caseFact.conflict_id })}`,
         tracker,
         notifications,
         kind: "conflict_resolve",

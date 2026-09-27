@@ -1,3 +1,4 @@
+import { relatedPendingHref } from "../pending/workspace";
 import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -46,7 +47,6 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 type WizardPhase =
   | "source"
   | "acquiring"
-  | "candidate_gate"
   | "candidates"
   | "analyzing"
   | "conflicts"
@@ -74,7 +74,7 @@ interface WizardState {
   sourceText: string;
   descriptor?: SourceDescriptor;
   candidates: CandidateSelectionProps["candidates"];
-  /** AR-006：候选按来源分组，支持在门槛页移除单个来源及其候选。 */
+  /** AR-006：候选按来源分组，返回来源页时可移除来源并清理对应候选。 */
   candidatesBySource: { source: string; candidates: CandidateSelectionProps["candidates"] }[];
   selectedIds: string[];
   plan?: ImportPlan;
@@ -98,7 +98,7 @@ interface WizardState {
 }
 
 type WizardEvent =
-  | { type: "source_changed"; value: string }
+  | { type: "source_changed"; value: string; resetSourceResults?: boolean }
   | { type: "back_to_sources" }
   | { type: "parse_started" }
   | { type: "parse_succeeded"; descriptor: SourceDescriptor }
@@ -118,8 +118,6 @@ type WizardEvent =
   | { type: "commit_succeeded"; results: ImportResult[]; batch?: ImportBatchSummary }
   | { type: "source_preview_started"; source: string }
   | { type: "source_preview_finished"; source: string; status: SourceScanStatus }
-  | { type: "source_rescan_started"; source: string }
-  | { type: "source_rescan_finished"; source: string; status: SourceScanStatus; candidates: WizardState["candidates"] }
   | { type: "session_restored"; candidates: WizardState["candidates"]; sourceResults: SourceScanResult[]; candidatesBySource: WizardState["candidatesBySource"]; selectedIds: string[] }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
   | { type: "cancelled" }
@@ -162,7 +160,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         plan: undefined,
         commitProgress: undefined,
         selectedIds: [],
-        sourceResults: [],
+        sourceResults: event.resetSourceResults ? [] : state.sourceResults,
         retryingSource: undefined,
         sourceText: event.value,
       };
@@ -190,7 +188,11 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidates: event.candidates,
         candidatesBySource: event.candidatesBySource,
         error: undefined,
-        phase: "candidate_gate",
+        phase: event.candidates.length === 0
+          && event.sourceResults.length > 0
+          && event.sourceResults.every((result) => result.status.kind === "failed")
+          ? "source"
+          : "candidates",
         retryingSource: undefined,
         sourceResults: event.sourceResults,
       };
@@ -215,7 +217,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       };
     case "source_removed": {
       // AR-006/M-29：局部调整来源——仅丢弃被移除来源的候选与结果，其余保留；
-      // 阶段保持不变（来源页删除停在来源页，门槛页删除停在门槛页）。
+      // 阶段保持不变（来源页删除停在来源页，候选页删除通过返回来源页完成）。
       const remaining = state.candidatesBySource.filter(
         (entry) => entry.source !== event.source,
       );
@@ -240,15 +242,15 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "show_candidates":
       return { ...state, phase: "candidates" };
     case "session_restored":
-      // DEV-12：会话恢复——扫描结果与已勾选候选原样回到门槛步（勾选保留，
-      // 继续后仍生效）；仅当来源集合与保存时一致才派发本事件。
+      // DEV-12：会话恢复——扫描结果与已勾选候选直接回到候选选择步；
+      // 仅当来源集合与保存时一致才派发本事件。
       return {
         ...state,
         candidates: event.candidates,
         candidatesBySource: event.candidatesBySource,
         sourceResults: event.sourceResults,
         selectedIds: event.selectedIds,
-        phase: "candidate_gate",
+        phase: "candidates",
       };
     case "candidates_selected":
       return { ...state, selectedIds: event.ids };
@@ -299,33 +301,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return { ...state, commitProgress: event.progress };
     case "commit_succeeded":
       return { ...state, commitProgress: undefined, error: undefined, phase: "summary", results: event.results, batch: event.batch };
-    case "source_rescan_started":
-      // M-29：单个失败目录重试——其余目录的候选与结果保持不动。
-      return {
-        ...state,
-        error: undefined,
-        phase: "acquiring",
-        retryingSource: event.source,
-      };
-    case "source_rescan_finished": {
-      const others = state.candidatesBySource.filter(
-        (entry) => entry.source !== event.source,
-      );
-      const candidatesBySource = event.status.kind === "scanned"
-        ? [...others, { source: event.source, candidates: event.candidates }]
-        : others;
-      const candidates = candidatesBySource.flatMap((entry) => entry.candidates);
-      const remainingIds = new Set(candidates.map((candidate) => candidate.id));
-      return {
-        ...state,
-        candidates,
-        candidatesBySource,
-        phase: "candidate_gate",
-        retryingSource: undefined,
-        selectedIds: state.selectedIds.filter((id) => remainingIds.has(id)),
-        sourceResults: upsertSourceResult(state.sourceResults, event.source, event.status),
-      };
-    }
     case "failed":
       return {
         ...state,
@@ -550,7 +525,8 @@ export function ImportWizard({
       for (const input of inputs) {
         // M-29：逐目录扫描——单目录失败记录该目录原因并继续，不影响其他目录。
         try {
-          const descriptor = await facade.parseSource(input);
+          const descriptor = previewDescriptorsRef.current.get(input)
+            ?? await facade.parseSource(input);
           if (operation !== operationRef.current) return;
           const acquired = previewCandidatesRef.current.get(input)
             ?? await facade.acquireCandidates(descriptor, controller.signal);
@@ -679,7 +655,7 @@ type: "failed",
         setFocusedSource(existing);
         return;
       }
-      // M-29：本机选取的目录直接进入统一来源确认列表，并静默预览候选数量。
+      // M-29：本机选取的目录直接进入已选来源列表，并静默预览候选数量。
       const nextSources = [...new Set([...selectedSourcesRef.current, normalized])];
       selectedSourcesRef.current = nextSources;
       setSelectedSources(nextSources);
@@ -737,41 +713,6 @@ type: "failed",
     setFocusedSource(normalized);
     dispatch({ type: "source_added", inputValue: "", source: normalized });
     void previewSource(normalized);
-  };
-
-  // M-29：单个失败目录的重试——只重扫该目录，不惊动其他目录的候选。
-  const rescanSource = async (source: string) => {
-    const operation = ++operationRef.current;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    dispatch({ type: "source_rescan_started", source });
-    try {
-      const descriptor = await facade.parseSource(source);
-      if (operation !== operationRef.current) return;
-      const acquired = await facade.acquireCandidates(descriptor, controller.signal);
-      if (operation !== operationRef.current) return;
-      dispatch({
-        candidates: acquired,
-        source,
-        status: { kind: "scanned", count: acquired.length },
-        type: "source_rescan_finished",
-      });
-    } catch (error) {
-      if (operation !== operationRef.current) return;
-      if (error instanceof ImportCancelledError) {
-        dispatch({ type: "cancelled" });
-        return;
-      }
-      dispatch({
-        source,
-        status: {
-          kind: "failed",
-          reason: describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic"),
-        },
-        type: "source_rescan_finished",
-        candidates: [],
-      });
-    }
   };
 
   // OPT-20260914-01：分析已用时间——进入分析阶段启动秒级计时，离开即停。
@@ -841,7 +782,7 @@ type: "failed",
           skipped: settled.results.filter((result) => result.status === "skipped").length,
           todo: settled.results.filter((result) => result.status === "todo").length,
         }),
-        successNotice: (_settled, summary) => ({
+        successNotice: (settled, summary) => ({
           tone: summary?.failed || summary?.todo ? "warning" : "success",
           title: summary?.todo
             ? t("importWorkflow.notifications.attentionTitle")
@@ -852,7 +793,7 @@ type: "failed",
             succeeded: summary?.succeeded ?? 0,
             todo: summary?.todo ?? 0,
           }),
-          action: { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
+          action: summary?.todo ? { label: t("pending.actions.open"), to: relatedPendingHref(settled.results.flatMap((result) => [...(result.governanceTasks ?? []).map((task) => task.task_id), ...(result.sourceRelationId ? [result.sourceRelationId] : [])])) } : { label: t("importWorkflow.notifications.openLibrary"), to: "/library" },
         }),
         errorNotice: (_error, message) => ({
           tone: "danger",
@@ -925,6 +866,19 @@ type: "failed",
       const kind = statusBySource[source]?.kind;
       return kind === "unscanned" || kind === "scanning";
     });
+  const selectedSourcesPreviewRunning = selectedSources.some((source) => {
+    const kind = statusBySource[source]?.kind;
+    return kind === "unscanned" || kind === "scanning";
+  });
+  const selectedSourcesPreviewReady = selectedSources.length > 0
+    && selectedSources.every((source) => previewCandidatesRef.current.has(source));
+  const sourceActionLabel = onboardingPreviewRunning || selectedSourcesPreviewRunning
+    ? t("importWorkflow.source.previewing")
+    : selectedSourcesPreviewReady
+      ? t("importWorkflow.source.continueAfterPreview")
+      : selectedSources.length > 0
+        ? t("importWorkflow.source.acquireSelectedSources")
+        : t("importWorkflow.source.parse");
   // OPT-20260914-01：逐项分析进度是否已真实到达（到达前只展示不确定进度）。
   const analysisLive = Boolean(
     state.analysisProgress && state.analysisProgress.total > 0,
@@ -935,12 +889,8 @@ type: "failed",
     case "source":
       actions = {
         primary: [
-          <Button disabled={!canParse || onboardingPreviewRunning} key="parse" onClick={() => void runAcquisition()} size="lg">
-            {onboardingPreviewRunning
-              ? t("importWorkflow.source.previewing")
-              : selectedSources.length > 0
-              ? t("importWorkflow.source.acquireSelectedSources")
-              : t("importWorkflow.source.parse")}
+          <Button disabled={!canParse || onboardingPreviewRunning || selectedSourcesPreviewRunning} key="parse" onClick={() => void runAcquisition()} size="lg">
+            {sourceActionLabel}
           </Button>,
         ],
         secondary: variant !== "onboarding"
@@ -962,21 +912,6 @@ type: "failed",
         primary: [
           <Button key="cancel" onClick={() => void cancelAcquisition()} variant="ghost">
             {t("importWorkflow.source.cancelAcquiring")}
-          </Button>,
-        ],
-        secondary: [],
-      };
-      break;
-    case "candidate_gate":
-      actions = {
-        primary: [
-          <Button
-            disabled={state.candidates.length === 0}
-            key="gate-continue"
-            onClick={() => dispatch({ type: "show_candidates" })}
-            size="lg"
-          >
-            {t("importWorkflow.source.continueCandidates")}
           </Button>,
         ],
         secondary: [],
@@ -1103,24 +1038,27 @@ type: "failed",
           {t("importWorkflow.commit.locked")}
         </p>
       ) : null}
-      {(["source", "acquiring", "candidate_gate", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
+      {(["source", "acquiring", "cancelled", "failed"] as WizardPhase[]).includes(state.phase) ? (
         <SourceInput
           descriptor={state.descriptor}
           disabled={state.phase === "acquiring"}
           focusedSource={focusedSource}
           onChange={(value) => {
-            // AR-006：输入手动来源不再清空已选扫描来源（混合导入）。
-            // 编辑即作废预览会话：source_changed 清空结果条目，预览缓存与
-            // 在途请求一并废弃，页脚回到空闲态由用户决定何时重新获取；
-            // 迟到的预览完成被请求序号守卫丢弃，不会复活陈旧终结。
-            discardPreviews();
-            dispatch({ type: "source_changed", value: normalizeWindowsPath(value) });
+            // 标准导入中，这个输入框只是待添加路径；编辑它不影响已选
+            // 来源的后台预览结果。初始化流程没有手动来源列表，编辑时仍
+            // 作废在途预览，避免迟到结果推动向导进入后续步骤。
+            if (variant === "onboarding") discardPreviews();
+            dispatch({
+              resetSourceResults: variant === "onboarding",
+              type: "source_changed",
+              value: normalizeWindowsPath(value),
+            });
           }}
           onClearSources={clearSources}
           onFocusedSourceApplied={() => setFocusedSource(undefined)}
           onPickLocalPath={() => void pickLocalDirectory()}
           onRemoveSource={removeSource}
-          onRetrySource={(source) => void (state.phase === "candidate_gate" ? rescanSource(source) : previewSource(source))}
+          onRetrySource={(source) => void previewSource(source)}
           onSelectAllSources={() => {
             const allSelected = normalizedInitialSources.every((source) => selectedSources.includes(source));
             if (allSelected) {
@@ -1159,12 +1097,19 @@ type: "failed",
       ) : null}
 
       {state.phase === "candidates" ? (
-        <CandidateSelection
-          candidates={state.candidates}
-          onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
-          onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
-          selectedIds={state.selectedIds}
-        />
+        <>
+          {state.descriptor?.kind === "npx_reference" ? (
+            <p aria-live="polite" className="sh-import-source__notice">
+              {t("importWorkflow.source.npxParseOnly")}
+            </p>
+          ) : null}
+          <CandidateSelection
+            candidates={state.candidates}
+            onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
+            onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
+            selectedIds={state.selectedIds}
+          />
+        </>
       ) : null}
 
       {state.phase === "analyzing" ? (

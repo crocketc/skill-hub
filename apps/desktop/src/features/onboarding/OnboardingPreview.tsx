@@ -17,9 +17,15 @@ const PREVIEW_LONG_LIBRARY_PATH = [
 ].join("\\");
 
 const PREVIEW_TARGETS: CompatibilityTarget[] = [
-  { id: "preview-codex", label: "Codex", profileId: "openai", kind: "cli", availability: "available" },
-  { id: "preview-claude", label: "Claude Code", profileId: "anthropic", kind: "cli", availability: "available" },
-  { id: "preview-missing", label: "Missing Agent", kind: "desktop", availability: "unavailable" },
+  { id: "preview-codex", label: "Codex", profileId: "openai", kind: "cli", path: "C:\\Users\\Preview\\.codex\\skills", availability: "available" },
+  { id: "preview-codex-desktop", label: "Codex Desktop", profileId: "openai", kind: "desktop", path: "C:/Users/Preview/.codex/skills", availability: "available" },
+  { id: "preview-openai-desktop", label: "OpenAI Desktop", profileId: "openai", kind: "desktop", path: "C:\\Users\\Preview\\.openai\\skills", availability: "available" },
+  { id: "preview-claude", label: "Claude Code", profileId: "anthropic", kind: "cli", path: "C:\\Users\\Preview\\.claude\\skills", availability: "available" },
+  { id: "preview-gemini", label: "Gemini CLI", profileId: "google", kind: "cli", path: "C:\\Users\\Preview\\.gemini\\skills", availability: "available" },
+  { id: "preview-grok", label: "Grok", profileId: "grok", kind: "cli", path: "C:\\Users\\Preview\\.grok\\skills", availability: "available" },
+  { id: "preview-kimi", label: "Kimi", profileId: "kimi", kind: "cli", path: "C:\\Users\\Preview\\.kimi\\skills", availability: "available" },
+  { id: "preview-copilot", label: "GitHub Copilot", profileId: "github-copilot", kind: "ide_extension", path: "C:\\Users\\Preview\\.github-copilot\\skills", availability: "available" },
+  { id: "preview-missing", label: "Missing Agent", kind: "desktop", path: "C:\\Users\\Preview\\.missing-agent\\skills", availability: "unavailable" },
 ];
 
 function previewScanResult(discoveredCount: number, root: string): ScanResult {

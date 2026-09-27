@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { queryApplication, type GovernanceTaskFact } from "../api/bindings";
 import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
 import { desktopDiscoveryFacade } from "../features/discovery/api";
@@ -30,9 +30,11 @@ export function DiscoveryRoute({
   const state = location.state as
     | { initialSources?: string[]; initialSourceText?: string; onboardingImport?: boolean; governanceTaskId?: string }
     | null;
-  const governanceTaskId = state?.governanceTaskId;
+  const [params] = useSearchParams();
+  const governanceTaskId = params.get("task") ?? state?.governanceTaskId;
   const [governanceTasks, setGovernanceTasks] = useState<GovernanceTaskFact[]>([]);
   const [governanceTasksLoading, setGovernanceTasksLoading] = useState(false);
+  const [governanceTasksUnavailable, setGovernanceTasksUnavailable] = useState(false);
 
   useEffect(() => {
     if (!governanceTaskId) {
@@ -42,6 +44,7 @@ export function DiscoveryRoute({
     }
     let active = true;
     setGovernanceTasksLoading(true);
+    setGovernanceTasksUnavailable(false);
     void queryClient.fetchQuery({
       queryKey: relationshipOverviewQueryKey,
       // 定向待办导航必须拿到提交后真实落库的事实，不能沿用全局 30 秒 staleTime。
@@ -59,7 +62,7 @@ export function DiscoveryRoute({
     }).then((overview) => {
       if (active) setGovernanceTasks(overview.pending_governance_tasks);
     }).catch(() => {
-      if (active) setGovernanceTasks([]);
+      if (active) setGovernanceTasksUnavailable(true);
     }).finally(() => {
       if (active) setGovernanceTasksLoading(false);
     });
@@ -109,6 +112,7 @@ export function DiscoveryRoute({
       governanceTaskId={governanceTaskId}
       governanceTasks={governanceTasks}
       governanceTasksLoading={governanceTasksLoading}
+      governanceTasksUnavailable={governanceTasksUnavailable}
       onOpenLibrary={() => navigate("/library")}
       onOpenGovernance={(batch) => navigate(
         batch?.batchId

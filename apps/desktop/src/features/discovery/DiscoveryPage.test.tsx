@@ -209,7 +209,7 @@ it("reports committed imports and lets the user open the refreshed library", asy
   await user.click(screen.getAllByRole("button", { name: "Import Skill" })[0]);
   await user.type(screen.getByLabelText("Source"), "C:\\Skills");
   await user.click(screen.getByRole("button", { name: "Read candidates from this source" }));
-  await user.click(await screen.findByRole("button", { name: "Continue to candidate selection" }));
+  await screen.findByRole("button", { name: "Analyze conflicts" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "Analyze conflicts" }));
   await user.click(await screen.findByRole("button", { name: "Commit import" }));
@@ -296,12 +296,58 @@ it("routes an installed online hit into the import wizard on the online subpage"
   );
 });
 
-it("carries the scanned candidates into the import wizard on review", async () => {
+it("groups reviewed import sources by physical target and keeps the Skill candidate count", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const facade = repoStubFacade();
-  facade.getDiscoverySnapshot = async () => workbenchSnapshot;
-  facade.scanTargets = async () => workbenchScanResult;
+  const secondTarget = {
+    ...workbenchSnapshot.logical_targets[0],
+    id: "lt2",
+    profile_id: "claude",
+    client_id: "claude",
+    path: "C:/claude/skills",
+    physical_id: "pt2",
+  };
+  facade.getDiscoverySnapshot = async () => ({
+    ...workbenchSnapshot,
+    instances: [...workbenchSnapshot.instances, {
+      profile_id: "claude",
+      client_id: "claude",
+      kind: "cli",
+      supported_os: ["windows"],
+      client_presence: "Unknown",
+    }],
+    logical_targets: [...workbenchSnapshot.logical_targets, secondTarget],
+    physical_targets: [...workbenchSnapshot.physical_targets, {
+      ...workbenchSnapshot.physical_targets[0],
+      id: "pt2",
+      path: "C:/claude/skills",
+      logical_target_ids: ["lt2"],
+    }],
+  });
+  const [alpha] = workbenchScanResult.discovered;
+  facade.scanTargets = async () => ({
+    ...workbenchScanResult,
+    roots: ["C:/codex/skills", "C:/claude/skills"],
+    discovered: [
+      alpha,
+      {
+        ...alpha,
+        relative_path: "beta",
+        path: "C:/codex/skills/beta",
+        fingerprint: "b",
+        metadata_fingerprint: "b",
+      },
+      {
+        ...alpha,
+        root: "C:/claude/skills",
+        relative_path: "gamma",
+        path: "C:/claude/skills/gamma",
+        fingerprint: "c",
+        metadata_fingerprint: "c",
+      },
+    ],
+  });
   render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter><AppNotificationsProvider>
@@ -313,12 +359,13 @@ it("carries the scanned candidates into the import wizard on review", async () =
   await user.click(await screen.findByRole("button", { name: "重新扫描" }));
   await user.click(await screen.findByRole("button", { name: "审查并导入" }));
 
-  // P1-04：审查并导入必须把本次扫描候选目录带进向导（默认全选），
-  // 而不是打开空向导让用户从零重选。
+  // 审查并导入第一步按 Agent 实际 Skill 物理目标带入来源；
+  // SKILL.md 候选仍在导入向导后续步骤中解析。
   expect(await screen.findByRole("heading", { name: "导入 Skill" })).toBeVisible();
-  const candidate = screen.getByRole("checkbox", { name: "C:/codex/skills/alpha" });
-  expect(candidate).toBeChecked();
-  expect(screen.getByText("本次扫描发现 1 个候选目录，已默认全部选中；请审阅候选项后继续。"))
+  expect(screen.getByRole("checkbox", { name: "C:/codex/skills" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "C:/claude/skills" })).toBeChecked();
+  expect(screen.queryByRole("checkbox", { name: "C:/codex/skills/alpha" })).not.toBeInTheDocument();
+  expect(screen.getByText("本次扫描发现 3 个候选目录，已默认全部选中；请审阅候选项后继续。"))
     .toBeVisible();
 });
 

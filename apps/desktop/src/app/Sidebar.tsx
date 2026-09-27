@@ -50,7 +50,7 @@ function NavigationIcon({ name }: { name: NavigationIconName }) {
   return <Icon className="sh-sidebar__icon" name={name} size={20} />;
 }
 
-function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collapsed: boolean }) {
+function NavigationLinks({ items, collapsed, pendingCount = 0, pendingUnavailable = false }: { items: NavigationItem[]; collapsed: boolean; pendingCount?: number; pendingUnavailable?: boolean }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
 
@@ -78,6 +78,7 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
             >
               <NavigationIcon name={item.icon} />
               <span className="sh-sidebar__label">{label}</span>
+              {item.href === "/pending" && (pendingCount > 0 || pendingUnavailable) ? <span className="sh-sidebar__pending-count" title={pendingUnavailable ? t("pending.partial") : t("pending.count", { count: pendingCount })}>{pendingUnavailable ? `${pendingCount || ""}·` : pendingCount > 99 ? "99+" : pendingCount}</span> : null}
             </Link>
           </li>
         );
@@ -88,11 +89,13 @@ function NavigationLinks({ items, collapsed }: { items: NavigationItem[]; collap
 
 interface SidebarProps {
   /** 折叠状态和按钮动作由壳层持有，头部负责呈现稳定的 Logo/控制布局。 */
+  pendingCount?: number;
+  pendingUnavailable?: boolean;
   collapsed?: boolean;
   onToggle?: () => void;
 }
 
-export function Sidebar({ collapsed = false, onToggle = () => undefined }: SidebarProps) {
+export function Sidebar({ collapsed = false, onToggle = () => undefined, pendingCount, pendingUnavailable }: SidebarProps) {
   const { t } = useTranslation();
 
   return (
@@ -128,7 +131,7 @@ export function Sidebar({ collapsed = false, onToggle = () => undefined }: Sideb
       </div>
       <div className="sh-sidebar__scroll">
         <nav>
-          <NavigationLinks collapsed={collapsed} items={primaryNavigation} />
+          <NavigationLinks collapsed={collapsed} items={primaryNavigation} pendingCount={pendingCount} pendingUnavailable={pendingUnavailable} />
         </nav>
         <nav className="sh-sidebar__pinned">
           <NavigationLinks collapsed={collapsed} items={pinnedNavigation} />

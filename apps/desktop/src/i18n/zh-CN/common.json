@@ -167,7 +167,6 @@
     "phases": {
       "source": "选择来源",
       "acquiring": "正在读取候选项",
-      "candidate_gate": "候选项已准备好",
       "candidates": "选择候选项",
       "analyzing": "正在分析冲突",
       "conflicts": "处理冲突",
@@ -214,8 +213,8 @@
       "placeholder": "C:/skills 或 https://github.com/owner/repository",
       "parse": "读取该来源的候选",
       "acquireSelectedSources": "读取已选目录候选",
+      "continueAfterPreview": "继续下一步",
       "previewing": "正在解析…",
-      "continueCandidates": "继续选择候选",
       "acquiring": "正在读取来源中的候选 Skill",
       "cancelAcquiring": "取消获取",
       "retry": "重试获取",
@@ -983,6 +982,8 @@
     "back": "上一步",
     "compatibilityConfirmation": "我确认这里只识别 Agent，不会把技能添加到 Agent/项目",
     "compatibilityDescription": "识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。",
+    "compatibilityPathCount": "{{count}} 个路径卡片 · {{available}} 个可用目标",
+    "compatibilityPathHelper": "同品牌、同目录的类型合并展示；不同路径分别选择。路径较多时可在此列表内滚动。",
     "compatibilityTitle": "识别兼容的 Agent",
     "compatibilityTargets": "可选择的兼容性目标",
     "complete": "初始化设置已提交。",
@@ -1022,6 +1023,7 @@
     "scanComplete": "已完成只读扫描预览。",
     "scanBackground": "扫描已转入后台，仍会继续执行。你可以先完成初始化。",
     "scanContinueInBackground": "转入后台，继续完成初始化",
+    "rescanContinueInBackground": "转入后台，继续扫描",
     "scanDescription": "扫描只生成预览，不会移动、导入技能，也不会把技能添加到 Agent/项目。",
     "scanDiscovered": "发现 {{count}} 个 Skill",
     "scanFailed": "无法完成扫描。现有技能和目录没有被修改。",
@@ -1045,7 +1047,6 @@
     "skipScan": "跳过扫描",
     "skipDescription": "将创建空集中库：{{path}}。不会识别 Agent、扫描或导入技能，也不会把技能添加到 Agent/项目。",
     "skipTitle": "将创建空集中库",
-    "selectionConfirmation": "我确认所选目标只用于只读扫描，不会把技能添加到 Agent/项目",
     "startReadOnlyScan": "开始只读扫描",
     "scanning": "正在扫描…",
     "step": "第 {{current}} 步，共 3 步",
@@ -1093,7 +1094,9 @@
     "backgroundScanCompleteTitle": "后台扫描完成",
     "backgroundScanCompleteDetail": "发现 {{count}} 个 Skill。可以立即批量导入，或稍后在发现中查看结果。",
     "backgroundScanFailedTitle": "后台扫描失败",
-    "rescanScan": "重新扫描"
+    "rescanScan": "重新扫描",
+    "rescanScanInBackground": "扫描已转入后台",
+    "targetPathUnavailable": "未发现可用路径"
   },
   "theme": {
     "choiceLabel": "主题颜色",
@@ -2114,7 +2117,13 @@
       "security_finding": "安全发现",
       "recovery": "恢复事项",
       "conflict": "技能冲突",
-      "governance": "关系治理"
+      "governance": "关系治理",
+      "basic_check": "待完成基础检查",
+      "import_skills": "导入首个 Skill",
+      "ai_setup": "配置 AI 模型（可选）",
+      "backup_setup": "创建首次备份",
+      "source_update": "审阅来源更新",
+      "governance_followup": "导入治理提醒"
     },
     "actions": {
       "recheck": "重新检查",
@@ -2178,9 +2187,44 @@
       "blocked": "关系处理受阻，请查看原因和可用的解决方式。",
       "recovery": "有未完成的操作，请进入恢复页面核对后处理。",
       "security_finding": "当前版本存在尚未处理的安全发现，请查看详情或重新检查。",
-      "trial_due": "试用已到期，请决定是否转为常规技能。"
+      "trial_due": "试用已到期，请决定是否转为常规技能。",
+      "basic_check": "当前版本尚无已完成的基础检查，请运行检查；检查失败不会被视为已处理。",
+      "import_skills": "初始化只进行了只读发现。前往本机发现，选择来源和候选项，再确认导入集中库。",
+      "ai_setup": "配置可用模型后，可使用 AI 检查等可选能力；也可以跳过这条建议。",
+      "backup_setup": "集中库已有内容，建议创建一份备份。成功创建并校验后，这条建议会自动关闭。",
+      "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
+      "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。"
     },
-    "count": "共 {{count}} 项待办"
+    "count": "共 {{count}} 项待办",
+    "recommendedCount": "{{count}} 条使用建议",
+    "recommended": "使用建议",
+    "partial": "部分事项暂时无法核实，已保留可用结果。请刷新后确认，当前数量可能不完整。",
+    "focusFinding": "已定位到这条检查发现，请在下方高亮项中处理。",
+    "linkResolved": "这条事项已处理或已不适用；当前不会替你选择其他事项。",
+    "findingReview": "检查发现需要人工审阅的问题，请结合文件位置确认风险并选择处置方式。",
+    "confirmHandled": "确认已人工处理",
+    "confirmDescription": "这只会关闭这条导入提醒，并记录为用户确认。不会修改文件，也不会将检查、冲突或恢复标记为通过。",
+    "confirmReason": "用户确认已人工处理",
+    "relatedScope": "当前显示与该通知相关的事项。",
+    "showAll": "查看全部待处理",
+    "taskKinds": {
+      "select_authoritative_version": "选择权威版本",
+      "classify_same_name_skill": "审阅同名 Skill",
+      "confirm_shared_directory_impact": "确认共享目录影响",
+      "convert_copy_to_managed_link": "审阅副本管理方式",
+      "convert_shared_reference_to_managed_link": "审阅共享引用",
+      "unknown_directory_recognition": "确认目录用途",
+      "operation_failure_recovery": "处理未完成操作"
+    },
+    "taskInstructions": {
+      "select_authoritative_version": "前往冲突处理比较版本，确认要保留的版本。",
+      "classify_same_name_skill": "前往冲突处理，确认同名内容是不同技能还是同一技能的不同版本。",
+      "confirm_shared_directory_impact": "在关系治理中查看共享目录的使用方，确认影响后再操作。",
+      "convert_copy_to_managed_link": "在关系治理中选择保留独立副本，或预览纳入集中库管理。",
+      "convert_shared_reference_to_managed_link": "在关系治理中审阅共享引用，确认安全的管理方式。",
+      "unknown_directory_recognition": "确认来源目录及用途；不支持的 Agent 路径可手动添加后重新检查。",
+      "operation_failure_recovery": "前往恢复页面，根据实际操作记录处理未完成操作。"
+    }
   },
   "recovery": {
     "eyebrow": "恢复",
@@ -2495,7 +2539,7 @@
       "resolve": {
         "trackerLabel": "写入冲突结论",
         "successTitle": "冲突结论已写入",
-        "successDetail": "{{conflictId}} 已按你的决定完成处理。",
+        "successDetail": "冲突已按你的决定完成处理。",
         "errorTitle": "未能写入冲突结论",
         "errorUnknown": "写入冲突结论时出现问题（{{code}}）。"
       },
@@ -2762,7 +2806,7 @@
         "rollbackAvailable": "可回退",
         "childOperation": "操作记录",
         "trackerLabel": "纳入集中库管理批次",
-        "itemTrackerLabel": "纳入集中库管理：{{id}}",
+        "itemTrackerLabel": "纳入集中库管理",
         "close": "关闭"
       },
       "empty": {
@@ -3296,7 +3340,13 @@
         "trial_due_one": "{{count}} 个试用待确认",
         "trial_due_other": "{{count}} 个试用待确认",
         "conflict": "{{count}} 组技能冲突",
-        "governance": "{{count}} 条关系待治理"
+        "governance": "{{count}} 条关系待治理",
+        "basic_check": "{{count}} · 待完成基础检查",
+        "import_skills": "{{count}} · 导入首个 Skill",
+        "ai_setup": "{{count}} · 配置 AI 模型（可选）",
+        "backup_setup": "{{count}} · 创建首次备份",
+        "source_update": "{{count}} · 审阅来源更新",
+        "governance_followup": "{{count}} · 导入治理提醒"
       },
       "none": "没有待处理事项",
       "title": "{{count}} 项待处理"

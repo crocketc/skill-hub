@@ -149,3 +149,292 @@ html:has(.sh-onboarding) {
     width: 100%;
   }
 }
+
+/* Roomy one-step wizard frame inspired by the reference screens. The product
+   palette remains theme-driven; long path lists own their scroll container. */
+.sh-onboarding .sh-onboarding__frame {
+  width: min(76rem, 100%);
+  height: min(58rem, calc(100dvh - 1rem));
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  align-content: stretch;
+  gap: clamp(var(--space-1), 0.9vh, var(--space-3));
+}
+
+.sh-onboarding {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sh-onboarding__header > p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.sh-onboarding__body {
+  min-height: 0;
+  align-content: start;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.sh-onboarding__body:has(> .sh-onboarding__path) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sh-onboarding__body > .sh-onboarding__path {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sh-onboarding__body > .sh-onboarding__path > span {
+  flex: 0 0 auto;
+}
+
+.sh-onboarding__body > .sh-onboarding__path > code {
+  min-width: 0;
+  flex: 1 1 24rem;
+}
+
+.sh-onboarding__body > .sh-onboarding__card {
+  min-height: 0;
+  overflow: hidden;
+  align-content: start;
+  padding: clamp(var(--space-4), 3vw, var(--space-8));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.sh-onboarding__step-heading h1 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  letter-spacing: -0.035em;
+}
+
+.sh-onboarding .sh-onboarding__step-heading h1 {
+  font-size: clamp(1.125rem, 1.7vw, 1.25rem);
+  letter-spacing: -0.015em;
+}
+
+.sh-onboarding__step-heading p {
+  max-width: 52rem;
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.sh-onboarding__confirm-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sh-onboarding__step-actions,
+.sh-onboarding__target-list-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.sh-onboarding__step-actions > .sh-button {
+  margin-inline-start: auto;
+}
+
+.sh-onboarding__confirm-row > .sh-onboarding__step-actions {
+  align-items: flex-end;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+}
+
+.sh-onboarding__target-count {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.sh-onboarding__target-count {
+  order: 0;
+  margin: 0;
+}
+
+.sh-onboarding .sh-onboarding__compatibility {
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+
+.sh-onboarding__targets {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.sh-onboarding__targets > legend {
+  padding-inline: var(--space-2);
+  font-size: var(--font-size-md);
+  font-weight: 650;
+}
+
+.sh-onboarding__target-list-header > p {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.sh-onboarding__target-scroll {
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 1px var(--space-2) 1px 1px;
+  scrollbar-gutter: stable;
+}
+
+.sh-onboarding__target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.sh-onboarding__target-card {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.sh-onboarding__target-card:hover {
+  border-color: var(--ui-selected-border);
+}
+
+.sh-onboarding__target-card[data-selected="true"] {
+  border-color: var(--ui-selected-border);
+  background: var(--ui-selected-surface);
+  box-shadow: 0 0 0 1px var(--ui-selected-border);
+}
+
+.sh-onboarding__target-card:focus-within {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.sh-onboarding__target-card > .sh-checkbox-field {
+  width: 100%;
+  min-height: 4.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.sh-onboarding__target-card .sh-checkbox-field__input {
+  margin-top: 0;
+}
+
+.sh-onboarding__target-card-content {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-onboarding__target-card:not([data-unavailable="true"]) .sh-checkbox-field__description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sh-onboarding__target-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sh-onboarding__target-path {
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.sh-onboarding__target-unavailable {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-onboarding .sh-onboarding__actions {
+  justify-content: space-between;
+}
+
+.sh-onboarding .sh-onboarding__scan-progress,
+.sh-onboarding .sh-onboarding__scan-preview {
+  padding: clamp(var(--space-4), 2.5vw, var(--space-6));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+}
+
+.sh-onboarding .sh-onboarding__status {
+  min-height: 0;
+}
+
+.sh-onboarding .sh-onboarding__scan-progress {
+  gap: var(--space-4);
+}
+
+.sh-onboarding .sh-onboarding__scan-progress progress {
+  height: 0.35rem;
+}
+
+@media (max-width: 38rem) {
+  .sh-onboarding__frame {
+    min-height: calc(100dvh - 1rem);
+  }
+
+  .sh-onboarding__target-scroll {
+    max-height: none;
+  }
+
+  .sh-onboarding__target-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 35rem) {
+  .sh-onboarding__confirm-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .sh-onboarding__confirm-row > .sh-onboarding__step-actions {
+    width: 100%;
+    align-items: flex-end;
+  }
+}

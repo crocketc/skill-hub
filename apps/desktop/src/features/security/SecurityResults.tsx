@@ -14,12 +14,16 @@ export interface SecurityResultsProps {
   facade?: SecurityFacade;
   skillId: string;
   versionId: string;
+  findingId?: string;
+  checkKind?: string;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade = unavailableSecurityFacade, skillId, tracker = operationTracker, versionId }: SecurityResultsProps) {
+export function SecurityResults({ facade = unavailableSecurityFacade, skillId, tracker = operationTracker, versionId, findingId, checkKind }: SecurityResultsProps) {
   const { t } = useTranslation();
+  const [resolvedVersionId, setResolvedVersionId] = useState(versionId);
+  const targetHref = `/library/${encodeURIComponent(skillId)}/security?${new URLSearchParams({ version: resolvedVersionId })}`;
   const notifications = useOptionalAppNotifications();
   const [checks, setChecks] = useState<SecurityCheck[]>([]);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
@@ -32,11 +36,14 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      facade.getChecks(skillId, versionId),
-      facade.listFindings(skillId, versionId),
-      facade.getPreferences?.().catch(() => undefined),
-    ])
+    setChecks([]); setFindings([]); setError(undefined);
+    void (facade.resolveVersion ? facade.resolveVersion(skillId, versionId) : Promise.resolve(versionId)).then(async (resolved) => {
+      const results = await Promise.all([
+        facade.getChecks(skillId, resolved), facade.listFindings(skillId, resolved), facade.getPreferences?.().catch(() => undefined),
+      ]);
+      if (active) setResolvedVersionId(resolved);
+      return results;
+    })
       .then(([nextChecks, nextFindings, nextPreferences]) => {
         if (!active) return;
         setChecks(nextChecks);
@@ -63,6 +70,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     setDispositionError(undefined);
     try {
       await runTrackedOperation({
+        targetHref: `${targetHref}&${new URLSearchParams({ kind: finding.kind, finding: finding.id })}`,
         kind: "finding_disposition",
         label: t("security.tracker.dispositionLabel"),
         mode: "instant",
@@ -86,7 +94,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
             finding,
             disposition,
             skillId,
-            versionId,
+            resolvedVersionId,
             options.highRiskConfirmed,
           ),
       });
@@ -103,6 +111,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     setBasicError(undefined);
     try {
       await runTrackedOperation({
+        targetHref,
         kind: "basic_check",
         label: t("security.tracker.basicCheckLabel"),
         mode: "phased",
@@ -112,7 +121,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         successNotice: () => ({ tone: "success", title: t("security.tracker.basicCheckLabel") }),
         errorNotice: (_error, message) => ({ tone: "danger", title: t("security.basic.runFailed", { message }), detail: message }),
         describeError: describeFailure,
-        run: () => facade.runBasicCheck!(skillId, versionId),
+        run: () => facade.runBasicCheck!(skillId, resolvedVersionId),
       });
       setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
@@ -137,6 +146,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     cancelledRef.current = false;
     try {
       await runTrackedOperation({
+        targetHref,
         tracker,
         notifications,
         kind: "ai_check",
@@ -148,7 +158,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         describeError: describeFailure,
         run: async (handle) => {
           handleRef.current = handle;
-          await runCheck(skillId, versionId);
+          await runCheck(skillId, resolvedVersionId);
         },
       });
       setReloadKey((key) => key + 1);
@@ -174,11 +184,11 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         try {
           const runs = await listRunning();
           if (!active) return;
-          const match = runs.find((run) => run.skillId === skillId && run.versionId === versionId);
+          const match = runs.find((run) => run.skillId === skillId && run.versionId === resolvedVersionId);
           setRunningOperation(match?.operationId);
           // 运行中拿到持久化 operation id 即关联同一投影（三端同一 id）。
           if (match) {
-            handleRef.current?.correlate(match.operationId);
+            handleRef.current?.correlate(match.operationId, targetHref);
             return;
           }
         } catch {
@@ -191,7 +201,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     return () => {
       active = false;
     };
-  }, [running, facade, skillId, versionId]);
+  }, [running, facade, skillId, resolvedVersionId, targetHref]);
   const handleCancel = async () => {
     if (!runningOperation || !facade.cancelLlmCheck) return;
     setCancelRequested(true);
@@ -216,6 +226,7 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
       <header className="sh-page__header">
         <div><p className="sh-eyebrow">{t("security.eyebrow")}</p><h1>{t("security.heading")}</h1><p>{t("security.description")}</p></div>
       </header>
+      {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || finding.kind === checkKind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
       <div className="sh-workflow-grid">
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
@@ -250,8 +261,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         {dispositionError ? <p role="alert">{dispositionError}</p> : null}
         {findings.length === 0 ? <p>{t("security.noFindings")}</p> : (
           <>
-            <FindingGroup heading={t("security.findingsBasic")} findings={basicFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
-            <FindingGroup heading={t("security.findingsLlm")} findings={llmFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
+            <FindingGroup focusedId={findingId} focusedKind={checkKind} heading={t("security.findingsBasic")} findings={basicFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
+            <FindingGroup focusedId={findingId} focusedKind={checkKind} heading={t("security.findingsLlm")} findings={llmFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
           </>
         )}
       </section>
@@ -265,7 +276,9 @@ function findingLocation(finding: SecurityFinding): string | null {
   return finding.file ? `${finding.file}:${span}` : `L${span}`;
 }
 
-function FindingGroup({ heading, findings, onDisposition }: {
+function FindingGroup({ heading, findings, onDisposition, focusedId, focusedKind }: {
+  focusedId?: string;
+  focusedKind?: string;
   heading: string;
   findings: SecurityFinding[];
   onDisposition: (finding: SecurityFinding, disposition: SecurityFinding["disposition"], options: { highRiskConfirmed: boolean }) => void;
@@ -279,11 +292,11 @@ function FindingGroup({ heading, findings, onDisposition }: {
         {findings.map((finding) => {
           const location = findingLocation(finding);
           return (
-            <li className="sh-workflow-list__item" key={finding.id}>
+            <li className={`sh-workflow-list__item${finding.id === focusedId && (!focusedKind || focusedKind === finding.kind) ? " sh-pending-focus" : ""}`} key={finding.id}>
               <div>
-                <strong>{finding.code}</strong>
+                <strong>{t("security.findingsHeading")}</strong>
                 {finding.highRisk ? <StatusBadge tone="danger">{t("security.highRiskLabel")}</StatusBadge> : null}
-                <p>{finding.message}</p>
+                <p>{finding.message === finding.code ? t("pending.findingReview") : finding.message}</p>
                 <small>{location ?? t("security.locationUnknown")}</small>
               </div>
               <FindingActions finding={finding} onDisposition={(disposition, options) => onDisposition(finding, disposition, options)} />

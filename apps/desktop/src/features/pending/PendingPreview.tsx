@@ -7,6 +7,7 @@ const BASE_ITEMS: PendingItem[] = [
   {
     id: "security_finding:pdf-reader:finding-7",
     subject: "pdf-reader",
+    displayName: "pdf-reader",
     kind: "security_finding",
     code: "finding-7",
     message: "pending.messages.securityFinding",
@@ -16,6 +17,7 @@ const BASE_ITEMS: PendingItem[] = [
   {
     id: "trial_due:release-notes:trial",
     subject: "release-notes",
+    displayName: "release-notes",
     kind: "trial_due",
     code: "trial",
     message: "pending.messages.trialDue",
@@ -26,6 +28,7 @@ const BASE_ITEMS: PendingItem[] = [
   {
     id: "recovery:op-deploy-9:recovery",
     subject: "deploy-toolkit",
+    displayName: "deploy-toolkit",
     kind: "recovery",
     code: "recovery",
     message: "pending.messages.recovery",
@@ -34,6 +37,7 @@ const BASE_ITEMS: PendingItem[] = [
   {
     id: "security_finding:web-clipper:finding-2",
     subject: "web-clipper",
+    displayName: "web-clipper",
     kind: "security_finding",
     code: "finding-2",
     message: "pending.messages.securityFinding",
@@ -65,6 +69,7 @@ function longList(count: number): PendingItem[] {
     return {
       id: `${kind}:skill-${index + 1}:preview`,
       subject: `skill-${index + 1}`,
+      displayName: `skill-${index + 1}`,
       kind,
       code: kind,
       message: kind === "security_finding"
@@ -90,8 +95,12 @@ export function PendingPreview() {
     const items = previewFlag("empty")
       ? []
       : configuredCount === 0
-        ? BASE_ITEMS
+        ? [...BASE_ITEMS]
         : longList(configuredCount);
+    if (previewFlag("setup") && !previewFlag("empty")) items.push(
+      { id: "work:import_skills:library:first", subject: "library", kind: "import_skills", code: "import_skills", message: "pending.reasons.import_skills", displayName: "Import your first Skill", recommended: true, href: "/discovery/local", sourceRoots: ["C:/fixtures/skills"] },
+      { id: "work:ai_setup:settings:first", subject: "settings", kind: "ai_setup", code: "ai_setup", message: "pending.reasons.ai_setup", displayName: "Configure AI", recommended: true, href: "/settings?section=networkAi" },
+    );
     const failing = previewFlag("actionError");
     const fail = () => Promise.reject(new Error("library.locked: write permission denied by preview"));
     return {

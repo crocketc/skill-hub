@@ -62,6 +62,7 @@ export function SourceUpdatePanel({ facade, skillId, tracker = operationTracker 
       // 统一执行反馈（任务 4）：应用上游更新是长流程（可能重写受管副本），
       // 因此占用在途顶栏而不是走 instant。
       const applied = await runTrackedOperation({
+        targetHref: `/library/${encodeURIComponent(skillId)}#versions`,
         kind: "apply_source_update",
         label: t("skillDetail.tracker.applyUpdateLabel"),
         notifications,

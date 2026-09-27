@@ -70,7 +70,6 @@ const ENTRY_ACTION_KEYS = [
   "onboarding.contractUnavailable",
   "onboarding.scanDescription",
   "onboarding.skipDescription",
-  "onboarding.selectionConfirmation",
   "onboarding.rescanDescription",
   "projects.assemblyPlan.empty",
 ];

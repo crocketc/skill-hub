@@ -37,8 +37,8 @@ test("exposes risk, impact, and suggested actions per item", async ({ page }) =>
 
   const group = page.getByRole("group", { name: "Suggested actions for pdf-reader" });
   await expect(group.getByRole("button", { name: "Recheck" })).toBeVisible();
-  await expect(group.getByRole("button", { name: "Defer" })).toBeVisible();
-  await expect(group.getByRole("button", { name: "Ignore" })).toBeVisible();
+  await expect(group.getByRole("button", { name: "Defer" })).toHaveCount(0);
+  await expect(group.getByRole("button", { name: "Ignore" })).toHaveCount(0);
 
   const trial = page.locator("li").filter({ hasText: "release-notes" }).first();
   await expect(trial.getByText("Due 2026-09-30")).toBeVisible();
@@ -53,7 +53,7 @@ test("keeps the batch bar from covering the last item or its focus at 50+ items"
   await expect(bar).toBeVisible();
 
   const lastItem = page.locator(".sh-pending-item").last();
-  const focusTarget = lastItem.getByRole("button", { name: "Defer" }).first();
+  const focusTarget = lastItem.getByRole("button", { name: "Recover" }).first();
   await focusTarget.focus();
 
   const buttonBox = await focusTarget.boundingBox();
@@ -73,7 +73,7 @@ test("keeps the last item reachable with only 600px of viewport height", async (
 
   const bar = page.locator(".sh-pending-batch--anchored");
   const lastItem = page.locator(".sh-pending-item").last();
-  const focusTarget = lastItem.getByRole("button", { name: "Defer" }).first();
+  const focusTarget = lastItem.getByRole("button", { name: "Recover" }).first();
   await focusTarget.focus();
 
   const buttonBox = await focusTarget.boundingBox();
@@ -88,7 +88,7 @@ test("reports a failed action inline and keeps the list usable", async ({ page }
   await page.setViewportSize({ width: 1280, height: 900 });
   await openPending(page, "?actionError=1");
 
-  const firstItem = page.locator(".sh-pending-item").first();
+  const firstItem = page.locator(".sh-pending-item").filter({ hasText: "release-notes" });
   await firstItem.getByRole("button", { name: "Defer" }).first().click();
 
   // 统一执行反馈：失败同时进通知中心（danger toast）与页面行内提示，两者同源；
@@ -107,7 +107,7 @@ test("batch ignore keeps its confirmation and cancel path", async ({ page }) => 
   await page.setViewportSize({ width: 1280, height: 900 });
   await openPending(page);
 
-  await page.getByRole("checkbox", { name: "Select pdf-reader" }).check();
+  await page.getByRole("checkbox", { name: "Select release-notes" }).check();
   await expect(page.getByText("1 selected")).toBeVisible();
   await page.getByRole("button", { name: "Ignore selected permanently" }).click();
 
@@ -155,9 +155,20 @@ test.describe("pending 9-theme matrix at 1280x900", () => {
       await expect(page.getByText("High risk").first()).toBeVisible();
 
       // Keyboard focus remains visible on an item action.
-      await page.locator(".sh-pending-item").first().getByRole("button", { name: "Defer" }).first().focus();
+      await page.locator(".sh-pending-item").nth(1).getByRole("button", { name: "Defer" }).first().focus();
       const focused = await page.evaluate(() => document.activeElement?.tagName ?? "");
       expect(["BUTTON", "SELECT", "INPUT"]).toContain(focused);
     });
   }
+});
+
+
+test("keeps setup suggestions separate from required work and links to the exact settings section", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openPending(page, "?setup=1");
+  const ai = page.locator(".sh-pending-item").filter({ hasText: "Configure AI" });
+  await expect(ai.getByRole("link", { name: "Open task" })).toHaveAttribute("href", "/settings?section=networkAi");
+  await expect(ai.getByRole("button", { name: "Recover" })).toHaveCount(0);
+  await expect(page.getByText("2 suggestions", { exact: false }).first()).toBeVisible();
+  await expectNoRootHorizontalOverflow(page);
 });

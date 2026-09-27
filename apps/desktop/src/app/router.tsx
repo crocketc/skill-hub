@@ -1,3 +1,4 @@
+import { pendingKinds } from "../features/pending/workspace";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
@@ -200,9 +201,9 @@ function RecoveryRoute() {
 function PendingRoute() {
   const [params] = useSearchParams();
   const value = params.get("kind");
-  const kinds: PendingKind[] = ["trial_due", "security_finding", "conflict", "governance", "recovery"];
+  const kinds: PendingKind[] = pendingKinds;
   const initialKind = kinds.find((kind) => kind === value);
-  return <RouteSuspense><PendingPage key={initialKind ?? "all"} facade={nativePendingFacade} initialKind={initialKind} /></RouteSuspense>;
+  return <RouteSuspense><PendingPage key={params.toString()} facade={nativePendingFacade} initialKind={initialKind} initialSubjects={params.getAll("subject")} /></RouteSuspense>;
 }
 
 function DeploymentRoute() {
@@ -289,8 +290,9 @@ function RepoManagerRoute() {
 }
 
 function SecurityRoute() {
+  const [params] = useSearchParams();
   const { skillId } = useParams();
-  return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId="current" /></RouteSuspense>;
+  return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId={params.get("version") ?? "current"} findingId={params.get("finding") ?? undefined} checkKind={params.get("kind") ?? undefined} /></RouteSuspense>;
 }
 
 function OperationRoute() {

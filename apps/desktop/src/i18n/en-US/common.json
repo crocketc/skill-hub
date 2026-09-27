@@ -167,7 +167,6 @@
     "phases": {
       "source": "Choose a source",
       "acquiring": "Reading candidates",
-      "candidate_gate": "Candidates ready",
       "candidates": "Choose candidates",
       "analyzing": "Analyzing conflicts",
       "conflicts": "Resolve conflicts",
@@ -214,8 +213,8 @@
       "placeholder": "C:/skills or https://github.com/owner/repository",
       "parse": "Read candidates from this source",
       "acquireSelectedSources": "Read selected directory candidates",
+      "continueAfterPreview": "Continue",
       "previewing": "Resolving sources…",
-      "continueCandidates": "Continue to candidate selection",
       "acquiring": "Reading candidates from the source",
       "cancelAcquiring": "Cancel acquisition",
       "retry": "Retry acquisition",
@@ -983,6 +982,8 @@
     "back": "Back",
     "compatibilityConfirmation": "I understand this only discovers Agents and will not add skills to Agents/projects",
     "compatibilityDescription": "Discovery only creates compatibility information. Adding to Agents/projects requires a separate preview and confirmation later.",
+    "compatibilityPathCount": "{{count}} path cards · {{available}} available targets",
+    "compatibilityPathHelper": "Types for the same brand and directory are combined; choose different paths separately. Scroll this list when needed.",
     "compatibilityTitle": "Discover compatible agents",
     "compatibilityTargets": "Compatible targets available for selection",
     "complete": "Initialization settings were submitted.",
@@ -1022,6 +1023,7 @@
     "scanComplete": "Read-only scan preview completed.",
     "scanBackground": "The scan is continuing in the background. You can finish initialization now.",
     "scanContinueInBackground": "Continue initialization in the background",
+    "rescanContinueInBackground": "Continue scanning in the background",
     "scanDescription": "The scan only creates a preview. It will not move or import skills, or add them to Agents/projects.",
     "scanDiscovered": "{{count}} Skills discovered",
     "scanFailed": "The scan could not be completed. Existing skills and directories were not changed.",
@@ -1045,7 +1047,6 @@
     "skipScan": "Skip scan",
     "skipDescription": "An empty library will be created at {{path}}. No agents will be discovered and no skills will be scanned, imported, or added to Agents/projects.",
     "skipTitle": "Create an empty library",
-    "selectionConfirmation": "I understand selected targets are only used for a read-only scan and will not add skills to Agents/projects",
     "startReadOnlyScan": "Start read-only scan",
     "scanning": "Scanning…",
     "step": "Step {{current}} of 3",
@@ -1093,7 +1094,9 @@
     "backgroundScanCompleteTitle": "Background scan finished",
     "backgroundScanCompleteDetail": "Discovered {{count}} skills. Batch import now, or review the results later in discovery.",
     "backgroundScanFailedTitle": "Background scan failed",
-    "rescanScan": "Rescan"
+    "rescanScan": "Rescan",
+    "rescanScanInBackground": "Scan running in the background",
+    "targetPathUnavailable": "No available path was found"
   },
   "theme": {
     "choiceLabel": "Theme colors",
@@ -2114,7 +2117,13 @@
       "security_finding": "Security finding",
       "recovery": "Recovery",
       "conflict": "Skill conflicts",
-      "governance": "Relationship governance"
+      "governance": "Relationship governance",
+      "basic_check": "Complete basic check",
+      "import_skills": "Import your first Skill",
+      "ai_setup": "Configure AI (optional)",
+      "backup_setup": "Create your first backup",
+      "source_update": "Review source update",
+      "governance_followup": "Import governance follow-up"
     },
     "actions": {
       "recheck": "Recheck",
@@ -2178,9 +2187,44 @@
       "blocked": "This relationship is blocked. Review the reason and available actions.",
       "recovery": "An operation needs recovery. Review it on the recovery page.",
       "security_finding": "The current version has unresolved security findings. Review the details or run a new check.",
-      "trial_due": "This trial has expired. Decide whether to keep it as a regular Skill."
+      "trial_due": "This trial has expired. Decide whether to keep it as a regular Skill.",
+      "basic_check": "This version has no completed basic check. Run the check; a failed run does not complete this task.",
+      "import_skills": "Initialization only discovered files. Open local discovery, choose sources and candidates, then confirm import into the library.",
+      "ai_setup": "Configure an available model to use optional AI checks. You can also skip this suggestion.",
+      "backup_setup": "Your library has content. Create a backup; this suggestion closes after successful creation and verification.",
+      "source_update": "A newer source version is available. Review the changes before updating.",
+      "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate."
     },
-    "count": "{{count}} pending tasks"
+    "count": "{{count}} pending tasks",
+    "recommendedCount": "{{count}} suggestions",
+    "recommended": "Suggestion",
+    "partial": "Some work could not be verified. Available results are retained; refresh to confirm. Counts may be incomplete.",
+    "focusFinding": "The linked finding is highlighted below.",
+    "linkResolved": "This item is resolved or no longer applicable. No other item has been selected for you.",
+    "findingReview": "Review the finding at the indicated file location and choose a disposition.",
+    "confirmHandled": "Confirm manually handled",
+    "confirmDescription": "This closes only this import advisory and records your confirmation. It does not change files or mark checks, conflicts, or recovery as successful.",
+    "confirmReason": "User confirmed manual handling",
+    "relatedScope": "Showing work related to this notification.",
+    "showAll": "View all pending work",
+    "taskKinds": {
+      "select_authoritative_version": "Select an authoritative version",
+      "classify_same_name_skill": "Review same-name Skills",
+      "confirm_shared_directory_impact": "Review shared-directory impact",
+      "convert_copy_to_managed_link": "Review copy management",
+      "convert_shared_reference_to_managed_link": "Review shared reference",
+      "unknown_directory_recognition": "Review directory purpose",
+      "operation_failure_recovery": "Recover an incomplete operation"
+    },
+    "taskInstructions": {
+      "select_authoritative_version": "Compare versions in conflict decisions and select the version to keep.",
+      "classify_same_name_skill": "Decide whether the matching names describe distinct Skills or different versions.",
+      "confirm_shared_directory_impact": "Review the shared-directory consumers in governance before changing the relationship.",
+      "convert_copy_to_managed_link": "Keep an independent copy or preview bringing it under central-library management.",
+      "convert_shared_reference_to_managed_link": "Review the shared reference in relationship governance.",
+      "unknown_directory_recognition": "Confirm the source directory and its purpose. Unsupported Agent paths can be added manually and rechecked.",
+      "operation_failure_recovery": "Use recovery to handle the incomplete operation based on its recorded state."
+    }
   },
   "recovery": {
     "eyebrow": "Recovery",
@@ -2495,7 +2539,7 @@
       "resolve": {
         "trackerLabel": "Write conflict conclusion",
         "successTitle": "Conflict conclusion written",
-        "successDetail": "{{conflictId}} was handled per your decision.",
+        "successDetail": "The conflict was handled per your decision.",
         "errorTitle": "Could not write the conflict conclusion",
         "errorUnknown": "A problem occurred while writing the conflict conclusion ({{code}})."
       },
@@ -2762,7 +2806,7 @@
         "rollbackAvailable": "Rollback available",
         "childOperation": "Operation record",
         "trackerLabel": "Central library management batch",
-        "itemTrackerLabel": "Central library management: {{id}}",
+        "itemTrackerLabel": "Central library management",
         "close": "Close"
       },
       "empty": {
@@ -3296,7 +3340,13 @@
         "trial_due_one": "{{count}} trial due",
         "trial_due_other": "{{count}} trials due",
         "conflict": "{{count}} skill conflicts",
-        "governance": "{{count}} relationships need attention"
+        "governance": "{{count}} relationships need attention",
+        "basic_check": "{{count}} · Complete basic check",
+        "import_skills": "{{count}} · Import your first Skill",
+        "ai_setup": "{{count}} · Configure AI (optional)",
+        "backup_setup": "{{count}} · Create your first backup",
+        "source_update": "{{count}} · Review source update",
+        "governance_followup": "{{count}} · Import governance follow-up"
       },
       "none": "No pending items",
       "title": "{{count}} pending items"

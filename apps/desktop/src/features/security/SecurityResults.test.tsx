@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -90,7 +91,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
     withNotices
       ? (
           <I18nextProvider i18n={i18n}>
-            <AppNotificationsProvider>{tree}</AppNotificationsProvider>
+            <MemoryRouter><AppNotificationsProvider>{tree}</AppNotificationsProvider></MemoryRouter>
           </I18nextProvider>
         )
       : tree,
@@ -324,7 +325,7 @@ describe("SecurityResults 与统一执行桥", () => {
     expect(inFlight.canCancel).toBe(true);
     // 运行中被发现的持久化 operation id 随时关联到同一投影。
     expect(inFlight.operationId).toBe("op-live");
-    expect(inFlight.targetHref).toBe("/operations/op-live");
+    expect(inFlight.targetHref).toBe("/library/skill-pdf/security?version=v1");
 
     resolveRun();
     await waitFor(() => {

@@ -1,3 +1,6 @@
+import { usePendingItems } from "../features/pending/usePendingItems";
+import { actionableCount } from "../features/pending/workspace";
+import { nativePendingFacade } from "../features/pending/nativeApi";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -181,6 +184,7 @@ function AgentDiscoveryBridge({ enabled }: { enabled: boolean }) {
 }
 
 export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellProps) {
+  const pending = usePendingItems(nativePendingFacade);
   const reducedMotion = useSkillHubReducedMotion();
   const { t } = useTranslation();
   const { pathname } = useLocation();
@@ -246,7 +250,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
           <a className="sh-skip-link" href="#main-content">
             {t("appShell.skipToContent")}
           </a>
-          <Sidebar
+          <Sidebar pendingCount={actionableCount(pending.items ?? [])} pendingUnavailable={Boolean(pending.error || pending.unavailableSources.length)}
             collapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed((value) => !value)}
           />

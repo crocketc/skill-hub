@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import type { InitializationScanState } from "../bootstrap/api";
 import onboardingCss from "./onboarding.css?raw";
 import { RescanWizard } from "./RescanWizard";
 
@@ -250,4 +251,43 @@ it("shows a scan error and retries without changing the current library state", 
   await waitFor(() => expect(runInitializationScan).toHaveBeenCalledTimes(2));
   expect(screen.queryByText("Scan failed")).not.toBeInTheDocument();
   expect(screen.getByText("C:\\SkillHub")).toBeVisible();
+});
+
+it("shows scan progress and can hand a slow rediscovery scan to the background", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const user = userEvent.setup();
+  let releaseScan!: (value: InitializationScanState) => void;
+  const runInitializationScan = vi.fn(() => new Promise<InitializationScanState>((resolve) => {
+    releaseScan = resolve;
+  }));
+  const onComplete = vi.fn();
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RescanWizard
+        libraryPath="C:\\SkillHub"
+        onComplete={onComplete}
+        scanSlowAfterMs={0}
+        operations={{ completeOnboarding: async () => undefined, discoverAgents: async () => ({ targets: [] }) }}
+        runtime={{ getBootstrapView: async () => { throw new Error("unused"); }, runInitializationScan }}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "识别 Agent" }));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  expect(screen.getByText("当前阶段：扫描中")).toBeVisible();
+  expect(await screen.findByRole("button", { name: "转入后台，继续扫描" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "转入后台，继续扫描" }));
+  expect(screen.getByRole("button", { name: "扫描已转入后台" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "完成重新扫描" }));
+  expect(onComplete).toHaveBeenCalledOnce();
+
+  releaseScan({
+    kind: "completed",
+    result: { generation: { generation: 1, observed_at: 1 }, roots: [], discovered: [], visited_paths: [], reparsed_count: 0, unchanged_count: 0, errors: [] },
+  });
 });
