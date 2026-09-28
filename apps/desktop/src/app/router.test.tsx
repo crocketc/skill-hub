@@ -244,6 +244,7 @@ it("does not expose first-run initialization branches when the bootstrap snapsho
 
 it("shows the welcome journey before the real first-run initialization wizard", async () => {
   mockBrowserPreferences();
+  localStorage.setItem("skillhub.appearance", "sakura");
   await skillHubI18n.changeLanguage("zh-CN");
   const initializedView = await desktopBootstrapRuntime.getBootstrapView();
   const getBootstrapView = vi.spyOn(desktopBootstrapRuntime, "getBootstrapView").mockResolvedValue({
@@ -265,6 +266,9 @@ it("shows the welcome journey before the real first-run initialization wizard", 
     fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
 
     expect(await screen.findByRole("button", { name: "新建集中库" })).toBeVisible();
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral"));
+    expect(localStorage.getItem("skillhub.appearance")).toBe("sakura");
+    expect(document.querySelector("[data-tauri-drag-region]" )).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "开始设置" })).not.toBeInTheDocument();
     expect(appRouter.state.location.pathname).toBe("/initialize");
   } finally {

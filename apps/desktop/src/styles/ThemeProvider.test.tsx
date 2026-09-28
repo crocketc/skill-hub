@@ -7,13 +7,16 @@ import {
 } from "./ThemeProvider";
 
 function ThemeHarness() {
-  const { appearance, resolvedTheme, setAppearance } = useTheme();
+  const { appearance, resolvedTheme, setAppearance, previewAppearance } = useTheme();
 
   return (
     <>
       <output>{`${appearance}:${resolvedTheme}`}</output>
       <button onClick={() => setAppearance("roast")} type="button">
         Choose roast
+      </button>
+      <button onClick={() => previewAppearance("terracotta")} type="button">
+        Preview terracotta
       </button>
     </>
   );
@@ -94,4 +97,19 @@ it("falls back to the neutral system theme for an invalid stored value", () => {
 
   expect(screen.getByText("system:moss-neutral")).toBeInTheDocument();
   expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral");
+});
+
+it("previews a theme without writing it to local browser storage", () => {
+  mockColorScheme(false);
+  localStorage.setItem(THEME_STORAGE_KEY, "sakura");
+  render(
+    <ThemeProvider>
+      <ThemeHarness />
+    </ThemeProvider>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Preview terracotta" }));
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "terracotta");
+  expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("sakura");
 });

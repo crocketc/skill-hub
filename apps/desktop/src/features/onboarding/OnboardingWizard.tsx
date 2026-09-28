@@ -34,6 +34,7 @@ interface OnboardingWizardProps {
   operations?: OnboardingOperations;
   runtime?: BootstrapRuntime;
   onThemeChange?: (theme: ThemeName) => void;
+  onInitializationComplete?: () => void;
   theme?: ThemeName;
 }
 
@@ -75,6 +76,7 @@ export function OnboardingWizard({
   runtime = desktopBootstrapRuntime,
   scanSlowAfterMs = 10_000,
   onThemeChange,
+  onInitializationComplete,
   theme = "moss-neutral",
 }: OnboardingWizardProps) {
   const { t } = useTranslation();
@@ -230,6 +232,7 @@ export function OnboardingWizard({
         setLibraryActivated(true);
       }
       await operations.completeOnboarding({ libraryPath: nativeLibraryPath, skipped });
+      onInitializationComplete?.();
       setCompletionSnapshot({ branch: branch ?? "create", skipped });
       if (scanInBackground) {
         // 后台扫描仍在真实运行：立即退出向导进入概览（M-31），扫描结果

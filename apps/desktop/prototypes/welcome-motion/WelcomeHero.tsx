@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LifecycleMap } from "./LifecycleMap";
+import { FirstRunWindowChrome } from "../../src/ui/FirstRunWindowChrome";
 import "./welcome-motion.css";
 
 export function WelcomeHero({ onStart }: { onStart: () => void }) {
@@ -7,6 +8,7 @@ export function WelcomeHero({ onStart }: { onStart: () => void }) {
 
   return (
     <main className="wm" data-playback={playing ? "playing" : "paused"} data-motion-override={playing ? "true" : undefined}>
+      <FirstRunWindowChrome />
       <button
         className="wm__playback"
         type="button"

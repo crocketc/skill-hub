@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../../ui/Icon";
+import { FirstRunWindowChrome } from "../../ui/FirstRunWindowChrome";
 import "./onboarding.css";
 
 export type WizardStepState = "complete" | "current" | "upcoming";
@@ -44,6 +45,7 @@ export function WizardShell({
 
   return (
     <main className="sh-onboarding">
+      <FirstRunWindowChrome />
       <div className="sh-onboarding__frame">
         <header className="sh-onboarding__header">
           <p>{eyebrow}</p>

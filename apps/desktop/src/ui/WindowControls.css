@@ -10,6 +10,10 @@
   margin-inline-end: calc(-1 * var(--space-5));
 }
 
+.sh-window-controls--close-only {
+  width: 2.875rem;
+}
+
 .sh-window-controls__button {
   display: inline-flex;
   align-items: center;

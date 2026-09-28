@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("first launch plays the welcome journey before the existing setup choices", async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem("skillhub.appearance", "sakura");
     Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
     Object.defineProperty(window, "isTauri", { configurable: true, value: true });
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
@@ -68,11 +69,17 @@ test("first launch plays the welcome journey before the existing setup choices",
 
   await expect(page.getByRole("heading", { name: /让每一项技能，\s*都有清晰的来路与去向/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "暂停动画" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "关闭" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "新建集中库" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "开始设置" }).click();
 
   await expect(page).toHaveURL(/\/initialize$/);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "moss-neutral");
+  expect(await page.evaluate(() => localStorage.getItem("skillhub.appearance"))).toBe("sakura");
+  await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "关闭" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "新建集中库" })).toBeVisible();
   await expect(page.getByRole("button", { name: "使用已有集中库" })).toBeVisible();
   await expect(page.getByRole("button", { name: "从备份恢复" })).toBeVisible();

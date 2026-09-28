@@ -2,6 +2,7 @@ import {
   createContext,
   type ReactNode,
   useContext,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -21,6 +22,7 @@ interface ThemeContextValue {
   appearance: AppearancePreference;
   resolvedTheme: ThemeName;
   setAppearance: (appearance: AppearancePreference) => void;
+  previewAppearance: (appearance: AppearancePreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -62,8 +64,17 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [appearance, setAppearance] =
     useState<AppearancePreference>(readStoredAppearance);
+  const [persistAppearance, setPersistAppearance] = useState(false);
   const [prefersDark, setPrefersDark] = useState(systemPrefersDark);
   const resolvedTheme = resolveTheme(appearance, prefersDark);
+  const chooseAppearance = useCallback((next: AppearancePreference) => {
+    setAppearance(next);
+    setPersistAppearance(true);
+  }, []);
+  const previewAppearance = useCallback((next: AppearancePreference) => {
+    setAppearance(next);
+    setPersistAppearance(false);
+  }, []);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") {
@@ -78,16 +89,18 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, appearance);
-    } catch {
-      // Storage may be disabled; the in-memory selection still applies.
+    if (persistAppearance) {
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, appearance);
+      } catch {
+        // Storage may be disabled; the in-memory selection still applies.
+      }
     }
-  }, [appearance, resolvedTheme]);
+  }, [appearance, persistAppearance, resolvedTheme]);
 
   const value = useMemo(
-    () => ({ appearance, resolvedTheme, setAppearance }),
-    [appearance, resolvedTheme],
+    () => ({ appearance, resolvedTheme, setAppearance: chooseAppearance, previewAppearance }),
+    [appearance, resolvedTheme, chooseAppearance, previewAppearance],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

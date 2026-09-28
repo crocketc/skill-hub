@@ -98,14 +98,14 @@ function CloseIcon() {
   );
 }
 
-export function WindowControls() {
+export function WindowControls({ variant = "full" }: { variant?: "full" | "close-only" }) {
   const { t } = useTranslation();
   // 平台能力只在挂载时解析一次，避免重渲染反复触碰 Tauri API。
   const [chrome] = useState<WindowChrome | null>(() => resolveWindowChrome());
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!chrome) {
+    if (!chrome || variant === "close-only") {
       return;
     }
     let active = true;
@@ -132,34 +132,38 @@ export function WindowControls() {
       active = false;
       unlisten?.();
     };
-  }, [chrome]);
+  }, [chrome, variant]);
 
   if (!chrome) {
     return null;
   }
 
   return (
-    <div className="sh-window-controls">
-      <button
-        type="button"
-        className="sh-window-controls__button"
-        aria-label={t("appShell.minimize")}
-        onClick={() => {
-          void chrome.minimize();
-        }}
-      >
-        <MinimizeIcon />
-      </button>
-      <button
-        type="button"
-        className="sh-window-controls__button"
-        aria-label={maximized ? t("appShell.restore") : t("appShell.maximize")}
-        onClick={() => {
-          void chrome.toggleMaximize();
-        }}
-      >
-        {maximized ? <RestoreIcon /> : <MaximizeIcon />}
-      </button>
+    <div className={`sh-window-controls${variant === "close-only" ? " sh-window-controls--close-only" : ""}`}>
+      {variant === "full" ? (
+        <>
+          <button
+            type="button"
+            className="sh-window-controls__button"
+            aria-label={t("appShell.minimize")}
+            onClick={() => {
+              void chrome.minimize();
+            }}
+          >
+            <MinimizeIcon />
+          </button>
+          <button
+            type="button"
+            className="sh-window-controls__button"
+            aria-label={maximized ? t("appShell.restore") : t("appShell.maximize")}
+            onClick={() => {
+              void chrome.toggleMaximize();
+            }}
+          >
+            {maximized ? <RestoreIcon /> : <MaximizeIcon />}
+          </button>
+        </>
+      ) : null}
       <button
         type="button"
         className="sh-window-controls__button sh-window-controls__button--close"

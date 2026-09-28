@@ -96,6 +96,7 @@ it("requires compatibility discovery before the read-only scan and keeps back na
 
 it("lets users finish without scanning and admits the skipped scan instead of zero counts", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
+  const onInitializationComplete = vi.fn();
   const onComplete = vi.fn();
   const runInitializationScan = vi.fn(async (_scopeIds: string[]) => undefined);
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -105,6 +106,7 @@ it("lets users finish without scanning and admits the skipped scan instead of ze
       <OnboardingWizard
         libraryPath={defaultLibraryPath}
         onComplete={onComplete}
+        onInitializationComplete={onInitializationComplete}
         operations={{ completeOnboarding, discoverAgents: async () => ({ targets: [] }) }}
         runtime={{
           getBootstrapView: async () => {
@@ -130,6 +132,7 @@ it("lets users finish without scanning and admits the skipped scan instead of ze
     libraryPath: defaultLibraryPath,
     skipped: false,
   });
+  expect(onInitializationComplete).toHaveBeenCalledOnce();
   expect(onComplete).not.toHaveBeenCalled();
   expect(screen.getByText("初始化已完成")).toBeVisible();
   expect(screen.getByText("已跳过扫描：本次未扫描任何来源目录，未读取已有技能。")).toBeVisible();

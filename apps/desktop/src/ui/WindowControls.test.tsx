@@ -103,6 +103,24 @@ describe("WindowControls", () => {
     expect(harness.chrome.close).toHaveBeenCalledTimes(1);
   });
 
+  it("renders only the close button in close-only mode", async () => {
+    const harness = createChromeHarness();
+    resolveWindowChrome.mockReturnValue(harness.chrome);
+    const i18n = await createSkillHubI18n(["en-US"]);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <WindowControls variant="close-only" />
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Close" })).toHaveAttribute("type", "button");
+    expect(screen.queryByRole("button", { name: "Minimize" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Maximize" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(harness.chrome.close).toHaveBeenCalledOnce();
+    expect(harness.chrome.isMaximized).not.toHaveBeenCalled();
+  });
+
   it("switches to Restore when the window starts out maximized and still toggles", async () => {
     const harness = createChromeHarness(true);
     resolveWindowChrome.mockReturnValue(harness.chrome);

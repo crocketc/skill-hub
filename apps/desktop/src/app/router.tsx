@@ -55,6 +55,7 @@ import "../features/discovery/discovery.css";
 import "../features/skill-detail/skill-detail.css";
 import "../features/relationships/relationships.css";
 import { ThemeProvider, useTheme } from "../styles/ThemeProvider";
+import type { ThemeName } from "../styles/theme";
 import { DesktopApp } from "./App";
 import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
@@ -116,15 +117,24 @@ export function preloadRoute(href: string) {
 function OnboardingRoute() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { resolvedTheme, setAppearance } = useTheme();
+  const { resolvedTheme, setAppearance, previewAppearance } = useTheme();
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof desktopBootstrapRuntime.getBootstrapView>>["snapshot"] | null>(null);
   const [snapshotLoadFailed, setSnapshotLoadFailed] = useState(false);
   const [welcomeCompleted, setWelcomeCompleted] = useState(false);
+  const [setupTheme, setSetupTheme] = useState<ThemeName>("moss-neutral");
   useEffect(() => {
     void desktopBootstrapRuntime.getBootstrapView()
       .then((view) => setSnapshot(view.snapshot))
       .catch(() => setSnapshotLoadFailed(true));
   }, []);
+  useEffect(() => {
+    if (snapshot?.initialization_state === "not_initialized") {
+      // An unfinished first run always starts from the onboarding default.
+      // The user's explicit theme choice is applied after this one-time reset.
+      setSetupTheme("moss-neutral");
+      previewAppearance("moss-neutral");
+    }
+  }, [snapshot?.initialization_state, previewAppearance]);
   if (!snapshot && !snapshotLoadFailed) {
     return <DataState message={t("dataState.loading")} state="loading" />;
   }
@@ -151,8 +161,12 @@ function OnboardingRoute() {
     <OnboardingWizard
       initialBranch="select"
       onThemeChange={(theme) => {
-        setAppearance(theme);
-        void nativeSettingsFacade.execute({ type: "set_theme", payload: { theme } });
+        setSetupTheme(theme);
+        previewAppearance(theme);
+      }}
+      onInitializationComplete={() => {
+        setAppearance(setupTheme);
+        void nativeSettingsFacade.execute({ type: "set_theme", payload: { theme: setupTheme } });
       }}
       onComplete={() => navigate("/", { replace: true })}
       onOpenImport={(roots) => navigate("/discovery/local", {
