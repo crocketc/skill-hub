@@ -11,6 +11,28 @@ export interface AgentRelation {
 }
 
 export type AgentStatus = "accessible" | "directory_only" | "inaccessible" | "custom";
+export type AgentDirectoryStatus = "existing" | "pending_creation" | "inaccessible" | "non_directory" | "broken_link";
+export type AgentDirectoryRole = "agent_native" | "shared_directory" | "project" | "builtin";
+export type AgentDeploymentMode = "managed_copy" | "symbolic_link" | "directory_junction";
+export type AgentDeploymentStatus = "deployed" | "partially_deployed" | "not_deployed" | "unknown";
+
+export interface AgentDirectoryView {
+  path: string | null;
+  status: AgentDirectoryStatus;
+  role: AgentDirectoryRole;
+  sharedReference: boolean;
+  builtin: boolean;
+  readable: boolean;
+  writable: boolean;
+  available: boolean;
+  physicalIdentityVerified: boolean;
+  physicalIdentityKey?: string;
+  /** Stable candidate identity used only when the directory is not yet verified. */
+  candidateIdentityKey?: string;
+  supportedModes: AgentDeploymentMode[];
+  preferredMode?: AgentDeploymentMode;
+  deploymentStatus: AgentDeploymentStatus;
+}
 
 export interface AgentView {
   brand: string;
@@ -42,6 +64,14 @@ export interface AgentView {
   officialReference: string | null;
   relations: AgentRelation[];
   status: AgentStatus;
+  /** Unified directory facts used by every Agent presentation surface. */
+  directoryViews?: AgentDirectoryView[];
+  /** Whether this recognised brand can consume the shared directory. */
+  supportsSharedDirectory?: boolean;
+  /** Brands shown on the independent shared-directory card. */
+  sharedAgentBrands?: string[];
+  /** Display types shown in each shared-directory brand logo tooltip. */
+  sharedAgentBrandKinds?: Record<string, string[]>;
 }
 
 /** View-level values collected by the custom agent form. */

@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use skillhub_core::agent::{
-    ClientInstance, ClientPresence, DiscoverySnapshot, LogicalTarget, OperatingSystem,
-    PhysicalTarget, ProfileCatalog, TargetScope,
+    AgentRootObservation, ClientInstance, ClientPresence, DirectoryObservationStatus,
+    DiscoverySnapshot, LogicalTarget, OperatingSystem, PhysicalTarget, ProfileCatalog, TargetScope,
 };
 use skillhub_core::AppResult;
 
@@ -51,6 +51,7 @@ impl DiscoverAgents {
 
     pub fn discover(&self, roots: &DiscoveryRoots) -> AppResult<DiscoverySnapshot> {
         let mut instances = Vec::new();
+        let mut agent_roots = Vec::new();
         let mut logical_targets = Vec::new();
         for profile in &self.catalog.profiles {
             let profile_id = profile_id(&profile.brand);
@@ -61,8 +62,40 @@ impl DiscoverAgents {
                 for candidate in &client.path_candidates {
                     for path in expand_candidate(candidate, roots) {
                         let path_string = path.to_string_lossy().into_owned();
-                        let exists = path.is_dir();
-                        let (readable, writable) = directory_access(&path, exists);
+                        let observation = observe_directory(&path);
+                        let root_pattern = agent_root_pattern(client, candidate);
+                        let root_path = expand_pattern(&root_pattern, roots)
+                            .iter()
+                            .find(|root| path.starts_with(root))
+                            .cloned()
+                            .or_else(|| expand_pattern(&root_pattern, roots).into_iter().next())
+                            .unwrap_or_else(|| path.clone());
+                        let root_observation =
+                            observe_directory(&root_path);
+                        let root_path_string = root_path.to_string_lossy().into_owned();
+                        let root_id = format!(
+                            "{profile_id}:{}:{}:root:{root_path_string}",
+                            client.id,
+                            scope_code(&candidate.scope)
+                        );
+                        if !agent_roots.iter().any(|root: &AgentRootObservation| {
+                            root.id == root_id
+                        }) {
+                            agent_roots.push(AgentRootObservation {
+                                id: root_id.clone(),
+                                profile_id: profile_id.clone(),
+                                client_id: client.id.clone(),
+                                scope: candidate.scope.clone(),
+                                path: root_path_string,
+                                status: root_observation.status,
+                                exists: root_observation.exists,
+                                readable: root_observation.readable,
+                                writable: root_observation.writable,
+                                physical_id: root_observation.physical_id,
+                                physical_identity_verified: root_observation
+                                    .physical_identity_verified,
+                            });
+                        }
                         let physical_id = physical_identity(&path, roots.operating_system.clone());
                         logical_targets.push(LogicalTarget {
                             id: format!(
@@ -74,15 +107,19 @@ impl DiscoverAgents {
                             client_id: client.id.clone(),
                             scope: candidate.scope.clone(),
                             path: path_string,
+                            agent_root_id: root_id,
                             marker: candidate.marker.clone(),
                             precedence: candidate.precedence.clone(),
                             shared_reference: candidate.shared_reference,
                             builtin: candidate.builtin,
-                            exists,
-                            readable,
-                            writable,
-                            available: exists && readable,
+                            exists: observation.exists,
+                            readable: observation.readable,
+                            writable: observation.writable,
+                            available: observation.status == DirectoryObservationStatus::Existing
+                                && observation.readable,
                             physical_id,
+                            status: observation.status,
+                            physical_identity_verified: observation.physical_identity_verified,
                         });
                     }
                 }
@@ -105,7 +142,11 @@ impl DiscoverAgents {
         let mut seen = std::collections::HashSet::<(String, String, String, String)>::new();
         logical_targets.retain(|target| {
             seen.insert((
-                target.physical_id.clone(),
+                if target.physical_identity_verified {
+                    target.physical_id.clone()
+                } else {
+                    target.id.clone()
+                },
                 format!("{:?}", target.scope),
                 target.profile_id.clone(),
                 target.client_id.clone(),
@@ -114,7 +155,7 @@ impl DiscoverAgents {
 
         let mut physical = BTreeMap::<String, PhysicalTarget>::new();
         for target in &logical_targets {
-            if !target.exists {
+            if !target.exists || !target.physical_identity_verified {
                 continue;
             }
             let entry = physical
@@ -137,6 +178,7 @@ impl DiscoverAgents {
             generation: "1".into(),
             observed_at: now(),
             instances,
+            agent_roots,
             logical_targets,
             physical_targets: physical.into_values().collect(),
         })
@@ -147,7 +189,56 @@ fn expand_candidate(
     candidate: &skillhub_core::agent::PathCandidate,
     roots: &DiscoveryRoots,
 ) -> Vec<PathBuf> {
-    let raw = candidate.path.as_str();
+    expand_pattern(candidate.path.as_str(), roots)
+}
+
+/// Profiles may omit `agent_root` for legacy candidates. Keep that format
+/// compatible while deriving the smallest bounded root from the researched
+/// `.../.agent-name/skills` convention. Shared candidates first borrow a
+/// sibling native candidate in the same scope so `.agents/skills` does not
+/// make a brand appear when only the shared directory exists.
+fn agent_root_pattern(
+    client: &skillhub_core::agent::AgentClient,
+    candidate: &skillhub_core::agent::PathCandidate,
+) -> String {
+    if let Some(root) = candidate.agent_root.as_deref() {
+        return root.to_owned();
+    }
+    if candidate.shared_reference {
+        if let Some(root) = client
+            .path_candidates
+            .iter()
+            .filter(|sibling| {
+                sibling.scope == candidate.scope
+                    && !sibling.shared_reference
+                    && !sibling.builtin
+            })
+            .find_map(|sibling| inferred_agent_root(&sibling.path))
+        {
+            return root;
+        }
+    }
+    inferred_agent_root(&candidate.path).unwrap_or_else(|| candidate.path.clone())
+}
+
+fn inferred_agent_root(path: &str) -> Option<String> {
+    let normalized = path.replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/');
+    let without_builtin = trimmed.strip_suffix("/skills/.system").unwrap_or(trimmed);
+    let Some(root) = without_builtin.strip_suffix("/skills") else {
+        return None;
+    };
+    if root.is_empty()
+        || root == "{user_home}"
+        || root == "{project_root}"
+        || root.ends_with(":")
+    {
+        return None;
+    }
+    Some(root.to_owned())
+}
+
+fn expand_pattern(raw: &str, roots: &DiscoveryRoots) -> Vec<PathBuf> {
     if raw.contains("{user_home}") {
         return vec![join_relative(
             &roots.user_home,
@@ -183,16 +274,85 @@ fn join_relative(root: &Path, suffix: &str) -> PathBuf {
         .fold(root.to_path_buf(), |path, segment| path.join(segment))
 }
 
-fn directory_access(path: &Path, exists: bool) -> (bool, bool) {
-    if !exists {
-        return (false, false);
+struct DirectoryObservation {
+    status: DirectoryObservationStatus,
+    exists: bool,
+    readable: bool,
+    writable: bool,
+    physical_id: Option<String>,
+    physical_identity_verified: bool,
+}
+
+fn observe_directory(path: &Path) -> DirectoryObservation {
+    let symlink_metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return DirectoryObservation {
+                status: DirectoryObservationStatus::Missing,
+                exists: false,
+                readable: false,
+                writable: false,
+                physical_id: None,
+                physical_identity_verified: false,
+            }
+        }
+        Err(_) => {
+            return DirectoryObservation {
+                status: DirectoryObservationStatus::Inaccessible,
+                exists: false,
+                readable: false,
+                writable: false,
+                physical_id: None,
+                physical_identity_verified: false,
+            }
+        }
+    };
+    if symlink_metadata.file_type().is_symlink() && fs::metadata(path).is_err() {
+        return DirectoryObservation {
+            status: DirectoryObservationStatus::BrokenLink,
+            exists: false,
+            readable: false,
+            writable: false,
+            physical_id: None,
+            physical_identity_verified: false,
+        };
     }
     let Ok(metadata) = fs::metadata(path) else {
-        return (false, false);
+        return DirectoryObservation {
+            status: DirectoryObservationStatus::Inaccessible,
+            exists: false,
+            readable: false,
+            writable: false,
+            physical_id: None,
+            physical_identity_verified: false,
+        };
     };
+    if !metadata.is_dir() {
+        return DirectoryObservation {
+            status: DirectoryObservationStatus::NonDirectory,
+            exists: false,
+            readable: false,
+            writable: false,
+            physical_id: None,
+            physical_identity_verified: false,
+        };
+    }
     let readable = fs::read_dir(path).is_ok();
     let writable = readable && !metadata.permissions().readonly();
-    (readable, writable)
+    let identity = metadata_identity(path, &metadata);
+    let physical_identity_verified = identity.is_some();
+    DirectoryObservation {
+        status: if readable {
+            DirectoryObservationStatus::Existing
+        } else {
+            DirectoryObservationStatus::Inaccessible
+        },
+        exists: true,
+        readable,
+        writable,
+        physical_id: identity.map(|value| format!("fs:{value}")),
+        physical_identity_verified,
+    }
 }
 
 fn physical_identity(path: &Path, operating_system: OperatingSystem) -> String {

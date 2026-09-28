@@ -1,6 +1,6 @@
 use skillhub_adapters::scanner::ScanService;
 use skillhub_core::agent::{
-    AgentRepository, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
+    AgentRepository, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
     TargetScope,
 };
 use skillhub_core::api::{RescanSkill, RunInitializationScan, ScanTargets};
@@ -49,6 +49,7 @@ fn discovery_target(scope: &ScanScope) -> LogicalTarget {
         client_id: "test".into(),
         scope: TargetScope::Global,
         path: scope.root.clone(),
+        agent_root_id: "fixture-root".into(),
         marker: scope.marker.clone(),
         precedence: DirectoryPrecedence::Preferred,
         shared_reference: false,
@@ -58,6 +59,8 @@ fn discovery_target(scope: &ScanScope) -> LogicalTarget {
         writable: true,
         available: true,
         physical_id: physical_id_for_path(&scope.root).unwrap_or_else(|| id.clone()),
+        status: DirectoryObservationStatus::Existing,
+        physical_identity_verified: true,
     }
 }
 
@@ -80,6 +83,7 @@ fn register_scope(service: &mut ScanService, scope: ScanScope) {
             instances: Vec::new(),
             logical_targets: vec![target],
             physical_targets: vec![physical],
+            agent_roots: Vec::new(),
         },
     };
     let policy = PathPolicy::from_roots([AllowedRoot::new(&scope.root).unwrap()]).unwrap();
@@ -285,6 +289,7 @@ fn invalid_scope_is_reported_and_other_registered_scope_still_scans() {
             instances: Vec::new(),
             logical_targets: vec![discovery_target(&missing)],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         },
     };
     assert!(service
@@ -370,6 +375,7 @@ fn profile_marker_is_case_aware_and_not_user_selectable() {
             instances: Vec::new(),
             logical_targets: vec![target],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         },
     };
     let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();
@@ -392,6 +398,7 @@ fn unavailable_discovery_target_cannot_authorize_a_scan_root() {
             instances: Vec::new(),
             logical_targets: vec![target.clone()],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         },
     };
     let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();
@@ -418,6 +425,7 @@ fn forged_discovery_record_cannot_authorize_an_unregistered_path() {
             instances: Vec::new(),
             logical_targets: vec![target],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         },
     };
     let policy = PathPolicy::from_roots([AllowedRoot::new(&allowed).unwrap()]).unwrap();
@@ -455,6 +463,7 @@ fn shared_physical_targets_are_scanned_once_for_multiple_logical_ids() {
                 case_behavior: "test".into(),
                 logical_target_ids: vec!["client-a".into(), "client-b".into()],
             }],
+            agent_roots: Vec::new(),
         },
     };
     let policy = PathPolicy::from_roots([AllowedRoot::new(&root).unwrap()]).unwrap();

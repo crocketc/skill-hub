@@ -853,6 +853,7 @@ mod path_grant_tests {
                         supported_os: vec![skillhub_core::agent::OperatingSystem::Windows],
                         path_candidates: vec![skillhub_core::PathCandidate {
                             path: candidate_path.into(),
+                            agent_root: None,
                             scope: skillhub_core::TargetScope::Global,
                             precedence: skillhub_core::DirectoryPrecedence::Preferred,
                             marker: "SKILL.md".into(),

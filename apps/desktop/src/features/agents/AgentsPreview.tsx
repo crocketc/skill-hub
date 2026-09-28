@@ -6,8 +6,9 @@ import { AgentListPage } from "./AgentListPage";
 /**
  * Deterministic DEV-only fixture for /__preview/agents. Covers the layout
  * matrix without touching disk, network, or the Tauri backend: long Windows
- * and macOS paths, an inaccessible client, a directory-only instance, and a
- * custom agent with edit/remove actions. `?empty=1` renders the empty state.
+ * and macOS paths, pending/unavailable directory facts, and custom agents.
+ * Card operations are intentionally exercised through the detail link;
+ * `?empty=1` renders the empty state.
  */
 const previewAgents: AgentView[] = [
   {

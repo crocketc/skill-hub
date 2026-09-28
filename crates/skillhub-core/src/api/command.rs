@@ -1040,6 +1040,14 @@ pub struct DismissSearchCandidate {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiscoverAgentTargets;
 
+/// Creates one profile-declared Skill directory after an explicit user
+/// confirmation. Agent roots are never created by this command.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct EnsureAgentTargetDirectory {
+    pub target_id: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ScanTargets {
@@ -1321,6 +1329,8 @@ pub enum AppCommand {
     DismissSearchCandidate(DismissSearchCandidate),
     #[serde(rename = "discover_agent_targets")]
     DiscoverAgentTargets(DiscoverAgentTargets),
+    #[serde(rename = "ensure_agent_target_directory")]
+    EnsureAgentTargetDirectory(EnsureAgentTargetDirectory),
     #[serde(rename = "scan_targets")]
     ScanTargets(ScanTargets),
     #[serde(rename = "rescan_skill")]

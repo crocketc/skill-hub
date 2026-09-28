@@ -25,7 +25,7 @@ pub use command::{
     CreateCustomAgent, CreateIgnoreRule, CreateSkill, CreateStandardExport, DeleteCombination,
     DeleteLlmProvider, DeploymentPairCommitOutcome, DeploymentPairCommitResult,
     DeploymentPreviewCommitResult, DetachManagement, DiscoverAgentTargets, DismissSearchCandidate,
-    DownloadApplicationUpdate, DownloadRepoSkill, FetchLlmModels, FetchLlmProvider,
+    DownloadApplicationUpdate, DownloadRepoSkill, EnsureAgentTargetDirectory, FetchLlmModels, FetchLlmProvider,
     FinalizeImportBatch, GenerateOnlineSearchQuery, IgnoreExternalChange, ImportAiCheckOutcome,
     ImportAiChecksReport, ImportBatchFinalized, ImportBatchStarted, InstallApplicationUpdate,
     KeepIndependentCopy, LibraryActivationMode, OpenExternalUrl, OpenImportBatch,

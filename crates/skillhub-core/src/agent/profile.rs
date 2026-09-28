@@ -29,6 +29,14 @@ pub fn validate_profile_strict(profile: &AgentProfile) -> Result<(), String> {
             if path.is_empty() || is_unbounded_root(path) || path.contains("**") {
                 return Err("unbounded scan root".into());
             }
+            if let Some(agent_root) = candidate.agent_root.as_deref() {
+                if agent_root.trim().is_empty()
+                    || is_unbounded_root(agent_root)
+                    || agent_root.contains("**")
+                {
+                    return Err("unbounded agent recognition root".into());
+                }
+            }
             if candidate.marker.trim().is_empty() {
                 return Err("empty skill marker".into());
             }

@@ -689,8 +689,10 @@
     "sharedBrand": "共享",
     "eyebrow": "Agent 工作区",
     "title": "Agent",
-    "description": "查看已发现的客户端和 Skill 目录事实。",
+    "description": "查看已识别 Agent 目录和 Skill 路径事实。",
     "pathLabel": "路径：",
+    "pathPending": "待创建",
+    "pathUnavailable": "路径不可用",
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
     "empty": "尚未发现任何 Agent。可以重新扫描，或新增自定义 Agent。",
@@ -735,7 +737,7 @@
     "runtimeHookStatus": "研发中",
     "detail": {
       "eyebrow": "已观测 Agent",
-      "discoveredFact": "已发现客户端和 Skill 目录",
+      "discoveredFact": "已识别 Agent 目录；这不代表 Agent 软件已安装或一定会加载 Skill。",
       "observed": "已观测",
       "identity": "Agent 身份",
       "managedDeployments": "受管副本",
@@ -789,7 +791,14 @@
     "managedRelationsCount_other": "{{count}} 条部署关系",
     "builtinLabel": "内置 · 只读",
     "builtinHint": "如需调整请在对应 Agent 内手动管理；常用技能建议导入 SkillHub 统一管理。",
-    "sharedDirectoryChip": "支持共享目录"
+    "sharedDirectoryChip": "支持共享目录",
+    "sharedDirectoryTitle": "Agent共享目录",
+    "deploymentMethods": {
+      "label": "派发方式",
+      "managed_copy": { "supported": "支持复制派发", "unsupported": "不支持复制派发" },
+      "symbolic_link": { "supported": "支持符号链接派发", "unsupported": "不支持符号链接派发" },
+      "directory_junction": { "supported": "支持目录联接派发", "unsupported": "不支持目录联接派发" }
+    }
   },
   "projects": {
     "actions": {
@@ -1836,7 +1845,12 @@
     "targets": {
       "heading": "Agent 目标",
       "description": "只有已发现且可写的目标可以选择。",
-      "unavailable": "不可用"
+      "unavailable": "不可用",
+      "createAction": "创建并加入派发",
+      "createTitle": "创建 Skill 目录？",
+      "createDescription": "将只创建这个 Agent profile 声明的 Skill 目录，不会创建 Agent 根目录；创建后会重新验证目录并加入当前派发。",
+      "createConfirm": "确认创建",
+      "createUnavailable": "当前连接不支持创建待建目录。"
     },
     "preview": "预览",
     "retryFailed": "重试失败目标",

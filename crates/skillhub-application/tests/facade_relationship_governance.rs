@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
-use skillhub_core::agent::DirectoryPrecedence;
+use skillhub_core::agent::{DirectoryObservationStatus, DirectoryPrecedence};
 use skillhub_core::api::{
     CommitRelationGovernanceBatch, CreateSkill, GetConflictWorkspace, GetRelationshipOverview,
     GetRelationshipRemovalImpact, GetSkillRelationshipGraph, ListRelationGovernance,
@@ -5216,6 +5216,7 @@ mod retain_and_cleanup_prepare {
                     client_id: CLIENT_ID.into(),
                     scope: TargetScope::Global,
                     path: root.to_string_lossy().into_owned(),
+                    agent_root_id: "fixture-root".into(),
                     marker: "SKILL.md".into(),
                     precedence: DirectoryPrecedence::Preferred,
                     shared_reference: false,
@@ -5225,8 +5226,11 @@ mod retain_and_cleanup_prepare {
                     writable: true,
                     available: true,
                     physical_id: physical_id_for_path(root).expect("physical id"),
+                    status: DirectoryObservationStatus::Existing,
+                    physical_identity_verified: true,
                 }],
                 physical_targets: Vec::new(),
+                agent_roots: Vec::new(),
             })
             .expect("agent snapshot");
     }

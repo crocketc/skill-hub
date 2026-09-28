@@ -35,6 +35,7 @@ fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
             client_id: "openai.codex-cli".into(),
             scope: TargetScope::Global,
             path: "C:/home/.agents/skills".into(),
+            agent_root_id: "fixture-root".into(),
             marker: "SKILL.md".into(),
             precedence: skillhub_core::agent::DirectoryPrecedence::Preferred,
             shared_reference: false,
@@ -44,6 +45,8 @@ fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
             writable: available,
             available,
             physical_id: "path:c:/home/.agents/skills".into(),
+            status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+            physical_identity_verified: available,
         }],
         physical_targets: vec![PhysicalTarget {
             id: "path:c:/home/.agents/skills".into(),
@@ -54,6 +57,7 @@ fn snapshot(generation: u64, available: bool) -> DiscoverySnapshot {
             case_behavior: "case_insensitive_normalization".into(),
             logical_target_ids: vec!["target-1".into()],
         }],
+        agent_roots: Vec::new(),
     }
 }
 

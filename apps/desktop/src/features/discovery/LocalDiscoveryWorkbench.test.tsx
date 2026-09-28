@@ -459,7 +459,7 @@ it("shows exactly one generic ownership card for the shared agents directory", a
   expect(screen.getByText("被 2 个已登记客户端共享").getAttribute("title"))
     .toContain("ZCode");
   // 形态徽标使用共享目录的专属文案，而不是客户端产品形态。
-  expect(screen.getByText("共享目录")).toBeVisible();
+  expect(screen.getByText("Agent共享目录")).toBeVisible();
 });
 
 // 2026-09-25 验收裁决：真实存在的内置技能目录独立成「内置」只读卡片，

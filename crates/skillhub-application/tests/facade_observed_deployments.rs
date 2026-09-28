@@ -51,6 +51,7 @@ fn register_agent_target(database: &Database, root: &std::path::Path) {
                 client_id: CLIENT_ID.into(),
                 scope: TargetScope::Global,
                 path: root.to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -60,6 +61,8 @@ fn register_agent_target(database: &Database, root: &std::path::Path) {
                 writable: true,
                 available: true,
                 physical_id: physical_id.clone(),
+                status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: vec![PhysicalTarget {
                 id: physical_id,
@@ -70,6 +73,7 @@ fn register_agent_target(database: &Database, root: &std::path::Path) {
                 case_behavior: "unknown".into(),
                 logical_target_ids: vec!["target-1".into()],
             }],
+            agent_roots: Vec::new(),
         })
         .expect("save discovery");
 }

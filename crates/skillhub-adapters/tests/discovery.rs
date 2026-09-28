@@ -164,6 +164,143 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
     }
 }
 
+#[test]
+fn agent_root_presence_identifies_client_when_skill_directory_is_missing() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".dsh")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+        .unwrap();
+
+    let root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| {
+            root.profile_id == "deepseek-harness"
+                && root.client_id == "deepseek-harness.tui"
+                && root.scope == skillhub_core::agent::TargetScope::Global
+        })
+        .expect("DeepSeek Harness Agent root");
+    assert!(root.exists);
+    assert_eq!(
+        root.status,
+        skillhub_core::agent::DirectoryObservationStatus::Existing
+    );
+    assert!(root.physical_identity_verified);
+
+    let skill_target = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| {
+            target.profile_id == "deepseek-harness"
+                && target.client_id == "deepseek-harness.tui"
+                && target.scope == skillhub_core::agent::TargetScope::Global
+                && target.path.ends_with(".dsh/skills")
+        })
+        .expect("DeepSeek Harness Skill directory candidate");
+    assert!(!skill_target.exists);
+    assert_eq!(
+        skill_target.status,
+        skillhub_core::agent::DirectoryObservationStatus::Missing
+    );
+    assert!(!skill_target.physical_identity_verified);
+    assert!(snapshot.physical_targets.is_empty());
+}
+
+#[test]
+fn shared_directory_reference_does_not_identify_brand_without_native_root() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+        .unwrap();
+    let shared = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| {
+            target.profile_id == "cursor"
+                && target.shared_reference
+                && target.scope == skillhub_core::agent::TargetScope::Global
+        })
+        .expect("Cursor shared reference");
+    assert!(shared.exists);
+    let root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| root.id == shared.agent_root_id)
+        .expect("Cursor native root observation");
+    assert!(root.path.ends_with(".cursor"));
+    assert_eq!(
+        root.status,
+        skillhub_core::agent::DirectoryObservationStatus::Missing
+    );
+}
+
+#[test]
+fn non_directory_skill_path_is_observed_without_becoming_a_deployment_target() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".dsh")).unwrap();
+    std::fs::write(home.join(".dsh/skills"), "not a directory").unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+        .unwrap();
+    let target = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| {
+            target.profile_id == "deepseek-harness"
+                && target.client_id == "deepseek-harness.tui"
+                && target.scope == skillhub_core::agent::TargetScope::Global
+                && target.path.ends_with(".dsh/skills")
+        })
+        .expect("DeepSeek Harness Skill path");
+    assert_eq!(
+        target.status,
+        skillhub_core::agent::DirectoryObservationStatus::NonDirectory
+    );
+    assert!(!target.exists);
+    assert!(!target.physical_identity_verified);
+    assert!(snapshot.physical_targets.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn broken_skill_link_is_observed_without_creating_a_physical_target() {
+    use std::os::unix::fs::symlink;
+
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".dsh")).unwrap();
+    symlink("missing-skills", home.join(".dsh/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+        .unwrap();
+    let target = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| {
+            target.profile_id == "deepseek-harness"
+                && target.client_id == "deepseek-harness.tui"
+                && target.scope == skillhub_core::agent::TargetScope::Global
+                && target.path.ends_with(".dsh/skills")
+        })
+        .expect("DeepSeek Harness Skill path");
+    assert_eq!(
+        target.status,
+        skillhub_core::agent::DirectoryObservationStatus::BrokenLink
+    );
+    assert!(!target.exists);
+    assert!(!target.physical_identity_verified);
+    assert!(snapshot.physical_targets.is_empty());
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinked_directory_is_merged_by_filesystem_identity() {
@@ -181,6 +318,7 @@ fn symlinked_directory_is_merged_by_filesystem_identity() {
 
     let candidate = |path: &str, scope: TargetScope| PathCandidate {
         path: path.into(),
+        agent_root: None,
         scope,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
@@ -263,6 +401,7 @@ fn alias_catalog() -> skillhub_core::agent::ProfileCatalog {
         supported_os: vec![OperatingSystem::Windows],
         path_candidates: vec![PathCandidate {
             path: path.into(),
+            agent_root: None,
             scope,
             precedence: DirectoryPrecedence::Preferred,
             marker: "SKILL.md".into(),
@@ -486,6 +625,7 @@ fn spelling_variants_of_one_directory_collapse_to_one_logical_target_per_client_
     };
     let candidate = |path: &str| PathCandidate {
         path: path.into(),
+        agent_root: None,
         scope: TargetScope::Global,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
@@ -552,6 +692,7 @@ fn builtin_candidates_flow_into_logical_targets_as_platform_read_only_roots() {
     };
     let candidate = |path: &str, builtin: bool| PathCandidate {
         path: path.into(),
+        agent_root: None,
         scope: TargetScope::Global,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),

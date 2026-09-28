@@ -117,7 +117,14 @@ export function AgentDetailPage({
       <header className="sh-agent-detail__header">
         <div>
           <p className="sh-agent-eyebrow">{t("agents.detail.eyebrow")}</p>
-          <h1><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></h1>
+          <h1><AgentPresentation
+            agentId={agent.client}
+            brand={agent.brand}
+            instance={agent.instance}
+            sharedAgentBrandKinds={agent.sharedAgentBrandKinds}
+            sharedAgentBrands={agent.sharedAgentBrands}
+            sharedDirectory={agent.kinds?.includes("shared_directory")}
+          /></h1>
           <p>{t("agents.detail.discoveredFact")}</p>
         </div>
         <div className="sh-agent-detail__header-side">
@@ -160,7 +167,13 @@ export function AgentDetailPage({
           <dt>{t("agents.pathLabel")}</dt>
           <dd>
             <ul aria-label={t("agents.detail.paths")} className="sh-agent-detail__paths">
-              {agent.discoveredPaths.map((path) => <li key={path}><code>{displayPath(path)}</code></li>)}
+              {(agent.directoryViews && agent.directoryViews.length > 0
+                ? agent.directoryViews
+                : agent.discoveredPaths.map((path) => ({ path, status: "existing" as const }))).map((directory, index) => (
+                <li key={`${directory.path ?? "pending"}-${index}`}>
+                  <code>{directory.path ? displayPath(directory.path) : t("agents.pathPending")}</code>
+                </li>
+              ))}
             </ul>
           </dd>
         </div>

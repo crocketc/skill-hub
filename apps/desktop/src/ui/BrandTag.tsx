@@ -106,14 +106,16 @@ export interface BrandTagProps {
   className?: string;
   /** Constrained surfaces can retain the recognizable mark without text. */
   iconOnly?: boolean;
+  /** Optional user-facing tooltip for compact brand marks. */
+  title?: string;
 }
 
-export function BrandTag({ brand, className, iconOnly = false }: BrandTagProps): JSX.Element | null {
+export function BrandTag({ brand, className, iconOnly = false, title }: BrandTagProps): JSX.Element | null {
   const key = normalizeBrandKey(brand);
   if (!key) return null;
   const icon = brandIconSrc(brand);
   return (
-    <span className={["sh-brand-tag", brandColorClass(brand), iconOnly ? "sh-brand-tag--icon-only" : "", className].filter(Boolean).join(" ")} title={brand.trim()}>
+    <span className={["sh-brand-tag", brandColorClass(brand), iconOnly ? "sh-brand-tag--icon-only" : "", className].filter(Boolean).join(" ")} title={title ?? brand.trim()}>
       {icon ? (
         <img
           alt=""

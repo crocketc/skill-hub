@@ -71,9 +71,9 @@ pub mod i64_option_string {
 pub use agent::{
     AgentClient, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
     ClientPresence, CustomAgent, CustomAgentDraft, CustomAgentOverride, CustomAgentValidationError,
-    DeploymentCapability, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem,
-    PathCandidate, PathGrant, PathGrantResolver, PhysicalTarget, ProfileCatalog, ResolvedPathGrant,
-    TargetScope,
+    AgentRootObservation, DeploymentCapability, DirectoryObservationStatus, DirectoryPrecedence,
+    DiscoverySnapshot, LogicalTarget, OperatingSystem, PathCandidate, PathGrant, PathGrantResolver,
+    PhysicalTarget, ProfileCatalog, ResolvedPathGrant, TargetScope,
 };
 pub use api::{
     ActivateLibraryRoot, AddSkillRepo, AnalyzeGlobalSkillEvidence, AnalyzeImport,
@@ -84,6 +84,7 @@ pub use api::{
     CommitRelationMigration, CommitRepair, CommitRestore, CommitUndeploy, CreateBackup,
     CreateIgnoreRule, CreateStandardExport, DeploymentTarget, DetachManagement,
     DiscoverImportCandidates, DiscoverRepoSkills, DownloadApplicationUpdate, DownloadRepoSkill,
+    EnsureAgentTargetDirectory,
     FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
     GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
     GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact, GetUiPreference,

@@ -60,6 +60,10 @@ export type DeploymentTarget = {
   agentProfileId?: string;
   sharedDirectory?: boolean;
   sharedAgentBrands?: string[];
+  sharedAgentBrandKinds?: Record<string, string[]>;
+  directoryStatus?: "existing" | "missing" | "non_directory" | "inaccessible" | "broken_link";
+  physicalIdentityVerified?: boolean;
+  preferredMode?: DeploymentMode;
 };
 
 export type DeploymentResult = {
@@ -195,6 +199,8 @@ export type BatchDeploymentResult = DeploymentResult & { skillId: string };
  */
 export interface BatchDeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
+  /** Creates a missing profile-declared directory after explicit confirmation. */
+  ensureTargetDirectory?(targetId: string): Promise<void>;
   preview(
     items: BatchPreviewItem[],
     context?: { confirmations?: PreviewConfirmations; exclusions?: string[] },

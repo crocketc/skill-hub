@@ -6,6 +6,7 @@ import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { ImportShell, type ImportStatus, type ImportStep } from "../import/ImportShell";
 import { DeploymentResults } from "./DeploymentResults";
@@ -76,6 +77,7 @@ export function DeploymentDialog({
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
   const [committing, setCommitting] = useState(false);
+  const [creatingTargetId, setCreatingTargetId] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -127,6 +129,26 @@ export function DeploymentDialog({
       setConfirmationsDirty(false);
     } catch (reason) {
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+    }
+  };
+
+  const ensureTargetDirectory = async (target: DeploymentTarget) => {
+    if (!activeFacade.ensureTargetDirectory) {
+      setFlowError(t("deployment.targets.createUnavailable"));
+      return;
+    }
+    setFlowError(undefined);
+    setCreatingTargetId(target.id);
+    try {
+      await activeFacade.ensureTargetDirectory(target.id);
+      const refreshed = await activeFacade.listTargets();
+      setTargets(refreshed);
+      setSelectedIds((current) => current.includes(target.id) ? current : [...current, target.id]);
+      setPreview(undefined);
+    } catch (reason: unknown) {
+      setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+    } finally {
+      setCreatingTargetId(undefined);
     }
   };
 
@@ -345,9 +367,7 @@ export function DeploymentDialog({
             <span className="sh-count-badge">{selected.length}</span>
           </div>
           <div className="sh-workflow-targets">
-            {/* DEV-11：不可用目标不进默认列表（用户裁定）——选择页只呈现
-                「已发现且可写」的目标，与文案承诺一致。 */}
-            {targets.filter((target) => target.available).map((target) => (
+            {targets.filter((target) => target.available || target.directoryStatus === "missing").map((target) => target.available ? (
               <label className="sh-workflow-target" key={target.id}>
                 <input
                   aria-label={target.agentClientId ?? target.label}
@@ -364,6 +384,21 @@ export function DeploymentDialog({
                   <small>{displayPath(target.path)}</small>
                 </span>
               </label>
+            ) : (
+              <div className="sh-workflow-target sh-workflow-target--pending" key={target.id}>
+                <span>
+                  <DeploymentTargetPresentation fallback={target.label} target={target} />
+                  <small>{t("agents.pathPending")}</small>
+                </span>
+                <ConfirmDialog
+                  cancelLabel={t("agents.removeDialog.cancel")}
+                  confirmLabel={t("deployment.targets.createConfirm")}
+                  description={t("deployment.targets.createDescription")}
+                  onConfirm={() => void ensureTargetDirectory(target)}
+                  title={t("deployment.targets.createTitle")}
+                  trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
+                />
+              </div>
             ))}
           </div>
         </section>

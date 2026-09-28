@@ -172,6 +172,7 @@ mod tests {
             client_id: client.to_string(),
             scope: TargetScope::Global,
             path: path.to_string(),
+            agent_root_id: "fixture-root".to_string(),
             marker: "SKILL.md".to_string(),
             precedence: DirectoryPrecedence::Preferred,
             shared_reference: shared,
@@ -181,6 +182,8 @@ mod tests {
             writable: true,
             available: true,
             physical_id: format!("phys-{id}"),
+            status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
         }
     }
 
@@ -206,6 +209,7 @@ mod tests {
                 case_behavior: "insensitive".to_string(),
                 logical_target_ids: Vec::new(),
             }],
+            agent_roots: Vec::new(),
         }
     }
 
@@ -264,5 +268,40 @@ mod tests {
             .find(|candidate| candidate.id == "codex:codex-cli:global:gone")
             .expect("gone directory stays as an unavailable fact");
         assert!(!gone.available);
+    }
+
+    #[test]
+    fn legacy_snapshot_without_agent_root_fields_still_deserializes() {
+        let legacy = r#"{
+            "generation":"1",
+            "observed_at":"1789829830",
+            "instances":[],
+            "logical_targets":[{
+                "id":"legacy-target",
+                "profile_id":"codex",
+                "client_id":"codex-cli",
+                "scope":"global",
+                "path":"C:/u/.agents/skills",
+                "marker":"SKILL.md",
+                "precedence":"preferred",
+                "shared_reference":true,
+                "builtin":false,
+                "exists":true,
+                "readable":true,
+                "writable":true,
+                "available":true,
+                "physical_id":"phys-legacy"
+            }],
+            "physical_targets":[]
+        }"#;
+
+        let snapshot: DiscoverySnapshot = serde_json::from_str(legacy).unwrap();
+        assert!(snapshot.agent_roots.is_empty());
+        assert_eq!(snapshot.logical_targets[0].agent_root_id, "");
+        assert_eq!(
+            snapshot.logical_targets[0].status,
+            skillhub_core::agent::DirectoryObservationStatus::Existing
+        );
+        assert!(!snapshot.logical_targets[0].physical_identity_verified);
     }
 }

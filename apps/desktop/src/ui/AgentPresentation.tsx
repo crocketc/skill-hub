@@ -122,6 +122,8 @@ export interface AgentPresentationProps {
   sharedDirectory?: boolean;
   /** Brands that recognise one physical shared directory. */
   sharedAgentBrands?: readonly string[];
+  /** Raw ClientKind values used in each shared brand logo tooltip. */
+  sharedAgentBrandKinds?: Record<string, readonly string[]>;
   density?: AgentPresentationDensity;
 }
 
@@ -134,6 +136,7 @@ export function AgentPresentation({
   kinds,
   sharedDirectory = false,
   sharedAgentBrands = [],
+  sharedAgentBrandKinds = {},
   density = "full",
 }: AgentPresentationProps): JSX.Element {
   const { t } = useTranslation();
@@ -141,14 +144,17 @@ export function AgentPresentation({
   const isShared = sharedDirectory || resolvedKinds.includes("shared_directory");
   const visibleKinds = isShared ? ["shared_directory" as const] : resolvedKinds;
   const resolvedBrand = brand?.trim() || agentBrandKey(agentId);
-  const labels = isShared && sharedAgentBrands.length > 0
-    ? [...new Set(sharedAgentBrands)].map((candidate) => brandDisplayName(candidate))
-    : visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
-  const brandLabel = isShared ? String(t("agents.sharedBrand")) : brandDisplayName(resolvedBrand);
-  // 独立共享目录实体的名称就是「共享目录」；只有列出关联品牌时才加「共享」前缀。
-  const accessibleName = isShared && sharedAgentBrands.length === 0
-    ? labels.filter(Boolean).join("/")
-    : [brandLabel, ...labels].filter(Boolean).join(" · ");
+  const sharedTitle = String(t("agents.sharedDirectoryTitle"));
+  const labels = visibleKinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+  const accessibleName = isShared
+    ? [sharedTitle, ...sharedAgentBrands.map((candidate) => {
+      const kindsForBrand = sharedAgentBrandKinds[candidate] ?? [];
+      const kindLabels = kindsForBrand
+        .filter(isAgentKindKey)
+        .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+      return [brandDisplayName(candidate), ...kindLabels].join(" · ");
+    })].filter(Boolean).join("；")
+    : [brandDisplayName(resolvedBrand), ...labels].filter(Boolean).join(" · ");
 
   return (
     <span
@@ -157,8 +163,24 @@ export function AgentPresentation({
       data-agent-kind={visibleKinds.join(",")}
       title={accessibleName}
     >
-      {isShared ? <span className="sh-agent-presentation__shared-brand">{brandLabel}</span> : <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />}
-      {density === "full" ? <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span> : null}
+      {isShared ? (
+        <>
+          <span aria-hidden="true" className="sh-agent-presentation__vercel-logo" />
+          {density === "full" ? <span className="sh-agent-presentation__shared-title">{sharedTitle}</span> : null}
+          <span className="sh-agent-presentation__shared-brands">
+            {[...new Set(sharedAgentBrands)].map((candidate) => {
+              const kindLabels = (sharedAgentBrandKinds[candidate] ?? [])
+                .filter(isAgentKindKey)
+                .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+              const label = [brandDisplayName(candidate), ...kindLabels].join(" · ");
+              return <BrandTag brand={candidate} iconOnly title={label} key={candidate} />;
+            })}
+          </span>
+        </>
+      ) : (
+        <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />
+      )}
+      {!isShared && density === "full" ? <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span> : null}
     </span>
   );
 }

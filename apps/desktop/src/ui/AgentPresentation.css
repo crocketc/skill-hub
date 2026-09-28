@@ -31,6 +31,42 @@
   white-space: nowrap;
 }
 
+.sh-agent-presentation__vercel-logo {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-right: 0.55rem solid transparent;
+  border-bottom: 0.95rem solid #111;
+  border-left: 0.55rem solid transparent;
+}
+
+.sh-agent-presentation__shared-title {
+  color: var(--ui-ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sh-agent-presentation__shared-brands {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.sh-agent-presentation__shared-brands .sh-brand-tag--icon-only {
+  border-radius: 999px;
+  display: inline-grid;
+  height: 1.35rem;
+  overflow: hidden;
+  padding: 0.15rem;
+  place-items: center;
+  width: 1.35rem;
+}
+
+.sh-agent-presentation__shared-brands .sh-brand-tag__icon {
+  height: 0.9rem;
+  width: 0.9rem;
+}
+
 .sh-agent-presentation--compact {
   flex-wrap: nowrap;
 }

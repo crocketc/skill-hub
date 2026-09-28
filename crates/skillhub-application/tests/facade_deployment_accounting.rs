@@ -78,6 +78,7 @@ async fn harness(client_id: &str, markdown_name: &str) -> Harness {
             client_id: client_id.into(),
             scope: TargetScope::Global,
             path: target_root.path().to_string_lossy().into_owned(),
+            agent_root_id: "fixture-root".into(),
             marker: "SKILL.md".into(),
             precedence: DirectoryPrecedence::Preferred,
             shared_reference: false,
@@ -87,8 +88,11 @@ async fn harness(client_id: &str, markdown_name: &str) -> Harness {
             writable: true,
             available: true,
             physical_id,
+            status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
         }],
         physical_targets: Vec::new(),
+        agent_roots: Vec::new(),
     };
     database
         .agent_repository()
@@ -830,6 +834,7 @@ async fn targeted_harness(
                 client_id: "agent-skills.directory".into(),
                 scope: skillhub_core::TargetScope::Global,
                 path: target_root.path().to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: skillhub_core::DirectoryPrecedence::Preferred,
                 shared_reference: true,
@@ -839,8 +844,11 @@ async fn targeted_harness(
                 writable: true,
                 available: true,
                 physical_id: physical_id.clone(),
+                status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         };
         database
             .agent_repository()

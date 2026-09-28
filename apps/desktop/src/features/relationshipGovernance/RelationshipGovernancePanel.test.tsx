@@ -63,7 +63,7 @@ it("renders structured impact facts per group without backend prose", async () =
   // 不阻止第一个成员的登记 Agent 出现。
   expect(screen.getByText(/2 个 Skill 将导入集中库。受影响 Agent：/)).toBeVisible();
   expect(screen.getAllByLabelText("Trae · 终端").length).toBeGreaterThan(0);
-  expect(screen.getAllByLabelText("共享目录").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("Agent共享目录").length).toBeGreaterThan(0);
   expect(screen.getByText("通用目录直接读取")).toBeVisible();
   // 回退方式按分类给出，文案来自 i18n 而不是后端。
   expect(
@@ -130,7 +130,7 @@ it("renders relationship governance copy in the active English locale", async ()
   expect(screen.getByText("Shared directory reads")).toBeVisible();
   expect(screen.getByText(/2 skills will be imported into the central library. Affected agents:/)).toBeVisible();
   expect(screen.getAllByLabelText("Trae · Terminal").length).toBeGreaterThan(0);
-  expect(screen.getAllByLabelText("Shared directory").length).toBeGreaterThan(0);
+  expect(screen.getAllByLabelText("Agent shared directory").length).toBeGreaterThan(0);
   expect(
     screen.getByText(
       "Recovery: the shared directory itself is not modified by this action.",

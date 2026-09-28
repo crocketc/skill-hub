@@ -3,6 +3,37 @@ use serde::{Deserialize, Serialize};
 use super::{AgentProfile, ClientKind, OperatingSystem, TargetScope};
 use crate::AppResult;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectoryObservationStatus {
+    Existing,
+    Missing,
+    NonDirectory,
+    Inaccessible,
+    BrokenLink,
+}
+
+impl Default for DirectoryObservationStatus {
+    fn default() -> Self {
+        Self::Existing
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentRootObservation {
+    pub id: String,
+    pub profile_id: String,
+    pub client_id: String,
+    pub scope: TargetScope,
+    pub path: String,
+    pub status: DirectoryObservationStatus,
+    pub exists: bool,
+    pub readable: bool,
+    pub writable: bool,
+    pub physical_id: Option<String>,
+    pub physical_identity_verified: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ClientInstance {
     pub profile_id: String,
@@ -28,6 +59,8 @@ pub struct LogicalTarget {
     pub client_id: String,
     pub scope: TargetScope,
     pub path: String,
+    #[serde(default)]
+    pub agent_root_id: String,
     pub marker: String,
     pub precedence: super::DirectoryPrecedence,
     /// `true` for cross-brand shared references (`.agents/skills`): the
@@ -46,6 +79,10 @@ pub struct LogicalTarget {
     pub writable: bool,
     pub available: bool,
     pub physical_id: String,
+    #[serde(default)]
+    pub status: DirectoryObservationStatus,
+    #[serde(default)]
+    pub physical_identity_verified: bool,
 }
 
 impl LogicalTarget {
@@ -83,6 +120,8 @@ pub struct DiscoverySnapshot {
     pub generation: String,
     pub observed_at: String,
     pub instances: Vec<ClientInstance>,
+    #[serde(default)]
+    pub agent_roots: Vec<AgentRootObservation>,
     pub logical_targets: Vec<LogicalTarget>,
     pub physical_targets: Vec<PhysicalTarget>,
 }

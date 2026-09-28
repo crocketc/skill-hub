@@ -64,8 +64,9 @@ it("keeps the shared directory as a standalone user-facing entity", async () => 
     sharedDirectory: true,
   });
 
-  expect(screen.getByText("共享目录")).toBeVisible();
+  expect(screen.getByText("Agent共享目录")).toBeVisible();
   expect(container.querySelector(".sh-brand-tag")).toBeNull();
+  expect(container.querySelector(".sh-agent-presentation__vercel-logo")).toBeInTheDocument();
   expect(screen.queryByText("agent-skills.shared-directory")).not.toBeInTheDocument();
 });
 
@@ -74,10 +75,12 @@ it("makes one shared directory the brand and recognised vendors its visible type
     agentId: "agent-skills.shared-directory",
     sharedDirectory: true,
     sharedAgentBrands: ["anthropic", "codex"],
+    sharedAgentBrandKinds: { anthropic: ["desktop"], codex: ["cli"] },
   });
 
-  expect(screen.getByText("共享")).toBeVisible();
-  expect(screen.getByText("Claude/Codex")).toBeVisible();
+  expect(screen.getByText("Agent共享目录")).toBeVisible();
+  expect(screen.getByTitle("Claude · 桌面端")).toBeInTheDocument();
+  expect(screen.getByTitle("Codex · 终端")).toBeInTheDocument();
 });
 
 it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {

@@ -8,8 +8,8 @@ pub use custom::{
     PathGrantResolver, ResolvedPathGrant,
 };
 pub use discovery::{
-    AgentRepository, ClientInstance, ClientPresence, DiscoverySnapshot, LogicalTarget,
-    PhysicalTarget,
+    AgentRepository, AgentRootObservation, ClientInstance, ClientPresence,
+    DirectoryObservationStatus, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
 };
 pub use profile::{
     validate_profile_strict, AgentClient, AgentProfile, CallPolicy, ClientKind,

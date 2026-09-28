@@ -73,12 +73,12 @@ async function renderListPage(facade: AgentFacade, localeAgents?: AgentView[]) {
   );
 }
 
-it("refreshes the card counts when a deployment commit broadcasts changed facts", async () => {
-  // DEV-22：部署提交成功后 Agent 页此前收不到任何通知，卡片计数停在旧值。
-  // 现在监听部署事实广播并重读列表。
+it("refreshes directory card facts when a deployment commit broadcasts changed facts", async () => {
+  // 卡片不展示 Skill/部署数量，但部署事实变化仍需触发卡片重新读取。
   const facade = facadeWith();
   renderListPage(facade);
-  expect(await screen.findByText("2 个 Skill · 5 条部署关系")).toBeVisible();
+  expect(await screen.findAllByTestId("agent-card")).toHaveLength(2);
+  expect(screen.queryByText("2 个 Skill · 5 条部署关系")).not.toBeInTheDocument();
   expect(facade.list).toHaveBeenCalledTimes(1);
 
   notifyDeploymentFactsChanged();
@@ -87,9 +87,8 @@ it("refreshes the card counts when a deployment commit broadcasts changed facts"
 });
 
 it("merges directory-only clients into their brand card instead of standalone cards", async () => {
-  // 验收反馈（2026-09-25）：仅发现相关目录（directory_only）的客户端
-  // 不应单独出卡；同品牌已有目录卡时并入并合并类型徽标，整品牌都无目录
-  // 时也只出一张卡。
+  // 无安装根目录的品牌不会出卡；已识别但技能目录待创建的类型不能和
+  // 已验证物理目录合并，避免把不同候选身份误判成同一目录。
   const traeAgents: AgentView[] = [
     {
       brand: "Trae",
@@ -145,11 +144,9 @@ it("merges directory-only clients into their brand card instead of standalone ca
 
   expect((await screen.findAllByText("Trae")).length).toBeGreaterThan(0);
   expect(screen.getAllByText("Lore").length).toBeGreaterThan(0);
-  expect(screen.getAllByTestId("agent-card")).toHaveLength(2);
-  // Trae 卡并入 trae.work 后仍如实展示可用；Lore 整品牌无目录，合并为
-  // 一张卡并保留诚实的「仅发现相关目录」状态。
-  expect(screen.getAllByText("仅发现相关目录")).toHaveLength(1);
-  expect(screen.getByText("可访问")).toBeVisible();
+  expect(screen.getAllByTestId("agent-card")).toHaveLength(4);
+  expect(screen.queryByText("仅发现相关目录")).not.toBeInTheDocument();
+  expect(screen.queryByText("可访问")).not.toBeInTheDocument();
 });
 
 it("tiles every agent card in a single page-level grid", async () => {
@@ -214,7 +211,7 @@ it("renders built-in directories as separate read-only cards with guidance", asy
   expect(badge.className).toContain("sh-agent-card__builtin");
   // 可访问状态徽标仍是头部直接子元素（右上角，与其他卡片一致）。
   const head = badge.closest(".sh-agent-card__head") as HTMLElement;
-  expect(within(head).getAllByText("可访问")).toHaveLength(1);
+  expect(within(head).queryByText("可访问")).not.toBeInTheDocument();
   // 提示段压缩为行动指引，不再复述只读政策。
   expect(within(card).getByText(/手动管理/)).toBeVisible();
   expect(within(card).queryByText(/由平台自带管理/)).not.toBeInTheDocument();
@@ -228,9 +225,9 @@ it("refreshes discovery facts and keeps every agent visible", async () => {
 
   expect((await screen.findAllByTestId("agent-card")).length).toBeGreaterThan(0);
   expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
-  expect(screen.getByText("可访问")).toBeVisible();
-  expect(screen.getByText("自定义 Agent")).toBeVisible();
-  expect(screen.getByText("2 个 Skill · 5 条部署关系")).toBeVisible();
+  expect(screen.getByRole("link", { name: "OpenAI · 终端" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Acme · Agent" })).toBeVisible();
+  expect(screen.queryByText("2 个 Skill · 5 条部署关系")).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "重新扫描" }));
 
@@ -275,8 +272,8 @@ it("aggregates duplicate deployment relations by unique skill per agent", async 
 
   renderListPage(facade, duplicated);
 
-  expect(await screen.findByText("2 个 Skill · 5 条部署关系")).toBeVisible();
-  expect(screen.queryByText(/5 个受管部署/)).not.toBeInTheDocument();
+  expect(await screen.findAllByTestId("agent-card")).toHaveLength(1);
+  expect(screen.queryByText("2 个 Skill · 5 条部署关系")).not.toBeInTheDocument();
 });
 
 it("merges same-brand agents on one directory and presents their platform types once", async () => {
@@ -330,8 +327,7 @@ it("offers an explicit custom agent creation entry with the filled values", asyn
   await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
 });
 
-it("edits a custom agent through its list entry with prefilled values", async () => {
-  const user = userEvent.setup();
+it("keeps custom agent editing inside the detail entry", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
@@ -339,26 +335,11 @@ it("edits a custom agent through its list entry with prefilled values", async ()
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
-  await user.click(within(customItem).getByRole("button", { name: "编辑" }));
-
-  expect(await screen.findByDisplayValue("Reviewer")).toBeVisible();
-  expect(await screen.findByDisplayValue("https://acme.example/docs")).toBeVisible();
-  expect((await screen.findAllByText("编辑自定义 Agent")).length).toBeGreaterThan(0);
-
-  await user.clear(screen.getByLabelText("显示名称"));
-  await user.type(screen.getByLabelText("显示名称"), "Reviewer 2");
-  await user.click(screen.getByRole("button", { name: "保存" }));
-
-  await waitFor(() => expect(facade.updateCustomAgent).toHaveBeenCalledWith("custom-reviewer", {
-    brand: "Acme",
-    displayName: "Reviewer 2",
-    directoryPath: "D:/Agents/reviewer",
-    referenceUrl: "https://acme.example/docs",
-  }));
+  expect(within(customItem).getByRole("link", { name: "Acme · Agent" })).toHaveAttribute("href", "/agents/custom-reviewer");
+  expect(within(customItem).queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
 });
 
-it("removes a custom agent only after explicit confirmation", async () => {
-  const user = userEvent.setup();
+it("does not place custom agent removal on the card", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
@@ -366,15 +347,8 @@ it("removes a custom agent only after explicit confirmation", async () => {
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
-  await user.click(within(customItem).getByRole("button", { name: "删除" }));
-
-  expect(await screen.findByText("删除自定义 Agent")).toBeVisible();
+  expect(within(customItem).queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
   expect(facade.removeCustomAgent).not.toHaveBeenCalled();
-
-  await user.click(screen.getByRole("button", { name: "确认删除" }));
-
-  await waitFor(() => expect(facade.removeCustomAgent).toHaveBeenCalledWith("custom-reviewer"));
-  await waitFor(() => expect(facade.list).toHaveBeenCalledTimes(2));
 });
 
 it("does not offer custom agent actions for discovered agents", async () => {
@@ -424,8 +398,7 @@ it("returns drawer focus to the trigger that opened it", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: "新增自定义 Agent" })).toHaveFocus());
 });
 
-it("returns drawer focus to the card edit trigger after editing", async () => {
-  const user = userEvent.setup();
+it("keeps card actions limited to the detail link", async () => {
   const facade = facadeWith();
 
   renderListPage(facade);
@@ -433,18 +406,10 @@ it("returns drawer focus to the card edit trigger after editing", async () => {
 
   const customItem = screen.getAllByTestId("agent-card")[0];
   if (!customItem) throw new Error("custom agent item missing");
-  await user.click(within(customItem).getByRole("button", { name: "编辑" }));
-  expect(await screen.findByRole("dialog")).toBeVisible();
-
-  await user.click(screen.getByRole("button", { name: "关闭" }));
-
-  await waitFor(() => expect(within(customItem).getByRole("button", { name: "编辑" })).toHaveFocus());
+  expect(within(customItem).getByRole("link", { name: "Acme · Agent" })).toHaveAttribute("href", "/agents/custom-reviewer");
 });
 
-// DEV-88（2026-09-25 验收反馈）：品牌卡上 shared_reference 的 .agents\skills
-// 路径行渲染为「支持共享目录」chip（可点击定位共享目录卡），具体路径只在
-// 共享目录卡展示一次；非共享路径不受影响。
-it("replaces shared-reference path rows with a shared-directory chip", async () => {
+it("shows shared-directory support on the brand card and keeps the shared card independent", async () => {
   const agents: AgentView[] = [
     {
       brand: "Pi",
@@ -459,6 +424,7 @@ it("replaces shared-reference path rows with a shared-directory chip", async () 
       status: "accessible",
       kinds: ["cli"],
       sharedReferencePaths: ["C:/Users/demo/.agents/skills"],
+      supportsSharedDirectory: true,
     },
     {
       brand: "Agent Skills",
@@ -472,6 +438,7 @@ it("replaces shared-reference path rows with a shared-directory chip", async () 
       relations: [],
       status: "accessible",
       kinds: ["shared_directory"],
+      sharedAgentBrands: ["Pi"],
     },
   ];
 
@@ -482,14 +449,14 @@ it("replaces shared-reference path rows with a shared-directory chip", async () 
   // 共享目录卡：唯一仍展示 .agents\skills 具体路径的卡片。
   const sharedCard = cards.find((card) => /\.agents.{0,3}skills/i.test(card.textContent ?? "")) as HTMLElement;
 
-  // 品牌卡：共享路径行替换为 chip，chip 指向共享目录卡。
-  const chip = within(piCard).getByRole("link", { name: "支持共享目录" });
-  expect(chip).toHaveAttribute("href", "/agents/agent-skills.shared-directory");
+  // 品牌卡只显示支持事实，不把共享目录作为合卡依据。
+  expect(within(piCard).getByText("支持共享目录")).toBeVisible();
   expect(within(piCard).queryByText(/\.agents.{0,3}skills/i)).not.toBeInTheDocument();
   // 非共享路径照常展示。
   expect(within(piCard).getByText(/\.pi.{0,3}agent.{0,3}skills/i)).toBeInTheDocument();
 
   // 共享目录卡本体仍展示具体路径（全站唯一），不再叠加 chip。
   expect(within(sharedCard).getByText(/\.agents.{0,3}skills/i)).toBeInTheDocument();
-  expect(within(sharedCard).queryByRole("link", { name: "支持共享目录" })).not.toBeInTheDocument();
+  expect(within(sharedCard).queryByText("支持共享目录")).not.toBeInTheDocument();
+  expect(within(sharedCard).getByText("Agent共享目录")).toBeVisible();
 });

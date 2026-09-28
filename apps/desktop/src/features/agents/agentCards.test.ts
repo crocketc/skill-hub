@@ -37,7 +37,8 @@ describe("countDiscoveredAgentCards", () => {
       agent({ id: "zcode.desktop", brand: "ZCode", client: "zcode-desktop", discoveredPaths: ["C:/u/.zcode/skills"] }),
     ];
 
-    expect(countDiscoveredAgentCards(agents)).toBe(3);
+    // 无物理目录的类型不能与已有目录合并；只有确认同一物理目录才合卡。
+    expect(countDiscoveredAgentCards(agents)).toBe(4);
   });
 
   it("excludes custom agents from the discovered caliber", () => {
@@ -77,10 +78,9 @@ describe("buildAgentCardViews kind presentation", () => {
 });
 
 describe("buildAgentCardViews shared-reference facts (DEV-88)", () => {
-  it("carries normalized shared-reference path keys through merges", async () => {
-    // DEV-88（2026-09-25 验收反馈）：Agent 卡上 shared_reference 的
-    // .agents\skills 路径行要换成「支持共享目录」chip。视图层必须把
-    // shared_reference 路径（文件系统身份归一）随卡传递，合卡时取并集。
+  it("keeps shared-directory support separate from card merging", async () => {
+    // 共享目录是独立卡；品牌卡只保留是否支持的事实，不把共享路径作为
+    // 合卡依据，也不重复展示共享目录路径。
     const { buildAgentCardViews } = await import("./agentCards");
     const agents: AgentView[] = [
       agent({
@@ -90,6 +90,7 @@ describe("buildAgentCardViews shared-reference facts (DEV-88)", () => {
         kinds: ["cli"],
         discoveredPaths: ["C:/u/.codex/skills", "C:/u/.agents/skills"],
         sharedReferencePaths: ["C:\\u\\.agents\\skills"],
+        supportsSharedDirectory: true,
       }),
       agent({
         id: "openai.codex-desktop",
@@ -98,6 +99,7 @@ describe("buildAgentCardViews shared-reference facts (DEV-88)", () => {
         kinds: ["desktop"],
         discoveredPaths: ["C:/u/.codex/skills", "c:\U\.AGENTS\skills"],
         sharedReferencePaths: ["c:\\U\\.AGENTS\\skills"],
+        supportsSharedDirectory: true,
       }),
       agent({
         id: "zcode.desktop",
@@ -110,10 +112,8 @@ describe("buildAgentCardViews shared-reference facts (DEV-88)", () => {
 
     const views = buildAgentCardViews(agents);
     const openai = views.get("openai")![0];
-    expect(openai.sharedPathKeys).toHaveLength(1);
-    // 大小写/斜杠归一后的文件系统身份。
-    expect(openai.sharedPathKeys[0]).toBe("c:/u/.agents/skills");
-    expect(openai.sharedPathKeys).toContain("c:/u/.agents/skills");
+    expect(openai.sharedPathKeys).toHaveLength(0);
+    expect(openai.agent.supportsSharedDirectory).toBe(true);
     const zcode = views.get("zcode")![0];
     expect(zcode.sharedPathKeys).toHaveLength(0);
   });

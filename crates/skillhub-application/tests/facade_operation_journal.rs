@@ -46,6 +46,7 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
                 client_id: logical_id.into(),
                 scope: TargetScope::Global,
                 path: path.to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -55,8 +56,11 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
                 writable: true,
                 available: true,
                 physical_id: physical_id.clone(),
+                status: skillhub_core::agent::DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         })
         .expect("seed registered target");
     physical_id

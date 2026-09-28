@@ -14,6 +14,7 @@ export function DeploymentTargetPresentation({
         agentId={target.agentClientId}
         brand={target.agentProfileId}
         sharedAgentBrands={target.sharedAgentBrands}
+        sharedAgentBrandKinds={target.sharedAgentBrandKinds}
         sharedDirectory={target.sharedDirectory}
       />
     );

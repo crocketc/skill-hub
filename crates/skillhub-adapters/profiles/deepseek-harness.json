@@ -19,12 +19,14 @@
       "path_candidates": [
         {
           "path": "{project_root}/.dsh/skills",
+          "agent_root": "{project_root}/.dsh",
           "scope": "project",
           "precedence": "preferred",
           "marker": "SKILL.md"
         },
         {
           "path": "{project_root}/.agents/skills",
+          "agent_root": "{project_root}/.dsh",
           "scope": "project",
           "precedence": "lower_priority_copy",
           "marker": "SKILL.md",
@@ -32,12 +34,14 @@
         },
         {
           "path": "{user_home}/.dsh/skills",
+          "agent_root": "{user_home}/.dsh",
           "scope": "global",
           "precedence": "preferred",
           "marker": "SKILL.md"
         },
         {
           "path": "{user_home}/.agents/skills",
+          "agent_root": "{user_home}/.dsh",
           "scope": "global",
           "precedence": "lower_priority_copy",
           "marker": "SKILL.md",
@@ -70,12 +74,14 @@
       "path_candidates": [
         {
           "path": "{project_root}/.dsh/skills",
+          "agent_root": "{project_root}/.dsh",
           "scope": "project",
           "precedence": "preferred",
           "marker": "SKILL.md"
         },
         {
           "path": "{project_root}/.agents/skills",
+          "agent_root": "{project_root}/.dsh",
           "scope": "project",
           "precedence": "lower_priority_copy",
           "marker": "SKILL.md",
@@ -83,12 +89,14 @@
         },
         {
           "path": "{user_home}/.dsh/skills",
+          "agent_root": "{user_home}/.dsh",
           "scope": "global",
           "precedence": "preferred",
           "marker": "SKILL.md"
         },
         {
           "path": "{user_home}/.agents/skills",
+          "agent_root": "{user_home}/.dsh",
           "scope": "global",
           "precedence": "lower_priority_copy",
           "marker": "SKILL.md",

@@ -75,6 +75,38 @@ fn shared_reference_defaults_to_false_when_omitted() {
 }
 
 #[test]
+fn accepts_agent_root_and_defaults_legacy_candidate_to_skill_path() {
+    let json = profile_with_path("{user_home}/.dsh/skills").replace(
+        r#""path":"{user_home}/.dsh/skills""#,
+        r#""path":"{user_home}/.dsh/skills","agent_root":"{user_home}/.dsh""#,
+    );
+    let profile = parse_custom_profile(&json).unwrap();
+    assert_eq!(
+        profile.clients[0].path_candidates[0].agent_root.as_deref(),
+        Some("{user_home}/.dsh")
+    );
+
+    let legacy = parse_custom_profile(&profile_with_path("{user_home}/.agents/skills")).unwrap();
+    assert_eq!(
+        legacy.clients[0].path_candidates[0].agent_root.as_deref(),
+        None
+    );
+}
+
+#[test]
+fn rejects_unsafe_agent_root() {
+    for agent_root in ["{user_home}", "{user_home}/..", "{user_home}/**/skills"] {
+        let json = profile_with_path("{user_home}/.example/skills").replace(
+            r#""path":"{user_home}/.example/skills""#,
+            &format!(
+                r#""path":"{{user_home}}/.example/skills","agent_root":{agent_root:?}""#
+            ),
+        );
+        assert!(parse_custom_profile(&json).is_err(), "accepted {agent_root}");
+    }
+}
+
+#[test]
 fn rejects_missing_or_empty_display_name() {
     let missing = r#"{
       "profile_version": 1, "research_date": "2026-09-15",

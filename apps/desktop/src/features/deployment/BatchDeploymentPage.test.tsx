@@ -106,6 +106,35 @@ it("hides unavailable targets from the default selection list (DEV-11)", async (
   expect(screen.queryByLabelText("Read-only Agent")).not.toBeInTheDocument();
 });
 
+it("creates a pending Skill directory only after explicit confirmation", async () => {
+  const user = userEvent.setup();
+  const pending = {
+    ...deploymentTargetsFixture()[0],
+    available: false,
+    directoryStatus: "missing" as const,
+    physicalIdentityVerified: false,
+  };
+  const created = { ...pending, available: true, directoryStatus: "existing" as const, physicalIdentityVerified: true };
+  let isCreated = false;
+  const ensureTargetDirectory = vi.fn(async () => { isCreated = true; });
+  const facade: BatchDeploymentFacade = {
+    listTargets: vi.fn(async () => [isCreated ? created : pending]),
+    ensureTargetDirectory,
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  await user.click(await screen.findByRole("button", { name: "创建并加入派发" }));
+  expect(await screen.findByText("创建 Skill 目录？")).toBeVisible();
+  expect(ensureTargetDirectory).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("button", { name: "确认创建" }));
+  await waitFor(() => expect(ensureTargetDirectory).toHaveBeenCalledWith(pending.id));
+  expect(await screen.findByLabelText(pending.agentClientId ?? pending.label)).toBeVisible();
+});
+
 it("renders selectable deployment targets as compact cards with full-path hints (DEV-82)", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const targets = deploymentTargetsFixture().slice(0, 2);

@@ -42,6 +42,7 @@ fn snapshot_build_counts_discovered_agents_from_the_persisted_discovery_snapshot
         ],
         logical_targets: vec![],
         physical_targets: vec![],
+        agent_roots: vec![],
     };
     db.agent_repository().replace(&snapshot).unwrap();
 

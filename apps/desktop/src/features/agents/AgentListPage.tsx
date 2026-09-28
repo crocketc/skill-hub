@@ -8,14 +8,12 @@ import { operationTracker, type OperationTracker } from "../../platform/operatio
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
 import { AgentPresentation } from "../../ui/AgentPresentation";
-import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { PageHeader } from "../../ui/PageHeader";
-import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
-import { type AgentFacade, type AgentView, unavailableAgentFacade } from "./api";
-import { buildAgentCardViews, normalizePathKey } from "./agentCards";
+import { type AgentFacade, type AgentDirectoryView, type AgentView, unavailableAgentFacade } from "./api";
+import { buildAgentCardViews } from "./agentCards";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
@@ -35,6 +33,8 @@ export function AgentListPage({
   tracker = operationTracker,
 }: AgentListPageProps) {
   const { t } = useTranslation();
+  const translate = (key: string, options?: Record<string, unknown>): string =>
+    String(t(key as never, options as never));
   const notifications = useOptionalAppNotifications();
   const [agents, setAgents] = useState<AgentView[]>();
   const [error, setError] = useState<string>();
@@ -53,8 +53,7 @@ export function AgentListPage({
     return () => { active = false; };
   }, [facade, revision, t]);
 
-  // DEV-22：部署提交成功后 Agent 卡片的 Skill/部署关系计数必须即时刷新
-  // （本页是本地 state 拉取，没有可失效的 query key，靠应用内广播触发重读）。
+  // 部署事实变化后重读目录视图，卡片只更新目录与能力图标，数量留在详情页。
   useEffect(() => onDeploymentFactsChanged(() => {
     setRevision((current) => current + 1);
   }), []);
@@ -75,8 +74,6 @@ export function AgentListPage({
   );
   // DEV-88：共享目录卡在页面里只有一张；品牌卡上的「支持共享目录」chip
   // 点击后定位到它。不存在时 chip 退化为纯标注（仍不显示具体路径）。
-  const sharedCardId = cards.find(({ sharedDirectory }) => sharedDirectory)?.agent.id;
-
   const rescan = async () => {
     setRefreshing(true);
     setError(undefined);
@@ -99,25 +96,6 @@ export function AgentListPage({
       setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));
     } finally {
       setRefreshing(false);
-    }
-  };
-
-  const removeAgent = async (id: string) => {
-    setError(undefined);
-    try {
-      await runTrackedOperation({
-        kind: "agent_remove",
-        label: t("agents.actions.remove"),
-        mode: "instant",
-        notifications,
-        translate: (key, options) => String(t(key as never, options as never)),
-        successNotice: () => ({ tone: "success", title: t("agents.actions.remove") }),
-        errorNotice: (_error, message) => ({ tone: "danger", title: t("agents.actions.remove"), detail: message }),
-        run: () => facade.removeCustomAgent(id),
-      });
-      setRevision((current) => current + 1);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));
     }
   };
 
@@ -148,7 +126,7 @@ export function AgentListPage({
       />
       {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : (
         <ul aria-label={t("agents.title")} className="sh-agents-page__cards">
-          {cards.map(({ agent, kinds, sharedDirectory, sharedPathKeys }) => (
+          {cards.map(({ agent, kinds, sharedDirectory, model }) => (
               <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
                 <div className="sh-agent-card__head">
                   {/* DEV-87（2026-09-25 验收反馈）：三标签融二——左侧为品牌
@@ -160,12 +138,13 @@ export function AgentListPage({
                         agentId={agent.client}
                         brand={agent.brand}
                         kinds={kinds}
+                        sharedAgentBrands={model.sharedAgentBrands}
+                        sharedAgentBrandKinds={model.sharedAgentBrandKinds}
                         sharedDirectory={sharedDirectory}
                       />
                     </Link>
                     {agent.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
                   </div>
-                  <StatusBadge tone={statusTone(agent.status)}>{t(`agents.status.${agent.status}`)}</StatusBadge>
                 </div>
                 {agent.builtin ? (
                   <p className="sh-agent-card__builtin-hint">{t("agents.builtinHint")}</p>
@@ -176,36 +155,13 @@ export function AgentListPage({
                     {/* DEV-88（2026-09-25 验收反馈）：shared_reference 路径
                         不展示具体路径（唯一路径在共享目录卡上），替换为
                         「支持共享目录」chip，点击定位共享目录卡。 */}
-                    {renderCardPaths({
-                      agent,
-                      sharedPathKeys,
-                      sharedCardId,
-                      label: t("agents.sharedDirectoryChip"),
-                    })}
+                    {model.directories.map((directory, index) => renderDirectory(directory, index, translate))}
                   </ul>
                 </div>
-                <div className="sh-agent-card__meta">
-                  <span>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</span>
-                </div>
-                {agent.status === "custom" ? (
-                  <div className="sh-agent-card__actions">
-                    <Button
-                      onClick={(event) => { drawerTriggerRef.current = event.currentTarget; setFormState({ agent, mode: "edit" }); }}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {t("agents.actions.edit")}
-                    </Button>
-                    <ConfirmDialog
-                      cancelLabel={t("agents.removeDialog.cancel")}
-                      confirmLabel={t("agents.removeDialog.confirm")}
-                      description={t("agents.removeDialog.description", { name: agent.instance })}
-                      onConfirm={() => void removeAgent(agent.id)}
-                      title={t("agents.removeDialog.title")}
-                      trigger={<Button size="sm" variant="danger">{t("agents.actions.remove")}</Button>}
-                    />
-                  </div>
+                {model.supportsSharedDirectory && !model.sharedDirectory ? (
+                  <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
                 ) : null}
+                <DeploymentCapabilityIcons directory={model.directories[0]} t={translate} />
               </li>
             ))}
         </ul>
@@ -239,52 +195,54 @@ export function AgentListPage({
  * 识别，合卡后可能有多条拼法变体）只渲染一枚「支持共享目录」chip；共享
  * 目录卡存在时 chip 可点击定位到它，具体路径只在共享目录卡上展示一次。
  */
-function renderCardPaths({
-  agent,
-  label,
-  sharedCardId,
-  sharedPathKeys,
-}: {
-  agent: AgentView;
-  label: string;
-  sharedCardId: string | undefined;
-  sharedPathKeys: string[];
-}): JSX.Element[] {
-  const shared = new Set(sharedPathKeys);
-  const renderedShared = new Set<string>();
-  const items: JSX.Element[] = [];
-  for (const path of agent.discoveredPaths) {
-    const key = normalizePathKey(path);
-    if (shared.has(key)) {
-      if (renderedShared.has(key)) continue;
-      renderedShared.add(key);
-      items.push(
-        sharedCardId ? (
-          <li key={`shared-${key}`}>
-            <Link className="sh-agent-card__shared-chip" to={`/agents/${sharedCardId}`}>
-              {label}
-            </Link>
-          </li>
-        ) : (
-          <li key={`shared-${key}`}>
-            <span className="sh-agent-card__shared-chip">{label}</span>
-          </li>
-        ),
-      );
-      continue;
-    }
-    items.push(
-      <li key={path}>
-        <code className="sh-agent-card__path">{displayPath(path)}</code>
-      </li>,
-    );
-  }
-  return items;
+function renderDirectory(
+  directory: AgentDirectoryView,
+  index: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): JSX.Element {
+  const content = directory.status === "pending_creation"
+    ? t("agents.pathPending")
+    : directory.path
+      ? displayPath(directory.path)
+      : t("agents.pathUnavailable");
+  return (
+    <li key={`${directory.role}-${directory.path ?? index}`}>
+      <span className={`sh-agent-card__path sh-agent-card__path--${directory.status}`}>
+        {content}
+      </span>
+    </li>
+  );
 }
 
-function statusTone(status: AgentView["status"]): "info" | "neutral" | "success" | "warning" {
-  if (status === "accessible") return "success";
-  if (status === "inaccessible") return "warning";
-  if (status === "custom") return "info";
-  return "neutral";
+function DeploymentCapabilityIcons({
+  directory,
+  t,
+}: {
+  directory?: AgentDirectoryView;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}): JSX.Element | null {
+  if (!directory) return null;
+  const methods = [
+    ["managed_copy", "⧉"],
+    ["symbolic_link", "↗"],
+    ["directory_junction", "⊞"],
+  ] as const;
+  return (
+    <div aria-label={String(t("agents.deploymentMethods.label"))} className="sh-agent-card__deployment-methods">
+      {methods.map(([mode, symbol]) => {
+        const supported = directory.supportedModes.includes(mode);
+        const recommended = directory.preferredMode === mode;
+        return (
+          <span
+            aria-label={String(t(`agents.deploymentMethods.${mode}.${supported ? "supported" : "unsupported"}`))}
+            className={`sh-agent-card__deployment-method ${supported ? "is-supported" : "is-unsupported"} ${recommended ? "is-recommended" : ""}`}
+            key={mode}
+            title={String(t(`agents.deploymentMethods.${mode}.${supported ? "supported" : "unsupported"}`))}
+          >
+            <span aria-hidden="true">{symbol}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
 }

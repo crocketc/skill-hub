@@ -199,6 +199,27 @@
   border-color: var(--ui-control-border-hover);
 }
 
+.sh-deployment-target-card--pending {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-style: dashed;
+  cursor: default;
+}
+
+.sh-workflow-target--pending {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-style: dashed;
+  cursor: default;
+}
+
+.sh-workflow-target--pending small {
+  color: var(--ui-ink-muted);
+  font-style: italic;
+}
+
+.sh-deployment-target-card--pending small {
+  font-style: italic;
+}
+
 .sh-deployment-target-card:has(input:focus-visible) {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;

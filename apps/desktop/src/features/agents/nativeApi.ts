@@ -5,13 +5,24 @@ import {
   type AgentProfile,
   type CustomAgent,
   type CustomAgentDraft,
+  type DeploymentTarget,
   type DeploymentRecord,
   type DiscoverySnapshot,
   type LogicalTarget,
   type OperatingSystem,
 } from "../../api/bindings";
 import { countManagedDeployments, deploymentTargetIdSpace, type TargetIdPair } from "../deployment/targetProjection";
-import type { AgentFacade, AgentRelation, AgentStatus, AgentView, CustomAgentFormValues } from "./api";
+import type {
+  AgentDeploymentMode,
+  AgentDirectoryRole,
+  AgentDirectoryStatus,
+  AgentFacade,
+  AgentDirectoryView,
+  AgentRelation,
+  AgentStatus,
+  AgentView,
+  CustomAgentFormValues,
+} from "./api";
 
 function unexpectedResult(operation: string): Error {
   return new Error(`${operation} returned an unexpected native result.`);
@@ -51,6 +62,72 @@ function discoveredStatus(targets: LogicalTarget[]): AgentStatus {
   return existing.some((target) => target.available) ? "accessible" : "inaccessible";
 }
 
+function rootIsRecognized(target: LogicalTarget, snapshot: DiscoverySnapshot): boolean {
+  const roots = snapshot.agent_roots ?? [];
+  if (roots.length === 0) return target.exists;
+  const root = roots.find((candidate) => candidate.id === target.agent_root_id);
+  return root?.exists === true && root.status === "existing";
+}
+
+function directoryStatus(target: LogicalTarget): AgentDirectoryStatus {
+  if (target.status === "non_directory" || target.status === "inaccessible" || target.status === "broken_link") {
+    return target.status;
+  }
+  return target.exists ? "existing" : "pending_creation";
+}
+
+function directoryRole(target: LogicalTarget, sharedClient: boolean): AgentDirectoryRole {
+  if (target.builtin) return "builtin";
+  if (sharedClient || target.shared_reference) return "shared_directory";
+  return target.scope === "project" ? "project" : "agent_native";
+}
+
+function deploymentStatusFor(
+  target: LogicalTarget,
+  deployments: DeploymentRecord[],
+  targetById: Map<string, DeploymentTarget>,
+): AgentDirectoryView["deploymentStatus"] {
+  const deploymentTarget = targetById.get(target.id) ?? targetById.get(target.physical_id);
+  const accepted = new Set([target.id, target.physical_id, deploymentTarget?.id, deploymentTarget?.physical_id].filter(Boolean));
+  const active = deployments.filter((deployment) => deployment.managed && deployment.state !== "removed" && accepted.has(deployment.target_id));
+  if (active.length === 0) return "not_deployed";
+  return active.some((deployment) => deployment.state === "deployed") ? "deployed" : "partially_deployed";
+}
+
+function directoryViewsOf(
+  instance: DiscoverySnapshot["instances"][number],
+  targets: LogicalTarget[],
+  deployments: DeploymentRecord[],
+  deploymentTargets: DeploymentTarget[],
+): AgentDirectoryView[] {
+  const targetById = new Map<string, DeploymentTarget>();
+  for (const target of deploymentTargets) {
+    targetById.set(target.id, target);
+    targetById.set(target.physical_id, target);
+  }
+  const sharedClient = instance.kind === "shared_directory";
+  return targets.map((target) => {
+    const deploymentTarget = targetById.get(target.id) ?? targetById.get(target.physical_id);
+    const supportedModes = (deploymentTarget?.modes ?? []) as AgentDeploymentMode[];
+    return {
+      path: target.exists ? target.path : null,
+      status: directoryStatus(target),
+      role: directoryRole(target, sharedClient),
+      sharedReference: Boolean(target.shared_reference),
+      builtin: Boolean(target.builtin),
+      readable: target.readable,
+      writable: target.writable,
+      available: target.available && target.physical_identity_verified !== false,
+      physicalIdentityVerified: target.physical_identity_verified ?? false,
+      physicalIdentityKey: target.physical_identity_verified ? target.physical_id : undefined,
+      candidateIdentityKey: target.id,
+      supportedModes,
+      preferredMode: deploymentTarget?.preferred_mode as AgentDeploymentMode | undefined,
+      deploymentStatus: deploymentStatusFor(target, deployments, targetById),
+    };
+  });
+}
+
 /**
  * DEV-5：按文件系统身份归并仅斜杠/大小写拼写不同的同一路径。
  * Windows 卷大小写不敏感，折叠大小写比较；POSIX 保持大小写敏感精确比较。
@@ -69,19 +146,24 @@ function dedupePathsByFsIdentity(paths: string[]): string[] {
   return result;
 }
 
-function discoveredAgents(snapshot: DiscoverySnapshot, deployments: DeploymentRecord[]): AgentView[] {
+function discoveredAgents(
+  snapshot: DiscoverySnapshot,
+  deployments: DeploymentRecord[],
+  deploymentTargets: DeploymentTarget[],
+): AgentView[] {
   const views: AgentView[] = [];
   for (const instance of snapshot.instances) {
     const targets = snapshot.logical_targets.filter(
       (target) => target.profile_id === instance.profile_id && target.client_id === instance.client_id,
     );
+    if (!targets.some((target) => rootIsRecognized(target, snapshot))) continue;
     // 2026-09-25 验收裁决：内置技能目录拆成独立的只读视图——路径、状态与
     // 计数都不混入用户级（终端/桌面端）目录；不存在的内置候选保持安静。
     const builtinTargets = targets.filter((target) => target.builtin && target.exists);
     const userTargets = targets.filter((target) => !target.builtin);
-    views.push(agentView(instance, userTargets, deployments, false, snapshot));
+    views.push(agentView(instance, userTargets, deployments, false, snapshot, deploymentTargets));
     if (builtinTargets.length > 0) {
-      views.push(agentView(instance, builtinTargets, deployments, true, snapshot));
+      views.push(agentView(instance, builtinTargets, deployments, true, snapshot, deploymentTargets));
     }
   }
   return views;
@@ -93,6 +175,7 @@ function agentView(
   deployments: DeploymentRecord[],
   builtin: boolean,
   snapshot: DiscoverySnapshot,
+  deploymentTargets: DeploymentTarget[],
 ): AgentView {
   const stats = builtin
     ? { skills: 0, relations: 0 }
@@ -115,6 +198,8 @@ function agentView(
     discoveredPaths: dedupePathsByFsIdentity(
       targets.filter((target) => target.exists).map((target) => target.path),
     ),
+    directoryViews: directoryViewsOf(instance, targets, deployments, deploymentTargets),
+    supportsSharedDirectory: targets.some((target) => target.shared_reference),
     // DEV-88：shared_reference 路径（.agents\skills 等）单独随视图传递，
     // 渲染层把这些路径行替换为「支持共享目录」chip。
     sharedReferencePaths: [
@@ -129,7 +214,32 @@ function agentView(
     officialReference: null,
     relations: targets.map((target) => relationOf(target, snapshot)),
     status: discoveredStatus(targets),
+    sharedAgentBrands: instance.kind === "shared_directory"
+      ? sharedBrandsFor(snapshot, targets)
+      : undefined,
+    sharedAgentBrandKinds: instance.kind === "shared_directory"
+      ? sharedBrandKindsFor(snapshot, targets)
+      : undefined,
   };
+}
+
+function sharedBrandsFor(snapshot: DiscoverySnapshot, sharedTargets: LogicalTarget[]): string[] {
+  const physicalIds = new Set(sharedTargets.filter((target) => target.exists).map((target) => target.physical_id));
+  return [...new Set(snapshot.logical_targets
+    .filter((target) => target.shared_reference && target.exists && physicalIds.has(target.physical_id) && rootIsRecognized(target, snapshot))
+    .map((target) => target.profile_id))].sort();
+}
+
+function sharedBrandKindsFor(snapshot: DiscoverySnapshot, sharedTargets: LogicalTarget[]): Record<string, string[]> {
+  const physicalIds = new Set(sharedTargets.filter((target) => target.exists).map((target) => target.physical_id));
+  const result: Record<string, string[]> = {};
+  for (const target of snapshot.logical_targets) {
+    if (!target.shared_reference || !target.exists || !physicalIds.has(target.physical_id) || !rootIsRecognized(target, snapshot)) continue;
+    const instance = snapshot.instances.find((candidate) => candidate.profile_id === target.profile_id && candidate.client_id === target.client_id);
+    if (!instance) continue;
+    result[target.profile_id] = [...new Set([...(result[target.profile_id] ?? []), instance.kind])];
+  }
+  return result;
 }
 
 function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): AgentView {
@@ -149,6 +259,21 @@ function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): Agent
     managedDeploymentCount: stats.skills,
     managedDeploymentRelationCount: stats.relations,
     discoveredPaths: [agent.directory.path],
+    directoryViews: [{
+      path: agent.directory.path,
+      status: "existing",
+      role: "agent_native",
+      sharedReference: false,
+      builtin: false,
+      readable: true,
+      writable: true,
+      available: true,
+      physicalIdentityVerified: true,
+      physicalIdentityKey: agent.directory.grant_id,
+      supportedModes: ["managed_copy", "symbolic_link", "directory_junction"],
+      preferredMode: "symbolic_link",
+      deploymentStatus: stats.relations > 0 ? "deployed" : "not_deployed",
+    }],
     kinds: [customKind],
     officialReference: agent.profile.official_references[0] ?? null,
     relations: [{
@@ -162,16 +287,21 @@ function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): Agent
 }
 
 async function listAgents(): Promise<AgentView[]> {
-  const [discovery, custom, deployments] = await Promise.all([
+  const [discovery, custom, deployments, deploymentTargets] = await Promise.all([
     queryApplication({ type: "get_discovery_snapshot", payload: null }),
     queryApplication({ type: "list_custom_agents", payload: null }),
     queryApplication({ type: "list_deployments", payload: { skill_id: null } }),
+    queryApplication({ type: "list_deployment_targets", payload: null }),
   ]);
   if (discovery.type !== "discovery_snapshot") throw unexpectedResult("get_discovery_snapshot");
   if (custom.type !== "custom_agents") throw unexpectedResult("list_custom_agents");
   if (deployments.type !== "deployments") throw unexpectedResult("list_deployments");
+  // 兼容旧版测试夹具/桥接：新查询不可用时仍返回目录事实，派发方式图标置灰。
+  const deploymentTargetPayload = deploymentTargets?.type === "deployment_targets"
+    ? deploymentTargets.payload
+    : [];
   return [
-    ...discoveredAgents(discovery.payload, deployments.payload),
+    ...discoveredAgents(discovery.payload, deployments.payload, deploymentTargetPayload),
     ...custom.payload.map((agent) => customAgent(agent, deployments.payload)),
   ];
 }

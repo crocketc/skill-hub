@@ -4,7 +4,7 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::check::CheckRepository;
 use skillhub_core::{
     agent::{
-        ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
+        ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot,
         LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
     },
     api::{
@@ -229,6 +229,7 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     client_id: "codex".into(),
                     scope: TargetScope::Global,
                     path: available_root.path().to_string_lossy().into_owned(),
+                    agent_root_id: "fixture-root".into(),
                     marker: "SKILL.md".into(),
                     precedence: DirectoryPrecedence::Preferred,
                     shared_reference: false,
@@ -239,6 +240,8 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     available: true,
                     physical_id: skillhub_core::physical_id_for_path(available_root.path())
                         .expect("physical id"),
+                    status: DirectoryObservationStatus::Existing,
+                    physical_identity_verified: true,
                 },
                 LogicalTarget {
                     id: "unavailable".into(),
@@ -246,6 +249,7 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     client_id: "unknown".into(),
                     scope: TargetScope::Global,
                     path: unavailable_path.to_string_lossy().into_owned(),
+                    agent_root_id: "fixture-root".into(),
                     marker: "SKILL.md".into(),
                     precedence: DirectoryPrecedence::Unknown,
                     shared_reference: false,
@@ -255,6 +259,8 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     writable: false,
                     available: false,
                     physical_id: "missing".into(),
+                    status: DirectoryObservationStatus::Missing,
+                    physical_identity_verified: false,
                 },
             ],
             physical_targets: vec![PhysicalTarget {
@@ -267,6 +273,7 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                 case_behavior: "unknown".into(),
                 logical_target_ids: vec!["available".into()],
             }],
+            agent_roots: Vec::new(),
         })
         .expect("save discovery");
     let facade = LocalApplicationFacade::new(database);
@@ -311,6 +318,7 @@ async fn initialization_scan_accepts_legacy_profile_client_scope_ids() {
                 client_id: "codex".into(),
                 scope: TargetScope::Global,
                 path: root.path().to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -320,6 +328,8 @@ async fn initialization_scan_accepts_legacy_profile_client_scope_ids() {
                 writable: true,
                 available: true,
                 physical_id: physical_id.clone(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: vec![PhysicalTarget {
                 id: physical_id,
@@ -330,6 +340,7 @@ async fn initialization_scan_accepts_legacy_profile_client_scope_ids() {
                 case_behavior: "unknown".into(),
                 logical_target_ids: vec!["target-1".into()],
             }],
+            agent_roots: Vec::new(),
         })
         .expect("save discovery");
     let facade = LocalApplicationFacade::new(database);
@@ -359,6 +370,7 @@ async fn custom_agent_rejects_unregistered_picker_grants() {
             supported_os: vec![skillhub_core::OperatingSystem::Windows],
             path_candidates: vec![skillhub_core::PathCandidate {
                 path: "C:/Users/demo/.custom/skills".into(),
+                agent_root: None,
                 scope: skillhub_core::TargetScope::Global,
                 precedence: skillhub_core::DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -2535,6 +2547,7 @@ async fn prepare_delete_reports_the_full_deletion_impact_matrix() {
                 case_behavior: "unknown".into(),
                 logical_target_ids: Vec::new(),
             }],
+            agent_roots: Vec::new(),
         })
         .expect("seed discovery");
 
@@ -4331,6 +4344,7 @@ async fn deployment_plan_query_builds_target_index_from_discovery_for_production
                 client_id: "codex.cli".into(),
                 scope: TargetScope::Global,
                 path: target.path().to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -4340,8 +4354,11 @@ async fn deployment_plan_query_builds_target_index_from_discovery_for_production
                 writable: true,
                 available: true,
                 physical_id,
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         })
         .expect("save discovery");
 
@@ -4420,13 +4437,22 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
         generation: "1".into(),
         observed_at: "2026-08-30T00:00:00Z".into(),
         instances: vec![ClientInstance {
-            profile_id: "codex".into(),
-            client_id: "codex.cli".into(),
-            kind: ClientKind::Cli,
+                profile_id: "codex".into(),
+                client_id: "codex.cli".into(),
+                kind: ClientKind::Cli,
             display_name: "Fixture".into(),
-            supported_os: vec![OperatingSystem::Windows],
-            client_presence: ClientPresence::Unknown,
-        }],
+                supported_os: vec![OperatingSystem::Windows],
+                client_presence: ClientPresence::Unknown,
+            },
+            ClientInstance {
+                profile_id: "anthropic".into(),
+                client_id: "anthropic.claude-code".into(),
+                kind: ClientKind::Headless,
+                display_name: "Fixture Claude".into(),
+                supported_os: vec![OperatingSystem::Windows],
+                client_presence: ClientPresence::Unknown,
+            },
+        ],
         logical_targets: vec![
             LogicalTarget {
                 id: "codex-global".into(),
@@ -4434,6 +4460,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 client_id: "codex.cli".into(),
                 scope: TargetScope::Global,
                 path: "C:/Users/demo/.codex/skills".into(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -4443,6 +4470,8 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 writable: true,
                 available: true,
                 physical_id: "fs:codex".into(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             },
             LogicalTarget {
                 id: "shared-directory".into(),
@@ -4450,6 +4479,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 client_id: "agent-skills.shared-directory".into(),
                 scope: TargetScope::Global,
                 path: "C:/Users/demo/.agents/skills".into(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -4459,6 +4489,8 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 writable: true,
                 available: true,
                 physical_id: "fs:shared-agents".into(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             },
             LogicalTarget {
                 id: "shared-codex".into(),
@@ -4466,6 +4498,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 client_id: "codex.cli".into(),
                 scope: TargetScope::Global,
                 path: "C:/Users/demo/.agents/skills".into(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: true,
@@ -4475,6 +4508,8 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 writable: true,
                 available: true,
                 physical_id: "fs:shared-agents".into(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             },
             LogicalTarget {
                 id: "shared-claude".into(),
@@ -4482,6 +4517,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 client_id: "anthropic.claude-code".into(),
                 scope: TargetScope::Global,
                 path: "C:/Users/demo/.agents/skills".into(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: true,
@@ -4491,9 +4527,12 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 writable: true,
                 available: true,
                 physical_id: "fs:shared-agents".into(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             },
         ],
         physical_targets: Vec::new(),
+        agent_roots: Vec::new(),
     };
     database
         .agent_repository()
@@ -4547,6 +4586,14 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     assert_eq!(shared_target.id, "shared-directory");
     assert_eq!(shared_target.path, "C:/Users/demo/.agents/skills");
     assert_eq!(shared_target.shared_agent_brands, ["anthropic", "codex"]);
+    assert_eq!(
+        shared_target.shared_agent_brand_kinds.get("anthropic"),
+        Some(&vec![ClientKind::Headless])
+    );
+    assert_eq!(
+        shared_target.shared_agent_brand_kinds.get("codex"),
+        Some(&vec![ClientKind::Cli])
+    );
     let project_target = targets
         .iter()
         .find(|target| target.id == project.id.to_string())
@@ -4580,6 +4627,7 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
                 client_id: logical_id.into(),
                 scope: TargetScope::Global,
                 path: path.to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -4589,8 +4637,11 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
                 writable: true,
                 available: true,
                 physical_id: physical_id.clone(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         })
         .expect("seed registered target");
     physical_id
@@ -5855,14 +5906,16 @@ async fn discovery_classifies_user_local_sources_with_physical_identity() {
         classification.physical_source_id,
         skillhub_core::physical_id_for_path(&candidates[0].absolute_root),
     );
-    let lowered = candidates[0].absolute_root.to_lowercase();
-    let by_spelling = facade
-        .import_source_classification_for_tests(lowered)
-        .expect("classification lookup is spelling tolerant");
-    assert_eq!(
-        by_spelling.physical_source_id,
-        classification.physical_source_id
-    );
+    if cfg!(windows) {
+        let lowered = candidates[0].absolute_root.to_lowercase();
+        let by_spelling = facade
+            .import_source_classification_for_tests(lowered)
+            .expect("classification lookup is spelling tolerant on Windows");
+        assert_eq!(
+            by_spelling.physical_source_id,
+            classification.physical_source_id
+        );
+    }
 }
 
 #[tokio::test]
@@ -5889,6 +5942,7 @@ async fn discovery_classifies_agent_and_project_roots_by_deepest_match() {
                 client_id: "codex-cli".into(),
                 scope: TargetScope::Global,
                 path: agent_root.to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
                 shared_reference: false,
@@ -5898,8 +5952,11 @@ async fn discovery_classifies_agent_and_project_roots_by_deepest_match() {
                 writable: true,
                 available: true,
                 physical_id: skillhub_core::physical_id_for_path(&agent_root).expect("physical id"),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
             }],
             physical_targets: Vec::new(),
+            agent_roots: Vec::new(),
         })
         .expect("save discovery");
     database

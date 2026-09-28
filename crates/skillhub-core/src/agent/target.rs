@@ -12,6 +12,10 @@ pub enum TargetScope {
 #[serde(deny_unknown_fields)]
 pub struct PathCandidate {
     pub path: String,
+    /// Optional Agent root used to recognise the client independently from
+    /// its Skill directory. When omitted, discovery falls back to `path`.
+    #[serde(default)]
+    pub agent_root: Option<String>,
     pub scope: TargetScope,
     pub precedence: super::DirectoryPrecedence,
     pub marker: String,

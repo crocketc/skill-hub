@@ -6,6 +6,7 @@ import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { DataState } from "../../ui/DataState";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import { ImportShell, type ImportStatus, type ImportStep } from "../import/ImportShell";
@@ -66,6 +67,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
   const [committing, setCommitting] = useState(false);
+  const [creatingTargetId, setCreatingTargetId] = useState<string>();
   const [searchParams, setSearchParams] = useSearchParams();
   const planHeadingRef = useRef<HTMLHeadingElement>(null);
   const preselectedTargetId = searchParams.get("target");
@@ -73,6 +75,15 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const preselectedAgentClientId = searchParams.get("agent");
 
   const [projects, setProjects] = useState<BatchProjectInfo[]>();
+  useEffect(() => {
+    if (!preview) return;
+    queueMicrotask(() => {
+      const heading = planHeadingRef.current;
+      if (!heading) return;
+      heading.focus({ preventScroll: true });
+      if (typeof heading.scrollIntoView === "function") heading.scrollIntoView({ block: "start" });
+    });
+  }, [preview]);
   useEffect(() => {
     let active = true;
     void activeFacade.listTargets().then((value) => active && setTargets(value)).catch((reason: unknown) => {
@@ -187,18 +198,28 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         .map((pair) => pair.pairId)));
       setExclusionsDirty(false);
       setConfirmationsDirty(false);
-      // 重新预览后回到计划区首部（14.16）。
-      requestAnimationFrame(() => {
-        const heading = planHeadingRef.current;
-        if (!heading) return;
-        heading.focus({ preventScroll: true });
-        // jsdom 不实现 scrollIntoView；真实环境滚动到计划区首部（14.16）。
-        if (typeof heading.scrollIntoView === "function") {
-          heading.scrollIntoView({ block: "start" });
-        }
-      });
     } catch (reason) {
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+    }
+  };
+
+  const ensureTargetDirectory = async (target: DeploymentTarget) => {
+    if (!activeFacade.ensureTargetDirectory) {
+      setFlowError(t("deployment.targets.createUnavailable"));
+      return;
+    }
+    setFlowError(undefined);
+    setCreatingTargetId(target.id);
+    try {
+      await activeFacade.ensureTargetDirectory(target.id);
+      const refreshed = await activeFacade.listTargets();
+      setTargets(refreshed);
+      setSelectedIds((current) => current.includes(target.id) ? current : [...current, target.id]);
+      setPreview(undefined);
+    } catch (reason: unknown) {
+      setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
+    } finally {
+      setCreatingTargetId(undefined);
     }
   };
 
@@ -430,23 +451,39 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           </div>
           <span className="sh-count-badge">{selected.length}</span>
         </div>
-        {/* DEV-11：不可用目标不进默认列表（用户裁定）——选择页只呈现
-            「已发现且可写」的目标，与文案承诺一致。 */}
+        {/* 待创建目录属于已识别 Agent，但必须经用户确认后才创建。 */}
         <div className="sh-deployment-targets" data-testid="deployment-target-grid">
-          {targets.filter((target) => target.available).map((target) => {
+          {targets.filter((target) => target.available || target.directoryStatus === "missing").map((target) => {
             const targetPath = displayPath(target.path);
 
-            return <label className="sh-deployment-target-card" data-testid="deployment-target-card" key={target.id}>
-              <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
-                setPreference("automatic");
-                setPreview(undefined);
-                setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
-              }} type="checkbox" />
-              <span className="sh-deployment-target-card__body">
-                <DeploymentTargetPresentation fallback={target.label} target={target} />
-                <small title={targetPath}>{targetPath}</small>
-              </span>
-            </label>;
+            return target.available ? (
+              <label className="sh-deployment-target-card" data-testid="deployment-target-card" key={target.id}>
+                <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
+                  setPreference("automatic");
+                  setPreview(undefined);
+                  setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
+                }} type="checkbox" />
+                <span className="sh-deployment-target-card__body">
+                  <DeploymentTargetPresentation fallback={target.label} target={target} />
+                  <small title={targetPath}>{targetPath}</small>
+                </span>
+              </label>
+            ) : (
+              <div className="sh-deployment-target-card sh-deployment-target-card--pending" data-testid="deployment-target-card" key={target.id}>
+                <span className="sh-deployment-target-card__body">
+                  <DeploymentTargetPresentation fallback={target.label} target={target} />
+                  <small title={targetPath}>{t("agents.pathPending")}</small>
+                </span>
+                <ConfirmDialog
+                  cancelLabel={t("agents.removeDialog.cancel")}
+                  confirmLabel={t("deployment.targets.createConfirm")}
+                  description={t("deployment.targets.createDescription")}
+                  onConfirm={() => void ensureTargetDirectory(target)}
+                  title={t("deployment.targets.createTitle")}
+                  trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
+                />
+              </div>
+            );
           })}
         </div>
         {expandableLinks.length > 0 ? <div className="sh-deployment-flow__expand">

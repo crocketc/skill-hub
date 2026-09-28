@@ -227,7 +227,7 @@ it("renders the generic shared directory card first with the agent recognition s
   // 共享消费者 = 已确认支持的能力 + 有活动关系的 Agent（观察事实）；
   // unknown（识别未确认）与 unsupported（已确认不支持）不得从目录存在推断。
   expect(shared.getAllByLabelText("Trae · 终端").length).toBeGreaterThan(0);
-  expect(shared.getAllByLabelText("共享目录").length).toBeGreaterThan(0);
+  expect(shared.getAllByLabelText("Agent共享目录").length).toBeGreaterThan(0);
   expect(shared.queryByText(/gpt\.bird/)).not.toBeInTheDocument();
   expect(shared.queryByText(/legacy\.agent/)).not.toBeInTheDocument();
 });

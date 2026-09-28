@@ -71,7 +71,9 @@ it("shows discovered directory facts without trust or usability status", async (
   const facade = facadeWith(agentFixture());
   await renderDetailPage(facade);
 
-  expect(await screen.findByText("已发现客户端和 Skill 目录")).toBeVisible();
+  expect(
+    await screen.findByText("已识别 Agent 目录；这不代表 Agent 软件已安装或一定会加载 Skill。"),
+  ).toBeVisible();
   expect(screen.getByText("可访问")).toBeVisible();
   expect(screen.getByText("2 个 Skill · 5 条部署关系")).toBeVisible();
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
@@ -295,7 +297,9 @@ describe("AgentDetailPage context check (12C)", () => {
     } as unknown as RelationGovernanceFacade;
     await renderDetailPage(facadeWith(agentFixture()), governanceFacade);
 
-    expect(await screen.findByText("已发现客户端和 Skill 目录")).toBeVisible();
+    expect(
+      await screen.findByText("已识别 Agent 目录；这不代表 Agent 软件已安装或一定会加载 Skill。"),
+    ).toBeVisible();
     await waitFor(() => expect(governanceFacade.revalidate).toHaveBeenCalledTimes(1));
     expect(governanceFacade.revalidate).toHaveBeenCalledWith(["r-agent-dep-1"], "light");
     expect(

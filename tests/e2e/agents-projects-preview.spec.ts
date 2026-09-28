@@ -23,7 +23,7 @@ const themeNames = [
 
 const previewRoutes = ["/__preview/agents", "/__preview/agents/detail", "/__preview/projects"] as const;
 
-test("agent cards expose a clean title link, directory path, and status text", async ({ page }) => {
+test("agent cards expose identity, directory facts, and deployment capabilities", async ({ page }) => {
   await page.goto("/__preview/agents");
 
   await expect(page.getByRole("main").getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
@@ -36,20 +36,26 @@ test("agent cards expose a clean title link, directory path, and status text", a
   await expect(page.getByText("Path:").first()).toBeVisible();
   await expect(page.getByText("C:\\Users\\Developer\\AppData\\Local\\SkillHub\\agents\\codex\\skills")).toBeVisible();
 
-  // Status is always icon/marker plus text, never color alone.
-  await expect(page.getByText("Accessible").first()).toBeVisible();
-  await expect(page.getByText("Currently inaccessible")).toBeVisible();
-  await expect(page.getByText("Related directory only")).toBeVisible();
+  // The card stays focused on Agent identity and directory facts. Installation
+  // evidence, Skill counts, and management actions belong to the detail page.
+  await expect(page.getByText("Accessible")).toHaveCount(0);
+  await expect(page.getByText("Currently inaccessible")).toHaveCount(0);
+  await expect(page.getByText("managed copies")).toHaveCount(0);
 
-  // Custom agents keep edit and confirmed removal on the card.
+  // Every card exposes the three deployment modes as supported/unsupported
+  // icons; the tooltip/accessible label carries the user-facing explanation.
+  const deploymentMethods = page.getByLabel("Deployment methods");
+  await expect(deploymentMethods).toHaveCount(6);
+  await expect(deploymentMethods.first().getByLabel("Managed copy unavailable")).toBeVisible();
+  await expect(deploymentMethods.first().getByLabel("Symbolic link unavailable")).toBeVisible();
+  await expect(deploymentMethods.first().getByLabel("Directory junction unavailable")).toBeVisible();
+
+  // Custom agents have a detail link; editing/removal is not a card action.
   const reviewerCard = page.getByRole("listitem").filter({
     has: page.getByText("D:\\Custom Agents\\Release Reviewer\\global skill directory", { exact: true }),
   });
-  await expect(reviewerCard.getByRole("button", { name: "Edit" })).toBeVisible();
-  await expect(reviewerCard.getByRole("button", { name: "Remove" })).toBeVisible();
-
-  // Discovered agents never offer custom agent actions (only Reviewer + Auditor do).
-  await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(2);
+  await expect(reviewerCard.getByRole("link")).toBeVisible();
+  await expect(reviewerCard.getByRole("button")).toHaveCount(0);
 });
 
 test("project cards expose title, path, tags, access, and a next step", async ({ page }) => {
@@ -202,13 +208,13 @@ test("long directory paths wrap instead of being clipped at 800px", async ({ pag
   expect(box.height, "a long path must wrap onto multiple lines").toBeGreaterThan(24);
 });
 
-test("the last card action stays reachable at the 800x600 minimum", async ({ page }) => {
+test("the last agent card detail link stays reachable at the 800x600 minimum", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/__preview/agents");
 
-  const remove = page.getByRole("button", { name: "Remove" }).last();
-  await remove.scrollIntoViewIfNeeded();
-  await expect(remove).toBeVisible();
+  const lastCardLink = page.getByTestId("agent-card").last().getByRole("link");
+  await lastCardLink.scrollIntoViewIfNeeded();
+  await expect(lastCardLink).toBeVisible();
 
   // The registration drawer scrolls internally and keeps its actions usable.
   await page.goto("/__preview/projects");
@@ -231,7 +237,7 @@ test("the agent detail keeps every discovered path readable at 800px", async ({ 
 
 test.describe("all nine themes render the reworked pages at 1280x900", () => {
   for (const theme of themeNames) {
-    test(`${theme} keeps statuses, cards, and focus usable`, async ({ browser }) => {
+    test(`${theme} keeps cards and focus usable`, async ({ browser }) => {
       const context = await browser.newContext({
         viewport: { width: 1280, height: 900 },
         locale: "en-US",
@@ -248,7 +254,7 @@ test.describe("all nine themes render the reworked pages at 1280x900", () => {
         clientWidth: document.documentElement.clientWidth,
       }));
       expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-      await expect(page.getByText("Currently inaccessible")).toBeVisible();
+      await expect(page.getByRole("link", { name: "OpenAI · Terminal", exact: true })).toBeVisible();
 
       await page.goto("/__preview/projects");
       await page.getByRole("button", { name: "Aurora Web" }).focus();

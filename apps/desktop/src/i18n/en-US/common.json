@@ -691,6 +691,8 @@
     "title": "Agents",
     "description": "Review discovered client and Skill directory facts.",
     "pathLabel": "Path:",
+    "pathPending": "Not created yet",
+    "pathUnavailable": "Path unavailable",
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
     "empty": "No agents discovered yet. Rescan, or add a custom agent.",
@@ -735,7 +737,7 @@
     "runtimeHookStatus": "In development",
     "detail": {
       "eyebrow": "Observed Agent",
-      "discoveredFact": "Discovered client and Skill directory facts",
+      "discoveredFact": "An Agent directory is recognised; this does not prove the Agent software is installed or will load a Skill.",
       "observed": "Observed",
       "identity": "Agent identity",
       "managedDeployments": "Managed copies",
@@ -789,7 +791,14 @@
     "managedRelationsCount_other": "{{count}} deployment relations",
     "builtinLabel": "Built-in · read-only",
     "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally.",
-    "sharedDirectoryChip": "Shared-directory ready"
+    "sharedDirectoryChip": "Shared-directory ready",
+    "sharedDirectoryTitle": "Agent shared directory",
+    "deploymentMethods": {
+      "label": "Deployment methods",
+      "managed_copy": { "supported": "Managed copy supported", "unsupported": "Managed copy unavailable" },
+      "symbolic_link": { "supported": "Symbolic link supported", "unsupported": "Symbolic link unavailable" },
+      "directory_junction": { "supported": "Directory junction supported", "unsupported": "Directory junction unavailable" }
+    }
   },
   "projects": {
     "actions": {
@@ -1836,7 +1845,12 @@
     "targets": {
       "heading": "Agent targets",
       "description": "Only discovered writable targets can be selected.",
-      "unavailable": "Unavailable"
+      "unavailable": "Unavailable",
+      "createAction": "Create and add",
+      "createTitle": "Create the Skill directory?",
+      "createDescription": "Only the Skill directory declared by this Agent profile will be created. The Agent root will not be created; the directory will be revalidated before it is added to this deployment.",
+      "createConfirm": "Create directory",
+      "createUnavailable": "This connection cannot create a pending directory yet."
     },
     "preview": "Preview",
     "retryFailed": "Retry failed targets",

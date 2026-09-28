@@ -500,6 +500,20 @@ pub struct DeploymentTarget {
     /// Empty for ordinary Agent and project targets.
     #[serde(default)]
     pub shared_agent_brands: Vec<String>,
+    /// Client kinds grouped by the brand that recognises the same physical
+    /// shared directory. Used only for the user-facing logo tooltip.
+    #[serde(default)]
+    pub shared_agent_brand_kinds: std::collections::BTreeMap<String, Vec<crate::agent::ClientKind>>,
+    /// User-facing directory observation fact; absent for project targets.
+    #[serde(default)]
+    pub directory_status: Option<crate::agent::DirectoryObservationStatus>,
+    /// False for a not-yet-created candidate path. Such a target may be shown
+    /// for confirmation but must not be used as a physical deployment identity.
+    #[serde(default)]
+    pub physical_identity_verified: bool,
+    /// First supported mode, matching the existing planner preference order.
+    #[serde(default)]
+    pub preferred_mode: Option<DeploymentMode>,
 }
 
 /// Lists registered logical targets without scanning arbitrary directories.

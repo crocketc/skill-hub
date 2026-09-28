@@ -56,6 +56,10 @@ function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
     agentProfileId: target.agent_profile_id ?? undefined,
     sharedDirectory: target.shared_directory,
     sharedAgentBrands: target.shared_agent_brands,
+    sharedAgentBrandKinds: target.shared_agent_brand_kinds,
+    directoryStatus: target.directory_status ?? undefined,
+    physicalIdentityVerified: target.physical_identity_verified,
+    preferredMode: target.preferred_mode ?? undefined,
   };
 }
 
@@ -95,6 +99,14 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
     listTargets: async (): Promise<DeploymentTarget[]> => {
       const result = await queryApplication({ type: "list_deployment_targets", payload: null });
       return targetsResult(result).map(toTarget);
+    },
+
+    ensureTargetDirectory: async (targetId: string): Promise<void> => {
+      const result = await executeCommand({
+        type: "ensure_agent_target_directory",
+        payload: { target_id: targetId },
+      });
+      if (result.type !== "discovery_snapshot") throw new Error("deployment.ensure_target_unexpected_result");
     },
 
     listProjects: async () => {

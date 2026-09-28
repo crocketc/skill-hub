@@ -1,5 +1,7 @@
 # Agent 识别、卡片归并与派发展示实施计划
 
+> 实施状态（2026-09-29）：代码与自动化回归已完成；前端 2013/2013、Agent/发现/关系定向浏览器 E2E 53/53 通过。当前仅剩 Windows/macOS 真实桌面人工验收，入口为 `docs/development/人工验收清单-2026-09-29.md` 流程 L。本文保留为实施过程记录，产品边界以对应设计文档为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在现有发现快照、Profile（配置档案）、物理目录归并和派发流程上做增量调整，使项目所有 Agent 入口统一采用“已识别 Agent 目录”、按品牌与实际 Skill 路径归并卡片、独立展示共享目录，并在卡片上展示路径状态、共享能力和三种派发方式能力；不增加软件安装检测，不重构现有部署执行器或关系治理。
@@ -211,9 +213,9 @@
 **Files:**
 
 - 修改：`AGENTS.md`（当前工作树已有一条前后端文案分层规则，实施时保留并检查是否需要随最终字段名微调）
-- 修改：`docs/development/开发状态-2026-09-28.md`
-- 修改：`docs/development/自动化测试说明-2026-09-28.md`
-- 修改：`docs/development/功能完成度与验收状态矩阵-2026-09-28.md`
+- 修改：`docs/development/开发状态-2026-09-29.md`
+- 修改：`docs/development/自动化测试说明-2026-09-29.md`
+- 修改：`docs/development/功能完成度与验收状态矩阵-2026-09-29.md`
 - 必要时更新：`docs/superpowers/specs/2026-09-28-agent-discovery-card-and-dispatch-design.md`（只记录经实现验证后的边界，不改产品裁决）
 
 **Steps:**

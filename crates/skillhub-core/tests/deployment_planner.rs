@@ -281,6 +281,7 @@ fn directory_capability_is_deterministic_and_does_not_use_directory_existence() 
             supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
             path_candidates: vec![PathCandidate {
                 path: "{user_home}/.agents/skills".into(),
+                agent_root: None,
                 scope: TargetScope::Global,
                 precedence: DirectoryPrecedence::Preferred,
                 marker: "SKILL.md".into(),
@@ -318,6 +319,7 @@ fn native_profile_candidate_is_supported_but_shared_candidate_is_only_unknown() 
                 supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
                 path_candidates: vec![PathCandidate {
                     path: "{user_home}/.example/skills".into(),
+                    agent_root: None,
                     scope: TargetScope::Global,
                     precedence: DirectoryPrecedence::Preferred,
                     marker: "SKILL.md".into(),
@@ -335,6 +337,7 @@ fn native_profile_candidate_is_supported_but_shared_candidate_is_only_unknown() 
                 supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
                 path_candidates: vec![PathCandidate {
                     path: "{user_home}/.agents/skills".into(),
+                    agent_root: None,
                     scope: TargetScope::Global,
                     precedence: DirectoryPrecedence::Preferred,
                     marker: "SKILL.md".into(),
@@ -920,6 +923,7 @@ fn shared_directory_read_requires_directory_representation_and_supported_capabil
 fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators() {
     let posix = PathCandidate {
         path: "/home/ada/.codex/skills".into(),
+        agent_root: None,
         scope: TargetScope::Global,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),
@@ -935,6 +939,7 @@ fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators()
 
     let windows = PathCandidate {
         path: r"C:\Users\Ada\.codex\skills".into(),
+        agent_root: None,
         scope: TargetScope::Global,
         precedence: DirectoryPrecedence::Preferred,
         marker: "SKILL.md".into(),

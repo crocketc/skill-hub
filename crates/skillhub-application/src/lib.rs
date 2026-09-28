@@ -1510,6 +1510,65 @@ impl LocalApplicationFacade {
         })
     }
 
+    /// Creates only the profile-declared Skill directory after an explicit
+    /// user action. Discovery itself remains read-only; the fresh scan below
+    /// is what assigns the newly-created directory its physical identity.
+    fn ensure_agent_target_directory(
+        &self,
+        request: skillhub_core::EnsureAgentTargetDirectory,
+    ) -> AppResult<AppCommandResult> {
+        if request.target_id.trim().is_empty() {
+            return Err(invalid_input("target id must not be empty"));
+        }
+        let snapshot = self.with_database("query.get_discovery_snapshot", |database| {
+            Ok(database
+                .agent_repository()
+                .load()?
+                .unwrap_or_else(empty_discovery))
+        })?;
+        let target = snapshot
+            .logical_targets
+            .iter()
+            .find(|candidate| candidate.id == request.target_id)
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        if target.builtin {
+            return Err(invalid_input("built-in directories cannot be created"));
+        }
+        let root = snapshot
+            .agent_roots
+            .iter()
+            .find(|candidate| candidate.id == target.agent_root_id)
+            .ok_or_else(|| invalid_input("agent root is not identified"))?;
+        if !root.exists
+            || root.status != skillhub_core::DirectoryObservationStatus::Existing
+            || !root.readable
+            || !root.writable
+        {
+            return Err(invalid_input("agent root is not available"));
+        }
+        let root_path = Path::new(&root.path);
+        let target_path = Path::new(&target.path);
+        if target_path == root_path || !target_path.starts_with(root_path) {
+            return Err(invalid_input("skill directory is outside the identified agent root"));
+        }
+        match std::fs::symlink_metadata(target_path) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => return Err(AppError::new(ErrorCode::TargetExists, Severity::Error)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir_all(target_path)
+                    .map_err(|error| io_conflict(target_path)(error))?;
+            }
+            Err(error) => return Err(io_conflict(target_path)(error)),
+        }
+
+        let roots = DiscoveryRoots::new(current_operating_system(), user_home());
+        let refreshed = DiscoverAgents::builtin().discover(&roots)?;
+        self.with_database("execute.ensure_agent_target_directory", |database| {
+            let refreshed = database.agent_repository().replace(&refreshed)?;
+            Ok(AppCommandResult::DiscoverySnapshot(refreshed))
+        })
+    }
+
     async fn check_application_update(
         &self,
         request: skillhub_core::CheckApplicationUpdate,
@@ -5745,6 +5804,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::ActivateLibraryRoot(request) => return self.activate_library_root(request),
             AppCommand::CompleteOnboarding(request) => return self.complete_onboarding(request),
             AppCommand::DiscoverAgentTargets(_) => return self.discover_agent_targets(),
+            AppCommand::EnsureAgentTargetDirectory(request) => {
+                return self.ensure_agent_target_directory(request)
+            }
             AppCommand::ScanTargets(request) => return self.run_scan(request.scope_ids),
             AppCommand::RescanSkill(request) => return self.rescan_skill(request),
             AppCommand::SetFindingDisposition(request) => {
@@ -6463,6 +6525,11 @@ impl LocalApplicationFacade {
                 .agent_repository()
                 .load()?
                 .map(|snapshot| {
+                    let client_kinds = snapshot
+                        .instances
+                        .iter()
+                        .map(|instance| (instance.client_id.clone(), instance.kind.clone()))
+                        .collect::<BTreeMap<_, _>>();
                     let mut targets = Vec::new();
                     let mut targets_by_physical_id = BTreeMap::new();
                     for target in snapshot.logical_targets {
@@ -6471,8 +6538,26 @@ impl LocalApplicationFacade {
                         if target.builtin {
                             continue;
                         }
+                        let root_identified = snapshot
+                            .agent_roots
+                            .iter()
+                            .find(|root| root.id == target.agent_root_id)
+                            .map(|root| {
+                                root.exists
+                                    && root.status
+                                        == skillhub_core::agent::DirectoryObservationStatus::Existing
+                            })
+                            .unwrap_or_else(|| target.exists);
+                        if !root_identified {
+                            continue;
+                        }
+                        let grouping_key = if target.physical_identity_verified {
+                            format!("physical:{}", target.physical_id)
+                        } else {
+                            format!("logical:{}", target.id)
+                        };
                         targets_by_physical_id
-                            .entry(target.physical_id.clone())
+                            .entry(grouping_key)
                             .or_insert_with(Vec::new)
                             .push(target);
                     }
@@ -6487,17 +6572,22 @@ impl LocalApplicationFacade {
                                     &target.client_id,
                                     &host_capabilities,
                                 ));
+                                let preferred_mode = modes.first().cloned();
                                 targets.push(skillhub_core::api::DeploymentTarget {
                                     id: target.id,
                                     label: target.client_id.clone(),
                                     path: target.path,
-                                    available: target.available,
+                                    available: target.available && target.physical_identity_verified,
                                     physical_id: target.physical_id,
                                     modes,
                                     agent_client_id: Some(target.client_id),
                                     agent_profile_id: Some(target.profile_id),
                                     shared_directory: false,
                                     shared_agent_brands: Vec::new(),
+                                    shared_agent_brand_kinds: BTreeMap::new(),
+                                    directory_status: Some(target.status),
+                                    physical_identity_verified: target.physical_identity_verified,
+                                    preferred_mode,
                                 });
                             }
                             continue;
@@ -6517,6 +6607,7 @@ impl LocalApplicationFacade {
                             &canonical.client_id,
                             &host_capabilities,
                         ));
+                        let preferred_mode = modes.first().cloned();
                         let mut shared_agent_brands = physical_targets
                             .iter()
                             .filter(|target| target.profile_id != "agent-skills")
@@ -6524,17 +6615,36 @@ impl LocalApplicationFacade {
                             .collect::<Vec<_>>();
                         shared_agent_brands.sort();
                         shared_agent_brands.dedup();
+                        let mut shared_agent_brand_kinds = BTreeMap::new();
+                        for target in physical_targets
+                            .iter()
+                            .filter(|target| target.profile_id != "agent-skills")
+                        {
+                            if let Some(kind) = client_kinds.get(&target.client_id) {
+                                let kinds = shared_agent_brand_kinds
+                                    .entry(target.profile_id.clone())
+                                    .or_insert_with(Vec::new);
+                                if !kinds.contains(kind) {
+                                    kinds.push(kind.clone());
+                                }
+                            }
+                        }
                         targets.push(skillhub_core::api::DeploymentTarget {
                             id: canonical.id.clone(),
                             label: canonical.client_id.clone(),
                             path: canonical.path.clone(),
-                            available: canonical.available,
+                            available: canonical.available
+                                && canonical.physical_identity_verified,
                             physical_id: canonical.physical_id.clone(),
                             modes,
                             agent_client_id: Some(canonical.client_id.clone()),
                             agent_profile_id: None,
                             shared_directory: true,
                             shared_agent_brands,
+                            shared_agent_brand_kinds,
+                            directory_status: Some(canonical.status),
+                            physical_identity_verified: canonical.physical_identity_verified,
+                            preferred_mode,
                         });
                     }
                     targets
@@ -6558,6 +6668,10 @@ impl LocalApplicationFacade {
                             agent_profile_id: None,
                             shared_directory: false,
                             shared_agent_brands: Vec::new(),
+                            shared_agent_brand_kinds: BTreeMap::new(),
+                            directory_status: None,
+                            physical_identity_verified: true,
+                            preferred_mode: modes.first().cloned(),
                         }
                     }),
             );
@@ -11241,6 +11355,7 @@ fn empty_discovery() -> skillhub_core::DiscoverySnapshot {
         instances: Vec::new(),
         logical_targets: Vec::new(),
         physical_targets: Vec::new(),
+        agent_roots: Vec::new(),
     }
 }
 

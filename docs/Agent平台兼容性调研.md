@@ -1,6 +1,6 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研完成；2026-09-25 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-16 补充豆包工作 Windows 真机目录观察与行为反查；2026-09-15 已完成豆包工作 profile 初步调研；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整真机验证仍待后续测试阶段
+> 文档状态：官方资料调研完成；2026-09-29 已同步 Agent 根目录识别、共享目录品牌交集和待建 Skill 目录规则；2026-09-27 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整产品链路真机验证仍待后续测试阶段。
 >
 > 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
@@ -13,6 +13,8 @@
 ---
 
 ## 0.2.0 适配实现状态
+
+- 2026-09-29 规则补充：SkillHub 以 profile 声明的 Agent 根目录作为“已识别 Agent 目录”证据，不检测软件安装包、进程或注册表。根目录存在但 Skill 目录缺失时保留品牌卡并显示“待创建”；共享目录卡只展示已声明支持且本机根目录已识别的品牌。详细卡片归并与派发规则见 `docs/superpowers/specs/2026-09-28-agent-discovery-card-and-dispatch-design.md`。
 
 - 后端已内置 `pi.coding-agent`、`deepseek-harness.tui` 和 `deepseek-harness.web` 三个客户端目标，接入统一的发现、扫描、部署、解除部署和所有权保护流程；DeepSeek Harness 的 TUI/Web 仅作为两个客户端 profile，共享其本地 Skill 目录规则。
 - 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
@@ -677,7 +679,7 @@ Windows 必须分别验证：
 ### 6.7 初始化与项目扫描边界
 
 - 初始化只扫描集中库、`~/.agents/skills`、已发现客户端的已知用户级目录、可访问的内置或插件目录和用户自选目录，不遍历全盘。
-- 2026-09-25 起的扫描边界：profile 以 `builtin=true` 声明内置目录（如 `.codex/skills/.system`、`skills-cursor`、`builtin_skills`），内置目录作为独立只读扫描根，其技能不进品牌用户级卡；扫描任意宿主根时点前缀嵌套目录（`.system` 一类平台内置层）整体跳过，防止同一 Skill 双重归卡。WorkBuddy/DeepSeek Harness/Kimi 的内置目录位于安装目录或含变量段，暂无法以稳定占位符表达，未登记。
+- 2026-09-25 起的扫描边界：profile 以 `builtin=true` 声明内置目录（如 `.codex/skills/.system`、`skills-cursor`、`builtin_skills`），内置目录作为独立只读扫描根，其技能不进品牌用户级卡；扫描任意宿主根时点前缀嵌套目录（`.system` 一类平台内置层）整体跳过，防止同一 Skill 双重归卡。WorkBuddy/DeepSeek Harness/Kimi 的内置目录位于安装目录或含变量段，仍暂无法以稳定占位符表达，未登记；DeepSeek Harness 的用户/项目 `.dsh` 根目录和 `.agents/skills` 共享引用已登记为普通 profile 路径。
 - 未注册项目不自动扫描；项目注册后按对应 Agent 的原生目录、`.agents/skills`、父级和嵌套规则扫描。
 - 用户可以选择一个上级文件夹有限发现候选项目，结果先预览，不读取 Agent 对话或项目历史。
 - 仅发现 `.agents/skills` 不能推断项目正在使用哪些 Agent，项目与 Agent 关联由用户确认。

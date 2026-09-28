@@ -17,6 +17,7 @@ fn profile(path: &str) -> AgentProfile {
             supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
             path_candidates: vec![PathCandidate {
                 path: path.into(),
+                agent_root: None,
                 scope: TargetScope::Global,
                 precedence: DirectoryPrecedence::Preferred,
                 marker: "SKILL.md".into(),
