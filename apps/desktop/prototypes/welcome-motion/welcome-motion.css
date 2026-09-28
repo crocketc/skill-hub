@@ -1,4 +1,4 @@
-:root {
+.wm, .wm-setup {
   font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   color: #1c251f;
   background: #eef0ec;
@@ -7,9 +7,8 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-* { box-sizing: border-box; }
-body { min-width: 320px; min-height: 100vh; margin: 0; }
-button { font: inherit; }
+.wm *, .wm *::before, .wm *::after, .wm-setup *, .wm-setup *::before, .wm-setup *::after { box-sizing: border-box; }
+.wm button, .wm-setup button { font: inherit; }
 
 .wm {
   display: grid;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LifecycleMap } from "./LifecycleMap";
+import "./welcome-motion.css";
 
 export function WelcomeHero({ onStart }: { onStart: () => void }) {
   const [playing, setPlaying] = useState(true);
@@ -14,9 +15,9 @@ export function WelcomeHero({ onStart }: { onStart: () => void }) {
         onClick={() => setPlaying((value) => !value)}
       >{playing ? <span className="wm__pause-icon" /> : <span className="wm__play-icon" />}</button>
       <section className="wm__content">
-        <a className="wm__brand" href="#welcome" aria-label="SkillHub 欢迎页">
+        <span className="wm__brand" aria-label="SkillHub 欢迎页">
           <span className="wm__brand-mark" aria-hidden="true"><i /><i /><i /></span>SkillHub
-        </a>
+        </span>
         <div className="wm__copy">
           <p className="wm__eyebrow">SKILLHUB · 技能管理工作台</p>
           <h1>让每一项技能，<br />都有清晰的来路与去向</h1>

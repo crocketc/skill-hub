@@ -242,6 +242,47 @@ it("does not expose first-run initialization branches when the bootstrap snapsho
   }
 });
 
+it("shows the welcome journey before the real first-run initialization wizard", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  const initializedView = await desktopBootstrapRuntime.getBootstrapView();
+  const getBootstrapView = vi.spyOn(desktopBootstrapRuntime, "getBootstrapView").mockResolvedValue({
+    ...initializedView,
+    snapshot: {
+      ...initializedView.snapshot,
+      initialization_state: "not_initialized",
+      library_path: "",
+    },
+  });
+  try {
+    await appRouter.navigate("/");
+    render(<AppRouter />);
+
+    expect(await screen.findByRole("heading", { name: /让每一项技能，\s*都有清晰的来路与去向/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "暂停动画" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "新建集中库" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
+
+    expect(await screen.findByRole("button", { name: "新建集中库" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "开始设置" })).not.toBeInTheDocument();
+    expect(appRouter.state.location.pathname).toBe("/initialize");
+  } finally {
+    getBootstrapView.mockRestore();
+  }
+});
+
+it("keeps the initialized rescan route free of the first-run welcome", async () => {
+  mockBrowserPreferences();
+  await skillHubI18n.changeLanguage("zh-CN");
+  await appRouter.navigate("/initialize");
+
+  render(<AppRouter />);
+
+  expect(await screen.findByRole("heading", { name: "重新发现 Agent 与 Skill" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "开始设置" })).not.toBeInTheDocument();
+});
+
 it("isolates deterministic Skill detail preview data from production", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");

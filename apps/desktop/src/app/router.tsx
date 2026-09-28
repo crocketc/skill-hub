@@ -63,6 +63,7 @@ import { DataState } from "../ui/DataState";
 // 路由级代码分割：每个页面按需加载，开发用 __preview 路由保持静态导入。
 const OnboardingWizard = lazy(() => import("../features/onboarding/OnboardingWizard").then((m) => ({ default: m.OnboardingWizard })));
 const RescanWizard = lazy(() => import("../features/onboarding/RescanWizard").then((m) => ({ default: m.RescanWizard })));
+const WelcomeHero = lazy(() => import("../../prototypes/welcome-motion/WelcomeHero").then((m) => ({ default: m.WelcomeHero })));
 const AgentDetailPage = lazy(() => import("../features/agents/AgentDetailPage").then((m) => ({ default: m.AgentDetailPage })));
 const AgentListPage = lazy(() => import("../features/agents/AgentListPage").then((m) => ({ default: m.AgentListPage })));
 const ProjectDetailPage = lazy(() => import("../features/projects/ProjectDetailPage").then((m) => ({ default: m.ProjectDetailPage })));
@@ -118,6 +119,7 @@ function OnboardingRoute() {
   const { resolvedTheme, setAppearance } = useTheme();
   const [snapshot, setSnapshot] = useState<Awaited<ReturnType<typeof desktopBootstrapRuntime.getBootstrapView>>["snapshot"] | null>(null);
   const [snapshotLoadFailed, setSnapshotLoadFailed] = useState(false);
+  const [welcomeCompleted, setWelcomeCompleted] = useState(false);
   useEffect(() => {
     void desktopBootstrapRuntime.getBootstrapView()
       .then((view) => setSnapshot(view.snapshot))
@@ -140,6 +142,9 @@ function OnboardingRoute() {
       />
       </RouteSuspense>
     );
+  }
+  if (!welcomeCompleted) {
+    return <RouteSuspense><WelcomeHero onStart={() => setWelcomeCompleted(true)} /></RouteSuspense>;
   }
   return (
     <RouteSuspense>
