@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { WelcomeHero } from "./WelcomeHero";
 
 it("presents the product story and advances to the setup preview", () => {
@@ -44,6 +44,21 @@ it("provides an understandable description of the animated story", () => {
   render(<WelcomeHero onStart={() => undefined} />);
 
   expect(
-    screen.getByText("技能从多处汇入技能库，关系逐渐清晰，冲突由你确认，AI 只提供可选建议。"),
+    screen.getByText("不同来源的技能汇入集中库，来源信息保留"),
   ).toBeInTheDocument();
+});
+
+it("moves through focused product scenes at a brisk pace", () => {
+  vi.useFakeTimers();
+  render(<WelcomeHero onStart={() => undefined} />);
+
+  expect(screen.getByRole("heading", { name: "集中管理技能" })).toBeVisible();
+  act(() => vi.advanceTimersByTime(2200));
+  expect(screen.getByRole("heading", { name: "看清技能关系" })).toBeVisible();
+  act(() => vi.advanceTimersByTime(2200));
+  expect(screen.getByRole("heading", { name: "冲突由你决定" })).toBeVisible();
+  act(() => vi.advanceTimersByTime(2200));
+  expect(screen.getByRole("heading", { name: "AI 给出可核对的建议" })).toBeVisible();
+
+  vi.useRealTimers();
 });
