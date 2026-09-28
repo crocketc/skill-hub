@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "prototypes/welcome-motion/**/*.ts",
+    "prototypes/welcome-motion/**/*.tsx",
+    "vite.welcome-prototype.config.ts"
+  ],
+  "exclude": ["node_modules", "prototypes/welcome-motion/dist"]
+}
