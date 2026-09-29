@@ -185,6 +185,8 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
     std::fs::create_dir_all(&shared_path).expect("shared path");
     std::fs::create_dir_all(&ordinary_path).expect("ordinary path");
     std::fs::create_dir_all(&distinct_path).expect("distinct path");
+    let ordinary_physical_id = skillhub_core::physical_id_for_path(&ordinary_path)
+        .expect("ordinary directory identity");
 
     let instance = |client_id: &str, kind| ClientInstance {
         profile_id: if client_id == "agent-skills" {
@@ -296,7 +298,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 "ordinary-cli",
                 "openai.codex-cli",
                 &ordinary_path,
-                "physical:ordinary",
+                &ordinary_physical_id,
                 true,
                 false,
             ),
@@ -304,9 +306,29 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 "ordinary-desktop",
                 "openai.chatgpt-desktop",
                 &ordinary_path,
-                "physical:ordinary",
+                &ordinary_physical_id,
                 true,
                 false,
+            ),
+            {
+                let mut target = logical(
+                    "ordinary-builtin",
+                    "openai.codex-cli",
+                    &ordinary_path,
+                    &ordinary_physical_id,
+                    true,
+                    false,
+                );
+                target.builtin = true;
+                target
+            },
+            logical(
+                "ordinary-shared",
+                "openai.codex-cli",
+                &ordinary_path,
+                &ordinary_physical_id,
+                true,
+                true,
             ),
             logical(
                 "distinct-ide",
@@ -347,6 +369,15 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .agent_repository()
         .replace(&snapshot)
         .expect("save snapshot");
+    let project = skillhub_core::project::Project::new(
+        skillhub_core::ProjectId::new(),
+        "Same physical directory as an Agent",
+        &ordinary_path,
+    );
+    database
+        .project_repository()
+        .register(project)
+        .expect("register project fact");
     let facade = LocalApplicationFacade::new(database);
 
     let result = facade
@@ -387,19 +418,26 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .any(|member| member.logical_target_id == "shared-cli"
             && member.kind == Some(ClientKind::Cli)));
 
-    let ordinary = projection
+    let same_physical_identity = projection
         .directories
         .iter()
-        .find(|fact| {
-            fact.members
-                .iter()
-                .any(|member| member.logical_target_id == "ordinary-cli")
+        .filter(|fact| {
+            fact.identity
+                == skillhub_core::AgentDirectoryIdentity::VerifiedPhysical(
+                    ordinary_physical_id.clone(),
+                )
         })
-        .expect("ordinary entity");
+        .collect::<Vec<_>>();
+    assert_eq!(same_physical_identity.len(), 2, "one Agent entity plus its independent project entity");
+    let ordinary = same_physical_identity
+        .iter()
+        .find(|fact| fact.role != skillhub_core::AgentDirectoryRole::Project)
+        .expect("Agent entity");
+    assert_eq!(ordinary.role, skillhub_core::AgentDirectoryRole::SharedDirectory);
     assert_eq!(
         ordinary.members.len(),
-        2,
-        "same verified physical directory combines kinds"
+        4,
+        "same verified physical directory combines members across roles"
     );
     assert!(ordinary
         .members
@@ -409,18 +447,47 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .members
         .iter()
         .any(|member| member.kind == Some(ClientKind::Desktop)));
-    assert!(ordinary
+    let cli_member = ordinary
         .members
         .iter()
-        .any(|member| member.logical_target_id == "ordinary-cli"
-            && member.capabilities.deployment.copy));
-    assert!(
-        ordinary
-            .members
-            .iter()
-            .any(|member| member.logical_target_id == "ordinary-desktop"
-                && !member.capabilities.deployment.copy),
-        "capabilities stay member-scoped"
+        .find(|member| member.logical_target_id == "ordinary-cli")
+        .expect("CLI member");
+    let desktop_member = ordinary
+        .members
+        .iter()
+        .find(|member| member.logical_target_id == "ordinary-desktop")
+        .expect("desktop member");
+    let host = skillhub_adapters::deployment::DeploymentFilesystem::new().available_capabilities();
+    let profiles = skillhub_core::ProfileCatalog::builtin();
+    let cli_declared = profiles
+        .deployment_capability_for_client("openai.codex-cli")
+        .expect("CLI profile capability");
+    let desktop_declared = profiles
+        .deployment_capability_for_client("openai.chatgpt-desktop")
+        .expect("desktop profile capability");
+    let expected_cli = host.intersect(cli_declared);
+    let expected_desktop = host.intersect(desktop_declared);
+    let modes = |capability: &skillhub_core::DeploymentCapability| {
+        [
+            (capability.symlink, DeploymentMode::SymbolicLink),
+            (capability.junction, DeploymentMode::DirectoryJunction),
+            (capability.copy, DeploymentMode::ManagedCopy),
+        ]
+        .into_iter()
+        .filter_map(|(supported, mode)| supported.then_some(mode))
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(cli_member.capabilities.deployment, expected_cli);
+    assert_eq!(cli_member.capabilities.modes, modes(&expected_cli));
+    assert_eq!(
+        cli_member.capabilities.preferred_mode,
+        modes(&expected_cli).first().copied()
+    );
+    assert_eq!(desktop_member.capabilities.deployment, expected_desktop);
+    assert_eq!(desktop_member.capabilities.modes, modes(&expected_desktop));
+    assert_eq!(
+        desktop_member.capabilities.preferred_mode,
+        modes(&expected_desktop).first().copied()
     );
     assert!(ordinary
         .members
@@ -430,6 +497,10 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .members
         .iter()
         .all(|member| member.availability.available));
+    assert!(same_physical_identity
+        .iter()
+        .any(|fact| fact.role == skillhub_core::AgentDirectoryRole::Project
+            && fact.members.len() == 1));
 
     assert!(
         projection.directories.iter().any(|fact| fact
