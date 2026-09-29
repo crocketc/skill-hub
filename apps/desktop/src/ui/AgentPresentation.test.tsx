@@ -71,7 +71,7 @@ it("keeps the shared directory as a standalone user-facing entity", async () => 
 });
 
 it("makes one shared directory the brand and recognised vendors its visible types", async () => {
-  await renderPresentation({
+  const { container } = await renderPresentation({
     agentId: "agent-skills.shared-directory",
     sharedDirectory: true,
     sharedAgentBrands: ["anthropic", "codex"],
@@ -81,6 +81,12 @@ it("makes one shared directory the brand and recognised vendors its visible type
   expect(screen.getByText("Agent共享目录")).toBeVisible();
   expect(screen.getByTitle("Claude · 桌面端")).toBeInTheDocument();
   expect(screen.getByTitle("Codex · 终端")).toBeInTheDocument();
+  expect(container.querySelector(".sh-agent-presentation")).toHaveAttribute(
+    "aria-label",
+    "Agent共享目录；Claude · 桌面端；Codex · 终端",
+  );
+  expect(container.querySelector(".sh-agent-presentation")?.getAttribute("aria-label"))
+    .not.toMatch(/agent-skills|anthropic|codex\./i);
 });
 
 it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {

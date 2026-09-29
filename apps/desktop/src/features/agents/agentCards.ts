@@ -1,7 +1,8 @@
 import { normalizeBrandKey } from "../../ui/BrandTag";
 import type { AgentCardModel } from "./agentCardModel";
-import { buildAgentCardModels } from "./agentCardModel";
+import { agentDirectoryProjectionToAgentViews, buildAgentCardModels, buildAgentDirectoryCardModels } from "./agentCardModel";
 import type { AgentView } from "./api";
+import type { AgentDirectoryProjection } from "../../api/bindings";
 
 export interface AgentCardView {
   agent: AgentView;
@@ -53,6 +54,36 @@ export function buildAgentCardViews(agents: AgentView[]): Map<string, AgentCardV
     const existing = grouped.get(brand) ?? [];
     existing.push(card);
     grouped.set(brand, existing);
+  }
+  return grouped;
+}
+
+/** Projection adapter for consumers that still require the established AgentView shape. */
+export function agentDirectoryProjectionToViews(projection: AgentDirectoryProjection): AgentView[] {
+  return agentDirectoryProjectionToAgentViews(projection);
+}
+
+/** Additive projected card view; the legacy builder above keeps its current semantics. */
+export function buildAgentDirectoryCardViews(projection: AgentDirectoryProjection): Map<string, AgentCardView[]> {
+  const grouped = new Map<string, AgentCardView[]>();
+  for (const model of buildAgentDirectoryCardModels(projection)) {
+    const brand = normalizeBrandKey(model.brand);
+    const representativeAgent = representative(model);
+    const card: AgentCardView = {
+      agent: {
+        ...representativeAgent,
+        brand: model.brand,
+        instance: model.sharedDirectory ? model.brandLabel : representativeAgent.instance,
+      },
+      agents: model.members,
+      kinds: model.kinds,
+      sharedDirectory: model.sharedDirectory,
+      sharedPathKeys: model.directories
+        .filter((directory) => directory.sharedReference && directory.path)
+        .map((directory) => directoryKey(directory.path as string)),
+      model,
+    };
+    grouped.set(brand, [...(grouped.get(brand) ?? []), card]);
   }
   return grouped;
 }

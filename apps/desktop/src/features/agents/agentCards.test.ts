@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentView } from "./api";
 import { countDiscoveredAgentCards } from "./agentCards";
+import type { AgentDirectoryProjection } from "../../api/bindings";
 
 function agent(overrides: Partial<AgentView> & Pick<AgentView, "id" | "brand" | "client">): AgentView {
   return {
@@ -116,5 +117,48 @@ describe("buildAgentCardViews shared-reference facts (DEV-88)", () => {
     expect(openai.agent.supportsSharedDirectory).toBe(true);
     const zcode = views.get("zcode")![0];
     expect(zcode.sharedPathKeys).toHaveLength(0);
+  });
+});
+
+describe("directory projection compatibility adapter", () => {
+  it("adapts shared facts into one readable AgentView while retaining internal target mapping", async () => {
+    const { agentDirectoryProjectionToViews, buildAgentDirectoryCardViews } = await import("./agentCards");
+    const projection: AgentDirectoryProjection = {
+      directories: [{
+        role: "shared_directory" as const,
+        identity: { kind: "verified_physical" as const, value: "physical-shared-id" },
+        path: "C:/Users/demo/.agents/skills",
+        status: "existing" as const,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        members: [
+          {
+            logical_target_id: "openai.cli.internal-target",
+            brand: "OpenAI",
+            client_id: "openai.cli.internal-client",
+            kind: "cli" as const,
+            availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true },
+            capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["managed_copy", "symbolic_link"], preferred_mode: "symbolic_link" },
+          },
+        ],
+      }],
+    };
+
+    const views = agentDirectoryProjectionToViews(projection);
+    expect(views).toHaveLength(1);
+    expect(views[0].instance).toBe("共享目录");
+    expect(views[0].sharedAgentBrands).toEqual(["OpenAI"]);
+    expect(views[0].relations[0].logicalTargetId).toBe("openai.cli.internal-target");
+    expect(views[0].directoryMembers?.[0].capabilities.modes).toEqual(["managed_copy", "symbolic_link"]);
+    expect(views[0].directoryViews?.[0].physicalIdentityVerified).toBe(true);
+
+    const cards = [...buildAgentDirectoryCardViews(projection).values()].flat();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].sharedDirectory).toBe(true);
+    expect(cards[0].agent.brand).toBe("Agent Skills");
+    expect(cards[0].agent.instance).toBe("共享目录");
+    expect(cards[0].agent.instance).not.toContain("internal");
   });
 });

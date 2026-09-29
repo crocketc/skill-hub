@@ -1,6 +1,9 @@
 import { normalizeBrandKey } from "../../ui/BrandTag";
 import { normalizeAgentKinds, type AgentKindKey } from "../../ui/AgentPresentation";
 import type {
+  AgentDirectoryFact,
+  AgentDirectoryMemberFact,
+  AgentDirectoryProjection,
   AgentDeploymentStatus,
   AgentDeploymentMode,
   AgentDirectoryRole,
@@ -26,6 +29,170 @@ export interface AgentCardModel {
   deploymentStatus: AgentDeploymentStatus;
   detailTarget: string;
   members: AgentView[];
+  /** Raw per-target facts used to expand a selected directory into operations. */
+  directoryMembers?: AgentDirectoryMemberFact[];
+}
+
+function projectedStatus(status: AgentDirectoryFact["status"]): AgentDirectoryView["status"] {
+  return status === "missing" ? "pending_creation" : status;
+}
+
+function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirectoryMemberFact): AgentView {
+  const brand = member.brand ?? "Agent Skills";
+  const displayName = member.brand ?? "共享目录";
+  return {
+    id: member.logical_target_id,
+    brand,
+    client: member.client_id ?? "shared-directory",
+    instance: displayName,
+    discoveredPaths: directory.exists ? [directory.path] : [],
+    managedDeploymentCount: 0,
+    managedDeploymentRelationCount: 0,
+    officialReference: null,
+    relations: [{
+      logicalLabel: displayName,
+      logicalTargetId: member.logical_target_id,
+      physicalPath: directory.path,
+      physicalTargetId: directory.identity.kind === "verified_physical" ? directory.identity.value : "",
+    }],
+    status: member.availability.available ? "accessible" : "inaccessible",
+    kinds: member.kind ? [member.kind] : undefined,
+    directoryMembers: [member],
+  };
+}
+
+function supportedModesForMembers(members: readonly AgentDirectoryMemberFact[]): AgentDeploymentMode[] {
+  const selectable = members.filter((member) => member.availability.exists && member.availability.available);
+  if (selectable.length === 0) return [];
+  return selectable[0].capabilities.modes.filter((mode) =>
+    selectable.every((member) => member.capabilities.modes.includes(mode)),
+  ) as AgentDeploymentMode[];
+}
+
+function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryView {
+  const verified = directory.identity.kind === "verified_physical";
+  const candidate = directory.identity.kind === "candidate";
+  return {
+    path: directory.exists ? directory.path : null,
+    status: projectedStatus(directory.status),
+    role: directory.role,
+    sharedReference: directory.role === "shared_directory",
+    builtin: directory.role === "builtin",
+    readable: directory.readable,
+    writable: directory.writable,
+    available: directory.available,
+    physicalIdentityVerified: verified,
+    physicalIdentityKey: verified ? directory.identity.value : undefined,
+    candidateIdentityKey: candidate ? directory.identity.value : undefined,
+    supportedModes: supportedModesForMembers(directory.members),
+    preferredMode: directory.members.length > 0
+      && directory.members.every((member) => member.capabilities.preferred_mode === directory.members[0].capabilities.preferred_mode)
+      ? directory.members[0].capabilities.preferred_mode ?? undefined
+      : undefined,
+    deploymentStatus: "unknown",
+  };
+}
+
+/**
+ * Converts the generated directory projection into the compatibility AgentView
+ * shape. Internal target identifiers stay in data fields and are never used as
+ * presentation labels.
+ */
+export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryProjection): AgentView[] {
+  return projection.directories.map((directory) => {
+    const members = directory.members.map((member) => projectedMemberView(directory, member));
+    const shared = directory.role === "shared_directory";
+    const brand = shared ? "Agent Skills" : directory.members.find((member) => member.brand)?.brand ?? "Agent";
+    const identity = directory.identity.kind === "verified_physical"
+      ? `physical:${directory.identity.value}`
+      : `candidate:${directory.identity.value}`;
+    const kinds = shared
+      ? ["shared_directory" as const]
+      : [...new Set(directory.members.flatMap((member) => member.kind ? [member.kind] : []))];
+    const representative = members[0];
+    return {
+      ...(representative ?? {
+        id: identity,
+        brand,
+        client: "unknown",
+        instance: shared ? "共享目录" : brand,
+        discoveredPaths: directory.exists ? [directory.path] : [],
+        managedDeploymentCount: 0,
+        managedDeploymentRelationCount: 0,
+        officialReference: null,
+        relations: [],
+        status: directory.available ? "accessible" as const : "inaccessible" as const,
+      }),
+      id: representative?.id ?? identity,
+      brand,
+      instance: shared ? "共享目录" : representative?.instance ?? brand,
+      kinds,
+      discoveredPaths: directory.exists ? [directory.path] : [],
+      relations: directory.members.map((member) => ({
+        logicalLabel: member.brand ?? "共享目录",
+        logicalTargetId: member.logical_target_id,
+        physicalPath: directory.path,
+        physicalTargetId: directory.identity.kind === "verified_physical" ? directory.identity.value : "",
+      })),
+      directoryViews: [projectedDirectoryView(directory)],
+      directoryMembers: directory.members,
+      builtin: directory.role === "builtin" || undefined,
+      supportsSharedDirectory: directory.role === "shared_directory",
+      sharedAgentBrands: shared ? [...new Set(directory.members.flatMap((member) => member.brand ? [member.brand] : []))].sort() : undefined,
+      sharedAgentBrandKinds: shared ? sharedBrandKindsFromFacts(directory.members) : undefined,
+    };
+  });
+}
+
+function sharedBrandKindsFromFacts(members: readonly AgentDirectoryMemberFact[]): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const member of members) {
+    if (!member.brand || !member.kind) continue;
+    result[member.brand] = [...new Set([...(result[member.brand] ?? []), member.kind])].sort();
+  }
+  return result;
+}
+
+/** Additive canonical card builder for the generated directory projection. */
+export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjection): AgentCardModel[] {
+  return projection.directories.map((directory) => {
+    const directoryView = projectedDirectoryView(directory);
+    const members = directory.members.map((member) => projectedMemberView(directory, member));
+    const shared = directory.role === "shared_directory";
+    const brands = shared
+      ? [...new Set(directory.members.flatMap((member) => member.brand ? [member.brand] : []))].sort()
+      : [];
+    const kinds = shared
+      ? ["shared_directory" as const]
+      : normalizeAgentKinds(directory.members.flatMap((member) => member.kind ? [member.kind] : []));
+    const identityKey = directory.identity.kind === "verified_physical"
+      ? `physical:${directory.identity.value}`
+      : `candidate:${directory.identity.value}`;
+    const supportedModes = supportedModesForMembers(directory.members);
+    const preferredMode = directory.members.length > 0
+      && directory.members.every((member) => member.capabilities.preferred_mode === directory.members[0].capabilities.preferred_mode)
+      ? directory.members[0].capabilities.preferred_mode ?? undefined
+      : undefined;
+    return {
+      id: `${directory.role}:${identityKey}`,
+      brand: shared ? "Agent Skills" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
+      brandLabel: shared ? "共享目录" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
+      kinds,
+      directories: [directoryView],
+      sharedDirectory: shared,
+      supportsSharedDirectory: shared,
+      sharedAgentBrands: brands,
+      sharedAgentBrandKinds: shared ? sharedBrandKindsFromFacts(directory.members) : {},
+      builtin: directory.role === "builtin",
+      readOnly: directory.role === "builtin" || !directory.writable,
+      supportedModes,
+      preferredMode,
+      deploymentStatus: "unknown",
+      detailTarget: members[0]?.id ?? identityKey,
+      members,
+      directoryMembers: directory.members,
+    };
+  });
 }
 
 function directoryKey(directory: AgentDirectoryView): string {

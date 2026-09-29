@@ -3,6 +3,7 @@ import {
   queryApplication,
   type AgentClient,
   type AgentProfile,
+  type AgentDirectoryProjection,
   type CustomAgent,
   type CustomAgentDraft,
   type DeploymentTarget,
@@ -26,6 +27,13 @@ import type {
 
 function unexpectedResult(operation: string): Error {
   return new Error(`${operation} returned an unexpected native result.`);
+}
+
+/** Additive read path for consumers migrating to the canonical directory facts. */
+export async function loadAgentDirectoryProjection(): Promise<AgentDirectoryProjection> {
+  const result = await queryApplication({ type: "get_agent_directory_projection", payload: null });
+  if (result.type !== "agent_directory_projection") throw unexpectedResult("get_agent_directory_projection");
+  return result.payload;
 }
 
 function relationOf(target: LogicalTarget, snapshot: DiscoverySnapshot): AgentRelation {

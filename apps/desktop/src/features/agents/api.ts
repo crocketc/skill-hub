@@ -1,7 +1,15 @@
 import type { AgentKindKey } from "../../ui/AgentPresentation";
-import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
+import type { AgentDirectoryMemberFact, RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
 
 export type { RelationshipOverview, RemovalImpactFact };
+export type {
+  AgentDirectoryAvailability,
+  AgentDirectoryFact,
+  AgentDirectoryIdentity,
+  AgentDirectoryMemberCapabilities,
+  AgentDirectoryMemberFact,
+  AgentDirectoryProjection,
+} from "../../api/bindings";
 
 export interface AgentRelation {
   logicalLabel: string;
@@ -66,6 +74,8 @@ export interface AgentView {
   status: AgentStatus;
   /** Unified directory facts used by every Agent presentation surface. */
   directoryViews?: AgentDirectoryView[];
+  /** Member-scoped target and capability facts from the canonical projection. */
+  directoryMembers?: AgentDirectoryMemberFact[];
   /** Whether this recognised brand can consume the shared directory. */
   supportsSharedDirectory?: boolean;
   /** Brands shown on the independent shared-directory card. */
