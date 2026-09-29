@@ -49,6 +49,8 @@
 .sh-agent-presentation__shared-brands {
   display: inline-flex;
   align-items: center;
+  /* DEV-102：共享目录关联品牌较多时在卡片宽度内换行，不越出右边界。 */
+  flex-wrap: wrap;
   gap: var(--space-1);
 }
 

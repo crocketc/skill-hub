@@ -1,28 +1,29 @@
+/* DEV-108：派发方式小图标——无边框、尺寸收敛，以绿/红直接表达
+   支持/不支持；推荐态只用一层轻量成功色底，不回到描边样式。 */
+
 .sh-agent-card__deployment-methods {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   color: var(--ui-ink-muted);
 }
 
 .sh-agent-card__deployment-method {
   display: inline-grid;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 1.15rem;
+  height: 1.15rem;
   place-items: center;
-  border: 1px solid var(--ui-border-subtle);
+  border: none;
   border-radius: var(--radius-xs);
-  font-size: var(--font-size-sm);
+  font-size: 0.85rem;
   line-height: 1;
-  opacity: 0.38;
+  color: var(--ui-danger-foreground);
 }
 
 .sh-agent-card__deployment-method.is-supported {
-  border-color: var(--ui-accent-border);
-  color: var(--ui-accent-strong);
-  opacity: 1;
+  color: var(--ui-success-foreground);
 }
 
 .sh-agent-card__deployment-method.is-recommended {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 16%, transparent);
+  background: var(--ui-success-background);
 }

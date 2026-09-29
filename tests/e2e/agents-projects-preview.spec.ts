@@ -44,11 +44,16 @@ test("agent cards expose identity, directory facts, and deployment capabilities"
 
   // Every card exposes the three deployment modes as supported/unsupported
   // icons; the tooltip/accessible label carries the user-facing explanation.
+  // DEV-108 预览夹具新增共享目录卡后共 7 张卡，每卡一组派发方式图标。
   const deploymentMethods = page.getByLabel("Deployment methods");
-  await expect(deploymentMethods).toHaveCount(6);
+  await expect(deploymentMethods).toHaveCount(7);
   await expect(deploymentMethods.first().getByLabel("Managed copy unavailable")).toBeVisible();
   await expect(deploymentMethods.first().getByLabel("Symbolic link unavailable")).toBeVisible();
   await expect(deploymentMethods.first().getByLabel("Directory junction unavailable")).toBeVisible();
+  // 共享目录卡的三种方式全部支持，绿/红状态与小尺寸图标共用同一规则。
+  const sharedCard = page.getByRole("listitem").filter({ has: page.getByText("/Users/preview/.agents/skills") });
+  await expect(sharedCard.getByLabel("Symbolic link supported")).toBeVisible();
+  await expect(sharedCard.getByLabel("Directory junction supported")).toBeVisible();
 
   // Custom agents have a detail link; editing/removal is not a card action.
   const reviewerCard = page.getByRole("listitem").filter({
