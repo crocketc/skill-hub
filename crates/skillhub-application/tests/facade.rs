@@ -78,6 +78,21 @@ async fn desktop_preferences_default_and_persist_through_the_real_facade() {
 }
 
 #[tokio::test]
+async fn agent_directory_projection_query_returns_an_empty_projection_without_discovery() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            skillhub_core::api::GetAgentDirectoryProjection,
+        ))
+        .await
+        .expect("empty directory projection");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected Agent directory projection");
+    };
+    assert!(projection.directories.is_empty());
+}
+
+#[tokio::test]
 async fn project_commands_and_queries_use_the_real_facade() {
     let database = Database::open_in_memory().expect("database");
     let project_root = tempfile::tempdir().expect("project root");

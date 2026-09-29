@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{AgentProfile, ClientKind, OperatingSystem, TargetScope};
+use crate::deployment::DeploymentMode;
 use crate::AppResult;
+use crate::DeploymentCapability;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -124,6 +126,80 @@ pub struct DiscoverySnapshot {
     pub agent_roots: Vec<AgentRootObservation>,
     pub logical_targets: Vec<LogicalTarget>,
     pub physical_targets: Vec<PhysicalTarget>,
+}
+
+/// Stable identity for a directory in the Agent presentation read model.
+/// Unverified candidates are never represented as physical filesystem facts.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum AgentDirectoryIdentity {
+    VerifiedPhysical(String),
+    Candidate(String),
+}
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentDirectoryRole {
+    AgentNative,
+    SharedDirectory,
+    Builtin,
+    Project,
+}
+
+impl AgentDirectoryIdentity {
+    pub fn is_verified(&self) -> bool {
+        matches!(self, Self::VerifiedPhysical(_))
+    }
+}
+
+/// Availability facts observed for one logical directory member.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentDirectoryAvailability {
+    pub status: DirectoryObservationStatus,
+    pub exists: bool,
+    pub readable: bool,
+    pub writable: bool,
+    pub available: bool,
+}
+
+/// Deployment facts stay scoped to the logical target that was observed.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentDirectoryMemberCapabilities {
+    pub deployment: DeploymentCapability,
+    pub modes: Vec<DeploymentMode>,
+    pub preferred_mode: Option<DeploymentMode>,
+}
+
+/// One logical target represented by a directory entity.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentDirectoryMemberFact {
+    pub logical_target_id: String,
+    pub brand: Option<String>,
+    pub client_id: Option<String>,
+    pub kind: Option<ClientKind>,
+    pub availability: AgentDirectoryAvailability,
+    pub capabilities: AgentDirectoryMemberCapabilities,
+}
+
+/// Canonical directory entity used by Agent card consumers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentDirectoryFact {
+    pub role: AgentDirectoryRole,
+    pub identity: AgentDirectoryIdentity,
+    pub path: String,
+    pub status: DirectoryObservationStatus,
+    pub exists: bool,
+    pub readable: bool,
+    pub writable: bool,
+    pub available: bool,
+    pub members: Vec<AgentDirectoryMemberFact>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct AgentDirectoryProjection {
+    pub directories: Vec<AgentDirectoryFact>,
 }
 
 pub trait AgentRepository {

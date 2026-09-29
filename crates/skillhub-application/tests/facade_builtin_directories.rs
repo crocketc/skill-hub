@@ -6,7 +6,8 @@ use skillhub_core::agent::{
 };
 use skillhub_core::api::{
     AppCommand as RootAppCommand, AppCommandResult, AppQuery as RootAppQuery, AppQueryResult,
-    EnsureAgentTargetDirectory, GetDeploymentPlan, ListDeploymentTargets,
+    EnsureAgentTargetDirectory, GetAgentDirectoryProjection, GetDeploymentPlan,
+    ListDeploymentTargets,
 };
 use skillhub_core::deployment::DeploymentPlanRequest;
 use skillhub_core::{ApplicationFacade, DeploymentMode, ErrorCode, VersionId};
@@ -171,6 +172,292 @@ async fn identified_agent_with_missing_skill_directory_is_listed_as_pending_targ
     );
     assert!(!targets[0].physical_identity_verified);
     assert!(!targets[0].modes.is_empty());
+}
+
+#[tokio::test]
+async fn agent_directory_projection_preserves_member_identity_and_capabilities() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let shared_path = root.path().join("shared");
+    let ordinary_path = root.path().join("ordinary");
+    let distinct_path = root.path().join("distinct");
+    let candidate_path = root.path().join("candidate");
+    std::fs::create_dir_all(&shared_path).expect("shared path");
+    std::fs::create_dir_all(&ordinary_path).expect("ordinary path");
+    std::fs::create_dir_all(&distinct_path).expect("distinct path");
+
+    let instance = |client_id: &str, kind| ClientInstance {
+        profile_id: if client_id == "agent-skills" {
+            "agent-skills"
+        } else {
+            "openai"
+        }
+        .into(),
+        client_id: client_id.into(),
+        kind,
+        display_name: client_id.into(),
+        supported_os: vec![OperatingSystem::Windows],
+        client_presence: ClientPresence::Unknown,
+    };
+    let root_observation = |id: &str, client_id: &str| AgentRootObservation {
+        id: id.into(),
+        profile_id: if client_id == "agent-skills" {
+            "agent-skills"
+        } else {
+            "openai"
+        }
+        .into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: root.path().to_string_lossy().into_owned(),
+        status: DirectoryObservationStatus::Existing,
+        exists: true,
+        readable: true,
+        writable: true,
+        physical_id: Some(format!("root:{id}")),
+        physical_identity_verified: true,
+    };
+    let logical = |id: &str,
+                   client_id: &str,
+                   path: &std::path::Path,
+                   physical_id: &str,
+                   verified: bool,
+                   shared| LogicalTarget {
+        id: id.into(),
+        profile_id: if client_id == "agent-skills" {
+            "agent-skills"
+        } else {
+            "openai"
+        }
+        .into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: path.to_string_lossy().into_owned(),
+        agent_root_id: format!("root:{client_id}"),
+        marker: "SKILL.md".into(),
+        precedence: DirectoryPrecedence::Preferred,
+        shared_reference: shared,
+        builtin: false,
+        exists: path.exists(),
+        readable: path.exists(),
+        writable: path.exists(),
+        available: path.exists(),
+        physical_id: physical_id.into(),
+        status: if path.exists() {
+            DirectoryObservationStatus::Existing
+        } else {
+            DirectoryObservationStatus::Missing
+        },
+        physical_identity_verified: verified,
+    };
+
+    let snapshot = DiscoverySnapshot {
+        generation: "projection-test".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: vec![
+            instance("openai.codex-cli", ClientKind::Cli),
+            instance("openai.chatgpt-desktop", ClientKind::Desktop),
+            instance("openai.codex-ide", ClientKind::IdeExtension),
+            instance("openai.unknown-root", ClientKind::Cli),
+            instance("agent-skills", ClientKind::SharedDirectory),
+        ],
+        agent_roots: vec![
+            root_observation("root:openai.codex-cli", "openai.codex-cli"),
+            root_observation("root:openai.chatgpt-desktop", "openai.chatgpt-desktop"),
+            root_observation("root:openai.codex-ide", "openai.codex-ide"),
+            root_observation("root:agent-skills", "agent-skills"),
+        ],
+        logical_targets: vec![
+            logical(
+                "shared-canonical",
+                "agent-skills",
+                &shared_path,
+                "physical:shared",
+                true,
+                true,
+            ),
+            logical(
+                "shared-cli",
+                "openai.codex-cli",
+                &shared_path,
+                "physical:shared",
+                true,
+                true,
+            ),
+            logical(
+                "shared-unidentified",
+                "openai.unknown-root",
+                &shared_path,
+                "physical:shared",
+                true,
+                true,
+            ),
+            logical(
+                "ordinary-cli",
+                "openai.codex-cli",
+                &ordinary_path,
+                "physical:ordinary",
+                true,
+                false,
+            ),
+            logical(
+                "ordinary-desktop",
+                "openai.chatgpt-desktop",
+                &ordinary_path,
+                "physical:ordinary",
+                true,
+                false,
+            ),
+            logical(
+                "distinct-ide",
+                "openai.codex-ide",
+                &distinct_path,
+                "physical:distinct",
+                true,
+                false,
+            ),
+            logical(
+                "candidate-cli",
+                "openai.codex-cli",
+                &candidate_path,
+                "candidate:same-text",
+                false,
+                false,
+            ),
+            logical(
+                "candidate-cli-second",
+                "openai.codex-cli",
+                &candidate_path,
+                "candidate:same-text",
+                false,
+                false,
+            ),
+            logical(
+                "candidate-desktop",
+                "openai.chatgpt-desktop",
+                &candidate_path,
+                "candidate:same-text",
+                false,
+                false,
+            ),
+        ],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save snapshot");
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
+        .await
+        .expect("projection query");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected directory projection");
+    };
+
+    let shared = projection
+        .directories
+        .iter()
+        .find(|fact| {
+            fact.members
+                .iter()
+                .any(|member| member.logical_target_id == "shared-canonical")
+        })
+        .expect("shared entity");
+    assert_eq!(
+        shared.members.len(),
+        2,
+        "canonical target and recognized brand association are members"
+    );
+    assert_eq!(
+        shared.role,
+        skillhub_core::AgentDirectoryRole::SharedDirectory
+    );
+    assert!(shared
+        .members
+        .iter()
+        .all(|member| member.logical_target_id != "shared-unidentified"));
+    assert!(shared
+        .members
+        .iter()
+        .any(|member| member.logical_target_id == "shared-cli"
+            && member.kind == Some(ClientKind::Cli)));
+
+    let ordinary = projection
+        .directories
+        .iter()
+        .find(|fact| {
+            fact.members
+                .iter()
+                .any(|member| member.logical_target_id == "ordinary-cli")
+        })
+        .expect("ordinary entity");
+    assert_eq!(
+        ordinary.members.len(),
+        2,
+        "same verified physical directory combines kinds"
+    );
+    assert!(ordinary
+        .members
+        .iter()
+        .any(|member| member.kind == Some(ClientKind::Cli)));
+    assert!(ordinary
+        .members
+        .iter()
+        .any(|member| member.kind == Some(ClientKind::Desktop)));
+    assert!(ordinary
+        .members
+        .iter()
+        .any(|member| member.logical_target_id == "ordinary-cli"
+            && member.capabilities.deployment.copy));
+    assert!(
+        ordinary
+            .members
+            .iter()
+            .any(|member| member.logical_target_id == "ordinary-desktop"
+                && !member.capabilities.deployment.copy),
+        "capabilities stay member-scoped"
+    );
+    assert!(ordinary
+        .members
+        .iter()
+        .all(|member| member.availability.status == DirectoryObservationStatus::Existing));
+    assert!(ordinary
+        .members
+        .iter()
+        .all(|member| member.availability.available));
+
+    assert!(
+        projection.directories.iter().any(|fact| fact
+            .members
+            .iter()
+            .any(|member| member.logical_target_id == "distinct-ide")),
+        "different physical paths remain separate"
+    );
+    let candidates: Vec<_> = projection
+        .directories
+        .iter()
+        .filter(|fact| {
+            fact.members
+                .iter()
+                .any(|member| member.logical_target_id.starts_with("candidate-"))
+        })
+        .collect();
+    assert_eq!(
+        candidates.len(),
+        2,
+        "candidate identity is scoped to the observing Agent root"
+    );
+    assert!(candidates.iter().all(|fact| !fact.identity.is_verified()));
+    assert!(
+        candidates.iter().any(|fact| fact.members.len() == 2),
+        "same root and candidate identity can group targets"
+    );
+    assert_ne!(candidates[0].identity, candidates[1].identity);
 }
 
 #[tokio::test]
