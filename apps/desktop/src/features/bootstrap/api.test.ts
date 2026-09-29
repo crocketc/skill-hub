@@ -66,6 +66,13 @@ it("completes onboarding and discovers Agent targets through typed native comman
             supported_os: ["windows"],
             client_presence: "Unknown",
           },
+          {
+            profile_id: "deepseek-harness",
+            client_id: "deepseek-harness.tui",
+            kind: "tui",
+            supported_os: ["windows"],
+            client_presence: "Unknown",
+          },
         ],
         logical_targets: [
           {
@@ -81,6 +88,21 @@ it("completes onboarding and discovers Agent targets through typed native comman
             writable: true,
             available: true,
             physical_id: "physical-1",
+          },
+          {
+            id: "target-2",
+            profile_id: "deepseek-harness",
+            client_id: "deepseek-harness.tui",
+            scope: "global",
+            path: "C:\\Users\\Test\\.dsh\\skills",
+            marker: "SKILL.md",
+            precedence: "preferred",
+            exists: false,
+            readable: false,
+            writable: false,
+            available: false,
+            physical_id: "candidate-2",
+            status: "missing",
           },
         ],
         physical_targets: [],
@@ -117,6 +139,15 @@ it("completes onboarding and discovers Agent targets through typed native comman
       path: "C:\\Users\\Test\\.codex\\skills",
       physicalId: "physical-1",
       availability: "available",
+    },
+    {
+      id: "target-2",
+      label: "deepseek-harness.tui",
+      profileId: "deepseek-harness",
+      kind: "tui",
+      path: "C:\\Users\\Test\\.dsh\\skills",
+      physicalId: "candidate-2",
+      availability: "pending_creation",
     },
   ]);
   expect(result.projection).toEqual({ directories: [] });

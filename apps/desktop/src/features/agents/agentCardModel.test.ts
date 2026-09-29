@@ -215,6 +215,7 @@ describe("buildAgentDirectoryCardModels", () => {
     ] });
     expect(cards.map((card) => card.directories[0].role)).toEqual(["agent_native", "agent_native", "agent_native", "builtin", "project"]);
     expect(cards.map((card) => card.directories[0].status)).toEqual(["pending_creation", "inaccessible", "broken_link", "existing", "existing"]);
+    expect(cards[0].supportedModes).toEqual(["managed_copy", "symbolic_link", "directory_junction"]);
     expect(cards[3].readOnly).toBe(true);
   });
 });

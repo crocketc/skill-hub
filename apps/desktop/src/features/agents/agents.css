@@ -120,35 +120,6 @@
   color: var(--ui-warning-foreground);
 }
 
-.sh-agent-card__deployment-methods {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--ui-ink-muted);
-}
-
-.sh-agent-card__deployment-method {
-  display: inline-grid;
-  width: 1.65rem;
-  height: 1.65rem;
-  place-items: center;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-xs);
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  opacity: 0.38;
-}
-
-.sh-agent-card__deployment-method.is-supported {
-  border-color: var(--ui-accent-border);
-  color: var(--ui-accent-strong);
-  opacity: 1;
-}
-
-.sh-agent-card__deployment-method.is-recommended {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-accent) 16%, transparent);
-}
-
 .sh-agent-card__meta {
   display: flex;
   flex-wrap: wrap;

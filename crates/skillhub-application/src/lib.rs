@@ -3699,6 +3699,17 @@ impl LocalApplicationFacade {
             }
             normalized_ids.sort();
             normalized_ids.dedup();
+            // A discovered Agent root with a missing Skills child is a valid
+            // selectable recognition target, but has nothing for the scanner
+            // to walk yet. Skip only that known-missing target; inaccessible,
+            // malformed, stale, and unknown scopes continue through normal
+            // registration validation.
+            normalized_ids.retain(|id| {
+                !snapshot.logical_targets.iter().any(|target| {
+                    target.id == *id
+                        && target.status == skillhub_core::DirectoryObservationStatus::Missing
+                })
+            });
 
             let mut roots = Vec::new();
             for target in &snapshot.logical_targets {

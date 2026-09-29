@@ -71,10 +71,9 @@ function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirecto
 }
 
 function supportedModesForMembers(members: readonly AgentDirectoryMemberFact[]): AgentDeploymentMode[] {
-  const selectable = members.filter((member) => member.availability.exists && member.availability.available);
-  if (selectable.length === 0) return [];
-  return selectable[0].capabilities.modes.filter((mode) =>
-    selectable.every((member) => member.capabilities.modes.includes(mode)),
+  if (members.length === 0) return [];
+  return members[0].capabilities.modes.filter((mode) =>
+    members.every((member) => member.capabilities.modes.includes(mode)),
   ) as AgentDeploymentMode[];
 }
 

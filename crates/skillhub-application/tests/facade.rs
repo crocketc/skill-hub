@@ -224,13 +224,13 @@ async fn scan_commands_persist_confirmed_results_and_reject_unregistered_paths()
 }
 
 #[tokio::test]
-async fn initialization_scan_without_selection_ignores_unavailable_agent_targets() {
+async fn initialization_scan_skips_missing_agent_targets_when_selected() {
     let database = Database::open_in_memory().expect("database");
     let available_root = tempfile::tempdir().expect("available root");
     let skill = available_root.path().join("example");
     std::fs::create_dir_all(&skill).expect("skill dir");
     std::fs::write(skill.join("SKILL.md"), "# Example\n").expect("marker");
-    let unavailable_path = available_root.path().join("missing-agent");
+    let pending_path = available_root.path().join("missing-agent");
     database
         .agent_repository()
         .replace(&DiscoverySnapshot {
@@ -259,11 +259,11 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     physical_identity_verified: true,
                 },
                 LogicalTarget {
-                    id: "unavailable".into(),
+                    id: "pending".into(),
                     profile_id: "unknown".into(),
                     client_id: "unknown".into(),
                     scope: TargetScope::Global,
-                    path: unavailable_path.to_string_lossy().into_owned(),
+                    path: pending_path.to_string_lossy().into_owned(),
                     agent_root_id: "fixture-root".into(),
                     marker: "SKILL.md".into(),
                     precedence: DirectoryPrecedence::Unknown,
@@ -278,16 +278,27 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
                     physical_identity_verified: false,
                 },
             ],
-            physical_targets: vec![PhysicalTarget {
-                id: skillhub_core::physical_id_for_path(available_root.path())
-                    .expect("physical id"),
-                path: available_root.path().to_string_lossy().into_owned(),
-                exists: true,
-                readable: true,
-                writable: true,
-                case_behavior: "unknown".into(),
-                logical_target_ids: vec!["available".into()],
-            }],
+            physical_targets: vec![
+                PhysicalTarget {
+                    id: skillhub_core::physical_id_for_path(available_root.path())
+                        .expect("physical id"),
+                    path: available_root.path().to_string_lossy().into_owned(),
+                    exists: true,
+                    readable: true,
+                    writable: true,
+                    case_behavior: "unknown".into(),
+                    logical_target_ids: vec!["available".into()],
+                },
+                PhysicalTarget {
+                    id: "missing".into(),
+                    path: pending_path.to_string_lossy().into_owned(),
+                    exists: false,
+                    readable: false,
+                    writable: false,
+                    case_behavior: "unknown".into(),
+                    logical_target_ids: vec!["pending".into()],
+                },
+            ],
             agent_roots: Vec::new(),
         })
         .expect("save discovery");
@@ -304,6 +315,34 @@ async fn initialization_scan_without_selection_ignores_unavailable_agent_targets
         panic!("expected scan result");
     };
     assert_eq!(scan.discovered.len(), 1);
+
+    let result = facade
+        .execute(AppCommand::RunInitializationScan(
+            skillhub_core::api::RunInitializationScan {
+                scope_ids: vec!["available".into(), "pending".into()],
+            },
+        ))
+        .await
+        .expect("missing Agent skills directory must be skipped");
+    let AppCommandResult::ScanResult(scan) = result else {
+        panic!("expected scan result");
+    };
+    assert_eq!(scan.discovered.len(), 1);
+
+    let result = facade
+        .execute(AppCommand::RunInitializationScan(
+            skillhub_core::api::RunInitializationScan {
+                scope_ids: vec!["pending".into()],
+            },
+        ))
+        .await
+        .expect("scanning only a pending Agent directory must be an empty scan");
+    let AppCommandResult::ScanResult(scan) = result else {
+        panic!("expected scan result");
+    };
+    assert!(scan.roots.is_empty());
+    assert!(scan.discovered.is_empty());
+    assert!(!pending_path.exists());
 }
 
 #[tokio::test]

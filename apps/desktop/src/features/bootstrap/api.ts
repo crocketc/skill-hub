@@ -72,7 +72,7 @@ export interface CompatibilityTarget {
   path?: string;
   /** Native file-system target identity; kept with the scope for grouped selection. */
   physicalId?: string;
-  availability: "available" | "unavailable";
+  availability: "available" | "pending_creation" | "unavailable";
 }
 
 function unavailable(operation: string): Promise<never> {
@@ -124,9 +124,11 @@ export const desktopOnboardingOperations: OnboardingOperations = {
       kind: kindByClient.get(`${target.profile_id}:${target.client_id}`) ?? null,
       path: target.path,
       physicalId: target.physical_id,
-      availability: target.available && target.exists && target.readable
-        ? ("available" as const)
-        : ("unavailable" as const),
+      availability: target.status === "missing"
+        ? ("pending_creation" as const)
+        : target.available && target.exists && target.readable
+          ? ("available" as const)
+          : ("unavailable" as const),
     }));
     const representedClients = new Set(
       result.payload.logical_targets.map((target) => `${target.profile_id}:${target.client_id}`),

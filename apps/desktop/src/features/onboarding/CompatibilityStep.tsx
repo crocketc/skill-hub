@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { buildAgentCardViews } from "../agents/agentCards";
 import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
 import type { AgentDirectoryProjection } from "../../api/bindings";
-import type { AgentView } from "../agents/api";
+import type { AgentDirectoryView, AgentView } from "../agents/api";
+import { DeploymentCapabilityIcons } from "../agents/DeploymentCapabilityIcons";
 import { Button } from "../../ui/Button";
 import { AgentPresentation, agentKindLabel, isAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
 import { brandDisplayName } from "../../ui/BrandTag";
@@ -27,6 +28,8 @@ interface CompatibilityCardGroup {
   brand: string;
   kinds: AgentKindKey[];
   path?: string;
+  directory?: AgentDirectoryView;
+  pendingCreation: boolean;
   sharedDirectory: boolean;
   sharedAgentBrands: string[];
   sharedAgentBrandKinds: Record<string, string[]>;
@@ -44,12 +47,19 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
           const target = targetsById.get(member.logical_target_id);
           if (!target || seen.has(target.id)) return [];
           seen.add(target.id);
-          return [{ ...target, availability: member.availability.available && target.availability === "available" ? "available" as const : "unavailable" as const }];
+          const availability = member.availability.available && target.availability === "available"
+            ? "available" as const
+            : member.availability.status === "missing" || card.directories[0]?.status === "pending_creation"
+              ? "pending_creation" as const
+              : "unavailable" as const;
+          return [{ ...target, availability }];
         });
         return {
           brand: card.brand,
           kinds: card.kinds,
           path: card.directories[0]?.path ?? undefined,
+          directory: card.directories[0],
+          pendingCreation: card.directories[0]?.status === "pending_creation",
           sharedDirectory: card.sharedDirectory,
           sharedAgentBrands: card.sharedAgentBrands,
           sharedAgentBrandKinds: card.sharedAgentBrandKinds,
@@ -79,6 +89,8 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
       brand: card.agent.brand || brand,
       kinds: card.kinds,
       path: card.agent.discoveredPaths[0],
+      directory: card.model.directories[0],
+      pendingCreation: card.agents.some((agent) => targetsById.get(agent.id)?.availability === "pending_creation"),
       sharedDirectory: card.sharedDirectory,
       sharedAgentBrands: card.model.sharedAgentBrands,
       sharedAgentBrandKinds: card.model.sharedAgentBrandKinds,
@@ -179,10 +191,11 @@ function TargetCard({
   onTargetSelectionChange: (targetId: string, selected: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const selectableTargets = group.targets.filter((target) => target.availability === "available");
+  const selectableTargets = group.targets.filter((target) => target.availability !== "unavailable");
   const selectableIds = selectableTargets.map((target) => target.id);
   const checked = selectableIds.length > 0 && selectableIds.every((id) => selectedTargetIds.includes(id));
-  const unavailable = selectableIds.length === 0;
+  const pendingCreation = group.pendingCreation || group.targets.some((target) => target.availability === "pending_creation");
+  const unavailable = selectableIds.length === 0 && !pendingCreation;
   const kindLabels = group.kinds.map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
   const presentationLabel = group.sharedDirectory
     ? String(t("agents.kind.sharedDirectory"))
@@ -212,8 +225,13 @@ function TargetCard({
               />
             </span>
             <code className="sh-onboarding__target-path">
-              {group.path ? displayPath(group.path) : t("onboarding.targetPathUnavailable")}
+              {pendingCreation
+                ? t("agents.pathPending")
+                : group.path
+                  ? displayPath(group.path)
+                  : t("onboarding.targetPathUnavailable")}
             </code>
+            <DeploymentCapabilityIcons directory={group.directory} t={(key) => String(t(key as never))} />
           </span>
         )}
         onChange={(event) => {

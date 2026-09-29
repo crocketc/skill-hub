@@ -193,3 +193,58 @@ it("uses projected physical identities, shared membership, and expands selected 
     "codex-project",
   ]);
 });
+
+it("keeps a recognized Agent root with a missing skills directory as pending creation", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const onTargetSelectionChange = vi.fn();
+  const user = userEvent.setup();
+  const pendingProjection: AgentDirectoryProjection = {
+    directories: [{
+      role: "agent_native",
+      identity: { kind: "candidate", value: "deepseek-harness-root" },
+      path: "C:/Users/Test/.dsh/skills",
+      status: "missing",
+      exists: false,
+      readable: false,
+      writable: false,
+      available: false,
+      members: [{
+        logical_target_id: "deepseek-harness-tui",
+        brand: "deepseek-harness",
+        client_id: "deepseek-harness.tui",
+        kind: "tui",
+        availability: { status: "missing", exists: false, available: false, readable: false, writable: false },
+        capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" },
+        deployment_status: "not_deployed",
+        managed_deployment_relation_count: 0,
+        managed_deployment_count: 0,
+      }],
+    }],
+  };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <CompatibilityStep
+        confirmed
+        isDiscovering={false}
+        selectedTargetIds={[]}
+        targets={[{ id: "deepseek-harness-tui", label: "deepseek-harness.tui", profileId: "deepseek-harness", kind: "tui", path: "C:/Users/Test/.dsh/skills", availability: "pending_creation" }]}
+        projection={pendingProjection}
+        onConfirmChange={() => undefined}
+        onDiscover={() => undefined}
+        onTargetSelectionChange={onTargetSelectionChange}
+        onSelectAllAvailable={() => undefined}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getAllByLabelText("DeepSeek Harness · 终端")[0]).toBeVisible();
+  expect(screen.getByText("待创建")).toBeVisible();
+  expect(screen.queryByText("不可用")).not.toBeInTheDocument();
+  expect(screen.queryByText("未发现可用路径")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("支持复制派发")).toBeVisible();
+  expect(screen.getByLabelText("不支持符号链接派发")).toBeVisible();
+  expect(screen.getAllByLabelText("DeepSeek Harness · 终端")[0]).toBeEnabled();
+  expect(document.querySelector(".sh-onboarding__target-card")).toHaveAttribute("data-unavailable", "false");
+  await user.click(screen.getAllByLabelText("DeepSeek Harness · 终端")[0]);
+  expect(onTargetSelectionChange).toHaveBeenCalledWith("deepseek-harness-tui", true);
+});
