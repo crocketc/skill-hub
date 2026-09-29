@@ -6607,7 +6607,7 @@ impl LocalApplicationFacade {
                 } else {
                     AgentDirectoryRole::AgentNative
                 };
-                let (identity, grouping_key) = if target.physical_identity_verified {
+                let (identity, identity_key) = if target.physical_identity_verified {
                     let identity =
                         AgentDirectoryIdentity::VerifiedPhysical(target.physical_id.clone());
                     (identity.clone(), format!("verified:{}", target.physical_id))
@@ -6617,6 +6617,15 @@ impl LocalApplicationFacade {
                     let candidate_id = format!("{}::{}", target.agent_root_id, target.physical_id);
                     let identity = AgentDirectoryIdentity::Candidate(candidate_id.clone());
                     (identity, format!("candidate:{candidate_id}"))
+                };
+                let grouping_key = match (role, target.physical_identity_verified) {
+                    (AgentDirectoryRole::SharedDirectory, _) => {
+                        format!("shared:{identity_key}")
+                    }
+                    (role, true) => {
+                        format!("brand:{}:role:{role:?}:{identity_key}", target.profile_id)
+                    }
+                    (role, false) => format!("role:{role:?}:{identity_key}"),
                 };
                 let capabilities =
                     effective_target_capabilities(&target.client_id, &host_capabilities);
@@ -6662,17 +6671,6 @@ impl LocalApplicationFacade {
                         available: target.available && target.physical_identity_verified,
                         members: Vec::new(),
                     });
-                // One Agent directory entity may carry members from several
-                // roles. Shared owns presentation precedence, then builtin.
-                let role_priority = |role| match role {
-                    AgentDirectoryRole::AgentNative => 0,
-                    AgentDirectoryRole::Builtin => 1,
-                    AgentDirectoryRole::SharedDirectory => 2,
-                    AgentDirectoryRole::Project => 3,
-                };
-                if role_priority(role) > role_priority(fact.role) {
-                    fact.role = role;
-                }
                 fact.members.push(member);
             }
 

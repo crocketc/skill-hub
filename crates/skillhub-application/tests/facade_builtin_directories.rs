@@ -254,6 +254,18 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         physical_identity_verified: verified,
     };
 
+    let mut other_brand_instance = instance("other-brand.cli", ClientKind::Cli);
+    other_brand_instance.profile_id = "other-brand".into();
+    let mut other_brand_target = logical(
+        "other-brand-same-directory",
+        "other-brand.cli",
+        &ordinary_path,
+        &ordinary_physical_id,
+        true,
+        false,
+    );
+    other_brand_target.profile_id = "other-brand".into();
+    other_brand_target.agent_root_id = "root:other-brand.cli".into();
     let snapshot = DiscoverySnapshot {
         generation: "projection-test".into(),
         observed_at: "2026-09-29T00:00:00Z".into(),
@@ -263,12 +275,14 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
             instance("openai.codex-ide", ClientKind::IdeExtension),
             instance("openai.unknown-root", ClientKind::Cli),
             instance("agent-skills", ClientKind::SharedDirectory),
+            other_brand_instance,
         ],
         agent_roots: vec![
             root_observation("root:openai.codex-cli", "openai.codex-cli"),
             root_observation("root:openai.chatgpt-desktop", "openai.chatgpt-desktop"),
             root_observation("root:openai.codex-ide", "openai.codex-ide"),
             root_observation("root:agent-skills", "agent-skills"),
+            root_observation("root:other-brand.cli", "other-brand.cli"),
         ],
         logical_targets: vec![
             logical(
@@ -311,6 +325,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 true,
                 false,
             ),
+            other_brand_target,
             {
                 let mut target = logical(
                     "ordinary-builtin",
@@ -409,6 +424,18 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         shared.role,
         skillhub_core::AgentDirectoryRole::SharedDirectory
     );
+    assert_eq!(
+        projection
+            .directories
+            .iter()
+            .filter(|fact| fact.members.iter().any(|member| {
+                member.logical_target_id == "shared-canonical"
+                    || member.logical_target_id == "shared-cli"
+            }))
+            .count(),
+        1,
+        "one shared physical directory produces exactly one entity"
+    );
     assert!(shared
         .members
         .iter()
@@ -429,16 +456,23 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 )
         })
         .collect::<Vec<_>>();
-    assert_eq!(same_physical_identity.len(), 2, "one Agent entity plus its independent project entity");
+    assert_eq!(
+        same_physical_identity.len(),
+        5,
+        "brand and role boundaries plus the independent project entity"
+    );
     let ordinary = same_physical_identity
         .iter()
         .find(|fact| fact.role != skillhub_core::AgentDirectoryRole::Project)
         .expect("Agent entity");
-    assert_eq!(ordinary.role, skillhub_core::AgentDirectoryRole::SharedDirectory);
+    assert_eq!(
+        ordinary.role,
+        skillhub_core::AgentDirectoryRole::AgentNative
+    );
     assert_eq!(
         ordinary.members.len(),
-        4,
-        "same verified physical directory combines members across roles"
+        2,
+        "same brand and role combine client kinds without merging other roles"
     );
     assert!(ordinary
         .members
@@ -448,6 +482,39 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .members
         .iter()
         .any(|member| member.kind == Some(ClientKind::Desktop)));
+    let builtin = same_physical_identity
+        .iter()
+        .find(|fact| fact.role == skillhub_core::AgentDirectoryRole::Builtin)
+        .expect("builtin entity remains independent");
+    assert_eq!(builtin.members.len(), 1);
+    assert_eq!(builtin.members[0].logical_target_id, "ordinary-builtin");
+    let shared_entities = same_physical_identity
+        .iter()
+        .filter(|fact| fact.role == skillhub_core::AgentDirectoryRole::SharedDirectory)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        shared_entities.len(),
+        1,
+        "shared directory is one independent entity"
+    );
+    assert_eq!(shared_entities[0].members.len(), 1);
+    assert_eq!(
+        shared_entities[0].members[0].logical_target_id,
+        "ordinary-shared"
+    );
+    let other_brand = same_physical_identity
+        .iter()
+        .find(|fact| {
+            fact.members
+                .iter()
+                .any(|member| member.brand.as_deref() == Some("other-brand"))
+        })
+        .expect("other brand remains independent");
+    assert_eq!(
+        other_brand.role,
+        skillhub_core::AgentDirectoryRole::AgentNative
+    );
+    assert_eq!(other_brand.members.len(), 1);
     let cli_member = ordinary
         .members
         .iter()
