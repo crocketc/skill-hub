@@ -86,6 +86,10 @@ it("completes onboarding and discovers Agent targets through typed native comman
         physical_targets: [],
       },
     });
+  mocks.queryApplication.mockResolvedValueOnce({
+    type: "agent_directory_projection",
+    payload: { directories: [] },
+  });
 
   await desktopOnboardingOperations.completeOnboarding({
     libraryPath: "C:\\Users\\Test\\SkillHub",
@@ -115,6 +119,7 @@ it("completes onboarding and discovers Agent targets through typed native comman
       availability: "available",
     },
   ]);
+  expect(result.projection).toEqual({ directories: [] });
 });
 
 it("keeps the native scan result for the read-only preview", async () => {

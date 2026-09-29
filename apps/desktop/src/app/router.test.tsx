@@ -22,6 +22,9 @@ vi.mock("../api/bindings", async (importOriginal) => {
       if (query.type === "get_discovery_snapshot") {
         return { type: "discovery_snapshot" as const, payload: { generation: "g", observed_at: "now", instances: [], logical_targets: [], physical_targets: [] } };
       }
+      if (query.type === "get_agent_directory_projection") {
+        return { type: "agent_directory_projection" as const, payload: { directories: [] } };
+      }
       if (query.type === "list_skill_repos") {
         return {
           type: "skill_repos" as const,

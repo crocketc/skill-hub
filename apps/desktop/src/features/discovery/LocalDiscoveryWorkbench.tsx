@@ -141,8 +141,13 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
   // P1-06：分组派生保持纯函数；排除过的目录从展示中移除。
   const agentGroups = useMemo(() => {
     if (!snapshot) return null;
-    if (!snapshot.projection) return { available: [], unavailable: [] };
-    const groups = buildAgentGroups(snapshot.projection);
+    const groups = snapshot.projection
+      ? buildAgentGroups(snapshot.projection)
+      : buildAgentGroups(snapshot.raw, {
+        os: /Macintosh|Mac OS X/i.test(navigator.userAgent) || /^Mac/i.test(navigator.platform)
+          ? "macos"
+          : "windows",
+      });
     const visible = (group: AgentBrandGroup): AgentBrandGroup => ({
       ...group,
       cards: group.cards.filter((card) => !excludedPaths.has(card.path)),

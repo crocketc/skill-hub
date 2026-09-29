@@ -57,6 +57,22 @@ it("uses an honest neutral fallback for unknown brands and types", async () => {
   expect(screen.queryByText("acme.custom")).not.toBeInTheDocument();
 });
 
+it.each([
+  ["pi.coding-agent", "Pi", "终端"],
+  ["hermes.agent", "Hermes", "终端"],
+  ["openclaw.agent", "OpenClaw", "后台服务"],
+  ["google.antigravity.app", "Gemini", "桌面端"],
+  ["google.antigravity.sdk", "Gemini", "后台服务"],
+  ["cline.sdk", "Cline", "后台服务"],
+  ["github-copilot.cloud", "GitHub Copilot", "后台服务"],
+])("maps known client %s to its catalog brand and user-facing kind", async (agentId, brand, kindLabel) => {
+  await renderPresentation({ agentId });
+
+  expect(screen.getByText(brand)).toBeVisible();
+  expect(screen.getByText(kindLabel)).toBeVisible();
+  expect(screen.queryByText(agentId)).not.toBeInTheDocument();
+});
+
 it("keeps the shared directory as a standalone user-facing entity", async () => {
   const { container } = await renderPresentation({
     agentId: "agent-skills.shared-directory",

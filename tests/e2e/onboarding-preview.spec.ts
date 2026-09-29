@@ -123,6 +123,14 @@ test("groups rediscovery Agent cards by supported path and scrolls the list insi
   await page.getByRole("button", { name: "识别 Agent" }).click();
 
   await expect(page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" })).toBeVisible();
+  const mergedOpenAiCard = page.locator(".sh-onboarding__target-card").filter({
+    has: page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }),
+  });
+  await expect(mergedOpenAiCard).toHaveCount(1);
+  await expect(mergedOpenAiCard.getByText("C:\\Users\\Preview\\.codex\\skills", { exact: true })).toBeVisible();
+  // A second OpenAI physical directory remains separate from the merged Codex path.
+  await expect(page.getByText("C:\\Users\\Preview\\.openai\\skills", { exact: true })).toBeVisible();
+  await expect(page.getByText(/preview-codex|preview-openai/)).toHaveCount(0);
   await expect(page.getByText("8 个路径卡片 · 8 个可用目标")).toBeVisible();
   await expect(page.locator(".sh-onboarding__target-card")).toHaveCount(8);
   expect((await page.locator(".sh-onboarding__frame").boundingBox())!.width).toBeGreaterThan(1000);

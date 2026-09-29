@@ -315,6 +315,17 @@ Expected: Existing register/edit/save behavior passes with grouped cards and rou
 
 Run `git diff --check`, then commit with `Adapt project selectors to shared Agent cards`.
 
+### Follow-up: Adapt the native Agent list to the canonical projection
+
+**Reason:** Final cross-consumer review found that `/agents` still consumed the legacy `AgentView[]` builder after Tasks 4–7 had moved their selectors to projected directory facts. The legacy mode union could overstate support when members sharing a directory had different capabilities.
+
+**Files:** `apps/desktop/src/features/agents/AgentListPage.tsx`, `apps/desktop/src/features/agents/nativeApi.ts`, `apps/desktop/src/features/agents/api.ts`, and their colocated tests.
+
+- Add failing facade/UI tests proving the page prefers canonical card models, expands a member back to its detail route, and uses the intersection of available-member modes.
+- Add `listCardModels()` as an optional additive facade path. The native implementation reads the directory projection and current custom-Agent facts; legacy `list()` remains for compatibility previews and existing tests.
+- Preserve custom Agent handling and existing detail routes; make no page-layout rewrite.
+- Run focused Vitest, `pnpm check:frontend`, and `git diff --check` before committing.
+
 ### Task 8: Audit remaining Agent identity presentations without redesigning their screens
 
 **Files:**
@@ -356,6 +367,8 @@ Run `git diff --check`, then commit the narrowly changed adapters/tests with `Pr
 - Modify: `tests/e2e/agents-projects-preview.spec.ts`
 - Modify: `tests/e2e/discovery-cards.spec.ts`
 - Modify: `tests/e2e/onboarding-preview.spec.ts`
+- Modify: `tests/e2e/workflow-deployment.spec.ts`
+- Modify: deterministic Agent/project/discovery preview fixtures only where their facades still use obsolete identity labels or omit the directory projection
 - Modify: `docs/development/开发状态-2026-09-29.md`
 - Modify: `docs/development/自动化测试说明-2026-09-29.md`
 - Modify: `docs/development/功能完成度与验收状态矩阵-2026-09-29.md`
@@ -363,15 +376,15 @@ Run `git diff --check`, then commit the narrowly changed adapters/tests with `Pr
 
 **Interfaces:**
 - Consumes: All additive adapters from Tasks 2–8.
-- Produces: Cross-entry parity evidence from a shared fixture; current docs distinguish code/automation status from real Windows/macOS desktop evidence.
+- Produces: Cross-entry parity evidence from equivalent deterministic facts in each existing preview (the previews are independent fixtures, so they do not claim to be one shared runtime fixture); current docs distinguish code/automation status from real Windows/macOS desktop evidence.
 
 - [ ] **Step 1: Add failing end-to-end parity coverage**
 
-Use one fixture with same-brand different kinds on one physical directory, a second distinct directory, a shared directory with identified/unidentified roots, a pending path, and mixed member capabilities. Assert identities, shared-card counts, kinds, and selection mapping across Agent list, initialization/rescan, discovery, deployment, and project association.
+Add representative parity assertions without joining the preview architectures: Agent list verifies a canonical model response and retains a member detail route; initialization/rescan verifies same-path OpenAI kinds merge once while another physical path remains separate; discovery verifies one shared directory card and only recognized brand/type associations; project selection uses readable brand/type names and preserves grouped member selection; deployment keeps the shared card model's member capability constraints in its existing E2E suite. Keep deterministic fixtures local to their current preview facades.
 
 - [ ] **Step 2: Run targeted E2E and confirm old entry points disagree**
 
-Run: `pnpm test:e2e tests/e2e/agents-projects-preview.spec.ts tests/e2e/discovery-cards.spec.ts tests/e2e/onboarding-preview.spec.ts`
+Run: `pnpm test:e2e tests/e2e/agents-projects-preview.spec.ts tests/e2e/discovery-cards.spec.ts tests/e2e/onboarding-preview.spec.ts tests/e2e/relationship-views.spec.ts tests/e2e/workflow-deployment.spec.ts`
 
 Expected: New parity assertions fail before all consumer adapters are applied.
 

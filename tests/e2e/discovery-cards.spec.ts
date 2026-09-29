@@ -200,6 +200,10 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     await expect(sharedCard.getByText("Shared directory")).toBeVisible();
     await expect(sharedCard.getByText("Shared by 2 registered clients")).toBeVisible();
     await expect(sharedCard.getByText("C:\\Users\\demo\\.agents\\skills")).toBeVisible();
+    const sharedPresentation = sharedCard.locator(".sh-agent-presentation");
+    await expect(sharedPresentation).toHaveCount(1);
+    await expect(sharedPresentation).toHaveAttribute("aria-label", /ZCode.*Terminal.*Desktop app/);
+    await expect(sharedPresentation).not.toHaveAttribute("aria-label", /Agent Skills/);
     // 旧的 ZCode 品牌（desktop/cli 合并类型徽标）卡片不再出现。
     await expect(page.getByText("Desktop app/CLI")).toHaveCount(0);
     // 完全不可用的品牌沉底，单独分区说明。
@@ -229,7 +233,7 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(PREVIEW);
 
-    const icon = page.locator(".sh-discovery-workbench .sh-brand-tag__icon").first();
+    const icon = page.getByTestId("agent-card-phys-codebuddy").locator(".sh-brand-tag__icon").first();
     await expect(icon).toBeVisible();
     const box = await icon.boundingBox();
     expect(box).not.toBeNull();
