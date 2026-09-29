@@ -10,6 +10,7 @@ import {
 } from "../bootstrap/backgroundScan";
 import {
   type CompatibilityTarget,
+  type CompatibilityDiscoveryResult,
   desktopBootstrapRuntime,
   type BootstrapRuntime,
   type InitializationScanState,
@@ -17,7 +18,7 @@ import {
   desktopOnboardingOperations,
 } from "../bootstrap/api";
 import { BranchSelection, type InitializationBranch } from "./BranchSelection";
-import { CompatibilityStep } from "./CompatibilityStep";
+import { CompatibilityStep, selectableCompatibilityTargetIds } from "./CompatibilityStep";
 import { LibraryStep } from "./LibraryStep";
 import { RestoreStep } from "./RestoreStep";
 import { ScanStep } from "./ScanStep";
@@ -99,6 +100,7 @@ export function OnboardingWizard({
   const [scanState, setScanState] = useState<InitializationScanState | null>(null);
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
+  const [directoryProjection, setDirectoryProjection] = useState<CompatibilityDiscoveryResult["projection"] | null>(null);
   const [completionState, setCompletionState] = useState<"idle" | "pending" | "complete">("idle");
   const [completionSnapshot, setCompletionSnapshot] = useState<CompletionSnapshot | null>(null);
   const [libraryActivated, setLibraryActivated] = useState(false);
@@ -148,6 +150,7 @@ export function OnboardingWizard({
     try {
       const result = await operations.discoverAgents();
       setTargets(result.targets);
+      setDirectoryProjection(result.projection ?? null);
       setSelectedTargetIds([]);
     } catch (caught) {
       setError(describe(caught));
@@ -304,11 +307,12 @@ export function OnboardingWizard({
         isDiscovering={isDiscovering}
         selectedTargetIds={selectedTargetIds}
         targets={targets}
+        projection={directoryProjection}
         onConfirmChange={setCompatibilityConfirmed}
         onDiscover={() => void discoverAgents()}
         onTargetSelectionChange={selectTarget}
         onSelectAllAvailable={() => {
-          setSelectedTargetIds(targets?.filter((target) => target.availability === "available").map((target) => target.id) ?? []);
+          setSelectedTargetIds(selectableCompatibilityTargetIds(targets, directoryProjection));
         }}
       />
     ) : (

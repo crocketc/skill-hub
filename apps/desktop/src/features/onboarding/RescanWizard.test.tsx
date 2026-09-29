@@ -3,9 +3,34 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import type { AgentDirectoryProjection } from "../../api/bindings";
 import type { InitializationScanState } from "../bootstrap/api";
 import onboardingCss from "./onboarding.css?raw";
 import { RescanWizard } from "./RescanWizard";
+
+const sharedProjection: AgentDirectoryProjection = {
+  directories: [{
+    role: "shared_directory",
+    identity: { kind: "verified_physical", value: "shared-physical" },
+    path: "C:/Users/Test/.agents/skills",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: false,
+    available: true,
+    members: ["openai-scope", "anthropic-scope"].map((logical_target_id, index) => ({
+      logical_target_id,
+      brand: index === 0 ? "openai" : "anthropic",
+      client_id: index === 0 ? "codex" : "claude",
+      kind: index === 0 ? "cli" : "desktop",
+      availability: { status: "existing", exists: true, available: true, readable: true, writable: false },
+      capabilities: { deployment: { copy: false, symlink: false, junction: false }, modes: [], preferred_mode: null },
+      deployment_status: "not_deployed",
+      managed_deployment_relation_count: 0,
+      managed_deployment_count: 0,
+    })),
+  }],
+};
 
 it("shows the active library as read-only and never exposes activation controls", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -37,6 +62,47 @@ it("shows the active library as read-only and never exposes activation controls"
   await user.click(screen.getByRole("checkbox"));
   await user.click(screen.getByRole("button", { name: "继续" }));
   expect(activateLibraryRoot).not.toHaveBeenCalled();
+});
+
+it("scans every logical scope represented by one shared directory card exactly once", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const user = userEvent.setup();
+  const runInitializationScan = vi.fn(async () => ({
+    kind: "completed" as const,
+    result: { generation: { generation: 1, observed_at: 1 }, roots: [], discovered: [], visited_paths: [], reparsed_count: 0, unchanged_count: 0, errors: [] },
+  }));
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RescanWizard
+        libraryPath="C:\\SkillHub"
+        operations={{
+          completeOnboarding: async () => undefined,
+          discoverAgents: async () => ({
+            targets: [
+              { id: "openai-scope", label: "codex", availability: "available" },
+              { id: "anthropic-scope", label: "claude", availability: "available" },
+              { id: "unknown-root", label: "unknown", availability: "unavailable" },
+            ],
+            projection: sharedProjection,
+          }),
+        }}
+        runtime={{ getBootstrapView: async () => { throw new Error("unused"); }, runInitializationScan }}
+      />
+    </I18nextProvider>,
+  );
+
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "识别 Agent" }));
+  const sharedCard = await screen.findByLabelText("Agent Skills · 共享目录");
+  expect(document.querySelectorAll(".sh-onboarding__target-card")).toHaveLength(1);
+  await user.click(sharedCard);
+  await user.click(screen.getByRole("button", { name: "继续" }));
+  await user.click(screen.getByRole("button", { name: "开始只读扫描" }));
+
+  await waitFor(() => expect(runInitializationScan).toHaveBeenCalledWith(["openai-scope", "anthropic-scope"]));
+  expect(runInitializationScan).toHaveBeenCalledOnce();
 });
 
 it("exposes the rediscovery step rail with named steps and the active step", async () => {

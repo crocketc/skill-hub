@@ -9,10 +9,11 @@ import {
   desktopOnboardingOperations,
   type BootstrapRuntime,
   type CompatibilityTarget,
+  type CompatibilityDiscoveryResult,
   type InitializationScanState,
   type OnboardingOperations,
 } from "../bootstrap/api";
-import { CompatibilityStep } from "./CompatibilityStep";
+import { CompatibilityStep, selectableCompatibilityTargetIds } from "./CompatibilityStep";
 import { ScanStep } from "./ScanStep";
 import { WizardShell, type WizardStep } from "./WizardShell";
 import { displayPath } from "../../platform/displayPath";
@@ -48,6 +49,7 @@ export function RescanWizard({
   const [step, setStep] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
   const [targets, setTargets] = useState<CompatibilityTarget[] | null>(null);
+  const [directoryProjection, setDirectoryProjection] = useState<CompatibilityDiscoveryResult["projection"] | null>(null);
   const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -83,6 +85,7 @@ export function RescanWizard({
     try {
       const result = await operations.discoverAgents();
       setTargets(result.targets);
+      setDirectoryProjection(result.projection ?? null);
       setSelectedTargetIds([]);
     } catch (error) {
       setOperationError({ kind: "discover", message: describe(error) });
@@ -247,10 +250,11 @@ export function RescanWizard({
           isDiscovering={isDiscovering}
           selectedTargetIds={selectedTargetIds}
           targets={targets}
+          projection={directoryProjection}
           onConfirmChange={setConfirmed}
           onDiscover={() => void discover()}
           onTargetSelectionChange={(id, selected) => setSelectedTargetIds((current) => selected ? [...current, id] : current.filter((item) => item !== id))}
-          onSelectAllAvailable={() => setSelectedTargetIds(targets?.filter((target) => target.availability === "available").map((target) => target.id) ?? [])}
+          onSelectAllAvailable={() => setSelectedTargetIds(selectableCompatibilityTargetIds(targets, directoryProjection))}
         />
       ) : (
         <ScanStep

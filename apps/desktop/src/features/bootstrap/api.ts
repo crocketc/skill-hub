@@ -9,6 +9,7 @@ import {
   type RestoreResult,
   type ScanResult,
 } from "../../api/bindings";
+import type { AgentDirectoryProjection } from "../../api/bindings";
 import { nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 import { desktopDirectoryPicker } from "../../platform/directoryPicker";
 
@@ -54,6 +55,12 @@ export interface OnboardingOperations {
   activateLibraryRoot?: (path: string, mode: LibraryActivationMode) => Promise<void>;
 }
 
+export interface CompatibilityDiscoveryResult {
+  targets: CompatibilityTarget[];
+  /** Canonical physical-directory facts; optional for legacy/test adapters. */
+  projection?: AgentDirectoryProjection;
+}
+
 export interface CompatibilityTarget {
   id: string;
   label: string;
@@ -66,10 +73,6 @@ export interface CompatibilityTarget {
   /** Native file-system target identity; kept with the scope for grouped selection. */
   physicalId?: string;
   availability: "available" | "unavailable";
-}
-
-export interface CompatibilityDiscoveryResult {
-  targets: CompatibilityTarget[];
 }
 
 function unavailable(operation: string): Promise<never> {
@@ -104,6 +107,10 @@ export const desktopOnboardingOperations: OnboardingOperations = {
     if (result.type !== "discovery_snapshot") {
       throw new Error("Unexpected Agent discovery response from the native application.");
     }
+    const projectionResult = await queryApplication({ type: "get_agent_directory_projection", payload: null });
+    if (projectionResult.type !== "agent_directory_projection") {
+      throw new Error("Unexpected Agent directory response from the native application.");
+    }
     const kindByClient = new Map(
       result.payload.instances.map((instance) => [
         `${instance.profile_id}:${instance.client_id}`,
@@ -135,6 +142,7 @@ export const desktopOnboardingOperations: OnboardingOperations = {
       }));
     return {
       targets: [...logicalTargets, ...instancesWithoutTargets],
+      projection: projectionResult.payload,
     };
   },
   async prepareRestore(path) {
