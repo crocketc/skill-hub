@@ -15,7 +15,7 @@ import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
  * 后端 now() 产出的 epoch 秒十进制字符串（旧库快照仍如此）。
  * 展示必须是本地化日期时间，解析失败必须给占位而不是露出原始串。
  */
-const projectDirectory = (role: "agent_native" | "shared_directory" | "builtin", identity: string, path: string, members: AgentDirectoryProjection["directories"][number]["members"]): AgentDirectoryProjection["directories"][number] => ({ role, identity: { kind: "verified_physical", value: identity }, path, status: "existing", exists: true, readable: true, writable: true, available: true, members });
+const projectDirectory = (role: "agent_native" | "shared_directory" | "project" | "builtin", identity: string, path: string, members: AgentDirectoryProjection["directories"][number]["members"]): AgentDirectoryProjection["directories"][number] => ({ role, identity: { kind: "verified_physical", value: identity }, path, status: "existing", exists: true, readable: true, writable: true, available: true, members });
 const projectMember = (id: string, brand: string | null, kind: AgentDirectoryProjection["directories"][number]["members"][number]["kind"], client: string | null) => ({ logical_target_id: id, brand, client_id: client, kind, availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true }, capabilities: { deployment: { copy: true, symlink: true, junction: true }, modes: ["managed_copy" as const, "symbolic_link" as const, "directory_junction" as const], preferred_mode: "symbolic_link" as const }, deployment_status: "not_deployed" as const, managed_deployment_relation_count: 0, managed_deployment_count: 0 });
 const directoryProjection: AgentDirectoryProjection = { directories: [
   projectDirectory("agent_native", "physical-cursor", "C:\\Users\\me\\.cursor\\skills", [projectMember("editor", "cursor", "desktop", "cursor-editor"), projectMember("cli", "cursor", "cli", "cursor-cli")]),
@@ -23,6 +23,15 @@ const directoryProjection: AgentDirectoryProjection = { directories: [
 ] };
 
 describe("discovery directory projection parity", () => {
+  it("does not render project directories in Agent discovery groups", () => {
+    const project = projectDirectory("project", "project-skills", "C:/repo/.agents/skills", [
+      projectMember("project-member", "openai", "cli", "codex-cli"),
+    ]);
+    const groups = buildAgentGroups({ directories: [project] });
+    expect(groups.available).toEqual([]);
+    expect(groups.unavailable).toEqual([]);
+  });
+
   it("retains canonical identities, type sets, recognized shared brands, and availability", () => {
     const models = buildAgentDirectoryCardModels(directoryProjection);
     const groups = buildAgentGroups(directoryProjection);
@@ -243,7 +252,7 @@ describe("buildAgentGroups", () => {
     expect(generic.cards[0].sharedClientNames).toEqual(
       expect.arrayContaining(["ZCode", "ZCode CLI", "Codex CLI"]),
     );
-    // 旧快照没有 display_name 时回退 client_id，不产生 undefined。
+    // 旧快照没有 display_name 时回退品牌展示名，不泄露 client_id。
     const legacy = buildAgentGroups(
       {
         ...agentSnapshot,
@@ -266,7 +275,19 @@ describe("buildAgentGroups", () => {
       },
       { os: "windows" },
     );
-    expect(legacy.available[0].cards[0].names).toEqual(["legacy"]);
+    expect(legacy.available[0].cards[0].names).toEqual(["P"]);
+    expect(legacy.available[0].cards[0].names).not.toContain("legacy");
+  });
+
+  it("uses readable brand names when shared client display names are absent", () => {
+    const unnamed = buildAgentGroups({
+      ...agentSnapshot,
+      instances: agentSnapshot.instances.map(({ display_name: _displayName, ...instance }) => instance),
+    }, { os: "windows" });
+    const shared = unnamed.available.find((group) => group.brand === "agent-skills")?.cards[0];
+    expect(shared?.sharedClientNames).toEqual(["ZCode", "Codex"]);
+    expect(shared?.sharedClientNames).not.toContain("zcode-desktop");
+    expect(shared?.sharedClientNames).not.toContain("codex-cli");
   });
 
   it("merges different product forms sharing one native path into a single card", () => {

@@ -542,6 +542,7 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
   models.forEach((model: AgentCardModel, index) => {
     const directory = model.directories[0];
     const fact = projection.directories[index];
+    if (directory?.role === "project") return;
     // Platform-managed builtin paths are optional. Their absence is normal and
     // stays quiet, matching the discovery inventory's previous behavior.
     if (model.builtin && !fact?.exists) return;
@@ -593,6 +594,13 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
 
 function isGenericSharedOwner(member: { brand: string | null; client_id: string | null }): boolean {
   return member.brand === "agent-skills" || member.client_id === "agent-skills.shared-directory";
+}
+
+function snapshotInstanceLabel(
+  target: DiscoverySnapshot["logical_targets"][number],
+  instance: DiscoverySnapshot["instances"][number],
+): string {
+  return instance.display_name?.trim() || brandDisplayName(target.profile_id);
 }
 
 function snapshotProjection(
@@ -725,7 +733,7 @@ export function buildAgentGroups(
       card.physicalId = targetMembers[0]?.target.physical_id
         ?? model.directories[0]?.candidateIdentityKey
         ?? card.physicalId;
-      card.names = [...new Set(visibleMembers.map(({ instance }) => instance.display_name || instance.client_id))];
+      card.names = [...new Set(visibleMembers.map(({ target, instance }) => snapshotInstanceLabel(target, instance)))];
       if (shared) {
         card.sharedBrands = [...new Set(visibleMembers.map(({ target }) => target.profile_id))].sort();
         card.sharedBrandKinds = Object.fromEntries(card.sharedBrands.map((brand) => [
@@ -733,7 +741,7 @@ export function buildAgentGroups(
           [...new Set(visibleMembers.flatMap(({ target, instance }) => target.profile_id === brand ? [instance.kind] : []))].sort(),
         ]));
         card.sharedClients = new Set(visibleMembers.map(({ target }) => target.client_id)).size;
-        card.sharedClientNames = [...new Set(visibleMembers.map(({ instance }) => instance.display_name || instance.client_id))];
+        card.sharedClientNames = [...new Set(visibleMembers.map(({ target, instance }) => snapshotInstanceLabel(target, instance)))];
       }
     }
   }
