@@ -171,6 +171,13 @@ describe("buildAgentDirectoryCardModels", () => {
       role: "shared_directory",
       identity: { kind: "verified_physical", value: "physical-shared" },
       members: [
+        {
+          ...projectedDirectory().members[0],
+          logical_target_id: "agent-skills.shared-directory",
+          brand: "agent-skills",
+          client_id: "agent-skills.shared-directory",
+          kind: "shared_directory",
+        },
         projectedDirectory().members[0],
         {
           ...projectedDirectory().members[0],
@@ -191,11 +198,11 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards[0].sharedDirectory).toBe(true);
     expect(cards[0].sharedAgentBrands).toEqual(["Cursor", "OpenAI"]);
     expect(cards[0].sharedAgentBrandKinds).toEqual({ Cursor: ["desktop"], OpenAI: ["cli"] });
-    expect(cards[0].members.map((member) => member.id)).toEqual(["openai.cli.target", "cursor.desktop.target"]);
-    expect(cards[0].directoryMembers?.map((member) => member.logical_target_id)).toEqual(["openai.cli.target", "cursor.desktop.target"]);
+    expect(cards[0].members.map((member) => member.id)).toEqual(["agent-skills.shared-directory", "openai.cli.target", "cursor.desktop.target"]);
+    expect(cards[0].directoryMembers?.map((member) => member.logical_target_id)).toEqual(["agent-skills.shared-directory", "openai.cli.target", "cursor.desktop.target"]);
     expect(cards[0].supportedModes).toEqual(["managed_copy"]);
     expect(cards[0].members.map((member) => [member.deploymentStatus, member.managedDeploymentCount, member.managedDeploymentRelationCount]))
-      .toEqual([["not_deployed", 0, 0], ["not_deployed", 0, 0]]);
+      .toEqual([["not_deployed", 0, 0], ["not_deployed", 0, 0], ["not_deployed", 0, 0]]);
   });
 
   it("preserves explicit directory roles and unavailable observation states", () => {

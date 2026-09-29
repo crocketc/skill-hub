@@ -148,7 +148,7 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
       deploymentStatus: projectedDeploymentStatus(directory.members),
       builtin: directory.role === "builtin" || undefined,
       supportsSharedDirectory: directory.role === "shared_directory",
-      sharedAgentBrands: shared ? [...new Set(directory.members.flatMap((member) => member.brand ? [member.brand] : []))].sort() : undefined,
+      sharedAgentBrands: shared ? recognizedSharedBrands(directory.members) : undefined,
       sharedAgentBrandKinds: shared ? sharedBrandKindsFromFacts(directory.members) : undefined,
     };
   });
@@ -157,10 +157,16 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
 function sharedBrandKindsFromFacts(members: readonly AgentDirectoryMemberFact[]): Record<string, string[]> {
   const result: Record<string, string[]> = {};
   for (const member of members) {
-    if (!member.brand || !member.kind) continue;
+    if (!member.brand || normalizeBrandKey(member.brand) === "agent-skills" || !member.kind) continue;
     result[member.brand] = [...new Set([...(result[member.brand] ?? []), member.kind])].sort();
   }
   return result;
+}
+
+function recognizedSharedBrands(members: readonly AgentDirectoryMemberFact[]): string[] {
+  return [...new Set(members.flatMap((member) =>
+    member.brand && normalizeBrandKey(member.brand) !== "agent-skills" ? [member.brand] : [],
+  ))].sort();
 }
 
 /** Additive canonical card builder for the generated directory projection. */
@@ -170,7 +176,7 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
     const members = directory.members.map((member) => projectedMemberView(directory, member));
     const shared = directory.role === "shared_directory";
     const brands = shared
-      ? [...new Set(directory.members.flatMap((member) => member.brand ? [member.brand] : []))].sort()
+      ? recognizedSharedBrands(directory.members)
       : [];
     const kinds = shared
       ? ["shared_directory" as const]
