@@ -84,7 +84,20 @@ it("maps canonical directory cards to every existing project Agent ID", async ()
           available: true,
           members: [
             { logical_target_id: "codex-cli", brand: "openai", client_id: "codex.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
-            { logical_target_id: "codex-desktop", brand: "openai", client_id: "codex.desktop", kind: "desktop", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+            { logical_target_id: "codex-desktop", brand: "openai", client_id: "codex.desktop", kind: "desktop", availability: { exists: true, available: false, readable: false, writable: false }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+          ],
+        },
+        {
+          role: "project",
+          identity: { kind: "verified_physical", value: "physical-project" },
+          path: "D:/Projects/Aurora",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [
+            { logical_target_id: "project-aurora", brand: null, client_id: null, kind: null, availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
           ],
         },
         {
@@ -110,6 +123,7 @@ it("maps canonical directory cards to every existing project Agent ID", async ()
           writable: true,
           available: true,
           members: [
+            { logical_target_id: "agent-skills-owner", brand: "agent-skills", client_id: "agent-skills", kind: "shared_directory", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
             { logical_target_id: "codex-shared", brand: "openai", client_id: "codex.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
             { logical_target_id: "claude-shared", brand: "anthropic", client_id: "anthropic.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
           ],
@@ -120,11 +134,12 @@ it("maps canonical directory cards to every existing project Agent ID", async ()
 
   const candidates = await nativeProjectFacade.listAgentCandidates();
   expect(query).toHaveBeenCalledWith({ type: "get_agent_directory_projection", payload: null });
-  expect(candidates.map(({ memberIds, sharedDirectory }) => ({ memberIds, sharedDirectory }))).toEqual([
-    { memberIds: ["codex-cli", "codex-desktop"], sharedDirectory: false },
-    { memberIds: ["codex-project"], sharedDirectory: false },
-    { memberIds: ["codex-shared", "claude-shared"], sharedDirectory: true },
+  expect(candidates.map(({ memberIds, selectableMemberIds, sharedDirectory, sharedAgentBrands }) => ({ memberIds, selectableMemberIds, sharedDirectory, sharedAgentBrands }))).toEqual([
+    { memberIds: ["codex-cli", "codex-desktop"], selectableMemberIds: ["codex-cli"], sharedDirectory: false, sharedAgentBrands: [] },
+    { memberIds: ["codex-project"], selectableMemberIds: ["codex-project"], sharedDirectory: false, sharedAgentBrands: [] },
+    { memberIds: ["codex-shared", "claude-shared"], selectableMemberIds: ["codex-shared", "claude-shared"], sharedDirectory: true, sharedAgentBrands: ["anthropic", "openai"] },
   ]);
+  expect(candidates.some(({ memberIds }) => memberIds?.includes("project-aurora"))).toBe(false);
 });
 
 it("maps the project assembly plan items without inventing fields", async () => {

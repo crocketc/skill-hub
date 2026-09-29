@@ -145,6 +145,36 @@ it("shows mixed selection for a grouped directory and saves all represented memb
   expect(await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" })).toBeChecked();
 });
 
+it("only saves available members when selecting a mixed-availability directory card", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = { ...projectFixture(), agentIds: [] };
+  const updateAgentIds = vi.fn(async (_projectId: string, agentIds: string[]) => ({ ...project, agentIds }));
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={detailFacade(project, {
+          updateAgentIds,
+          listAgentCandidates: async () => [{
+            id: "codex-directory",
+            label: "OpenAI",
+            available: true,
+            memberIds: ["codex-cli", "codex-desktop"],
+            selectableMemberIds: ["codex-cli"],
+            brand: "openai",
+            kinds: ["cli", "desktop"],
+          }],
+        })} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  await user.click(await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" }));
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+
+  expect(updateAgentIds).toHaveBeenCalledWith("demo-project", ["codex-cli"]);
+});
+
 it.each([
   ["accessible", { exists: true, id: "fs-aurora", path: "D:/Work/Aurora", readable: true, writable: true }, "可访问"],
   ["read only", { exists: true, id: "fs-aurora", path: "D:/Work/Aurora", readable: true, writable: false }, "只读"],

@@ -43,6 +43,8 @@ export interface ProjectAgentCandidate {
   available: boolean;
   /** Existing project association IDs represented by this directory card. */
   memberIds?: string[];
+  /** Represented IDs that are available for a new association selection. */
+  selectableMemberIds?: string[];
   /** Labels retained only for matching directory preview facts. */
   matchLabels?: string[];
   agentId?: string;
@@ -54,6 +56,7 @@ export interface ProjectAgentCandidate {
 }
 
 export function projectCandidateMemberIds(candidate: ProjectAgentCandidate): string[] {
+  if (candidate.selectableMemberIds) return candidate.selectableMemberIds;
   return candidate.memberIds?.length ? candidate.memberIds : [candidate.id];
 }
 
