@@ -1,4 +1,6 @@
 import { executeCommand, queryApplication, type Project } from "../../api/bindings";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
+import { loadAgentDirectoryProjection } from "../agents/nativeApi";
 import type { ProjectAgentCandidate, ProjectFacade, ProjectPhysicalTargetView, ProjectRegistration, ProjectView } from "./api";
 
 function isNotFoundError(reason: unknown): boolean {
@@ -115,16 +117,24 @@ export const nativeProjectFacade: ProjectFacade = {
     return projectView(result.payload);
   },
   async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {
-    const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
-    if (result.type !== "discovery_snapshot") throw new Error("get_discovery_snapshot returned an unexpected native result.");
-    return result.payload.logical_targets.map((target) => ({
-      id: target.id,
-      label: `${target.profile_id} · ${target.client_id}`,
-      available: target.available,
-      agentId: target.client_id,
-      brand: target.profile_id,
-      sharedDirectory: target.shared_reference,
-    }));
+    return buildAgentDirectoryCardModels(await loadAgentDirectoryProjection())
+      .map((model) => {
+        const members = model.members;
+        return {
+          id: model.id,
+          label: model.brandLabel,
+          available: members.some((member) => member.status === "accessible"),
+          memberIds: members.map((member) => member.id),
+          matchLabels: members.map((member) => `${member.brand} · ${member.client}`),
+          agentId: model.sharedDirectory ? undefined : model.brand,
+          brand: model.brand,
+          sharedDirectory: model.sharedDirectory,
+          kinds: model.kinds,
+          sharedAgentBrands: model.sharedAgentBrands,
+          sharedAgentBrandKinds: model.sharedAgentBrandKinds,
+        };
+      })
+      .filter((candidate) => candidate.memberIds.length > 0);
   },
   async previewDirectory(path) {
     const result = await queryApplication({

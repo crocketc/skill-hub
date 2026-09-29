@@ -1,4 +1,4 @@
-import { forwardRef, type ChangeEventHandler, type ReactNode, useId } from "react";
+import { forwardRef, type ChangeEventHandler, type ReactNode, useEffect, useId, useRef } from "react";
 
 export interface CheckboxFieldProps {
   checked?: boolean;
@@ -6,6 +6,7 @@ export interface CheckboxFieldProps {
   description?: string;
   disabled?: boolean;
   id?: string;
+  indeterminate?: boolean;
   label: ReactNode;
   ariaLabel?: string;
   name?: string;
@@ -26,6 +27,7 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
       description,
       disabled,
       id,
+      indeterminate = false,
       label,
       ariaLabel,
       name,
@@ -35,9 +37,14 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
     ref,
   ) {
     const generatedId = useId();
+    const inputRef = useRef<HTMLInputElement | null>(null);
     const inputId = id ?? generatedId;
     const labelId = `${inputId}-label`;
     const descriptionId = description ? `${inputId}-description` : undefined;
+
+    useEffect(() => {
+      if (inputRef.current) inputRef.current.indeterminate = indeterminate;
+    }, [indeterminate]);
 
     return (
       <label className="sh-checkbox-field" htmlFor={inputId}>
@@ -52,7 +59,11 @@ export const CheckboxField = forwardRef<HTMLInputElement, CheckboxFieldProps>(
           id={inputId}
           name={name}
           onChange={onChange}
-          ref={ref}
+          ref={(element) => {
+            inputRef.current = element;
+            if (typeof ref === "function") ref(element);
+            else if (ref) ref.current = element;
+          }}
           type="checkbox"
           value={value}
         />

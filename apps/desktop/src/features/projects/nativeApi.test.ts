@@ -68,6 +68,65 @@ it("maps physical target access facts from the discovery snapshot", async () => 
   ]);
 });
 
+it("maps canonical directory cards to every existing project Agent ID", async () => {
+  query.mockResolvedValue({
+    type: "agent_directory_projection",
+    payload: {
+      directories: [
+        {
+          role: "agent_native",
+          identity: { kind: "verified_physical", value: "physical-codex" },
+          path: "C:/Users/me/.codex/skills",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [
+            { logical_target_id: "codex-cli", brand: "openai", client_id: "codex.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+            { logical_target_id: "codex-desktop", brand: "openai", client_id: "codex.desktop", kind: "desktop", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+          ],
+        },
+        {
+          role: "agent_native",
+          identity: { kind: "verified_physical", value: "physical-codex-workspace" },
+          path: "D:/Projects/skills",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [
+            { logical_target_id: "codex-project", brand: "openai", client_id: "codex.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+          ],
+        },
+        {
+          role: "shared_directory",
+          identity: { kind: "verified_physical", value: "physical-shared" },
+          path: "C:/Users/me/.agents/skills",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [
+            { logical_target_id: "codex-shared", brand: "openai", client_id: "codex.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+            { logical_target_id: "claude-shared", brand: "anthropic", client_id: "anthropic.code", kind: "cli", availability: { exists: true, available: true, readable: true, writable: true }, capabilities: { deployment: "supported", modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+          ],
+        },
+      ],
+    },
+  } as never);
+
+  const candidates = await nativeProjectFacade.listAgentCandidates();
+  expect(query).toHaveBeenCalledWith({ type: "get_agent_directory_projection", payload: null });
+  expect(candidates.map(({ memberIds, sharedDirectory }) => ({ memberIds, sharedDirectory }))).toEqual([
+    { memberIds: ["codex-cli", "codex-desktop"], sharedDirectory: false },
+    { memberIds: ["codex-project"], sharedDirectory: false },
+    { memberIds: ["codex-shared", "claude-shared"], sharedDirectory: true },
+  ]);
+});
+
 it("maps the project assembly plan items without inventing fields", async () => {
   query.mockResolvedValueOnce({
     type: "assembly_plan",
