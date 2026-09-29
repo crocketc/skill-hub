@@ -28,6 +28,8 @@ interface CompatibilityCardGroup {
   kinds: AgentKindKey[];
   path?: string;
   sharedDirectory: boolean;
+  sharedAgentBrands: string[];
+  sharedAgentBrandKinds: Record<string, string[]>;
   targets: CompatibilityTarget[];
 }
 
@@ -49,6 +51,8 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
           kinds: card.kinds,
           path: card.directories[0]?.path ?? undefined,
           sharedDirectory: card.sharedDirectory,
+          sharedAgentBrands: card.sharedAgentBrands,
+          sharedAgentBrandKinds: card.sharedAgentBrandKinds,
           targets: representedTargets,
         };
       });
@@ -76,6 +80,8 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
       kinds: card.kinds,
       path: card.agent.discoveredPaths[0],
       sharedDirectory: card.sharedDirectory,
+      sharedAgentBrands: card.model.sharedAgentBrands,
+      sharedAgentBrandKinds: card.model.sharedAgentBrandKinds,
       targets: card.agents.flatMap((agent) => {
         const target = targetsById.get(agent.id);
         return target ? [target] : [];
@@ -201,6 +207,8 @@ function TargetCard({
                 brand={group.brand}
                 kinds={group.kinds}
                 sharedDirectory={group.sharedDirectory}
+                sharedAgentBrands={group.sharedAgentBrands}
+                sharedAgentBrandKinds={group.sharedAgentBrandKinds}
               />
             </span>
             <code className="sh-onboarding__target-path">

@@ -175,6 +175,9 @@ it("uses projected physical identities, shared membership, and expands selected 
 
   expect(document.querySelectorAll(".sh-onboarding__target-card")).toHaveLength(3);
   expect(screen.getByLabelText("Agent Skills · 共享目录")).toBeVisible();
+  expect(screen.getByTitle("OpenAI · 终端")).toBeVisible();
+  expect(screen.getByTitle("Claude · 桌面端")).toBeVisible();
+  expect(screen.queryByTitle("unrecognized")).not.toBeInTheDocument();
   expect(screen.getByLabelText("OpenAI · 桌面端/终端")).toBeVisible();
   expect(screen.getAllByLabelText("OpenAI · 桌面端")).toHaveLength(2);
   await user.click(screen.getByLabelText("Agent Skills · 共享目录"));
