@@ -168,6 +168,40 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "识别 Agent" }).click();
 
+  const compatibilityLegend = page.locator(".sh-onboarding__targets > legend");
+  const compatibilityFieldset = page.locator(".sh-onboarding__targets");
+  const geometry = async () => compatibilityFieldset.evaluate((fieldset) => {
+    const legend = fieldset.querySelector("legend");
+    if (!legend) return null;
+    const legendBox = legend.getBoundingClientRect();
+    const fieldsetBox = fieldset.getBoundingClientRect();
+    const borderTop = Number.parseFloat(getComputedStyle(fieldset).borderTopWidth);
+    return {
+      legendBottom: legendBox.bottom,
+      fieldsetTop: fieldsetBox.top,
+      borderTop,
+      borderStyle: getComputedStyle(fieldset).borderTopStyle,
+      borderColor: getComputedStyle(fieldset).borderTopColor,
+    };
+  });
+
+  for (const width of [1087, 750]) {
+    await page.setViewportSize({ width, height: 719 });
+    if (width !== 750) {
+      await page.goto("/__preview/onboarding/rescan");
+      await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+      await page.getByRole("button", { name: "继续" }).click();
+      await page.getByRole("button", { name: "识别 Agent" }).click();
+    }
+    await expect(compatibilityLegend).toBeVisible();
+    const measured = await geometry();
+    expect(measured, `compatibility title geometry at ${width}px`).not.toBeNull();
+    expect(measured!.fieldsetTop - measured!.legendBottom, `title clearance at ${width}px`).toBeGreaterThanOrEqual(2);
+    expect(measured!.borderTop, `fieldset border width at ${width}px`).toBeGreaterThan(0);
+    expect(measured!.borderStyle, `fieldset border style at ${width}px`).not.toBe("none");
+    expect(measured!.borderColor, `fieldset border color at ${width}px`).not.toBe("transparent");
+  }
+
   const layout = await page.evaluate(() => {
     const confirmation = document.querySelector(".sh-onboarding__confirm-row .sh-checkbox-field");
     const button = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "识别 Agent");
