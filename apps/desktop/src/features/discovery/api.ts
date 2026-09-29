@@ -1,12 +1,11 @@
 import {
   executeCommand,
   queryApplication,
-  type ClientInstance,
+  type AgentDirectoryProjection,
   type ClientKind,
   type DiscoverableRepoSkill,
   type DiscoverySnapshot,
   type DownloadedRepoSkill,
-  type LogicalTarget,
   type OperationSummary,
   type RepoDiscoveryReport,
   type ScanResult,
@@ -18,6 +17,8 @@ import {
   type SourceSearchQuery,
 } from "../../api/bindings";
 import { nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
+import { buildAgentDirectoryCardModels, type AgentCardModel } from "../agents/agentCardModel";
+import { brandDisplayName } from "../../ui/BrandTag";
 
 /**
  * Contracts reused verbatim from the Rust ApplicationFacade:
@@ -27,6 +28,7 @@ import { nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
  */
 export interface DiscoveryFacade {
   getDiscoverySnapshot: () => Promise<DiscoverySnapshot>;
+  getAgentDirectoryProjection: () => Promise<AgentDirectoryProjection>;
   scanTargets: (scopeIds: string[]) => Promise<ScanResult>;
   searchOnlineSources: (query: SourceSearchQuery) => Promise<SourceSearchPage>;
   /** Optional AI query extension (US-014): the original query always runs
@@ -74,6 +76,13 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     });
     if (result.type !== "discovery_snapshot") {
       throw new Error("Unexpected discovery snapshot response from the native application.");
+    }
+    return result.payload;
+  },
+  async getAgentDirectoryProjection() {
+    const result = await queryApplication({ type: "get_agent_directory_projection", payload: null });
+    if (result.type !== "agent_directory_projection") {
+      throw new Error("Unexpected Agent directory projection response from the native application.");
     }
     return result.payload;
   },
@@ -481,6 +490,7 @@ export function classifyScan(
 
 /** P1-06：一张聚合后的 Agent 目录卡片（同 physical 目录合并展示）。 */
 export interface AgentTargetCard {
+  /** Canonical card identity from the shared Agent directory model. */
   physicalId: string;
   /** 该 physical 组内任一 target 的路径（同一 physical 路径等价）。 */
   path: string;
@@ -497,6 +507,8 @@ export interface AgentTargetCard {
   sharedClients: number;
   /** OPT-07：共享引用客户端的官方产品名（提示与诊断用）。 */
   sharedClientNames: string[];
+  sharedBrands: string[];
+  sharedBrandKinds: Record<string, string[]>;
   /**
    * 2026-09-25 验收裁决：内置技能目录（平台只读，如 `.codex/skills/.system`）
    * 独立成「内置」类型卡片；本机不存在的内置候选不出卡（平台自管，缺席非故障）。
@@ -520,180 +532,50 @@ const byBrandName = (a: AgentBrandGroup, b: AgentBrandGroup) =>
   a.brand.localeCompare(b.brand);
 
 /**
- * P1-06：从发现快照构建 Agent 分组视图。
- * - 先按当前 OS 过滤 profile 声明的 supported_os（空列表视为未声明，保留）；
- * - 按品牌（profile_id）分组，组内按 physical_id 聚合（后端已把同目录
- *   的不同客户端归并为同一 physical_id）；
- * - 聚合卡片类型取组内去重后的 kind 集合，官方产品名随卡片并列展示；
- * - OPT-07：shared_reference 目标（`.agents/skills` 跨品牌共享引用）不再
- *   产出品牌卡片，而是把引用计数与客户端名聚合到同一物理目录的通用
- *   归属卡片上——归属只出现一次，品牌侧可用性不回退；
- * - 可用品牌在前（按品牌名排序），完全不可用的品牌整体置底。
+ * Discovery presentation adapter over the canonical directory card model.
+ * It preserves the existing brand sections and availability ordering while
+ * leaving card identity, membership, and shared-directory associations intact.
  */
-export function buildAgentGroups(
-  snapshot: DiscoverySnapshot,
-  options: { os: "windows" | "macos" },
-): AgentGroups {
-  const osInstances = snapshot.instances.filter(
-    (instance: ClientInstance) =>
-      instance.supported_os.length === 0 || instance.supported_os.includes(options.os),
-  );
-  const instanceKindByClient = new Map(
-    osInstances.map((instance) => [instance.client_id, instance.kind]),
-  );
-  const instanceNameByClient = new Map(
-    osInstances.map((instance) => [instance.client_id, instance.display_name || instance.client_id]),
-  );
-  const clientIds = new Set(instanceKindByClient.keys());
-
-  interface PhysicalAccumulator {
-    physicalId: string;
-    path: string;
-    kinds: ClientKind[];
-    names: string[];
-    available: boolean;
-    builtin: boolean;
-  }
-  // 验收反馈（2026-09-25）：merge_history 保留的旧扫描条目可能只有末段
-  // 分隔符不同（`.agents/skills` vs `.agents\skills`），且 shared_reference
-  // 反序列化为 false。目录聚合一律按文件系统路径身份（分隔符统一 + Windows
-  // 大小写折叠）归并，历史拼写变体不得再产出「品牌 + 不可用」幽灵卡。
-  const pathIdentity = (path: string): string => {
-    const unified = path.replaceAll("\\", "/");
-    return options.os === "windows" ? unified.toLowerCase() : unified;
-  };
-  const byBrand = new Map<string, Map<string, PhysicalAccumulator>>();
-  const sharedByIdentity = new Map<
-    string,
-    { physicalId: string; available: boolean; clientIds: string[]; names: string[]; path: string }
-  >();
-  for (const target of snapshot.logical_targets as LogicalTarget[]) {
-    if (!clientIds.has(target.client_id)) continue;
-    const kind = instanceKindByClient.get(target.client_id);
-    if (!kind) continue;
-    if (!target.shared_reference) continue;
-    const identity = pathIdentity(target.path);
-    let shared = sharedByIdentity.get(identity);
-    if (!shared) {
-      shared = {
-        physicalId: target.physical_id,
-        available: false,
-        clientIds: [],
-        names: [],
-        path: target.path,
-      };
-      sharedByIdentity.set(identity, shared);
-    }
-    shared.available = shared.available || target.available;
-    if (!shared.clientIds.includes(target.client_id)) shared.clientIds.push(target.client_id);
-    const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
-    if (!shared.names.includes(clientName)) shared.names.push(clientName);
-  }
-  for (const target of snapshot.logical_targets as LogicalTarget[]) {
-    if (!clientIds.has(target.client_id)) continue;
-    const kind = instanceKindByClient.get(target.client_id);
-    if (!kind) continue;
-    // 2026-09-25 验收裁决：内置候选目录不存在时保持安静——平台自管的目录
-    // 缺席是正常状态，不产生「不可用」噪音卡片。
-    if (target.builtin && !target.exists) continue;
-    const clientName = instanceNameByClient.get(target.client_id) ?? target.client_id;
-    const identity = pathIdentity(target.path);
-    const isGenericOwner = target.profile_id === "agent-skills";
-    if (!isGenericOwner && (target.shared_reference || sharedByIdentity.has(identity))) {
-      // OPT-07：共享引用不产出归属卡片，聚合到通用目录卡片上；历史拼写
-      // 变体（shared_reference 缺失）按同一路径身份并入同一共享聚合。
-      let shared = sharedByIdentity.get(identity);
-      if (!shared) {
-        shared = {
-          physicalId: target.physical_id,
-          available: false,
-          clientIds: [],
-          names: [],
-          path: target.path,
-        };
-        sharedByIdentity.set(identity, shared);
-      }
-      shared.available = shared.available || target.available;
-      if (!shared.clientIds.includes(target.client_id)) shared.clientIds.push(target.client_id);
-      if (!shared.names.includes(clientName)) shared.names.push(clientName);
-      continue;
-    }
-    let brandGroups = byBrand.get(target.profile_id);
-    if (!brandGroups) {
-      brandGroups = new Map();
-      byBrand.set(target.profile_id, brandGroups);
-    }
-    let card = brandGroups.get(identity);
-    if (!card) {
-      card = {
-        physicalId: target.physical_id,
-        path: target.path,
-        kinds: [],
-        names: [],
-        available: false,
-        builtin: true,
-      };
-      brandGroups.set(identity, card);
-    }
-    // 同一目录身份上混有普通条目时不再是内置卡；纯内置条目保持内置标记。
-    card.builtin = card.builtin && target.builtin === true;
-    // 同一路径的历史拼写各自带着不同 physical_id；可用拼写的路径优先作为展示值。
-    if (target.available && !card.available) {
-      card.physicalId = target.physical_id;
-      card.path = target.path;
-    }
-    if (!card.kinds.includes(kind)) card.kinds.push(kind);
-    const name = instanceNameByClient.get(target.client_id);
-    if (name && !card.names.includes(name)) card.names.push(name);
-    card.available = card.available || target.available;
-  }
-
-  // A snapshot can contain only brand-specific references when the generic
-  // shared-directory profile was not registered. The physical shared
-  // directory is still one independent user-facing entity.
-  const genericCards = byBrand.get("agent-skills") ?? new Map<string, PhysicalAccumulator>();
-  for (const [identity, shared] of sharedByIdentity) {
-    const existing = [...genericCards.values()].find(
-      (candidate) => pathIdentity(candidate.path) === identity,
+export function buildAgentGroupsFromProjection(projection: AgentDirectoryProjection): AgentGroups {
+  const models = buildAgentDirectoryCardModels(projection);
+  const cardsByBrand = new Map<string, AgentTargetCard[]>();
+  models.forEach((model: AgentCardModel, index) => {
+    const directory = model.directories[0];
+    const path = directory?.path ?? projection.directories[index]?.path ?? "";
+    const available = Boolean(directory?.available);
+    const names = [...new Set(model.members.map((member) => member.instance))];
+    const card: AgentTargetCard = {
+      physicalId: model.id,
+      path,
+      kinds: model.kinds as ClientKind[],
+      names,
+      available,
+      sharedClients: model.sharedDirectory
+        ? new Set((model.directoryMembers ?? []).flatMap((member) => member.client_id ? [member.client_id] : [])).size
+        : 0,
+      sharedClientNames: model.sharedDirectory
+        ? [...new Set((model.directoryMembers ?? []).flatMap((member) => member.brand ? [brandDisplayName(member.brand)] : []))]
+        : [],
+      sharedBrands: model.sharedAgentBrands,
+      sharedBrandKinds: model.sharedAgentBrandKinds,
+      builtin: model.builtin,
+    };
+    const cards = cardsByBrand.get(model.brand) ?? [];
+    cards.push(card);
+    cardsByBrand.set(model.brand, cards);
+  });
+  const groups = [...cardsByBrand].map(([brand, cards]): AgentBrandGroup => {
+    const ordered = cards.toSorted((a, b) =>
+      Number(b.available) - Number(a.available) || a.path.localeCompare(b.path),
     );
-    if (existing) {
-      existing.available = existing.available || shared.available;
-      continue;
-    }
-    genericCards.set(identity, {
-      physicalId: shared.physicalId,
-      path: shared.path,
-      kinds: ["shared_directory"],
-      names: ["Agent Skills"],
-      available: shared.available,
-      builtin: false,
-    });
-  }
-  if (genericCards.size > 0) byBrand.set("agent-skills", genericCards);
-
-  const groups: AgentBrandGroup[] = [];
-  for (const [brand, cards] of byBrand) {
-    const ordered = [...cards.values()]
-      .map((card) => {
-        const shared = sharedByIdentity.get(pathIdentity(card.path));
-        return {
-          ...card,
-          kinds: [...card.kinds],
-          names: [...card.names],
-          sharedClients: shared?.clientIds.length ?? 0,
-          sharedClientNames: shared ? [...shared.names] : [],
-        };
-      })
-      .sort((a, b) => Number(b.available) - Number(a.available) || a.path.localeCompare(b.path));
-    groups.push({
-      brand,
-      available: ordered.some((card) => card.available),
-      cards: ordered,
-    });
-  }
-  const sorted = [...groups].sort(byBrandName);
+    return { brand, available: ordered.some((card) => card.available), cards: ordered };
+  });
+  const sorted = groups.toSorted(byBrandName);
   return {
     available: sorted.filter((group) => group.available),
     unavailable: sorted.filter((group) => !group.available),
   };
 }
+
+/** Compatibility name retained for consumers while the canonical model owns grouping. */
+export const buildAgentGroups = buildAgentGroupsFromProjection;
