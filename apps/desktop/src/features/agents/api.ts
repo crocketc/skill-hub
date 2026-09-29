@@ -20,7 +20,7 @@ export interface AgentRelation {
 }
 
 export type AgentStatus = "accessible" | "directory_only" | "inaccessible" | "custom";
-export type AgentDirectoryStatus = "existing" | "pending_creation" | "inaccessible" | "non_directory" | "broken_link";
+export type AgentDirectoryStatus = "existing" | "pending_creation" | "inaccessible" | "non_directory" | "broken_link" | "identity_changed";
 export type AgentDirectoryRole = "agent_native" | "shared_directory" | "project" | "builtin";
 export type AgentDeploymentMode = "managed_copy" | "symbolic_link" | "directory_junction";
 export type AgentDeploymentStatus = "deployed" | "partially_deployed" | "not_deployed" | "unknown";

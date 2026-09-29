@@ -53,7 +53,7 @@ function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirecto
     brand,
     client: member.client_id ?? "shared-directory",
     instance: displayName,
-    discoveredPaths: directory.exists ? [directory.path] : [],
+    discoveredPaths: directory.exists || directory.status !== "missing" ? [directory.path] : [],
     managedDeploymentCount: member.managed_deployment_count,
     managedDeploymentRelationCount: member.managed_deployment_relation_count,
     officialReference: null,
@@ -81,7 +81,7 @@ function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryVi
   const verified = directory.identity.kind === "verified_physical";
   const candidate = directory.identity.kind === "candidate";
   return {
-    path: directory.exists ? directory.path : null,
+    path: directory.exists || directory.status !== "missing" ? directory.path : null,
     status: projectedStatus(directory.status),
     role: directory.role,
     sharedReference: directory.role === "shared_directory",
@@ -135,7 +135,7 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
       brand,
       instance: shared ? "共享目录" : representative?.instance ?? brand,
       kinds,
-      discoveredPaths: directory.exists ? [directory.path] : [],
+      discoveredPaths: directory.exists || directory.status !== "missing" ? [directory.path] : [],
       relations: directory.members.map((member) => ({
         logicalLabel: member.brand ?? "共享目录",
         logicalTargetId: member.logical_target_id,
@@ -356,8 +356,28 @@ function mergeSharedBrandKinds(members: readonly AgentView[]): Record<string, st
   return result;
 }
 
-export function directoryStatusLabel(status: AgentDirectoryStatus): string {
-  return status;
+export function directoryStatusLabel(status: AgentDirectoryStatus | "missing"): string {
+  switch (status) {
+    case "existing": return "agents.directoryStatus.existing";
+    case "missing":
+    case "pending_creation": return "agents.directoryStatus.pendingCreation";
+    case "non_directory": return "agents.directoryStatus.nonDirectory";
+    case "inaccessible": return "agents.directoryStatus.inaccessible";
+    case "broken_link": return "agents.directoryStatus.brokenLink";
+    case "identity_changed": return "agents.directoryStatus.identityChanged";
+  }
+}
+
+export function directoryStatusSuggestion(status: AgentDirectoryStatus | "missing"): string | null {
+  switch (status) {
+    case "existing": return null;
+    case "missing":
+    case "pending_creation": return "agents.directoryStatusSuggestion.pendingCreation";
+    case "non_directory": return "agents.directoryStatusSuggestion.nonDirectory";
+    case "inaccessible": return "agents.directoryStatusSuggestion.inaccessible";
+    case "broken_link": return "agents.directoryStatusSuggestion.brokenLink";
+    case "identity_changed": return "agents.directoryStatusSuggestion.identityChanged";
+  }
 }
 
 export function directoryRoleLabel(role: AgentDirectoryRole): string {

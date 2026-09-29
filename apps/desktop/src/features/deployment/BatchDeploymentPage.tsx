@@ -29,6 +29,7 @@ import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 import { displayPath } from "../../platform/displayPath";
+import { directoryStatusLabel, directoryStatusSuggestion } from "../agents/agentCardModel";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -458,7 +459,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         {/* 待创建目录属于已识别 Agent，但必须经用户确认后才创建。 */}
         <div className="sh-deployment-targets" data-testid="deployment-target-grid">
           {targetCards.filter((card) => card.targets.some((target) =>
-            target.available || target.directoryStatus === "missing")).map((card) => {
+            target.available || target.directoryStatus !== undefined)).map((card) => {
             const target = card.target;
             const targetPath = displayPath(target.path);
             const selectable = card.targets.filter((candidate) => candidate.available);
@@ -493,7 +494,17 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                     />
                     <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
                   </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
-                  <small title={targetPath}>{selectable.length > 0 ? targetPath : t("agents.pathPending")}</small>
+                  <small title={targetPath}>
+                    {selectable.length > 0
+                      ? targetPath
+                      : t(directoryStatusLabel(target.directoryStatus ?? "missing") as never)}
+                  </small>
+                  {selectable.length === 0 && target.directoryStatus
+                    && target.directoryStatus !== "missing" && target.directoryStatus !== "existing" ? (
+                      <small>
+                        {t(directoryStatusLabel(target.directoryStatus) as never)}: {t(directoryStatusSuggestion(target.directoryStatus) as never)}
+                      </small>
+                    ) : null}
                 </div>
                 {pendingTargets.map((pendingTarget) => <ConfirmDialog
                   key={pendingTarget.id}

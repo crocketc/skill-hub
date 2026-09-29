@@ -1,6 +1,7 @@
 use super::Database;
 use rusqlite::params;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use std::collections::BTreeMap;
 
 /// Registration row for one physical deployment target.  The columns mirror
 /// the legacy `targets` table that `deployments.target_id` references;
@@ -55,6 +56,22 @@ impl<'a> TargetRepository<'a> {
             )
             .map_err(|error| target_error("insert", error))?;
         Ok(())
+    }
+
+    /// Returns the last registered path for each physical target identity.
+    pub fn paths_by_id(&self) -> AppResult<BTreeMap<String, String>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT id, path FROM targets")
+            .map_err(|error| target_error("list", error))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| target_error("list", error))?;
+        rows.collect::<Result<BTreeMap<_, _>, _>>()
+            .map_err(|error| target_error("list", error))
     }
 }
 

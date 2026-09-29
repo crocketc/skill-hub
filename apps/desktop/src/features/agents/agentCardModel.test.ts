@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentCardModels, buildAgentDirectoryCardModels } from "./agentCardModel";
+import { buildAgentCardModels, buildAgentDirectoryCardModels, directoryStatusLabel, directoryStatusSuggestion } from "./agentCardModel";
 import type { AgentDirectoryProjection } from "../../api/bindings";
 import type { AgentView } from "./api";
 
@@ -132,6 +132,19 @@ function projectedDirectory(overrides: Partial<AgentDirectoryProjection["directo
 }
 
 describe("buildAgentDirectoryCardModels", () => {
+  it("presents abnormal directory states with user-readable recovery guidance", () => {
+    expect(directoryStatusLabel("pending_creation")).toBe("agents.directoryStatus.pendingCreation");
+    expect(directoryStatusSuggestion("pending_creation")).toBe("agents.directoryStatusSuggestion.pendingCreation");
+    expect(directoryStatusLabel("non_directory")).toBe("agents.directoryStatus.nonDirectory");
+    expect(directoryStatusSuggestion("non_directory")).toBe("agents.directoryStatusSuggestion.nonDirectory");
+    expect(directoryStatusLabel("inaccessible")).toBe("agents.directoryStatus.inaccessible");
+    expect(directoryStatusSuggestion("inaccessible")).toBe("agents.directoryStatusSuggestion.inaccessible");
+    expect(directoryStatusLabel("broken_link")).toBe("agents.directoryStatus.brokenLink");
+    expect(directoryStatusSuggestion("broken_link")).toBe("agents.directoryStatusSuggestion.brokenLink");
+    expect(directoryStatusLabel("identity_changed")).toBe("agents.directoryStatus.identityChanged");
+    expect(directoryStatusSuggestion("identity_changed")).toBe("agents.directoryStatusSuggestion.identityChanged");
+  });
+
   it("uses verified physical identity rather than path spelling and never merges candidate identities", () => {
     const cards = buildAgentDirectoryCardModels({ directories: [
       projectedDirectory({
@@ -217,5 +230,23 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards.map((card) => card.directories[0].status)).toEqual(["pending_creation", "inaccessible", "broken_link", "existing", "existing"]);
     expect(cards[0].supportedModes).toEqual(["managed_copy", "symbolic_link", "directory_junction"]);
     expect(cards[3].readOnly).toBe(true);
+  });
+
+  it("keeps abnormal target paths visible while missing targets remain pending", () => {
+    const cards = buildAgentDirectoryCardModels({ directories: [
+      projectedDirectory({
+        status: "non_directory", exists: false, available: false, readable: false,
+        path: "C:/Users/demo/.codex/skills",
+      }),
+      projectedDirectory({
+        status: "missing", exists: false, available: false, readable: false,
+        identity: { kind: "candidate", value: "candidate" },
+        path: "C:/Users/demo/.cursor/skills",
+      }),
+    ] });
+
+    expect(cards[0].directories[0].path).toBe("C:/Users/demo/.codex/skills");
+    expect(cards[0].members[0].discoveredPaths).toEqual(["C:/Users/demo/.codex/skills"]);
+    expect(cards[1].directories[0].path).toBeNull();
   });
 });

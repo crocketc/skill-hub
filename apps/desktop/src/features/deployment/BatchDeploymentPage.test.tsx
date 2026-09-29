@@ -109,6 +109,26 @@ it("hides unavailable targets from the default selection list (DEV-11)", async (
   expect(screen.queryByLabelText("Read-only Agent")).not.toBeInTheDocument();
 });
 
+it("keeps abnormal targets visible with guidance and without create or select actions", async () => {
+  const abnormal = {
+    ...deploymentTargetsFixture()[0],
+    available: false,
+    directoryStatus: "broken_link" as const,
+    physicalIdentityVerified: false,
+  };
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [abnormal],
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  expect(await screen.findByText("链接目标已失效: 修复链接目标后重新扫描。")).toBeVisible();
+  expect(screen.queryByLabelText(abnormal.agentClientId ?? abnormal.label)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
+});
+
 it("creates a pending Skill directory only after explicit confirmation", async () => {
   const user = userEvent.setup();
   const pending = {

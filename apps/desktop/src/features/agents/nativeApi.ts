@@ -75,11 +75,11 @@ function rootIsRecognized(target: LogicalTarget, snapshot: DiscoverySnapshot): b
   const roots = snapshot.agent_roots ?? [];
   if (roots.length === 0) return target.exists;
   const root = roots.find((candidate) => candidate.id === target.agent_root_id);
-  return root?.exists === true && root.status === "existing";
+  return root?.status !== "missing" && root !== undefined;
 }
 
 function directoryStatus(target: LogicalTarget): AgentDirectoryStatus {
-  if (target.status === "non_directory" || target.status === "inaccessible" || target.status === "broken_link") {
+  if (target.status === "non_directory" || target.status === "inaccessible" || target.status === "broken_link" || target.status === "identity_changed") {
     return target.status;
   }
   return target.exists ? "existing" : "pending_creation";

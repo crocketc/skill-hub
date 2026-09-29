@@ -25,6 +25,7 @@ import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { displayPath } from "../../platform/displayPath";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
+import { directoryStatusLabel, directoryStatusSuggestion } from "../agents/agentCardModel";
 
 export interface DeploymentDialogProps {
   /** 单项部署复用批次预览契约：一个 Skill 的 pair 流（任务 14）。 */
@@ -367,7 +368,7 @@ export function DeploymentDialog({
             <span className="sh-count-badge">{selected.length}</span>
           </div>
           <div className="sh-workflow-targets">
-            {targets.filter((target) => target.available || target.directoryStatus === "missing").map((target) => target.available ? (
+            {targets.filter((target) => target.available || target.directoryStatus !== undefined).map((target) => target.available ? (
               <label className="sh-workflow-target" key={target.id}>
                 <input
                   aria-label={target.agentClientId ?? target.label}
@@ -388,16 +389,18 @@ export function DeploymentDialog({
               <div className="sh-workflow-target sh-workflow-target--pending" key={target.id}>
                 <span>
                   <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small>{t("agents.pathPending")}</small>
+                  <small>{t(directoryStatusLabel(target.directoryStatus ?? "missing") as never)}</small>
                 </span>
-                <ConfirmDialog
+                {target.directoryStatus === "missing" || !target.directoryStatus ? <ConfirmDialog
                   cancelLabel={t("agents.removeDialog.cancel")}
                   confirmLabel={t("deployment.targets.createConfirm")}
                   description={t("deployment.targets.createDescription")}
                   onConfirm={() => void ensureTargetDirectory(target)}
                   title={t("deployment.targets.createTitle")}
                   trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
-                />
+                /> : target.directoryStatus !== "existing" ? (
+                  <small>{t(directoryStatusSuggestion(target.directoryStatus) as never)}</small>
+                ) : null}
               </div>
             ))}
           </div>

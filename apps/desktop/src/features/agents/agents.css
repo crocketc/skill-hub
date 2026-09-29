@@ -115,9 +115,18 @@
 
 .sh-agent-card__path--inaccessible,
 .sh-agent-card__path--non_directory,
-.sh-agent-card__path--broken_link {
+.sh-agent-card__path--broken_link,
+.sh-agent-card__path--identity_changed {
   border-color: var(--ui-warning-border);
   color: var(--ui-warning-foreground);
+}
+
+.sh-agent-card__path-guidance {
+  display: block;
+  padding: var(--space-1) var(--space-3) 0;
+  color: var(--ui-warning-foreground);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .sh-agent-card__meta {

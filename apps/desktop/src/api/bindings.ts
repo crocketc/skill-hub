@@ -1158,7 +1158,7 @@ export type DirectoryNodeFact = {
 	scan_source: string | null,
 };
 
-export type DirectoryObservationStatus = "existing" | "missing" | "non_directory" | "inaccessible" | "broken_link";
+export type DirectoryObservationStatus = "existing" | "missing" | "non_directory" | "inaccessible" | "broken_link" | "identity_changed";
 
 export type DirectoryPrecedence = "preferred" | "lower_priority_copy" | "may_coexist" | "unknown";
 

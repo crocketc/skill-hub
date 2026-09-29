@@ -1,4 +1,5 @@
 import type {
+  DirectoryObservationStatus,
   TargetOperationError,
 } from "../../api/bindings";
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
@@ -62,7 +63,7 @@ export type DeploymentTarget = {
   sharedDirectory?: boolean;
   sharedAgentBrands?: string[];
   sharedAgentBrandKinds?: Record<string, string[]>;
-  directoryStatus?: "existing" | "missing" | "non_directory" | "inaccessible" | "broken_link";
+  directoryStatus?: DirectoryObservationStatus;
   physicalIdentityVerified?: boolean;
   preferredMode?: DeploymentMode;
   /** Shared directory card projection; operation IDs remain on this target. */

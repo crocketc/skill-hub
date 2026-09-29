@@ -693,6 +693,21 @@
     "pathLabel": "Path:",
     "pathPending": "Not created yet",
     "pathUnavailable": "Path unavailable",
+    "directoryStatus": {
+      "existing": "Available",
+      "pendingCreation": "Not created yet",
+      "nonDirectory": "A file occupies this path",
+      "inaccessible": "Cannot access this directory",
+      "brokenLink": "Link target is unavailable",
+      "identityChanged": "Directory has changed"
+    },
+    "directoryStatusSuggestion": {
+      "pendingCreation": "Confirm to create this directory.",
+      "nonDirectory": "Choose another path or move the file first.",
+      "inaccessible": "Check directory permissions, then rescan.",
+      "brokenLink": "Repair the link target, then rescan.",
+      "identityChanged": "Confirm the directory again before managing its Skills."
+    },
     "loading": "Loading Agent facts",
     "unavailable": "Agent data is not connected to the native service yet.",
     "empty": "No agents discovered yet. Rescan, or add a custom agent.",

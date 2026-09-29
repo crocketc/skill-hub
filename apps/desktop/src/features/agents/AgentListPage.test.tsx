@@ -74,6 +74,28 @@ async function renderListPage(facade: AgentFacade, localeAgents?: AgentView[]) {
   );
 }
 
+it("shows readable state and recovery guidance for an abnormal directory", async () => {
+  await renderListPage(facadeWith(), [{
+    ...agents[0],
+    directoryViews: [{
+      path: "C:/Users/demo/.codex/skills",
+      status: "non_directory",
+      role: "agent_native",
+      sharedReference: false,
+      builtin: false,
+      readable: false,
+      writable: false,
+      available: false,
+      physicalIdentityVerified: false,
+      supportedModes: [],
+      deploymentStatus: "not_deployed",
+    }],
+  }]);
+
+  expect(await screen.findByText("路径位置被文件占用：选择其他目录，或先移走该文件。")).toBeInTheDocument();
+  expect(screen.queryByText("non_directory")).not.toBeInTheDocument();
+});
+
 it("refreshes directory card facts when a deployment commit broadcasts changed facts", async () => {
   // 卡片不展示 Skill/部署数量，但部署事实变化仍需触发卡片重新读取。
   const facade = facadeWith();

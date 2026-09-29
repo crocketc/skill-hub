@@ -693,6 +693,21 @@
     "pathLabel": "路径：",
     "pathPending": "待创建",
     "pathUnavailable": "路径不可用",
+    "directoryStatus": {
+      "existing": "可访问",
+      "pendingCreation": "待创建",
+      "nonDirectory": "路径位置被文件占用",
+      "inaccessible": "无法访问",
+      "brokenLink": "链接目标已失效",
+      "identityChanged": "目录已发生变化"
+    },
+    "directoryStatusSuggestion": {
+      "pendingCreation": "确认后可创建此目录。",
+      "nonDirectory": "选择其他目录，或先移走该文件。",
+      "inaccessible": "检查目录权限后重新扫描。",
+      "brokenLink": "修复链接目标后重新扫描。",
+      "identityChanged": "请重新确认目录后再管理其中的 Skill。"
+    },
     "loading": "正在加载 Agent 事实",
     "unavailable": "Agent 数据尚未连接到本机服务。",
     "empty": "尚未发现任何 Agent。可以重新扫描，或新增自定义 Agent。",

@@ -6554,13 +6554,12 @@ impl LocalApplicationFacade {
                 .collect::<BTreeMap<_, _>>();
             let root_is_identified = |root_id: &str| {
                 snapshot.agent_roots.iter().any(|root| {
-                    root.id == root_id
-                        && root.exists
-                        && root.status == DirectoryObservationStatus::Existing
+                    root.id == root_id && root.status != DirectoryObservationStatus::Missing
                 })
             };
             let mut facts = BTreeMap::<String, AgentDirectoryFact>::new();
             let deployments = database.deployment_repository().list_all()?;
+            let registered_target_paths = database.target_repository().paths_by_id()?;
             let deployment_facts = |logical_target_id: &str, physical_target_id: &str| {
                 let active = deployments
                     .iter()
@@ -6600,6 +6599,33 @@ impl LocalApplicationFacade {
                 {
                     continue;
                 }
+                let root_status = snapshot
+                    .agent_roots
+                    .iter()
+                    .find(|root| root.id == target.agent_root_id)
+                    .map(|root| root.status)
+                    .unwrap_or(DirectoryObservationStatus::Existing);
+                let identity_changed = target.physical_identity_verified
+                    && deployments.iter().any(|deployment| {
+                        deployment.managed
+                            && deployment.state != skillhub_core::DeploymentState::Removed
+                            && registered_target_paths
+                                .get(&deployment.target_id)
+                                .is_some_and(|path| {
+                                    paths_resolve_to_same_directory(path, &target.path)
+                                })
+                            && deployment.target_id != target.physical_id
+                    });
+                let status = if identity_changed {
+                    DirectoryObservationStatus::IdentityChanged
+                } else if target.status == DirectoryObservationStatus::Missing
+                    && root_status != DirectoryObservationStatus::Existing
+                    && root_status != DirectoryObservationStatus::Missing
+                {
+                    root_status
+                } else {
+                    target.status
+                };
                 let role = if target.builtin {
                     AgentDirectoryRole::Builtin
                 } else if target.shared_reference {
@@ -6643,11 +6669,11 @@ impl LocalApplicationFacade {
                         .get(&(target.profile_id.as_str(), target.client_id.as_str()))
                         .cloned(),
                     availability: AgentDirectoryAvailability {
-                        status: target.status,
+                        status,
                         exists: target.exists,
                         readable: target.readable,
                         writable: target.writable,
-                        available: target.available,
+                        available: target.available && !identity_changed,
                     },
                     capabilities: AgentDirectoryMemberCapabilities {
                         deployment: capabilities,
@@ -6664,11 +6690,13 @@ impl LocalApplicationFacade {
                         role,
                         identity,
                         path: target.path.clone(),
-                        status: target.status,
+                        status,
                         exists: target.exists,
                         readable: target.readable,
                         writable: target.writable,
-                        available: target.available && target.physical_identity_verified,
+                        available: target.available
+                            && target.physical_identity_verified
+                            && !identity_changed,
                         members: Vec::new(),
                     });
                 fact.members.push(member);
@@ -6749,6 +6777,10 @@ impl LocalApplicationFacade {
         let host_capabilities = DeploymentFilesystem::new().available_capabilities();
         let modes = offered_modes(&host_capabilities);
         self.with_database("query.list_deployment_targets", |database| {
+            use skillhub_core::agent::DirectoryObservationStatus;
+
+            let deployments = database.deployment_repository().list_all()?;
+            let registered_target_paths = database.target_repository().paths_by_id()?;
             let mut targets: Vec<skillhub_core::api::DeploymentTarget> = database
                 .agent_repository()
                 .load()?
@@ -6760,6 +6792,8 @@ impl LocalApplicationFacade {
                         .collect::<BTreeMap<_, _>>();
                     let mut targets = Vec::new();
                     let mut targets_by_physical_id = BTreeMap::new();
+                    let mut identity_changed_by_target_id = BTreeMap::new();
+                    let mut directory_status_by_target_id = BTreeMap::new();
                     for target in snapshot.logical_targets {
                         // 2026-09-25 验收裁决：内置技能目录只读观察，绝不作为
                         // 部署目标出现在选择清单中。
@@ -6770,15 +6804,40 @@ impl LocalApplicationFacade {
                             .agent_roots
                             .iter()
                             .find(|root| root.id == target.agent_root_id)
-                            .map(|root| {
-                                root.exists
-                                    && root.status
-                                        == skillhub_core::agent::DirectoryObservationStatus::Existing
-                            })
+                            .map(|root| root.status != DirectoryObservationStatus::Missing)
                             .unwrap_or_else(|| target.exists);
                         if !root_identified {
                             continue;
                         }
+                        let root_status = snapshot
+                            .agent_roots
+                            .iter()
+                            .find(|root| root.id == target.agent_root_id)
+                            .map(|root| root.status)
+                            .unwrap_or(DirectoryObservationStatus::Existing);
+                        let identity_changed = target.physical_identity_verified
+                            && deployments.iter().any(|deployment| {
+                                deployment.managed
+                                    && deployment.state != skillhub_core::DeploymentState::Removed
+                                    && registered_target_paths
+                                        .get(&deployment.target_id)
+                                        .is_some_and(|path| {
+                                            paths_resolve_to_same_directory(path, &target.path)
+                                        })
+                                    && deployment.target_id != target.physical_id
+                            });
+                        let directory_status = if identity_changed {
+                            DirectoryObservationStatus::IdentityChanged
+                        } else if target.status == DirectoryObservationStatus::Missing
+                            && root_status != DirectoryObservationStatus::Existing
+                            && root_status != DirectoryObservationStatus::Missing
+                        {
+                            root_status
+                        } else {
+                            target.status
+                        };
+                        identity_changed_by_target_id.insert(target.id.clone(), identity_changed);
+                        directory_status_by_target_id.insert(target.id.clone(), directory_status);
                         let grouping_key = if target.physical_identity_verified {
                             format!("physical:{}", target.physical_id)
                         } else {
@@ -6796,6 +6855,14 @@ impl LocalApplicationFacade {
                             .any(|target| target.shared_reference);
                         if !is_shared_directory {
                             for target in physical_targets {
+                                let identity_changed = identity_changed_by_target_id
+                                    .get(&target.id)
+                                    .copied()
+                                    .unwrap_or(false);
+                                let directory_status = directory_status_by_target_id
+                                    .get(&target.id)
+                                    .copied()
+                                    .unwrap_or(target.status);
                                 let modes = offered_modes(&effective_target_capabilities(
                                     &target.client_id,
                                     &host_capabilities,
@@ -6805,7 +6872,9 @@ impl LocalApplicationFacade {
                                     id: target.id,
                                     label: target.client_id.clone(),
                                     path: target.path,
-                                    available: target.available && target.physical_identity_verified,
+                                    available: target.available
+                                        && target.physical_identity_verified
+                                        && !identity_changed,
                                     physical_id: target.physical_id,
                                     modes,
                                     agent_client_id: Some(target.client_id),
@@ -6813,7 +6882,7 @@ impl LocalApplicationFacade {
                                     shared_directory: false,
                                     shared_agent_brands: Vec::new(),
                                     shared_agent_brand_kinds: BTreeMap::new(),
-                                    directory_status: Some(target.status),
+                                    directory_status: Some(directory_status),
                                     physical_identity_verified: target.physical_identity_verified,
                                     preferred_mode,
                                 });
@@ -6831,6 +6900,16 @@ impl LocalApplicationFacade {
                                     .first()
                                     .expect("physical target group is never empty")
                             });
+                        let identity_changed = physical_targets.iter().any(|target| {
+                            identity_changed_by_target_id
+                                .get(&target.id)
+                                .copied()
+                                .unwrap_or(false)
+                        });
+                        let directory_status = directory_status_by_target_id
+                            .get(&canonical.id)
+                            .copied()
+                            .unwrap_or(canonical.status);
                         let modes = offered_modes(&effective_target_capabilities(
                             &canonical.client_id,
                             &host_capabilities,
@@ -6862,7 +6941,8 @@ impl LocalApplicationFacade {
                             label: canonical.client_id.clone(),
                             path: canonical.path.clone(),
                             available: canonical.available
-                                && canonical.physical_identity_verified,
+                                && canonical.physical_identity_verified
+                                && !identity_changed,
                             physical_id: canonical.physical_id.clone(),
                             modes,
                             agent_client_id: Some(canonical.client_id.clone()),
@@ -6870,7 +6950,7 @@ impl LocalApplicationFacade {
                             shared_directory: true,
                             shared_agent_brands,
                             shared_agent_brand_kinds,
-                            directory_status: Some(canonical.status),
+                            directory_status: Some(directory_status),
                             physical_identity_verified: canonical.physical_identity_verified,
                             preferred_mode,
                         });
@@ -11678,6 +11758,14 @@ fn occupancy_names_equal(left: &str, right: &str, case_sensitive: bool) -> bool 
 /// outside the verified target root.
 fn is_single_path_component(value: &str) -> bool {
     !value.is_empty() && value != "." && value != ".." && !value.contains(['\0', '/', '\\', ':'])
+}
+
+/// Returns true only when both paths resolve and identify the same directory.
+fn paths_resolve_to_same_directory(left: &str, right: &str) -> bool {
+    std::fs::canonicalize(left)
+        .ok()
+        .zip(std::fs::canonicalize(right).ok())
+        .is_some_and(|(left, right)| left == right)
 }
 
 /// Builds the registered-target index from database facts only.  Shared by

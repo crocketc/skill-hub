@@ -12,7 +12,7 @@ import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { PageHeader } from "../../ui/PageHeader";
 import { useOptionalAppNotifications } from "../../ui/notifications";
-import { buildAgentCardModels, type AgentCardModel } from "./agentCardModel";
+import { buildAgentCardModels, directoryStatusLabel, directoryStatusSuggestion, type AgentCardModel } from "./agentCardModel";
 import { type AgentFacade, type AgentDirectoryView, type AgentView, unavailableAgentFacade } from "./api";
 import { DeploymentCapabilityIcons } from "./DeploymentCapabilityIcons";
 import { CustomAgentForm } from "./CustomAgentForm";
@@ -231,15 +231,22 @@ function renderDirectory(
   t: (key: string, options?: Record<string, unknown>) => string,
 ): JSX.Element {
   const content = directory.status === "pending_creation"
-    ? t("agents.pathPending")
+    ? t(directoryStatusLabel(directory.status) as never)
     : directory.path
       ? displayPath(directory.path)
       : t("agents.pathUnavailable");
+  const suggestion = directoryStatusSuggestion(directory.status);
   return (
     <li key={`${directory.role}-${directory.path ?? index}`}>
       <span className={`sh-agent-card__path sh-agent-card__path--${directory.status}`}>
         {content}
       </span>
+      {directory.status !== "existing" ? (
+        <small className="sh-agent-card__path-guidance">
+          {directory.status !== "pending_creation" ? `${t(directoryStatusLabel(directory.status) as never)}：` : ""}
+          {suggestion ? t(suggestion as never) : ""}
+        </small>
+      ) : null}
     </li>
   );
 }

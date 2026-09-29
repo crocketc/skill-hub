@@ -600,6 +600,304 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
 }
 
 #[tokio::test]
+async fn agent_directory_projection_keeps_abnormal_agent_root_observations() {
+    let database = Database::open_in_memory().expect("database");
+    let fixture_root = tempfile::tempdir().expect("fixture root");
+    let statuses = [
+        DirectoryObservationStatus::NonDirectory,
+        DirectoryObservationStatus::Inaccessible,
+        DirectoryObservationStatus::BrokenLink,
+    ];
+    let mut roots = Vec::new();
+    let mut targets = Vec::new();
+    for (index, status) in statuses.into_iter().enumerate() {
+        let id = format!("root-{index}");
+        roots.push(AgentRootObservation {
+            id: id.clone(),
+            profile_id: format!("fixture-{index}"),
+            client_id: format!("fixture-{index}.cli"),
+            scope: TargetScope::Global,
+            path: fixture_root.path().join(&id).to_string_lossy().into_owned(),
+            status,
+            exists: false,
+            readable: false,
+            writable: false,
+            physical_id: None,
+            physical_identity_verified: false,
+        });
+        targets.push(LogicalTarget {
+            id: format!("target-{index}"),
+            profile_id: format!("fixture-{index}"),
+            client_id: format!("fixture-{index}.cli"),
+            scope: TargetScope::Global,
+            path: fixture_root
+                .path()
+                .join(&id)
+                .join("skills")
+                .to_string_lossy()
+                .into_owned(),
+            agent_root_id: id,
+            marker: "SKILL.md".into(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: false,
+            builtin: false,
+            exists: false,
+            readable: false,
+            writable: false,
+            available: false,
+            physical_id: format!("candidate-{index}"),
+            status: DirectoryObservationStatus::Missing,
+            physical_identity_verified: false,
+        });
+    }
+    let snapshot = DiscoverySnapshot {
+        generation: "abnormal-roots".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: Vec::new(),
+        agent_roots: roots,
+        logical_targets: targets,
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(GetAgentDirectoryProjection))
+        .await
+        .expect("query projection");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected Agent directory projection");
+    };
+
+    assert_eq!(
+        projection.directories.len(),
+        3,
+        "abnormal roots must remain visible"
+    );
+    assert_eq!(
+        projection
+            .directories
+            .iter()
+            .map(|directory| directory.status)
+            .collect::<Vec<_>>(),
+        statuses,
+        "a failed root observation must not be rewritten as a missing skill directory"
+    );
+    let result = facade
+        .query(RootAppQuery::ListDeploymentTargets(ListDeploymentTargets))
+        .await
+        .expect("list abnormal targets");
+    let AppQueryResult::DeploymentTargets(targets) = result else {
+        panic!("expected deployment targets");
+    };
+    assert_eq!(
+        targets.iter().map(|target| target.directory_status).collect::<Vec<_>>(),
+        statuses.into_iter().map(Some).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn agent_directory_projection_preserves_identity_changed_status() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let skills_path = root.path().join("skills");
+    std::fs::create_dir(&skills_path).expect("create replacement skills directory");
+    let current_identity =
+        skillhub_core::physical_id_for_path(&skills_path).expect("current identity");
+    let skill =
+        skillhub_core::catalog::Skill::new(skillhub_core::SkillId::new(), "Identity changed");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id =
+        VersionId::parse(&format!("sha256:{}", "d".repeat(64))).expect("version id");
+    database.connection_for_test().execute(
+        "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+        rusqlite::params![version_id.to_string(), skill.id().to_string()],
+    )
+    .expect("insert version");
+    let old_identity = "fs:old-directory-identity";
+    database.connection_for_test().execute(
+        "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'fixture.cli', 'global', ?2, 0)",
+        rusqlite::params![old_identity, skills_path.to_string_lossy().into_owned()],
+    )
+    .expect("register old physical identity");
+    database.connection_for_test().execute(
+        "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, 'example', 'hash', 'hash', 0, 0)",
+        rusqlite::params![skillhub_core::DeploymentId::new().to_string(), skill.id().to_string(), version_id.to_string(), old_identity],
+    )
+    .expect("register active deployment");
+    let snapshot = DiscoverySnapshot {
+        generation: "identity-changed".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: Vec::new(),
+        agent_roots: vec![AgentRootObservation {
+            id: "root".into(),
+            profile_id: "fixture".into(),
+            client_id: "fixture.cli".into(),
+            scope: TargetScope::Global,
+            path: root.path().to_string_lossy().into_owned(),
+            status: DirectoryObservationStatus::Existing,
+            exists: true,
+            readable: true,
+            writable: true,
+            physical_id: Some("root-physical".into()),
+            physical_identity_verified: true,
+        }],
+        logical_targets: vec![LogicalTarget {
+            id: "target".into(),
+            profile_id: "fixture".into(),
+            client_id: "fixture.cli".into(),
+            scope: TargetScope::Global,
+            path: skills_path.to_string_lossy().into_owned(),
+            agent_root_id: "root".into(),
+            marker: "SKILL.md".into(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: false,
+            builtin: false,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id: current_identity,
+            status: DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
+        }],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(GetAgentDirectoryProjection))
+        .await
+        .expect("query projection");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected Agent directory projection");
+    };
+    assert_eq!(projection.directories.len(), 1);
+    assert_eq!(
+        projection.directories[0].status,
+        DirectoryObservationStatus::IdentityChanged
+    );
+    assert_eq!(
+        projection.directories[0].members[0].availability.status,
+        DirectoryObservationStatus::IdentityChanged
+    );
+    assert!(!projection.directories[0].available);
+    let result = facade
+        .query(RootAppQuery::ListDeploymentTargets(ListDeploymentTargets))
+        .await
+        .expect("list identity-changed target");
+    let AppQueryResult::DeploymentTargets(targets) = result else {
+        panic!("expected deployment targets");
+    };
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].directory_status, Some(DirectoryObservationStatus::IdentityChanged));
+    assert!(!targets[0].available);
+}
+
+#[tokio::test]
+async fn unresolved_registered_and_observed_paths_do_not_prove_identity_changed() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let skills_path = root.path().join("skills");
+    std::fs::create_dir(&skills_path).expect("create skills directory");
+    let stale_identity =
+        skillhub_core::physical_id_for_path(&skills_path).expect("stale identity");
+    let skill = skillhub_core::catalog::Skill::new(skillhub_core::SkillId::new(), "Stale scan");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = VersionId::parse(&format!("sha256:{}", "e".repeat(64))).expect("version id");
+    database.connection_for_test().execute(
+        "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+        rusqlite::params![version_id.to_string(), skill.id().to_string()],
+    ).expect("insert version");
+    database.connection_for_test().execute(
+        "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'fixture.cli', 'global', ?2, 0)",
+        rusqlite::params![stale_identity, skills_path.to_string_lossy().into_owned()],
+    ).expect("register stale target");
+    database.connection_for_test().execute(
+        "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, 'example', 'hash', 'hash', 0, 0)",
+        rusqlite::params![skillhub_core::DeploymentId::new().to_string(), skill.id().to_string(), version_id.to_string(), stale_identity],
+    ).expect("insert stale deployment");
+    std::fs::remove_dir(&skills_path).expect("remove observed directory");
+
+    let snapshot = DiscoverySnapshot {
+        generation: "stale-unresolved-identity".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: Vec::new(),
+        agent_roots: vec![AgentRootObservation {
+            id: "root".into(),
+            profile_id: "fixture".into(),
+            client_id: "fixture.cli".into(),
+            scope: TargetScope::Global,
+            path: root.path().to_string_lossy().into_owned(),
+            status: DirectoryObservationStatus::Existing,
+            exists: true,
+            readable: true,
+            writable: true,
+            physical_id: Some("root-physical".into()),
+            physical_identity_verified: true,
+        }],
+        logical_targets: vec![LogicalTarget {
+            id: "target".into(),
+            profile_id: "fixture".into(),
+            client_id: "fixture.cli".into(),
+            scope: TargetScope::Global,
+            path: skills_path.to_string_lossy().into_owned(),
+            agent_root_id: "root".into(),
+            marker: "SKILL.md".into(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: false,
+            builtin: false,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id: "fs:replacement-observation".into(),
+            status: DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
+        }],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
+        .await
+        .expect("query projection");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected Agent directory projection");
+    };
+    assert_eq!(projection.directories.len(), 1);
+    assert_eq!(
+        projection.directories[0].status,
+        DirectoryObservationStatus::Existing,
+        "two failed canonicalizations must not be treated as matching paths"
+    );
+}
+
+#[tokio::test]
 async fn agent_directory_projection_reports_deployment_facts_per_logical_member() {
     let database = Database::open_in_memory().expect("database");
     let root = tempfile::tempdir().expect("agent root");

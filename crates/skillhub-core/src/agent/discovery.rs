@@ -13,6 +13,7 @@ pub enum DirectoryObservationStatus {
     NonDirectory,
     Inaccessible,
     BrokenLink,
+    IdentityChanged,
 }
 
 impl Default for DirectoryObservationStatus {
