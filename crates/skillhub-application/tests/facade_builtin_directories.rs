@@ -9,8 +9,9 @@ use skillhub_core::api::{
     EnsureAgentTargetDirectory, GetAgentDirectoryProjection, GetDeploymentPlan,
     ListDeploymentTargets,
 };
+use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::DeploymentPlanRequest;
-use skillhub_core::{ApplicationFacade, DeploymentMode, ErrorCode, VersionId};
+use skillhub_core::{ApplicationFacade, DeploymentMode, DeploymentRepository, ErrorCode, VersionId};
 use skillhub_storage::{CentralLibrary, Database};
 
 /// 内置目录测试基座：一个可用（exists/readable/writable）的内置逻辑目标。
@@ -529,6 +530,161 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         "same root and candidate identity can group targets"
     );
     assert_ne!(candidates[0].identity, candidates[1].identity);
+}
+
+#[tokio::test]
+async fn agent_directory_projection_reports_deployment_facts_per_logical_member() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let directory = root.path().join("skills");
+    std::fs::create_dir_all(&directory).expect("skill directory");
+    let physical_id = skillhub_core::physical_id_for_path(&directory).expect("physical identity");
+    let make_instance = |client_id: &str, kind| ClientInstance {
+        profile_id: "fixture".into(),
+        client_id: client_id.into(),
+        kind,
+        display_name: client_id.into(),
+        supported_os: vec![OperatingSystem::Windows],
+        client_presence: ClientPresence::Unknown,
+    };
+    let make_root = |client_id: &str| AgentRootObservation {
+        id: format!("root:{client_id}"),
+        profile_id: "fixture".into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: root.path().to_string_lossy().into_owned(),
+        status: DirectoryObservationStatus::Existing,
+        exists: true,
+        readable: true,
+        writable: true,
+        physical_id: Some(format!("root:{client_id}")),
+        physical_identity_verified: true,
+    };
+    let make_target = |client_id: &str| LogicalTarget {
+        id: format!("fixture.{client_id}.target"),
+        profile_id: "fixture".into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: directory.to_string_lossy().into_owned(),
+        agent_root_id: format!("root:{client_id}"),
+        marker: "SKILL.md".into(),
+        precedence: DirectoryPrecedence::Preferred,
+        shared_reference: false,
+        builtin: false,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: physical_id.clone(),
+        status: DirectoryObservationStatus::Existing,
+        physical_identity_verified: true,
+    };
+    let snapshot = DiscoverySnapshot {
+        generation: "1".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: vec![
+            make_instance("cli", ClientKind::Cli),
+            make_instance("desktop", ClientKind::Desktop),
+        ],
+        agent_roots: vec![make_root("cli"), make_root("desktop")],
+        logical_targets: vec![make_target("cli"), make_target("desktop")],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
+    let skill = skillhub_core::catalog::Skill::new(skillhub_core::SkillId::new(), "Fixture skill");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let version_id = VersionId::parse(&format!("sha256:{}", "a".repeat(64))).expect("version id");
+    database.connection_for_test().execute(
+        "INSERT INTO versions (id,skill_id,content_hash,manifest_json,created_at) VALUES (?1,?2,'hash','{}',0)",
+        rusqlite::params![version_id.to_string(), skill.id().to_string()],
+    ).expect("insert version");
+    database.connection_for_test().execute(
+        "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('fixture.cli.target','fixture','global','fixture',0)",
+        [],
+    ).expect("insert target");
+    let deployment = skillhub_core::DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: skill.id(),
+        version_id,
+        target_id: "fixture.cli.target".into(),
+        state: skillhub_core::DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: "fixture-skill".into(),
+        expected_hash: "sha256:tree".into(),
+        observed_hash: Some("sha256:tree".into()),
+    };
+    database
+        .deployment_repository()
+        .insert(&deployment)
+        .await
+        .expect("insert deployment");
+    let repository = database.deployment_repository();
+    for (index, (state, managed)) in [
+        (skillhub_core::DeploymentState::NeedsRecovery, true),
+        (skillhub_core::DeploymentState::Removed, true),
+        (skillhub_core::DeploymentState::Deployed, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut additional = deployment.clone();
+        additional.id = skillhub_core::DeploymentId::new();
+        additional.state = state;
+        additional.managed = managed;
+        additional.runtime_name = format!("fixture-skill-{index}");
+        repository
+            .insert(&additional)
+            .await
+            .expect("insert filtered deployment row");
+    }
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
+        .await
+        .expect("query Agent directory projection");
+    let AppQueryResult::AgentDirectoryProjection(projection) = result else {
+        panic!("expected Agent directory projection");
+    };
+    let directory = projection
+        .directories
+        .iter()
+        .find(|fact| fact.members.len() == 2)
+        .expect("one directory with both logical members");
+    let deployed = directory
+        .members
+        .iter()
+        .find(|member| member.client_id.as_deref() == Some("cli"))
+        .expect("deployed member");
+    let sibling = directory
+        .members
+        .iter()
+        .find(|member| member.client_id.as_deref() == Some("desktop"))
+        .expect("not-deployed sibling");
+
+    assert_eq!(
+        deployed.deployment_status,
+        skillhub_core::AgentDirectoryDeploymentStatus::Deployed
+    );
+    assert_eq!(deployed.managed_deployment_relation_count, 2);
+    assert_eq!(deployed.managed_deployment_count, 1);
+    assert_eq!(
+        sibling.deployment_status,
+        skillhub_core::AgentDirectoryDeploymentStatus::NotDeployed
+    );
+    assert_eq!(sibling.managed_deployment_relation_count, 0);
+    assert_eq!(sibling.managed_deployment_count, 0);
 }
 
 #[tokio::test]

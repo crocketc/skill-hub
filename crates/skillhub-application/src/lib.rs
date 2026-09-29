@@ -6520,9 +6520,9 @@ impl LocalApplicationFacade {
 
     fn get_agent_directory_projection(&self) -> AppResult<AppQueryResult> {
         use skillhub_core::agent::{
-            AgentDirectoryAvailability, AgentDirectoryFact, AgentDirectoryIdentity,
-            AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact, AgentDirectoryProjection,
-            AgentDirectoryRole, DirectoryObservationStatus, TargetScope,
+            AgentDirectoryAvailability, AgentDirectoryDeploymentStatus, AgentDirectoryFact,
+            AgentDirectoryIdentity, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
+            AgentDirectoryProjection, AgentDirectoryRole, DirectoryObservationStatus, TargetScope,
         };
 
         let host_capabilities = DeploymentFilesystem::new().available_capabilities();
@@ -6549,6 +6549,37 @@ impl LocalApplicationFacade {
                 })
             };
             let mut facts = BTreeMap::<String, AgentDirectoryFact>::new();
+            let deployments = database.deployment_repository().list_all()?;
+            let deployment_facts = |logical_target_id: &str, physical_target_id: &str| {
+                let active = deployments
+                    .iter()
+                    .filter(|deployment| {
+                        deployment.managed
+                            && deployment.state != skillhub_core::DeploymentState::Removed
+                            && (deployment.target_id == logical_target_id
+                                || deployment.target_id == physical_target_id)
+                    })
+                    .collect::<Vec<_>>();
+                let deployment_status = if active.is_empty() {
+                    AgentDirectoryDeploymentStatus::NotDeployed
+                } else if active.iter().any(|deployment| {
+                    deployment.state == skillhub_core::DeploymentState::Deployed
+                }) {
+                    AgentDirectoryDeploymentStatus::Deployed
+                } else {
+                    AgentDirectoryDeploymentStatus::PartiallyDeployed
+                };
+                let managed_deployment_count = active
+                    .iter()
+                    .map(|deployment| deployment.skill_id.to_string())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                (
+                    deployment_status,
+                    u32::try_from(active.len()).unwrap_or(u32::MAX),
+                    u32::try_from(managed_deployment_count).unwrap_or(u32::MAX),
+                )
+            };
 
             for target in &snapshot.logical_targets {
                 // A project has its own durable project entity below. Keeping
@@ -6579,6 +6610,11 @@ impl LocalApplicationFacade {
                 let capabilities =
                     effective_target_capabilities(&target.client_id, &host_capabilities);
                 let modes = offered_modes(&capabilities);
+                let (
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                ) = deployment_facts(&target.id, &target.physical_id);
                 let member = AgentDirectoryMemberFact {
                     logical_target_id: target.id.clone(),
                     brand: Some(target.profile_id.clone()),
@@ -6598,6 +6634,9 @@ impl LocalApplicationFacade {
                         preferred_mode: modes.first().cloned(),
                         modes,
                     },
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
                 };
                 let fact = facts
                     .entry(grouping_key)
@@ -6637,6 +6676,11 @@ impl LocalApplicationFacade {
                     DirectoryObservationStatus::Missing
                 };
                 let modes = offered_modes(&host_capabilities);
+                let (
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                ) = deployment_facts(&project.id.to_string(), &project.physical_id);
                 let identity =
                     AgentDirectoryIdentity::VerifiedPhysical(project.physical_id.clone());
                 let key = format!("project:{}", project.id);
@@ -6668,6 +6712,9 @@ impl LocalApplicationFacade {
                                 preferred_mode: modes.first().cloned(),
                                 modes,
                             },
+                            deployment_status,
+                            managed_deployment_relation_count,
+                            managed_deployment_count,
                         }],
                     },
                 );

@@ -123,6 +123,9 @@ function projectedDirectory(overrides: Partial<AgentDirectoryProjection["directo
         modes: ["managed_copy", "symbolic_link", "directory_junction"],
         preferred_mode: "symbolic_link",
       },
+      deployment_status: "not_deployed",
+      managed_deployment_relation_count: 0,
+      managed_deployment_count: 0,
     }],
     ...overrides,
   };
@@ -191,6 +194,8 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards[0].members.map((member) => member.id)).toEqual(["openai.cli.target", "cursor.desktop.target"]);
     expect(cards[0].directoryMembers?.map((member) => member.logical_target_id)).toEqual(["openai.cli.target", "cursor.desktop.target"]);
     expect(cards[0].supportedModes).toEqual(["managed_copy"]);
+    expect(cards[0].members.map((member) => [member.deploymentStatus, member.managedDeploymentCount, member.managedDeploymentRelationCount]))
+      .toEqual([["not_deployed", 0, 0], ["not_deployed", 0, 0]]);
   });
 
   it("preserves explicit directory roles and unavailable observation states", () => {

@@ -69,7 +69,7 @@ pub mod i64_option_string {
 }
 
 pub use agent::{
-    AgentClient, AgentDirectoryAvailability, AgentDirectoryFact, AgentDirectoryIdentity,
+    AgentClient, AgentDirectoryAvailability, AgentDirectoryDeploymentStatus, AgentDirectoryFact, AgentDirectoryIdentity,
     AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact, AgentDirectoryProjection,
     AgentDirectoryRole, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
     ClientPresence, CustomAgent, CustomAgentDraft, CustomAgentOverride, CustomAgentValidationError,

@@ -55,6 +55,9 @@ export type AgentDirectoryCapabilityFact = {
 	applicable_platforms: string[],
 };
 
+/**  Managed deployment state observed for one logical directory member. */
+export type AgentDirectoryDeploymentStatus = "not_deployed" | "deployed" | "partially_deployed";
+
 /**  Canonical directory entity used by Agent card consumers. */
 export type AgentDirectoryFact = {
 	role: AgentDirectoryRole,
@@ -89,6 +92,9 @@ export type AgentDirectoryMemberFact = {
 	kind: ClientKind | null,
 	availability: AgentDirectoryAvailability,
 	capabilities: AgentDirectoryMemberCapabilities,
+	deployment_status: AgentDirectoryDeploymentStatus,
+	managed_deployment_relation_count: number,
+	managed_deployment_count: number,
 };
 
 export type AgentDirectoryProjection = {

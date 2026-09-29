@@ -37,6 +37,14 @@ function projectedStatus(status: AgentDirectoryFact["status"]): AgentDirectoryVi
   return status === "missing" ? "pending_creation" : status;
 }
 
+function projectedDeploymentStatus(members: readonly AgentDirectoryMemberFact[]): AgentDeploymentStatus {
+  if (members.some((member) => member.deployment_status === "deployed")) return "deployed";
+  if (members.some((member) => member.deployment_status === "partially_deployed")) return "partially_deployed";
+  return members.length > 0 && members.every((member) => member.deployment_status === "not_deployed")
+    ? "not_deployed"
+    : "unknown";
+}
+
 function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirectoryMemberFact): AgentView {
   const brand = member.brand ?? "Agent Skills";
   const displayName = member.brand ?? "共享目录";
@@ -46,8 +54,8 @@ function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirecto
     client: member.client_id ?? "shared-directory",
     instance: displayName,
     discoveredPaths: directory.exists ? [directory.path] : [],
-    managedDeploymentCount: 0,
-    managedDeploymentRelationCount: 0,
+    managedDeploymentCount: member.managed_deployment_count,
+    managedDeploymentRelationCount: member.managed_deployment_relation_count,
     officialReference: null,
     relations: [{
       logicalLabel: displayName,
@@ -58,6 +66,7 @@ function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirecto
     status: member.availability.available ? "accessible" : "inaccessible",
     kinds: member.kind ? [member.kind] : undefined,
     directoryMembers: [member],
+    deploymentStatus: member.deployment_status,
   };
 }
 
@@ -89,7 +98,7 @@ function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryVi
       && directory.members.every((member) => member.capabilities.preferred_mode === directory.members[0].capabilities.preferred_mode)
       ? directory.members[0].capabilities.preferred_mode ?? undefined
       : undefined,
-    deploymentStatus: "unknown",
+    deploymentStatus: projectedDeploymentStatus(directory.members),
   };
 }
 
@@ -136,6 +145,7 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
       })),
       directoryViews: [projectedDirectoryView(directory)],
       directoryMembers: directory.members,
+      deploymentStatus: projectedDeploymentStatus(directory.members),
       builtin: directory.role === "builtin" || undefined,
       supportsSharedDirectory: directory.role === "shared_directory",
       sharedAgentBrands: shared ? [...new Set(directory.members.flatMap((member) => member.brand ? [member.brand] : []))].sort() : undefined,
@@ -187,7 +197,7 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
       readOnly: directory.role === "builtin" || !directory.writable,
       supportedModes,
       preferredMode,
-      deploymentStatus: "unknown",
+      deploymentStatus: projectedDeploymentStatus(directory.members),
       detailTarget: members[0]?.id ?? identityKey,
       members,
       directoryMembers: directory.members,

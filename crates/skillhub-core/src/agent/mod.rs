@@ -9,7 +9,8 @@ pub use custom::{
 };
 pub use discovery::{
     AgentDirectoryAvailability, AgentDirectoryFact, AgentDirectoryIdentity,
-    AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact, AgentDirectoryProjection,
+    AgentDirectoryDeploymentStatus, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
+    AgentDirectoryProjection,
     AgentDirectoryRole, AgentRepository, AgentRootObservation, ClientInstance, ClientPresence,
     DirectoryObservationStatus, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
 };

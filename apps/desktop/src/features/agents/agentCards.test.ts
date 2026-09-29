@@ -141,6 +141,20 @@ describe("directory projection compatibility adapter", () => {
             kind: "cli" as const,
             availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true },
             capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["managed_copy", "symbolic_link"], preferred_mode: "symbolic_link" },
+            deployment_status: "deployed",
+            managed_deployment_relation_count: 2,
+            managed_deployment_count: 1,
+          },
+          {
+            logical_target_id: "cursor.desktop.internal-target",
+            brand: "Cursor",
+            client_id: "cursor.desktop.internal-client",
+            kind: "desktop",
+            availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+            capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" },
+            deployment_status: "not_deployed",
+            managed_deployment_relation_count: 0,
+            managed_deployment_count: 0,
           },
         ],
       }],
@@ -149,9 +163,14 @@ describe("directory projection compatibility adapter", () => {
     const views = agentDirectoryProjectionToViews(projection);
     expect(views).toHaveLength(1);
     expect(views[0].instance).toBe("共享目录");
-    expect(views[0].sharedAgentBrands).toEqual(["OpenAI"]);
+    expect(views[0].sharedAgentBrands).toEqual(["Cursor", "OpenAI"]);
     expect(views[0].relations[0].logicalTargetId).toBe("openai.cli.internal-target");
     expect(views[0].directoryMembers?.[0].capabilities.modes).toEqual(["managed_copy", "symbolic_link"]);
+    expect(views[0].managedDeploymentCount).toBe(1);
+    expect(views[0].managedDeploymentRelationCount).toBe(2);
+    expect(views[0].deploymentStatus).toBe("deployed");
+    expect(views[0].directoryMembers?.map((member) => [member.deployment_status, member.managed_deployment_count, member.managed_deployment_relation_count]))
+      .toEqual([["deployed", 1, 2], ["not_deployed", 0, 0]]);
     expect(views[0].directoryViews?.[0].physicalIdentityVerified).toBe(true);
 
     const cards = [...buildAgentDirectoryCardViews(projection).values()].flat();
@@ -160,5 +179,9 @@ describe("directory projection compatibility adapter", () => {
     expect(cards[0].agent.brand).toBe("Agent Skills");
     expect(cards[0].agent.instance).toBe("共享目录");
     expect(cards[0].agent.instance).not.toContain("internal");
+    expect(cards[0].agent.directoryMembers?.map((member) => member.managed_deployment_count)).toEqual([1, 0]);
+    expect(cards[0].agent.deploymentStatus).toBe("deployed");
+    expect(cards[0].agents.map((member) => [member.deploymentStatus, member.managedDeploymentCount, member.managedDeploymentRelationCount]))
+      .toEqual([["deployed", 1, 2], ["not_deployed", 0, 0]]);
   });
 });

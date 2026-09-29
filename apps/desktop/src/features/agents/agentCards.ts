@@ -74,6 +74,8 @@ export function buildAgentDirectoryCardViews(projection: AgentDirectoryProjectio
         ...representativeAgent,
         brand: model.brand,
         instance: model.sharedDirectory ? model.brandLabel : representativeAgent.instance,
+        directoryMembers: model.directoryMembers,
+        deploymentStatus: model.deploymentStatus,
       },
       agents: model.members,
       kinds: model.kinds,

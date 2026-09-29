@@ -76,6 +76,8 @@ export interface AgentView {
   directoryViews?: AgentDirectoryView[];
   /** Member-scoped target and capability facts from the canonical projection. */
   directoryMembers?: AgentDirectoryMemberFact[];
+  /** Managed deployment state for this view or the represented directory card. */
+  deploymentStatus?: AgentDeploymentStatus;
   /** Whether this recognised brand can consume the shared directory. */
   supportsSharedDirectory?: boolean;
   /** Brands shown on the independent shared-directory card. */

@@ -172,6 +172,16 @@ pub struct AgentDirectoryMemberCapabilities {
     pub preferred_mode: Option<DeploymentMode>,
 }
 
+/// Managed deployment state observed for one logical directory member.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentDirectoryDeploymentStatus {
+    #[default]
+    NotDeployed,
+    Deployed,
+    PartiallyDeployed,
+}
+
 /// One logical target represented by a directory entity.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct AgentDirectoryMemberFact {
@@ -181,6 +191,9 @@ pub struct AgentDirectoryMemberFact {
     pub kind: Option<ClientKind>,
     pub availability: AgentDirectoryAvailability,
     pub capabilities: AgentDirectoryMemberCapabilities,
+    pub deployment_status: AgentDirectoryDeploymentStatus,
+    pub managed_deployment_relation_count: u32,
+    pub managed_deployment_count: u32,
 }
 
 /// Canonical directory entity used by Agent card consumers.
