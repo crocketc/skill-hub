@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -75,6 +75,20 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const preselectedTargetId = searchParams.get("target");
   // 治理清理结果等入口只知道 Agent：?agent= 预选该 Agent 的首个可用目标。
   const preselectedAgentClientId = searchParams.get("agent");
+  // DEV-106：深链目标无法解析时给出可见反馈，不再静默丢弃。
+  const [preselectNotice, setPreselectNotice] = useState<string>();
+  const targetCards = useMemo(() => buildDeploymentTargetCards(targets ?? []), [targets]);
+  // 成员 id → 可选目标 id：直接命中目标行；否则经合卡成员映射（例如共享
+  // 目录的非 canonical 成员折叠到 canonical 目标）。
+  const selectableTargetIdsForMember = useCallback((memberId: string): string[] => {
+    const direct = (targets ?? []).find((candidate) => candidate.id === memberId);
+    if (direct) return direct.available ? [direct.id] : [];
+    const card = targetCards.find((candidate) =>
+      candidate.cardModel?.members.some((member) => member.id === memberId));
+    return card
+      ? card.targets.filter((target) => target.available).map((target) => target.id)
+      : [];
+  }, [targets, targetCards]);
 
   const [projects, setProjects] = useState<BatchProjectInfo[]>();
   useEffect(() => {
@@ -98,26 +112,32 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     return () => { active = false; };
   }, [activeFacade]);
 
-  // 反向入口：?target= 预选一个目标（Agent/项目详情"发起部署"跳转携带）。
+  // 反向入口：?target= 预选目标（Agent/项目详情"发起部署"跳转携带）。
+  // 携带成员 id 时按合卡映射到可选目标；无法解析时给出可见反馈。
   useEffect(() => {
     if (!preselectedTargetId || !targets) return;
-    const target = targets.find((candidate) => candidate.id === preselectedTargetId);
-    if (!target?.available) return;
-    setSelectedIds((current) => current.includes(preselectedTargetId) ? current : [...current, preselectedTargetId]);
+    const resolved = selectableTargetIdsForMember(preselectedTargetId);
+    if (resolved.length > 0) {
+      setSelectedIds((current) => [...new Set([...current, ...resolved])]);
+    } else {
+      setPreselectNotice(t("deployment.batch.preselectUnavailable"));
+    }
     setSearchParams({}, { replace: true });
-  }, [preselectedTargetId, setSearchParams, targets]);
+  }, [preselectedTargetId, selectableTargetIdsForMember, setSearchParams, t, targets]);
 
-  // 反向入口（治理清理结果）：?agent= 按 Agent 身份解析首个可用目标并预选；
-  // 解析失败时静默退化为不预选，目标选择仍由用户在页面上显式完成。
+  // 反向入口（治理清理结果）：?agent= 预选该 Agent 的可用目标；解析失败时
+  // 给出可见反馈，目标选择仍由用户在页面上显式完成。
   useEffect(() => {
     if (!preselectedAgentClientId || !targets) return;
     const target = targets.find((candidate) => candidate.agentClientId === preselectedAgentClientId
       && candidate.available);
-    if (!target) return;
-    const targetId = target.id;
-    setSelectedIds((current) => current.includes(targetId) ? current : [...current, targetId]);
+    if (target) {
+      setSelectedIds((current) => current.includes(target.id) ? current : [...current, target.id]);
+    } else {
+      setPreselectNotice(t("deployment.batch.preselectUnavailable"));
+    }
     setSearchParams({}, { replace: true });
-  }, [preselectedAgentClientId, setSearchParams, targets]);
+  }, [preselectedAgentClientId, setSearchParams, t, targets]);
 
   const selectedProjects = (targets ?? [])
     .filter((target) => selectedIds.includes(target.id))
@@ -126,12 +146,15 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       info: projects?.find((project) => project.id === target.id),
     }))
     .filter((entry): entry is { target: DeploymentTarget; info: BatchProjectInfo } => Boolean(entry.info));
-  const expandableLinks = selectedProjects.flatMap(({ target, info }) => info.agentIds
-    .filter((agentId) => !selectedIds.includes(agentId))
-    .map((agentId) => ({ project: target, agentId })));
+  // DEV-106：项目记录的 agentIds 是投影成员 id；展开经合卡成员映射落到
+  // 可选目标上（共享目录折叠到 canonical 目标），解析不到的成员不再混入。
+  const expandableLinks = selectedProjects.flatMap(({ target, info }) =>
+    [...new Set(info.agentIds
+      .flatMap((agentId) => selectableTargetIdsForMember(agentId)))]
+      .filter((targetId) => !selectedIds.includes(targetId))
+      .map((targetId) => ({ project: target, targetId })));
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
-  const targetCards = useMemo(() => buildDeploymentTargetCards(targets ?? []), [targets]);
   const canSelectLink = selected.length > 0 && selected.every((target) => target.modes.some(isLinkMode));
   const canSelectCopy = selected.length > 0 && selected.every((target) => target.modes.includes("managed_copy"));
   const groups = useMemo(
@@ -442,6 +465,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       title={t("deployment.batch.heading", { count: selectedSkillIds.length })}
     >
       <p className="sh-deployment-flow__description">{t("deployment.batch.description")}</p>
+      {preselectNotice ? <p role="status">{preselectNotice}</p> : null}
       {flowError ? <DataState message={flowError} state="error" /> : null}
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
@@ -525,7 +549,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           <Button onClick={() => {
             setPreference("automatic");
             setPreview(undefined);
-            setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.agentId)])]);
+            setSelectedIds((current) => [...new Set([...current, ...expandableLinks.map((link) => link.targetId)])]);
           }} variant="secondary">
             {t("deployment.batch.expandAgents", { count: expandableLinks.length })}
           </Button>

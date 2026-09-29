@@ -1907,6 +1907,7 @@
       "fallbackMode": "Fallback mode"
     },
     "batch": {
+        "preselectUnavailable": "The linked target is not selectable right now; choose a target below.",
       "heading": "Add {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
       "planDescription": "Review the target changes per Skill; warnings and conflicts remain visible before commit.",

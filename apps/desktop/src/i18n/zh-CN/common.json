@@ -1907,6 +1907,7 @@
       "fallbackMode": "回退方式"
     },
     "batch": {
+        "preselectUnavailable": "深链指向的目标当前不可选，请在下方手动选择目标。",
       "heading": "添加 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
       "planDescription": "以下按 Skill 展示将发生的目标变化；警告和冲突会在提交前保留。",

@@ -1117,3 +1117,334 @@ async fn explicit_target_creation_creates_only_skill_directory_and_rescans() {
     assert!(skill_path.is_dir());
     assert!(matches!(result, AppCommandResult::DiscoverySnapshot(_)));
 }
+
+/// DEV-106：共享目录部署目标的可提供方式必须是组内全体成员能力交集，
+/// 不能只取 canonical 客户端的声明——否则混合能力会被高估并错误提交。
+#[tokio::test]
+async fn shared_directory_targets_offer_the_intersection_of_member_capabilities() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let shared_path = root.path().join("shared");
+    std::fs::create_dir_all(&shared_path).expect("shared path");
+
+    let instance = |profile_id: &str, client_id: &str, kind| ClientInstance {
+        profile_id: profile_id.into(),
+        client_id: client_id.into(),
+        kind,
+        display_name: client_id.into(),
+        supported_os: vec![OperatingSystem::Windows],
+        client_presence: ClientPresence::Unknown,
+    };
+    let root_observation = |profile_id: &str, client_id: &str| AgentRootObservation {
+        id: format!("root:{client_id}"),
+        profile_id: profile_id.into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: root.path().to_string_lossy().into_owned(),
+        status: DirectoryObservationStatus::Existing,
+        exists: true,
+        readable: true,
+        writable: true,
+        physical_id: Some(format!("root:{client_id}")),
+        physical_identity_verified: true,
+    };
+    let logical = |id: &str, profile_id: &str, client_id: &str| LogicalTarget {
+        id: id.into(),
+        profile_id: profile_id.into(),
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: shared_path.to_string_lossy().into_owned(),
+        agent_root_id: format!("root:{client_id}"),
+        marker: "SKILL.md".into(),
+        precedence: DirectoryPrecedence::Preferred,
+        shared_reference: true,
+        builtin: false,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: "physical:shared".into(),
+        status: DirectoryObservationStatus::Existing,
+        physical_identity_verified: true,
+    };
+    let snapshot = DiscoverySnapshot {
+        generation: "shared-capabilities".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: vec![
+            instance("agent-skills", "agent-skills.shared-directory", ClientKind::SharedDirectory),
+            instance("openai", "openai.codex-desktop", ClientKind::Desktop),
+        ],
+        agent_roots: vec![
+            root_observation("agent-skills", "agent-skills.shared-directory"),
+            root_observation("openai", "openai.codex-desktop"),
+        ],
+        logical_targets: vec![
+            logical("shared-canonical", "agent-skills", "agent-skills.shared-directory"),
+            logical("shared-desktop", "openai", "openai.codex-desktop"),
+        ],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save snapshot");
+    let facade = LocalApplicationFacade::new(database);
+
+    let result = facade
+        .query(RootAppQuery::ListDeploymentTargets(ListDeploymentTargets))
+        .await
+        .expect("list deployment targets");
+    let AppQueryResult::DeploymentTargets(targets) = result else {
+        panic!("expected deployment targets");
+    };
+    let shared = targets
+        .iter()
+        .find(|target| target.shared_directory)
+        .expect("one shared canonical target");
+    // codex-desktop 只声明受管复制；canonical 的全部支持不能抬高整组能力。
+    assert_eq!(shared.modes, vec![DeploymentMode::ManagedCopy]);
+    assert_eq!(shared.preferred_mode, Some(DeploymentMode::ManagedCopy));
+}
+
+/// DEV-106：部署目标查询与目录投影的一致性核对——普通成员逐一对应、
+/// 共享目录只折叠一份、内置不进目标、待建保留可创建、自定义 Agent 的
+/// 边界（投影有卡，部署目标暂不收录）显式固定，防止漂移。
+#[tokio::test]
+async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
+    let database = Database::open_in_memory().expect("database");
+    let root = tempfile::tempdir().expect("agent root");
+    let ordinary_path = root.path().join("ordinary");
+    let shared_path = root.path().join("shared");
+    std::fs::create_dir_all(&ordinary_path).expect("ordinary path");
+    std::fs::create_dir_all(&shared_path).expect("shared path");
+    let ordinary_physical_id = skillhub_core::physical_id_for_path(&ordinary_path)
+        .expect("ordinary identity");
+    let shared_physical_id = skillhub_core::physical_id_for_path(&shared_path)
+        .expect("shared identity");
+
+    let instance = |profile_id: &str, client_id: &str, kind| ClientInstance {
+        profile_id: profile_id.into(),
+        client_id: client_id.into(),
+        kind,
+        display_name: client_id.into(),
+        supported_os: vec![OperatingSystem::Windows],
+        client_presence: ClientPresence::Unknown,
+    };
+    let root_observation = |client_id: &str| AgentRootObservation {
+        id: format!("root:{client_id}"),
+        profile_id: if client_id == "agent-skills.shared-directory" {
+            "agent-skills".into()
+        } else {
+            "openai".into()
+        },
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: root.path().to_string_lossy().into_owned(),
+        status: DirectoryObservationStatus::Existing,
+        exists: true,
+        readable: true,
+        writable: true,
+        physical_id: Some(format!("root:{client_id}")),
+        physical_identity_verified: true,
+    };
+    let logical = |id: &str,
+                   client_id: &str,
+                   path: &std::path::Path,
+                   physical_id: &str,
+                   verified: bool,
+                   shared,
+                   builtin| LogicalTarget {
+        id: id.into(),
+        profile_id: if client_id == "agent-skills.shared-directory" {
+            "agent-skills".into()
+        } else {
+            "openai".into()
+        },
+        client_id: client_id.into(),
+        scope: TargetScope::Global,
+        path: path.to_string_lossy().into_owned(),
+        agent_root_id: format!("root:{client_id}"),
+        marker: "SKILL.md".into(),
+        precedence: DirectoryPrecedence::Preferred,
+        shared_reference: shared,
+        builtin,
+        exists: path.exists(),
+        readable: path.exists(),
+        writable: path.exists(),
+        available: path.exists(),
+        physical_id: physical_id.into(),
+        status: if path.exists() {
+            DirectoryObservationStatus::Existing
+        } else {
+            DirectoryObservationStatus::Missing
+        },
+        physical_identity_verified: verified,
+    };
+    let candidate_path = root.path().join("candidate").join("skills");
+    let mut builtin_target = logical(
+        "ordinary-builtin",
+        "openai.codex-cli",
+        &ordinary_path,
+        &ordinary_physical_id,
+        true,
+        false,
+        true,
+    );
+    builtin_target.builtin = true;
+    let snapshot = DiscoverySnapshot {
+        generation: "consistency".into(),
+        observed_at: "2026-09-29T00:00:00Z".into(),
+        instances: vec![
+            instance("openai", "openai.codex-cli", ClientKind::Cli),
+            instance("openai", "openai.chatgpt-desktop", ClientKind::Desktop),
+            instance("agent-skills", "agent-skills.shared-directory", ClientKind::SharedDirectory),
+        ],
+        agent_roots: vec![
+            root_observation("openai.codex-cli"),
+            root_observation("openai.chatgpt-desktop"),
+            root_observation("agent-skills.shared-directory"),
+        ],
+        logical_targets: vec![
+            logical("ordinary-cli", "openai.codex-cli", &ordinary_path, &ordinary_physical_id, true, false, false),
+            logical("ordinary-desktop", "openai.chatgpt-desktop", &ordinary_path, &ordinary_physical_id, true, false, false),
+            builtin_target,
+            logical("shared-canonical", "agent-skills.shared-directory", &shared_path, &shared_physical_id, true, true, false),
+            logical("shared-cli", "openai.codex-cli", &shared_path, &shared_physical_id, true, true, false),
+            logical("candidate-cli", "openai.codex-cli", &candidate_path, "candidate:text", false, false, false),
+        ],
+        physical_targets: Vec::new(),
+    };
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save snapshot");
+    let facade = LocalApplicationFacade::new(database);
+    // 自定义 Agent（注册实体）：投影有卡，部署目标显式不收录。
+    let custom_directory = tempfile::tempdir().expect("custom directory");
+    facade
+        .register_path_grant(skillhub_core::agent::ResolvedPathGrant {
+            grant_id: custom_directory.path().to_string_lossy().into_owned(),
+            path: custom_directory.path().to_string_lossy().into_owned(),
+            operating_system: skillhub_core::agent::OperatingSystem::Macos,
+        })
+        .expect("register custom grant");
+    facade
+        .execute(RootAppCommand::CreateCustomAgent(
+            skillhub_core::api::CreateCustomAgent {
+                agent: skillhub_core::CustomAgentDraft {
+                    id: "custom-acme".into(),
+                    display_name: "Acme".into(),
+                    directory: skillhub_core::PathGrant::from_file_picker(
+                        custom_directory.path().to_string_lossy().into_owned(),
+                    ),
+                    profile: skillhub_core::AgentProfile {
+                        profile_version: 1,
+                        research_date: "2026-09-29".into(),
+                        official_references: vec!["https://acme.example".into()],
+                        brand: "Acme".into(),
+                        clients: vec![skillhub_core::AgentClient {
+                            id: "acme.cli".into(),
+                            kind: ClientKind::Cli,
+                            display_name: "Acme".into(),
+                            supported_os: vec![skillhub_core::agent::OperatingSystem::Macos],
+                            path_candidates: vec![skillhub_core::PathCandidate {
+                                path: custom_directory.path().to_string_lossy().into_owned(),
+                                agent_root: None,
+                                scope: TargetScope::Global,
+                                precedence: DirectoryPrecedence::Preferred,
+                                shared_reference: false,
+                                builtin: false,
+                                marker: "SKILL.md".into(),
+                            }],
+                            skill_marker: "SKILL.md".into(),
+                            deployment: skillhub_core::DeploymentCapability {
+                                copy: true,
+                                symlink: false,
+                                junction: false,
+                                limitations: Vec::new(),
+                            },
+                            call_policy: skillhub_core::CallPolicy::Unknown,
+                        }],
+                    },
+                },
+            },
+        ))
+        .await
+        .expect("create custom agent");
+
+    let projected = facade
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
+        .await
+        .expect("projection query");
+    let AppQueryResult::AgentDirectoryProjection(projection) = projected else {
+        panic!("expected projection");
+    };
+    let listed = facade
+        .query(RootAppQuery::ListDeploymentTargets(ListDeploymentTargets))
+        .await
+        .expect("list deployment targets");
+    let AppQueryResult::DeploymentTargets(targets) = listed else {
+        panic!("expected deployment targets");
+    };
+    let target_ids = targets
+        .iter()
+        .map(|target| target.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for fact in &projection.directories {
+        match fact.role {
+            skillhub_core::AgentDirectoryRole::Builtin => {
+                for member in &fact.members {
+                    assert!(
+                        !target_ids.contains(member.logical_target_id.as_str()),
+                        "builtin member {} must stay out of deployment targets",
+                        member.logical_target_id
+                    );
+                }
+            }
+            skillhub_core::AgentDirectoryRole::SharedDirectory => {
+                let shared_rows = targets
+                    .iter()
+                    .filter(|target| target.shared_directory)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    shared_rows.len(),
+                    1,
+                    "one shared physical directory folds into exactly one selectable target"
+                );
+                let canonical_ids = fact
+                    .members
+                    .iter()
+                    .map(|member| member.logical_target_id.as_str())
+                    .collect::<std::collections::BTreeSet<_>>();
+                assert!(
+                    canonical_ids.contains(shared_rows[0].id.as_str()),
+                    "the shared target must be the canonical member of the projection group"
+                );
+            }
+            skillhub_core::AgentDirectoryRole::AgentNative
+            | skillhub_core::AgentDirectoryRole::Project => {
+                if fact.members.iter().any(|member| member.logical_target_id == "custom-acme") {
+                    // 自定义 Agent 的边界在下方单独固定：投影有卡，部署目标
+                    // 暂不收录，防止两者悄悄漂移。
+                    continue;
+                }
+                for member in &fact.members {
+                    assert!(
+                        target_ids.contains(member.logical_target_id.as_str()),
+                        "selectable member {} must appear in deployment targets",
+                        member.logical_target_id
+                    );
+                }
+            }
+        }
+    }
+    let candidate = targets
+        .iter()
+        .find(|target| target.id == "candidate-cli")
+        .expect("pending candidate stays creatable");
+    assert!(!candidate.available);
+    assert!(!target_ids.contains("custom-acme"));
+}

@@ -6977,10 +6977,17 @@ impl LocalApplicationFacade {
                             .get(&canonical.id)
                             .copied()
                             .unwrap_or(canonical.status);
-                        let modes = offered_modes(&effective_target_capabilities(
-                            &canonical.client_id,
-                            &host_capabilities,
-                        ));
+                        // DEV-106：共享目录整组共用一个部署入口，可提供方式
+                        // 必须是组内全体成员能力的交集，不能只取 canonical
+                        // 客户端的声明抬高整组能力。
+                        let shared_capabilities = physical_targets
+                            .iter()
+                            .map(|target| {
+                                effective_target_capabilities(&target.client_id, &host_capabilities)
+                            })
+                            .reduce(|left, right| left.intersect(&right))
+                            .unwrap_or_else(|| host_capabilities.clone());
+                        let modes = offered_modes(&shared_capabilities);
                         let preferred_mode = modes.first().cloned();
                         let mut shared_agent_brands = physical_targets
                             .iter()

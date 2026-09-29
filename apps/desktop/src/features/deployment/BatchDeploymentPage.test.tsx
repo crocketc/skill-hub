@@ -245,6 +245,51 @@ it("keeps distinct physical directories as separate cards", async () => {
   expect(within(grid).getAllByTestId("deployment-target-card")).toHaveLength(2);
 });
 
+/** DEV-106 夹具：一张共享目录卡（canonical 目标 + 两个品牌成员事实）。 */
+function sharedCardFixture(): { canonicalTarget: DeploymentTarget; memberIds: string[] } {
+  const member: AgentDirectoryMemberFact = {
+    logical_target_id: "shared-member",
+    brand: "OpenAI",
+    client_id: "openai.cli",
+    kind: "cli" as const,
+    availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true },
+    capabilities: {
+      deployment: { copy: true, symlink: true, junction: false },
+      modes: ["managed_copy", "symbolic_link"],
+      preferred_mode: "symbolic_link" as const,
+    },
+    deployment_status: "not_deployed" as const,
+    managed_deployment_relation_count: 0,
+    managed_deployment_count: 0,
+  };
+  const model = buildAgentDirectoryCardModels({ directories: [{
+    role: "shared_directory",
+    identity: { kind: "verified_physical", value: "shared-directory-id" },
+    path: "C:/Users/demo/.agents/skills",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [
+      member,
+      { ...member, logical_target_id: "cursor-member", brand: "Cursor", client_id: "cursor.desktop", kind: "desktop" },
+    ],
+  }] })[0];
+  const canonicalTarget: DeploymentTarget = {
+    id: "canonical-shared-target",
+    label: "Agent Skills",
+    path: "C:/Users/demo/.agents/skills",
+    available: true,
+    physicalId: "shared-directory-id",
+    modes: ["managed_copy", "symbolic_link"],
+    agentClientId: "agent-skills.shared",
+    sharedDirectory: true,
+    cardModel: model,
+  };
+  return { canonicalTarget, memberIds: ["shared-member", "cursor-member"] };
+}
+
 it("keeps a shared directory as one canonical selection card", async () => {
   const member: AgentDirectoryMemberFact = {
     logical_target_id: "shared-member",
@@ -965,4 +1010,59 @@ describe("BatchDeploymentPage 与统一执行桥", () => {
     expect(failed.status).toBe("failed");
     expect(failed.error).toBe("deployment.plan_stale");
   });
+});
+
+it("resolves a deep-linked member id to its card targets (DEV-106)", async () => {
+  const user = userEvent.setup();
+  const { canonicalTarget } = sharedCardFixture();
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => [canonicalTarget], preview, commit: async () => [] };
+
+  // ?target= 携带的是共享卡的成员 id：必须映射到卡上唯一可选目标，不能静默丢弃。
+  await renderBatchPage(facade, ["skill-pdf"], "/deploy?target=shared-member");
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getByRole("checkbox")).toBeChecked();
+
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ skillId: "skill-pdf", targetIds: ["canonical-shared-target"] })],
+    undefined,
+  );
+});
+
+it("tells the user when a deep-linked target cannot be selected (DEV-106)", async () => {
+  const { canonicalTarget } = sharedCardFixture();
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [canonicalTarget],
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"], "/deploy?target=does-not-exist");
+  expect(await screen.findByText(/当前不可选/)).toBeVisible();
+});
+
+it("expands project agent links through card membership to addressable targets (DEV-106)", async () => {
+  const user = userEvent.setup();
+  const { canonicalTarget } = sharedCardFixture();
+  const project: DeploymentTarget = { id: "project-1", label: "我的项目", path: "D:/proj", available: true, physicalId: "p2", modes: ["managed_copy"] };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [canonicalTarget, project],
+    preview,
+    commit: async () => [],
+    listProjects: async () => [{ id: "project-1", agentIds: ["shared-member"] }],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+  await user.click(await screen.findByLabelText("我的项目"));
+  await user.click(screen.getByRole("button", { name: /展开关联 Agent/ }));
+
+  // 项目记录的是共享卡成员 id；展开必须落到唯一可选的 canonical 目标上。
+  expect(screen.getByRole("checkbox", { name: /Agent共享目录/ })).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ skillId: "skill-pdf", targetIds: expect.arrayContaining(["project-1", "canonical-shared-target"]) })],
+    undefined,
+  );
 });

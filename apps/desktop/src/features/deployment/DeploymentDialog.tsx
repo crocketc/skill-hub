@@ -12,6 +12,8 @@ import { ImportShell, type ImportStatus, type ImportStep } from "../import/Impor
 import { DeploymentResults } from "./DeploymentResults";
 import "./deployment.css";
 import {
+  buildDeploymentTargetCards,
+  isLinkMode,
   type BatchDeploymentFacade,
   type BatchPreviewItem,
   type DeploymentPairPreview,
@@ -89,6 +91,11 @@ export function DeploymentDialog({
   }, [activeFacade]);
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
+  // DEV-106：单 Skill 流与批量页同一合卡语义——卡片是选择单元，勾选即
+  // 提交其全部可选成员；偏好方式按选中目标的成员能力交集开放。
+  const targetCards = useMemo(() => buildDeploymentTargetCards(targets ?? []), [targets]);
+  const canSelectLink = selected.length > 0 && selected.every((target) => target.modes.some(isLinkMode));
+  const canSelectCopy = selected.length > 0 && selected.every((target) => target.modes.includes("managed_copy"));
   const groups = useMemo(
     () => preview ? groupPairsByDisposition(preview.pairs) : [],
     [preview],
@@ -211,10 +218,22 @@ export function DeploymentDialog({
     }
   };
   const retryFailed = () => {
-    const failedTargets = results
+    // DEV-106：合并 pair 的结果行只携带首个成员 id；重试按合卡语义展开为
+    // 该卡全部可选成员，避免只重选首个成员造成「漏提交」。
+    const failedIds = results
       ?.filter((result) => result.status === "failed")
       .map((result) => result.targetId) ?? [];
-    setSelectedIds(failedTargets);
+    const reselected = new Set<string>();
+    for (const id of failedIds) {
+      const card = targetCards.find((candidate) => candidate.targets.some((target) => target.id === id));
+      const members = card?.targets.filter((target) => target.available) ?? [];
+      if (card && members.length > 1 && members.some((target) => target.id === id)) {
+        for (const member of members) reselected.add(member.id);
+      } else {
+        reselected.add(id);
+      }
+    }
+    setSelectedIds([...reselected]);
     setPreview(undefined);
     setResults(undefined);
   };
@@ -305,8 +324,10 @@ export function DeploymentDialog({
               value={preference}
             >
               <option value="automatic">{t("deployment.preference.automatic")}</option>
-              <option value="link">{t("deployment.preference.link")}</option>
-              <option value="copy">{t("deployment.preference.copy")}</option>
+              {/* 能力交集护栏（DEV-106）：选中目标不全支持的方式不可选，
+                  与批量页行为一致；后端预览仍做最终校验。 */}
+              <option disabled={!canSelectLink} value="link">{t("deployment.preference.link")}</option>
+              <option disabled={!canSelectCopy} value="copy">{t("deployment.preference.copy")}</option>
             </select>
           </label>
         </div>
@@ -367,44 +388,68 @@ export function DeploymentDialog({
             </div>
             <span className="sh-count-badge">{selected.length}</span>
           </div>
-          <div className="sh-workflow-targets">
-            {targets.filter((target) => target.available || target.directoryStatus !== undefined).map((target) => target.available ? (
-              <label className="sh-workflow-target" key={target.id}>
-                <input
-                  aria-label={target.agentClientId ?? target.label}
-                  checked={selectedIds.includes(target.id)}
-                  onChange={(event) => {
-                    setPreference("automatic");
-                    setPreview(undefined);
-                    setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
-                  }}
-                  type="checkbox"
-                />
-                <span>
-                  <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small>{displayPath(target.path)}</small>
-                </span>
-              </label>
-            ) : (
-              <div className="sh-workflow-target sh-workflow-target--pending" key={target.id}>
-                <span>
-                  <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small>{target.directoryStatus
-                    ? t(directoryStatusLabel(target.directoryStatus) as never)
-                    : t("agents.pathUnavailable")}</small>
-                </span>
-                {target.directoryStatus === "missing" ? <ConfirmDialog
-                  cancelLabel={t("agents.removeDialog.cancel")}
-                  confirmLabel={t("deployment.targets.createConfirm")}
-                  description={t("deployment.targets.createDescription")}
-                  onConfirm={() => void ensureTargetDirectory(target)}
-                  title={t("deployment.targets.createTitle")}
-                  trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
-                /> : target.directoryStatus && target.directoryStatus !== "existing" ? (
-                  <small>{t(directoryStatusSuggestion(target.directoryStatus) as never)}</small>
-                ) : null}
-              </div>
-            ))}
+          <div className="sh-deployment-targets" data-testid="deployment-target-grid">
+            {targetCards.filter((card) => card.targets.some((target) =>
+              target.available || target.directoryStatus !== undefined)).map((card) => {
+              const target = card.target;
+              const targetPath = displayPath(target.path);
+              const selectable = card.targets.filter((candidate) => candidate.available);
+              const selectedCount = selectable.filter((candidate) => selectedIds.includes(candidate.id)).length;
+              const checked = selectable.length > 0 && selectedCount === selectable.length;
+              const pendingTargets = card.targets.filter((candidate) =>
+                !candidate.available && candidate.directoryStatus === "missing");
+              return (
+                <div
+                  className={["sh-deployment-target-card", selectable.length === 0 ? "sh-deployment-target-card--pending" : ""].filter(Boolean).join(" ")}
+                  data-testid="deployment-target-card"
+                  key={card.id}
+                >
+                  <div className="sh-deployment-target-card__body">
+                    {selectable.length > 0 ? <label>
+                      <input
+                        checked={checked}
+                        onChange={(event) => {
+                          setPreference("automatic");
+                          setPreview(undefined);
+                          setSelectedIds((current) => {
+                            const selectableIds = new Set(selectable.map((candidate) => candidate.id));
+                            const retained = current.filter((id) => !selectableIds.has(id));
+                            return event.target.checked ? [...retained, ...selectable.map((candidate) => candidate.id)] : retained;
+                          });
+                        }}
+                        ref={(element) => {
+                          if (element) element.indeterminate = selectedCount > 0 && !checked;
+                        }}
+                        type="checkbox"
+                      />
+                      <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
+                    </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
+                    <small title={targetPath}>
+                      {selectable.length > 0
+                        ? targetPath
+                        : target.directoryStatus
+                          ? t(directoryStatusLabel(target.directoryStatus) as never)
+                          : t("agents.pathUnavailable")}
+                    </small>
+                    {selectable.length === 0 && target.directoryStatus
+                      && target.directoryStatus !== "missing" && target.directoryStatus !== "existing" ? (
+                        <small>
+                          {t(directoryStatusLabel(target.directoryStatus) as never)}: {t(directoryStatusSuggestion(target.directoryStatus) as never)}
+                        </small>
+                      ) : null}
+                  </div>
+                  {pendingTargets.map((pendingTarget) => <ConfirmDialog
+                    key={pendingTarget.id}
+                    cancelLabel={t("agents.removeDialog.cancel")}
+                    confirmLabel={t("deployment.targets.createConfirm")}
+                    description={t("deployment.targets.createDescription")}
+                    onConfirm={() => void ensureTargetDirectory(pendingTarget)}
+                    title={t("deployment.targets.createTitle")}
+                    trigger={<Button loading={creatingTargetId === pendingTarget.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
+                  />)}
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}

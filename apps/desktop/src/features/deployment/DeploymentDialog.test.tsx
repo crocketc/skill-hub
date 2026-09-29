@@ -14,6 +14,7 @@ import {
   type DeploymentResult,
   type DeploymentTarget,
 } from "./api";
+import type { AgentCardModel } from "../agents/agentCardModel";
 import { DeploymentDialog } from "./DeploymentDialog";
 
 let pairSeq = 0;
@@ -174,6 +175,99 @@ it("offers creation only when a target is explicitly missing", async () => {
 
   expect(await screen.findByText("待创建")).toBeVisible();
   expect(screen.getByRole("button", { name: "创建并加入派发" })).toBeVisible();
+});
+
+function cardModelFixture(memberIds: string[]): AgentCardModel {
+  return {
+    id: `agent_native:test:${memberIds.join("+")}`,
+    brand: "OpenAI",
+    brandLabel: "OpenAI",
+    kinds: ["cli"],
+    directories: [],
+    sharedDirectory: false,
+    supportsSharedDirectory: false,
+    sharedAgentBrands: [],
+    sharedAgentBrandKinds: {},
+    builtin: false,
+    readOnly: false,
+    supportedModes: ["managed_copy"],
+    deploymentStatus: "not_deployed",
+    detailTarget: memberIds[0] ?? "",
+    members: memberIds.map((id) => ({ id })) as AgentCardModel["members"],
+  };
+}
+
+function mergedCardTargets(): DeploymentTarget[] {
+  const model = cardModelFixture(["codex-cli", "codex-desktop"]);
+  return [
+    { ...deploymentTargetsFixture()[0], id: "codex-cli", agentClientId: "codex.code", cardModel: model },
+    { ...deploymentTargetsFixture()[0], id: "codex-desktop", label: "Codex Desktop", agentClientId: "codex.desktop", cardModel: model, modes: ["managed_copy"] },
+  ];
+}
+
+it("selecting a merged Agent card submits every selectable member (DEV-106)", async () => {
+  const user = userEvent.setup();
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => mergedCardTargets(), preview, commit: vi.fn() };
+
+  await renderDialog(facade);
+
+  // 合卡只渲染一个选择框；勾选即选中其全部可选成员。
+  expect(await screen.findAllByRole("checkbox")).toHaveLength(1);
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ skillId: "skill-pdf", targetIds: ["codex-cli", "codex-desktop"] })],
+    undefined,
+  );
+});
+
+it("disables mode preferences that the selected targets do not all support (DEV-106)", async () => {
+  const user = userEvent.setup();
+  const copyOnly = { ...deploymentTargetsFixture()[0], id: "copy-only", label: "Copy Only", agentClientId: "copy.only", modes: ["managed_copy" as const] };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => [copyOnly], preview, commit: vi.fn() };
+
+  await renderDialog(facade);
+
+  // 未选择目标时链接/复制偏好同样不可选；自动推荐始终可用。
+  await screen.findByRole("option", { name: "链接部署" });
+  expect((screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole("option", { name: "自动选择方式" }) as HTMLOptionElement).disabled).toBe(false);
+
+  await user.click(await screen.findByRole("checkbox"));
+  expect((screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement).disabled).toBe(false);
+});
+
+it("retries every selectable member of a failed merged card (DEV-106)", async () => {
+  const user = userEvent.setup();
+  const pairs = [pair({ pairId: "skill-pdf:codex", logicalTargetIds: ["codex-cli", "codex-desktop"], targetLabel: "OpenAI" })];
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch(pairs));
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async () => [{
+    skillId: "skill-pdf",
+    targetId: "codex-cli",
+    label: "OpenAI",
+    status: "failed" as const,
+    message: "目标目录不可写",
+  }]);
+  const facade: BatchDeploymentFacade = { listTargets: async () => mergedCardTargets(), preview, commit };
+
+  await renderDialog(facade);
+
+  await user.click(await screen.findByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
+  await user.click(await screen.findByRole("button", { name: "重试失败目标" }));
+
+  // 重试按合卡语义重新选整卡：合并 pair 的失败不能只重选首个成员。
+  await user.click(await screen.findByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenLastCalledWith(
+    [expect.objectContaining({ targetIds: ["codex-cli", "codex-desktop"] })],
+    undefined,
+  );
 });
 
 it("sends the user preference instead of an implementation mode (14.11)", async () => {
