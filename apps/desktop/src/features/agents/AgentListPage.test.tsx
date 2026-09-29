@@ -7,6 +7,7 @@ import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { notifyDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import { createOperationTracker } from "../../platform/operationTracker";
+import { buildAgentDirectoryCardModels, type AgentCardModel } from "./agentCardModel";
 import { type AgentFacade, type AgentView } from "./api";
 import { AgentListPage } from "./AgentListPage";
 
@@ -298,6 +299,62 @@ it("merges same-brand agents on one directory and presents their platform types 
   expect(container.querySelectorAll(".sh-agent-card")).toHaveLength(1);
   expect(screen.queryByText("codex-cli")).not.toBeInTheDocument();
   expect(screen.queryByText("codex-desktop")).not.toBeInTheDocument();
+});
+
+it("uses canonical directory cards for the native list while keeping the member detail route", async () => {
+  const model: AgentCardModel = {
+    ...buildAgentDirectoryCardModels({ directories: [{
+      role: "agent_native",
+      identity: { kind: "verified_physical", value: "physical-codex" },
+      path: "C:/Users/demo/.codex/skills",
+      status: "existing",
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      members: [
+        {
+          logical_target_id: "openai.codex-cli",
+          brand: "OpenAI",
+          client_id: "codex-cli",
+          kind: "cli",
+          availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+          capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["managed_copy", "symbolic_link"], preferred_mode: "symbolic_link" },
+          deployment_status: "not_deployed",
+          managed_deployment_relation_count: 0,
+          managed_deployment_count: 0,
+        },
+        {
+          logical_target_id: "openai.codex-desktop",
+          brand: "OpenAI",
+          client_id: "codex-desktop",
+          kind: "desktop",
+          availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+          capabilities: { deployment: { copy: true, symlink: false, junction: true }, modes: ["managed_copy", "directory_junction"], preferred_mode: "managed_copy" },
+          deployment_status: "not_deployed",
+          managed_deployment_relation_count: 0,
+          managed_deployment_count: 0,
+        },
+      ],
+    }] })[0]!,
+  };
+  const facade = facadeWith({
+    listCardModels: vi.fn(async () => [model]),
+    list: vi.fn(async () => { throw new Error("legacy list should not be used by canonical list page"); }),
+  });
+
+  renderListPage(facade);
+
+  const card = await screen.findByTestId("agent-card");
+  expect(within(card).getByRole("link", { name: "OpenAI · 桌面端 · 终端" })).toHaveAttribute(
+    "href",
+    "/agents/openai.codex-cli",
+  );
+  expect(within(card).getByLabelText("支持复制派发")).toBeVisible();
+  expect(within(card).getByLabelText("不支持符号链接派发")).toBeVisible();
+  expect(within(card).getByLabelText("不支持目录联接派发")).toBeVisible();
+  expect(facade.listCardModels).toHaveBeenCalledOnce();
+  expect(facade.list).not.toHaveBeenCalled();
 });
 
 it("offers an explicit custom agent creation entry with the filled values", async () => {

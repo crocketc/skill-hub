@@ -1,5 +1,6 @@
 import type { AgentKindKey } from "../../ui/AgentPresentation";
 import type { AgentDirectoryMemberFact, RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
+import type { AgentCardModel } from "./agentCardModel";
 
 export type { RelationshipOverview, RemovalImpactFact };
 export type {
@@ -96,6 +97,8 @@ export interface CustomAgentFormValues {
 
 export interface AgentFacade {
   list(): Promise<AgentView[]>;
+  /** Canonical directory-card read path; optional for older preview/test facades. */
+  listCardModels?(): Promise<AgentCardModel[]>;
   get(id: string): Promise<AgentView>;
   rescan(): Promise<void>;
   createCustomAgent(values: CustomAgentFormValues): Promise<void>;

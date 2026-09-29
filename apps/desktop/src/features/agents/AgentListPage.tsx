@@ -12,8 +12,8 @@ import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { PageHeader } from "../../ui/PageHeader";
 import { useOptionalAppNotifications } from "../../ui/notifications";
+import { buildAgentCardModels, type AgentCardModel } from "./agentCardModel";
 import { type AgentFacade, type AgentDirectoryView, type AgentView, unavailableAgentFacade } from "./api";
-import { buildAgentCardViews } from "./agentCards";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
@@ -36,7 +36,7 @@ export function AgentListPage({
   const translate = (key: string, options?: Record<string, unknown>): string =>
     String(t(key as never, options as never));
   const notifications = useOptionalAppNotifications();
-  const [agents, setAgents] = useState<AgentView[]>();
+  const [cardModels, setCardModels] = useState<AgentCardModel[]>();
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
   const [formState, setFormState] = useState<CustomAgentFormState>();
@@ -45,8 +45,11 @@ export function AgentListPage({
 
   useEffect(() => {
     let active = true;
-    void facade.list().then((value) => {
-      if (active) setAgents(value);
+    const readCards = facade.listCardModels
+      ? facade.listCardModels()
+      : facade.list().then((agents) => buildAgentCardModels(agents));
+    void readCards.then((value) => {
+      if (active) setCardModels(value);
     }).catch((reason: unknown) => {
       if (active) setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));
     });
@@ -67,10 +70,8 @@ export function AgentListPage({
   // 类型标识后是冗余的，且分组网格每组只剩一两张卡，页面仍是纵向堆叠；
   // 拍平为单一网格后按品牌排序保持相邻。
   const cards = useMemo(
-    () => [...buildAgentCardViews(agents ?? [])]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .flatMap(([, groupCards]) => groupCards),
-    [agents],
+    () => [...(cardModels ?? [])].sort((left, right) => left.brand.localeCompare(right.brand)),
+    [cardModels],
   );
   // DEV-88：共享目录卡在页面里只有一张；品牌卡上的「支持共享目录」chip
   // 点击后定位到它。不存在时 chip 退化为纯标注（仍不显示具体路径）。
@@ -109,7 +110,7 @@ export function AgentListPage({
       />
     );
   }
-  if (!agents) return <DataState message={t("agents.loading")} state="loading" />;
+  if (!cardModels) return <DataState message={t("agents.loading")} state="loading" />;
 
   return (
     <div className="sh-agents-page">
@@ -124,29 +125,31 @@ export function AgentListPage({
         headingLevel="h1"
         title={t("agents.title")}
       />
-      {agents.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : (
+      {cardModels.length === 0 ? <DataState message={t("agents.empty")} state="empty" /> : (
         <ul aria-label={t("agents.title")} className="sh-agents-page__cards">
-          {cards.map(({ agent, kinds, sharedDirectory, model }) => (
-              <li className="sh-agent-card" data-testid="agent-card" key={agent.id}>
+          {cards.map((model) => {
+            const agent = cardAgent(model);
+            return (
+              <li className="sh-agent-card" data-testid="agent-card" key={model.id}>
                 <div className="sh-agent-card__head">
                   {/* DEV-87（2026-09-25 验收反馈）：三标签融二——左侧为品牌
                       +类型与差异色「内置 · 只读」徽标，可访问状态徽标独占
                       右上角，与其他卡片位置一致。 */}
                   <div className="sh-agent-card__head-main">
-                    <Link className="sh-agent-card__title" to={`/agents/${agent.id}`}>
+                    <Link className="sh-agent-card__title" to={`/agents/${model.detailTarget}`}>
                       <AgentPresentation
                         agentId={agent.client}
-                        brand={agent.brand}
-                        kinds={kinds}
+                        brand={model.brand}
+                        kinds={model.kinds}
                         sharedAgentBrands={model.sharedAgentBrands}
                         sharedAgentBrandKinds={model.sharedAgentBrandKinds}
-                        sharedDirectory={sharedDirectory}
+                        sharedDirectory={model.sharedDirectory}
                       />
                     </Link>
-                    {agent.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
+                    {model.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
                   </div>
                 </div>
-                {agent.builtin ? (
+                {model.builtin ? (
                   <p className="sh-agent-card__builtin-hint">{t("agents.builtinHint")}</p>
                 ) : null}
                 <div className="sh-agent-card__paths">
@@ -163,7 +166,8 @@ export function AgentListPage({
                 ) : null}
                 <DeploymentCapabilityIcons directory={model.directories[0]} t={translate} />
               </li>
-            ))}
+            );
+          })}
         </ul>
       )}
       <Drawer
@@ -187,6 +191,31 @@ export function AgentListPage({
       </Drawer>
     </div>
   );
+}
+
+function cardAgent(model: AgentCardModel): AgentView {
+  const member = model.members[0];
+  return {
+    ...member,
+    id: model.detailTarget,
+    brand: model.brand,
+    client: member?.client ?? "unknown",
+    instance: model.brandLabel,
+    discoveredPaths: model.directories.flatMap((directory) => directory.path ? [directory.path] : []),
+    managedDeploymentCount: member?.managedDeploymentCount ?? 0,
+    managedDeploymentRelationCount: member?.managedDeploymentRelationCount ?? 0,
+    officialReference: member?.officialReference ?? null,
+    relations: member?.relations ?? [],
+    status: member?.status ?? "inaccessible",
+    kinds: model.kinds,
+    directoryViews: model.directories,
+    directoryMembers: model.directoryMembers,
+    deploymentStatus: model.deploymentStatus,
+    supportsSharedDirectory: model.supportsSharedDirectory,
+    sharedAgentBrands: model.sharedAgentBrands,
+    sharedAgentBrandKinds: model.sharedAgentBrandKinds,
+    builtin: model.builtin || undefined,
+  };
 }
 
 
