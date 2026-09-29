@@ -28,7 +28,7 @@ import { brandDisplayName } from "../../ui/BrandTag";
  */
 export interface DiscoveryFacade {
   getDiscoverySnapshot: () => Promise<DiscoverySnapshot>;
-  getAgentDirectoryProjection: () => Promise<AgentDirectoryProjection>;
+  getAgentDirectoryProjection?: () => Promise<AgentDirectoryProjection>;
   scanTargets: (scopeIds: string[]) => Promise<ScanResult>;
   searchOnlineSources: (query: SourceSearchQuery) => Promise<SourceSearchPage>;
   /** Optional AI query extension (US-014): the original query always runs
@@ -541,9 +541,23 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
   const cardsByBrand = new Map<string, AgentTargetCard[]>();
   models.forEach((model: AgentCardModel, index) => {
     const directory = model.directories[0];
-    const path = directory?.path ?? projection.directories[index]?.path ?? "";
+    const fact = projection.directories[index];
+    // Platform-managed builtin paths are optional. Their absence is normal and
+    // stays quiet, matching the discovery inventory's previous behavior.
+    if (model.builtin && !fact?.exists) return;
+    const path = directory?.path ?? fact?.path ?? "";
     const available = Boolean(directory?.available);
-    const names = [...new Set(model.members.map((member) => member.instance))];
+    const sharedMembers = (model.directoryMembers ?? []).filter(
+      (member) => !isGenericSharedOwner(member) && member.brand && member.client_id,
+    );
+    const names = model.sharedDirectory
+      ? [...new Set(sharedMembers.flatMap((member) => member.brand ? [brandDisplayName(member.brand)] : []))]
+      : [...new Set(model.members.map((member) => member.instance))];
+    const sharedBrands = [...new Set(sharedMembers.flatMap((member) => member.brand ? [member.brand] : []))].sort();
+    const sharedBrandKinds = Object.fromEntries(sharedBrands.map((brand) => [
+      brand,
+      [...new Set(sharedMembers.flatMap((member) => member.brand === brand && member.kind ? [member.kind] : []))].sort(),
+    ]));
     const card: AgentTargetCard = {
       physicalId: model.id,
       path,
@@ -551,13 +565,13 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
       names,
       available,
       sharedClients: model.sharedDirectory
-        ? new Set((model.directoryMembers ?? []).flatMap((member) => member.client_id ? [member.client_id] : [])).size
+        ? new Set(sharedMembers.flatMap((member) => member.client_id ? [member.client_id] : [])).size
         : 0,
       sharedClientNames: model.sharedDirectory
-        ? [...new Set((model.directoryMembers ?? []).flatMap((member) => member.brand ? [brandDisplayName(member.brand)] : []))]
+        ? [...new Set(sharedMembers.flatMap((member) => member.brand ? [brandDisplayName(member.brand)] : []))]
         : [],
-      sharedBrands: model.sharedAgentBrands,
-      sharedBrandKinds: model.sharedAgentBrandKinds,
+      sharedBrands,
+      sharedBrandKinds,
       builtin: model.builtin,
     };
     const cards = cardsByBrand.get(model.brand) ?? [];
@@ -565,17 +579,165 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
     cardsByBrand.set(model.brand, cards);
   });
   const groups = [...cardsByBrand].map(([brand, cards]): AgentBrandGroup => {
-    const ordered = cards.toSorted((a, b) =>
+    const ordered = cards.sort((a, b) =>
       Number(b.available) - Number(a.available) || a.path.localeCompare(b.path),
     );
     return { brand, available: ordered.some((card) => card.available), cards: ordered };
   });
-  const sorted = groups.toSorted(byBrandName);
+  const sorted = groups.sort(byBrandName);
   return {
     available: sorted.filter((group) => group.available),
     unavailable: sorted.filter((group) => !group.available),
   };
 }
 
-/** Compatibility name retained for consumers while the canonical model owns grouping. */
-export const buildAgentGroups = buildAgentGroupsFromProjection;
+function isGenericSharedOwner(member: { brand: string | null; client_id: string | null }): boolean {
+  return member.brand === "agent-skills" || member.client_id === "agent-skills.shared-directory";
+}
+
+function snapshotProjection(
+  snapshot: DiscoverySnapshot,
+  os: "windows" | "macos",
+): AgentDirectoryProjection {
+  const instances = new Map(
+    snapshot.instances
+      .filter((instance) => instance.supported_os.length === 0 || instance.supported_os.includes(os))
+      .map((instance) => [`${instance.profile_id}:${instance.client_id}`, instance]),
+  );
+  const normalizeSharedPath = (path: string) => {
+    const normalized = path.trim().replaceAll("\\", "/").replace(/\/+$/g, "");
+    return os === "windows" ? normalized.toLowerCase() : normalized;
+  };
+  const sharedPaths = new Set(snapshot.logical_targets.flatMap((target) => {
+    const instance = instances.get(`${target.profile_id}:${target.client_id}`);
+    return target.shared_reference || instance?.kind === "shared_directory" ? [normalizeSharedPath(target.path)] : [];
+  }));
+  const grouped = new Map<string, {
+    role: AgentDirectoryProjection["directories"][number]["role"];
+    identity: AgentDirectoryProjection["directories"][number]["identity"];
+    path: string;
+    targets: DiscoverySnapshot["logical_targets"];
+  }>();
+  for (const target of snapshot.logical_targets) {
+    const instance = instances.get(`${target.profile_id}:${target.client_id}`);
+    if (!instance || (target.builtin && !target.exists)) continue;
+    const normalizedPath = normalizeSharedPath(target.path);
+    const sharedPathMatch = sharedPaths.has(normalizedPath);
+    const role = target.builtin
+      ? "builtin"
+      : target.scope === "project"
+        ? "project"
+        : target.shared_reference || instance.kind === "shared_directory" || sharedPathMatch
+          ? "shared_directory"
+          : "agent_native";
+    const verified = target.physical_identity_verified !== false;
+    const identity = sharedPathMatch
+      ? { kind: "verified_physical" as const, value: `shared-path:${normalizedPath}` }
+      : verified
+      ? { kind: "verified_physical" as const, value: target.physical_id }
+      : { kind: "candidate" as const, value: target.id };
+    const key = `${role}:${identity.kind}:${identity.value}`;
+    const group = grouped.get(key) ?? {
+      role,
+      identity,
+      path: snapshot.physical_targets.find((physical) => physical.id === target.physical_id)?.path ?? target.path,
+      targets: [],
+    };
+    group.targets.push(target);
+    grouped.set(key, group);
+  }
+  return {
+    directories: [...grouped.values()].map((group) => {
+      const physical = snapshot.physical_targets.find((candidate) => candidate.id === group.targets[0]?.physical_id);
+      const exists = physical?.exists ?? group.targets.some((target) => target.exists);
+      const readable = physical?.readable ?? group.targets.some((target) => target.readable);
+      const writable = physical?.writable ?? group.targets.some((target) => target.writable);
+      const available = group.targets.some((target) => target.available);
+      const status = group.targets.find((target) => target.status)?.status
+        ?? (exists ? available ? "existing" : "inaccessible" : "missing");
+      return {
+        role: group.role,
+        identity: group.identity,
+        path: group.path,
+        status,
+        exists,
+        readable,
+        writable,
+        available,
+        members: group.targets.map((target) => {
+          const instance = instances.get(`${target.profile_id}:${target.client_id}`)!;
+          const memberAvailable = target.available && target.physical_identity_verified !== false;
+          return {
+            logical_target_id: target.id,
+            brand: target.profile_id,
+            client_id: target.client_id,
+            kind: instance.kind,
+            availability: {
+              status: target.status ?? (target.exists ? memberAvailable ? "existing" : "inaccessible" : "missing"),
+              exists: target.exists,
+              readable: target.readable,
+              writable: target.writable,
+              available: memberAvailable,
+            },
+            capabilities: { deployment: { copy: false, symlink: false, junction: false }, modes: [], preferred_mode: null },
+            deployment_status: "not_deployed" as const,
+            managed_deployment_relation_count: 0,
+            managed_deployment_count: 0,
+          };
+        }),
+      };
+    }),
+  } as AgentDirectoryProjection;
+}
+
+/**
+ * Keep the previous snapshot+OS call shape for unmigrated consumers. The
+ * adapter converts those observed facts into the canonical projection, then
+ * delegates card identity and presentation to the shared model.
+ */
+export function buildAgentGroups(projection: AgentDirectoryProjection): AgentGroups;
+export function buildAgentGroups(snapshot: DiscoverySnapshot, options: { os: "windows" | "macos" }): AgentGroups;
+export function buildAgentGroups(
+  input: AgentDirectoryProjection | DiscoverySnapshot,
+  options?: { os: "windows" | "macos" },
+): AgentGroups {
+  if ("directories" in input) return buildAgentGroupsFromProjection(input);
+
+  const projection = snapshotProjection(input, options?.os ?? "windows");
+  const groups = buildAgentGroupsFromProjection(projection);
+  const modelsById = new Map(buildAgentDirectoryCardModels(projection).map((model) => [model.id, model]));
+  const instances = new Map(input.instances.map((instance) => [`${instance.profile_id}:${instance.client_id}`, instance]));
+  const targets = new Map(input.logical_targets.map((target) => [target.id, target]));
+  for (const group of [...groups.available, ...groups.unavailable]) {
+    for (const card of group.cards) {
+      const model = modelsById.get(card.physicalId);
+      if (!model) continue;
+      const targetMembers = (model.directoryMembers ?? []).flatMap((member) => {
+        const target = targets.get(member.logical_target_id);
+        const instance = target ? instances.get(`${target.profile_id}:${target.client_id}`) : undefined;
+        return target && instance ? [{ target, instance }] : [];
+      });
+      const shared = model.sharedDirectory;
+      const visibleMembers = targetMembers.filter(({ target }) =>
+        !shared || (target.profile_id !== "agent-skills" && target.client_id !== "agent-skills.shared-directory"),
+      );
+      group.brand = shared ? "agent-skills" : targetMembers[0]?.target.profile_id ?? group.brand;
+      card.physicalId = targetMembers[0]?.target.physical_id
+        ?? model.directories[0]?.candidateIdentityKey
+        ?? card.physicalId;
+      card.names = [...new Set(visibleMembers.map(({ instance }) => instance.display_name || instance.client_id))];
+      if (shared) {
+        card.sharedBrands = [...new Set(visibleMembers.map(({ target }) => target.profile_id))].sort();
+        card.sharedBrandKinds = Object.fromEntries(card.sharedBrands.map((brand) => [
+          brand,
+          [...new Set(visibleMembers.flatMap(({ target, instance }) => target.profile_id === brand ? [instance.kind] : []))].sort(),
+        ]));
+        card.sharedClients = new Set(visibleMembers.map(({ target }) => target.client_id)).size;
+        card.sharedClientNames = [...new Set(visibleMembers.map(({ instance }) => instance.display_name || instance.client_id))];
+      }
+    }
+  }
+  groups.available.sort((a, b) => a.brand.localeCompare(b.brand));
+  groups.unavailable.sort((a, b) => a.brand.localeCompare(b.brand));
+  return groups;
+}
