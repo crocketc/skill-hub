@@ -175,6 +175,49 @@ it("only saves available members when selecting a mixed-availability directory c
   expect(updateAgentIds).toHaveBeenCalledWith("demo-project", ["codex-cli"]);
 });
 
+it("keeps unavailable existing members selected while group toggles only change available members", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  let persistedProject = { ...projectFixture(), agentIds: ["codex-desktop"] };
+  const updateAgentIds = vi.fn(async (_projectId: string, agentIds: string[]) => {
+    persistedProject = { ...persistedProject, agentIds };
+    return persistedProject;
+  });
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={detailFacade(persistedProject, {
+          get: async () => persistedProject,
+          updateAgentIds,
+          listAgentCandidates: async () => [{
+            id: "codex-directory",
+            label: "OpenAI",
+            available: true,
+            memberIds: ["codex-cli", "codex-desktop"],
+            selectableMemberIds: ["codex-cli"],
+            brand: "openai",
+            kinds: ["cli", "desktop"],
+          }],
+        })} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  const group = await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" });
+  expect(group).not.toBeChecked();
+  expect((group as HTMLInputElement).indeterminate).toBe(true);
+  await user.click(group);
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+  expect(updateAgentIds).toHaveBeenNthCalledWith(1, "demo-project", ["codex-desktop", "codex-cli"]);
+  expect(group).toBeChecked();
+
+  await user.click(group);
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+  expect(updateAgentIds).toHaveBeenNthCalledWith(2, "demo-project", ["codex-desktop"]);
+  expect(group).not.toBeChecked();
+  expect((group as HTMLInputElement).indeterminate).toBe(true);
+});
+
 it.each([
   ["accessible", { exists: true, id: "fs-aurora", path: "D:/Work/Aurora", readable: true, writable: true }, "可访问"],
   ["read only", { exists: true, id: "fs-aurora", path: "D:/Work/Aurora", readable: true, writable: false }, "只读"],

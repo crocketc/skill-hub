@@ -18,7 +18,7 @@ import {
   resolveProjectNextStep,
   projectCandidateAccessibleName,
   projectCandidateCheckState,
-  projectCandidateMemberIds,
+  projectCandidateSelectableMemberIds,
   sortSkillCandidatesByTraceAffinity,
   toggleProjectCandidateIds,
   type ProjectAccessFact,
@@ -153,7 +153,7 @@ export function ProjectListPage({
             ...current,
             ...agentCandidates
               .filter((candidate) => (candidate.matchLabels ?? [candidate.label]).some((label) => tracedLabels.has(label)))
-              .flatMap(projectCandidateMemberIds),
+              .flatMap(projectCandidateSelectableMemberIds),
           ]),
         ]);
       } catch {

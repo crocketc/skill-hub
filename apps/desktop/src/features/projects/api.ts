@@ -56,8 +56,11 @@ export interface ProjectAgentCandidate {
 }
 
 export function projectCandidateMemberIds(candidate: ProjectAgentCandidate): string[] {
-  if (candidate.selectableMemberIds) return candidate.selectableMemberIds;
   return candidate.memberIds?.length ? candidate.memberIds : [candidate.id];
+}
+
+export function projectCandidateSelectableMemberIds(candidate: ProjectAgentCandidate): string[] {
+  return candidate.selectableMemberIds ?? projectCandidateMemberIds(candidate);
 }
 
 export function projectCandidateCheckState(
@@ -75,10 +78,11 @@ export function toggleProjectCandidateIds(
   candidate: ProjectAgentCandidate,
 ): string[] {
   const memberIds = projectCandidateMemberIds(candidate);
+  const selectableMemberIds = projectCandidateSelectableMemberIds(candidate);
   const selected = new Set(selectedIds);
   const fullySelected = memberIds.every((id) => selected.has(id));
-  if (fullySelected) return selectedIds.filter((id) => !memberIds.includes(id));
-  return [...new Set([...selectedIds, ...memberIds])];
+  if (fullySelected) return selectedIds.filter((id) => !selectableMemberIds.includes(id));
+  return [...new Set([...selectedIds, ...selectableMemberIds])];
 }
 
 export function projectCandidateAccessibleName(
