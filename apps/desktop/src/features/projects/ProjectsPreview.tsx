@@ -12,8 +12,26 @@ import {
 import { ProjectListPage } from "./ProjectListPage";
 
 const previewCandidates: ProjectAgentCandidate[] = [
-  { id: "codex-target", label: "OpenAI · Codex CLI", available: true },
-  { id: "claude-code", label: "anthropic · anthropic.claude-code", available: true },
+  {
+    id: "codex-target",
+    label: "OpenAI · Terminal/Desktop",
+    available: true,
+    memberIds: ["codex-cli", "codex-desktop"],
+    selectableMemberIds: ["codex-cli", "codex-desktop"],
+    matchLabels: ["Codex CLI", "Codex Desktop"],
+    agentId: "openai",
+    brand: "openai",
+    kinds: ["cli", "desktop"],
+  },
+  {
+    id: "claude-code",
+    label: "Claude · Terminal",
+    matchLabels: ["Claude · Terminal"],
+    available: true,
+    agentId: "anthropic",
+    brand: "anthropic",
+    kinds: ["cli"],
+  },
   // DEV-14：超长无空格标签——钉死「勾选列表不得横向溢出抽屉」的回归护栏。
   // Agent 呈现约定后可见主文案走品牌回退；未知品牌按原文展示，
   // 折行前提由 brand 回退承载。
@@ -79,7 +97,7 @@ const previewDirectoryPreview: ProjectDirectoryPreview = {
   agentTraces: [
     {
       targetId: "anthropic:claude-code:project:C:/Preview/Aurora/.claude/skills",
-      label: "anthropic · anthropic.claude-code",
+      label: "Claude · Terminal",
       marker: "SKILL.md",
       path: "C:/Preview/Aurora/.claude/skills",
       available: true,

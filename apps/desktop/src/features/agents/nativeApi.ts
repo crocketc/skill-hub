@@ -3,6 +3,7 @@ import {
   queryApplication,
   type AgentClient,
   type AgentProfile,
+  type AgentDirectoryProjection,
   type CustomAgent,
   type CustomAgentDraft,
   type DeploymentTarget,
@@ -12,6 +13,7 @@ import {
   type OperatingSystem,
 } from "../../api/bindings";
 import { countManagedDeployments, deploymentTargetIdSpace, type TargetIdPair } from "../deployment/targetProjection";
+import { buildAgentCardModels, buildAgentDirectoryCardModels } from "./agentCardModel";
 import type {
   AgentDeploymentMode,
   AgentDirectoryRole,
@@ -26,6 +28,13 @@ import type {
 
 function unexpectedResult(operation: string): Error {
   return new Error(`${operation} returned an unexpected native result.`);
+}
+
+/** Additive read path for consumers migrating to the canonical directory facts. */
+export async function loadAgentDirectoryProjection(): Promise<AgentDirectoryProjection> {
+  const result = await queryApplication({ type: "get_agent_directory_projection", payload: null });
+  if (result.type !== "agent_directory_projection") throw unexpectedResult("get_agent_directory_projection");
+  return result.payload;
 }
 
 function relationOf(target: LogicalTarget, snapshot: DiscoverySnapshot): AgentRelation {
@@ -306,6 +315,24 @@ async function listAgents(): Promise<AgentView[]> {
   ];
 }
 
+/**
+ * Agent list card read path. Directory identity and capabilities come from the
+ * canonical projection; custom targets keep their established compatibility
+ * mapping because they are registered separately from discovered directories.
+ */
+async function listAgentCardModels() {
+  const [projection, custom, deployments] = await Promise.all([
+    loadAgentDirectoryProjection(),
+    queryApplication({ type: "list_custom_agents", payload: null }),
+    queryApplication({ type: "list_deployments", payload: { skill_id: null } }),
+  ]);
+  if (custom.type !== "custom_agents") throw unexpectedResult("list_custom_agents");
+  if (deployments.type !== "deployments") throw unexpectedResult("list_deployments");
+  const canonicalModels = buildAgentDirectoryCardModels(projection);
+  const customModels = buildAgentCardModels(custom.payload.map((agent) => customAgent(agent, deployments.payload)));
+  return [...canonicalModels, ...customModels];
+}
+
 function slugify(value: string): string {
   const slug = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "agent";
@@ -359,6 +386,7 @@ async function saveCustomAgent(command: "create_custom_agent" | "update_custom_a
 
 export const nativeAgentFacade: AgentFacade = {
   list: listAgents,
+  listCardModels: listAgentCardModels,
   async get(id) {
     const agent = (await listAgents()).find((candidate) => candidate.id === id);
     if (!agent) throw new Error(`Agent ${id} was not found.`);

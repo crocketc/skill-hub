@@ -16,7 +16,11 @@ import { ProjectQuickDrawer } from "./ProjectQuickDrawer";
 import {
   resolveProjectAccessState,
   resolveProjectNextStep,
+  projectCandidateAccessibleName,
+  projectCandidateCheckState,
+  projectCandidateSelectableMemberIds,
   sortSkillCandidatesByTraceAffinity,
+  toggleProjectCandidateIds,
   type ProjectAccessFact,
   type ProjectAgentCandidate,
   type ProjectDirectoryPreview,
@@ -148,8 +152,8 @@ export function ProjectListPage({
           ...new Set([
             ...current,
             ...agentCandidates
-              .filter((candidate) => tracedLabels.has(candidate.label))
-              .map((candidate) => candidate.id),
+              .filter((candidate) => (candidate.matchLabels ?? [candidate.label]).some((label) => tracedLabels.has(label)))
+              .flatMap(projectCandidateSelectableMemberIds),
           ]),
         ]);
       } catch {
@@ -315,13 +319,14 @@ export function ProjectListPage({
                 <div className="sh-project-registration__agent-list" tabIndex={-1}>
                   {agentCandidates.map((agent) => (
                     <CheckboxField
-                      checked={selectedAgentIds.includes(agent.id)}
+                      checked={projectCandidateCheckState(agent, selectedAgentIds) === "checked"}
                       description={agent.available ? undefined : t("projects.registration.agentUnavailable")}
                       disabled={registering || !agent.available}
+                      indeterminate={projectCandidateCheckState(agent, selectedAgentIds) === "mixed"}
                       key={agent.id}
-                      label={<AgentPresentation agentId={agent.agentId ?? agent.id} brand={agent.brand} sharedDirectory={agent.sharedDirectory} />}
-                      ariaLabel={agent.agentId ?? agent.label}
-                      onChange={() => setSelectedAgentIds((current) => current.includes(agent.id) ? current.filter((id) => id !== agent.id) : [...current, agent.id])}
+                      label={<AgentPresentation agentId={agent.agentId} brand={agent.brand} kinds={agent.kinds} sharedAgentBrands={agent.sharedAgentBrands} sharedAgentBrandKinds={agent.sharedAgentBrandKinds} sharedDirectory={agent.sharedDirectory} />}
+                      ariaLabel={projectCandidateAccessibleName(agent, (key) => String(t(key as never)))}
+                      onChange={() => setSelectedAgentIds((current) => toggleProjectCandidateIds(current, agent))}
                     />
                   ))}
                 </div>

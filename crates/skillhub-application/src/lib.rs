@@ -6129,6 +6129,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                     Ok(AppQueryResult::DiscoverySnapshot(snapshot))
                 })
             }
+            AppQuery::GetAgentDirectoryProjection(_) => self.get_agent_directory_projection(),
             AppQuery::ListCustomAgents(_) => {
                 self.with_database("query.custom_agents", |database| {
                     Ok(AppQueryResult::CustomAgents(
@@ -6515,6 +6516,224 @@ impl LocalApplicationFacade {
                 skill_candidates,
             },
         ))
+    }
+
+    fn get_agent_directory_projection(&self) -> AppResult<AppQueryResult> {
+        use skillhub_core::agent::{
+            AgentDirectoryAvailability, AgentDirectoryDeploymentStatus, AgentDirectoryFact,
+            AgentDirectoryIdentity, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
+            AgentDirectoryProjection, AgentDirectoryRole, DirectoryObservationStatus, TargetScope,
+        };
+
+        let host_capabilities = DeploymentFilesystem::new().available_capabilities();
+        self.with_database("query.agent_directory_projection", |database| {
+            let snapshot = database
+                .agent_repository()
+                .load()?
+                .unwrap_or_else(empty_discovery);
+            let kinds_by_client = snapshot
+                .instances
+                .iter()
+                .map(|instance| {
+                    (
+                        (instance.profile_id.as_str(), instance.client_id.as_str()),
+                        instance.kind.clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let root_is_identified = |root_id: &str| {
+                snapshot.agent_roots.iter().any(|root| {
+                    root.id == root_id
+                        && root.exists
+                        && root.status == DirectoryObservationStatus::Existing
+                })
+            };
+            let mut facts = BTreeMap::<String, AgentDirectoryFact>::new();
+            let deployments = database.deployment_repository().list_all()?;
+            let deployment_facts = |logical_target_id: &str, physical_target_id: &str| {
+                let active = deployments
+                    .iter()
+                    .filter(|deployment| {
+                        deployment.managed
+                            && deployment.state != skillhub_core::DeploymentState::Removed
+                            && (deployment.target_id == logical_target_id
+                                || deployment.target_id == physical_target_id)
+                    })
+                    .collect::<Vec<_>>();
+                let deployment_status = if active.is_empty() {
+                    AgentDirectoryDeploymentStatus::NotDeployed
+                } else if active.iter().any(|deployment| {
+                    deployment.state == skillhub_core::DeploymentState::Deployed
+                }) {
+                    AgentDirectoryDeploymentStatus::Deployed
+                } else {
+                    AgentDirectoryDeploymentStatus::PartiallyDeployed
+                };
+                let managed_deployment_count = active
+                    .iter()
+                    .map(|deployment| deployment.skill_id.to_string())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                (
+                    deployment_status,
+                    u32::try_from(active.len()).unwrap_or(u32::MAX),
+                    u32::try_from(managed_deployment_count).unwrap_or(u32::MAX),
+                )
+            };
+
+            for target in &snapshot.logical_targets {
+                // A project has its own durable project entity below. Keeping
+                // discovery traces out of that list avoids duplicate cards.
+                if target.scope == TargetScope::Project
+                    || !root_is_identified(&target.agent_root_id)
+                {
+                    continue;
+                }
+                let role = if target.builtin {
+                    AgentDirectoryRole::Builtin
+                } else if target.shared_reference {
+                    AgentDirectoryRole::SharedDirectory
+                } else {
+                    AgentDirectoryRole::AgentNative
+                };
+                let (identity, grouping_key) = if target.physical_identity_verified {
+                    let identity =
+                        AgentDirectoryIdentity::VerifiedPhysical(target.physical_id.clone());
+                    (identity.clone(), format!("verified:{}", target.physical_id))
+                } else {
+                    // Scope the candidate to its observing Agent root. Identical
+                    // path text under different roots is not physical identity.
+                    let candidate_id = format!("{}::{}", target.agent_root_id, target.physical_id);
+                    let identity = AgentDirectoryIdentity::Candidate(candidate_id.clone());
+                    (identity, format!("candidate:{candidate_id}"))
+                };
+                let capabilities =
+                    effective_target_capabilities(&target.client_id, &host_capabilities);
+                let modes = offered_modes(&capabilities);
+                let (
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                ) = deployment_facts(&target.id, &target.physical_id);
+                let member = AgentDirectoryMemberFact {
+                    logical_target_id: target.id.clone(),
+                    brand: Some(target.profile_id.clone()),
+                    client_id: Some(target.client_id.clone()),
+                    kind: kinds_by_client
+                        .get(&(target.profile_id.as_str(), target.client_id.as_str()))
+                        .cloned(),
+                    availability: AgentDirectoryAvailability {
+                        status: target.status,
+                        exists: target.exists,
+                        readable: target.readable,
+                        writable: target.writable,
+                        available: target.available,
+                    },
+                    capabilities: AgentDirectoryMemberCapabilities {
+                        deployment: capabilities,
+                        preferred_mode: modes.first().cloned(),
+                        modes,
+                    },
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                };
+                let fact = facts
+                    .entry(grouping_key)
+                    .or_insert_with(|| AgentDirectoryFact {
+                        role,
+                        identity,
+                        path: target.path.clone(),
+                        status: target.status,
+                        exists: target.exists,
+                        readable: target.readable,
+                        writable: target.writable,
+                        available: target.available && target.physical_identity_verified,
+                        members: Vec::new(),
+                    });
+                // One Agent directory entity may carry members from several
+                // roles. Shared owns presentation precedence, then builtin.
+                let role_priority = |role| match role {
+                    AgentDirectoryRole::AgentNative => 0,
+                    AgentDirectoryRole::Builtin => 1,
+                    AgentDirectoryRole::SharedDirectory => 2,
+                    AgentDirectoryRole::Project => 3,
+                };
+                if role_priority(role) > role_priority(fact.role) {
+                    fact.role = role;
+                }
+                fact.members.push(member);
+            }
+
+            for project in database.project_repository().list()? {
+                let path = Path::new(project.path());
+                let exists = path.is_dir();
+                let status = if exists {
+                    DirectoryObservationStatus::Existing
+                } else if path.exists() {
+                    DirectoryObservationStatus::NonDirectory
+                } else {
+                    DirectoryObservationStatus::Missing
+                };
+                let modes = offered_modes(&host_capabilities);
+                let (
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                ) = deployment_facts(&project.id.to_string(), &project.physical_id);
+                let identity =
+                    AgentDirectoryIdentity::VerifiedPhysical(project.physical_id.clone());
+                let key = format!("project:{}", project.id);
+                facts.insert(
+                    key,
+                    AgentDirectoryFact {
+                        role: AgentDirectoryRole::Project,
+                        identity,
+                        path: project.device_path.clone(),
+                        status,
+                        exists,
+                        readable: exists,
+                        writable: exists,
+                        available: exists,
+                        members: vec![AgentDirectoryMemberFact {
+                            logical_target_id: project.id.to_string(),
+                            brand: None,
+                            client_id: None,
+                            kind: None,
+                            availability: AgentDirectoryAvailability {
+                                status,
+                                exists,
+                                readable: exists,
+                                writable: exists,
+                                available: exists,
+                            },
+                            capabilities: AgentDirectoryMemberCapabilities {
+                                deployment: host_capabilities.clone(),
+                                preferred_mode: modes.first().cloned(),
+                                modes,
+                            },
+                            deployment_status,
+                            managed_deployment_relation_count,
+                            managed_deployment_count,
+                        }],
+                    },
+                );
+            }
+
+            let mut directories = facts.into_values().collect::<Vec<_>>();
+            directories.sort_by(|left, right| {
+                left.role
+                    .cmp(&right.role)
+                    .then_with(|| left.path.cmp(&right.path))
+            });
+            for fact in &mut directories {
+                fact.members
+                    .sort_by(|left, right| left.logical_target_id.cmp(&right.logical_target_id));
+            }
+            Ok(AppQueryResult::AgentDirectoryProjection(
+                AgentDirectoryProjection { directories },
+            ))
+        })
     }
 
     fn list_deployment_targets(&self) -> AppResult<AppQueryResult> {

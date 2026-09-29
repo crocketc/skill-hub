@@ -114,7 +114,7 @@ test("project registration runs in a drawer and returns focus to its trigger", a
   await expect(registration.getByText("C:\\Preview\\Aurora", { exact: true })).toBeVisible();
   await expect(registration.getByRole("textbox", { name: "Project name" })).toHaveValue("Aurora");
 
-  await registration.getByRole("checkbox", { name: "OpenAI · Codex CLI" }).check();
+  await registration.getByRole("checkbox", { name: "OpenAI · Terminal/Desktop" }).check();
   await registration.getByRole("button", { name: "Register project" }).click();
 
   // Success keeps the drawer open with explicit next actions instead of
@@ -141,7 +141,7 @@ test("project registration keeps the read-only preview boundary inside the drawe
   await registration.getByRole("button", { name: "Choose project directory" }).click();
   await expect(registration.getByText("The preview only reads the directory. It creates no project, imports no Skill, and writes no files.")).toBeVisible();
   await expect(registration.getByText("C:\\Preview\\Aurora\\.claude\\skills", { exact: true })).toBeVisible();
-  await expect(registration.getByRole("checkbox", { name: "anthropic · anthropic.claude-code" })).toBeChecked();
+  await expect(registration.getByRole("checkbox", { name: "Claude · Terminal" })).toBeChecked();
 });
 
 test.describe("previews stay free of horizontal overflow at every benchmark width", () => {

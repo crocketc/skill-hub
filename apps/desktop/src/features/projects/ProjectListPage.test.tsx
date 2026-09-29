@@ -80,7 +80,7 @@ it("registers a user-selected local directory without creating a shared config",
   const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
   render(
     <I18nextProvider i18n={i18n}>
-      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, { list: async () => [], register, listAgentCandidates: async () => [{ id: "codex-cli", label: "OpenAI · Codex CLI", available: true }], previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }) })} />
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, { list: async () => [], register, listAgentCandidates: async () => [{ id: "codex-cli", label: "OpenAI", available: true, brand: "openai", kinds: ["cli"] }], previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }) })} />
     </I18nextProvider>,
   );
 
@@ -89,7 +89,7 @@ it("registers a user-selected local directory without creating a shared config",
 
   expect(screen.getByText("C:\\Projects\\Aurora")).toBeVisible();
   expect(screen.getByRole("textbox", { name: "项目名称" })).toHaveValue("Aurora");
-  await user.click(await screen.findByRole("checkbox", { name: "OpenAI · Codex CLI" }));
+  await user.click(await screen.findByRole("checkbox", { name: "OpenAI · 终端" }));
   await user.click(screen.getByRole("button", { name: "确认注册" }));
 
   expect(register).toHaveBeenCalledWith(expect.objectContaining({
@@ -99,6 +99,41 @@ it("registers a user-selected local directory without creating a shared config",
     tags: [],
     agentIds: ["codex-cli"],
   }));
+});
+
+it("registers every member behind a selected project Agent card", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  const register = vi.fn(async () => project);
+  const directoryPicker: DirectoryPicker = { pickDirectory: vi.fn(async () => "C:/Projects/Aurora") };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ProjectListPage directoryPicker={directoryPicker} facade={listFacade(project, {
+        list: async () => [],
+        register,
+        listAgentCandidates: async () => [{
+          id: "shared-directory-card",
+          label: "共享目录",
+          available: true,
+          memberIds: ["codex-cli", "claude-code"],
+          brand: "Agent Skills",
+          sharedDirectory: true,
+          kinds: ["shared_directory"],
+          sharedAgentBrands: ["openai", "anthropic"],
+          sharedAgentBrandKinds: { openai: ["cli"], anthropic: ["cli"] },
+        }],
+        previewDirectory: async () => ({ path: "C:/Projects/Aurora", agentTraces: [], skillCandidates: [] }),
+      })} />
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "注册项目" }));
+  await user.click(screen.getByRole("button", { name: "选择项目目录" }));
+  await user.click(await screen.findByRole("checkbox", { name: /共享目录/ }));
+  await user.click(screen.getByRole("button", { name: "确认注册" }));
+
+  expect(register).toHaveBeenCalledWith(expect.objectContaining({ agentIds: ["codex-cli", "claude-code"] }));
 });
 
 it("leaves project registration unchanged when directory selection is cancelled", async () => {
@@ -143,7 +178,7 @@ it("previews the chosen directory read-only and suggests traced agents before re
         register,
         listAgentCandidates: async () => [
           { id: "codex-cli", label: "OpenAI · Codex CLI", available: true },
-          { id: "claude-code", label: "anthropic · anthropic.claude-code", available: true },
+          { id: "claude-code", label: "anthropic · anthropic.claude-code", available: true, brand: "anthropic", kinds: ["cli"] },
         ],
         previewDirectory,
       })} />
@@ -156,7 +191,7 @@ it("previews the chosen directory read-only and suggests traced agents before re
   expect(await screen.findByText("C:\\Projects\\Aurora\\.claude\\skills")).toBeVisible();
   expect(screen.getByText("research")).toBeVisible();
   expect(screen.getByText("预览仅读取目录，不会创建项目、导入 Skill 或写入任何文件。")).toBeVisible();
-  expect(screen.getByRole("checkbox", { name: "anthropic · anthropic.claude-code" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Claude · 终端" })).toBeChecked();
 
   await user.click(screen.getByRole("button", { name: "确认注册" }));
 

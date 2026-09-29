@@ -8,7 +8,10 @@ pub use custom::{
     PathGrantResolver, ResolvedPathGrant,
 };
 pub use discovery::{
-    AgentRepository, AgentRootObservation, ClientInstance, ClientPresence,
+    AgentDirectoryAvailability, AgentDirectoryFact, AgentDirectoryIdentity,
+    AgentDirectoryDeploymentStatus, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
+    AgentDirectoryProjection,
+    AgentDirectoryRole, AgentRepository, AgentRootObservation, ClientInstance, ClientPresence,
     DirectoryObservationStatus, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
 };
 pub use profile::{

@@ -4,6 +4,7 @@ import {
   queryApplication,
   type DeploymentRecord,
   type DiscoverySnapshot,
+  type AgentDirectoryProjection,
   type RelationshipOverview,
 } from "../../api/bindings";
 import { nativeAgentFacade } from "./nativeApi";
@@ -122,6 +123,62 @@ it("maps discovered clients with availability status and active deployment count
     status: "accessible",
     managedDeploymentCount: 2,
   })]);
+});
+
+it("loads canonical directory card facts and preserves logical member identities", async () => {
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native",
+    identity: { kind: "verified_physical", value: "physical-codex" },
+    path: "C:/Users/Test/.codex/skills",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [
+      {
+        logical_target_id: "openai.codex-cli",
+        brand: "OpenAI",
+        client_id: "codex-cli",
+        kind: "cli",
+        availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+        capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["managed_copy", "symbolic_link"], preferred_mode: "symbolic_link" },
+        deployment_status: "not_deployed",
+        managed_deployment_relation_count: 0,
+        managed_deployment_count: 0,
+      },
+      {
+        logical_target_id: "openai.codex-desktop",
+        brand: "OpenAI",
+        client_id: "codex-desktop",
+        kind: "desktop",
+        availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+        capabilities: { deployment: { copy: true, symlink: false, junction: true }, modes: ["managed_copy", "directory_junction"], preferred_mode: "managed_copy" },
+        deployment_status: "not_deployed",
+        managed_deployment_relation_count: 0,
+        managed_deployment_count: 0,
+      },
+    ],
+  }] };
+  query
+    .mockResolvedValueOnce({ type: "agent_directory_projection", payload: projection })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "deployments", payload: [] });
+
+  const models = await nativeAgentFacade.listCardModels?.();
+
+  expect(query).toHaveBeenCalledWith({ type: "get_agent_directory_projection", payload: null });
+  expect(models).toHaveLength(1);
+  expect(models?.[0]).toMatchObject({
+    brand: "OpenAI",
+    kinds: ["desktop", "cli"],
+    detailTarget: "openai.codex-cli",
+    supportedModes: ["managed_copy"],
+    members: [
+      { id: "openai.codex-cli", client: "codex-cli" },
+      { id: "openai.codex-desktop", client: "codex-desktop" },
+    ],
+  });
 });
 
 it("carries the authoritative ClientKind into the view instead of id-string guesses", async () => {

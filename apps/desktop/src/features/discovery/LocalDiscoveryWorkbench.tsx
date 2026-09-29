@@ -8,7 +8,7 @@ import { Button } from "../../ui/Button";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { AgentPresentation } from "../../ui/AgentPresentation";
-import type { DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
+import type { AgentDirectoryProjection, DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
 import {
   buildAgentGroups,
   classifyScan,
@@ -33,6 +33,7 @@ interface SnapshotState {
   clients: number;
   targets: number;
   raw: DiscoverySnapshot;
+  projection: AgentDirectoryProjection | null;
 }
 
 /**
@@ -71,15 +72,18 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
 
   useEffect(() => {
     let cancelled = false;
-    facade
-      .getDiscoverySnapshot()
-      .then((result) => {
+    Promise.all([
+      facade.getDiscoverySnapshot(),
+      facade.getAgentDirectoryProjection?.() ?? Promise.resolve(null),
+    ])
+      .then(([result, projection]) => {
         if (cancelled) return;
         setSnapshot({
           observedAt: result.observed_at,
           clients: result.instances.length,
           targets: result.physical_targets.length,
           raw: result,
+          projection,
         });
       })
       .catch(() => {
@@ -117,11 +121,13 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
           snap: await facade.getDiscoverySnapshot(),
         }),
       });
+      const projection = await facade.getAgentDirectoryProjection?.() ?? null;
       setSnapshot({
         observedAt: snap.observed_at,
         clients: snap.instances.length,
         targets: snap.physical_targets.length,
         raw: snap,
+        projection,
       });
       setClassification(classifyScan(snap, result));
       setCandidates(result.discovered);
@@ -135,7 +141,13 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
   // P1-06：分组派生保持纯函数；排除过的目录从展示中移除。
   const agentGroups = useMemo(() => {
     if (!snapshot) return null;
-    const groups = buildAgentGroups(snapshot.raw, { os: detectOs() });
+    const groups = snapshot.projection
+      ? buildAgentGroups(snapshot.projection)
+      : buildAgentGroups(snapshot.raw, {
+        os: /Macintosh|Mac OS X/i.test(navigator.userAgent) || /^Mac/i.test(navigator.platform)
+          ? "macos"
+          : "windows",
+      });
     const visible = (group: AgentBrandGroup): AgentBrandGroup => ({
       ...group,
       cards: group.cards.filter((card) => !excludedPaths.has(card.path)),
@@ -303,6 +315,8 @@ function AgentCard({
           brand={brand}
           kinds={card.kinds}
           sharedDirectory={card.kinds.includes("shared_directory")}
+          sharedAgentBrands={card.sharedBrands}
+          sharedAgentBrandKinds={card.sharedBrandKinds}
         />
         {/* 2026-09-25 验收裁决：内置技能目录标注「内置」，只读边界随卡说明。 */}
         {card.builtin ? <span className="sh-discovery-workbench__agent-builtin">{t("discovery.workbench.builtinLabel")}</span> : null}
@@ -357,12 +371,4 @@ function renderObservedAt(
     return <span>{t("discovery.workbench.timeUnknown")}</span>;
   }
   return <time dateTime={date.toISOString()}>{label}</time>;
-}
-
-/** 快照按当前宿主 OS 过滤 profile 的 supported_os；未知环境回退 windows。 */
-function detectOs(): "windows" | "macos" {
-  if (typeof navigator !== "undefined" && /Mac/i.test(navigator.platform ?? "")) {
-    return "macos";
-  }
-  return "windows";
 }

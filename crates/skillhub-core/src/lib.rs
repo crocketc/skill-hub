@@ -69,7 +69,9 @@ pub mod i64_option_string {
 }
 
 pub use agent::{
-    AgentClient, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
+    AgentClient, AgentDirectoryAvailability, AgentDirectoryDeploymentStatus, AgentDirectoryFact, AgentDirectoryIdentity,
+    AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact, AgentDirectoryProjection,
+    AgentDirectoryRole, AgentProfile, AgentRepository, CallPolicy, ClientInstance, ClientKind,
     ClientPresence, CustomAgent, CustomAgentDraft, CustomAgentOverride, CustomAgentValidationError,
     AgentRootObservation, DeploymentCapability, DirectoryObservationStatus, DirectoryPrecedence,
     DiscoverySnapshot, LogicalTarget, OperatingSystem, PathCandidate, PathGrant, PathGrantResolver,
@@ -86,7 +88,8 @@ pub use api::{
     DiscoverImportCandidates, DiscoverRepoSkills, DownloadApplicationUpdate, DownloadRepoSkill,
     EnsureAgentTargetDirectory,
     FactsChanged, GenerateOnlineSearchQuery, GetCallPolicy, GetDeploymentPlan,
-    GetDeploymentRelations, GetLlmSafetyCheckResult, GetProjectAssemblyPlan, GetReconcilePlan,
+    GetAgentDirectoryProjection, GetDeploymentRelations, GetLlmSafetyCheckResult,
+    GetProjectAssemblyPlan, GetReconcilePlan,
     GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact, GetUiPreference,
     GetUiPreferenceResult, IgnoreExternalChange, InstallApplicationUpdate, KeepIndependentCopy,
     ListDeploymentTargets, ListDeployments, ListMarkdownFiles, ListPendingItems,

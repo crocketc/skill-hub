@@ -77,9 +77,24 @@ export function readableAgentIdName(id: string): string {
   return brand === "unknown" ? "Agent" : brandDisplayName(brand);
 }
 
+// A few supported clients have names that do not carry their user-facing kind
+// in the identifier (for example `pi.coding-agent`). Keep those facts in the
+// one shared presenter until every legacy identity DTO carries kind data.
+const KNOWN_CLIENT_KINDS: Readonly<Record<string, AgentKindKey>> = {
+  "pi.coding-agent": "cli",
+  "hermes.agent": "cli",
+  "openclaw.agent": "headless",
+  "google.antigravity.app": "desktop",
+  "google.antigravity.sdk": "headless",
+  "cline.sdk": "headless",
+  "github-copilot.cloud": "headless",
+};
+
 export function inferAgentKindKey(agentId = "", instance = ""): AgentKindKey {
   const value = `${agentId} ${instance}`.trim().toLowerCase();
   if (!value) return "unknown";
+  const knownKind = KNOWN_CLIENT_KINDS[agentId.trim().toLowerCase()];
+  if (knownKind) return knownKind;
   if (value.includes("shared") || value.includes("agent-skills")) return "shared_directory";
   if (value.includes("ide") || value.includes("extension") || value.includes("plugin")) {
     return "ide_extension";

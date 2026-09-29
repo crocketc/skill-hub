@@ -123,6 +123,14 @@ test("groups rediscovery Agent cards by supported path and scrolls the list insi
   await page.getByRole("button", { name: "识别 Agent" }).click();
 
   await expect(page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" })).toBeVisible();
+  const mergedOpenAiCard = page.locator(".sh-onboarding__target-card").filter({
+    has: page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }),
+  });
+  await expect(mergedOpenAiCard).toHaveCount(1);
+  await expect(mergedOpenAiCard.getByText("C:\\Users\\Preview\\.codex\\skills", { exact: true })).toBeVisible();
+  // A second OpenAI physical directory remains separate from the merged Codex path.
+  await expect(page.getByText("C:\\Users\\Preview\\.openai\\skills", { exact: true })).toBeVisible();
+  await expect(page.getByText(/preview-codex|preview-openai/)).toHaveCount(0);
   await expect(page.getByText("8 个路径卡片 · 8 个可用目标")).toBeVisible();
   await expect(page.locator(".sh-onboarding__target-card")).toHaveCount(8);
   expect((await page.locator(".sh-onboarding__frame").boundingBox())!.width).toBeGreaterThan(1000);
@@ -167,6 +175,42 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
   await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
   await page.getByRole("button", { name: "继续" }).click();
   await page.getByRole("button", { name: "识别 Agent" }).click();
+
+  const compatibilityLegend = page.locator(".sh-onboarding__targets > legend");
+  const compatibilityFieldset = page.locator(".sh-onboarding__targets");
+  const geometry = async () => compatibilityFieldset.evaluate((fieldset) => {
+    const legend = fieldset.querySelector("legend");
+    if (!legend) return null;
+    const legendBox = legend.getBoundingClientRect();
+    const fieldsetBox = fieldset.getBoundingClientRect();
+    const borderTop = Number.parseFloat(getComputedStyle(fieldset).borderTopWidth);
+    const borderColor = getComputedStyle(fieldset).borderTopColor;
+    const rgbaAlpha = borderColor.match(/^rgba\([^)]*,\s*([\d.]+)\s*\)$/)?.[1];
+    return {
+      legendBottom: legendBox.bottom,
+      fieldsetTop: fieldsetBox.top,
+      borderTop,
+      borderStyle: getComputedStyle(fieldset).borderTopStyle,
+      borderAlpha: rgbaAlpha === undefined ? 1 : Number(rgbaAlpha),
+    };
+  });
+
+  for (const width of [1087, 750]) {
+    await page.setViewportSize({ width, height: 719 });
+    if (width !== 750) {
+      await page.goto("/__preview/onboarding/rescan");
+      await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+      await page.getByRole("button", { name: "继续" }).click();
+      await page.getByRole("button", { name: "识别 Agent" }).click();
+    }
+    await expect(compatibilityLegend).toBeVisible();
+    const measured = await geometry();
+    expect(measured, `compatibility title geometry at ${width}px`).not.toBeNull();
+    expect(measured!.fieldsetTop - measured!.legendBottom, `title clearance at ${width}px`).toBeGreaterThanOrEqual(2);
+    expect(measured!.borderTop, `fieldset border width at ${width}px`).toBeGreaterThan(0);
+    expect(measured!.borderStyle, `fieldset border style at ${width}px`).not.toBe("none");
+    expect(measured!.borderAlpha, `fieldset border alpha at ${width}px`).toBeGreaterThan(0);
+  }
 
   const layout = await page.evaluate(() => {
     const confirmation = document.querySelector(".sh-onboarding__confirm-row .sh-checkbox-field");

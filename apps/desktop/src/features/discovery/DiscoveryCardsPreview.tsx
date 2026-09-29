@@ -126,7 +126,7 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
     { profile_id: "zcode", client_id: "zcode-desktop", display_name: "ZCode", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "zcode", client_id: "zcode-cli", display_name: "ZCode CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "codebuddy", client_id: "codebuddy-code", display_name: "CodeBuddy Code", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
-    { profile_id: "claudedesktop", client_id: "claude-desktop", display_name: "Claude Desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "anthropic", client_id: "claude-desktop", display_name: "Claude Desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "brokenbrand", client_id: "broken-cli", display_name: "Broken CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
   ],
   logical_targets: [
@@ -192,7 +192,7 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
     },
     {
       id: "lt-claude",
-      profile_id: "claudedesktop",
+      profile_id: "anthropic",
       client_id: "claude-desktop",
       scope: "global",
       path: "C:/Users/demo/.claude/skills",

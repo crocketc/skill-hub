@@ -1,7 +1,16 @@
 import type { AgentKindKey } from "../../ui/AgentPresentation";
-import type { RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
+import type { AgentDirectoryMemberFact, RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
+import type { AgentCardModel } from "./agentCardModel";
 
 export type { RelationshipOverview, RemovalImpactFact };
+export type {
+  AgentDirectoryAvailability,
+  AgentDirectoryFact,
+  AgentDirectoryIdentity,
+  AgentDirectoryMemberCapabilities,
+  AgentDirectoryMemberFact,
+  AgentDirectoryProjection,
+} from "../../api/bindings";
 
 export interface AgentRelation {
   logicalLabel: string;
@@ -66,6 +75,10 @@ export interface AgentView {
   status: AgentStatus;
   /** Unified directory facts used by every Agent presentation surface. */
   directoryViews?: AgentDirectoryView[];
+  /** Member-scoped target and capability facts from the canonical projection. */
+  directoryMembers?: AgentDirectoryMemberFact[];
+  /** Managed deployment state for this view or the represented directory card. */
+  deploymentStatus?: AgentDeploymentStatus;
   /** Whether this recognised brand can consume the shared directory. */
   supportsSharedDirectory?: boolean;
   /** Brands shown on the independent shared-directory card. */
@@ -84,6 +97,8 @@ export interface CustomAgentFormValues {
 
 export interface AgentFacade {
   list(): Promise<AgentView[]>;
+  /** Canonical directory-card read path; optional for older preview/test facades. */
+  listCardModels?(): Promise<AgentCardModel[]>;
   get(id: string): Promise<AgentView>;
   rescan(): Promise<void>;
   createCustomAgent(values: CustomAgentFormValues): Promise<void>;

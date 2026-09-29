@@ -39,7 +39,7 @@ function nodeLabel(
     case "agent":
       return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
-      return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
+      return node.path ? displayPath(node.path) : fallback;
     case "conflict":
       return node.conflict_id ?? fallback;
     case "source":
@@ -213,11 +213,21 @@ export function GraphDetailsPanel({
               {selectedNodeEntry.node.kind === "agent" && selectedNodeEntry.node.agent_client_id ? (
                 <AgentPresentation agentId={selectedNodeEntry.node.agent_client_id} />
               ) : (
-                nodeLabel(selectedNodeEntry.node, selectedNodeEntry.node.node_id, resolveSkillName)
+                nodeLabel(
+                  selectedNodeEntry.node,
+                  selectedNodeEntry.node.kind === "directory"
+                    ? selectedNodeEntry.node.role === "shared_directory"
+                      ? t("agents.kind.sharedDirectory")
+                      : t("relationships.graph.nodeKind.directory")
+                    : selectedNodeEntry.node.node_id,
+                  resolveSkillName,
+                )
               )}
             </h3>
             <p className="sh-graph-details__kind">
-              {t(`relationships.graph.nodeKind.${selectedNodeEntry.node.kind}`)}
+              {selectedNodeEntry.node.kind === "directory" && selectedNodeEntry.node.role === "shared_directory"
+                ? t("agents.kind.sharedDirectory")
+                : t(`relationships.graph.nodeKind.${selectedNodeEntry.node.kind}`)}
             </p>
             {selectedNodeEdge ? (
               <dl>

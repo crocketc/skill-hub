@@ -261,9 +261,29 @@ export function projectGraph(
     }
   }
 
-  const hiddenEdgeCount = centerEdges.filter((candidate) =>
+  let hiddenEdgeCount = centerEdges.filter((candidate) =>
     edgeHiddenByFactFilters(candidate, filters),
   ).length;
+
+  // Shared directories are the one intentional two-hop exception to the
+  // single-center projection: preserve Skill → shared directory → Agent.
+  const visibleSharedDirectoryIds = new Set(centerEdges.flatMap((edge) => {
+    if (edgeHiddenByFactFilters(edge, filters)) return [];
+    const from = nodeById.get(edge.from_node_id);
+    const to = nodeById.get(edge.to_node_id);
+    const directory = from?.kind === "directory" && from.role === "shared_directory"
+      ? from
+      : to?.kind === "directory" && to.role === "shared_directory"
+        ? to
+        : undefined;
+    return directory ? [directory.node_id] : [];
+  }));
+  const sharedAssociationEdges = graph.edges.filter((edge) => {
+    const target = nodeById.get(edge.to_node_id);
+    return edge.kind === "shared"
+      && visibleSharedDirectoryIds.has(edge.from_node_id)
+      && target?.kind === "agent";
+  });
 
   const endpoints = new Map<string, SkillRelationshipNode>();
   for (const candidate of centerEdges) {
@@ -303,6 +323,24 @@ export function projectGraph(
       continue;
     }
     visibleNodeIds.add(other.node_id);
+  }
+
+  for (const edge of sharedAssociationEdges) {
+    const agent = nodeById.get(edge.to_node_id);
+    if (!agent || !visibleNodeIds.has(edge.from_node_id)) continue;
+    if (edgeHiddenByFactFilters(edge, filters)) {
+      if (categoryShown(agent.kind, display)) {
+        filteredByKind.set(agent.kind, (filteredByKind.get(agent.kind) ?? 0) + 1);
+        hiddenEdgeCount += 1;
+      }
+      continue;
+    }
+    if (!categoryShown(agent.kind, display)) {
+      displayOffByKind.set(agent.kind, (displayOffByKind.get(agent.kind) ?? 0) + 1);
+      continue;
+    }
+    visibleNodeIds.add(agent.node_id);
+    endpoints.set(agent.node_id, agent);
   }
 
   const projectedNodes: ProjectedNode[] = [
@@ -365,7 +403,7 @@ export function projectGraph(
     sourceCopies.map((copy) => [copy.latest_provenance_id, copy.relation_id]),
   );
   const projectedEdges: ProjectedEdge[] = [];
-  for (const candidate of centerEdges) {
+  for (const candidate of [...centerEdges, ...sharedAssociationEdges]) {
     if (!edgeHiddenByFactFilters(candidate, filters)) {
       const from = projectedPosition.get(candidate.from_node_id);
       const to = projectedPosition.get(candidate.to_node_id);

@@ -6,7 +6,9 @@ import {
   type DeploymentPairCommitResult as NativePairCommitResult,
   type DeploymentPairPreview as NativePairPreview,
   type DeploymentTarget as NativeDeploymentTarget,
+  type AgentDirectoryProjection,
 } from "../../api/bindings";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
 import {
   pairOutcomeStatus as statusOf,
   type BatchDeploymentFacade,
@@ -26,6 +28,13 @@ import {
 function targetsResult(result: AppQueryResult): NativeDeploymentTarget[] {
   if (result.type !== "deployment_targets") {
     throw new Error("deployment.targets_unexpected_result");
+  }
+  return result.payload;
+}
+
+function directoryProjectionResult(result: AppQueryResult): AgentDirectoryProjection {
+  if (result.type !== "agent_directory_projection") {
+    throw new Error("deployment.directory_projection_unexpected_result");
   }
   return result.payload;
 }
@@ -97,8 +106,23 @@ function resultMessage(outcome: NativePairCommitResult["outcome"]): string {
 export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
   const self = {
     listTargets: async (): Promise<DeploymentTarget[]> => {
-      const result = await queryApplication({ type: "list_deployment_targets", payload: null });
-      return targetsResult(result).map(toTarget);
+      const [result, projectionResult] = await Promise.all([
+        queryApplication({ type: "list_deployment_targets", payload: null }),
+        queryApplication({ type: "get_agent_directory_projection", payload: null }),
+      ]);
+      const targets = targetsResult(result).map(toTarget);
+      const models = buildAgentDirectoryCardModels(directoryProjectionResult(projectionResult));
+      return targets.map((target) => {
+        if (!target.agentClientId) return target;
+        const role = target.sharedDirectory ? "shared_directory" : "agent_native";
+        const model = models.find((candidate) =>
+          candidate.directories.some((directory) =>
+            directory.role === role && directory.physicalIdentityVerified
+              && directory.physicalIdentityKey === target.physicalId)
+          || candidate.directoryMembers?.some((member) => member.logical_target_id === target.id),
+        );
+        return model ? { ...target, cardModel: model } : target;
+      });
     },
 
     ensureTargetDirectory: async (targetId: string): Promise<void> => {

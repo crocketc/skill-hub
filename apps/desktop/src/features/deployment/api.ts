@@ -2,6 +2,7 @@ import type {
   TargetOperationError,
 } from "../../api/bindings";
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
+import type { AgentCardModel } from "../agents/agentCardModel";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 
@@ -64,7 +65,40 @@ export type DeploymentTarget = {
   directoryStatus?: "existing" | "missing" | "non_directory" | "inaccessible" | "broken_link";
   physicalIdentityVerified?: boolean;
   preferredMode?: DeploymentMode;
+  /** Shared directory card projection; operation IDs remain on this target. */
+  cardModel?: AgentCardModel;
 };
+
+export type DeploymentTargetCard = {
+  id: string;
+  target: DeploymentTarget;
+  targets: DeploymentTarget[];
+  cardModel?: AgentCardModel;
+};
+
+/** Group only the display projection. Each original target remains addressable. */
+export function buildDeploymentTargetCards(targets: readonly DeploymentTarget[]): DeploymentTargetCard[] {
+  const cards: DeploymentTargetCard[] = [];
+  const byModel = new Map<string, DeploymentTargetCard>();
+  for (const target of targets) {
+    // Projects keep their own identity even when their path resembles an Agent path.
+    const model = target.agentClientId ? target.cardModel : undefined;
+    const existing = model ? byModel.get(model.id) : undefined;
+    if (existing) {
+      existing.targets.push(target);
+      continue;
+    }
+    const card: DeploymentTargetCard = {
+      id: model?.id ?? "target:" + target.id,
+      target,
+      targets: [target],
+      cardModel: model,
+    };
+    cards.push(card);
+    if (model) byModel.set(model.id, card);
+  }
+  return cards;
+}
 
 export type DeploymentResult = {
   skillId?: string;

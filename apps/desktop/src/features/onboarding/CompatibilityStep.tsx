@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { buildAgentCardViews } from "../agents/agentCards";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
+import type { AgentDirectoryProjection } from "../../api/bindings";
 import type { AgentView } from "../agents/api";
 import { Button } from "../../ui/Button";
 import { AgentPresentation, agentKindLabel, isAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
@@ -14,6 +16,7 @@ interface CompatibilityStepProps {
   isDiscovering: boolean;
   selectedTargetIds: string[];
   targets: CompatibilityTarget[] | null;
+  projection?: AgentDirectoryProjection | null;
   onConfirmChange: (confirmed: boolean) => void;
   onDiscover: () => void;
   onTargetSelectionChange: (targetId: string, selected: boolean) => void;
@@ -25,11 +28,36 @@ interface CompatibilityCardGroup {
   kinds: AgentKindKey[];
   path?: string;
   sharedDirectory: boolean;
+  sharedAgentBrands: string[];
+  sharedAgentBrandKinds: Record<string, string[]>;
   targets: CompatibilityTarget[];
 }
 
-function cardGroupsFor(targets: CompatibilityTarget[]): CompatibilityCardGroup[] {
+function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirectoryProjection | null): CompatibilityCardGroup[] {
   const targetsById = new Map(targets.map((target) => [target.id, target]));
+  if (projection) {
+    return buildAgentDirectoryCardModels(projection)
+      .filter((card) => card.directoryMembers && card.directoryMembers.length > 0)
+      .map((card) => {
+        const seen = new Set<string>();
+        const representedTargets = (card.directoryMembers ?? []).flatMap((member) => {
+          const target = targetsById.get(member.logical_target_id);
+          if (!target || seen.has(target.id)) return [];
+          seen.add(target.id);
+          return [{ ...target, availability: member.availability.available && target.availability === "available" ? "available" as const : "unavailable" as const }];
+        });
+        return {
+          brand: card.brand,
+          kinds: card.kinds,
+          path: card.directories[0]?.path ?? undefined,
+          sharedDirectory: card.sharedDirectory,
+          sharedAgentBrands: card.sharedAgentBrands,
+          sharedAgentBrandKinds: card.sharedAgentBrandKinds,
+          targets: representedTargets,
+        };
+      });
+  }
+
   const views: AgentView[] = targets.map((target) => ({
     id: target.id,
     brand: target.profileId ?? target.label,
@@ -52,6 +80,8 @@ function cardGroupsFor(targets: CompatibilityTarget[]): CompatibilityCardGroup[]
       kinds: card.kinds,
       path: card.agent.discoveredPaths[0],
       sharedDirectory: card.sharedDirectory,
+      sharedAgentBrands: card.model.sharedAgentBrands,
+      sharedAgentBrandKinds: card.model.sharedAgentBrandKinds,
       targets: card.agents.flatMap((agent) => {
         const target = targetsById.get(agent.id);
         return target ? [target] : [];
@@ -60,19 +90,31 @@ function cardGroupsFor(targets: CompatibilityTarget[]): CompatibilityCardGroup[]
   );
 }
 
+export function selectableCompatibilityTargetIds(
+  targets: CompatibilityTarget[] | null,
+  projection?: AgentDirectoryProjection | null,
+): string[] {
+  if (!targets) return [];
+  return [...new Set(cardGroupsFor(targets, projection)
+    .flatMap((group) => group.targets)
+    .filter((target) => target.availability === "available")
+    .map((target) => target.id))];
+}
+
 export function CompatibilityStep({
   confirmed,
   isDiscovering,
   selectedTargetIds,
   targets,
+  projection,
   onConfirmChange,
   onDiscover,
   onTargetSelectionChange,
   onSelectAllAvailable,
 }: CompatibilityStepProps) {
   const { t } = useTranslation();
-  const cardGroups = useMemo(() => targets ? cardGroupsFor(targets) : [], [targets]);
-  const availableCount = targets?.filter((target) => target.availability === "available").length ?? 0;
+  const cardGroups = useMemo(() => targets ? cardGroupsFor(targets, projection) : [], [targets, projection]);
+  const availableCount = cardGroups.reduce((count, group) => count + group.targets.filter((target) => target.availability === "available").length, 0);
 
   return (
     <section aria-labelledby="compatibility-step-title" className="sh-onboarding__card sh-onboarding__compatibility">
@@ -165,6 +207,8 @@ function TargetCard({
                 brand={group.brand}
                 kinds={group.kinds}
                 sharedDirectory={group.sharedDirectory}
+                sharedAgentBrands={group.sharedAgentBrands}
+                sharedAgentBrandKinds={group.sharedAgentBrandKinds}
               />
             </span>
             <code className="sh-onboarding__target-path">

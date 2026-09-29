@@ -1,4 +1,6 @@
 import type { AssemblyItemStatus } from "../../api/bindings";
+import { agentKindLabel, isAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
+import { brandDisplayName } from "../../ui/BrandTag";
 
 export type ProjectAssemblyStatus = "satisfied" | "skipped" | "conflict" | "failed";
 
@@ -39,9 +41,66 @@ export interface ProjectAgentCandidate {
   id: string;
   label: string;
   available: boolean;
+  /** Existing project association IDs represented by this directory card. */
+  memberIds?: string[];
+  /** Represented IDs that are available for a new association selection. */
+  selectableMemberIds?: string[];
+  /** Labels retained only for matching directory preview facts. */
+  matchLabels?: string[];
   agentId?: string;
   brand?: string;
   sharedDirectory?: boolean;
+  kinds?: AgentKindKey[];
+  sharedAgentBrands?: string[];
+  sharedAgentBrandKinds?: Record<string, string[]>;
+}
+
+export function projectCandidateMemberIds(candidate: ProjectAgentCandidate): string[] {
+  return candidate.memberIds?.length ? candidate.memberIds : [candidate.id];
+}
+
+export function projectCandidateSelectableMemberIds(candidate: ProjectAgentCandidate): string[] {
+  return candidate.selectableMemberIds ?? projectCandidateMemberIds(candidate);
+}
+
+export function projectCandidateCheckState(
+  candidate: ProjectAgentCandidate,
+  selectedIds: readonly string[],
+): "checked" | "unchecked" | "mixed" {
+  const memberIds = projectCandidateMemberIds(candidate);
+  const selectedCount = memberIds.filter((id) => selectedIds.includes(id)).length;
+  if (selectedCount === 0) return "unchecked";
+  return selectedCount === memberIds.length ? "checked" : "mixed";
+}
+
+export function toggleProjectCandidateIds(
+  selectedIds: readonly string[],
+  candidate: ProjectAgentCandidate,
+): string[] {
+  const memberIds = projectCandidateMemberIds(candidate);
+  const selectableMemberIds = projectCandidateSelectableMemberIds(candidate);
+  const selected = new Set(selectedIds);
+  const fullySelected = memberIds.every((id) => selected.has(id));
+  if (fullySelected) return selectedIds.filter((id) => !selectableMemberIds.includes(id));
+  return [...new Set([...selectedIds, ...selectableMemberIds])];
+}
+
+export function projectCandidateAccessibleName(
+  candidate: ProjectAgentCandidate,
+  translate: (key: string) => string,
+): string {
+  const kindLabels = (kinds: readonly AgentKindKey[] = []) => kinds.map((kind) => agentKindLabel(kind, translate));
+  if (candidate.sharedDirectory) {
+    const associations = (candidate.sharedAgentBrands ?? []).map((brand) => {
+      const labels = kindLabels(candidate.sharedAgentBrandKinds?.[brand]?.filter(isAgentKindKey));
+      return [brandDisplayName(brand), ...labels].join(" · ");
+    });
+    return [translate("agents.sharedDirectoryTitle"), ...associations].join("；");
+  }
+  const labels = kindLabels(candidate.kinds);
+  return [candidate.brand ? brandDisplayName(candidate.brand) : "Agent", labels.length ? labels.join("/") : undefined]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export interface ProjectAgentTrace {

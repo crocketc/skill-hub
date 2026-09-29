@@ -96,6 +96,38 @@ describe("GraphDetailsPanel path presentation", () => {
     expect(screen.queryByText(/\\\\\?\\/)).not.toBeInTheDocument();
   });
 
+  it("labels a shared directory without exposing its internal node ID when the path is missing", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes[1] = {
+      ...graph.nodes[1],
+      directory_node_id: "directory-internal-42",
+      path: null,
+      role: "shared_directory",
+    };
+    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            relationshipRevision="r1"
+            selectedEdgeId={null}
+            selectedNodeId={"dir"}
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Shared directory" })).toBeVisible();
+    expect(screen.queryByText("directory-internal-42")).not.toBeInTheDocument();
+  });
+
   it("uses the resolved Skill name for selected Skill nodes", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
     const graph = fixture();

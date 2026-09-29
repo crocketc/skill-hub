@@ -1,4 +1,7 @@
 import { executeCommand, queryApplication, type Project } from "../../api/bindings";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
+import { loadAgentDirectoryProjection } from "../agents/nativeApi";
+import { normalizeBrandKey } from "../../ui/BrandTag";
 import type { ProjectAgentCandidate, ProjectFacade, ProjectPhysicalTargetView, ProjectRegistration, ProjectView } from "./api";
 
 function isNotFoundError(reason: unknown): boolean {
@@ -115,16 +118,43 @@ export const nativeProjectFacade: ProjectFacade = {
     return projectView(result.payload);
   },
   async listAgentCandidates(): Promise<ProjectAgentCandidate[]> {
-    const result = await queryApplication({ type: "get_discovery_snapshot", payload: null });
-    if (result.type !== "discovery_snapshot") throw new Error("get_discovery_snapshot returned an unexpected native result.");
-    return result.payload.logical_targets.map((target) => ({
-      id: target.id,
-      label: `${target.profile_id} · ${target.client_id}`,
-      available: target.available,
-      agentId: target.client_id,
-      brand: target.profile_id,
-      sharedDirectory: target.shared_reference,
-    }));
+    return buildAgentDirectoryCardModels(await loadAgentDirectoryProjection())
+      .filter((model) => model.directories.every((directory) => directory.role !== "project"))
+      .map((model) => {
+        const members = model.sharedDirectory
+          ? model.members.filter((member) => !member.kinds?.includes("shared_directory")
+            && normalizeBrandKey(member.brand) !== "agent-skills"
+            && member.client !== "agent-skills")
+          : model.members;
+        const sharedAgentBrands = model.sharedDirectory
+          ? [...new Set(members.flatMap((member) => member.brand ? [member.brand] : []))].sort()
+          : model.sharedAgentBrands;
+        const sharedAgentBrandKinds = model.sharedDirectory
+          ? Object.fromEntries(sharedAgentBrands.map((brand) => [
+            brand,
+            [...new Set(members.flatMap((member) => member.brand === brand ? member.kinds ?? [] : []))].sort(),
+          ]))
+          : model.sharedAgentBrandKinds;
+        const memberIds = members.map((member) => member.id);
+        const selectableMemberIds = members
+          .filter((member) => member.status === "accessible")
+          .map((member) => member.id);
+        return {
+          id: model.id,
+          label: model.brandLabel,
+          available: selectableMemberIds.length > 0,
+          memberIds,
+          selectableMemberIds,
+          matchLabels: members.map((member) => `${member.brand} · ${member.client}`),
+          agentId: model.sharedDirectory ? undefined : model.brand,
+          brand: model.brand,
+          sharedDirectory: model.sharedDirectory,
+          kinds: model.kinds,
+          sharedAgentBrands,
+          sharedAgentBrandKinds,
+        };
+      })
+      .filter((candidate) => candidate.memberIds.length > 0);
   },
   async previewDirectory(path) {
     const result = await queryApplication({

@@ -82,19 +82,140 @@ it("updates the Agent associations without changing the project shared configura
       <ProjectDetailPage facade={detailFacade(project, {
         updateAgentIds,
         listAgentCandidates: async () => [
-          { id: "codex-cli", label: "OpenAI · Codex CLI", available: true },
-          { id: "claude-code", label: "Anthropic · Claude Code", available: true },
+          { id: "codex-cli", label: "OpenAI", available: true, brand: "openai", kinds: ["cli"] },
+          { id: "claude-code", label: "Claude", available: true, brand: "anthropic", kinds: ["cli"] },
         ],
       })} />
       </MemoryRouter>
     </TestProviders>,
   );
 
-  await user.click(await screen.findByRole("checkbox", { name: "Anthropic · Claude Code" }));
+  await user.click(await screen.findByRole("checkbox", { name: "Claude · 终端" }));
   await user.click(screen.getByRole("button", { name: "保存关联" }));
 
   expect(updateAgentIds).toHaveBeenCalledWith("demo-project", ["codex-cli", "claude-code"]);
   expect(screen.getByText("已保存 Agent 关联。")).toBeVisible();
+});
+
+it("shows mixed selection for a grouped directory and saves all represented member IDs", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  let persistedProject = { ...projectFixture(), agentIds: ["codex-cli"] };
+  const updateAgentIds = vi.fn(async (_projectId: string, agentIds: string[]) => {
+    persistedProject = { ...persistedProject, agentIds };
+    return persistedProject;
+  });
+  const facade = detailFacade(persistedProject, {
+    get: async () => persistedProject,
+    updateAgentIds,
+    listAgentCandidates: async () => [{
+      id: "codex-directory",
+      label: "OpenAI",
+      available: true,
+      memberIds: ["codex-cli", "codex-desktop"],
+      brand: "openai",
+      agentId: "openai",
+      kinds: ["cli", "desktop"],
+    }],
+  });
+  const view = render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={facade} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  const group = await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" });
+  expect(group).not.toBeChecked();
+  expect((group as HTMLInputElement).indeterminate).toBe(true);
+  await user.click(group);
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+
+  expect(updateAgentIds).toHaveBeenCalledWith("demo-project", ["codex-cli", "codex-desktop"]);
+  expect(persistedProject.agentIds).toEqual(["codex-cli", "codex-desktop"]);
+  view.unmount();
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={facade} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+  expect(await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" })).toBeChecked();
+});
+
+it("only saves available members when selecting a mixed-availability directory card", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = { ...projectFixture(), agentIds: [] };
+  const updateAgentIds = vi.fn(async (_projectId: string, agentIds: string[]) => ({ ...project, agentIds }));
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={detailFacade(project, {
+          updateAgentIds,
+          listAgentCandidates: async () => [{
+            id: "codex-directory",
+            label: "OpenAI",
+            available: true,
+            memberIds: ["codex-cli", "codex-desktop"],
+            selectableMemberIds: ["codex-cli"],
+            brand: "openai",
+            kinds: ["cli", "desktop"],
+          }],
+        })} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  await user.click(await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" }));
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+
+  expect(updateAgentIds).toHaveBeenCalledWith("demo-project", ["codex-cli"]);
+});
+
+it("keeps unavailable existing members selected while group toggles only change available members", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  let persistedProject = { ...projectFixture(), agentIds: ["codex-desktop"] };
+  const updateAgentIds = vi.fn(async (_projectId: string, agentIds: string[]) => {
+    persistedProject = { ...persistedProject, agentIds };
+    return persistedProject;
+  });
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage facade={detailFacade(persistedProject, {
+          get: async () => persistedProject,
+          updateAgentIds,
+          listAgentCandidates: async () => [{
+            id: "codex-directory",
+            label: "OpenAI",
+            available: true,
+            memberIds: ["codex-cli", "codex-desktop"],
+            selectableMemberIds: ["codex-cli"],
+            brand: "openai",
+            kinds: ["cli", "desktop"],
+          }],
+        })} />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  const group = await screen.findByRole("checkbox", { name: "OpenAI · 终端/桌面端" });
+  expect(group).not.toBeChecked();
+  expect((group as HTMLInputElement).indeterminate).toBe(true);
+  await user.click(group);
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+  expect(updateAgentIds).toHaveBeenNthCalledWith(1, "demo-project", ["codex-desktop", "codex-cli"]);
+  expect(group).toBeChecked();
+
+  await user.click(group);
+  await user.click(screen.getByRole("button", { name: "保存关联" }));
+  expect(updateAgentIds).toHaveBeenNthCalledWith(2, "demo-project", ["codex-desktop"]);
+  expect(group).not.toBeChecked();
+  expect((group as HTMLInputElement).indeterminate).toBe(true);
 });
 
 it.each([

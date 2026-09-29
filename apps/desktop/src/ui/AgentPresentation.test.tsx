@@ -57,6 +57,22 @@ it("uses an honest neutral fallback for unknown brands and types", async () => {
   expect(screen.queryByText("acme.custom")).not.toBeInTheDocument();
 });
 
+it.each([
+  ["pi.coding-agent", "Pi", "终端"],
+  ["hermes.agent", "Hermes", "终端"],
+  ["openclaw.agent", "OpenClaw", "后台服务"],
+  ["google.antigravity.app", "Gemini", "桌面端"],
+  ["google.antigravity.sdk", "Gemini", "后台服务"],
+  ["cline.sdk", "Cline", "后台服务"],
+  ["github-copilot.cloud", "GitHub Copilot", "后台服务"],
+])("maps known client %s to its catalog brand and user-facing kind", async (agentId, brand, kindLabel) => {
+  await renderPresentation({ agentId });
+
+  expect(screen.getByText(brand)).toBeVisible();
+  expect(screen.getByText(kindLabel)).toBeVisible();
+  expect(screen.queryByText(agentId)).not.toBeInTheDocument();
+});
+
 it("keeps the shared directory as a standalone user-facing entity", async () => {
   const { container } = await renderPresentation({
     agentId: "agent-skills.shared-directory",
@@ -71,7 +87,7 @@ it("keeps the shared directory as a standalone user-facing entity", async () => 
 });
 
 it("makes one shared directory the brand and recognised vendors its visible types", async () => {
-  await renderPresentation({
+  const { container } = await renderPresentation({
     agentId: "agent-skills.shared-directory",
     sharedDirectory: true,
     sharedAgentBrands: ["anthropic", "codex"],
@@ -81,6 +97,12 @@ it("makes one shared directory the brand and recognised vendors its visible type
   expect(screen.getByText("Agent共享目录")).toBeVisible();
   expect(screen.getByTitle("Claude · 桌面端")).toBeInTheDocument();
   expect(screen.getByTitle("Codex · 终端")).toBeInTheDocument();
+  expect(container.querySelector(".sh-agent-presentation")).toHaveAttribute(
+    "aria-label",
+    "Agent共享目录；Claude · 桌面端；Codex · 终端",
+  );
+  expect(container.querySelector(".sh-agent-presentation")?.getAttribute("aria-label"))
+    .not.toMatch(/agent-skills|anthropic|codex\./i);
 });
 
 it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {

@@ -3,6 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
 import type {
+  AgentDirectoryProjection,
   DiscoverySnapshot,
   ScanResult,
   SourceSearchHit,
@@ -420,11 +421,59 @@ const agentGroupSnapshot: DiscoverySnapshot = {
   ],
 };
 
+function projectionForSnapshot(snapshot: DiscoverySnapshot): AgentDirectoryProjection {
+  return {
+    directories: snapshot.physical_targets.map((physical) => {
+      const targets = snapshot.logical_targets.filter((target) => target.physical_id === physical.id);
+      const instances = targets.flatMap((target) => {
+        const instance = snapshot.instances.find((candidate) => candidate.client_id === target.client_id);
+        if (!instance || (physical.id === "phys-agents" && instance.profile_id === "agent-skills")) return [];
+        return [{ target, instance }];
+      });
+      const shared = physical.path.toLowerCase().replaceAll("\\", "/").endsWith("/.agents/skills");
+      const builtin = targets.length > 0 && targets.every((target) => target.builtin === true);
+      const available = targets.some((target) => target.available);
+      const status = physical.exists ? (available ? "existing" : "inaccessible") : "missing";
+      return {
+        role: shared ? "shared_directory" : builtin ? "builtin" : "agent_native",
+        identity: { kind: "verified_physical", value: physical.id },
+        path: physical.path,
+        status,
+        exists: physical.exists,
+        readable: physical.readable,
+        writable: physical.writable,
+        available,
+        members: instances.map(({ target, instance }) => ({
+          logical_target_id: target.id,
+          brand: instance.profile_id,
+          client_id: instance.client_id,
+          kind: instance.kind,
+          availability: {
+            status: target.exists ? target.available ? "existing" : "inaccessible" : "missing",
+            exists: target.exists,
+            readable: target.readable,
+            writable: target.writable,
+            available: target.available,
+          },
+          capabilities: {
+            deployment: { copy: true, symlink: true, junction: true },
+            modes: ["managed_copy", "symbolic_link", "directory_junction"],
+            preferred_mode: "symbolic_link",
+          },
+          deployment_status: "not_deployed",
+          managed_deployment_relation_count: 0,
+          managed_deployment_count: 0,
+        })),
+      };
+    }),
+  } as AgentDirectoryProjection;
+}
+
 it("groups discovered agent directories by brand with merged kind badges", async () => {
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(agentGroupSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
       />
     </I18nextProvider>,
   );
@@ -446,7 +495,7 @@ it("shows exactly one generic ownership card for the shared agents directory", a
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(agentGroupSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
       />
     </I18nextProvider>,
   );
@@ -511,7 +560,7 @@ it("renders existing built-in directories as read-only builtin cards with guidan
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => builtinSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        facade={{ getDiscoverySnapshot: async () => builtinSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(builtinSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
       />
     </I18nextProvider>,
   );
@@ -528,7 +577,7 @@ it("pins scan actions and summary in a panel above a collapsible agent inventory
   const { container } = render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(agentGroupSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
         onReviewCandidates={vi.fn()}
       />
     </I18nextProvider>,
@@ -587,7 +636,7 @@ it("keeps very long directory paths wrapped and reachable through a title hint (
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => longSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
+        facade={{ getDiscoverySnapshot: async () => longSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(longSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs }}
       />
     </I18nextProvider>,
   );
@@ -609,7 +658,7 @@ it("excludes a directory only after confirmation via the ignore rule and never d
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(agentGroupSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
       />
     </I18nextProvider>,
   );
@@ -636,7 +685,7 @@ it("keeps the directory visible with a readable error when the exclusion fails",
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <LocalDiscoveryWorkbench
-        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
+        facade={{ getDiscoverySnapshot: async () => agentGroupSnapshot, getAgentDirectoryProjection: async () => projectionForSnapshot(agentGroupSnapshot), scanTargets: async () => scanResult, searchOnlineSources: async () => searchPage([]), ...repoDiscoveryStubs, createIgnoreRule }}
       />
     </I18nextProvider>,
   );

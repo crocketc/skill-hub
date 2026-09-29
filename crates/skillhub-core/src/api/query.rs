@@ -1,4 +1,4 @@
-use crate::agent::{CustomAgent, DiscoverySnapshot};
+use crate::agent::{AgentDirectoryProjection, CustomAgent, DiscoverySnapshot};
 use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
 use crate::catalog::{DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle};
 use crate::check::{
@@ -321,6 +321,9 @@ pub struct DeterministicDuplicateEntry {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetDiscoverySnapshot;
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetAgentDirectoryProjection;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListCustomAgents;
@@ -954,6 +957,8 @@ pub enum AppQuery {
     GetDeploymentBatchPreview(GetDeploymentBatchPreview),
     #[serde(rename = "list_deployment_targets")]
     ListDeploymentTargets(ListDeploymentTargets),
+    #[serde(rename = "get_agent_directory_projection")]
+    GetAgentDirectoryProjection(GetAgentDirectoryProjection),
     #[serde(rename = "list_deployments")]
     ListDeployments(ListDeployments),
     #[serde(rename = "get_deployment_relations")]
@@ -1073,6 +1078,8 @@ pub enum AppQueryResult {
     DeploymentBatchPreview(DeploymentBatchPreview),
     #[serde(rename = "deployment_targets")]
     DeploymentTargets(Vec<DeploymentTarget>),
+    #[serde(rename = "agent_directory_projection")]
+    AgentDirectoryProjection(AgentDirectoryProjection),
     #[serde(rename = "deployments")]
     Deployments(Vec<crate::DeploymentRecord>),
     #[serde(rename = "deployment_relations")]

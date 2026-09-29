@@ -20,6 +20,7 @@ import {
   type DeploymentPreference,
   type DeploymentPreviewBatch,
   type DeploymentTarget,
+  buildDeploymentTargetCards,
   groupPairsByDisposition,
   isLinkMode,
 } from "./api";
@@ -129,6 +130,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     .map((agentId) => ({ project: target, agentId })));
 
   const selected = (targets ?? []).filter((target) => selectedIds.includes(target.id));
+  const targetCards = useMemo(() => buildDeploymentTargetCards(targets ?? []), [targets]);
+  const canSelectLink = selected.length > 0 && selected.every((target) => target.modes.some(isLinkMode));
+  const canSelectCopy = selected.length > 0 && selected.every((target) => target.modes.includes("managed_copy"));
   const groups = useMemo(
     () => preview ? groupPairsByDisposition(preview.pairs) : [],
     [preview],
@@ -387,8 +391,8 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
             value={preference}
           >
             <option value="automatic">{t("deployment.preference.automatic")}</option>
-            <option value="link">{t("deployment.preference.link")}</option>
-            <option value="copy">{t("deployment.preference.copy")}</option>
+            <option disabled={!canSelectLink} value="link">{t("deployment.preference.link")}</option>
+            <option disabled={!canSelectCopy} value="copy">{t("deployment.preference.copy")}</option>
           </select>
         </label>
       </div>
@@ -453,35 +457,53 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         </div>
         {/* 待创建目录属于已识别 Agent，但必须经用户确认后才创建。 */}
         <div className="sh-deployment-targets" data-testid="deployment-target-grid">
-          {targets.filter((target) => target.available || target.directoryStatus === "missing").map((target) => {
+          {targetCards.filter((card) => card.targets.some((target) =>
+            target.available || target.directoryStatus === "missing")).map((card) => {
+            const target = card.target;
             const targetPath = displayPath(target.path);
+            const selectable = card.targets.filter((candidate) => candidate.available);
+            const selectedCount = selectable.filter((candidate) => selectedIds.includes(candidate.id)).length;
+            const checked = selectable.length > 0 && selectedCount === selectable.length;
+            const pendingTargets = card.targets.filter((candidate) =>
+              !candidate.available && candidate.directoryStatus === "missing");
 
-            return target.available ? (
-              <label className="sh-deployment-target-card" data-testid="deployment-target-card" key={target.id}>
-                <input aria-label={target.agentClientId ?? target.label} checked={selectedIds.includes(target.id)} onChange={(event) => {
-                  setPreference("automatic");
-                  setPreview(undefined);
-                  setSelectedIds((current) => event.target.checked ? [...current, target.id] : current.filter((id) => id !== target.id));
-                }} type="checkbox" />
-                <span className="sh-deployment-target-card__body">
-                  <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small title={targetPath}>{targetPath}</small>
-                </span>
-              </label>
-            ) : (
-              <div className="sh-deployment-target-card sh-deployment-target-card--pending" data-testid="deployment-target-card" key={target.id}>
-                <span className="sh-deployment-target-card__body">
-                  <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small title={targetPath}>{t("agents.pathPending")}</small>
-                </span>
-                <ConfirmDialog
+            return (
+              <div
+                className={["sh-deployment-target-card", selectable.length === 0 ? "sh-deployment-target-card--pending" : ""].filter(Boolean).join(" ")}
+                data-testid="deployment-target-card"
+                key={card.id}
+              >
+                <div className="sh-deployment-target-card__body">
+                  {selectable.length > 0 ? <label>
+                    <input
+                      checked={checked}
+                      onChange={(event) => {
+                        setPreference("automatic");
+                        setPreview(undefined);
+                        setSelectedIds((current) => {
+                          const selectableIds = new Set(selectable.map((candidate) => candidate.id));
+                          const retained = current.filter((id) => !selectableIds.has(id));
+                          return event.target.checked ? [...retained, ...selectable.map((candidate) => candidate.id)] : retained;
+                        });
+                      }}
+                      ref={(element) => {
+                        if (element) element.indeterminate = selectedCount > 0 && !checked;
+                      }}
+                      type="checkbox"
+                    />
+                    <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
+                  </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
+                  <small title={targetPath}>{selectable.length > 0 ? targetPath : t("agents.pathPending")}</small>
+                </div>
+                {pendingTargets.map((pendingTarget) => <ConfirmDialog
+                  key={pendingTarget.id}
                   cancelLabel={t("agents.removeDialog.cancel")}
                   confirmLabel={t("deployment.targets.createConfirm")}
                   description={t("deployment.targets.createDescription")}
-                  onConfirm={() => void ensureTargetDirectory(target)}
+                  onConfirm={() => void ensureTargetDirectory(pendingTarget)}
                   title={t("deployment.targets.createTitle")}
-                  trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
-                />
+                  trigger={<Button loading={creatingTargetId === pendingTarget.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
+                />)}
               </div>
             );
           })}

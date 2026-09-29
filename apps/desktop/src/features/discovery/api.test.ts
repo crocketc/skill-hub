@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DiscoverySnapshot, SearchCandidateRecord } from "../../api/bindings";
+import type { AgentDirectoryProjection, DiscoverySnapshot, SearchCandidateRecord } from "../../api/bindings";
 import {
   buildAgentGroups,
   formatObservedAt,
@@ -8,12 +8,50 @@ import {
   mergeCandidateEntries,
   parseRepoInput,
 } from "./api";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
 
 /**
  * P1-04：发现快照的 observed_at 有两种历史形态——ISO 字符串与
  * 后端 now() 产出的 epoch 秒十进制字符串（旧库快照仍如此）。
  * 展示必须是本地化日期时间，解析失败必须给占位而不是露出原始串。
  */
+const projectDirectory = (role: "agent_native" | "shared_directory" | "project" | "builtin", identity: string, path: string, members: AgentDirectoryProjection["directories"][number]["members"]): AgentDirectoryProjection["directories"][number] => ({ role, identity: { kind: "verified_physical", value: identity }, path, status: "existing", exists: true, readable: true, writable: true, available: true, members });
+const projectMember = (id: string, brand: string | null, kind: AgentDirectoryProjection["directories"][number]["members"][number]["kind"], client: string | null) => ({ logical_target_id: id, brand, client_id: client, kind, availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true }, capabilities: { deployment: { copy: true, symlink: true, junction: true }, modes: ["managed_copy" as const, "symbolic_link" as const, "directory_junction" as const], preferred_mode: "symbolic_link" as const }, deployment_status: "not_deployed" as const, managed_deployment_relation_count: 0, managed_deployment_count: 0 });
+const directoryProjection: AgentDirectoryProjection = { directories: [
+  projectDirectory("agent_native", "physical-cursor", "C:\\Users\\me\\.cursor\\skills", [projectMember("editor", "cursor", "desktop", "cursor-editor"), projectMember("cli", "cursor", "cli", "cursor-cli")]),
+  projectDirectory("shared_directory", "physical-shared", "C:/Users/ME/.agents/skills", [projectMember("recognized", "openai", "cli", "codex-cli"), projectMember("unknown", null, null, null)]),
+] };
+
+describe("discovery directory projection parity", () => {
+  it("does not render project directories in Agent discovery groups", () => {
+    const project = projectDirectory("project", "project-skills", "C:/repo/.agents/skills", [
+      projectMember("project-member", "openai", "cli", "codex-cli"),
+    ]);
+    const groups = buildAgentGroups({ directories: [project] });
+    expect(groups.available).toEqual([]);
+    expect(groups.unavailable).toEqual([]);
+  });
+
+  it("retains canonical identities, type sets, recognized shared brands, and availability", () => {
+    const models = buildAgentDirectoryCardModels(directoryProjection);
+    const groups = buildAgentGroups(directoryProjection);
+    const cards = [...groups.available, ...groups.unavailable].flatMap((group) => group.cards);
+    expect(cards.map((card) => card.physicalId).sort()).toEqual(models.map((model) => model.id).sort());
+    expect(cards.find((card) => card.path.includes(".cursor"))?.kinds).toEqual(["desktop", "cli"]);
+    expect(cards.find((card) => card.kinds.includes("shared_directory"))?.sharedBrands).toEqual(["openai"]);
+    expect(cards.every((card) => card.available)).toBe(true);
+  });
+
+  it("keeps candidate identities distinct across Windows separator and case variants", () => {
+    const source = directoryProjection.directories[0]!;
+    const pending = { ...source, identity: { kind: "candidate" as const, value: "candidate-two" }, path: "c:/users/me/.cursor/skills", status: "missing" as const, exists: false, readable: false, writable: false, available: false, members: [{ ...source.members[0]!, logical_target_id: "pending", availability: { status: "missing" as const, exists: false, readable: false, writable: false, available: false } }] };
+    const projection: AgentDirectoryProjection = { directories: [...directoryProjection.directories, pending] };
+    const groups = buildAgentGroups(projection);
+    const cards = [...groups.available, ...groups.unavailable].flatMap((group) => group.cards);
+    expect(cards.filter((card) => card.path.toLowerCase().includes(".cursor"))).toHaveLength(2);
+    expect(cards.map((card) => card.physicalId).sort()).toEqual(buildAgentDirectoryCardModels(projection).map((model) => model.id).sort());
+  });
+});
 describe("formatObservedAt", () => {
   it("formats an ISO timestamp as a localized date time", () => {
     expect(
@@ -210,10 +248,11 @@ describe("buildAgentGroups", () => {
 
   it("carries official client names on cards and shared reference names on the generic card", () => {
     const generic = available.find((group) => group.brand === "agent-skills")!;
+    expect(generic.cards[0].sharedClientNames).toHaveLength(3);
     expect(generic.cards[0].sharedClientNames).toEqual(
       expect.arrayContaining(["ZCode", "ZCode CLI", "Codex CLI"]),
     );
-    // 旧快照没有 display_name 时回退 client_id，不产生 undefined。
+    // 旧快照没有 display_name 时回退品牌展示名，不泄露 client_id。
     const legacy = buildAgentGroups(
       {
         ...agentSnapshot,
@@ -236,7 +275,19 @@ describe("buildAgentGroups", () => {
       },
       { os: "windows" },
     );
-    expect(legacy.available[0].cards[0].names).toEqual(["legacy"]);
+    expect(legacy.available[0].cards[0].names).toEqual(["P"]);
+    expect(legacy.available[0].cards[0].names).not.toContain("legacy");
+  });
+
+  it("uses readable brand names when shared client display names are absent", () => {
+    const unnamed = buildAgentGroups({
+      ...agentSnapshot,
+      instances: agentSnapshot.instances.map(({ display_name: _displayName, ...instance }) => instance),
+    }, { os: "windows" });
+    const shared = unnamed.available.find((group) => group.brand === "agent-skills")?.cards[0];
+    expect(shared?.sharedClientNames).toEqual(["ZCode", "Codex"]);
+    expect(shared?.sharedClientNames).not.toContain("zcode-desktop");
+    expect(shared?.sharedClientNames).not.toContain("codex-cli");
   });
 
   it("merges different product forms sharing one native path into a single card", () => {
@@ -263,8 +314,8 @@ describe("buildAgentGroups", () => {
     expect(card.path).toBe("C:/u/.cursor/skills");
   });
 
-  it("keeps legacy snapshots without shared_reference working as ownership cards", () => {
-    // 向后兼容：旧库快照没有 shared_reference 字段，行为与迁移前一致。
+  it("recognizes legacy shared ownership from the generic directory instance", () => {
+    // 旧库快照没有 shared_reference 字段时，仍由通用共享目录事实识别身份。
     const legacyTargets = agentSnapshot.logical_targets.map(
       ({ shared_reference: _shared, ...rest }) => rest,
     );
@@ -272,8 +323,12 @@ describe("buildAgentGroups", () => {
       { ...agentSnapshot, logical_targets: legacyTargets },
       { os: "windows" },
     );
-    const zcode = legacy.available.find((group) => group.brand === "zcode");
-    expect(zcode!.cards.map((card) => card.physicalId)).toContain("phys-agents");
+    const sharedCards = [...legacy.available, ...legacy.unavailable]
+      .flatMap((group) => group.cards)
+      .filter((card) => card.path === "C:/u/.agents/skills");
+    expect(sharedCards).toHaveLength(1);
+    expect(sharedCards[0]).toMatchObject({ physicalId: "phys-agents", sharedClients: 3 });
+    expect(legacy.available.find((group) => group.brand === "codex")).toBeUndefined();
   });
 
   it("sorts available brands first and sinks wholly unavailable brands to the bottom", () => {
@@ -378,12 +433,7 @@ describe("buildAgentGroups", () => {
   });
 });
 
-/**
- * P1-05：候选确认闭环的纯函数。candidate id 由后端派生（sha256），
- * 前端只能按 provider_source_id（即 hit.source_id）归并；
- * dismissed→confirmed 被原生层拒绝（OperationConflict reason=candidate_dismissed），
- * UI 必须在调用 describeNativeError 之前识别该冲突并给出专属文案。
- */
+
 describe("search candidate helpers", () => {
   const conflictError = {
     code: "operation.conflict",
@@ -515,5 +565,62 @@ describe("formatRelativeScanTime", () => {
 
   it("returns null for unparseable timestamps", () => {
     expect(formatRelativeScanTime("not-a-date", { now })).toBeNull();
+  });
+});
+
+describe("discovery compatibility behavior", () => {
+  it("omits missing builtin cards and preserves availability ordering within brand sections", () => {
+    const member = projectMember("member", "codex", "cli", "codex-cli");
+    const available = projectDirectory("agent_native", "available", "C:/u/codex/skills", [member]);
+    const unavailable = { ...projectDirectory("agent_native", "unavailable", "C:/u/codex/old", [member]), available: false, readable: false, writable: false, members: [{ ...member, logical_target_id: "old", availability: { status: "inaccessible" as const, exists: true, readable: false, writable: false, available: false } }] };
+    const missingBuiltin = { ...projectDirectory("builtin", "builtin-missing", "C:/u/codex/.system", [member]) };
+    missingBuiltin.exists = false;
+    missingBuiltin.available = false;
+    missingBuiltin.readable = false;
+    missingBuiltin.writable = false;
+    missingBuiltin.status = "missing";
+    const groups = buildAgentGroups({ directories: [unavailable, missingBuiltin, available] });
+    expect(groups.available).toHaveLength(1);
+    expect(groups.available[0]?.cards.map((card) => card.available)).toEqual([true, false]);
+    expect(groups.available.flatMap((group) => group.cards).some((card) => card.builtin)).toBe(false);
+  });
+
+  it("excludes the generic shared owner from shared brand names and client counts", () => {
+    const shared = projectDirectory("shared_directory", "shared-production", "C:/u/.agents/skills", [
+      projectMember("owner", "agent-skills", "shared_directory", "agent-skills.shared-directory"),
+      projectMember("owner-alias", "openai", "shared_directory", "agent-skills.shared-directory"),
+      projectMember("recognized", "openai", "cli", "codex-cli"),
+      projectMember("unknown-root", null, null, null),
+    ]);
+    const card = buildAgentGroups({ directories: [shared] }).available[0]?.cards[0];
+    expect(card?.sharedBrands).toEqual(["openai"]);
+    expect(card?.sharedBrandKinds).toEqual({ openai: ["cli"] });
+    expect(card?.sharedClients).toBe(1);
+    expect(card?.sharedClientNames).toEqual(["OpenAI"]);
+    expect(card?.names).toEqual(["OpenAI"]);
+  });
+
+  it("keeps the snapshot-and-OS compatibility signature and filters unsupported clients", () => {
+    const snapshot: DiscoverySnapshot = {
+      generation: "1", observed_at: "1789114968",
+      instances: [
+        { profile_id: "cursor", client_id: "cursor-cli", display_name: "Cursor CLI", kind: "cli", supported_os: ["windows"], client_presence: "Unknown" },
+        { profile_id: "cursor", client_id: "cursor-desktop", display_name: "Cursor Desktop", kind: "desktop", supported_os: ["windows"], client_presence: "Unknown" },
+        { profile_id: "mac-only", client_id: "mac-client", display_name: "Mac Only", kind: "desktop", supported_os: ["macos"], client_presence: "Unknown" },
+      ],
+      logical_targets: [
+        { id: "cli-target", profile_id: "cursor", client_id: "cursor-cli", scope: "global", path: "C:/u/.cursor/skills", marker: "SKILL.md", precedence: "preferred", exists: true, readable: true, writable: true, available: true, physical_id: "cursor-physical" },
+        { id: "desktop-target", profile_id: "cursor", client_id: "cursor-desktop", scope: "global", path: "C:\\u\\.cursor\\skills", marker: "SKILL.md", precedence: "preferred", exists: true, readable: true, writable: true, available: true, physical_id: "cursor-physical" },
+        { id: "mac-target", profile_id: "mac-only", client_id: "mac-client", scope: "global", path: "C:/u/mac/skills", marker: "SKILL.md", precedence: "preferred", exists: true, readable: true, writable: true, available: true, physical_id: "mac-physical" },
+      ],
+      physical_targets: [
+        { id: "cursor-physical", path: "C:/u/.cursor/skills", exists: true, readable: true, writable: true, case_behavior: "insensitive", logical_target_ids: ["cli-target", "desktop-target"] },
+        { id: "mac-physical", path: "C:/u/mac/skills", exists: true, readable: true, writable: true, case_behavior: "sensitive", logical_target_ids: ["mac-target"] },
+      ],
+    };
+    const groups = buildAgentGroups(snapshot, { os: "windows" });
+    expect(groups.available).toHaveLength(1);
+    expect(groups.available[0]).toMatchObject({ brand: "cursor", cards: [{ kinds: ["desktop", "cli"] }] });
+    expect(groups.unavailable).toEqual([]);
   });
 });

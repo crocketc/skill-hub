@@ -197,7 +197,7 @@ fn agent_root_presence_identifies_client_when_skill_directory_is_missing() {
             target.profile_id == "deepseek-harness"
                 && target.client_id == "deepseek-harness.tui"
                 && target.scope == skillhub_core::agent::TargetScope::Global
-                && target.path.ends_with(".dsh/skills")
+                && target.path.replace('\\', "/").ends_with(".dsh/skills")
         })
         .expect("DeepSeek Harness Skill directory candidate");
     assert!(!skill_target.exists);
@@ -257,7 +257,7 @@ fn non_directory_skill_path_is_observed_without_becoming_a_deployment_target() {
             target.profile_id == "deepseek-harness"
                 && target.client_id == "deepseek-harness.tui"
                 && target.scope == skillhub_core::agent::TargetScope::Global
-                && target.path.ends_with(".dsh/skills")
+                && target.path.replace('\\', "/").ends_with(".dsh/skills")
         })
         .expect("DeepSeek Harness Skill path");
     assert_eq!(
