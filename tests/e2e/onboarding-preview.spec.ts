@@ -176,12 +176,14 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
     const legendBox = legend.getBoundingClientRect();
     const fieldsetBox = fieldset.getBoundingClientRect();
     const borderTop = Number.parseFloat(getComputedStyle(fieldset).borderTopWidth);
+    const borderColor = getComputedStyle(fieldset).borderTopColor;
+    const rgbaAlpha = borderColor.match(/^rgba\([^)]*,\s*([\d.]+)\s*\)$/)?.[1];
     return {
       legendBottom: legendBox.bottom,
       fieldsetTop: fieldsetBox.top,
       borderTop,
       borderStyle: getComputedStyle(fieldset).borderTopStyle,
-      borderColor: getComputedStyle(fieldset).borderTopColor,
+      borderAlpha: rgbaAlpha === undefined ? 1 : Number(rgbaAlpha),
     };
   });
 
@@ -199,7 +201,7 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
     expect(measured!.fieldsetTop - measured!.legendBottom, `title clearance at ${width}px`).toBeGreaterThanOrEqual(2);
     expect(measured!.borderTop, `fieldset border width at ${width}px`).toBeGreaterThan(0);
     expect(measured!.borderStyle, `fieldset border style at ${width}px`).not.toBe("none");
-    expect(measured!.borderColor, `fieldset border color at ${width}px`).not.toBe("transparent");
+    expect(measured!.borderAlpha, `fieldset border alpha at ${width}px`).toBeGreaterThan(0);
   }
 
   const layout = await page.evaluate(() => {
