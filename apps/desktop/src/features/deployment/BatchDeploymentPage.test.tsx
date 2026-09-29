@@ -7,6 +7,7 @@ import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { BatchDeploymentPage } from "./BatchDeploymentPage";
 import {
+  buildDeploymentTargetCards,
   deploymentTargetsFixture,
   type BatchDeploymentFacade,
   type BatchDeploymentResult,
@@ -15,6 +16,8 @@ import {
   type DeploymentPreviewBatch,
   type DeploymentTarget,
 } from "./api";
+import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
+import type { AgentDirectoryMemberFact, AgentDirectoryProjection } from "../../api/bindings";
 
 async function renderBatchPage(facade: BatchDeploymentFacade, skillIds: string[], initialEntry = "/deploy") {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -151,6 +154,108 @@ it("renders selectable deployment targets as compact cards with full-path hints 
   expect(cards).toHaveLength(2);
   expect(cards[0]).toHaveClass("sh-deployment-target-card");
   expect(within(cards[0]).getByTitle("C:\\Users\\demo\\.codex\\skills")).toHaveTextContent("C:\\Users\\demo\\.codex\\skills");
+});
+
+it("shows one directory card for same-brand kinds and expands selection to every logical target", async () => {
+  const user = userEvent.setup();
+  const targets: DeploymentTarget[] = [
+    { ...deploymentTargetsFixture()[0], id: "codex-cli", agentClientId: "codex.code", agentProfileId: "codex" },
+    { ...deploymentTargetsFixture()[0], id: "codex-desktop", label: "Codex Desktop", agentClientId: "codex.desktop", agentProfileId: "codex", modes: ["managed_copy"] },
+  ];
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native", identity: { kind: "verified_physical", value: "codex-skills" },
+    path: targets[0].path, status: "existing", exists: true, readable: true, writable: true, available: true,
+    members: [
+      { logical_target_id: targets[0].id, brand: "OpenAI", client_id: "codex.code", kind: "cli", availability: { status: "existing", exists: true, readable: true, writable: true, available: true }, capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["symbolic_link", "managed_copy"], preferred_mode: "symbolic_link" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+      { logical_target_id: targets[1].id, brand: "OpenAI", client_id: "codex.desktop", kind: "desktop", availability: { status: "existing", exists: true, readable: true, writable: true, available: true }, capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" }, deployment_status: "not_deployed", managed_deployment_relation_count: 0, managed_deployment_count: 0 },
+    ],
+  }] };
+  const models = buildAgentDirectoryCardModels(projection);
+  const cards = buildDeploymentTargetCards(targets.map((target) => ({ ...target, cardModel: models[0] })));
+  expect(cards).toHaveLength(1);
+  expect(cards[0].targets.map(({ id }) => id)).toEqual(["codex-cli", "codex-desktop"]);
+
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => targets.map((target) => ({ ...target, cardModel: models[0] })), preview, commit: async () => [] };
+  await renderBatchPage(facade, ["skill-pdf"]);
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getAllByTestId("deployment-target-card")).toHaveLength(1);
+  expect(within(grid).getByText("桌面端/终端")).toBeVisible();
+
+  await user.click(within(grid).getByRole("checkbox"));
+  const mode = screen.getByLabelText("部署方式") as HTMLSelectElement;
+  expect(within(mode).getByRole("option", { name: "链接部署" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenCalledWith([expect.objectContaining({ targetIds: ["codex-cli", "codex-desktop"] })], undefined);
+});
+
+it("keeps distinct physical directories as separate cards", async () => {
+  const first = deploymentTargetsFixture()[0];
+  const projectionModel = buildAgentDirectoryCardModels({ directories: [
+    { role: "agent_native", identity: { kind: "verified_physical", value: "physical-a" }, path: first.path, status: "existing", exists: true, readable: true, writable: true, available: true, members: [] },
+    { role: "agent_native", identity: { kind: "verified_physical", value: "physical-b" }, path: first.path, status: "existing", exists: true, readable: true, writable: true, available: true, members: [] },
+  ] });
+  const targets: DeploymentTarget[] = [
+    { ...first, id: "target-a", physicalId: "physical-a", agentClientId: "claude.code", cardModel: projectionModel[0] },
+    { ...first, id: "target-b", physicalId: "physical-b", agentClientId: "claude.desktop", cardModel: projectionModel[1], modes: ["managed_copy"] },
+  ];
+  const facade: BatchDeploymentFacade = { listTargets: async () => targets, preview: async () => previewBatch([]), commit: async () => [] };
+  await renderBatchPage(facade, ["skill-pdf"]);
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getAllByTestId("deployment-target-card")).toHaveLength(2);
+});
+
+it("keeps a shared directory as one canonical selection card", async () => {
+  const member: AgentDirectoryMemberFact = {
+    logical_target_id: "shared-member",
+    brand: "OpenAI",
+    client_id: "openai.cli",
+    kind: "cli" as const,
+    availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true },
+    capabilities: {
+      deployment: { copy: true, symlink: true, junction: false },
+      modes: ["managed_copy", "symbolic_link"],
+      preferred_mode: "symbolic_link" as const,
+    },
+    deployment_status: "not_deployed" as const,
+    managed_deployment_relation_count: 0,
+    managed_deployment_count: 0,
+  };
+  const model = buildAgentDirectoryCardModels({ directories: [{
+    role: "shared_directory",
+    identity: { kind: "verified_physical", value: "shared-directory-id" },
+    path: "C:/Users/demo/.agents/skills",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [
+      member,
+      { ...member, logical_target_id: "cursor-member", brand: "Cursor", client_id: "cursor.desktop", kind: "desktop" },
+    ],
+  }] })[0];
+  const canonicalTarget: DeploymentTarget = {
+    id: "canonical-shared-target",
+    label: "Agent Skills",
+    path: "C:/Users/demo/.agents/skills",
+    available: true,
+    physicalId: "shared-directory-id",
+    modes: ["managed_copy", "symbolic_link"],
+    agentClientId: "agent-skills.shared",
+    sharedDirectory: true,
+    cardModel: model,
+  };
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [canonicalTarget],
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getAllByTestId("deployment-target-card")).toHaveLength(1);
+  expect(within(grid).getByLabelText("Agent共享目录；Cursor · 桌面端；OpenAI · 终端")).toBeVisible();
 });
 
 it("previews the whole batch in one call and groups pair dispositions for explicit commit (14.5)", async () => {
@@ -713,10 +818,9 @@ it("preselects the first available target of an agent passed via the agent searc
     </I18nextProvider>,
   );
 
-  // 治理清理结果只知道 Agent 身份：按 agentClientId 解析首个可用目标。
-  // 目标卡的可达名即 agentClientId（与展示层的品牌/类型徽标无关）。
-  await waitFor(() => expect(screen.getByLabelText("codex")).toBeChecked());
-  expect(screen.getByLabelText("claude-code")).not.toBeChecked();
+  // 治理清理结果只知道 Agent 身份；界面仍以用户可读品牌/类型呈现目标。
+  await waitFor(() => expect(screen.getAllByRole("checkbox")[0]).toBeChecked());
+  expect(screen.getAllByRole("checkbox")[1]).not.toBeChecked();
 });
 
 describe("BatchDeploymentPage 与统一执行桥", () => {

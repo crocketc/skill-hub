@@ -74,17 +74,19 @@ function mockPreviewResponse(pairs: unknown[] = nativePairs, preserved: string[]
 }
 
 it("lists only registered deployment targets and preserves capability modes", async () => {
-  vi.mocked(queryApplication).mockResolvedValue({
-    type: "deployment_targets",
-    payload: [{
-      id: "codex-global",
-      label: "Codex CLI",
-      path: "C:/Users/demo/.codex/skills",
-      available: true,
-      physical_id: "fs:codex",
-      modes: ["managed_copy"],
-    }],
-  });
+  vi.mocked(queryApplication).mockImplementation(async (query) => query.type === "list_deployment_targets"
+    ? {
+      type: "deployment_targets",
+      payload: [{
+        id: "codex-global",
+        label: "Codex CLI",
+        path: "C:/Users/demo/.codex/skills",
+        available: true,
+        physical_id: "fs:codex",
+        modes: ["managed_copy"],
+      }],
+    } as never
+    : { type: "agent_directory_projection", payload: { directories: [] } } as never);
 
   await expect(createNativeBatchDeploymentFacade().listTargets()).resolves.toEqual([{
     id: "codex-global",
@@ -95,6 +97,46 @@ it("lists only registered deployment targets and preserves capability modes", as
     modes: ["managed_copy"],
   }]);
   expect(queryApplication).toHaveBeenCalledWith({ type: "list_deployment_targets", payload: null });
+  expect(queryApplication).toHaveBeenCalledWith({ type: "get_agent_directory_projection", payload: null });
+});
+
+it("attaches the canonical shared directory card model without changing the write target ID", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (query) => query.type === "list_deployment_targets"
+    ? {
+      type: "deployment_targets",
+      payload: [{
+        id: "agent-skills-target",
+        label: "agent-skills",
+        path: "C:/Users/demo/.agents/skills",
+        available: true,
+        physical_id: "shared-physical",
+        modes: ["managed_copy"],
+        agent_client_id: "agent-skills.shared",
+        shared_directory: true,
+        shared_agent_brands: ["OpenAI", "Cursor"],
+        shared_agent_brand_kinds: { OpenAI: ["cli"], Cursor: ["desktop"] },
+        physical_identity_verified: true,
+      }],
+    } as never
+    : {
+      type: "agent_directory_projection",
+      payload: { directories: [{
+        role: "shared_directory",
+        identity: { kind: "verified_physical", value: "shared-physical" },
+        path: "C:/Users/demo/.agents/skills",
+        status: "existing",
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        members: [],
+      }] },
+    } as never);
+
+  const [target] = await createNativeBatchDeploymentFacade().listTargets();
+  expect(target.id).toBe("agent-skills-target");
+  expect(target.cardModel?.sharedDirectory).toBe(true);
+  expect(target.cardModel?.directories[0].physicalIdentityKey).toBe("shared-physical");
 });
 
 it("previews the whole batch in one native call and maps pair facts", async () => {
