@@ -4655,6 +4655,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     assert_eq!(project_target.label, "Aurora");
     assert_eq!(project_target.path, project.device_path);
     assert!(project_target.available);
+    assert_eq!(project_target.directory_status, None);
     assert!(project_target.modes.contains(&DeploymentMode::ManagedCopy));
 }
 

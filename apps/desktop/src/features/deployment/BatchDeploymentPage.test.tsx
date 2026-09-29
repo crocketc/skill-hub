@@ -129,6 +129,26 @@ it("keeps abnormal targets visible with guidance and without create or select ac
   expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
 });
 
+it("does not label a target without directory status as pending creation", async () => {
+  const target = {
+    ...deploymentTargetsFixture()[0],
+    available: false,
+    directoryStatus: null as unknown as DeploymentTarget["directoryStatus"],
+    physicalIdentityVerified: false,
+  };
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [target],
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  expect(await screen.findByText("路径不可用")).toBeVisible();
+  expect(screen.queryByText("待创建")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
+});
+
 it("creates a pending Skill directory only after explicit confirmation", async () => {
   const user = userEvent.setup();
   const pending = {

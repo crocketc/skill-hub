@@ -497,7 +497,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                   <small title={targetPath}>
                     {selectable.length > 0
                       ? targetPath
-                      : t(directoryStatusLabel(target.directoryStatus ?? "missing") as never)}
+                      : target.directoryStatus
+                        ? t(directoryStatusLabel(target.directoryStatus) as never)
+                        : t("agents.pathUnavailable")}
                   </small>
                   {selectable.length === 0 && target.directoryStatus
                     && target.directoryStatus !== "missing" && target.directoryStatus !== "existing" ? (

@@ -389,16 +389,18 @@ export function DeploymentDialog({
               <div className="sh-workflow-target sh-workflow-target--pending" key={target.id}>
                 <span>
                   <DeploymentTargetPresentation fallback={target.label} target={target} />
-                  <small>{t(directoryStatusLabel(target.directoryStatus ?? "missing") as never)}</small>
+                  <small>{target.directoryStatus
+                    ? t(directoryStatusLabel(target.directoryStatus) as never)
+                    : t("agents.pathUnavailable")}</small>
                 </span>
-                {target.directoryStatus === "missing" || !target.directoryStatus ? <ConfirmDialog
+                {target.directoryStatus === "missing" ? <ConfirmDialog
                   cancelLabel={t("agents.removeDialog.cancel")}
                   confirmLabel={t("deployment.targets.createConfirm")}
                   description={t("deployment.targets.createDescription")}
                   onConfirm={() => void ensureTargetDirectory(target)}
                   title={t("deployment.targets.createTitle")}
                   trigger={<Button loading={creatingTargetId === target.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
-                /> : target.directoryStatus !== "existing" ? (
+                /> : target.directoryStatus && target.directoryStatus !== "existing" ? (
                   <small>{t(directoryStatusSuggestion(target.directoryStatus) as never)}</small>
                 ) : null}
               </div>

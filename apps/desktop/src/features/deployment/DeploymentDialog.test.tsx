@@ -12,6 +12,7 @@ import {
   type DeploymentPairPreview,
   type DeploymentPreviewBatch,
   type DeploymentResult,
+  type DeploymentTarget,
 } from "./api";
 import { DeploymentDialog } from "./DeploymentDialog";
 
@@ -139,6 +140,40 @@ it("shows an empty state after target discovery completes", async () => {
 
   expect(await screen.findByText("未发现可写入的 Agent 目标")).toBeInTheDocument();
   expect(screen.queryByText("正在加载目标")).not.toBeInTheDocument();
+});
+
+it("does not treat a target with no directory status as pending creation", async () => {
+  const target = {
+    ...deploymentTargetsFixture()[0],
+    available: false,
+    directoryStatus: null as unknown as DeploymentTarget["directoryStatus"],
+    physicalIdentityVerified: false,
+  };
+  const facade = facadeFixture([], { listTargets: async () => [target] });
+
+  await renderDialog(facade);
+
+  expect(await screen.findByText("路径不可用")).toBeVisible();
+  expect(screen.queryByText("待创建")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
+});
+
+it("offers creation only when a target is explicitly missing", async () => {
+  const target = {
+    ...deploymentTargetsFixture()[0],
+    available: false,
+    directoryStatus: "missing" as const,
+    physicalIdentityVerified: false,
+  };
+  const facade = facadeFixture([], {
+    listTargets: async () => [target],
+    ensureTargetDirectory: vi.fn(async () => undefined),
+  });
+
+  await renderDialog(facade);
+
+  expect(await screen.findByText("待创建")).toBeVisible();
+  expect(screen.getByRole("button", { name: "创建并加入派发" })).toBeVisible();
 });
 
 it("sends the user preference instead of an implementation mode (14.11)", async () => {
