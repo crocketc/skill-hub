@@ -377,11 +377,21 @@ async function cardMemberDetail(id: string): Promise<AgentView> {
   if (!model || !member) throw new Error(`Agent ${id} was not found.`);
   return {
     ...member,
+    // 合卡详情按整卡呈现（DEV-105）：类型取合并类型、关系覆盖全部成员，
+    // 与列表卡是同一实体；单成员卡（如自定义 Agent）保留成员自身身份。
+    id: model.detailTarget,
+    brand: model.brand,
+    instance: model.members.length > 1 ? model.brandLabel : member.instance,
+    discoveredPaths: model.directories.flatMap((directory) => directory.path ? [directory.path] : []),
+    kinds: model.kinds,
     directoryViews: model.directories,
-    directoryMembers: model.directoryMembers,
+    directoryMembers: model.directoryMembers ?? model.members.flatMap((candidate) => candidate.directoryMembers ?? []),
+    deploymentStatus: model.deploymentStatus,
     supportsSharedDirectory: model.supportsSharedDirectory,
     sharedAgentBrands: model.sharedAgentBrands,
     sharedAgentBrandKinds: model.sharedAgentBrandKinds,
+    builtin: model.builtin || undefined,
+    relations: model.members.flatMap((candidate) => candidate.relations),
   };
 }
 

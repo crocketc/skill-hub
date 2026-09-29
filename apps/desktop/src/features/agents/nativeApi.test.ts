@@ -331,11 +331,58 @@ it("resolves detail views from the unified projection so list and detail agree",
 
   const detail = await nativeAgentFacade.get("openai:codex-desktop:global:skills");
 
-  expect(detail).toMatchObject({ id: "openai:codex-desktop:global:skills", client: "codex-desktop" });
+  // 合卡详情按整卡呈现：与列表同一类型、目录、成员和能力（DEV-105）。
+  expect(detail).toMatchObject({
+    id: "openai:codex-cli:global:skills",
+    brand: "OpenAI",
+    kinds: ["desktop", "cli"],
+  });
   // 详情目录事实与合卡同源：能力是成员交集，不是单个成员的事实。
   expect(detail.directoryViews?.[0]).toMatchObject({
     status: "existing",
     supportedModes: ["managed_copy"],
+  });
+  expect(detail.directoryMembers?.map((member) => member.client_id)).toEqual(["codex-cli", "codex-desktop"]);
+  expect(detail.relations.map((relation) => relation.logicalTargetId)).toEqual([
+    "openai:codex-cli:global:skills",
+    "openai:codex-desktop:global:skills",
+  ]);
+});
+
+it("keeps the persisted custom identity on the detail read path", async () => {
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native",
+    identity: { kind: "candidate", value: "custom::custom-acme" },
+    path: "D:/Agents/acme",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [{
+      logical_target_id: "custom-acme",
+      brand: "Acme",
+      client_id: "acme.cli",
+      kind: "cli",
+      availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+      capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" },
+      deployment_status: "not_deployed",
+      managed_deployment_relation_count: 0,
+      managed_deployment_count: 0,
+    }],
+  }] };
+  query
+    .mockResolvedValueOnce({ type: "agent_directory_projection", payload: projection })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [customAgentPayload] });
+
+  const detail = await nativeAgentFacade.get("custom-acme");
+
+  // 自定义 Agent 详情保留持久化身份与「custom」状态（编辑/移除入口依赖它）。
+  expect(detail).toMatchObject({
+    id: "custom-acme",
+    status: "custom",
+    instance: "Acme Reviewer",
+    discoveredPaths: ["D:/Agents/acme"],
   });
 });
 
