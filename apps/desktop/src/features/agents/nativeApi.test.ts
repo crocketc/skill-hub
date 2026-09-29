@@ -5,6 +5,7 @@ import {
   type DeploymentRecord,
   type DiscoverySnapshot,
   type AgentDirectoryProjection,
+  type CustomAgent,
   type RelationshipOverview,
 } from "../../api/bindings";
 import { nativeAgentFacade } from "./nativeApi";
@@ -179,6 +180,178 @@ it("loads canonical directory card facts and preserves logical member identities
       { id: "openai.codex-desktop", client: "codex-desktop" },
     ],
   });
+});
+
+const customAgentPayload: CustomAgent = {
+  id: "custom-acme",
+  display_name: "Acme Reviewer",
+  directory: { grant_id: "D:/Agents/acme", path: "D:/Agents/acme", operating_system: "windows" },
+  profile: {
+    profile_version: 1,
+    research_date: "2026-09-06",
+    official_references: ["https://acme.example/docs"],
+    brand: "Acme",
+    clients: [{
+      id: "acme.cli",
+      kind: "cli",
+      display_name: "Acme",
+      supported_os: ["windows"],
+      path_candidates: [],
+      skill_marker: "SKILL.md",
+      deployment: { copy: true, symlink: false, junction: false },
+      call_policy: "unknown",
+    }],
+  },
+};
+
+it("builds custom agent cards from verified projection facts without duplicate cards", async () => {
+  // DEV-105：自定义 Agent 目录事实来自统一投影的系统验证（存在性、能力交集、
+  // 部署账目），持久化 id 与「custom」状态标记保留；不再单独拼旧卡片。
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native",
+    identity: { kind: "verified_physical", value: "physical-acme" },
+    path: "D:/Agents/acme",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [{
+      logical_target_id: "custom-acme",
+      brand: "Acme",
+      client_id: "acme.cli",
+      kind: "cli",
+      availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+      capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" },
+      deployment_status: "deployed",
+      managed_deployment_relation_count: 2,
+      managed_deployment_count: 1,
+    }],
+  }] };
+  query
+    .mockResolvedValueOnce({ type: "agent_directory_projection", payload: projection })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [customAgentPayload] });
+
+  const models = await nativeAgentFacade.listCardModels?.();
+
+  expect(models).toHaveLength(1);
+  expect(models?.[0]).toMatchObject({
+    brand: "Acme",
+    kinds: ["cli"],
+    detailTarget: "custom-acme",
+    supportedModes: ["managed_copy"],
+  });
+  expect(models?.[0]?.members[0]).toMatchObject({
+    id: "custom-acme",
+    status: "custom",
+    brand: "Acme",
+    instance: "Acme Reviewer",
+    client: "acme.cli",
+    officialReference: "https://acme.example/docs",
+    discoveredPaths: ["D:/Agents/acme"],
+    managedDeploymentCount: 1,
+    managedDeploymentRelationCount: 2,
+  });
+});
+
+it("keeps custom agents whose directory disappeared visible as pending creation", async () => {
+  // DEV-107 原则同样适用于自定义 Agent：目录缺失不静默消失，也不误报为正常。
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native",
+    identity: { kind: "candidate", value: "custom::custom-acme" },
+    path: "D:/Agents/acme",
+    status: "missing",
+    exists: false,
+    readable: false,
+    writable: false,
+    available: false,
+    members: [{
+      logical_target_id: "custom-acme",
+      brand: "Acme",
+      client_id: "acme.cli",
+      kind: "cli",
+      availability: { status: "missing", exists: false, readable: false, writable: false, available: false },
+      capabilities: { deployment: { copy: true, symlink: false, junction: false }, modes: ["managed_copy"], preferred_mode: "managed_copy" },
+      deployment_status: "not_deployed",
+      managed_deployment_relation_count: 0,
+      managed_deployment_count: 0,
+    }],
+  }] };
+  query
+    .mockResolvedValueOnce({ type: "agent_directory_projection", payload: projection })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [customAgentPayload] });
+
+  const models = await nativeAgentFacade.listCardModels?.();
+
+  expect(models).toHaveLength(1);
+  expect(models?.[0]?.members[0]).toMatchObject({ id: "custom-acme", status: "custom" });
+  expect(models?.[0]?.directories[0]).toMatchObject({ status: "pending_creation", path: null });
+});
+
+it("resolves detail views from the unified projection so list and detail agree", async () => {
+  // DEV-105：合卡点进详情必须看到同一类型、目录与能力；detailTarget（逻辑
+  // 成员 id）必须能直接解析，不再依赖旧 {profile}.{client} id 空间。
+  const projection: AgentDirectoryProjection = { directories: [{
+    role: "agent_native",
+    identity: { kind: "verified_physical", value: "physical-codex" },
+    path: "C:/Users/Test/.codex/skills",
+    status: "existing",
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [
+      {
+        logical_target_id: "openai:codex-cli:global:skills",
+        brand: "OpenAI",
+        client_id: "codex-cli",
+        kind: "cli",
+        availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+        capabilities: { deployment: { copy: true, symlink: true, junction: false }, modes: ["managed_copy", "symbolic_link"], preferred_mode: "symbolic_link" },
+        deployment_status: "not_deployed",
+        managed_deployment_relation_count: 0,
+        managed_deployment_count: 0,
+      },
+      {
+        logical_target_id: "openai:codex-desktop:global:skills",
+        brand: "OpenAI",
+        client_id: "codex-desktop",
+        kind: "desktop",
+        availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+        capabilities: { deployment: { copy: true, symlink: false, junction: true }, modes: ["managed_copy", "directory_junction"], preferred_mode: "managed_copy" },
+        deployment_status: "not_deployed",
+        managed_deployment_relation_count: 0,
+        managed_deployment_count: 0,
+      },
+    ],
+  }] };
+  query
+    .mockResolvedValueOnce({ type: "agent_directory_projection", payload: projection })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] });
+
+  const detail = await nativeAgentFacade.get("openai:codex-desktop:global:skills");
+
+  expect(detail).toMatchObject({ id: "openai:codex-desktop:global:skills", client: "codex-desktop" });
+  // 详情目录事实与合卡同源：能力是成员交集，不是单个成员的事实。
+  expect(detail.directoryViews?.[0]).toMatchObject({
+    status: "existing",
+    supportedModes: ["managed_copy"],
+  });
+});
+
+it("falls back to legacy discovery facts when the projection query is unavailable", async () => {
+  query
+    .mockRejectedValueOnce(new Error("bridge too old"))
+    // 并发的 list_custom_agents 也会消费一次查询结果。
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "discovery_snapshot", payload: snapshotWithTarget({}) })
+    .mockResolvedValueOnce({ type: "custom_agents", payload: [] })
+    .mockResolvedValueOnce({ type: "deployments", payload: [] })
+    .mockResolvedValueOnce({ type: "deployment_targets", payload: [] });
+
+  const detail = await nativeAgentFacade.get("openai.codex-cli");
+
+  expect(detail).toMatchObject({ id: "openai.codex-cli", status: "accessible" });
 });
 
 it("carries the authoritative ClientKind into the view instead of id-string guesses", async () => {

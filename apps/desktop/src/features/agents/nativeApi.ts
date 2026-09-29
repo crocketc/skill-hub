@@ -13,7 +13,7 @@ import {
   type OperatingSystem,
 } from "../../api/bindings";
 import { countManagedDeployments, deploymentTargetIdSpace, type TargetIdPair } from "../deployment/targetProjection";
-import { buildAgentCardModels, buildAgentDirectoryCardModels } from "./agentCardModel";
+import { buildAgentDirectoryCardModels } from "./agentCardModel";
 import type {
   AgentDeploymentMode,
   AgentDirectoryRole,
@@ -316,21 +316,73 @@ async function listAgents(): Promise<AgentView[]> {
 }
 
 /**
- * Agent list card read path. Directory identity and capabilities come from the
- * canonical projection; custom targets keep their established compatibility
- * mapping because they are registered separately from discovered directories.
+ * Agent list card read path. Directory identity, availability and capabilities
+ * all come from the canonical projection; registered custom agents appear as
+ * projection members and only overlay their persisted identity facts here, so
+ * both fact sets share one identity rule set and never produce duplicate cards.
  */
 async function listAgentCardModels() {
-  const [projection, custom, deployments] = await Promise.all([
+  const [projection, custom] = await Promise.all([
     loadAgentDirectoryProjection(),
     queryApplication({ type: "list_custom_agents", payload: null }),
-    queryApplication({ type: "list_deployments", payload: { skill_id: null } }),
   ]);
   if (custom.type !== "custom_agents") throw unexpectedResult("list_custom_agents");
-  if (deployments.type !== "deployments") throw unexpectedResult("list_deployments");
-  const canonicalModels = buildAgentDirectoryCardModels(projection);
-  const customModels = buildAgentCardModels(custom.payload.map((agent) => customAgent(agent, deployments.payload)));
-  return [...canonicalModels, ...customModels];
+  const customById = new Map(custom.payload.map((agent) => [agent.id, agent]));
+  return buildAgentDirectoryCardModels(projection).map((model) => ({
+    ...model,
+    members: model.members.map((member) => {
+      const registered = customById.get(member.id);
+      return registered ? customMemberOverlay(registered, member) : member;
+    }),
+  }));
+}
+
+/**
+ * DEV-105：自定义 Agent 的目录事实（状态、能力交集、部署账目）由投影系统
+ * 验证产生；这里只把持久化的展示身份（显示名、品牌、官方引用、「custom」
+ * 状态标记）叠加到投影成员上，持久化 id 与 create/update/remove 命令 id
+ * 保持不变。
+ */
+function customMemberOverlay(agent: CustomAgent, member: AgentView): AgentView {
+  const client = agent.profile.clients[0];
+  return {
+    ...member,
+    id: agent.id,
+    brand: agent.profile.brand,
+    client: client?.id ?? "custom",
+    instance: agent.display_name,
+    status: "custom",
+    officialReference: agent.profile.official_references[0] ?? null,
+    discoveredPaths: [agent.directory.path],
+    relations: [{
+      logicalLabel: agent.display_name,
+      logicalTargetId: agent.id,
+      physicalPath: agent.directory.path,
+      physicalTargetId: agent.directory.grant_id,
+    }],
+    kinds: member.kinds?.length ? member.kinds : client ? [client.kind] : undefined,
+  };
+}
+
+/**
+ * DEV-105：详情读路径与列表共用同一套合卡事实——点进详情看到的类型、目录、
+ * 成员和能力与列表卡一致；detailTarget（逻辑成员 id）可直接解析。旧桥接
+ * （无投影查询）或旧 id 空间退回快照读路径。
+ */
+async function cardMemberDetail(id: string): Promise<AgentView> {
+  const models = await listAgentCardModels();
+  const model = models.find((candidate) => candidate.detailTarget === id
+    || candidate.members.some((member) => member.id === id));
+  const member = model?.members.find((candidate) => candidate.id === id) ?? model?.members[0];
+  if (!model || !member) throw new Error(`Agent ${id} was not found.`);
+  return {
+    ...member,
+    directoryViews: model.directories,
+    directoryMembers: model.directoryMembers,
+    supportsSharedDirectory: model.supportsSharedDirectory,
+    sharedAgentBrands: model.sharedAgentBrands,
+    sharedAgentBrandKinds: model.sharedAgentBrandKinds,
+  };
 }
 
 function slugify(value: string): string {
@@ -388,9 +440,14 @@ export const nativeAgentFacade: AgentFacade = {
   list: listAgents,
   listCardModels: listAgentCardModels,
   async get(id) {
-    const agent = (await listAgents()).find((candidate) => candidate.id === id);
-    if (!agent) throw new Error(`Agent ${id} was not found.`);
-    return agent;
+    try {
+      return await cardMemberDetail(id);
+    } catch {
+      // 旧桥接或旧 id 空间：退回快照读路径，行为与统一前保持一致。
+      const agent = (await listAgents()).find((candidate) => candidate.id === id);
+      if (!agent) throw new Error(`Agent ${id} was not found.`);
+      return agent;
+    }
   },
   async getRelationshipOverview(agentClientId) {
     // Task 7：目录矩阵只消费统一关系 DTO；识别能力缺失时由事实本身诚实降级。

@@ -274,16 +274,18 @@ fn join_relative(root: &Path, suffix: &str) -> PathBuf {
         .fold(root.to_path_buf(), |path, segment| path.join(segment))
 }
 
-struct DirectoryObservation {
-    status: DirectoryObservationStatus,
-    exists: bool,
-    readable: bool,
-    writable: bool,
-    physical_id: Option<String>,
-    physical_identity_verified: bool,
+pub struct DirectoryObservation {
+    pub status: DirectoryObservationStatus,
+    pub exists: bool,
+    pub readable: bool,
+    pub writable: bool,
+    pub physical_id: Option<String>,
+    pub physical_identity_verified: bool,
 }
 
-fn observe_directory(path: &Path) -> DirectoryObservation {
+/// 统一目录事实观察（DEV-105）：注册实体（如自定义 Agent）与发现目标
+/// 必须用同一套目录观察规则，状态词汇与物理身份语义保持一致。
+pub fn observe_directory(path: &Path) -> DirectoryObservation {
     let symlink_metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

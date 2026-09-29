@@ -81,6 +81,33 @@ it("shows discovered directory facts without trust or usability status", async (
   expect(screen.getByText("研发中")).toBeVisible();
 });
 
+it("explains abnormal directory states with the same labels as the list cards", async () => {
+  // DEV-105：详情与列表共用统一投影事实后，异常目录状态也必须用同一套
+  // 用户可读标签与处理建议呈现，不能只显示一条裸路径。
+  const agent: AgentView = {
+    ...agentFixture(),
+    status: "inaccessible",
+    discoveredPaths: [],
+    directoryViews: [{
+      path: "C:/Users/demo/.codex/skills",
+      status: "non_directory",
+      role: "agent_native",
+      sharedReference: false,
+      builtin: false,
+      readable: false,
+      writable: false,
+      available: false,
+      physicalIdentityVerified: false,
+      supportedModes: [],
+      deploymentStatus: "unknown",
+    }],
+  };
+  await renderDetailPage(facadeWith(agent));
+
+  expect(await screen.findByText(/路径位置被文件占用/)).toBeVisible();
+  expect(screen.getByText(/选择其他目录，或先移走该文件/)).toBeVisible();
+});
+
 it("states contract boundaries instead of showing fake management actions", async () => {
   await renderDetailPage(facadeWith(agentFixture()));
 

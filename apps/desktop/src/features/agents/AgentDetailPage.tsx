@@ -23,6 +23,7 @@ import {
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { useRelationshipContextCheck } from "../relationships/governance/useRelationshipContextCheck";
 import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFacade } from "./api";
+import { directoryStatusLabel, directoryStatusSuggestion } from "./agentCardModel";
 import { DirectoryMatrix } from "./DirectoryMatrix";
 import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
@@ -171,7 +172,17 @@ export function AgentDetailPage({
                 ? agent.directoryViews
                 : agent.discoveredPaths.map((path) => ({ path, status: "existing" as const }))).map((directory, index) => (
                 <li key={`${directory.path ?? "pending"}-${index}`}>
+                  {/* DEV-105：详情与列表共用统一投影事实，异常目录状态也用
+                      同一套用户可读标签与处理建议呈现。 */}
                   <code>{directory.path ? displayPath(directory.path) : t("agents.pathPending")}</code>
+                  {directory.status !== "existing" ? (
+                    <small className="sh-agent-card__path-guidance">
+                      {directory.status !== "pending_creation" ? `${t(directoryStatusLabel(directory.status) as never)}：` : ""}
+                      {directoryStatusSuggestion(directory.status)
+                        ? t(directoryStatusSuggestion(directory.status) as never)
+                        : ""}
+                    </small>
+                  ) : null}
                 </li>
               ))}
             </ul>

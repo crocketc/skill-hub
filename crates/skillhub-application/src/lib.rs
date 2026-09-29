@@ -6702,6 +6702,73 @@ impl LocalApplicationFacade {
                 fact.members.push(member);
             }
 
+            // DEV-105：自定义 Agent 是注册实体（与项目同类），其目录事实必须
+            // 经系统验证后进入同一投影：同一状态词汇、同一物理身份语义、同一
+            // 能力交集规则；目录缺失时保留事实（候选身份限定在持久化实体上），
+            // 不静默消失。持久化 id 与 create/update/remove 命令 id 不变。
+            for agent in database.custom_agent_repository().list()? {
+                let observation = skillhub_adapters::agent::discovery::observe_directory(
+                    Path::new(&agent.directory.path),
+                );
+                let identity = if observation.physical_identity_verified {
+                    let physical_id = observation
+                        .physical_id
+                        .clone()
+                        .unwrap_or_else(|| agent.directory.grant_id.clone());
+                    AgentDirectoryIdentity::VerifiedPhysical(physical_id)
+                } else {
+                    AgentDirectoryIdentity::Candidate(format!("custom::{}", agent.id))
+                };
+                let profile = &agent.profile;
+                let client = profile.clients.first();
+                // D-9：能力取宿主文件系统与自定义 profile 声明的交集。
+                let declared = client.map(|client| client.deployment.clone());
+                let capabilities = match declared {
+                    Some(declared) => host_capabilities.intersect(&declared),
+                    None => host_capabilities.clone(),
+                };
+                let modes = offered_modes(&capabilities);
+                let (
+                    deployment_status,
+                    managed_deployment_relation_count,
+                    managed_deployment_count,
+                ) = deployment_facts(&agent.id, &agent.directory.grant_id);
+                facts.insert(
+                    format!("custom:{}", agent.id),
+                    AgentDirectoryFact {
+                        role: AgentDirectoryRole::AgentNative,
+                        identity,
+                        path: agent.directory.path.clone(),
+                        status: observation.status,
+                        exists: observation.exists,
+                        readable: observation.readable,
+                        writable: observation.writable,
+                        available: observation.readable,
+                        members: vec![AgentDirectoryMemberFact {
+                            logical_target_id: agent.id.clone(),
+                            brand: Some(profile.brand.clone()),
+                            client_id: client.map(|client| client.id.clone()),
+                            kind: client.map(|client| client.kind.clone()),
+                            availability: AgentDirectoryAvailability {
+                                status: observation.status,
+                                exists: observation.exists,
+                                readable: observation.readable,
+                                writable: observation.writable,
+                                available: observation.readable,
+                            },
+                            capabilities: AgentDirectoryMemberCapabilities {
+                                deployment: capabilities,
+                                preferred_mode: modes.first().cloned(),
+                                modes,
+                            },
+                            deployment_status,
+                            managed_deployment_relation_count,
+                            managed_deployment_count,
+                        }],
+                    },
+                );
+            }
+
             for project in database.project_repository().list()? {
                 let path = Path::new(project.path());
                 let exists = path.is_dir();
