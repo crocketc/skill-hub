@@ -190,6 +190,29 @@ function ControlledCanvas({ initialViewport }: { initialViewport: GraphViewport 
 }
 
 describe("SkillGraphCanvas interaction", () => {
+  it("labels shared directory nodes without exposing IDs and keeps the intermediate topology", async () => {
+    const graph = graphFixture();
+    graph.nodes = [
+      graph.nodes[0]!,
+      node({ node_id: "n-shared-internal", kind: "directory", directory_node_id: "directory-internal-42", role: "shared_directory" }),
+      node({ node_id: "n-agent-codex", kind: "agent", agent_client_id: "openai.codex-cli" }),
+      node({ node_id: "n-agent-claude", kind: "agent", agent_client_id: "claude-code" }),
+    ];
+    graph.edges = [
+      { ...graph.edges[2]!, edge_id: "e-skill-shared", kind: "shared", to_node_id: "n-shared-internal" },
+      { ...graph.edges[2]!, edge_id: "e-shared-codex", kind: "shared", from_node_id: "n-shared-internal", to_node_id: "n-agent-codex", relationship: null, relation_id: null, match_state: null, active: null },
+      { ...graph.edges[2]!, edge_id: "e-shared-claude", kind: "shared", from_node_id: "n-shared-internal", to_node_id: "n-agent-claude", relationship: null, relation_id: null, match_state: null, active: null },
+    ];
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    await renderCanvas({ projection });
+
+    expect(screen.getByRole("button", { name: /Shared directory/ })).toBeVisible();
+    expect(screen.queryByText("directory-internal-42")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /OpenAI.*Terminal/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Claude.*Terminal/ })).toBeVisible();
+    expect(screen.getByTestId("skill-graph-surface").querySelectorAll(".sh-graph-edge__line")).toHaveLength(3);
+  });
+
   it("marks sparse graphs for compact node presentation", async () => {
     await renderCanvas({ projection: sparseProjection() });
 
@@ -277,7 +300,7 @@ describe("SkillGraphCanvas interaction", () => {
 
     onFocusSkill.mockClear();
     onSelectNode.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "dir-central" }));
+    fireEvent.click(screen.getByRole("button", { name: "Directory" }));
     expect(onSelectNode).toHaveBeenCalledWith("n-dir-1");
     expect(onFocusSkill).not.toHaveBeenCalled();
   });

@@ -215,6 +215,38 @@ describe("projectGraph layer boundaries", () => {
     expect(edgeIds.sort()).toEqual(["e1", "e2", "e3", "e4", "e5", "e6"]);
   });
 
+  it("preserves the shared-directory association path without adding direct Skill-to-Agent edges", () => {
+    const graph = baseGraph();
+    graph.nodes = graph.nodes.map((node) => node.node_id === "n-dir-1"
+      ? { ...node, role: "shared_directory" }
+      : node);
+    graph.nodes.push(
+      contextNode({ node_id: "n-agent-codex", kind: "agent", agent_client_id: "openai.codex-cli" }),
+      contextNode({ node_id: "n-agent-claude", kind: "agent", agent_client_id: "claude-code" }),
+    );
+    graph.edges = [
+      ...graph.edges.map((candidate) => candidate.edge_id === "e4" ? { ...candidate, kind: "shared" as const } : candidate),
+      edge({ edge_id: "e-shared-codex", from_node_id: "n-dir-1", to_node_id: "n-agent-codex", kind: "shared", relationship: null }),
+      edge({ edge_id: "e-shared-claude", from_node_id: "n-dir-1", to_node_id: "n-agent-claude", kind: "shared", relationship: null }),
+    ];
+
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    const edgePairs = projection.edges.map(({ edge: projected }) => [projected.from_node_id, projected.to_node_id]);
+
+    expect(edgePairs).toContainEqual(["n-center", "n-dir-1"]);
+    expect(edgePairs).toContainEqual(["n-dir-1", "n-agent-codex"]);
+    expect(edgePairs).toContainEqual(["n-dir-1", "n-agent-claude"]);
+    expect(edgePairs).not.toContainEqual(["n-center", "n-agent-codex"]);
+    expect(edgePairs).not.toContainEqual(["n-center", "n-agent-claude"]);
+    expect(projection.nodes.map(({ node: projected }) => projected.node_id)).toEqual(
+      expect.arrayContaining(["n-dir-1", "n-agent-codex", "n-agent-claude"]),
+    );
+
+    const withoutAgents = projectGraph(graph, NO_FILTERS, { ...ALL_DISPLAY_ON, showAgentsProjects: false });
+    expect(withoutAgents.nodes.some(({ node: projected }) => projected.kind === "agent")).toBe(false);
+    expect(withoutAgents.edges.some(({ edge: projected }) => projected.from_node_id === "n-dir-1")).toBe(false);
+  });
+
   it("keeps every projected node anchored to the center by an edge or by an explicit collapse", () => {
     const graph = baseGraph();
     graph.nodes.push(

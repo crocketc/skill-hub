@@ -70,7 +70,7 @@ function nodeLabel(
     case "agent":
       return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
-      return node.path ? displayPath(node.path) : node.directory_node_id ?? fallback;
+      return node.path ? displayPath(node.path) : fallback;
     case "conflict":
       return node.conflict_id ?? fallback;
     case "source":
@@ -406,7 +406,18 @@ export function SkillGraphCanvas({
             const selected = node.node_id === selectedNodeId;
             const label = node.kind === "collapsed"
               ? t("relationships.graph.collapsedNodeLabel", { count: node.collapsed_count })
-              : nodeLabel(node, node.node_id, resolveSkillName);
+              : nodeLabel(
+                node,
+                node.kind === "directory"
+                  ? node.role === "shared_directory"
+                    ? t("agents.kind.sharedDirectory")
+                    : t("relationships.graph.nodeKind.directory")
+                  : node.node_id,
+                resolveSkillName,
+              );
+            const kindLabel = node.kind === "directory" && node.role === "shared_directory"
+              ? t("agents.kind.sharedDirectory")
+              : t(`relationships.graph.nodeKind.${node.kind}`);
             const handleClick = () => {
               // 拖拽（位移超阈值）不算点击：不触发选中/跳转。
               if (nodeDragRef.current?.moved) {
@@ -444,7 +455,7 @@ export function SkillGraphCanvas({
                 onClick={handleClick}
               >
                 <span aria-hidden="true" className="sh-graph-node__kind">
-                  {t(`relationships.graph.nodeKind.${node.kind}`)}
+                  {kindLabel}
                 </span>
                 {node.kind === "agent" && node.agent_client_id ? (
                   <AgentIdentity agentId={node.agent_client_id} density="compact" />

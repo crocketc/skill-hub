@@ -160,9 +160,9 @@ export function AgentDetailPage({
       <section className="sh-agent-facts" aria-label={t("agents.detail.identity")}>
         <div>
           <dt>{t("agents.detail.brand")}</dt>
-          <dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} /></dd>
+          <dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} kinds={agent.kinds ?? [inferAgentKindKey(agent.client, agent.instance)]} /></dd>
         </div>
-        <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} kinds={agent.kinds ?? [inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
+        <div><dt>{t("agents.detail.client")}</dt><dd><AgentPresentation agentId={agent.client} brand={agent.brand} instance={agent.instance} kinds={agent.kinds ?? [inferAgentKindKey(agent.client, agent.instance)]} /></dd></div>
         <div>
           <dt>{t("agents.pathLabel")}</dt>
           <dd>

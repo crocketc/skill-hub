@@ -165,6 +165,10 @@ it("presents the brand as a branded tag in the header and identity facts", async
   expect(facts.querySelector(".sh-brand-tag")).toHaveClass(
     "sh-brand-tag--openai",
   );
+  const identityPresentations = facts.querySelectorAll<HTMLElement>(".sh-agent-presentation");
+  expect(identityPresentations).toHaveLength(2);
+  expect([...identityPresentations].map((presentation) => presentation.getAttribute("aria-label")))
+    .toEqual(["OpenAI · 终端", "OpenAI · 终端"]);
 });
 
 it("renders two logical clients connected to one physical directory", async () => {
