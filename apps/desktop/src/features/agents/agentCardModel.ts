@@ -1,4 +1,5 @@
 import { normalizeBrandKey } from "../../ui/BrandTag";
+import { mergeImportCompatibility } from "./importCompatibility";
 import { normalizeAgentKinds, type AgentKindKey } from "../../ui/AgentPresentation";
 import type {
   AgentDirectoryFact,
@@ -88,6 +89,8 @@ function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryVi
   const verified = directory.identity.kind === "verified_physical";
   const candidate = directory.identity.kind === "candidate";
   return {
+    importCompatibility: directory.members.every((member) => member.capabilities.compatibility)
+      ? mergeImportCompatibility(directory.members.map((member) => member.capabilities.compatibility!)) : undefined,
     path: directory.exists || directory.status !== "missing" ? directory.path : null,
     status: projectedStatus(directory.status),
     role: directory.role,
@@ -269,6 +272,8 @@ function mergeDirectories(target: AgentDirectoryView[], incoming: AgentDirectory
       continue;
     }
     existing.supportedModes = existing.supportedModes.filter((mode) => directory.supportedModes.includes(mode));
+    existing.importCompatibility = existing.importCompatibility && directory.importCompatibility
+      ? mergeImportCompatibility([existing.importCompatibility, directory.importCompatibility]) : undefined;
     existing.preferredMode ??= directory.preferredMode;
     if (existing.status !== "existing" && directory.status === "existing") existing.status = directory.status;
     existing.available ||= directory.available;

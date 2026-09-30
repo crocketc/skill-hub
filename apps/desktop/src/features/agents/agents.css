@@ -344,3 +344,24 @@
 .sh-agent-directory-card__relations p {
   margin: 0;
 }
+.sh-compatibility-feedback {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-block: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.sh-compatibility-feedback label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-compatibility-feedback textarea {
+  width: 100%;
+  min-height: 4rem;
+}

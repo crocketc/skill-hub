@@ -35,10 +35,8 @@
       "deployment": {
         "copy": true,
         "symlink": true,
-        "junction": false,
-        "limitations": [
-          "junction_support_unconfirmed"
-        ]
+        "junction": true,
+        "limitations": []
       },
       "call_policy": "unknown"
     }

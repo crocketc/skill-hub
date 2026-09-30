@@ -1,6 +1,7 @@
 import { executeCommand, queryApplication } from "../../api/bindings";
 import { pendingDestination, pendingKinds, canSnoozePendingItem } from "./workspace";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
+import { recordAgentCompatibility } from "../agents/nativeApi";
 
 const SAVED_VIEW_KEY = "pending.view.kind";
 const SAVED_VIEW_KINDS = ["all", ...pendingKinds];
@@ -60,10 +61,16 @@ async function resolveRecoverableOperation(operationId: string): Promise<void> {
 }
 
 export const nativePendingFacade: PendingFacade = {
+  recordCompatibility: recordAgentCompatibility,
   async workspace() {
     const result = await queryApplication({ type: "get_pending_workspace" });
     if (result.type !== "pending_workspace") throw new Error("Unexpected pending workspace result.");
+    const projection = result.payload.items.some((work) => work.kind === "agent_compatibility")
+      ? await queryApplication({ type: "get_agent_directory_projection", payload: null }) : undefined;
+    const members = projection?.type === "agent_directory_projection"
+      ? projection.payload.directories.flatMap((directory) => directory.members) : [];
     const items = result.payload.items.map((work): PendingItem => {
+      const member = work.kind === "agent_compatibility" ? members.find((candidate) => candidate.logical_target_id === work.subject) : undefined;
       const item: PendingItem = {
         id: work.id, subject: work.subject, kind: work.kind, code: work.kind,
         message: work.message_code, displayName: work.display_name,
@@ -72,6 +79,8 @@ export const nativePendingFacade: PendingFacade = {
         checkKind: work.check_kind ?? undefined, path: work.path ?? undefined,
         dueDate: work.due_date, risk: work.risk,
         sourceRoots: work.source_roots, canConfirm: work.can_confirm,
+        agentBrand: member?.brand ?? undefined,
+        agentKinds: member?.kind ? [member.kind] : undefined,
       };
       return { ...item, href: pendingDestination(item) };
     });

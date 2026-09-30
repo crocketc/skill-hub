@@ -27,6 +27,7 @@ export type AgentDeploymentMode = "managed_copy" | "symbolic_link" | "directory_
 export type AgentDeploymentStatus = "deployed" | "partially_deployed" | "not_deployed" | "unknown";
 
 export interface AgentDirectoryView {
+  importCompatibility?: import("../../api/bindings").ImportCompatibility;
   path: string | null;
   status: AgentDirectoryStatus;
   role: AgentDirectoryRole;
@@ -100,6 +101,7 @@ export interface CustomAgentFormValues {
 }
 
 export interface AgentFacade {
+  recordCompatibility?(request: import("../../api/bindings").RecordAgentCompatibility): Promise<void>;
   list(): Promise<AgentView[]>;
   /** Canonical directory-card read path; optional for older preview/test facades. */
   listCardModels?(): Promise<AgentCardModel[]>;

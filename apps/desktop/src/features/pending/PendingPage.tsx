@@ -17,6 +17,8 @@ import { Select } from "../../ui/Select";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { type HandledEntry, type PendingFacade, type PendingItem, type PendingKind, type PendingRisk, unavailablePendingFacade } from "./api";
 import "./pending.css";
+import { CompatibilityFeedback } from "../agents/CompatibilityFeedback";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { pendingKinds, actionableCount, canSnoozePendingItem } from "./workspace";
 import { usePendingItems } from "./usePendingItems";
 
@@ -252,7 +254,8 @@ export function PendingPage({
               />
               <div className="sh-pending-item__main">
                 <div className="sh-pending-item__identity">
-                  <strong className="sh-pending-item__subject">{name}</strong>
+                  {item.kind === "agent_compatibility" ? <AgentPresentation brand={item.agentBrand ?? item.displayName ?? undefined} kinds={item.agentKinds} />
+                    : <strong className="sh-pending-item__subject">{name}</strong>}
                   {item.risk ? (
                     <span className={`sh-pending-item__risk sh-pending-item__risk--${item.risk}`}>
                       <Icon aria-hidden="true" name={RISK_ICONS[item.risk]} />
@@ -263,6 +266,10 @@ export function PendingPage({
                 <p className="sh-pending-item__message">{t(item.message, { defaultValue: t(`pending.kinds.${item.kind}`) })}</p>
                 <small>{t(`pending.kinds.${item.kind}`)}{item.recommended ? ` · ${t("pending.recommended")}` : ""}</small>
                 {item.path ? <p className="sh-pending-item__path">{displayPath(item.path)}</p> : null}
+                {item.kind === "agent_compatibility" && facade.recordCompatibility
+                  && (item.checkKind === "managed_copy" || item.checkKind === "symbolic_link" || item.checkKind === "directory_junction")
+                  ? <CompatibilityFeedback targetId={item.subject} mode={item.checkKind} save={facade.recordCompatibility}
+                    onSaved={() => { reload(); reloadHandled(); }} /> : null}
                 <div className="sh-pending-item__facts">
                   {item.kind === "trial_due" && item.dueDate ? (
                     <small className="sh-pending-item__fact">

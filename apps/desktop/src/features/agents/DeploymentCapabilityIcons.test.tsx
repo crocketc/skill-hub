@@ -22,6 +22,14 @@ const directory: AgentDirectoryView = {
 };
 
 describe("DeploymentCapabilityIcons", () => {
+  it("shows Agent compatibility independently of host modes and marks unknown yellow", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    render(<DeploymentCapabilityIcons directory={{ ...directory, supportedModes: [],
+      importCompatibility: { copy: "unverified", symlink: "supported", junction: "unverified" } }}
+      t={(key) => String(i18n.t(key as never))} />);
+    expect(screen.getByLabelText("复制导入兼容性待验证")).toHaveClass("is-unverified");
+    expect(screen.getByLabelText("支持链接导入")).toHaveClass("is-supported");
+  });
   it("shows copy and combined link capability with the agreed import labels", async () => {
     const i18n = await createSkillHubI18n(["zh-CN"]);
     render(

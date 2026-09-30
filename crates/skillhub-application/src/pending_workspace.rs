@@ -293,6 +293,34 @@ impl LocalApplicationFacade {
                 .unavailable_sources
                 .push("governance_followups".into()),
         }
+        // Derive verification work from live directory facts, not notifications.
+        match self.get_agent_directory_projection() {
+            Ok(AppQueryResult::AgentDirectoryProjection(projection)) => {
+                let mut seen = std::collections::BTreeSet::new();
+                let catalog = skillhub_core::ProfileCatalog::builtin();
+                for directory in projection.directories {
+                    if directory.role == skillhub_core::agent::AgentDirectoryRole::Builtin || !directory.exists || !directory.readable { continue; }
+                    for member in directory.members {
+                        let Some(compatibility) = member.capabilities.compatibility else { continue; };
+                        for mode in [skillhub_core::DeploymentMode::ManagedCopy, skillhub_core::DeploymentMode::SymbolicLink, skillhub_core::DeploymentMode::DirectoryJunction] {
+                            if mode == skillhub_core::DeploymentMode::DirectoryJunction && !cfg!(windows) { continue; }
+                            if compatibility.status(mode) != skillhub_core::agent::compatibility::CompatibilityStatus::Unverified { continue; }
+                            let mode_key = serde_json::to_value(mode).unwrap().as_str().unwrap().to_owned();
+                            if !seen.insert((member.logical_target_id.clone(), mode_key.clone())) { continue; }
+                            let mut item = work(WorkKind::AgentCompatibility, member.logical_target_id.clone(), &mode_key);
+                            item.path = Some(directory.path.clone());
+                            item.check_kind = Some(mode_key);
+                            item.display_name = member.client_id.as_deref().and_then(|id| catalog.profiles.iter().flat_map(|p| &p.clients).find(|c| c.id == id)).map(|c| c.display_name.clone())
+                                .or_else(|| member.brand.clone());
+                            item.can_defer = true;
+                            item.can_ignore = false;
+                            result.items.push(item);
+                        }
+                    }
+                }
+            }
+            _ => result.unavailable_sources.push("agent_compatibility".into()),
+        }
         match self.ignore_service.list().await {
             Ok(rules) => {
                 let today = format!(

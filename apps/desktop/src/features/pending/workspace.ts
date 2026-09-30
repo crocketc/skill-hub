@@ -1,12 +1,13 @@
 import type { PendingItem, PendingKind } from "./api";
 
-export const pendingKinds: PendingKind[] = ["recovery", "conflict", "governance", "governance_followup", "security_finding", "basic_check", "trial_due", "import_skills", "ai_setup", "backup_setup", "source_update"];
+export const pendingKinds: PendingKind[] = ["recovery", "conflict", "governance", "governance_followup", "security_finding", "basic_check", "trial_due", "import_skills", "ai_setup", "backup_setup", "source_update", "agent_compatibility"];
 export const actionableCount = (items: PendingItem[]) => items.filter((item) => !item.recommended).length;
 export const canSnoozePendingItem = (item: PendingItem) => item.canSnooze !== false && ["trial_due", "import_skills", "ai_setup", "backup_setup", "source_update"].includes(item.kind);
 
 export function pendingDestination(item: PendingItem): string {
   const subject = encodeURIComponent(item.subject ?? "");
   switch (item.kind) {
+    case "agent_compatibility": return `/agents/${subject}`;
     case "security_finding": case "basic_check": {
       const params = new URLSearchParams();
       if (item.versionId) params.set("version", item.versionId);

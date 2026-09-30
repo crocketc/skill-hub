@@ -1,4 +1,5 @@
 pub mod custom;
+pub mod compatibility;
 pub mod discovery;
 pub mod profile;
 pub mod target;

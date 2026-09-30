@@ -92,7 +92,12 @@ function longList(count: number): PendingItem[] {
 export function PendingPreview() {
   const facade = useMemo<PendingFacade>(() => {
     const configuredCount = previewNumber(0);
-    const items = previewFlag("empty")
+    const items: PendingItem[] = previewFlag("compatibility") ? [{
+      id: "work:agent_compatibility:preview-agent:directory_junction", subject: "preview-agent",
+      kind: "agent_compatibility", code: "agent_compatibility", message: "pending.reasons.agent_compatibility",
+      displayName: "Codex Desktop", agentBrand: "OpenAI", agentKinds: ["desktop"],
+      checkKind: "directory_junction", path: "C:/Users/demo/.codex/skills", canSnooze: false,
+    }] : previewFlag("empty")
       ? []
       : configuredCount === 0
         ? [...BASE_ITEMS]
@@ -105,6 +110,13 @@ export function PendingPreview() {
     const fail = () => Promise.reject(new Error("library.locked: write permission denied by preview"));
     return {
       list: async () => items,
+      recordCompatibility: async (request) => {
+        if (failing) return fail();
+        if (request.status !== "unverified") {
+          const index = items.findIndex((item) => item.subject === request.target_id && item.checkKind === request.mode);
+          if (index >= 0) items.splice(index, 1);
+        }
+      },
       resolve: async () => undefined,
       recheck: failing ? fail : async () => undefined,
       convert: failing ? fail : async () => undefined,

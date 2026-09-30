@@ -2,6 +2,7 @@
 
 mod external_link;
 mod pending_workspace;
+mod agent_compatibility;
 pub mod library_runtime;
 mod relationship_governance_batch;
 mod relationship_governance_service;
@@ -5765,6 +5766,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::DismissPendingWork(request) => return self.dismiss_pending_work(request).await,
             AppCommand::ConfirmPendingWork(request) => return self.confirm_pending_work(request).await,
+            AppCommand::RecordAgentCompatibility(request) => return self.record_agent_compatibility(request),
             AppCommand::RemoveIgnoreRule(request) => {
                 return self.remove_ignore_rule(request.rule_id).await;
             }
@@ -6655,7 +6657,7 @@ impl LocalApplicationFacade {
                     format!("role:{role:?}:{identity_key}")
                 };
                 let capabilities =
-                    effective_target_capabilities(&target.client_id, &host_capabilities);
+                    effective_target_capabilities(database, target, &host_capabilities);
                 let modes = offered_modes(&capabilities);
                 let (
                     deployment_status,
@@ -6681,6 +6683,7 @@ impl LocalApplicationFacade {
                         available: target.available && !identity_changed,
                     },
                     capabilities: AgentDirectoryMemberCapabilities {
+                        compatibility: Some(agent_compatibility::target_compatibility(database, target)),
                         deployment: capabilities,
                         preferred_mode: modes.first().cloned(),
                         modes,
@@ -6715,7 +6718,7 @@ impl LocalApplicationFacade {
             // 2026-09-30 裁决：观察/基线比对/能力交集由应用层统一产生（与
             // 目标清单、计划索引同源），身份基线不匹配即呈现 IdentityChanged。
             for agent in database.custom_agent_repository().list()? {
-                let facts_of = custom_agent_directory_facts(&agent, &host_capabilities);
+                let facts_of = custom_agent_directory_facts(database, &agent, &host_capabilities);
                 let observation = &facts_of.observation;
                 let status = if facts_of.identity_changed {
                     DirectoryObservationStatus::IdentityChanged
@@ -6765,6 +6768,7 @@ impl LocalApplicationFacade {
                                 available,
                             },
                             capabilities: AgentDirectoryMemberCapabilities {
+                                compatibility: Some(facts_of.compatibility),
                                 deployment: facts_of.capabilities,
                                 preferred_mode: facts_of.modes.first().cloned(),
                                 modes: facts_of.modes,
@@ -6822,6 +6826,7 @@ impl LocalApplicationFacade {
                                 available: exists,
                             },
                             capabilities: AgentDirectoryMemberCapabilities {
+                                compatibility: None,
                                 deployment: host_capabilities.clone(),
                                 preferred_mode: modes.first().cloned(),
                                 modes,
@@ -6941,7 +6946,8 @@ impl LocalApplicationFacade {
                                     .copied()
                                     .unwrap_or(target.status);
                                 let modes = offered_modes(&effective_target_capabilities(
-                                    &target.client_id,
+                                    database,
+                                    &target,
                                     &host_capabilities,
                                 ));
                                 let preferred_mode = modes.first().cloned();
@@ -6993,7 +6999,7 @@ impl LocalApplicationFacade {
                         let shared_capabilities = physical_targets
                             .iter()
                             .map(|target| {
-                                effective_target_capabilities(&target.client_id, &host_capabilities)
+                                effective_target_capabilities(database, target, &host_capabilities)
                             })
                             .reduce(|left, right| left.intersect(&right))
                             .unwrap_or_else(|| host_capabilities.clone());
@@ -7047,7 +7053,7 @@ impl LocalApplicationFacade {
             // 与声明的能力交集；标签用品牌名，前端经卡片模型联合呈现。
             let custom_agents = database.custom_agent_repository().list()?;
             for agent in custom_agents {
-                let facts_of = custom_agent_directory_facts(&agent, &host_capabilities);
+                let facts_of = custom_agent_directory_facts(database, &agent, &host_capabilities);
                 let status = if facts_of.identity_changed {
                     DirectoryObservationStatus::IdentityChanged
                 } else {
@@ -11416,18 +11422,19 @@ fn restore_version_pointer(
     }
 }
 
-/// D-9：一个部署方式必须同时被宿主文件系统与 Agent profile 声明允许。
-/// 未收录的客户端保持宿主能力（fail-open），已有 profile 的客户端以
-/// profile 为准（例如 Claude Code 声明 junction 未确认，即使宿主能建也
-/// 不自动选择）。
+/// A mode must satisfy the host and Agent compatibility declaration/local
+/// verification. Unknown clients fail closed until explicitly verified.
 fn effective_target_capabilities(
-    client_id: &str,
+    database: &skillhub_storage::Database,
+    target: &skillhub_core::LogicalTarget,
     host: &skillhub_core::DeploymentCapability,
 ) -> skillhub_core::DeploymentCapability {
-    skillhub_core::ProfileCatalog::builtin()
-        .deployment_capability_for_client(client_id)
-        .map(|declared| host.intersect(declared))
-        .unwrap_or_else(|| host.clone())
+    let compatibility = agent_compatibility::target_compatibility(database, target);
+    let mut allowed = compatibility.deployment();
+    if let Some(declared) = skillhub_core::ProfileCatalog::builtin().deployment_capability_for_client(&target.client_id) {
+        allowed.limitations.extend(declared.limitations.clone());
+    }
+    host.intersect(&allowed)
 }
 
 /// 计划界面可提供的部署方式（顺序即规划器偏好：链接 → 联接 → 复制）。
@@ -11897,6 +11904,7 @@ fn paths_resolve_to_same_directory(left: &str, right: &str) -> bool {
 /// D-9 能力交集）由应用层统一产生，投影、目标清单与计划索引共用同一份，
 /// 避免三处口径漂移。
 struct CustomAgentDirectoryFacts {
+    compatibility: skillhub_core::agent::compatibility::ImportCompatibility,
     observation: skillhub_adapters::agent::discovery::DirectoryObservation,
     capabilities: skillhub_core::DeploymentCapability,
     modes: Vec<skillhub_core::DeploymentMode>,
@@ -11904,6 +11912,7 @@ struct CustomAgentDirectoryFacts {
 }
 
 fn custom_agent_directory_facts(
+    database: &skillhub_storage::Database,
     agent: &skillhub_core::CustomAgent,
     host_capabilities: &skillhub_core::DeploymentCapability,
 ) -> CustomAgentDirectoryFacts {
@@ -11913,17 +11922,13 @@ fn custom_agent_directory_facts(
         .directory_physical_id
         .as_deref()
         .is_some_and(|baseline| observation.physical_id.as_deref() != Some(baseline));
-    let declared = agent
-        .profile
-        .clients
-        .first()
-        .map(|client| client.deployment.clone());
-    let capabilities = match declared {
-        Some(declared) => host_capabilities.intersect(&declared),
-        None => host_capabilities.clone(),
-    };
+    // Registering a custom path does not prove that an Agent can load Skills.
+    let compatibility = agent_compatibility::compatibility_for(database, &agent.id, None,
+        &agent_compatibility::custom_identity(agent, observation.physical_id.as_deref().unwrap_or_default()));
+    let capabilities = host_capabilities.intersect(&compatibility.deployment());
     let modes = offered_modes(&capabilities);
     CustomAgentDirectoryFacts {
+        compatibility,
         observation,
         capabilities,
         modes,
@@ -11961,7 +11966,7 @@ fn registered_target_index(
             roots.push(root);
             facts.push(TargetFact::from_logical_target(
                 &target,
-                effective_target_capabilities(&target.client_id, host_capabilities),
+                effective_target_capabilities(database, &target, host_capabilities),
             ));
         }
     }
@@ -11980,7 +11985,7 @@ fn registered_target_index(
     // 变化（基线不匹配）与目录不可读的目标不进索引——清单里它们以不可选
     // 状态呈现，按逻辑 id 直接请求计划同样被拒。
     for agent in database.custom_agent_repository().list()? {
-        let facts_of = custom_agent_directory_facts(&agent, host_capabilities);
+        let facts_of = custom_agent_directory_facts(database, &agent, host_capabilities);
         if !facts_of.observation.readable || facts_of.identity_changed {
             continue;
         }

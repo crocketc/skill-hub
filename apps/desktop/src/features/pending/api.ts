@@ -1,6 +1,8 @@
-export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update";
+export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
 export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
+  agentBrand?: string;
+  agentKinds?: import("../../ui/AgentPresentation").AgentKindKey[];
   id: string;
   subject: string;
   kind: PendingKind;
@@ -36,6 +38,7 @@ export type HandledEntry = {
   confirmed?: boolean;
 };
 export interface PendingFacade {
+  recordCompatibility?(request: import("../../api/bindings").RecordAgentCompatibility): Promise<void>;
   list(): Promise<PendingItem[]>;
   workspace?(): Promise<{ items: PendingItem[]; unavailableSources: string[] }>;
   confirm?(item: PendingItem, reason: string): Promise<void>;

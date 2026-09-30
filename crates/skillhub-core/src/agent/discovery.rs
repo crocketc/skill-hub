@@ -178,6 +178,9 @@ pub struct AgentDirectoryAvailability {
 /// Deployment facts stay scoped to the logical target that was observed.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct AgentDirectoryMemberCapabilities {
+    #[serde(default)]
+    #[specta(optional)]
+    pub compatibility: Option<super::compatibility::ImportCompatibility>,
     pub deployment: DeploymentCapability,
     pub modes: Vec<DeploymentMode>,
     pub preferred_mode: Option<DeploymentMode>,

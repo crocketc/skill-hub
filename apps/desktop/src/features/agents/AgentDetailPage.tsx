@@ -28,6 +28,7 @@ import { DirectoryMatrix } from "./DirectoryMatrix";
 import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
 import { UsageEvidencePanel } from "./UsageEvidencePanel";
+import { CompatibilityFeedback } from "./CompatibilityFeedback";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
 
@@ -193,6 +194,17 @@ export function AgentDetailPage({
           <dd>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</dd>
         </div>
       </section>
+      {!agent.builtin && facade.recordCompatibility ? <section>
+        <h2>{t("agents.compatibility.title")}</h2>
+        {(agent.directoryMembers ?? []).map((member) => <div key={member.logical_target_id}>
+          <AgentPresentation brand={member.brand ?? undefined} kinds={member.kind ? [member.kind] : undefined} />
+          {(["managed_copy", "symbolic_link", "directory_junction"] as const).map((mode) => <details key={mode}>
+            <summary>{t(`agents.compatibility.methods.${mode}`)}</summary>
+            <CompatibilityFeedback targetId={member.logical_target_id} mode={mode} save={facade.recordCompatibility!}
+              onSaved={() => setRevision((value) => value + 1)} />
+          </details>)}
+        </div>)}
+      </section> : null}
       {relationshipUnavailable ? (
         <DataState message={t("relationshipGovernance.matrix.loadError")} state="unavailable" />
       ) : relationshipOverview && agent ? (

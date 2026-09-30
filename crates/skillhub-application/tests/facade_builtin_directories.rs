@@ -112,7 +112,7 @@ async fn identified_agent_with_missing_skill_directory_is_listed_as_pending_targ
         observed_at: "2026-09-29T00:00:00Z".into(),
         instances: vec![ClientInstance {
             profile_id: "fixture".into(),
-            client_id: "fixture.cli".into(),
+            client_id: "openai.codex-cli".into(),
             kind: ClientKind::Cli,
             display_name: "Fixture".into(),
             supported_os: vec![OperatingSystem::Macos],
@@ -121,7 +121,7 @@ async fn identified_agent_with_missing_skill_directory_is_listed_as_pending_targ
         agent_roots: vec![AgentRootObservation {
             id: "fixture-root".into(),
             profile_id: "fixture".into(),
-            client_id: "fixture.cli".into(),
+            client_id: "openai.codex-cli".into(),
             scope: TargetScope::Global,
             path: root_path,
             status: DirectoryObservationStatus::Existing,
@@ -134,7 +134,7 @@ async fn identified_agent_with_missing_skill_directory_is_listed_as_pending_targ
         logical_targets: vec![LogicalTarget {
             id: "fixture-target".into(),
             profile_id: "fixture".into(),
-            client_id: "fixture.cli".into(),
+            client_id: "openai.codex-cli".into(),
             scope: TargetScope::Global,
             path: skill_path.to_string_lossy().into_owned(),
             agent_root_id: "fixture-root".into(),

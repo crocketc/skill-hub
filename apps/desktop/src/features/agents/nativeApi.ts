@@ -14,6 +14,15 @@ import {
 } from "../../api/bindings";
 import { countManagedDeployments, deploymentTargetIdSpace, type TargetIdPair } from "../deployment/targetProjection";
 import { buildAgentDirectoryCardModels } from "./agentCardModel";
+import { emitPendingFactsChanged } from "../../platform/pendingEvents";
+import { notifyDiscoveryFactsChanged } from "../../platform/discoveryEvents";
+
+export async function recordAgentCompatibility(request: import("../../api/bindings").RecordAgentCompatibility): Promise<void> {
+  const result = await executeCommand({ type: "record_agent_compatibility", payload: request });
+  if (result.type !== "operation_summary") throw unexpectedResult("record_agent_compatibility");
+  emitPendingFactsChanged();
+  notifyDiscoveryFactsChanged();
+}
 import type {
   AgentDeploymentMode,
   AgentDirectoryRole,
@@ -454,6 +463,7 @@ async function saveCustomAgent(command: "create_custom_agent" | "update_custom_a
 }
 
 export const nativeAgentFacade: AgentFacade = {
+  recordCompatibility: recordAgentCompatibility,
   list: listAgents,
   listCardModels: listAgentCardModels,
   async get(id) {
@@ -462,7 +472,7 @@ export const nativeAgentFacade: AgentFacade = {
     } catch {
       // 旧桥接或旧 id 空间：退回快照读路径，行为与统一前保持一致。
       const agent = (await listAgents()).find((candidate) => candidate.id === id);
-      if (!agent) throw new Error(`Agent ${id} was not found.`);
+      if (!agent) throw new Error("Agent was not found.");
       return agent;
     }
   },

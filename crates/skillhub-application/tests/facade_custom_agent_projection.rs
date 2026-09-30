@@ -64,7 +64,7 @@ fn profile(brand: &str, client_id: &str, directory_path: &str) -> AgentProfile {
 /// 建一个带自定义 Agent 的门面。`directory_exists` 控制授权目录是否真实存在。
 /// `library_root` 必须随返回值保活：TempDir 一释放就会删掉整个集中库。
 #[allow(clippy::type_complexity)]
-async fn facade_with_custom_agent(
+async fn facade_with_unverified_custom_agent(
     directory_exists: bool,
 ) -> (
     LocalApplicationFacade,
@@ -164,6 +164,49 @@ async fn facade_with_custom_agent(
     )
 }
 
+async fn facade_with_custom_agent(directory_exists: bool) -> (LocalApplicationFacade, tempfile::TempDir, String, tempfile::TempDir, SkillId, VersionId) {
+    let fixture = facade_with_unverified_custom_agent(directory_exists).await;
+    if directory_exists {
+        fixture.0.execute(AppCommand::RecordAgentCompatibility(skillhub_core::agent::compatibility::RecordAgentCompatibility {
+            target_id: "custom-acme".into(), mode: DeploymentMode::ManagedCopy,
+            status: skillhub_core::agent::compatibility::CompatibilityStatus::Supported,
+            agent_version: "test-1".into(), evidence: "Fixture Agent confirmed copied Skill discovery and loading".into(), agent_reading_checked: true,
+        })).await.expect("confirm fixture copy compatibility");
+    }
+    fixture
+}
+
+#[tokio::test]
+async fn custom_compatibility_pending_closes_only_after_explicit_loading_confirmation() {
+    use skillhub_core::agent::compatibility::{CompatibilityStatus, RecordAgentCompatibility};
+    let (facade, _agent_root, _path, _library, skill_id, version_id) = facade_with_unverified_custom_agent(true).await;
+    let projection = projection_of(&facade).await;
+    let member = &projection.directories[0].members[0];
+    assert_eq!(member.capabilities.compatibility.as_ref().unwrap().copy, CompatibilityStatus::Unverified);
+    assert!(member.capabilities.modes.is_empty());
+    let error = facade.query(AppQuery::GetDeploymentPlan(GetDeploymentPlan { request: DeploymentPlanRequest {
+        skill_id, version_id, runtime_name: "acme-skill".into(), logical_target_ids: vec!["custom-acme".into()], mode_override: Some(DeploymentMode::ManagedCopy),
+    }})).await.expect_err("unverified reading must block production deployment");
+    assert_eq!(error.params.get("reason").and_then(|value| value.as_str()), Some("agent_compatibility_unverified"));
+    let AppQueryResult::PendingWorkspace(pending) = facade.query(AppQuery::GetPendingWorkspace).await.unwrap() else { panic!("pending") };
+    assert!(pending.items.iter().any(|item| item.kind == skillhub_core::pending::WorkKind::AgentCompatibility && item.check_kind.as_deref() == Some("managed_copy")));
+    let mut request = RecordAgentCompatibility { target_id: "custom-acme".into(), mode: DeploymentMode::ManagedCopy,
+        status: CompatibilityStatus::Supported, agent_version: "test-1".into(), evidence: "Created entry only".into(), agent_reading_checked: false };
+    assert!(facade.execute(AppCommand::RecordAgentCompatibility(request.clone())).await.is_err());
+    request.agent_reading_checked = true;
+    request.evidence = "Agent discovered and loaded harmless test Skill".into();
+    facade.execute(AppCommand::RecordAgentCompatibility(request.clone())).await.unwrap();
+    assert_eq!(projection_of(&facade).await.directories[0].members[0].capabilities.modes, vec![DeploymentMode::ManagedCopy]);
+    let AppQueryResult::PendingWorkspace(pending) = facade.query(AppQuery::GetPendingWorkspace).await.unwrap() else { panic!("pending") };
+    assert!(!pending.items.iter().any(|item| item.kind == skillhub_core::pending::WorkKind::AgentCompatibility && item.check_kind.as_deref() == Some("managed_copy")));
+    request.status = CompatibilityStatus::Unsupported;
+    facade.execute(AppCommand::RecordAgentCompatibility(request.clone())).await.unwrap();
+    assert_eq!(projection_of(&facade).await.directories[0].members[0].capabilities.compatibility.as_ref().unwrap().copy, CompatibilityStatus::Unsupported);
+    request.status = CompatibilityStatus::Unverified;
+    facade.execute(AppCommand::RecordAgentCompatibility(request)).await.unwrap();
+    assert!(projection_of(&facade).await.directories[0].members[0].capabilities.modes.is_empty());
+}
+
 async fn projection_of(facade: &LocalApplicationFacade) -> skillhub_core::AgentDirectoryProjection {
     let result = facade
         .query(AppQuery::GetAgentDirectoryProjection(
@@ -191,7 +234,7 @@ async fn custom_agent_directories_enter_the_projection_with_verified_facts() {
                 .any(|member| member.logical_target_id == "custom-acme")
         })
         .expect("custom agent directory must appear in the projection");
-    assert_eq!(fact.role, AgentDirectoryRole::AgentNative);
+    assert_eq!(fact.role, AgentDirectoryRole::AgentUser);
     assert_eq!(fact.path, directory_path);
     assert_eq!(fact.status, DirectoryObservationStatus::Existing);
     assert!(fact.exists && fact.readable);

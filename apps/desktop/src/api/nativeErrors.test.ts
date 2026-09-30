@@ -3,6 +3,13 @@ import { createSkillHubI18n } from "../i18n";
 import { nativeErrorCode, nativeErrorParams, describeNativeError, isStructuredNativeError } from "./nativeErrors";
 
 describe("nativeErrors", () => {
+  it("explains unverified Agent reading separately from filesystem link failure", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const message = describeNativeError({ code: "agent_profile.invalid_capability", params: { reason: "agent_compatibility_unverified" } },
+      (key, options) => String(i18n.t(key as never, options as never)), "agents.errors.unknown");
+    expect(message).toContain("Agent 兼容性尚未验证");
+    expect(message).toContain("不代表系统无法创建链接");
+  });
   it("parses a serialized AppError object from the Tauri IPC rejection", () => {
     const error = {
       code: "operation.conflict",

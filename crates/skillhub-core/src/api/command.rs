@@ -1241,6 +1241,8 @@ pub enum AppCommand {
     DismissPendingWork(crate::pending::DismissPendingWork),
     #[serde(rename = "confirm_pending_work")]
     ConfirmPendingWork(crate::pending::ConfirmPendingWork),
+    #[serde(rename = "record_agent_compatibility")]
+    RecordAgentCompatibility(crate::agent::compatibility::RecordAgentCompatibility),
     #[serde(rename = "remove_ignore_rule")]
     RemoveIgnoreRule(RemoveIgnoreRule),
     #[serde(rename = "run_llm_safety_check")]

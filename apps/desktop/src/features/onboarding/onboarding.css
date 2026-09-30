@@ -354,6 +354,17 @@ html:has(.sh-onboarding) {
   margin-top: 0;
 }
 
+.sh-onboarding__target-card .sh-checkbox-field__text {
+  flex: 1 1 0;
+  height: 100%;
+}
+
+.sh-onboarding__target-card .sh-checkbox-field__label {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
 .sh-onboarding__target-card-content {
   display: grid;
   grid-template-rows: 40px 20px 14px 1fr 22px;
@@ -362,7 +373,7 @@ html:has(.sh-onboarding) {
   gap: var(--space-1);
 }
 
-.sh-onboarding__target-card:not([data-unavailable="true"]) .sh-checkbox-field__description {
+.sh-onboarding__target-card .sh-checkbox-field__description {
   position: absolute;
   width: 1px;
   height: 1px;

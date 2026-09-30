@@ -39,3 +39,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.sh-agent-card__deployment-method.is-unverified {
+  color: var(--ui-warning-foreground);
+}

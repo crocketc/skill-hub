@@ -15,6 +15,7 @@ pub enum WorkKind {
     AiSetup,
     BackupSetup,
     SourceUpdate,
+    AgentCompatibility,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

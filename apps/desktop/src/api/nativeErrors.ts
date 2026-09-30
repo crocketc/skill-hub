@@ -156,7 +156,8 @@ export function keyedMessage(
   }
   if (code === "deployment.security_check_blocked") return "deployment.results.failure.securityBlocked";
   if (code === "target.ownership_unknown") return "deployment.results.failure.ownershipUnknown";
-  if (code === "agent_profile.invalid_capability") return "deployment.results.failure.invalidCapability";
+  if (code === "agent_profile.invalid_capability") return reason === "agent_compatibility_unverified"
+    ? "agents.compatibility.pendingError" : "deployment.results.failure.invalidCapability";
   if (code === "backup.checksum_mismatch") return "errors.backupChecksumMismatch";
   if (code === "import.remote_download_not_wired") return "importWorkflow.errors.remoteNotWired";
   if (code === "import.no_default_action") return "importWorkflow.errors.noDefaultAction";

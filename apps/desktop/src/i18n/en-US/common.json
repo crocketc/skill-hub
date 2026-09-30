@@ -818,10 +818,20 @@
     "sharedDirectoryChip": "Shared-directory ready",
     "sharedDirectoryTitle": "Agent shared directory",
     "sharedBrandOverflow": "{{count}} more brands: {{brands}}",
+    "compatibility": {
+      "pendingError": "Agent compatibility for this import method is unverified. Complete verification in Pending first; this does not mean the system cannot create links.",
+      "saved": "Local verification saved. Unverified items remain pending.",
+      "methods": { "managed_copy": "Copy import", "symbolic_link": "Link import (symbolic link)", "directory_junction": "Link import (Windows directory junction)" },
+      "title": "Import compatibility verification", "mode": "Verify: {{mode}}",
+      "instructions": "Use a harmless test Skill. Verify the copied or linked entry is readable, then check discovery and loading in the Agent. Remove the test entry while preserving the source. Creation failures do not prove incompatibility; choose unverified. This local record applies to the current directory and declaration. Recheck after Agent upgrades.",
+      "version": "Agent version", "result": "Verification result", "evidence": "Steps and observed result",
+      "checked": "Checked discovery and loading in the Agent; for an unsupported result, ruled out creation, permission and path failures",
+      "supported": "Confirmed supported", "unsupported": "Confirmed unsupported", "unverified": "Unverified; keep pending", "save": "Save local verification"
+    },
     "deploymentMethods": {
       "label": "Deployment methods",
-      "copy": { "supported": "Copy import supported", "unsupported": "Copy import unavailable" },
-      "link": { "supported": "Link import supported", "unsupported": "Link import unavailable" },
+      "readonly": "Built-in directory is read-only; importing is disabled", "copy": { "unverified": "Copy import compatibility is unverified", "supported": "Copy import supported", "unsupported": "Copy import unavailable" },
+      "link": { "unverified": "Link import compatibility is unverified", "supported": "Link import supported", "unsupported": "Link import unavailable" },
       "managed_copy": { "supported": "Managed copy supported", "unsupported": "Managed copy unavailable" },
       "symbolic_link": { "supported": "Symbolic link supported", "unsupported": "Symbolic link unavailable" },
       "directory_junction": { "supported": "Directory junction supported", "unsupported": "Directory junction unavailable" }
@@ -2164,7 +2174,7 @@
       "import_skills": "Import your first Skill",
       "ai_setup": "Configure AI (optional)",
       "backup_setup": "Create your first backup",
-      "source_update": "Review source update",
+      "agent_compatibility": "Agent import compatibility verification", "source_update": "Review source update",
       "governance_followup": "Import governance follow-up"
     },
     "actions": {
@@ -2234,7 +2244,7 @@
       "import_skills": "Initialization only discovered files. Open local discovery, choose sources and candidates, then confirm import into the library.",
       "ai_setup": "Configure an available model to use optional AI checks. You can also skip this suggestion.",
       "backup_setup": "Your library has content. Create a backup; this suggestion closes after successful creation and verification.",
-      "source_update": "A newer source version is available. Review the changes before updating.",
+      "agent_compatibility": "Agent import compatibility verification", "source_update": "A newer source version is available. Review the changes before updating.",
       "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate."
     },
     "count": "{{count}} pending tasks",
@@ -3387,7 +3397,7 @@
         "import_skills": "{{count}} · Import your first Skill",
         "ai_setup": "{{count}} · Configure AI (optional)",
         "backup_setup": "{{count}} · Create your first backup",
-        "source_update": "{{count}} · Review source update",
+        "agent_compatibility": "Agent import compatibility verification", "source_update": "{{count}} · Review source update",
         "governance_followup": "{{count}} · Import governance follow-up"
       },
       "none": "No pending items",

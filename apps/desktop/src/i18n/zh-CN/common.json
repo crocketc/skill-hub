@@ -818,10 +818,20 @@
     "sharedDirectoryChip": "支持共享目录",
     "sharedDirectoryTitle": "Agent共享目录",
     "sharedBrandOverflow": "还有 {{count}} 个品牌：{{brands}}",
+    "compatibility": {
+      "pendingError": "此导入方式的 Agent 兼容性尚未验证，请先在待处理中完成验证；这不代表系统无法创建链接。",
+      "saved": "本机验证结果已保存；尚未确定的事项继续保留在待处理。",
+      "methods": { "managed_copy": "复制导入", "symbolic_link": "链接导入（符号链接）", "directory_junction": "链接导入（Windows 目录联接）" },
+      "title": "导入兼容性验证", "mode": "验证项目：{{mode}}",
+      "instructions": "使用无敏感内容的测试 Skill，先确认复制或链接入口可读取，再在 Agent 中确认发现和加载；完成后清理测试入口并保留原文件。创建失败时请选择暂未确定，不要据此判断 Agent 不支持。记录仅适用于本机当前目录及声明；Agent 升级后请重新验证。",
+      "version": "Agent 版本", "result": "验证结果", "evidence": "验证步骤与结果说明",
+      "checked": "已在 Agent 中检查发现和加载结果；若判为不支持，已排除文件创建、权限和路径问题",
+      "supported": "确认支持", "unsupported": "确认不支持", "unverified": "暂未确定，保留待处理", "save": "保存本机验证结果"
+    },
     "deploymentMethods": {
       "label": "派发方式",
-      "copy": { "supported": "支持复制导入", "unsupported": "不支持复制导入" },
-      "link": { "supported": "支持链接导入", "unsupported": "不支持链接导入" },
+      "copy": { "supported": "支持复制导入", "unsupported": "不支持复制导入", "unverified": "复制导入兼容性待验证" },
+      "link": { "supported": "支持链接导入", "unsupported": "不支持链接导入", "unverified": "链接导入兼容性待验证" }, "readonly": "内置目录只读，不允许导入",
       "managed_copy": { "supported": "支持复制派发", "unsupported": "不支持复制派发" },
       "symbolic_link": { "supported": "支持符号链接派发", "unsupported": "不支持符号链接派发" },
       "directory_junction": { "supported": "支持目录联接派发", "unsupported": "不支持目录联接派发" }
@@ -2164,7 +2174,7 @@
       "import_skills": "导入首个 Skill",
       "ai_setup": "配置 AI 模型（可选）",
       "backup_setup": "创建首次备份",
-      "source_update": "审阅来源更新",
+      "agent_compatibility": "Agent 导入兼容性待验证", "source_update": "审阅来源更新",
       "governance_followup": "导入治理提醒"
     },
     "actions": {
@@ -2234,7 +2244,7 @@
       "import_skills": "初始化只进行了只读发现。前往本机发现，选择来源和候选项，再确认导入集中库。",
       "ai_setup": "配置可用模型后，可使用 AI 检查等可选能力；也可以跳过这条建议。",
       "backup_setup": "集中库已有内容，建议创建一份备份。成功创建并校验后，这条建议会自动关闭。",
-      "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
+      "agent_compatibility": "请试用此导入方式并在 Agent 中检查发现和加载结果，然后记录本机兼容性结论。", "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
       "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。"
     },
     "count": "共 {{count}} 项待办",
@@ -3387,7 +3397,7 @@
         "import_skills": "{{count}} · 导入首个 Skill",
         "ai_setup": "{{count}} · 配置 AI 模型（可选）",
         "backup_setup": "{{count}} · 创建首次备份",
-        "source_update": "{{count}} · 审阅来源更新",
+        "agent_compatibility": "{{count}} · Agent 导入兼容性待验证", "source_update": "{{count}} · 审阅来源更新",
         "governance_followup": "{{count}} · 导入治理提醒"
       },
       "none": "没有待处理事项",

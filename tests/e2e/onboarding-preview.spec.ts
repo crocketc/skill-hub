@@ -115,6 +115,35 @@ test("rediscovery retries discovery and scan failures without losing library sta
   await expect(page.getByText("发现 60 个 Skill")).toBeVisible();
 });
 
+test("Agent card content fills equal-width columns for short brands and long paths", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/__preview/onboarding/rescan");
+  await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
+  await page.getByRole("button", { name: "识别 Agent" }).click();
+  await expect(page.locator(".sh-onboarding__target-card")).toHaveCount(8);
+  for (const width of [800, 1087, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const measurements = await page.locator(".sh-onboarding__target-card").evaluateAll((cards) => cards.map((card) => {
+    const outer = card.getBoundingClientRect();
+    const label = card.querySelector(".sh-checkbox-field")!.getBoundingClientRect();
+    const text = card.querySelector(".sh-checkbox-field__text")!.getBoundingClientRect();
+    const path = card.querySelector(".sh-onboarding__target-path")!.getBoundingClientRect();
+    const heading = card.querySelector(".sh-onboarding__target-card-heading")!.getBoundingClientRect();
+    const inset = parseFloat(getComputedStyle(card.querySelector(".sh-checkbox-field")!).paddingRight);
+    return { width: outer.width, unused: label.right - inset - text.right, pathRight: path.right, headingRight: heading.right, textRight: text.right };
+  }));
+  for (const measured of measurements) {
+    expect(Math.abs(measured.width - measurements[0]!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(measured.unused)).toBeLessThanOrEqual(1);
+    expect(Math.abs(measured.pathRight - measured.textRight)).toBeLessThanOrEqual(1);
+    expect(Math.abs(measured.headingRight - measured.textRight)).toBeLessThanOrEqual(1);
+  }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: test.info().outputPath("card-widths.png") });
+});
+
 test("groups rediscovery Agent cards by supported path and scrolls the list inside the wizard", async ({ page }) => {
   await page.setViewportSize({ width: 1087, height: 719 });
   await page.goto("/__preview/onboarding/rescan");
@@ -169,7 +198,7 @@ test("keeps rediscovery step text inset from the card edge at a narrow viewport"
   expect(inset).toBeGreaterThanOrEqual(16);
 });
 
-test("aligns Agent discovery with its confirmation row and shows path cards in multiple columns at 750px", async ({ page }) => {
+test("aligns Agent discovery and respects the approved card minimum width at 750px and 1087px", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
   await page.goto("/__preview/onboarding/rescan");
   await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
@@ -210,6 +239,8 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
     expect(measured!.borderTop, `fieldset border width at ${width}px`).toBeGreaterThan(0);
     expect(measured!.borderStyle, `fieldset border style at ${width}px`).not.toBe("none");
     expect(measured!.borderAlpha, `fieldset border alpha at ${width}px`).toBeGreaterThan(0);
+    const columns = await page.locator(".sh-onboarding__target-grid").evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
+    expect(columns, `21rem minimum card columns at ${width}px`).toBe(width === 750 ? 1 : 2);
   }
 
   const layout = await page.evaluate(() => {
@@ -228,9 +259,9 @@ test("aligns Agent discovery with its confirmation row and shows path cards in m
   });
 
   expect(layout).not.toBeNull();
-  expect(layout!.columns).toBe(2);
+  expect(layout!.columns).toBe(1);
   expect(layout!.confirmationButtonCenterDelta).toBeLessThanOrEqual(16);
-  expect(layout!.firstRowCardOffset).toBeGreaterThan(0);
+  expect(layout!.firstRowCardOffset).toBe(0);
 });
 
 test("keeps 60 discovered entries in an internal scroll without page overflow at 800px", async ({ page }) => {

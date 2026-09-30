@@ -242,7 +242,7 @@ it("keeps a recognized Agent root with a missing skills directory as pending cre
   expect(screen.queryByText("不可用")).not.toBeInTheDocument();
   expect(screen.queryByText("未发现可用路径")).not.toBeInTheDocument();
   expect(screen.getByLabelText("支持复制导入")).toBeVisible();
-  expect(screen.getByLabelText("不支持链接导入")).toBeVisible();
+  expect(screen.getByLabelText("链接导入兼容性待验证")).toHaveClass("is-unverified");
   expect(screen.getAllByLabelText("DeepSeek Harness · 终端")[0]).toBeEnabled();
   expect(document.querySelector(".sh-onboarding__target-card")).toHaveAttribute("data-unavailable", "false");
   await user.click(screen.getAllByLabelText("DeepSeek Harness · 终端")[0]);

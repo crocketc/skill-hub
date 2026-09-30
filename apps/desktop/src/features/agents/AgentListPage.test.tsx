@@ -366,7 +366,7 @@ it("uses canonical directory cards for the native list while keeping the member 
     "/agents/openai.codex-cli",
   );
   expect(within(card).getByLabelText("支持复制导入")).toBeVisible();
-  expect(within(card).getByLabelText("不支持链接导入")).toBeVisible();
+  expect(within(card).getByLabelText("链接导入兼容性待验证")).toHaveClass("is-unverified");
   expect(facade.listCardModels).toHaveBeenCalledOnce();
   expect(facade.list).not.toHaveBeenCalled();
 });

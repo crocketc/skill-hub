@@ -45,6 +45,13 @@ test("agent cards keep stable regions, wrapped shared logos, and two transparent
   const supportedColor = await supported.evaluate((element) => getComputedStyle(element).color);
   const unsupportedColor = await unsupported.evaluate((element) => getComputedStyle(element).color);
   expect(supportedColor).not.toBe(unsupportedColor);
+  const unverified = page.locator(".sh-agent-card__deployment-method.is-unverified").first();
+  await expect(unverified).toBeVisible();
+  const unverifiedColor = await unverified.evaluate((element) => getComputedStyle(element).color);
+  expect(unverifiedColor).not.toBe(supportedColor);
+  expect(unverifiedColor).not.toBe(unsupportedColor);
+  await expect(unverified).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.screenshot({ path: test.info().outputPath("traffic-light-cards.png"), fullPage: true });
 
   const iconBackground = await firstIcon.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(iconBackground).toBe("rgba(0, 0, 0, 0)");

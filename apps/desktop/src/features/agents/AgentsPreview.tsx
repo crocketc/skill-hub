@@ -114,6 +114,12 @@ const previewAgents: AgentView[] = [
     client: "custom",
     discoveredPaths: ["C:/Custom Agents/Auditor/skill library"],
     id: "custom-auditor",
+    directoryViews: [{
+      path: "C:/Custom Agents/Auditor/skill library", status: "existing", role: "agent_user",
+      sharedReference: false, builtin: false, readable: true, writable: true, available: true,
+      physicalIdentityVerified: true, supportedModes: ["managed_copy"], deploymentStatus: "not_deployed",
+      importCompatibility: { copy: "supported", symlink: "unsupported", junction: "unsupported" },
+    }],
     instance: "Auditor",
     managedDeploymentCount: 5,
     managedDeploymentRelationCount: 7,
