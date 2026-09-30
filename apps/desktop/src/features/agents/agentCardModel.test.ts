@@ -34,6 +34,38 @@ describe("AgentCardModel", () => {
     expect(cards[0].kinds).toEqual(expect.arrayContaining(["cli", "desktop"]));
   });
 
+  it("shows only deployment methods shared by every member of a card", () => {
+    const directory = (supportedModes: NonNullable<AgentView["directoryViews"]>[number]["supportedModes"]) => ({
+      path: "C:/Users/demo/.codex/skills",
+      status: "existing" as const,
+      role: "agent_user" as const,
+      isSharedDirectory: false,
+      supportsSharedDirectory: false,
+      sharedReference: false,
+      builtin: false,
+      readable: true,
+      writable: true,
+      available: true,
+      physicalIdentityVerified: true,
+      physicalIdentityKey: "shared-physical-id",
+      supportedModes,
+      deploymentStatus: "not_deployed" as const,
+    });
+    const cards = buildAgentCardModels([
+      agent({ directoryViews: [directory(["managed_copy", "symbolic_link"])] }),
+      agent({
+        id: "openai.desktop",
+        client: "openai.desktop",
+        instance: "Codex Desktop",
+        kinds: ["desktop"],
+        directoryViews: [directory(["managed_copy", "directory_junction"])],
+      }),
+    ]);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0].supportedModes).toEqual(["managed_copy"]);
+  });
+
   it("keeps same-brand different directories as separate cards", () => {
     const cards = buildAgentCardModels([
       agent(),
@@ -230,6 +262,17 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards.map((card) => card.directories[0].status)).toEqual(["pending_creation", "inaccessible", "broken_link", "existing", "existing"]);
     expect(cards[0].supportedModes).toEqual(["managed_copy", "symbolic_link", "directory_junction"]);
     expect(cards[3].readOnly).toBe(true);
+  });
+
+  it("keeps workspace role separate from project entities and shared-directory capability", () => {
+    const workspace = projectedDirectory({ role: "agent_workspace" });
+    workspace.members[0].supports_shared_directory = true;
+    const cards = buildAgentDirectoryCardModels({ directories: [workspace] });
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0].directories[0].role).toBe("agent_workspace");
+    expect(cards[0].sharedDirectory).toBe(false);
+    expect(cards[0].supportsSharedDirectory).toBe(true);
   });
 
   it("keeps abnormal target paths visible while missing targets remain pending", () => {

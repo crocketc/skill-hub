@@ -691,6 +691,15 @@
     "title": "Agents",
     "description": "Review discovered client and Skill directory facts.",
     "pathLabel": "Path:",
+    "directoryRole": {
+      "user": "User",
+      "workspace": "Workspace",
+      "builtin": "Built-in"
+    },
+    "cardDeploymentStatus": {
+      "deployed": "Deployed",
+      "partiallyDeployed": "Partially deployed"
+    },
     "pathPending": "Not created yet",
     "pathUnavailable": "Path unavailable",
     "directoryStatus": {
@@ -808,8 +817,11 @@
     "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally.",
     "sharedDirectoryChip": "Shared-directory ready",
     "sharedDirectoryTitle": "Agent shared directory",
+    "sharedBrandOverflow": "{{count}} more brands: {{brands}}",
     "deploymentMethods": {
       "label": "Deployment methods",
+      "copy": { "supported": "Copy import supported", "unsupported": "Copy import unavailable" },
+      "link": { "supported": "Link import supported", "unsupported": "Link import unavailable" },
       "managed_copy": { "supported": "Managed copy supported", "unsupported": "Managed copy unavailable" },
       "symbolic_link": { "supported": "Symbolic link supported", "unsupported": "Symbolic link unavailable" },
       "directory_junction": { "supported": "Directory junction supported", "unsupported": "Directory junction unavailable" }

@@ -1,0 +1,185 @@
+[     448ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[     549ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5173/favicon.ico:0
+[  154934ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[  154934ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[  154934ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[  154943ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[  154943ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[  154943ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[  154950ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80
+[  154950ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80
+[  154950ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80
+[  154951ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[  154951ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[  154951ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[  154952ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[  154952ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790497719110:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[  154952ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[  155329ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[  190105ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[  277805ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[ 1466246ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[21538011ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[21538011ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[21538011ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[21538018ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[21538018ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[21538018ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[21538022ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80
+[21538022ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80
+[21538022ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80
+[21538023ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[21538023ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[21538023ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[21538024ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[21538024ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790519102270:851:80 @ http://127.0.0.1:5173/@vite/client:881
+[21538024ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[21538343ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[22653866ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[22669146ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[25808134ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26022571ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26022571ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523586827:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26022572ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26022572ms] [INFO] [hmr] /src/app/AppShell.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26022573ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523586827:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26022573ms] [ERROR] [vite] Failed to reload /src/app/AppShell.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26022581ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523586827:853:80
+[26022581ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523586827:853:80
+[26022581ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523586827:853:80
+[26022882ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26053282ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26186259ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26288322ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26288322ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523852576:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26288322ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26288330ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26288330ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523852576:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26288330ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26288334ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523852576:853:80
+[26288334ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523852576:853:80
+[26288335ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523852576:853:80
+[26288623ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26420814ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26420814ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523985170:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26420814ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26420814ms] [INFO] [hmr] /src/app/AppShell.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26420814ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523985170:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26420814ms] [ERROR] [vite] Failed to reload /src/app/AppShell.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26420817ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523985170:853:80
+[26420818ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523985170:853:80
+[26420818ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790523985170:853:80
+[26421115ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26539840ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26539840ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524104240:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26539840ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26539842ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524104240:853:80
+[26539843ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524104240:853:80
+[26539843ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524104240:853:80
+[26540148ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26616733ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[26617098ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26617098ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26617098ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26617104ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26617104ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26617104ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26617108ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80
+[26617108ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80
+[26617109ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80
+[26617109ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26617109ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26617110ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26617110ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[26617110ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790524181389:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[26617110ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[26617440ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[27123867ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524688341:0
+[27123869ms] [ERROR] [vite] Failed to reload /src/features/pending/PendingPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123958ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524688352:0
+[27123958ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123958ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123969ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524688351:0
+[27123969ms] [ERROR] [vite] Failed to reload /src/features/pending/PendingPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123985ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123986ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123986ms] [INFO] [hmr] /src/app/AppShell.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123986ms] [ERROR] [vite] Failed to reload /src/app/AppShell.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123991ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123991ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123992ms] [INFO] [hmr] /src/app/AppShell.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123992ms] [ERROR] [vite] Failed to reload /src/app/AppShell.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123992ms] [ERROR] [vite] Failed to reload /src/features/pending/PendingPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123992ms] [ERROR] [vite] Failed to reload /src/features/pending/PendingPage.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27123992ms] [INFO] [hmr] /src/app/AppShell.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27123992ms] [ERROR] [vite] Failed to reload /src/app/AppShell.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27124189ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524688352:0
+[27204040ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524768230:0
+[27234221ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:5173/src/features/pending/PendingPage.tsx?t=1790524768230:0
+[27272783ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[27809898ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27809898ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[27809898ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27809904ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27809904ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[27809904ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27809907ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80
+[27809907ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80
+[27809907ms] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80
+[27809909ms] [INFO] [hmr] /src/app/router.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27809909ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[27809909ms] [ERROR] [vite] Failed to reload /src/app/router.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27809909ms] [INFO] [hmr] /src/app/App.tsx failed to apply HMR as it's within a circular import. Reloading page to reset the execution order. To debug and break the circular import, you can run `vite --debug hmr` to log the circular dependency path if a file change triggered it. @ http://127.0.0.1:5173/@vite/client:898
+[27809909ms] [ERROR] [vite] ReferenceError: Cannot access 'overviewPreviewRelationshipsFacade' before initialization
+    at http://127.0.0.1:5173/src/app/router.tsx?t=1790525374270:853:80 @ http://127.0.0.1:5173/@vite/client:881
+[27809910ms] [ERROR] [vite] Failed to reload /src/app/App.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:5173/@vite/client:881
+[27810201ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[54514132ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:963
+[54514139ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034
+[54515156ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5173/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5173/@vite/client:1034

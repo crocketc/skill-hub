@@ -61,6 +61,8 @@ export type AgentDirectoryDeploymentStatus = "not_deployed" | "deployed" | "part
 /**  Canonical directory entity used by Agent card consumers. */
 export type AgentDirectoryFact = {
 	role: AgentDirectoryRole,
+	/**  Identifies the shared directory entity independently from its path role. */
+	is_shared_directory?: boolean,
 	identity: AgentDirectoryIdentity,
 	path: string,
 	status: DirectoryObservationStatus,
@@ -90,6 +92,8 @@ export type AgentDirectoryMemberFact = {
 	brand: string | null,
 	client_id: string | null,
 	kind: ClientKind | null,
+	/**  Whether this Agent client can read from the shared Skills directory. */
+	supports_shared_directory?: boolean,
 	availability: AgentDirectoryAvailability,
 	capabilities: AgentDirectoryMemberCapabilities,
 	deployment_status: AgentDirectoryDeploymentStatus,
@@ -101,7 +105,25 @@ export type AgentDirectoryProjection = {
 	directories: AgentDirectoryFact[],
 };
 
-export type AgentDirectoryRole = "agent_native" | "shared_directory" | "builtin" | "project";
+export type AgentDirectoryRole =
+/**  User-level Agent Skill directory. */
+"agent_user" |
+/**
+ *  Skill directory owned by the Agent's active workspace; discovery may
+ *  encode this with the historical `project` target scope.
+ */
+"agent_workspace" |
+/**  Legacy role accepted for older generated fixtures and snapshots. */
+"agent_native" |
+/**
+ *  Legacy role: current projections express this independently with
+ *  `AgentDirectoryFact::is_shared_directory`.
+ */
+"shared_directory" |
+/**  Platform-managed Agent directory; read-only in the current release. */
+"builtin" |
+/**  Directory owned by the separate registered-project model. */
+"project";
 
 /**
  *  迁移计划/结果随行的 Agent 呈现快照。品牌与展示类型徽标由前端统一

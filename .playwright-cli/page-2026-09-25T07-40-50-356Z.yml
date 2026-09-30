@@ -1,0 +1,26 @@
+- main [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - paragraph [ref=f1e6]: 初始化
+    - list "初始化步骤" [ref=f1e7]:
+      - listitem [ref=f1e8]:
+        - generic [ref=f1e10]: 确认集中库位置
+        - generic [ref=f1e93]: 已完成
+      - listitem [ref=f1e11]:
+        - generic [ref=f1e12]: "2"
+        - generic [ref=f1e13]: 识别兼容的 Agent
+      - listitem [ref=f1e14]:
+        - generic [ref=f1e15]: "3"
+        - generic [ref=f1e16]: 扫描已有技能
+    - region [ref=f1e94]:
+      - heading "识别兼容的 Agent" [level=1] [ref=f1e95]
+      - paragraph [ref=f1e96]: 识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。
+      - generic [ref=f1e97] [cursor=pointer]:
+        - checkbox "我确认这里只识别 Agent，不会把技能添加到 Agent/项目" [ref=f1e98]
+        - generic [ref=f1e99]: 我确认这里只识别 Agent，不会把技能添加到 Agent/项目
+      - button "识别 Agent" [disabled] [ref=f1e101]
+    - status [ref=f1e85]
+    - generic [ref=f1e86]:
+      - button "上一步" [ref=f1e103] [cursor=pointer]
+      - generic [ref=f1e87]:
+        - button "继续" [disabled] [ref=f1e88]
+        - button "跳过初始化" [ref=f1e89] [cursor=pointer]

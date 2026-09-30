@@ -178,7 +178,7 @@
    覆盖品牌标签的 inline-flex 布局，卡片在窄面板自动退为单列。 */
 .sh-deployment-targets {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
   gap: var(--space-2);
 }
 
@@ -229,6 +229,100 @@
   display: grid;
   gap: var(--space-1);
   min-width: 0;
+}
+
+.sh-deployment-target-card[data-agent-card="true"] {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  height: 176px;
+}
+
+.sh-deployment-target-card--pending[data-agent-card="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.sh-deployment-target-card[data-agent-card="true"] .sh-deployment-target-card__body {
+  display: block;
+  height: 100%;
+}
+
+.sh-deployment-target-card[data-agent-card="true"] .sh-deployment-target-card__body > label {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.sh-deployment-target-card__contents {
+  display: grid;
+  height: 100%;
+  min-width: 0;
+  grid-template-rows: 40px 20px 14px 1fr 22px;
+  gap: var(--space-1);
+}
+
+.sh-deployment-target-card__identity,
+.sh-deployment-target-card__role,
+.sh-deployment-target-card__path-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.sh-deployment-target-card__identity .sh-agent-presentation {
+  display: flex;
+  width: 100%;
+  max-height: 40px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.sh-deployment-target-card__identity .sh-agent-presentation[data-agent-kind="shared_directory"] {
+  flex-wrap: wrap;
+}
+
+.sh-deployment-target-card__identity .sh-agent-presentation__kind {
+  margin-inline-start: auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sh-deployment-target-card__identity .sh-agent-presentation__shared-brands {
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+
+.sh-deployment-target-card__path-label {
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-deployment-target-card__path-region {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  overflow: hidden;
+}
+
+.sh-deployment-target-card__path-region small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-deployment-target-card__path-region .sh-deployment-target-card__guidance {
+  color: var(--ui-warning-foreground);
+}
+
+.sh-deployment-target-card__contents .sh-agent-card__deployment-footer {
+  overflow: hidden;
 }
 
 .sh-deployment-target-card .sh-agent-presentation,

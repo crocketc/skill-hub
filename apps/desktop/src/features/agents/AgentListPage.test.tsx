@@ -191,9 +191,7 @@ it("tiles every agent card in a single page-level grid", async () => {
 });
 
 it("renders built-in directories as separate read-only cards with guidance", async () => {
-  // 2026-09-25 验收裁决：内置技能目录独立成卡。DEV-87（2026-09-25 反馈）：
-  // 三标签融二——类型徽标保留，可访问状态徽标独占头部右侧；「内置」升级为
-  // 差异色「内置 · 只读」徽标（政策入文案），提示段压缩为行动指引。
+  // 内置角色位于品牌与路径之间；卡片底部说明目录只读且随 Agent 更新。
   const builtinAgents: AgentView[] = [
     {
       brand: "OpenAI",
@@ -227,16 +225,11 @@ it("renders built-in directories as separate read-only cards with guidance", asy
   expect((await screen.findAllByTestId("agent-card"))).toHaveLength(2);
 
   const card = screen.getAllByTestId("agent-card")[1];
-  const badge = within(card).getByText("内置 · 只读");
+  const badge = within(card).getByText("内置");
   expect(badge).toBeVisible();
-  // 差异色徽标挂在头部左侧（与品牌/类型同组），样式类锁定。
-  expect(badge.closest(".sh-agent-card__head-main")).not.toBeNull();
-  expect(badge.className).toContain("sh-agent-card__builtin");
-  // 可访问状态徽标仍是头部直接子元素（右上角，与其他卡片一致）。
-  const head = badge.closest(".sh-agent-card__head") as HTMLElement;
-  expect(within(head).queryByText("可访问")).not.toBeInTheDocument();
-  // 提示段压缩为行动指引，不再复述只读政策。
-  expect(within(card).getByText(/手动管理/)).toBeVisible();
+  expect(badge.closest(".sh-agent-card__role-line")).not.toBeNull();
+  expect(badge.className).toContain("sh-agent-directory-role-badge--builtin");
+  expect(within(card).getByText(/内置目录只读/)).toBeVisible();
   expect(within(card).queryByText(/由平台自带管理/)).not.toBeInTheDocument();
 });
 
@@ -372,9 +365,8 @@ it("uses canonical directory cards for the native list while keeping the member 
     "href",
     "/agents/openai.codex-cli",
   );
-  expect(within(card).getByLabelText("支持复制派发")).toBeVisible();
-  expect(within(card).getByLabelText("不支持符号链接派发")).toBeVisible();
-  expect(within(card).getByLabelText("不支持目录联接派发")).toBeVisible();
+  expect(within(card).getByLabelText("支持复制导入")).toBeVisible();
+  expect(within(card).getByLabelText("不支持链接导入")).toBeVisible();
   expect(facade.listCardModels).toHaveBeenCalledOnce();
   expect(facade.list).not.toHaveBeenCalled();
 });

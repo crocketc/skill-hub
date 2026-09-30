@@ -1,0 +1,31 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - paragraph [ref=e6]: 重新发现
+    - list "重新发现步骤" [ref=e7]:
+      - listitem [ref=e8]:
+        - generic [ref=e10]: 重新发现 Agent 与 Skill
+        - generic [ref=e37]: 已完成
+      - listitem [ref=e11]:
+        - generic [ref=e12]: "2"
+        - generic [ref=e13]: 识别兼容的 Agent
+      - listitem [ref=e14]:
+        - generic [ref=e15]: "3"
+        - generic [ref=e16]: 扫描已有技能
+    - generic [ref=e17]:
+      - generic [ref=e38]:
+        - generic [ref=e39]: 当前集中库位置
+        - code [ref=e40]: D:\very-long-library-root-segment\skillhub-central-library\team-workspaces\agent-platform\imports-2026\rediscovery-preview\nested\library-root
+      - region [ref=e41]:
+        - generic [ref=e42]:
+          - heading "识别兼容的 Agent" [level=1] [ref=e43]
+          - paragraph [ref=e44]: 识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。
+        - generic [ref=e45] [cursor=pointer]:
+          - checkbox "我确认这里只识别 Agent，不会把技能添加到 Agent/项目" [checked] [ref=e46]
+          - generic [ref=e47]: 我确认这里只识别 Agent，不会把技能添加到 Agent/项目
+        - button "识别 Agent" [ref=e50] [cursor=pointer]
+    - status [ref=e28]
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - button "取消并返回设置" [ref=e31] [cursor=pointer]
+        - button "上一步" [ref=e51] [cursor=pointer]
+      - button "继续" [disabled] [ref=e33]

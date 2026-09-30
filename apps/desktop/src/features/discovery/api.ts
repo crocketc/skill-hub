@@ -514,6 +514,8 @@ export interface AgentTargetCard {
    * 独立成「内置」类型卡片；本机不存在的内置候选不出卡（平台自管，缺席非故障）。
    */
   builtin: boolean;
+  /** Directory role and capabilities come from the shared Agent card model. */
+  cardModel?: AgentCardModel;
 }
 
 /** P1-06：一个品牌（profile）的分组；组内可用卡片在前、不可用置底。 */
@@ -574,6 +576,7 @@ export function buildAgentGroupsFromProjection(projection: AgentDirectoryProject
       sharedBrands,
       sharedBrandKinds,
       builtin: model.builtin,
+      cardModel: model,
     };
     const cards = cardsByBrand.get(model.brand) ?? [];
     cards.push(card);
@@ -622,6 +625,7 @@ function snapshotProjection(
   }));
   const grouped = new Map<string, {
     role: AgentDirectoryProjection["directories"][number]["role"];
+    isSharedDirectory: boolean;
     identity: AgentDirectoryProjection["directories"][number]["identity"];
     path: string;
     targets: DiscoverySnapshot["logical_targets"];
@@ -631,22 +635,22 @@ function snapshotProjection(
     if (!instance || (target.builtin && !target.exists)) continue;
     const normalizedPath = normalizeSharedPath(target.path);
     const sharedPathMatch = sharedPaths.has(normalizedPath);
+    const isSharedDirectory = target.shared_reference || instance.kind === "shared_directory" || sharedPathMatch;
     const role = target.builtin
       ? "builtin"
       : target.scope === "project"
-        ? "project"
-        : target.shared_reference || instance.kind === "shared_directory" || sharedPathMatch
-          ? "shared_directory"
-          : "agent_native";
+        ? "agent_workspace"
+        : "agent_user";
     const verified = target.physical_identity_verified !== false;
     const identity = sharedPathMatch
       ? { kind: "verified_physical" as const, value: `shared-path:${normalizedPath}` }
       : verified
       ? { kind: "verified_physical" as const, value: target.physical_id }
       : { kind: "candidate" as const, value: target.id };
-    const key = `${role}:${identity.kind}:${identity.value}`;
+    const key = `${role}:${isSharedDirectory ? "shared" : "agent"}:${identity.kind}:${identity.value}`;
     const group = grouped.get(key) ?? {
       role,
+      isSharedDirectory,
       identity,
       path: snapshot.physical_targets.find((physical) => physical.id === target.physical_id)?.path ?? target.path,
       targets: [],
@@ -665,6 +669,7 @@ function snapshotProjection(
         ?? (exists ? available ? "existing" : "inaccessible" : "missing");
       return {
         role: group.role,
+        is_shared_directory: group.isSharedDirectory,
         identity: group.identity,
         path: group.path,
         status,
@@ -680,6 +685,11 @@ function snapshotProjection(
             brand: target.profile_id,
             client_id: target.client_id,
             kind: instance.kind,
+            supports_shared_directory: snapshot.logical_targets.some((candidate) =>
+              candidate.profile_id === target.profile_id
+              && candidate.client_id === target.client_id
+              && candidate.shared_reference,
+            ),
             availability: {
               status: target.status ?? (target.exists ? memberAvailable ? "existing" : "inaccessible" : "missing"),
               exists: target.exists,

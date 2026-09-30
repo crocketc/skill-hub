@@ -301,6 +301,18 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 true,
                 true,
             ),
+            {
+                let mut target = logical(
+                    "shared-workspace-cli",
+                    "openai.codex-cli",
+                    &shared_path,
+                    "physical:shared",
+                    true,
+                    true,
+                );
+                target.scope = TargetScope::Project;
+                target
+            },
             logical(
                 "shared-unidentified",
                 "openai.unknown-root",
@@ -325,6 +337,18 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
                 true,
                 false,
             ),
+            {
+                let mut target = logical(
+                    "workspace-cli",
+                    "openai.codex-cli",
+                    &ordinary_path,
+                    &ordinary_physical_id,
+                    true,
+                    false,
+                );
+                target.scope = TargetScope::Project;
+                target
+            },
             other_brand_target,
             {
                 let mut target = logical(
@@ -417,13 +441,11 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .expect("shared entity");
     assert_eq!(
         shared.members.len(),
-        2,
-        "canonical target and recognized brand association are members"
+        3,
+        "all Agent scopes and the canonical target stay in one shared entity"
     );
-    assert_eq!(
-        shared.role,
-        skillhub_core::AgentDirectoryRole::SharedDirectory
-    );
+    assert_eq!(shared.role, skillhub_core::AgentDirectoryRole::AgentUser);
+    assert!(shared.is_shared_directory);
     assert_eq!(
         projection
             .directories
@@ -431,6 +453,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
             .filter(|fact| fact.members.iter().any(|member| {
                 member.logical_target_id == "shared-canonical"
                     || member.logical_target_id == "shared-cli"
+                    || member.logical_target_id == "shared-workspace-cli"
             }))
             .count(),
         1,
@@ -445,6 +468,10 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .iter()
         .any(|member| member.logical_target_id == "shared-cli"
             && member.kind == Some(ClientKind::Cli)));
+    assert!(shared
+        .members
+        .iter()
+        .any(|member| member.logical_target_id == "shared-workspace-cli"));
 
     let same_physical_identity = projection
         .directories
@@ -458,16 +485,18 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .collect::<Vec<_>>();
     assert_eq!(
         same_physical_identity.len(),
-        5,
-        "brand and role boundaries plus the independent project entity"
+        6,
+        "brand and Agent directory-role boundaries plus the independent project entity"
     );
     let ordinary = same_physical_identity
         .iter()
-        .find(|fact| fact.role != skillhub_core::AgentDirectoryRole::Project)
+        .find(|fact| {
+            fact.role == skillhub_core::AgentDirectoryRole::AgentUser && !fact.is_shared_directory
+        })
         .expect("Agent entity");
     assert_eq!(
         ordinary.role,
-        skillhub_core::AgentDirectoryRole::AgentNative
+        skillhub_core::AgentDirectoryRole::AgentUser
     );
     assert_eq!(
         ordinary.members.len(),
@@ -490,7 +519,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
     assert_eq!(builtin.members[0].logical_target_id, "ordinary-builtin");
     let shared_entities = same_physical_identity
         .iter()
-        .filter(|fact| fact.role == skillhub_core::AgentDirectoryRole::SharedDirectory)
+        .filter(|fact| fact.is_shared_directory)
         .collect::<Vec<_>>();
     assert_eq!(
         shared_entities.len(),
@@ -512,7 +541,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .expect("other brand remains independent");
     assert_eq!(
         other_brand.role,
-        skillhub_core::AgentDirectoryRole::AgentNative
+        skillhub_core::AgentDirectoryRole::AgentUser
     );
     assert_eq!(other_brand.members.len(), 1);
     let cli_member = ordinary
@@ -520,6 +549,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .iter()
         .find(|member| member.logical_target_id == "ordinary-cli")
         .expect("CLI member");
+    assert!(cli_member.supports_shared_directory);
     let desktop_member = ordinary
         .members
         .iter()
@@ -569,6 +599,11 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .iter()
         .any(|fact| fact.role == skillhub_core::AgentDirectoryRole::Project
             && fact.members.len() == 1));
+    let workspace = same_physical_identity
+        .iter()
+        .find(|fact| fact.role == skillhub_core::AgentDirectoryRole::AgentWorkspace)
+        .expect("Agent workspace directory");
+    assert_eq!(workspace.members[0].logical_target_id, "workspace-cli");
 
     assert!(
         projection.directories.iter().any(|fact| fact
@@ -1395,6 +1430,27 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
         .collect::<std::collections::BTreeSet<_>>();
 
     for fact in &projection.directories {
+        if fact.is_shared_directory {
+            let shared_rows = targets
+                .iter()
+                .filter(|target| target.shared_directory)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                shared_rows.len(),
+                1,
+                "one shared physical directory folds into exactly one selectable target"
+            );
+            let canonical_ids = fact
+                .members
+                .iter()
+                .map(|member| member.logical_target_id.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            assert!(
+                canonical_ids.contains(shared_rows[0].id.as_str()),
+                "the shared target must be the canonical member of the projection group"
+            );
+            continue;
+        }
         match fact.role {
             skillhub_core::AgentDirectoryRole::Builtin => {
                 for member in &fact.members {
@@ -1405,27 +1461,10 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
                     );
                 }
             }
-            skillhub_core::AgentDirectoryRole::SharedDirectory => {
-                let shared_rows = targets
-                    .iter()
-                    .filter(|target| target.shared_directory)
-                    .collect::<Vec<_>>();
-                assert_eq!(
-                    shared_rows.len(),
-                    1,
-                    "one shared physical directory folds into exactly one selectable target"
-                );
-                let canonical_ids = fact
-                    .members
-                    .iter()
-                    .map(|member| member.logical_target_id.as_str())
-                    .collect::<std::collections::BTreeSet<_>>();
-                assert!(
-                    canonical_ids.contains(shared_rows[0].id.as_str()),
-                    "the shared target must be the canonical member of the projection group"
-                );
-            }
-            skillhub_core::AgentDirectoryRole::AgentNative
+            skillhub_core::AgentDirectoryRole::AgentUser
+            | skillhub_core::AgentDirectoryRole::AgentWorkspace
+            | skillhub_core::AgentDirectoryRole::AgentNative
+            | skillhub_core::AgentDirectoryRole::SharedDirectory
             | skillhub_core::AgentDirectoryRole::Project => {
                 for member in &fact.members {
                     assert!(

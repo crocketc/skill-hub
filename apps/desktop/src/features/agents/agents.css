@@ -31,10 +31,12 @@
 /* 实体卡片：10px 圆角，最多一级浅阴影。 */
 .sh-agent-card {
   display: grid;
+  grid-template-rows: 40px 20px 42px 22px;
   min-width: 0;
+  height: 176px;
   padding: var(--space-4);
-  gap: var(--space-3);
-  align-content: start;
+  gap: var(--space-1) var(--space-3);
+  align-content: stretch;
   border: 1px solid var(--ui-border);
   border-radius: 10px;
   background: var(--ui-surface);
@@ -50,7 +52,9 @@
 }
 
 .sh-agent-card__title {
+  display: block;
   min-width: 0;
+  width: 100%;
   color: var(--ui-ink);
   font-size: var(--font-size-lg);
   font-weight: 700;
@@ -75,10 +79,17 @@
 .sh-agent-card__paths {
   display: grid;
   min-width: 0;
-  gap: var(--space-1);
+  grid-template-rows: 14px 1fr;
+  gap: 3px;
+  overflow: hidden;
 }
 
 .sh-agent-card__paths-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
   font-weight: 650;
@@ -90,6 +101,8 @@
   margin: 0;
   gap: var(--space-1);
   list-style: none;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sh-agent-card__path {
@@ -104,6 +117,10 @@
   font-size: var(--font-size-xs);
   line-height: 1.5;
   text-align: left;
+  max-height: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sh-agent-card__path--pending_creation {
@@ -165,6 +182,12 @@
   white-space: nowrap;
 }
 
+.sh-agent-card__role-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
 .sh-agent-card__shared-chip:hover {
   text-decoration: underline;
 }
@@ -195,7 +218,7 @@
 /* DEV-108：固定信息区域——派发方式行吸底，同一行卡片的底部区域对齐。 */
 .sh-agent-card .sh-agent-card__deployment-methods {
   margin-top: auto;
-  padding-top: var(--space-1);
+  padding-top: 0;
 }
 
 /* 自定义 Agent 表单（抽屉内）。 */

@@ -1,0 +1,3 @@
+[    1987ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/node_modules/.vite/deps/chunk-P4WKW7M7.js?v=7529f13e:21608
+[    2067ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/favicon.ico:0
+[    2231ms] [LOG] [ECharts] Specified `grid.containLabel` but no `use(LegacyGridContainLabel)`;use `grid.outerBounds` instead. @ http://127.0.0.1:5174/node_modules/.vite/deps/chunk-IEUKM23D.js?v=7529f13e:658

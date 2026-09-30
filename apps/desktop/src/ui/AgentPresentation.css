@@ -6,6 +6,23 @@
   min-width: 0;
 }
 
+.sh-agent-card__title .sh-agent-presentation { display: flex; width: 100%; flex-wrap: nowrap; }
+.sh-agent-card__title .sh-agent-presentation__kind { margin-inline-start: auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
+.sh-agent-card__title .sh-agent-presentation[data-agent-kind="shared_directory"] {
+  height: 40px;
+  align-content: center;
+  flex-wrap: wrap;
+  overflow: hidden;
+}
+.sh-agent-card__title .sh-agent-presentation[data-agent-kind="shared_directory"] .sh-agent-presentation__shared-brands {
+  max-height: 2.75rem;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+  overflow: hidden;
+}
+.sh-agent-presentation__deployment-status { flex: 0 0 auto; color: var(--ui-success-foreground); font-size: var(--font-size-md); line-height: 1; }
+.sh-agent-presentation__deployment-status.is-partial { color: var(--ui-warning-foreground); }
+
 .sh-agent-presentation__kind {
   background: var(--ui-surface-subtle);
   border: 1px solid var(--ui-border-subtle);
@@ -54,6 +71,21 @@
   gap: var(--space-1);
 }
 
+.sh-agent-directory-role-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.sh-agent-directory-role-badge--user { background: var(--ui-info-background); color: var(--ui-info-foreground); }
+.sh-agent-directory-role-badge--workspace { background: #eee8fa; color: #563791; }
+.sh-agent-directory-role-badge--builtin { background: var(--ui-warning-background); color: var(--ui-warning-foreground); }
+
 .sh-agent-presentation__shared-brands .sh-brand-tag--icon-only {
   border-radius: 999px;
   display: inline-grid;
@@ -67,6 +99,21 @@
 .sh-agent-presentation__shared-brands .sh-brand-tag__icon {
   height: 0.9rem;
   width: 0.9rem;
+}
+
+.sh-agent-presentation__shared-brand-overflow {
+  display: inline-flex;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
 }
 
 .sh-agent-presentation--compact {

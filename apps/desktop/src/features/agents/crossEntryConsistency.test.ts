@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 /**
- * DEV-109：一套隔离发现事实（同一 AgentDirectoryProjection）同时喂给
+ * DEV-110：一套隔离发现事实（同一 AgentDirectoryProjection）同时喂给
  * Agents 列表、初始化/重新扫描向导、部署目标与项目候选四个入口，断言
  * 身份、共享数量与展示类型从头到尾一致。后端 listTargets 与投影的一致性
  * 由 Rust 侧 facade_builtin_directories 回归固定；这里固定前端各入口对
@@ -31,7 +31,7 @@ beforeEach(() => {
  */
 const projection: AgentDirectoryProjection = { directories: [
   {
-    role: "agent_native",
+    role: "agent_user",
     identity: { kind: "verified_physical", value: "fs:ordinary" },
     path: "C:/Agents/openai/skills",
     status: "existing",
@@ -45,7 +45,8 @@ const projection: AgentDirectoryProjection = { directories: [
     ],
   },
   {
-    role: "shared_directory",
+    role: "agent_user",
+    is_shared_directory: true,
     identity: { kind: "verified_physical", value: "fs:shared" },
     path: "C:/Shared/.agents/skills",
     status: "existing",
@@ -55,12 +56,12 @@ const projection: AgentDirectoryProjection = { directories: [
     available: true,
     members: [
       member("shared-canonical", "Agent Skills", "agent-skills.shared-directory", "shared_directory"),
-      member("shared-cli", "OpenAI", "openai.cli", "cli"),
+      member("shared-cli", "OpenAI", "openai.cli", "cli", true),
       member("shared-cursor", "Cursor", "cursor.desktop", "desktop"),
     ],
   },
   {
-    role: "agent_native",
+    role: "agent_user",
     identity: { kind: "candidate", value: "root-x::physical-x" },
     path: "C:/Agents/kimi/skills",
     status: "missing",
@@ -99,12 +100,14 @@ function member(
   brand: string,
   clientId: string,
   kind: "cli" | "desktop" | "shared_directory",
+  supportsSharedDirectory = false,
 ): AgentDirectoryMemberFact {
   return {
     logical_target_id: logicalTargetId,
     brand,
     client_id: clientId,
     kind,
+    supports_shared_directory: supportsSharedDirectory,
     availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
     capabilities: {
       deployment: { copy: true, symlink: true, junction: false },
@@ -180,7 +183,6 @@ it("agents, wizard, deployment and project entries agree on one set of discovery
 
   // 入口 1：Agents 主列表卡片。
   const agentCards = await nativeAgentFacade.listCardModels?.() ?? [];
-  const agentCardById = new Map(agentCards.map((card) => [card.id, card]));
 
   // 入口 2：部署目标（经同一投影回填卡模型后的合卡）。
   const deploymentFacade = createNativeBatchDeploymentFacade();
@@ -207,7 +209,7 @@ it("agents, wizard, deployment and project entries agree on one set of discovery
     .toEqual(["ordinary-cli", "ordinary-desktop"]);
 
   // 待建目录在 Agents、部署、向导三侧都保留且可创建，不被静默过滤。
-  const pendingCard = agentCardById.get("agent_native:candidate:root-x::physical-x");
+  const pendingCard = agentCards.find((card) => card.members.some((entry) => entry.id === "pending-cli"));
   expect(pendingCard?.directories[0]).toMatchObject({ status: "pending_creation" });
   expect(targets.find((target) => target.id === "pending-cli")).toMatchObject({ available: false });
   expect(wizardSelectable).not.toContain("pending-cli");
@@ -216,10 +218,9 @@ it("agents, wizard, deployment and project entries agree on one set of discovery
   expect(agentCards.some((card) => card.builtin)).toBe(true);
   expect(targets.some((target) => target.id === "builtin-1")).toBe(false);
 
-  // 项目是独立实体卡：Agents 侧一张，不混入 Agent 品牌；项目候选不含它。
-  const projectCards = agentCards.filter((card) => card.directories.every((directory) => directory.role === "project"));
-  expect(projectCards).toHaveLength(1);
-  expect(candidates.find((candidate) => candidate.id === projectCards[0]!.id)).toBeUndefined();
+  // 注册项目目录走项目模型，不作为 Agent 卡片或 Agent 候选。
+  expect(agentCards.some((card) => card.members.some((entry) => entry.id === "project-1"))).toBe(false);
+  expect(candidates.some((candidate) => candidate.id === "project-1")).toBe(false);
 
   // —— 类型与数量一致：项目候选的品牌/类型与 Agents 卡一致；共享候选成员
   // 是品牌成员（不含 agent-skills canonical），可选成员与可访问成员一致。

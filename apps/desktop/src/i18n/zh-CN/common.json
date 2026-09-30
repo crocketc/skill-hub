@@ -691,6 +691,15 @@
     "title": "Agent",
     "description": "查看已识别 Agent 目录和 Skill 路径事实。",
     "pathLabel": "路径：",
+    "directoryRole": {
+      "user": "用户",
+      "workspace": "工作区",
+      "builtin": "内置"
+    },
+    "cardDeploymentStatus": {
+      "deployed": "已派发",
+      "partiallyDeployed": "部分派发"
+    },
     "pathPending": "待创建",
     "pathUnavailable": "路径不可用",
     "directoryStatus": {
@@ -805,11 +814,14 @@
     "managedRelationsCount_one": "{{count}} 条部署关系",
     "managedRelationsCount_other": "{{count}} 条部署关系",
     "builtinLabel": "内置 · 只读",
-    "builtinHint": "如需调整请在对应 Agent 内手动管理；常用技能建议导入 SkillHub 统一管理。",
+    "builtinHint": "内置目录只读，随 Agent 软件更新；如需调整请在对应 Agent 内管理。",
     "sharedDirectoryChip": "支持共享目录",
     "sharedDirectoryTitle": "Agent共享目录",
+    "sharedBrandOverflow": "还有 {{count}} 个品牌：{{brands}}",
     "deploymentMethods": {
       "label": "派发方式",
+      "copy": { "supported": "支持复制导入", "unsupported": "不支持复制导入" },
+      "link": { "supported": "支持链接导入", "unsupported": "不支持链接导入" },
       "managed_copy": { "supported": "支持复制派发", "unsupported": "不支持复制派发" },
       "symbolic_link": { "supported": "支持符号链接派发", "unsupported": "不支持符号链接派发" },
       "directory_junction": { "supported": "支持目录联接派发", "unsupported": "不支持目录联接派发" }

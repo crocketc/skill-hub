@@ -1,5 +1,6 @@
 import type { AgentKindKey } from "../../ui/AgentPresentation";
 import type { AgentDirectoryMemberFact, RelationshipOverview, RemovalImpactFact } from "../../api/bindings";
+import type { AgentDirectoryRole as AgentDirectoryRoleContract } from "../../api/bindings";
 import type { AgentCardModel } from "./agentCardModel";
 
 export type { RelationshipOverview, RemovalImpactFact };
@@ -21,7 +22,7 @@ export interface AgentRelation {
 
 export type AgentStatus = "accessible" | "directory_only" | "inaccessible" | "custom";
 export type AgentDirectoryStatus = "existing" | "pending_creation" | "inaccessible" | "non_directory" | "broken_link" | "identity_changed";
-export type AgentDirectoryRole = "agent_native" | "shared_directory" | "project" | "builtin";
+export type AgentDirectoryRole = AgentDirectoryRoleContract | "agent_native";
 export type AgentDeploymentMode = "managed_copy" | "symbolic_link" | "directory_junction";
 export type AgentDeploymentStatus = "deployed" | "partially_deployed" | "not_deployed" | "unknown";
 
@@ -29,6 +30,8 @@ export interface AgentDirectoryView {
   path: string | null;
   status: AgentDirectoryStatus;
   role: AgentDirectoryRole;
+  isSharedDirectory?: boolean;
+  supportsSharedDirectory?: boolean;
   sharedReference: boolean;
   builtin: boolean;
   readable: boolean;
@@ -58,6 +61,7 @@ export interface AgentView {
    * `.codex/skills/.system`）——只读观察，不参与部署/删除。
    */
   builtin?: boolean;
+  isSharedDirectory?: boolean;
   /**
    * 2026-09-25 验收反馈：后端 discovery 快照的权威 ClientKind。展示层
    * 不再从 id 字符串猜类型（pi.coding-agent 等不含关键词的 id 会被

@@ -139,6 +139,7 @@ export interface AgentPresentationProps {
   sharedAgentBrands?: readonly string[];
   /** Raw ClientKind values used in each shared brand logo tooltip. */
   sharedAgentBrandKinds?: Record<string, readonly string[]>;
+  deploymentStatus?: "deployed" | "partially_deployed" | "not_deployed" | "unknown";
   density?: AgentPresentationDensity;
 }
 
@@ -152,6 +153,7 @@ export function AgentPresentation({
   sharedDirectory = false,
   sharedAgentBrands = [],
   sharedAgentBrandKinds = {},
+  deploymentStatus = "unknown",
   density = "full",
 }: AgentPresentationProps): JSX.Element {
   const { t } = useTranslation();
@@ -170,6 +172,16 @@ export function AgentPresentation({
       return [brandDisplayName(candidate), ...kindLabels].join(" · ");
     })].filter(Boolean).join("；")
     : [brandDisplayName(resolvedBrand), ...labels].filter(Boolean).join(" · ");
+  const uniqueSharedBrands = [...new Set(sharedAgentBrands)];
+  const visibleSharedBrands = uniqueSharedBrands.slice(0, 4);
+  const hiddenSharedBrands = uniqueSharedBrands.slice(4);
+  const hiddenSharedBrandLabels = hiddenSharedBrands.map((candidate) => {
+    const kindsForBrand = sharedAgentBrandKinds[candidate] ?? [];
+    const kindLabels = kindsForBrand
+      .filter(isAgentKindKey)
+      .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+    return [brandDisplayName(candidate), ...kindLabels].join(" · ");
+  });
 
   return (
     <span
@@ -183,19 +195,40 @@ export function AgentPresentation({
           <span aria-hidden="true" className="sh-agent-presentation__vercel-logo" />
           {density === "full" ? <span className="sh-agent-presentation__shared-title">{sharedTitle}</span> : null}
           <span className="sh-agent-presentation__shared-brands">
-            {[...new Set(sharedAgentBrands)].map((candidate) => {
+            {visibleSharedBrands.map((candidate) => {
               const kindLabels = (sharedAgentBrandKinds[candidate] ?? [])
                 .filter(isAgentKindKey)
                 .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
               const label = [brandDisplayName(candidate), ...kindLabels].join(" · ");
               return <BrandTag brand={candidate} iconOnly title={label} key={candidate} />;
             })}
+            {hiddenSharedBrands.length > 0 ? (
+              <span
+                aria-label={String(t("agents.sharedBrandOverflow", {
+                  count: hiddenSharedBrands.length,
+                  brands: hiddenSharedBrandLabels.join(" / "),
+                }))}
+                className="sh-agent-presentation__shared-brand-overflow"
+                title={hiddenSharedBrandLabels.join(" / ")}
+              >+{hiddenSharedBrands.length}</span>
+            ) : null}
           </span>
         </>
       ) : (
         <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />
       )}
-      {!isShared && density === "full" ? <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span> : null}
+      {!isShared && density === "full" ? (
+        <>
+          {deploymentStatus === "deployed" || deploymentStatus === "partially_deployed" ? (
+            <span
+              aria-label={deploymentStatus === "deployed" ? String(t("agents.cardDeploymentStatus.deployed")) : String(t("agents.cardDeploymentStatus.partiallyDeployed"))}
+              className={`sh-agent-presentation__deployment-status${deploymentStatus === "partially_deployed" ? " is-partial" : ""}`}
+              title={String(t(deploymentStatus === "deployed" ? "agents.cardDeploymentStatus.deployed" : "agents.cardDeploymentStatus.partiallyDeployed"))}
+            >{deploymentStatus === "deployed" ? "✓" : "◌"}</span>
+          ) : null}
+          <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span>
+        </>
+      ) : null}
     </span>
   );
 }

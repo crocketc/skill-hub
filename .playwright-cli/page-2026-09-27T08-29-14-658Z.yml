@@ -1,0 +1,26 @@
+- main [ref=f2e3]:
+  - generic [ref=f2e4]:
+    - paragraph [ref=f2e6]: 重新发现
+    - list "重新发现步骤" [ref=f2e7]:
+      - listitem [ref=f2e8]:
+        - generic [ref=f2e9]: "1"
+        - generic [ref=f2e10]: 重新发现 Agent 与 Skill
+      - listitem [ref=f2e11]:
+        - generic [ref=f2e12]: "2"
+        - generic [ref=f2e13]: 识别兼容的 Agent
+      - listitem [ref=f2e14]:
+        - generic [ref=f2e15]: "3"
+        - generic [ref=f2e16]: 扫描已有技能
+    - region [ref=f2e18]:
+      - heading "重新发现 Agent 与 Skill" [level=1] [ref=f2e19]
+      - paragraph [ref=f2e20]: 当前集中库只读重新发现 Agent 和 Skill，不会更换集中库或把内容添加到 Agent/项目。
+      - generic [ref=f2e21]:
+        - generic [ref=f2e22]: 当前集中库位置
+        - code [ref=f2e23]: D:\very-long-library-root-segment\skillhub-central-library\team-workspaces\agent-platform\imports-2026\rediscovery-preview\nested\library-root
+      - generic [ref=f2e24] [cursor=pointer]:
+        - checkbox "我确认只执行只读发现和扫描" [ref=f2e25]
+        - generic [ref=f2e26]: 我确认只执行只读发现和扫描
+    - status
+    - generic [ref=f2e28]:
+      - button "取消并返回设置" [ref=f2e30] [cursor=pointer]
+      - button "继续" [disabled] [ref=f2e32]

@@ -1,0 +1,38 @@
+- main [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - paragraph [ref=f1e6]: 初始化
+    - list "初始化步骤" [ref=f1e7]:
+      - listitem [ref=f1e8]:
+        - generic [ref=f1e9]: "1"
+        - generic [ref=f1e10]: 确认集中库位置
+      - listitem [ref=f1e11]:
+        - generic [ref=f1e12]: "2"
+        - generic [ref=f1e13]: 识别兼容的 Agent
+      - listitem [ref=f1e14]:
+        - generic [ref=f1e15]: "3"
+        - generic [ref=f1e16]: 扫描已有技能
+    - region [ref=f1e18]:
+      - heading "确认集中库位置" [level=1] [ref=f1e19]
+      - paragraph [ref=f1e20]: 集中库会统一保存受管理的技能内容。完成初始化时才会创建或打开集中库。
+      - generic [ref=f1e21]:
+        - generic [ref=f1e22]: 默认集中库位置
+        - code [ref=f1e23]: C:\Users\Preview\SkillHub\skills
+      - button "选择其他目录" [ref=f1e25] [cursor=pointer]
+      - paragraph [ref=f1e26]: 确认使用默认位置即可直接继续；也可以选择其他系统目录作为集中库。
+      - region [ref=f1e27]:
+        - heading "选择界面主题" [level=2] [ref=f1e28]
+        - paragraph [ref=f1e29]: 选择你偏好的界面颜色。选中后会立即预览，并在继续时保存。
+        - group "主题颜色" [ref=f1e30]:
+          - button "苔藓中性" [ref=f1e31] [cursor=pointer]
+          - button "春日信号" [ref=f1e37] [cursor=pointer]
+          - button "赤陶" [ref=f1e43] [cursor=pointer]
+          - button "Codex 浅色" [ref=f1e49] [cursor=pointer]
+          - button "海洋钴蓝" [ref=f1e55] [cursor=pointer]
+          - button "樱花" [ref=f1e61] [cursor=pointer]
+          - button "极光" [ref=f1e67] [cursor=pointer]
+          - button "烘焙" [ref=f1e73] [cursor=pointer]
+          - button "Grok 夜色" [pressed] [ref=f1e79] [cursor=pointer]
+    - status [ref=f1e85]
+    - generic [ref=f1e87]:
+      - button "继续" [ref=f1e88] [cursor=pointer]
+      - button "跳过初始化" [ref=f1e89] [cursor=pointer]

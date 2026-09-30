@@ -8,6 +8,8 @@ import { Button } from "../../ui/Button";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { AgentPresentation } from "../../ui/AgentPresentation";
+import { AgentDirectoryRoleBadge } from "../../ui/AgentDirectoryRoleBadge";
+import { DeploymentCapabilityIcons } from "../agents/DeploymentCapabilityIcons";
 import type { AgentDirectoryProjection, DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
 import {
   buildAgentGroups,
@@ -307,51 +309,59 @@ function AgentCard({
   exclude: (path: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const model = card.cardModel;
+  const directory = model?.directories[0];
+  const note = card.builtin
+    ? String(t("discovery.workbench.builtinHint"))
+    : !card.available
+      ? String(t("discovery.workbench.agentUnavailable"))
+      : card.sharedClients > 0
+        ? String(t("discovery.workbench.sharedClients", { count: card.sharedClients }))
+        : model?.deploymentStatus === "deployed"
+          ? String(t("agents.cardDeploymentStatus.deployed"))
+          : model?.deploymentStatus === "partially_deployed"
+            ? String(t("agents.cardDeploymentStatus.partiallyDeployed"))
+            : undefined;
   return (
     <li className="sh-discovery-workbench__agent-card" data-testid={`agent-card-${card.physicalId}`}>
       <div className="sh-discovery-workbench__agent-line">
         <AgentPresentation
           agentId={brand}
           brand={brand}
+          deploymentStatus={model?.deploymentStatus}
           kinds={card.kinds}
           sharedDirectory={card.kinds.includes("shared_directory")}
           sharedAgentBrands={card.sharedBrands}
           sharedAgentBrandKinds={card.sharedBrandKinds}
         />
-        {/* 2026-09-25 验收裁决：内置技能目录标注「内置」，只读边界随卡说明。 */}
-        {card.builtin ? <span className="sh-discovery-workbench__agent-builtin">{t("discovery.workbench.builtinLabel")}</span> : null}
-        {!card.available ? (
-          <span className="sh-discovery-workbench__agent-unavailable-label">
-            {t("discovery.workbench.agentUnavailable")}
-          </span>
+      </div>
+      <div className="sh-discovery-workbench__agent-role">
+        <AgentDirectoryRoleBadge role={directory?.role ?? (card.builtin ? "builtin" : "agent_user")} />
+      </div>
+      <div className="sh-discovery-workbench__agent-path-label">
+        {t("agents.pathLabel")}
+        {model?.supportsSharedDirectory && !model.sharedDirectory ? (
+          <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
         ) : null}
       </div>
-      {card.builtin ? (
-        <p className="sh-discovery-workbench__agent-builtin-hint">{t("discovery.workbench.builtinHint")}</p>
-      ) : null}
-      {/* OPT-07：共享引用只改归属展示，不改变目录可用性语义。 */}
-      {card.sharedClients > 0 ? (
-        <p className="sh-discovery-workbench__agent-shared" title={card.sharedClientNames.join(" / ")}>
-          {t("discovery.workbench.sharedClients", { count: card.sharedClients })}
-        </p>
-      ) : null}
-      {/* P2-02：超长路径换行展示（overflow-wrap: anywhere），完整值经原生
-          title 提示可达——与忽略项规则值和卡片描述同一策略。 */}
-      <span className="sh-discovery-workbench__agent-path-label">{t("agents.pathLabel")}</span>{" "}
       <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>{displayPath(card.path)}</code>
-      <ConfirmDialog
-        cancelLabel={t("actions.cancel")}
-        confirmLabel={t("discovery.workbench.excludeConfirm")}
-        description={t("discovery.workbench.excludeConfirmDescription", { path: card.path })}
-        onConfirm={() => void exclude(card.path)}
-        title={t("discovery.workbench.excludeConfirmTitle")}
-        trigger={
-          <Button size="sm" variant="ghost">
-            {t("discovery.workbench.excludeAction")}
-          </Button>
-        }
-        variant="primary"
-      />
+      <div className="sh-discovery-workbench__agent-footer">
+        <DeploymentCapabilityIcons
+          directory={directory}
+          note={note}
+          noteTitle={card.sharedClients > 0 ? card.sharedClientNames.join(" / ") : note}
+          t={(key) => String(t(key as never))}
+        />
+        <ConfirmDialog
+          cancelLabel={t("actions.cancel")}
+          confirmLabel={t("discovery.workbench.excludeConfirm")}
+          description={t("discovery.workbench.excludeConfirmDescription", { path: card.path })}
+          onConfirm={() => void exclude(card.path)}
+          title={t("discovery.workbench.excludeConfirmTitle")}
+          trigger={<Button size="sm" variant="ghost">{t("discovery.workbench.excludeAction")}</Button>}
+          variant="primary"
+        />
+      </div>
     </li>
   );
 }

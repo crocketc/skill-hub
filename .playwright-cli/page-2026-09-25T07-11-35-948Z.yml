@@ -1,0 +1,102 @@
+- generic [ref=f2e3]:
+  - link "跳到主内容" [ref=f2e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - complementary "主导航" [ref=f2e5]:
+    - generic [ref=f2e6]:
+      - button "收起导航" [expanded] [ref=f2e7] [cursor=pointer]
+      - link "SkillHub" [ref=f2e10] [cursor=pointer]:
+        - /url: /
+        - img "SkillHub" [ref=f2e11]
+    - generic [ref=f2e12]:
+      - navigation [ref=f2e13]:
+        - list [ref=f2e14]:
+          - listitem [ref=f2e15]:
+            - link "概览" [ref=f2e16] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=f2e20]:
+            - link "技能库" [ref=f2e21] [cursor=pointer]:
+              - /url: /library
+          - listitem [ref=f2e25]:
+            - link "技能关系" [ref=f2e26] [cursor=pointer]:
+              - /url: /relationships
+          - listitem [ref=f2e35]:
+            - link "发现" [ref=f2e36] [cursor=pointer]:
+              - /url: /discovery
+          - listitem [ref=f2e40]:
+            - link "Agent" [ref=f2e41] [cursor=pointer]:
+              - /url: /agents
+          - listitem [ref=f2e45]:
+            - link "项目" [ref=f2e46] [cursor=pointer]:
+              - /url: /projects
+          - listitem [ref=f2e50]:
+            - link "待处理" [ref=f2e51] [cursor=pointer]:
+              - /url: /pending
+      - navigation [ref=f2e55]:
+        - list [ref=f2e56]:
+          - listitem [ref=f2e57]:
+            - link "操作记录与恢复" [ref=f2e58] [cursor=pointer]:
+              - /url: /operations
+          - listitem [ref=f2e62]:
+            - link "设置" [ref=f2e63] [cursor=pointer]:
+              - /url: /settings
+  - generic [ref=f2e67]:
+    - generic [ref=f2e68]:
+      - generic [ref=f2e69]:
+        - button "前进" [ref=f2e70] [cursor=pointer]
+        - paragraph [ref=f2e73]: 概览
+      - button "通知" [ref=f2e76] [cursor=pointer]
+    - main [ref=f2e80]:
+      - generic [ref=f2e81]:
+        - generic [ref=f2e82]:
+          - generic [ref=f2e83]:
+            - heading "项目" [level=1] [ref=f2e84]
+            - paragraph [ref=f2e85]: 用扁平的标签视图组织项目共享的 Skill 要求。
+          - button "注册项目" [ref=f2e87] [cursor=pointer]
+        - region "项目筛选" [ref=f2e88]:
+          - generic [ref=f2e89]:
+            - generic [ref=f2e90]: 搜索项目
+            - textbox "搜索项目" [ref=f2e91]
+          - group "标签" [ref=f2e92]:
+            - generic [ref=f2e94]:
+              - generic [ref=f2e95] [cursor=pointer]:
+                - checkbox "automation" [ref=f2e96]
+                - generic [ref=f2e97]: automation
+              - generic [ref=f2e99] [cursor=pointer]:
+                - checkbox "docs" [ref=f2e100]
+                - generic [ref=f2e101]: docs
+              - generic [ref=f2e103] [cursor=pointer]:
+                - checkbox "rust" [ref=f2e104]
+                - generic [ref=f2e105]: rust
+              - generic [ref=f2e107] [cursor=pointer]:
+                - checkbox "web" [ref=f2e108]
+                - generic [ref=f2e109]: web
+        - list [ref=f2e111]:
+          - listitem [ref=f2e112]:
+            - button "Aurora Web" [ref=f2e113] [cursor=pointer]
+            - paragraph [ref=f2e114]: Long-path Windows workspace used for layout checks.
+            - code [ref=f2e115]: D:\Work\very-long-project-paths\aurora-web\workspace\root
+            - paragraph [ref=f2e116]:
+              - generic [ref=f2e117]: 可访问
+              - generic [ref=f2e119]: 关联 Agent：1
+            - list "标签" [ref=f2e120]:
+              - listitem [ref=f2e121]: rust
+              - listitem [ref=f2e122]: web
+            - button "处理装配冲突（1 项）" [ref=f2e123] [cursor=pointer]
+          - listitem [ref=f2e124]:
+            - button "Docs Pipeline" [ref=f2e125] [cursor=pointer]
+            - paragraph [ref=f2e126]: macOS workspace with a deep documentation pipeline.
+            - code [ref=f2e127]: /Users/preview/Workspaces/documentation-pipeline/monorepo/apps/docs
+            - paragraph [ref=f2e128]:
+              - generic [ref=f2e129]: 未在本机
+              - generic [ref=f2e131]: 关联 Agent：0
+            - list "标签" [ref=f2e132]:
+              - listitem [ref=f2e133]: docs
+              - listitem [ref=f2e134]: automation
+            - button "在项目详情声明共享配置需求" [ref=f2e135] [cursor=pointer]
+          - listitem [ref=f2e136]:
+            - button "Mobile Relay" [ref=f2e137] [cursor=pointer]
+            - code [ref=f2e138]: C:\Dev\mobile-relay
+            - paragraph [ref=f2e139]:
+              - generic [ref=f2e140]: 未在本机
+              - generic [ref=f2e142]: 关联 Agent：0
+            - button "在项目详情声明共享配置需求" [ref=f2e143] [cursor=pointer]

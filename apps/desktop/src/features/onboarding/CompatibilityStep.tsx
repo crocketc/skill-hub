@@ -7,6 +7,7 @@ import type { AgentDirectoryView, AgentView } from "../agents/api";
 import { DeploymentCapabilityIcons } from "../agents/DeploymentCapabilityIcons";
 import { Button } from "../../ui/Button";
 import { AgentPresentation, agentKindLabel, isAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
+import { AgentDirectoryRoleBadge } from "../../ui/AgentDirectoryRoleBadge";
 import { brandDisplayName } from "../../ui/BrandTag";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { displayPath } from "../../platform/displayPath";
@@ -30,6 +31,9 @@ interface CompatibilityCardGroup {
   path?: string;
   directory?: AgentDirectoryView;
   pendingCreation: boolean;
+  role: AgentDirectoryView["role"];
+  deploymentStatus: AgentDirectoryView["deploymentStatus"];
+  supportsSharedDirectory: boolean;
   sharedDirectory: boolean;
   sharedAgentBrands: string[];
   sharedAgentBrandKinds: Record<string, string[]>;
@@ -40,6 +44,7 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
   const targetsById = new Map(targets.map((target) => [target.id, target]));
   if (projection) {
     return buildAgentDirectoryCardModels(projection)
+      .filter((card) => card.directories[0]?.role !== "project")
       .filter((card) => card.directoryMembers && card.directoryMembers.length > 0)
       .map((card) => {
         const seen = new Set<string>();
@@ -59,6 +64,9 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
           kinds: card.kinds,
           path: card.directories[0]?.path ?? undefined,
           directory: card.directories[0],
+          role: card.directories[0]?.role ?? "agent_user",
+          deploymentStatus: card.deploymentStatus,
+          supportsSharedDirectory: card.supportsSharedDirectory,
           pendingCreation: card.directories[0]?.status === "pending_creation",
           sharedDirectory: card.sharedDirectory,
           sharedAgentBrands: card.sharedAgentBrands,
@@ -90,6 +98,9 @@ function cardGroupsFor(targets: CompatibilityTarget[], projection?: AgentDirecto
       kinds: card.kinds,
       path: card.agent.discoveredPaths[0],
       directory: card.model.directories[0],
+      role: card.model.directories[0]?.role ?? "agent_user",
+      deploymentStatus: card.model.deploymentStatus,
+      supportsSharedDirectory: card.model.supportsSharedDirectory,
       pendingCreation: card.agents.some((agent) => targetsById.get(agent.id)?.availability === "pending_creation"),
       sharedDirectory: card.sharedDirectory,
       sharedAgentBrands: card.model.sharedAgentBrands,
@@ -218,11 +229,21 @@ function TargetCard({
               <AgentPresentation
                 agentId={group.brand}
                 brand={group.brand}
+                deploymentStatus={group.deploymentStatus}
                 kinds={group.kinds}
                 sharedDirectory={group.sharedDirectory}
                 sharedAgentBrands={group.sharedAgentBrands}
                 sharedAgentBrandKinds={group.sharedAgentBrandKinds}
               />
+            </span>
+            <span className="sh-onboarding__target-role">
+              <AgentDirectoryRoleBadge role={group.role} />
+            </span>
+            <span className="sh-onboarding__target-path-label">
+              {t("agents.pathLabel")}
+              {group.supportsSharedDirectory && !group.sharedDirectory ? (
+                <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
+              ) : null}
             </span>
             <code className="sh-onboarding__target-path">
               {pendingCreation
@@ -231,7 +252,17 @@ function TargetCard({
                   ? displayPath(group.path)
                   : t("onboarding.targetPathUnavailable")}
             </code>
-            <DeploymentCapabilityIcons directory={group.directory} t={(key) => String(t(key as never))} />
+            <DeploymentCapabilityIcons
+              directory={group.directory}
+              note={group.role === "builtin"
+                ? String(t("agents.builtinHint"))
+                : group.deploymentStatus === "deployed"
+                  ? String(t("agents.cardDeploymentStatus.deployed"))
+                  : group.deploymentStatus === "partially_deployed"
+                    ? String(t("agents.cardDeploymentStatus.partiallyDeployed"))
+                    : undefined}
+              t={(key) => String(t(key as never))}
+            />
           </span>
         )}
         onChange={(event) => {

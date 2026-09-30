@@ -18,6 +18,7 @@ import { DeploymentCapabilityIcons } from "./DeploymentCapabilityIcons";
 import { CustomAgentForm } from "./CustomAgentForm";
 import "./agents.css";
 import { displayPath } from "../../platform/displayPath";
+import { AgentDirectoryRoleBadge } from "../../ui/AgentDirectoryRoleBadge";
 
 export interface AgentListPageProps {
   facade?: AgentFacade;
@@ -141,20 +142,25 @@ export function AgentListPage({
                       <AgentPresentation
                         agentId={agent.client}
                         brand={model.brand}
+                        deploymentStatus={model.deploymentStatus}
                         kinds={model.kinds}
                         sharedAgentBrands={model.sharedAgentBrands}
                         sharedAgentBrandKinds={model.sharedAgentBrandKinds}
                         sharedDirectory={model.sharedDirectory}
                       />
                     </Link>
-                    {model.builtin ? <span className="sh-agent-card__builtin">{t("agents.builtinLabel")}</span> : null}
                   </div>
                 </div>
-                {model.builtin ? (
-                  <p className="sh-agent-card__builtin-hint">{t("agents.builtinHint")}</p>
-                ) : null}
+                <div className="sh-agent-card__role-line">
+                  <AgentDirectoryRoleBadge role={model.directories[0]?.role ?? "agent_user"} />
+                </div>
                 <div className="sh-agent-card__paths">
-                  <span className="sh-agent-card__paths-label">{t("agents.pathLabel")}</span>
+                  <span className="sh-agent-card__paths-label">
+                    {t("agents.pathLabel")}
+                    {model.supportsSharedDirectory && !model.sharedDirectory ? (
+                      <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
+                    ) : null}
+                  </span>
                   <ul className="sh-agent-card__path-list">
                     {/* DEV-88（2026-09-25 验收反馈）：shared_reference 路径
                         不展示具体路径（唯一路径在共享目录卡上），替换为
@@ -162,10 +168,11 @@ export function AgentListPage({
                     {model.directories.map((directory, index) => renderDirectory(directory, index, translate))}
                   </ul>
                 </div>
-                {model.supportsSharedDirectory && !model.sharedDirectory ? (
-                  <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
-                ) : null}
-                <DeploymentCapabilityIcons directory={model.directories[0]} t={translate} />
+                <DeploymentCapabilityIcons
+                  directory={model.directories[0]}
+                  note={model.builtin ? String(t("agents.builtinHint")) : model.deploymentStatus === "deployed" ? String(t("agents.cardDeploymentStatus.deployed")) : model.deploymentStatus === "partially_deployed" ? String(t("agents.cardDeploymentStatus.partiallyDeployed")) : undefined}
+                  t={translate}
+                />
               </li>
             );
           })}

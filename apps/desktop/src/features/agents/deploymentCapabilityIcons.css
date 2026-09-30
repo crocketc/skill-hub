@@ -1,5 +1,12 @@
-/* DEV-108：派发方式小图标——无边框、尺寸收敛，以绿/红直接表达
-   支持/不支持；推荐态只用一层轻量成功色底，不回到描边样式。 */
+/* 派发方式图标用绿/红文字色表达能力，不添加底色或推荐态背景。 */
+
+.sh-agent-card__deployment-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
 
 .sh-agent-card__deployment-methods {
   display: inline-flex;
@@ -24,6 +31,11 @@
   color: var(--ui-success-foreground);
 }
 
-.sh-agent-card__deployment-method.is-recommended {
-  background: var(--ui-success-background);
+.sh-agent-card__deployment-note {
+  overflow: hidden;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

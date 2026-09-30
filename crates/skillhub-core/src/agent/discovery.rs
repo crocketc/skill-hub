@@ -143,9 +143,19 @@ pub enum AgentDirectoryIdentity {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum AgentDirectoryRole {
+    /// User-level Agent Skill directory.
+    AgentUser,
+    /// Skill directory owned by the Agent's active workspace; discovery may
+    /// encode this with the historical `project` target scope.
+    AgentWorkspace,
+    /// Legacy role accepted for older generated fixtures and snapshots.
     AgentNative,
+    /// Legacy role: current projections express this independently with
+    /// `AgentDirectoryFact::is_shared_directory`.
     SharedDirectory,
+    /// Platform-managed Agent directory; read-only in the current release.
     Builtin,
+    /// Directory owned by the separate registered-project model.
     Project,
 }
 
@@ -190,6 +200,9 @@ pub struct AgentDirectoryMemberFact {
     pub brand: Option<String>,
     pub client_id: Option<String>,
     pub kind: Option<ClientKind>,
+    /// Whether this Agent client can read from the shared Skills directory.
+    #[serde(default)]
+    pub supports_shared_directory: bool,
     pub availability: AgentDirectoryAvailability,
     pub capabilities: AgentDirectoryMemberCapabilities,
     pub deployment_status: AgentDirectoryDeploymentStatus,
@@ -201,6 +214,9 @@ pub struct AgentDirectoryMemberFact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct AgentDirectoryFact {
     pub role: AgentDirectoryRole,
+    /// Identifies the shared directory entity independently from its path role.
+    #[serde(default)]
+    pub is_shared_directory: bool,
     pub identity: AgentDirectoryIdentity,
     pub path: String,
     pub status: DirectoryObservationStatus,

@@ -6596,11 +6596,7 @@ impl LocalApplicationFacade {
             };
 
             for target in &snapshot.logical_targets {
-                // A project has its own durable project entity below. Keeping
-                // discovery traces out of that list avoids duplicate cards.
-                if target.scope == TargetScope::Project
-                    || !root_is_identified(&target.agent_root_id)
-                {
+                if !root_is_identified(&target.agent_root_id) {
                     continue;
                 }
                 let root_status = snapshot
@@ -6630,12 +6626,15 @@ impl LocalApplicationFacade {
                 } else {
                     target.status
                 };
+                let is_shared_directory = target.shared_reference
+                    || kinds_by_client.get(&(target.profile_id.as_str(), target.client_id.as_str()))
+                        == Some(&skillhub_core::ClientKind::SharedDirectory);
                 let role = if target.builtin {
                     AgentDirectoryRole::Builtin
-                } else if target.shared_reference {
-                    AgentDirectoryRole::SharedDirectory
+                } else if target.scope == TargetScope::Project {
+                    AgentDirectoryRole::AgentWorkspace
                 } else {
-                    AgentDirectoryRole::AgentNative
+                    AgentDirectoryRole::AgentUser
                 };
                 let (identity, identity_key) = if target.physical_identity_verified {
                     let identity =
@@ -6648,14 +6647,12 @@ impl LocalApplicationFacade {
                     let identity = AgentDirectoryIdentity::Candidate(candidate_id.clone());
                     (identity, format!("candidate:{candidate_id}"))
                 };
-                let grouping_key = match (role, target.physical_identity_verified) {
-                    (AgentDirectoryRole::SharedDirectory, _) => {
-                        format!("shared:{identity_key}")
-                    }
-                    (role, true) => {
-                        format!("brand:{}:role:{role:?}:{identity_key}", target.profile_id)
-                    }
-                    (role, false) => format!("role:{role:?}:{identity_key}"),
+                let grouping_key = if is_shared_directory {
+                    format!("shared:{identity_key}")
+                } else if target.physical_identity_verified {
+                    format!("brand:{}:role:{role:?}:{identity_key}", target.profile_id)
+                } else {
+                    format!("role:{role:?}:{identity_key}")
                 };
                 let capabilities =
                     effective_target_capabilities(&target.client_id, &host_capabilities);
@@ -6672,6 +6669,10 @@ impl LocalApplicationFacade {
                     kind: kinds_by_client
                         .get(&(target.profile_id.as_str(), target.client_id.as_str()))
                         .cloned(),
+                    supports_shared_directory: snapshot.logical_targets.iter().any(|candidate|
+                        candidate.profile_id == target.profile_id
+                            && candidate.client_id == target.client_id
+                            && candidate.shared_reference),
                     availability: AgentDirectoryAvailability {
                         status,
                         exists: target.exists,
@@ -6692,6 +6693,7 @@ impl LocalApplicationFacade {
                     .entry(grouping_key)
                     .or_insert_with(|| AgentDirectoryFact {
                         role,
+                        is_shared_directory,
                         identity,
                         path: target.path.clone(),
                         status,
@@ -6740,7 +6742,8 @@ impl LocalApplicationFacade {
                 facts.insert(
                     format!("custom:{}", agent.id),
                     AgentDirectoryFact {
-                        role: AgentDirectoryRole::AgentNative,
+                        role: AgentDirectoryRole::AgentUser,
+                        is_shared_directory: false,
                         identity,
                         path: agent.directory.path.clone(),
                         status,
@@ -6753,6 +6756,7 @@ impl LocalApplicationFacade {
                             brand: Some(profile.brand.clone()),
                             client_id: client.map(|client| client.id.clone()),
                             kind: client.map(|client| client.kind.clone()),
+                            supports_shared_directory: false,
                             availability: AgentDirectoryAvailability {
                                 status,
                                 exists: observation.exists,
@@ -6796,6 +6800,7 @@ impl LocalApplicationFacade {
                     key,
                     AgentDirectoryFact {
                         role: AgentDirectoryRole::Project,
+                        is_shared_directory: false,
                         identity,
                         path: project.device_path.clone(),
                         status,
@@ -6808,6 +6813,7 @@ impl LocalApplicationFacade {
                             brand: None,
                             client_id: None,
                             kind: None,
+                            supports_shared_directory: false,
                             availability: AgentDirectoryAvailability {
                                 status,
                                 exists,

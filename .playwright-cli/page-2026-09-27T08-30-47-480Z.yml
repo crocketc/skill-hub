@@ -1,0 +1,75 @@
+- main [ref=f3e3]:
+  - generic [ref=f3e4]:
+    - paragraph [ref=f3e6]: 重新发现
+    - list "重新发现步骤" [ref=f3e7]:
+      - listitem [ref=f3e8]:
+        - generic [ref=f3e10]: 重新发现 Agent 与 Skill
+        - generic [ref=f3e36]: 已完成
+      - listitem [ref=f3e11]:
+        - generic [ref=f3e12]: "2"
+        - generic [ref=f3e13]: 识别兼容的 Agent
+      - listitem [ref=f3e14]:
+        - generic [ref=f3e15]: "3"
+        - generic [ref=f3e16]: 扫描已有技能
+    - generic [ref=f3e17]:
+      - generic [ref=f3e37]:
+        - generic [ref=f3e38]: 当前集中库位置
+        - code [ref=f3e39]: D:\very-long-library-root-segment\skillhub-central-library\team-workspaces\agent-platform\imports-2026\rediscovery-preview\nested\library-root
+      - region [ref=f3e40]:
+        - generic [ref=f3e41]:
+          - heading "识别兼容的 Agent" [level=1] [ref=f3e42]
+          - paragraph [ref=f3e43]: 识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。
+        - generic [ref=f3e44] [cursor=pointer]:
+          - checkbox "我确认这里只识别 Agent，不会把技能添加到 Agent/项目" [checked] [ref=f3e45]
+          - generic [ref=f3e46]: 我确认这里只识别 Agent，不会把技能添加到 Agent/项目
+        - generic [ref=f3e48]:
+          - button "识别 Agent" [active] [ref=f3e49] [cursor=pointer]
+          - generic [ref=f3e51]: 4 个路径卡片 · 4 个可用目标
+        - group "可选择的兼容性目标" [ref=f3e52]:
+          - generic [ref=f3e54]:
+            - paragraph [ref=f3e55]: 同品牌、同目录的类型合并展示；不同路径分别选择。路径较多时可在此列表内滚动。
+            - button "全选可用目标" [ref=f3e56] [cursor=pointer]
+          - generic "可选择的兼容性目标" [ref=f3e57]:
+            - generic [ref=f3e58]:
+              - generic [ref=f3e60] [cursor=pointer]:
+                - checkbox "OpenAI · 桌面端/终端" [ref=f3e61]
+                - generic [ref=f3e62]:
+                  - generic [ref=f3e64]:
+                    - generic "OpenAI · 桌面端 · 终端" [ref=f3e66]:
+                      - generic "openai" [ref=f3e67]: OpenAI
+                      - generic "OpenAI · 桌面端 · 终端" [ref=f3e70]: 桌面端/终端
+                    - code [ref=f3e71]: C:\Users\Preview\.codex\skills
+                  - generic [ref=f3e72]: 桌面端 · 终端
+              - generic [ref=f3e74] [cursor=pointer]:
+                - checkbox "OpenAI · 桌面端" [ref=f3e75]
+                - generic [ref=f3e76]:
+                  - generic [ref=f3e78]:
+                    - generic "OpenAI · 桌面端" [ref=f3e80]:
+                      - generic "openai" [ref=f3e81]: OpenAI
+                      - generic "OpenAI · 桌面端" [ref=f3e84]: 桌面端
+                    - code [ref=f3e85]: C:\Users\Preview\.openai\skills
+                  - generic [ref=f3e86]: 桌面端
+              - generic [ref=f3e88] [cursor=pointer]:
+                - checkbox "Claude · 终端" [ref=f3e89]
+                - generic [ref=f3e90]:
+                  - generic [ref=f3e92]:
+                    - generic "Claude · 终端" [ref=f3e94]:
+                      - generic "anthropic" [ref=f3e95]: Claude
+                      - generic "Claude · 终端" [ref=f3e98]: 终端
+                    - code [ref=f3e99]: C:\Users\Preview\.claude\skills
+                  - generic [ref=f3e100]: 终端
+              - generic [ref=f3e102] [cursor=pointer]:
+                - checkbox "Missing Agent · 桌面端" [disabled] [ref=f3e103]
+                - generic [ref=f3e104]:
+                  - generic [ref=f3e106]:
+                    - generic "Missing Agent · 桌面端" [ref=f3e108]:
+                      - generic "Missing Agent" [ref=f3e109]
+                      - generic "Missing Agent · 桌面端" [ref=f3e111]: 桌面端
+                    - code [ref=f3e112]: C:\Users\Preview\.missing-agent\skills
+                  - generic [ref=f3e113]: 不可用
+    - status
+    - generic [ref=f3e28]:
+      - generic [ref=f3e29]:
+        - button "取消并返回设置" [ref=f3e30] [cursor=pointer]
+        - button "上一步" [ref=f3e50] [cursor=pointer]
+      - button "继续" [disabled] [ref=f3e32]

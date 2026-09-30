@@ -1,0 +1,178 @@
+- generic:
+  - generic:
+    - generic:
+      - link:
+        - /url: "#main-content"
+        - text: 跳到主内容
+      - complementary:
+        - generic:
+          - button [expanded]
+          - link:
+            - /url: /
+        - generic:
+          - navigation:
+            - list:
+              - listitem:
+                - link:
+                  - /url: /
+                  - generic: 概览
+              - listitem:
+                - link:
+                  - /url: /library
+                  - generic: 技能库
+              - listitem:
+                - link:
+                  - /url: /relationships
+                  - generic: 技能关系
+              - listitem:
+                - link:
+                  - /url: /discovery
+                  - generic: 发现
+              - listitem:
+                - link:
+                  - /url: /agents
+                  - generic: Agent
+              - listitem:
+                - link:
+                  - /url: /projects
+                  - generic: 项目
+              - listitem:
+                - link:
+                  - /url: /pending
+                  - generic: 待处理
+          - navigation:
+            - list:
+              - listitem:
+                - link:
+                  - /url: /operations
+                  - generic: 操作记录与恢复
+              - listitem:
+                - link:
+                  - /url: /settings
+                  - generic: 设置
+      - generic:
+        - generic:
+          - generic:
+            - button
+            - paragraph: 概览
+          - generic:
+            - generic:
+              - button
+        - main:
+          - generic:
+            - generic:
+              - generic:
+                - heading [level=1]: 项目
+                - paragraph: 用扁平的标签视图组织项目共享的 Skill 要求。
+              - generic:
+                - button: 注册项目
+            - region:
+              - generic:
+                - generic: 搜索项目
+                - textbox
+              - group:
+                - generic: 标签
+                - generic:
+                  - generic:
+                    - checkbox
+                    - generic: automation
+                  - generic:
+                    - checkbox
+                    - generic: docs
+                  - generic:
+                    - checkbox
+                    - generic: rust
+                  - generic:
+                    - checkbox
+                    - generic: web
+            - list:
+              - listitem:
+                - button: Aurora Web
+                - paragraph: Long-path Windows workspace used for layout checks.
+                - code: D:\Work\very-long-project-paths\aurora-web\workspace\root
+                - paragraph:
+                  - generic: 可访问
+                  - generic: 关联 Agent：1
+                - list:
+                  - listitem: rust
+                  - listitem: web
+                - button: 处理装配冲突（1 项）
+              - listitem:
+                - button: Docs Pipeline
+                - paragraph: macOS workspace with a deep documentation pipeline.
+                - code: /Users/preview/Workspaces/documentation-pipeline/monorepo/apps/docs
+                - paragraph:
+                  - generic: 未在本机
+                  - generic: 关联 Agent：0
+                - list:
+                  - listitem: docs
+                  - listitem: automation
+                - button: 在项目详情声明共享配置需求
+              - listitem:
+                - button: Mobile Relay
+                - code: C:\Dev\mobile-relay
+                - paragraph:
+                  - generic: 未在本机
+                  - generic: 关联 Agent：0
+                - button: 在项目详情声明共享配置需求
+  - dialog [ref=e145]:
+    - banner [ref=e146]:
+      - generic [ref=e147]:
+        - heading "注册本地项目" [level=2] [ref=e148]
+        - paragraph [ref=e149]: 选择项目根目录后，SkillHub 只建立本机管理记录，不会导入 Skill 或写入项目文件。
+      - button "关闭" [ref=e150] [cursor=pointer]
+    - generic [ref=e154]:
+      - button "选择项目目录" [active] [ref=e155] [cursor=pointer]
+      - paragraph [ref=e200]: C:\Preview\Aurora
+      - region [ref=e201]:
+        - heading "目录预览（只读）" [level=3] [ref=e202]
+        - paragraph [ref=e203]: 预览仅读取目录，不会创建项目、导入 Skill 或写入任何文件。
+        - heading "发现的 Agent 目录痕迹" [level=4] [ref=e204]
+        - list [ref=e205]:
+          - listitem [ref=e206]:
+            - generic "Anthropic:claude Code:project:c:/preview/aurora/ · 终端" [ref=e207]:
+              - generic "anthropic:claude-code:project:c:/preview/aurora/" [ref=e208]: Anthropic:claude Code:project:c:/preview/aurora/
+              - generic "Anthropic:claude Code:project:c:/preview/aurora/ · 终端" [ref=e210]: 终端
+            - generic [ref=e211]: C:\Preview\Aurora\.claude\skills
+        - heading "可扫描的项目 Skill（不会自动导入）" [level=4] [ref=e212]
+        - list "可扫描的项目 Skill（不会自动导入）" [ref=e213]:
+          - listitem [ref=e214]:
+            - text: research
+            - generic [ref=e215]: C:\Preview\Aurora\.claude\skills\research
+          - listitem [ref=e216]:
+            - text: helpers
+            - generic [ref=e217]: C:\Preview\Aurora\scripts\helpers
+      - generic [ref=e156]:
+        - generic [ref=e157]: 项目名称
+        - textbox "项目名称" [ref=e158]: Aurora
+      - generic [ref=e159]:
+        - generic [ref=e160]: 标签（可选）
+        - textbox "标签（可选）" [ref=e161]
+        - paragraph [ref=e162]: 多个标签用英文逗号分隔。
+      - group "关联已发现的 Agent（可选）" [ref=e163]:
+        - generic [ref=e165]:
+          - generic [ref=e166] [cursor=pointer]:
+            - checkbox "OpenAI · Codex CLI" [ref=e167]
+            - generic "Codex · Agent" [ref=e169]:
+              - generic "codex" [ref=e170]: Codex
+              - generic "Codex · Agent" [ref=e173]: Agent
+          - generic [ref=e174] [cursor=pointer]:
+            - checkbox "anthropic · anthropic.claude-code" [checked] [ref=e175]
+            - generic "Claude · 终端" [ref=e177]:
+              - generic "claude" [ref=e178]: Claude
+              - generic "Claude · 终端" [ref=e181]: 终端
+          - generic [ref=e182] [cursor=pointer]:
+            - checkbox "deepseek-harness · deepseek-harness.local-agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing" [ref=e183]
+            - generic "Deepseek Harness · Deepseek Harness.local Agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing · Agent" [ref=e185]:
+              - generic "deepseek-harness · deepseek-harness.local-agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing" [ref=e186]: Deepseek Harness · Deepseek Harness.local Agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing
+              - generic "Deepseek Harness · Deepseek Harness.local Agent.with.an.extremely.long.unbroken.directory.suffix.that.must.wrap.instead.of.overflowing · Agent" [ref=e188]: Agent
+          - generic [ref=e189] [cursor=pointer]:
+            - checkbox "Unavailable target" [disabled] [ref=e190]
+            - generic:
+              - generic "Missing Target · Agent" [ref=e192]:
+                - generic "missing-target" [ref=e193]: Missing Target
+                - generic "Missing Target · Agent" [ref=e195]: Agent
+              - generic [ref=e196]: 当前不可用（目录不存在或不可写）
+      - generic [ref=e197]:
+        - button "取消" [ref=e198] [cursor=pointer]
+        - button "确认注册" [ref=e199] [cursor=pointer]

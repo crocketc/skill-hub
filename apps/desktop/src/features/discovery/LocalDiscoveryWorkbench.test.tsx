@@ -647,9 +647,9 @@ it("keeps very long directory paths wrapped and reachable through a title hint (
   expect(pathCode).toHaveClass("sh-discovery-workbench__agent-path");
   // 完整值经原生 title 提示可达（与忽略项规则值同一策略）。
   expect(pathCode).toHaveAttribute("title", displayLongPath);
-  // CSS 层锁定换行策略：不靠横向滚动或裁切展示超长路径。
+  // 固定卡片高度下以单行截断展示，完整值仍可通过 title 读取。
   expect(discoveryCss).toMatch(
-    /\.sh-discovery-workbench__agent-path\s*\{[^}]*overflow-wrap:\s*anywhere/,
+    /\.sh-discovery-workbench__agent-path\s*\{[^}]*text-overflow:\s*ellipsis/,
   );
 });
 

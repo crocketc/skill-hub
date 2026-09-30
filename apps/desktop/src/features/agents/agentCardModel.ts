@@ -77,6 +77,13 @@ function supportedModesForMembers(members: readonly AgentDirectoryMemberFact[]):
   ) as AgentDeploymentMode[];
 }
 
+function supportedModesForDirectories(directories: readonly AgentDirectoryView[]): AgentDeploymentMode[] {
+  if (directories.length === 0) return [];
+  return directories[0].supportedModes.filter((mode) =>
+    directories.every((directory) => directory.supportedModes.includes(mode)),
+  );
+}
+
 function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryView {
   const verified = directory.identity.kind === "verified_physical";
   const candidate = directory.identity.kind === "candidate";
@@ -84,7 +91,9 @@ function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryVi
     path: directory.exists || directory.status !== "missing" ? directory.path : null,
     status: projectedStatus(directory.status),
     role: directory.role,
-    sharedReference: directory.role === "shared_directory",
+    isSharedDirectory: directory.is_shared_directory ?? directory.role === "shared_directory",
+    supportsSharedDirectory: directory.members.some((member) => member.supports_shared_directory),
+    sharedReference: directory.is_shared_directory ?? directory.role === "shared_directory",
     builtin: directory.role === "builtin",
     readable: directory.readable,
     writable: directory.writable,
@@ -107,9 +116,9 @@ function projectedDirectoryView(directory: AgentDirectoryFact): AgentDirectoryVi
  * presentation labels.
  */
 export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryProjection): AgentView[] {
-  return projection.directories.map((directory) => {
+  return projection.directories.filter((directory) => directory.role !== "project").map((directory) => {
     const members = directory.members.map((member) => projectedMemberView(directory, member));
-    const shared = directory.role === "shared_directory";
+    const shared = directory.is_shared_directory ?? directory.role === "shared_directory";
     const brand = shared ? "Agent Skills" : directory.members.find((member) => member.brand)?.brand ?? "Agent";
     const identity = directory.identity.kind === "verified_physical"
       ? `physical:${directory.identity.value}`
@@ -146,7 +155,8 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
       directoryMembers: directory.members,
       deploymentStatus: projectedDeploymentStatus(directory.members),
       builtin: directory.role === "builtin" || undefined,
-      supportsSharedDirectory: directory.role === "shared_directory",
+      isSharedDirectory: shared,
+      supportsSharedDirectory: !shared && directory.members.some((member) => member.supports_shared_directory),
       sharedAgentBrands: shared ? recognizedSharedBrands(directory.members) : undefined,
       sharedAgentBrandKinds: shared ? sharedBrandKindsFromFacts(directory.members) : undefined,
     };
@@ -173,7 +183,7 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
   return projection.directories.map((directory) => {
     const directoryView = projectedDirectoryView(directory);
     const members = directory.members.map((member) => projectedMemberView(directory, member));
-    const shared = directory.role === "shared_directory";
+    const shared = directory.is_shared_directory ?? directory.role === "shared_directory";
     const brands = shared
       ? recognizedSharedBrands(directory.members)
       : [];
@@ -189,13 +199,13 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
       ? directory.members[0].capabilities.preferred_mode ?? undefined
       : undefined;
     return {
-      id: `${directory.role}:${identityKey}`,
+      id: `${directory.role}:${shared ? "shared" : "agent"}:${identityKey}`,
       brand: shared ? "Agent Skills" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
       brandLabel: shared ? "共享目录" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
       kinds,
       directories: [directoryView],
       sharedDirectory: shared,
-      supportsSharedDirectory: shared,
+      supportsSharedDirectory: !shared && directory.members.some((member) => member.supports_shared_directory),
       sharedAgentBrands: brands,
       sharedAgentBrandKinds: shared ? sharedBrandKindsFromFacts(directory.members) : {},
       builtin: directory.role === "builtin",
@@ -214,7 +224,7 @@ function directoryKey(directory: AgentDirectoryView): string {
   const identity = directory.physicalIdentityVerified && directory.physicalIdentityKey
     ? `physical:${directory.physicalIdentityKey}`
     : `candidate:${directory.candidateIdentityKey ?? (directory.path ?? "待创建").trim().replaceAll("\\", "/").replace(/\/+$/g, "").toLowerCase()}`;
-  return `${directory.role}:${directory.builtin ? "builtin" : "normal"}:${identity}`;
+  return `${directory.role}:${directory.isSharedDirectory ? "shared" : "normal"}:${directory.builtin ? "builtin" : "normal"}:${identity}`;
 }
 
 function fallbackDirectory(agent: AgentView): AgentDirectoryView[] {
@@ -227,8 +237,10 @@ function fallbackDirectory(agent: AgentView): AgentDirectoryView[] {
     return {
     path,
     status: path ? "existing" : "pending_creation",
-    role: agent.builtin ? "builtin" : sharedPaths.has(path?.trim().replaceAll("\\", "/").toLowerCase() ?? "") ? "shared_directory" : "agent_native",
-    sharedReference: sharedPaths.has(path?.trim().replaceAll("\\", "/").toLowerCase() ?? ""),
+      role: agent.builtin ? "builtin" : "agent_user",
+      isSharedDirectory: Boolean(agent.isSharedDirectory) || sharedPaths.has(path?.trim().replaceAll("\\", "/").toLowerCase() ?? ""),
+      supportsSharedDirectory: Boolean(agent.supportsSharedDirectory),
+      sharedReference: Boolean(agent.isSharedDirectory) || sharedPaths.has(path?.trim().replaceAll("\\", "/").toLowerCase() ?? ""),
     builtin: Boolean(agent.builtin),
     readable: Boolean(path),
     writable: Boolean(path),
@@ -256,7 +268,7 @@ function mergeDirectories(target: AgentDirectoryView[], incoming: AgentDirectory
       result.push(directory);
       continue;
     }
-    existing.supportedModes = [...new Set([...existing.supportedModes, ...directory.supportedModes])];
+    existing.supportedModes = existing.supportedModes.filter((mode) => directory.supportedModes.includes(mode));
     existing.preferredMode ??= directory.preferredMode;
     if (existing.status !== "existing" && directory.status === "existing") existing.status = directory.status;
     existing.available ||= directory.available;
@@ -267,9 +279,9 @@ function mergeDirectories(target: AgentDirectoryView[], incoming: AgentDirectory
 }
 
 function createModel(agent: AgentView, directories: AgentDirectoryView[], members: AgentView[]): AgentCardModel {
-  const sharedDirectory = directories.some((directory) => directory.role === "shared_directory")
+  const sharedDirectory = directories.some((directory) => directory.isSharedDirectory)
     || agent.kinds?.includes("shared_directory") === true;
-  const supportedModes = [...new Set(directories.flatMap((directory) => directory.supportedModes))];
+  const supportedModes = supportedModesForDirectories(directories);
   const preferredMode = directories.find((directory) => directory.preferredMode)?.preferredMode;
   const status = directories.some((directory) => directory.deploymentStatus === "deployed")
     ? "deployed"
@@ -285,8 +297,8 @@ function createModel(agent: AgentView, directories: AgentDirectoryView[], member
     kinds: normalizeAgentKinds(members.flatMap((member) => member.kinds ?? []), agent.client, agent.instance),
     directories,
     sharedDirectory,
-    supportsSharedDirectory: members.some((member) => member.supportsSharedDirectory)
-      || directories.some((directory) => directory.sharedReference),
+      supportsSharedDirectory: members.some((member) => member.supportsSharedDirectory)
+      || directories.some((directory) => directory.supportsSharedDirectory),
     sharedAgentBrands: [...new Set(members.flatMap((member) => member.sharedAgentBrands ?? []))].sort(),
     sharedAgentBrandKinds: mergeSharedBrandKinds(members),
     builtin: directories.every((directory) => directory.builtin),
@@ -310,7 +322,7 @@ export function buildAgentCardModels(agents: readonly AgentView[]): AgentCardMod
     const allDirectories = directoriesOf(agent);
     const nativeDirectories = allDirectories.filter((directory) => !directory.sharedReference);
     const visibleDirectories = nativeDirectories.length > 0 ? nativeDirectories : allDirectories;
-    if (agent.kinds?.includes("shared_directory") || allDirectories.some((directory) => directory.role === "shared_directory")) {
+    if (agent.kinds?.includes("shared_directory") || allDirectories.some((directory) => directory.isSharedDirectory)) {
       const shared = models.find((model) => model.sharedDirectory && model.directories.some((directory) => visibleDirectories.some((candidate) => directoryKey(candidate) === directoryKey(directory))));
       if (shared) {
         shared.members.push(agent);
@@ -334,7 +346,8 @@ export function buildAgentCardModels(agents: readonly AgentView[]): AgentCardMod
           ...normalizeAgentKinds(agent.kinds, agent.client, agent.instance),
         ], agent.client, agent.instance);
         existing.directories = mergeDirectories(existing.directories, [directory]);
-        existing.supportsSharedDirectory ||= Boolean(agent.supportsSharedDirectory) || directory.sharedReference;
+        existing.supportedModes = supportedModesForDirectories(existing.directories);
+        existing.supportsSharedDirectory ||= Boolean(agent.supportsSharedDirectory);
         continue;
       }
       models.push(createModel(agent, [directory], [agent]));
@@ -381,5 +394,10 @@ export function directoryStatusSuggestion(status: AgentDirectoryStatus | "missin
 }
 
 export function directoryRoleLabel(role: AgentDirectoryRole): string {
-  return role;
+  switch (role) {
+    case "builtin": return "agents.directoryRole.builtin";
+    case "agent_workspace": return "agents.directoryRole.workspace";
+    case "project": return "projects.title";
+    default: return "agents.directoryRole.user";
+  }
 }

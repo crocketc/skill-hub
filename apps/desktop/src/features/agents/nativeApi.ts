@@ -85,10 +85,9 @@ function directoryStatus(target: LogicalTarget): AgentDirectoryStatus {
   return target.exists ? "existing" : "pending_creation";
 }
 
-function directoryRole(target: LogicalTarget, sharedClient: boolean): AgentDirectoryRole {
+function directoryRole(target: LogicalTarget): AgentDirectoryRole {
   if (target.builtin) return "builtin";
-  if (sharedClient || target.shared_reference) return "shared_directory";
-  return target.scope === "project" ? "project" : "agent_native";
+  return target.scope === "project" ? "agent_workspace" : "agent_user";
 }
 
 function deploymentStatusFor(
@@ -115,13 +114,16 @@ function directoryViewsOf(
     targetById.set(target.physical_id, target);
   }
   const sharedClient = instance.kind === "shared_directory";
+  const supportsSharedDirectory = !sharedClient && targets.some((target) => target.shared_reference);
   return targets.map((target) => {
     const deploymentTarget = targetById.get(target.id) ?? targetById.get(target.physical_id);
     const supportedModes = (deploymentTarget?.modes ?? []) as AgentDeploymentMode[];
     return {
       path: target.exists ? target.path : null,
       status: directoryStatus(target),
-      role: directoryRole(target, sharedClient),
+      role: directoryRole(target),
+      isSharedDirectory: sharedClient || Boolean(target.shared_reference),
+      supportsSharedDirectory,
       sharedReference: Boolean(target.shared_reference),
       builtin: Boolean(target.builtin),
       readable: target.readable,
@@ -271,7 +273,9 @@ function customAgent(agent: CustomAgent, deployments: DeploymentRecord[]): Agent
     directoryViews: [{
       path: agent.directory.path,
       status: "existing",
-      role: "agent_native",
+      role: "agent_user",
+      isSharedDirectory: false,
+      supportsSharedDirectory: false,
       sharedReference: false,
       builtin: false,
       readable: true,
@@ -328,13 +332,15 @@ async function listAgentCardModels() {
   ]);
   if (custom.type !== "custom_agents") throw unexpectedResult("list_custom_agents");
   const customById = new Map(custom.payload.map((agent) => [agent.id, agent]));
-  return buildAgentDirectoryCardModels(projection).map((model) => ({
+  return buildAgentDirectoryCardModels(projection)
+    .filter((model) => model.directories[0]?.role !== "project")
+    .map((model) => ({
     ...model,
     members: model.members.map((member) => {
       const registered = customById.get(member.id);
       return registered ? customMemberOverlay(registered, member) : member;
     }),
-  }));
+    }));
 }
 
 /**
@@ -388,6 +394,7 @@ async function cardMemberDetail(id: string): Promise<AgentView> {
     directoryMembers: model.directoryMembers ?? model.members.flatMap((candidate) => candidate.directoryMembers ?? []),
     deploymentStatus: model.deploymentStatus,
     supportsSharedDirectory: model.supportsSharedDirectory,
+    isSharedDirectory: model.sharedDirectory,
     sharedAgentBrands: model.sharedAgentBrands,
     sharedAgentBrandKinds: model.sharedAgentBrandKinds,
     builtin: model.builtin || undefined,

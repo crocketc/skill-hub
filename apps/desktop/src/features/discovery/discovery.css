@@ -383,6 +383,7 @@
 
 .sh-discovery-workbench__agent-cards {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr));
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -390,33 +391,90 @@
 }
 
 .sh-discovery-workbench__agent-card {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  display: grid;
+  grid-template-rows: 40px 20px 14px 1fr 22px;
+  height: 176px;
+  gap: var(--space-1);
+  padding: var(--space-3);
   border: 1px solid var(--ui-border);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-md);
   background: var(--ui-surface);
   min-width: 0;
 }
 
-.sh-discovery-workbench__agent-card > .sh-button {
-  margin-left: auto;
+.sh-discovery-workbench__agent-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.sh-discovery-workbench__agent-line {
-  display: inline-flex;
+.sh-discovery-workbench__agent-line .sh-agent-presentation {
+  display: flex;
+  width: 100%;
+  max-height: 40px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.sh-discovery-workbench__agent-line .sh-agent-presentation[data-agent-kind="shared_directory"] {
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+}
+
+.sh-discovery-workbench__agent-line .sh-agent-presentation__kind,
+.sh-discovery-workbench__agent-line .sh-agent-presentation__shared-brands {
+  margin-inline-start: auto;
+}
+
+.sh-discovery-workbench__agent-line .sh-agent-presentation__kind {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sh-discovery-workbench__agent-line .sh-agent-presentation__shared-brands {
+  justify-content: flex-end;
+}
+
+.sh-discovery-workbench__agent-role,
+.sh-discovery-workbench__agent-path-label {
+  display: flex;
   min-width: 0;
+  align-items: center;
+}
+
+.sh-discovery-workbench__agent-path-label {
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
 }
 
 .sh-discovery-workbench__agent-path {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
   color: var(--ui-ink-muted);
+  font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-discovery-workbench__agent-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-discovery-workbench__agent-footer > .sh-agent-card__deployment-footer {
+  flex: 1;
 }
 
 .sh-discovery-workbench__agent-unavailable-label {

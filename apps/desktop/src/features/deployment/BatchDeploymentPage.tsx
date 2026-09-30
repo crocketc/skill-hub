@@ -28,8 +28,6 @@ import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
-import { displayPath } from "../../platform/displayPath";
-import { directoryStatusLabel, directoryStatusSuggestion } from "../agents/agentCardModel";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -485,7 +483,6 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           {targetCards.filter((card) => card.targets.some((target) =>
             target.available || target.directoryStatus !== undefined)).map((card) => {
             const target = card.target;
-            const targetPath = displayPath(target.path);
             const selectable = card.targets.filter((candidate) => candidate.available);
             const selectedCount = selectable.filter((candidate) => selectedIds.includes(candidate.id)).length;
             const checked = selectable.length > 0 && selectedCount === selectable.length;
@@ -496,11 +493,15 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
               <div
                 className={["sh-deployment-target-card", selectable.length === 0 ? "sh-deployment-target-card--pending" : ""].filter(Boolean).join(" ")}
                 data-testid="deployment-target-card"
+                data-agent-card={Boolean(card.cardModel || target.agentClientId)}
                 key={card.id}
               >
                 <div className="sh-deployment-target-card__body">
                   {selectable.length > 0 ? <label>
                     <input
+                      aria-label={target.sharedDirectory || card.cardModel?.sharedDirectory
+                        ? String(t("agents.sharedDirectoryTitle"))
+                        : target.label}
                       checked={checked}
                       onChange={(event) => {
                         setPreference("automatic");
@@ -516,21 +517,8 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                       }}
                       type="checkbox"
                     />
-                    <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
-                  </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
-                  <small title={targetPath}>
-                    {selectable.length > 0
-                      ? targetPath
-                      : target.directoryStatus
-                        ? t(directoryStatusLabel(target.directoryStatus) as never)
-                        : t("agents.pathUnavailable")}
-                  </small>
-                  {selectable.length === 0 && target.directoryStatus
-                    && target.directoryStatus !== "missing" && target.directoryStatus !== "existing" ? (
-                      <small>
-                        {t(directoryStatusLabel(target.directoryStatus) as never)}: {t(directoryStatusSuggestion(target.directoryStatus) as never)}
-                      </small>
-                    ) : null}
+                  <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
+                </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
                 </div>
                 {pendingTargets.map((pendingTarget) => <ConfirmDialog
                   key={pendingTarget.id}

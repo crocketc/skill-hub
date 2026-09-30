@@ -105,6 +105,29 @@ it("makes one shared directory the brand and recognised vendors its visible type
     .not.toMatch(/agent-skills|anthropic|codex\./i);
 });
 
+it("wraps a bounded set of shared logos and exposes the remaining brands in a readable overflow badge", async () => {
+  const { container } = await renderPresentation({
+    agentId: "agent-skills.shared-directory",
+    sharedDirectory: true,
+    sharedAgentBrands: ["anthropic", "codex", "cursor", "google", "kimi", "windsurf"],
+    sharedAgentBrandKinds: {
+      anthropic: ["desktop"],
+      codex: ["cli"],
+      cursor: ["ide_extension"],
+      google: ["web"],
+      kimi: ["desktop"],
+      windsurf: ["desktop"],
+    },
+  });
+
+  expect(container.querySelectorAll(".sh-agent-presentation__shared-brands .sh-brand-tag")).toHaveLength(4);
+  expect(container.querySelector(".sh-agent-presentation__shared-brand-overflow")).toHaveTextContent("+2");
+  expect(container.querySelector(".sh-agent-presentation__shared-brand-overflow")).toHaveAttribute(
+    "title",
+    "Kimi · 桌面端 / Windsurf · 桌面端",
+  );
+});
+
 it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {
   const { container } = await renderPresentation({
     agentId: "anthropic.claude-code",

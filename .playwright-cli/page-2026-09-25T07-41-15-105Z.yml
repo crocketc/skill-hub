@@ -1,0 +1,57 @@
+- main [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - paragraph [ref=f1e6]: 初始化
+    - list "初始化步骤" [ref=f1e7]:
+      - listitem [ref=f1e8]:
+        - generic [ref=f1e10]: 确认集中库位置
+        - generic [ref=f1e93]: 已完成
+      - listitem [ref=f1e11]:
+        - generic [ref=f1e12]: "2"
+        - generic [ref=f1e13]: 识别兼容的 Agent
+      - listitem [ref=f1e14]:
+        - generic [ref=f1e15]: "3"
+        - generic [ref=f1e16]: 扫描已有技能
+    - region [ref=f1e94]:
+      - heading "识别兼容的 Agent" [level=1] [ref=f1e95]
+      - paragraph [ref=f1e96]: 识别只会生成兼容性信息。添加到 Agent/项目需要在后续单独预览和确认。
+      - generic [ref=f1e97] [cursor=pointer]:
+        - checkbox "我确认这里只识别 Agent，不会把技能添加到 Agent/项目" [checked] [ref=f1e98]
+        - generic [ref=f1e99]: 我确认这里只识别 Agent，不会把技能添加到 Agent/项目
+      - button "识别 Agent" [active] [ref=f1e101] [cursor=pointer]
+      - group "可选择的兼容性目标" [ref=f1e104]:
+        - button "全选可用目标" [ref=f1e106] [cursor=pointer]
+        - generic [ref=f1e107]:
+          - paragraph [ref=f1e108]:
+            - generic "openai" [ref=f1e109]: OpenAI
+          - generic [ref=f1e112] [cursor=pointer]:
+            - checkbox "OpenAI · 终端" [ref=f1e113]
+            - generic [ref=f1e114]:
+              - generic "OpenAI · 终端" [ref=f1e116]:
+                - generic "openai" [ref=f1e117]: OpenAI
+                - generic "OpenAI · 终端" [ref=f1e120]: 终端
+              - generic [ref=f1e121]: 终端
+        - generic [ref=f1e122]:
+          - paragraph [ref=f1e123]:
+            - generic "anthropic" [ref=f1e124]: Claude
+          - generic [ref=f1e127] [cursor=pointer]:
+            - checkbox "Claude · 终端" [ref=f1e128]
+            - generic [ref=f1e129]:
+              - generic "Claude · 终端" [ref=f1e131]:
+                - generic "anthropic" [ref=f1e132]: Claude
+                - generic "Claude · 终端" [ref=f1e135]: 终端
+              - generic [ref=f1e136]: 终端
+        - generic [ref=f1e137]:
+          - paragraph [ref=f1e138]: 其他
+          - generic [ref=f1e139] [cursor=pointer]:
+            - checkbox "Missing Agent · 桌面端" [disabled] [ref=f1e140]
+            - generic [ref=f1e141]:
+              - generic "Missing Agent · 桌面端" [ref=f1e143]:
+                - generic "missing agent" [ref=f1e144]: Missing Agent
+                - generic "Missing Agent · 桌面端" [ref=f1e146]: 桌面端
+              - generic [ref=f1e147]: 桌面应用 · 不可用
+    - status [ref=f1e85]
+    - generic [ref=f1e86]:
+      - button "上一步" [ref=f1e103] [cursor=pointer]
+      - generic [ref=f1e87]:
+        - button "继续" [disabled] [ref=f1e88]
+        - button "跳过初始化" [ref=f1e89] [cursor=pointer]
