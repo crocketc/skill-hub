@@ -748,9 +748,10 @@ it("renders readable Agent names in the deployment chart instead of internal i18
   expect(screen.queryByText("deployment.dimension.agent")).not.toBeInTheDocument();
 });
 
-it("matches the overview discovered count with the agent page card caliber (2026-09-25)", async () => {
-  // 验收反馈（2026-09-25）：概览「已发现」= Agent 页卡片数——同目录的
-  // cli/desktop 合并计 1，内置只读视图单独计 1；快照实例数（5）不直接上屏。
+it("derives the overview discovered count from the unified agent card models (2026-09-30)", async () => {
+  // 2026-09-25 验收反馈：概览「已发现」= Agent 页卡片数。2026-09-30 裁决：
+  // 直接取统一卡片模型（与 Agent 页同一数据源、同一合卡规则，含自定义
+  // Agent 卡），不再用旧清单自行合并出第二套口径；快照实例数（5）不直接上屏。
   const stubAgents: AgentView[] = [
     {
       brand: "openai",
@@ -776,26 +777,21 @@ it("matches the overview discovered count with the agent page card caliber (2026
       relations: [],
       status: "accessible",
     },
-    {
-      brand: "openai",
-      client: "codex-cli",
-      discoveredPaths: ["C:/u/.codex/skills/.system"],
-      id: "openai.codex-cli.builtin",
-      instance: "Codex CLI",
-      managedDeploymentCount: 0,
-      managedDeploymentRelationCount: 0,
-      officialReference: null,
-      relations: [],
-      status: "accessible",
-      builtin: true,
-    },
   ];
-  const agentFacade = { list: async () => stubAgents } as unknown as AgentFacade;
+  const cardModels = [
+    { detailTarget: "openai" },
+    { detailTarget: "openai.builtin" },
+    { detailTarget: "custom-acme" },
+  ];
+  const agentFacade = {
+    list: async () => stubAgents,
+    listCardModels: async () => cardModels,
+  } as unknown as AgentFacade;
 
   await renderOverview(overviewSnapshot, populatedRelationshipsFacade, { agentFacade });
 
   expect(
-    await screen.findByRole("link", { name: "3 Agents (3 configured · 2 discovered)" }),
+    await screen.findByRole("link", { name: "3 Agents (3 configured · 3 discovered)" }),
   ).toBeVisible();
 });
 

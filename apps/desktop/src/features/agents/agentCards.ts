@@ -89,7 +89,3 @@ export function buildAgentDirectoryCardViews(projection: AgentDirectoryProjectio
   }
   return grouped;
 }
-
-export function countDiscoveredAgentCards(agents: AgentView[]): number {
-  return buildAgentCardModels(agents.filter((agent) => agent.status !== "custom")).length;
-}

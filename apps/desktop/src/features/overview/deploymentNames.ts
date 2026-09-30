@@ -6,7 +6,6 @@ import type { ProjectFacade } from "../projects/api";
 import { nativeProjectFacade } from "../projects/nativeApi";
 import { agentBrandKey, inferAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
 import { normalizeBrandKey } from "../../ui/BrandTag";
-import { countDiscoveredAgentCards } from "../agents/agentCards";
 
 /**
  * 概览图表类别 key（Agent 客户端 id / 项目 id）→ 可读名称的解析来源。
@@ -96,9 +95,10 @@ export function useOverviewDeploymentNames(
 }
 
 /**
- * 验收反馈（2026-09-25）：概览「已发现」数量必须与 Agent 页卡片数量一致
- * （合并的按 1 张计，不展示的不计）。复用名称解析的同一 agents 查询缓存，
- * 数据未就绪时返回 undefined，由指标层回退到发现快照口径。
+ * 验收反馈（2026-09-25）：概览「已发现」数量必须与 Agent 页卡片数量一致。
+ * 2026-09-30 裁决：直接取统一卡片模型（与 Agent 页同一数据源、同一合卡
+ * 规则），不再维护旧清单口径的兜底；数据未就绪时返回 undefined，由指标层
+ * 回退到发现快照口径。
  */
 export function useDiscoveredAgentCardCount(
   agentFacade: AgentFacade = nativeAgentFacade,
@@ -113,14 +113,14 @@ export function useDiscoveredAgentCardCount(
   const queryClient = contextClient ?? fallbackClientRef.current;
   const enabled = contextClient !== undefined;
 
-  const agentsQuery = useQuery(
+  const modelsQuery = useQuery(
     {
       enabled,
-      queryFn: () => agentFacade.list(),
-      queryKey: ["overview", "deployment-names", "agents"],
+      queryFn: () => agentFacade.listCardModels?.() ?? Promise.resolve([]),
+      queryKey: ["overview", "deployment-names", "agent-card-models"],
       staleTime: 30_000,
     },
     queryClient,
   );
-  return agentsQuery.data ? countDiscoveredAgentCards(agentsQuery.data) : undefined;
+  return modelsQuery.data?.length;
 }
