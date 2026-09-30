@@ -1,9 +1,10 @@
 import type {
+  AgentDirectoryMemberFact,
   DirectoryObservationStatus,
   TargetOperationError,
 } from "../../api/bindings";
 import { describeNativeError, type NativeAppError } from "../../api/nativeErrors";
-import type { AgentCardModel } from "../agents/agentCardModel";
+import { buildAgentDirectoryCardModels, type AgentCardModel } from "../agents/agentCardModel";
 
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 
@@ -306,6 +307,49 @@ export const unavailableDeploymentFacade: BatchDeploymentFacade = {
   preview: () => unavailable("deployment_preview"),
   commit: () => unavailable("deployment_commit"),
 };
+
+/**
+ * 2026-09-30 裁决：自定义 Agent 以统一规则进入部署目标。夹具模拟后端的
+ * 统一投影事实（agent_native 角色 + custom 成员）与目标清单行。
+ */
+export function customAgentDeploymentTargetFixture(): DeploymentTarget {
+  const member: AgentDirectoryMemberFact = {
+    logical_target_id: "custom-acme",
+    brand: "Acme",
+    client_id: "acme.cli",
+    kind: "cli" as const,
+    availability: { status: "existing" as const, exists: true, readable: true, writable: true, available: true },
+    capabilities: {
+      deployment: { copy: true, symlink: false, junction: false },
+      modes: ["managed_copy"],
+      preferred_mode: "managed_copy" as const,
+    },
+    deployment_status: "not_deployed" as const,
+    managed_deployment_relation_count: 0,
+    managed_deployment_count: 0,
+  };
+  const model = buildAgentDirectoryCardModels({ directories: [{
+    role: "agent_native" as const,
+    identity: { kind: "verified_physical" as const, value: "custom-physical-id" },
+    path: "D:/Agents/acme/skills",
+    status: "existing" as const,
+    exists: true,
+    readable: true,
+    writable: true,
+    available: true,
+    members: [member],
+  }] })[0];
+  return {
+    id: "custom-acme",
+    label: "Acme",
+    path: "D:/Agents/acme/skills",
+    available: true,
+    physicalId: "custom-physical-id",
+    modes: ["managed_copy"],
+    agentClientId: "acme.cli",
+    cardModel: model,
+  };
+}
 
 export function deploymentTargetsFixture(): DeploymentTarget[] {
   return [

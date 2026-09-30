@@ -1319,7 +1319,8 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
         .replace(&snapshot)
         .expect("save snapshot");
     let facade = LocalApplicationFacade::new(database);
-    // 自定义 Agent（注册实体）：投影有卡，部署目标显式不收录。
+    // 自定义 Agent（注册实体）：2026-09-30 裁决起进入部署目标清单，规则
+    // 与内置 Agent 统一，投影与目标清单不得漂移。
     let custom_directory = tempfile::tempdir().expect("custom directory");
     facade
         .register_path_grant(skillhub_core::agent::ResolvedPathGrant {
@@ -1426,11 +1427,6 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
             }
             skillhub_core::AgentDirectoryRole::AgentNative
             | skillhub_core::AgentDirectoryRole::Project => {
-                if fact.members.iter().any(|member| member.logical_target_id == "custom-acme") {
-                    // 自定义 Agent 的边界在下方单独固定：投影有卡，部署目标
-                    // 暂不收录，防止两者悄悄漂移。
-                    continue;
-                }
                 for member in &fact.members {
                     assert!(
                         target_ids.contains(member.logical_target_id.as_str()),
@@ -1446,5 +1442,10 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
         .find(|target| target.id == "candidate-cli")
         .expect("pending candidate stays creatable");
     assert!(!candidate.available);
-    assert!(!target_ids.contains("custom-acme"));
+    // 自定义 Agent 的目录在夹具中真实存在且身份已验证：作为可选目标出现。
+    let custom = targets
+        .iter()
+        .find(|target| target.id == "custom-acme")
+        .expect("custom agent joins deployment targets under the unified rule");
+    assert!(custom.available);
 }

@@ -50,6 +50,7 @@ fn agent_at(id: &str, path: &str) -> CustomAgent {
             path: path.into(),
             operating_system: OperatingSystem::Windows,
         },
+        directory_physical_id: None,
         profile: profile(path),
     }
 }
@@ -259,4 +260,69 @@ fn remove_never_deletes_a_real_granted_directory() {
         .unwrap();
     assert!(std::path::Path::new(&path).is_dir());
     assert!(directory.path().is_dir());
+}
+
+/// 2026-09-30 裁决：自定义 Agent 登记/编辑时持久化目录物理身份基线，部署
+/// 链路据此识别「目录被整体替换」。基线随实体一起走 settings JSON 读写。
+#[test]
+fn custom_agent_identity_baseline_round_trips_with_the_entity() {
+    let database = Database::open_in_memory().unwrap();
+    let repository = database.custom_agent_repository();
+
+    let mut stored = agent_at("custom.acme", "C:/Users/me/.acme/skills");
+    assert_eq!(stored.directory_physical_id, None);
+    repository.create(stored.clone()).unwrap();
+    repository.update({
+        let mut with_baseline = stored.clone();
+        with_baseline.directory_physical_id = Some("physical-1".into());
+        with_baseline
+    }).unwrap();
+
+    let listed = repository.list().unwrap();
+    let listed = listed
+        .iter()
+        .find(|candidate| candidate.id == "custom.acme")
+        .expect("custom agent survives the baseline update");
+    assert_eq!(listed.directory_physical_id.as_deref(), Some("physical-1"));
+}
+
+/// 兼容边界：旧版本写入的 settings JSON 没有基线字段，必须以 None 读回，
+/// 不得拒绝加载或要求迁移。
+#[test]
+fn legacy_custom_agent_rows_without_a_baseline_still_load() {
+    let database = Database::open_in_memory().unwrap();
+    database
+        .custom_agent_repository()
+        .create(agent_at("custom.legacy", "C:/Users/me/.legacy/skills"))
+        .unwrap();
+
+    let raw: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT value_json FROM settings WHERE key='custom_agents'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut entries: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    for entry in entries.as_array_mut().expect("agents array") {
+        entry
+            .as_object_mut()
+            .expect("agent object")
+            .remove("directory_physical_id");
+    }
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE settings SET value_json=?1 WHERE key='custom_agents'",
+            [entries.to_string()],
+        )
+        .unwrap();
+
+    let listed = database.custom_agent_repository().list().unwrap();
+    let legacy = listed
+        .iter()
+        .find(|candidate| candidate.id == "custom.legacy")
+        .expect("legacy row still loads");
+    assert_eq!(legacy.directory_physical_id, None);
 }

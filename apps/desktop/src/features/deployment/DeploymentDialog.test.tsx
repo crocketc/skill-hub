@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
 import {
+  customAgentDeploymentTargetFixture,
   deploymentTargetsFixture,
   type BatchDeploymentFacade,
   type BatchDeploymentResult,
@@ -157,6 +158,18 @@ it("does not treat a target with no directory status as pending creation", async
   expect(await screen.findByText("路径不可用")).toBeVisible();
   expect(screen.queryByText("待创建")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
+});
+
+it("offers registered custom agents as selectable targets with brand presentation (2026-09-30)", async () => {
+  // 2026-09-30 裁决：自定义 Agent 与内置 Agent 同规则进入部署目标——
+  // 可勾选、以统一卡片模型的品牌呈现，内部 id 不进界面。
+  const facade = facadeFixture([], { listTargets: async () => [customAgentDeploymentTargetFixture()] });
+
+  await renderDialog(facade);
+
+  const checkbox = await screen.findByRole("checkbox", { name: /Acme/ });
+  expect(checkbox).toBeEnabled();
+  expect(screen.queryByText("custom-acme")).not.toBeInTheDocument();
 });
 
 it("offers creation only when a target is explicitly missing", async () => {

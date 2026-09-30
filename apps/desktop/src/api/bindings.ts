@@ -784,6 +784,12 @@ export type CustomAgent = {
 	display_name: string,
 	directory: ResolvedPathGrant,
 	profile: AgentProfile,
+	/**
+	 *  2026-09-30 裁决：登记/编辑时观察到的目录物理身份基线。部署链路
+	 *  据此识别「目录被整体替换」；旧行没有该字段，按 None 读回（此时以
+	 *  当下观察为准，重新登记后恢复严格校验）。
+	 */
+	directory_physical_id?: string | null,
 };
 
 export type CustomAgentDraft = {

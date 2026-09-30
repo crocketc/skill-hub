@@ -67,6 +67,11 @@ pub struct CustomAgent {
     pub display_name: String,
     pub directory: ResolvedPathGrant,
     pub profile: AgentProfile,
+    /// 2026-09-30 裁决：登记/编辑时观察到的目录物理身份基线。部署链路
+    /// 据此识别「目录被整体替换」；旧行没有该字段，按 None 读回（此时以
+    /// 当下观察为准，重新登记后恢复严格校验）。
+    #[serde(default)]
+    pub directory_physical_id: Option<String>,
 }
 
 impl CustomAgent {
@@ -81,6 +86,8 @@ impl CustomAgent {
             display_name: draft.display_name,
             directory: resolved,
             profile: draft.profile,
+            // 基线由应用层在登记/编辑时经系统观察填写，草稿本身不携带。
+            directory_physical_id: None,
         };
         agent.validate()?;
         Ok(agent)

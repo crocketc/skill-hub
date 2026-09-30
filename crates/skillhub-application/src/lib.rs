@@ -3477,8 +3477,11 @@ impl LocalApplicationFacade {
         let resolver = LocalGrantResolver {
             grants: &self.path_grants,
         };
-        let agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
+        let mut agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
             .map_err(|error| agent_invalid(format!("{error:?}")))?;
+        // 2026-09-30 裁决：登记时观察并持久化目录物理身份基线，部署链路
+        // 据此识别「目录被整体替换」。
+        record_custom_agent_identity_baseline(&mut agent);
         self.with_database("execute.create_custom_agent", |database| {
             database
                 .custom_agent_repository()
@@ -3494,8 +3497,9 @@ impl LocalApplicationFacade {
         let resolver = LocalGrantResolver {
             grants: &self.path_grants,
         };
-        let agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
+        let mut agent = skillhub_core::CustomAgent::from_draft(request.agent, &resolver)
             .map_err(|error| agent_invalid(format!("{error:?}")))?;
+        record_custom_agent_identity_baseline(&mut agent);
         self.with_database("execute.update_custom_agent", |database| {
             database
                 .custom_agent_repository()
@@ -6706,10 +6710,17 @@ impl LocalApplicationFacade {
             // 经系统验证后进入同一投影：同一状态词汇、同一物理身份语义、同一
             // 能力交集规则；目录缺失时保留事实（候选身份限定在持久化实体上），
             // 不静默消失。持久化 id 与 create/update/remove 命令 id 不变。
+            // 2026-09-30 裁决：观察/基线比对/能力交集由应用层统一产生（与
+            // 目标清单、计划索引同源），身份基线不匹配即呈现 IdentityChanged。
             for agent in database.custom_agent_repository().list()? {
-                let observation = skillhub_adapters::agent::discovery::observe_directory(
-                    Path::new(&agent.directory.path),
-                );
+                let facts_of = custom_agent_directory_facts(&agent, &host_capabilities);
+                let observation = &facts_of.observation;
+                let status = if facts_of.identity_changed {
+                    DirectoryObservationStatus::IdentityChanged
+                } else {
+                    observation.status
+                };
+                let available = observation.readable && !facts_of.identity_changed;
                 let identity = if observation.physical_identity_verified {
                     let physical_id = observation
                         .physical_id
@@ -6721,13 +6732,6 @@ impl LocalApplicationFacade {
                 };
                 let profile = &agent.profile;
                 let client = profile.clients.first();
-                // D-9：能力取宿主文件系统与自定义 profile 声明的交集。
-                let declared = client.map(|client| client.deployment.clone());
-                let capabilities = match declared {
-                    Some(declared) => host_capabilities.intersect(&declared),
-                    None => host_capabilities.clone(),
-                };
-                let modes = offered_modes(&capabilities);
                 let (
                     deployment_status,
                     managed_deployment_relation_count,
@@ -6739,27 +6743,27 @@ impl LocalApplicationFacade {
                         role: AgentDirectoryRole::AgentNative,
                         identity,
                         path: agent.directory.path.clone(),
-                        status: observation.status,
+                        status,
                         exists: observation.exists,
                         readable: observation.readable,
                         writable: observation.writable,
-                        available: observation.readable,
+                        available,
                         members: vec![AgentDirectoryMemberFact {
                             logical_target_id: agent.id.clone(),
                             brand: Some(profile.brand.clone()),
                             client_id: client.map(|client| client.id.clone()),
                             kind: client.map(|client| client.kind.clone()),
                             availability: AgentDirectoryAvailability {
-                                status: observation.status,
+                                status,
                                 exists: observation.exists,
                                 readable: observation.readable,
                                 writable: observation.writable,
-                                available: observation.readable,
+                                available,
                             },
                             capabilities: AgentDirectoryMemberCapabilities {
-                                deployment: capabilities,
-                                preferred_mode: modes.first().cloned(),
-                                modes,
+                                deployment: facts_of.capabilities,
+                                preferred_mode: facts_of.modes.first().cloned(),
+                                modes: facts_of.modes,
                             },
                             deployment_status,
                             managed_deployment_relation_count,
@@ -7032,6 +7036,41 @@ impl LocalApplicationFacade {
                     targets
                 })
                 .unwrap_or_default();
+            // 2026-09-30 裁决：自定义 Agent 与内置 Agent 同规则进入部署目标
+            // 清单。可用性来自系统观察与物理身份基线比对；可提供方式是宿主
+            // 与声明的能力交集；标签用品牌名，前端经卡片模型联合呈现。
+            let custom_agents = database.custom_agent_repository().list()?;
+            for agent in custom_agents {
+                let facts_of = custom_agent_directory_facts(&agent, &host_capabilities);
+                let status = if facts_of.identity_changed {
+                    DirectoryObservationStatus::IdentityChanged
+                } else {
+                    facts_of.observation.status
+                };
+                let modes = facts_of.modes.clone();
+                targets.push(skillhub_core::api::DeploymentTarget {
+                    id: agent.id.clone(),
+                    label: agent.profile.brand.clone(),
+                    path: agent.directory.path.clone(),
+                    available: facts_of.observation.readable
+                        && facts_of.observation.physical_identity_verified
+                        && !facts_of.identity_changed,
+                    physical_id: facts_of
+                        .observation
+                        .physical_id
+                        .clone()
+                        .unwrap_or_else(|| agent.directory.grant_id.clone()),
+                    modes,
+                    agent_client_id: agent.profile.clients.first().map(|client| client.id.clone()),
+                    agent_profile_id: None,
+                    shared_directory: false,
+                    shared_agent_brands: Vec::new(),
+                    shared_agent_brand_kinds: BTreeMap::new(),
+                    directory_status: Some(status),
+                    physical_identity_verified: facts_of.observation.physical_identity_verified,
+                    preferred_mode: facts_of.modes.first().cloned(),
+                });
+            }
             targets.extend(
                 database
                     .project_repository()
@@ -7301,6 +7340,9 @@ impl LocalApplicationFacade {
         let projects = self.with_database("query.get_deployment_batch_preview", |database| {
             database.project_repository().list()
         })?;
+        let custom_agents = self.with_database("query.get_deployment_batch_preview", |database| {
+            database.custom_agent_repository().list()
+        })?;
 
         // Version: explicit, else the library's current version for the Skill.
         let version_id = match &item.version_id {
@@ -7449,7 +7491,7 @@ impl LocalApplicationFacade {
                 version_id: version_id.clone(),
                 runtime_name: runtime_name.clone(),
                 logical_target_ids,
-                target_label: batch_target_label(discovery_targets, &projects, &first_logical),
+                target_label: batch_target_label(discovery_targets, &custom_agents, &projects, &first_logical),
                 target_path,
                 destination_path: facts.destination_path.clone(),
                 preference: decision.preference,
@@ -7490,7 +7532,7 @@ impl LocalApplicationFacade {
                 version_id: version_id.clone(),
                 runtime_name: runtime_name.clone(),
                 logical_target_ids: vec![logical_id.clone()],
-                target_label: batch_target_label(discovery_targets, &projects, &logical_id),
+                target_label: batch_target_label(discovery_targets, &custom_agents, &projects, &logical_id),
                 target_path: String::new(),
                 destination_path: String::new(),
                 preference: decision.preference,
@@ -11845,11 +11887,56 @@ fn paths_resolve_to_same_directory(left: &str, right: &str) -> bool {
 /// Builds the registered-target index from database facts only.  Shared by
 /// the facade query path and the deployment backend's commit-time
 /// revalidation so both see exactly the same registered reality.
+/// 2026-09-30 裁决：自定义 Agent 的目录事实（系统观察、物理身份基线比对、
+/// D-9 能力交集）由应用层统一产生，投影、目标清单与计划索引共用同一份，
+/// 避免三处口径漂移。
+struct CustomAgentDirectoryFacts {
+    observation: skillhub_adapters::agent::discovery::DirectoryObservation,
+    capabilities: skillhub_core::DeploymentCapability,
+    modes: Vec<skillhub_core::DeploymentMode>,
+    identity_changed: bool,
+}
+
+fn custom_agent_directory_facts(
+    agent: &skillhub_core::CustomAgent,
+    host_capabilities: &skillhub_core::DeploymentCapability,
+) -> CustomAgentDirectoryFacts {
+    let observation =
+        skillhub_adapters::agent::discovery::observe_directory(Path::new(&agent.directory.path));
+    let identity_changed = agent
+        .directory_physical_id
+        .as_deref()
+        .is_some_and(|baseline| observation.physical_id.as_deref() != Some(baseline));
+    let declared = agent
+        .profile
+        .clients
+        .first()
+        .map(|client| client.deployment.clone());
+    let capabilities = match declared {
+        Some(declared) => host_capabilities.intersect(&declared),
+        None => host_capabilities.clone(),
+    };
+    let modes = offered_modes(&capabilities);
+    CustomAgentDirectoryFacts {
+        observation,
+        capabilities,
+        modes,
+        identity_changed,
+    }
+}
+
+/// 登记/编辑时观察并记录目录物理身份基线；观察不到物理身份时保持 None
+/// （旧数据同此：以当下观察为准，重新登记后恢复严格校验）。
+fn record_custom_agent_identity_baseline(agent: &mut skillhub_core::CustomAgent) {
+    let observation =
+        skillhub_adapters::agent::discovery::observe_directory(Path::new(&agent.directory.path));
+    agent.directory_physical_id = observation.physical_id;
+}
+
 fn registered_target_index(
     database: &skillhub_storage::Database,
     host_capabilities: &skillhub_core::DeploymentCapability,
-) -> AppResult<RegisteredTargetIndex> {
-    let mut facts = Vec::new();
+) -> AppResult<RegisteredTargetIndex> {    let mut facts = Vec::new();
     let mut roots = Vec::new();
     if let Some(snapshot) = database.agent_repository().load()? {
         for target in snapshot.logical_targets {
@@ -11881,6 +11968,31 @@ fn registered_target_index(
         facts.push(TargetFact::from_project(
             &project,
             host_capabilities.clone(),
+        ));
+    }
+    // 2026-09-30 裁决：自定义 Agent 与内置 Agent 同规则进入计划索引。身份
+    // 变化（基线不匹配）与目录不可读的目标不进索引——清单里它们以不可选
+    // 状态呈现，按逻辑 id 直接请求计划同样被拒。
+    for agent in database.custom_agent_repository().list()? {
+        let facts_of = custom_agent_directory_facts(&agent, host_capabilities);
+        if !facts_of.observation.readable || facts_of.identity_changed {
+            continue;
+        }
+        let Ok(root) = AllowedRoot::new(Path::new(&agent.directory.path)) else {
+            continue;
+        };
+        roots.push(root);
+        let expected_physical_id = agent
+            .directory_physical_id
+            .clone()
+            .or_else(|| facts_of.observation.physical_id.clone())
+            .unwrap_or_else(|| agent.directory.grant_id.clone());
+        facts.push(TargetFact::registered(
+            agent.id.clone(),
+            &agent.directory.path,
+            expected_physical_id,
+            skillhub_core::deployment::TargetFactSource::Custom,
+            facts_of.capabilities,
         ));
     }
     let policy = PathPolicy::from_roots(roots)?;
@@ -11946,10 +12058,12 @@ fn merged_capabilities_of(targets: &[VerifiedTarget]) -> skillhub_core::Deployme
 }
 
 /// Best-effort user-facing target label: the discovery snapshot's Agent
-/// client for agent targets, the project name for project targets, and the
-/// logical id only as a last resort for targets that never resolved.
+/// client for agent targets, the registered brand for custom agents, the
+/// project name for project targets, and the logical id only as a last
+/// resort for targets that never resolved.
 fn batch_target_label(
     discovery_targets: &[skillhub_core::LogicalTarget],
+    custom_agents: &[skillhub_core::CustomAgent],
     projects: &[skillhub_core::Project],
     logical_id: &str,
 ) -> String {
@@ -11958,6 +12072,9 @@ fn batch_target_label(
         .find(|target| target.id == logical_id)
     {
         return target.client_id.clone();
+    }
+    if let Some(agent) = custom_agents.iter().find(|agent| agent.id == logical_id) {
+        return agent.profile.brand.clone();
     }
     if let Some(project) = projects
         .iter()

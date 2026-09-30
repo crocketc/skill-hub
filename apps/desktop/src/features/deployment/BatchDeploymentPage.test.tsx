@@ -8,6 +8,7 @@ import { createOperationTracker } from "../../platform/operationTracker";
 import { BatchDeploymentPage } from "./BatchDeploymentPage";
 import {
   buildDeploymentTargetCards,
+  customAgentDeploymentTargetFixture,
   deploymentTargetsFixture,
   type BatchDeploymentFacade,
   type BatchDeploymentResult,
@@ -1040,6 +1041,44 @@ it("tells the user when a deep-linked target cannot be selected (DEV-106)", asyn
 
   await renderBatchPage(facade, ["skill-pdf"], "/deploy?target=does-not-exist");
   expect(await screen.findByText(/当前不可选/)).toBeVisible();
+});
+
+it("offers registered custom agents as selectable deployment targets (2026-09-30)", async () => {
+  const user = userEvent.setup();
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [customAgentDeploymentTargetFixture()],
+    preview,
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+  const grid = await screen.findByTestId("deployment-target-grid");
+  const checkbox = within(grid).getByRole("checkbox");
+  expect(checkbox).toBeEnabled();
+  // 品牌呈现来自统一卡片模型，内部 id 不进界面。
+  expect(within(grid).getByText("Acme")).toBeVisible();
+
+  await user.click(checkbox);
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ skillId: "skill-pdf", targetIds: ["custom-acme"] })],
+    undefined,
+  );
+});
+
+it("preselects a deep-linked custom agent target (2026-09-30)", async () => {
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => [customAgentDeploymentTargetFixture()],
+    preview,
+    commit: async () => [],
+  };
+
+  // 自定义 Agent 现在是可选目标：深链不再落入「当前不可选」提示。
+  await renderBatchPage(facade, ["skill-pdf"], "/deploy?skill=skill-pdf&target=custom-acme");
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getByRole("checkbox")).toBeChecked();
 });
 
 it("expands project agent links through card membership to addressable targets (DEV-106)", async () => {
