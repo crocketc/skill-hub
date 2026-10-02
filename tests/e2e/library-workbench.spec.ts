@@ -90,13 +90,25 @@ test("900x600 narrow library keeps search, table paging, and collapsed filters r
   await expect(table).toBeVisible();
   await expect(page.getByRole("row", { name: /PDF Reader/ })).toBeVisible();
 
+  const bodyGeometry = await page.locator(".sh-skill-table__region").evaluate((region) => {
+    const bounds = region.getBoundingClientRect();
+    const rows = [...region.querySelectorAll<HTMLElement>("tbody tr")];
+    const completeRows = rows.filter((row) => {
+      const rowBounds = row.getBoundingClientRect();
+      return rowBounds.height > 0 && rowBounds.top >= bounds.top - 1 && rowBounds.bottom <= bounds.bottom + 1;
+    });
+    return { height: bounds.height, completeRows: completeRows.length };
+  });
+  expect(bodyGeometry.height).toBeGreaterThanOrEqual(160);
+  expect(bodyGeometry.completeRows).toBeGreaterThanOrEqual(2);
+
+  const screenshotPath = path.resolve(process.cwd(), "test-results/skill-library-workbench-900x600.png");
+  await page.screenshot({ path: screenshotPath });
+
   const nextPage = page.getByRole("button", { name: "Next page" });
   await expect(nextPage).toBeEnabled();
   await nextPage.click();
   await expect(page.getByText("26–50 of 80")).toBeVisible();
-
-  const screenshotPath = path.resolve(process.cwd(), "test-results/skill-library-workbench-900x600.png");
-  await page.screenshot({ path: screenshotPath });
 
   await page.getByRole("button", { name: /Filters/ }).click();
   const filters = page.locator(".sh-skill-filters__advanced");
