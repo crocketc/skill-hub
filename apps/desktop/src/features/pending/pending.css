@@ -9,8 +9,9 @@
   min-width: 0;
 }
 
+/* 三列共用一条底基线：字段标签留在输入框上方，输入框/下拉框与左侧分类 chips 行底齐平。 */
 .sh-pending__toolbar {
-  align-items: start;
+  align-items: end;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem) minmax(11rem, 14rem);
   gap: var(--space-3);
@@ -38,13 +39,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.sh-pending__history-link {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-sm);
-  margin-inline-start: var(--space-2);
-  white-space: nowrap;
-}
-
 .sh-pending__toolbar .sh-field {
   min-width: 0;
 }
@@ -67,6 +61,14 @@
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+/* 历史入口随批量操作行行尾右侧呈现：安静文字链接，不与批量按钮竞争。 */
+.sh-pending__history-link {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  margin-inline-start: auto;
+  white-space: nowrap;
 }
 
 .sh-pending-batch__count {

@@ -174,6 +174,24 @@ it("summarizes involved objects, counts and the highest risk on the collapsed gr
   expect(screen.getByRole("link", { name: /处理历史/ })).toHaveAttribute("href", "#pending-history-heading");
 });
 
+it("moves the handled-history link into the batch disposition group", async () => {
+  const listHandled = vi.fn(async () => [
+    { id: "rule-1", pendingId: "trial_due:skill-a:trial", reason: "暂缓 7 天后再提醒", createdAt: "2026-09-01T10:00:00+08:00", deferUntil: "2026-09-08" },
+  ]);
+  await renderCollapsedPage(fakeFacade({ list: async () => [trialItem], listHandled }));
+  await screen.findByRole("heading", { name: "待处理工作台" });
+
+  // 历史入口归属批量处置组（钉顶常驻），保留锚点 href 与带计数的可访问名称。
+  const batchGroup = screen.getByRole("group", { name: "批量处置" });
+  const historyLink = within(batchGroup).getByRole("link", { name: /处理历史/ });
+  expect(historyLink).toHaveAttribute("href", "#pending-history-heading");
+  expect(historyLink).toHaveTextContent("处理历史 (1)");
+
+  // 分类组回归纯筛选职责，不再承载历史入口。
+  const categories = screen.getByRole("group", { name: "全部" });
+  expect(within(categories).queryByRole("link")).not.toBeInTheDocument();
+});
+
 it("keeps high-risk reasons visible before expanding with an exact deep link", async () => {
   await renderCollapsedPage(fakeFacade({
     list: async () => [
