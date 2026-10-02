@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 /**
@@ -351,7 +353,13 @@ test("offers the background hand-off while a scan keeps running and finishes hon
   const background = page.getByRole("button", { name: "转入后台，继续完成初始化" });
   await expect(background).toBeVisible({ timeout: 5_000 });
   await background.click();
-  await expect(page.getByRole("status")).toContainText("扫描已转入后台");
+
+  // 显著引导进入卡片内容最前：标题 + 通知承诺 + 下一步动作；底部细状态行不再承载。
+  const notice = page.locator(".sh-onboarding__notice");
+  await expect(notice).toContainText("扫描已转入后台");
+  await expect(notice).toContainText("通知");
+  await expect(notice).toContainText("完成初始化");
+  await expect(page.locator(".sh-onboarding__status")).toHaveText("");
 
   await page.getByRole("button", { name: "完成初始化" }).click();
 
@@ -363,6 +371,46 @@ test("offers the background hand-off while a scan keeps running and finishes hon
   // 诚实状态：扫描仍在后台进行，没有伪造的扫描结果计数。
   await expect(exited).toContainText("扫描仍在后台进行");
   await expect(page.getByText(/发现 Skill/)).toHaveCount(0);
+});
+
+test("keeps the background guidance prominent and unclipped at constrained window sizes", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/__preview/onboarding/slow-scan");
+
+  await page.getByRole("button", { name: "继续" }).click();
+  await confirmCompatibility(page);
+  await page.getByRole("checkbox", { name: "OpenAI · 桌面端/终端" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
+  await page.getByRole("button", { name: "开始只读扫描" }).click();
+  const background = page.getByRole("button", { name: "转入后台，继续完成初始化" });
+  await expect(background).toBeVisible({ timeout: 5_000 });
+  await background.click();
+
+  const notice = page.locator(".sh-onboarding__notice");
+  await expect(notice).toBeVisible();
+  // 整页不得纵向溢出：否则 sticky 底部操作区会压住最后一行内容（历史缺陷）。
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector(".sh-onboarding")!;
+    const noticeRect = document.querySelector(".sh-onboarding__notice")!.getBoundingClientRect();
+    const footerTop = document.querySelector(".sh-onboarding__actions")!.getBoundingClientRect().top;
+    return {
+      verticalOverflow: main.scrollHeight - main.clientHeight,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      noticeTop: noticeRect.top,
+      noticeBottom: noticeRect.bottom,
+      footerTop,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  expect(geometry.verticalOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.horizontalOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.noticeTop).toBeGreaterThanOrEqual(0);
+  expect(geometry.noticeBottom).toBeLessThanOrEqual(geometry.footerTop);
+  expect(geometry.noticeBottom).toBeLessThanOrEqual(geometry.viewportHeight);
+
+  const screenshot = path.resolve("test-results/ui/onboarding/onboarding-background-notice-1280x800.png");
+  fs.mkdirSync(path.dirname(screenshot), { recursive: true });
+  await page.screenshot({ path: screenshot });
 });
 
 test("returns focus to the skip trigger after the confirmation dialog is dismissed", async ({ page }) => {

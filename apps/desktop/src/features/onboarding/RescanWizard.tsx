@@ -264,6 +264,7 @@ export function RescanWizard({
           scanResult={scanState?.kind === "completed" ? scanState.result : undefined}
           scanStartedAt={scanStartedAtRef.current ?? undefined}
           scanInBackground={scanInBackground}
+          backgroundNextAction={t("onboarding.rescanComplete")}
         />
       )}
       {operationError ? (

@@ -89,6 +89,42 @@ html:has(.sh-onboarding) {
   margin-top: 0.125rem;
 }
 
+/* 需要引导下一步操作的持续状态（如扫描转后台）：放在卡片内容最前的
+   信息面板，不依赖底部细状态行——状态行只是瞬时反馈，矮窗口下曾被
+   sticky 操作区压盖。 */
+.sh-onboarding__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-info-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-info-background);
+}
+
+.sh-onboarding__notice svg {
+  flex: 0 0 auto;
+  margin-top: 0.125rem;
+  color: var(--ui-info-foreground);
+}
+
+.sh-onboarding__notice-body {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.sh-onboarding__notice-body strong {
+  color: var(--ui-ink);
+  font-weight: 650;
+}
+
+.sh-onboarding__notice-body p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
 /* 结果列表是唯一的滚动所有者：列表自身设滚动上限内部滚动，
    WizardShell 的 sticky 底部操作区（完成动作）因此始终可达，
    页面高度不随结果条目数增长。 */
@@ -154,7 +190,9 @@ html:has(.sh-onboarding) {
    palette remains theme-driven; long path lists own their scroll container. */
 .sh-onboarding .sh-onboarding__frame {
   width: min(76rem, 100%);
-  height: min(58rem, calc(100dvh - 1rem));
+  /* main 上下各有 --space-5 页面留白：固定高度必须一并扣除，否则整体
+     超出视口约一倍留白，sticky 底部操作区会压住最后一行状态提示。 */
+  height: min(58rem, calc(100dvh - 2 * var(--space-5)));
   min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   align-content: stretch;
@@ -476,7 +514,7 @@ html:has(.sh-onboarding) {
 
 @media (max-width: 38rem) {
   .sh-onboarding__frame {
-    min-height: calc(100dvh - 1rem);
+    min-height: calc(100dvh - 2 * var(--space-5));
   }
 
   .sh-onboarding__target-scroll {

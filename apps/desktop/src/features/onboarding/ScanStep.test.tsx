@@ -132,3 +132,36 @@ it("prevents starting a second scan after handing the first one to the backgroun
 
   expect(screen.getByRole("button", { name: "开始只读扫描" })).toBeDisabled();
 });
+
+it("guides the next step prominently right after the scan moves to the background", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { container } = render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep backgroundNextAction="完成初始化" isScanning={false} onScan={() => undefined} scanInBackground />
+    </I18nextProvider>,
+  );
+
+  // 显著引导：标题、通知承诺与下一步动作齐全，占据卡片内容最前位置。
+  const notice = screen.getByRole("status");
+  expect(notice).toHaveTextContent("扫描已转入后台");
+  expect(notice).toHaveTextContent("通知");
+  expect(notice).toHaveTextContent("完成初始化");
+  const heading = screen.getByRole("heading", { name: "扫描已有技能" });
+  expect(heading.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const description = screen.getByText("扫描只生成预览，不会移动、导入技能，也不会把技能添加到 Agent/项目。");
+  expect(notice.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  // 引导是卡片内的常驻面板，而不是依赖底部细状态行。
+  expect(container.querySelector(".sh-onboarding__notice")).not.toBeNull();
+});
+
+it("keeps the background guidance absent while the scan runs in the foreground", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ScanStep isScanning onScan={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});

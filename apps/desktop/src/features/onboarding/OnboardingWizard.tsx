@@ -333,9 +333,10 @@ export function OnboardingWizard({
           );
           setScanInBackground(true);
           setIsScanning(false);
-          setMessage(t("onboarding.scanBackground"));
+          // 引导由扫描卡内的显著通告承载，底部状态行不再重复。
         } : undefined}
         scanInBackground={scanInBackground}
+        backgroundNextAction={t("onboarding.finish")}
         scanStartedAt={scanStartedAtRef.current ?? undefined}
         scanPhase={isScanning ? t("onboarding.scanPhaseScanning") : undefined}
         scanResult={scanState?.kind === "completed" ? scanState.result : undefined}

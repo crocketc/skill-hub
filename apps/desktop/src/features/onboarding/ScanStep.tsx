@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { Icon } from "../../ui/Icon";
 import type { ScanResult } from "../../api/bindings";
 import { displayPath } from "../../platform/displayPath";
 
@@ -16,6 +17,8 @@ interface ScanStepProps {
   onOpenImport?: (roots: string[]) => void;
   scanResult?: ScanResult;
   scanInBackground?: boolean;
+  /** 用户可读的下一步动作名（如“完成初始化”），用于转后台引导文案。 */
+  backgroundNextAction?: string;
   scanStartedAt?: number;
   scanPhase?: string;
   scanProgress?: { completed: number; total: number };
@@ -28,6 +31,7 @@ export function ScanStep({
   onOpenImport,
   onScan,
   scanInBackground = false,
+  backgroundNextAction,
   scanStartedAt,
   scanPhase,
   scanProgress,
@@ -49,6 +53,19 @@ export function ScanStep({
   return (
     <section aria-labelledby="scan-step-title" className="sh-onboarding__card">
       <h1 id="scan-step-title">{t("onboarding.scanTitle")}</h1>
+      {scanInBackground ? (
+        <div className="sh-onboarding__notice" role="status">
+          <Icon aria-hidden="true" name="info" size={16} />
+          <div className="sh-onboarding__notice-body">
+            <strong>{t("onboarding.scanBackgroundNoticeTitle")}</strong>
+            <p>
+              {t("onboarding.scanBackgroundNoticeBody", {
+                action: backgroundNextAction ?? t("onboarding.finish"),
+              })}
+            </p>
+          </div>
+        </div>
+      ) : null}
       <p>{t("onboarding.scanDescription")}</p>
       {onScan ? (
         <Button disabled={scanInBackground} loading={isScanning} onClick={onScan}>
