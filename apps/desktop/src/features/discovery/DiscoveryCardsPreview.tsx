@@ -117,7 +117,9 @@ const REPO_SKILLS: DiscoverableRepoSkill[] = [
   },
 ];
 
-/** P1-06：本机发现工作台的确定性快照夹具（品牌分组 / 类型徽标 / 不可用置底）。 */
+/** P1-06：本机发现工作台的确定性快照夹具（跨品牌网格 / 类型徽标 / 不可用置底）。 */
+const LONG_OPENAI_SKILLS_PATH = `C:/Users/demo/.codex/skills/${"long-segment/".repeat(12)}skills`;
+
 const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
   generation: "9",
   observed_at: "1789114968",
@@ -127,7 +129,10 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
     { profile_id: "zcode", client_id: "zcode-cli", display_name: "ZCode CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "codebuddy", client_id: "codebuddy-code", display_name: "CodeBuddy Code", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "anthropic", client_id: "claude-desktop", display_name: "Claude Desktop", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "cursor", client_id: "cursor-editor", display_name: "Cursor", kind: "desktop", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "openai", client_id: "openai-codex-cli", display_name: "Codex CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
     { profile_id: "brokenbrand", client_id: "broken-cli", display_name: "Broken CLI", kind: "cli", supported_os: ["windows", "macos"], client_presence: "Unknown" },
+    { profile_id: "windsurf", client_id: "windsurf-editor", display_name: "Windsurf", kind: "ide_extension", supported_os: ["windows", "macos"], client_presence: "Unknown" },
   ],
   logical_targets: [
     {
@@ -206,6 +211,36 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
       physical_id: "phys-claude",
     },
     {
+      id: "lt-cursor",
+      profile_id: "cursor",
+      client_id: "cursor-editor",
+      scope: "global",
+      path: "C:/Users/demo/.cursor/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-cursor",
+    },
+    {
+      id: "lt-openai",
+      profile_id: "openai",
+      client_id: "openai-codex-cli",
+      scope: "global",
+      path: LONG_OPENAI_SKILLS_PATH,
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: true,
+      writable: true,
+      available: true,
+      physical_id: "phys-openai",
+    },
+    {
       id: "lt-broken",
       profile_id: "brokenbrand",
       client_id: "broken-cli",
@@ -219,6 +254,21 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
       writable: false,
       available: false,
       physical_id: "phys-broken",
+    },
+    {
+      id: "lt-windsurf",
+      profile_id: "windsurf",
+      client_id: "windsurf-editor",
+      scope: "global",
+      path: "C:/Users/demo/.windsurf/skills",
+      marker: "SKILL.md",
+      precedence: "preferred",
+      shared_reference: false,
+      exists: true,
+      readable: false,
+      writable: false,
+      available: false,
+      physical_id: "phys-windsurf",
     },
   ],
   physical_targets: [
@@ -250,6 +300,24 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
       logical_target_ids: ["lt-claude"],
     },
     {
+      id: "phys-cursor",
+      path: "C:/Users/demo/.cursor/skills",
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-cursor"],
+    },
+    {
+      id: "phys-openai",
+      path: LONG_OPENAI_SKILLS_PATH,
+      exists: true,
+      readable: true,
+      writable: true,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-openai"],
+    },
+    {
       id: "phys-broken",
       path: "C:/Users/demo/broken/skills",
       exists: false,
@@ -257,6 +325,15 @@ const WORKBENCH_SNAPSHOT: DiscoverySnapshot = {
       writable: false,
       case_behavior: "sensitive",
       logical_target_ids: ["lt-broken"],
+    },
+    {
+      id: "phys-windsurf",
+      path: "C:/Users/demo/.windsurf/skills",
+      exists: true,
+      readable: false,
+      writable: false,
+      case_behavior: "sensitive",
+      logical_target_ids: ["lt-windsurf"],
     },
   ],
 };
