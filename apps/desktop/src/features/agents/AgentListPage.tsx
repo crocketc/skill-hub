@@ -245,8 +245,8 @@ function renderDirectory(
   const suggestion = directoryStatusSuggestion(directory.status);
   return (
     <li key={`${directory.role}-${directory.path ?? index}`}>
-      <span className={`sh-agent-card__path sh-agent-card__path--${directory.status}`}>
-        {content}
+      <span className={`sh-agent-card__path sh-agent-card__path--${directory.status}`} title={content}>
+        <span className="sh-agent-card__path-text">{content}</span>
       </span>
       {directory.status !== "existing" ? (
         <small className="sh-agent-card__path-guidance">

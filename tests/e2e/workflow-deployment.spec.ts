@@ -34,6 +34,58 @@ function flowStatus(page: Page, regionName: string) {
 }
 
 test.describe("deployment flow shell", () => {
+  test("keeps the shared-directory chip inside its row and centers the target path", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/__preview/deployment?scenario=path-layout");
+
+    const card = page.locator('.sh-deployment-target-card[data-agent-card="true"]').first();
+    const chip = card.locator(".sh-agent-card__shared-chip");
+    const path = card.locator(".sh-deployment-target-card__path-region small").first();
+    await expect(card).toBeVisible();
+    await expect(chip).toBeVisible();
+    await expect(path).toHaveAttribute("title", "C:\\Users\\demo\\very-long-preview-directory-segment\\agent-skills\\with\\an\\extremely\\long\\suffix\\preview-skill-1");
+
+    const measure = () => card.evaluate((element) => {
+      const label = element.querySelector(".sh-deployment-target-card__path-label")!;
+      const chipElement = element.querySelector(".sh-agent-card__shared-chip")!;
+      const region = element.querySelector(".sh-deployment-target-card__path-region")!;
+      const pathElement = region.querySelector("small")!;
+      const range = document.createRange();
+      range.selectNodeContents(pathElement);
+      const labelRect = label.getBoundingClientRect();
+      const chipRect = chipElement.getBoundingClientRect();
+      const regionRect = region.getBoundingClientRect();
+      const pathRect = pathElement.getBoundingClientRect();
+      const textRect = range.getBoundingClientRect();
+      return {
+        chipBottom: chipRect.bottom,
+        chipTop: chipRect.top,
+        labelBottom: labelRect.bottom,
+        labelTop: labelRect.top,
+        pathCenter: (pathRect.top + pathRect.bottom) / 2,
+        regionCenter: (regionRect.top + regionRect.bottom) / 2,
+        textCenter: (textRect.top + textRect.bottom) / 2,
+        textClientWidth: pathElement.clientWidth,
+        textScrollWidth: pathElement.scrollWidth,
+      };
+    });
+
+    const wide = await measure();
+    expect.soft(wide.chipTop).toBeGreaterThanOrEqual(wide.labelTop);
+    expect.soft(wide.chipBottom).toBeLessThanOrEqual(wide.labelBottom);
+    expect.soft(Math.abs(wide.textCenter - wide.regionCenter)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: test.info().outputPath("deployment-agent-path-wide.png"), fullPage: true });
+
+    await page.setViewportSize({ width: 560, height: 900 });
+    const narrow = await measure();
+    expect.soft(narrow.chipTop).toBeGreaterThanOrEqual(narrow.labelTop);
+    expect.soft(narrow.chipBottom).toBeLessThanOrEqual(narrow.labelBottom);
+    expect.soft(Math.abs(narrow.textCenter - narrow.regionCenter)).toBeLessThanOrEqual(1);
+    expect(narrow.textScrollWidth).toBeGreaterThan(narrow.textClientWidth);
+    await expectNoRootHorizontalOverflow(page);
+    await page.screenshot({ path: test.info().outputPath("deployment-agent-path-narrow.png"), fullPage: true });
+  });
+
   test("exposes the unified step rail and a stable footer for the single flow", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment");

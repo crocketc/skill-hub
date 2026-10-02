@@ -405,7 +405,7 @@ html:has(.sh-onboarding) {
 
 .sh-onboarding__target-card-content {
   display: grid;
-  grid-template-rows: 40px 20px 14px 1fr 22px;
+  grid-template-rows: 40px 20px 22px minmax(30px, 1fr) 22px;
   min-width: 0;
   height: 100%;
   gap: var(--space-1);
@@ -468,19 +468,30 @@ html:has(.sh-onboarding) {
 }
 
 .sh-onboarding__target-path {
-  display: block;
+  display: flex;
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  height: 30px;
+  min-height: 30px;
+  align-items: center;
+  align-self: center;
+  padding: 0 var(--space-3);
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-sm);
   background: var(--ui-surface-subtle);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.5;
+  line-height: 1.25;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: var(--color-text-secondary);
+}
+
+.sh-onboarding__target-path-text {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text-secondary);
 }
 
 .sh-onboarding__target-unavailable {

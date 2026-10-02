@@ -9,19 +9,67 @@ import type {
   DeploymentPreviewBatch,
   DeploymentTarget,
 } from "./api";
+import type { AgentCardModel } from "../agents/agentCardModel";
+import type { AgentDirectoryView } from "../agents/api";
 
 const LONG_PATH = "C:/Users/demo/very-long-preview-directory-segment/agent-skills";
 
-function previewTargets(targetCount = 3, longPaths = false): DeploymentTarget[] {
+function previewTargets(targetCount = 3, longPaths = false, agentCard = false): DeploymentTarget[] {
   const path = longPaths ? `${LONG_PATH}/with/an/extremely/long/suffix` : "C:/Users/demo/.codex/skills";
-  return Array.from({ length: targetCount }, (_, index) => ({
-    id: `target-${index + 1}`,
-    label: index === 2 ? "Unavailable target" : `Preview Agent ${index + 1}`,
-    path: longPaths ? `${path}/preview-skill-${index + 1}` : path,
-    available: index !== 2,
-    physicalId: `physical-${index + 1}`,
-    modes: index % 2 === 0 ? ["symbolic_link", "managed_copy"] : ["managed_copy"],
-  }));
+  return Array.from({ length: targetCount }, (_, index) => {
+    const targetPath = longPaths ? `${path}/preview-skill-${index + 1}` : path;
+    const target: DeploymentTarget = {
+      id: `target-${index + 1}`,
+      label: index === 2 ? "Unavailable target" : `Preview Agent ${index + 1}`,
+      path: targetPath,
+      available: index !== 2,
+      physicalId: `physical-${index + 1}`,
+      modes: index % 2 === 0 ? ["symbolic_link", "managed_copy"] : ["managed_copy"],
+    };
+    if (!agentCard || index !== 0) return target;
+
+    const directory: AgentDirectoryView = {
+      path: targetPath,
+      status: "existing" as const,
+      role: "agent_user" as const,
+      isSharedDirectory: false,
+      supportsSharedDirectory: true,
+      sharedReference: false,
+      builtin: false,
+      readable: true,
+      writable: true,
+      available: true,
+      physicalIdentityVerified: true,
+      physicalIdentityKey: "preview-openai-directory",
+      supportedModes: ["symbolic_link", "managed_copy"],
+      preferredMode: "symbolic_link" as const,
+      deploymentStatus: "not_deployed" as const,
+    };
+    const cardModel: AgentCardModel = {
+      id: "preview-openai-directory",
+      brand: "OpenAI",
+      brandLabel: "OpenAI",
+      kinds: ["cli"],
+      directories: [directory],
+      sharedDirectory: false,
+      supportsSharedDirectory: true,
+      sharedAgentBrands: [],
+      sharedAgentBrandKinds: {},
+      builtin: false,
+      readOnly: false,
+      supportedModes: ["symbolic_link", "managed_copy"],
+      preferredMode: "symbolic_link",
+      deploymentStatus: "not_deployed",
+      detailTarget: "preview-openai",
+      members: [],
+    };
+    return {
+      ...target,
+      agentClientId: "openai.codex-cli",
+      agentProfileId: "openai",
+      cardModel,
+    };
+  });
 }
 
 function previewSkillDisplayName(skillId: string): string {
@@ -76,7 +124,8 @@ type PreviewScenario =
   | "batch-bulk"
   | "batch-preview-fail"
   | "batch-partial"
-  | "batch-fallback";
+  | "batch-fallback"
+  | "path-layout";
 
 const scenarios: readonly PreviewScenario[] = [
   "default",
@@ -91,6 +140,7 @@ const scenarios: readonly PreviewScenario[] = [
   "batch-preview-fail",
   "batch-partial",
   "batch-fallback",
+  "path-layout",
 ];
 
 const BATCH_SCENARIOS: readonly PreviewScenario[] = [
@@ -154,13 +204,17 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
       if (scenario === "unavailable") {
         throw new Error("preview.deploy_targets_unavailable");
       }
-      return previewTargets(3, scenario === "batch-bulk");
+      return previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout");
     },
     preview: async (items, context) => {
       if (scenario === "fail-preview" || scenario === "batch-preview-fail") {
         throw new Error("deployment.target_not_writable");
       }
-      const pairs = pairsFor(items, await previewTargets(3, scenario === "batch-bulk"), scenario);
+      const pairs = pairsFor(
+        items,
+        await previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout"),
+        scenario,
+      );
       // 镜像后端裁决（14.7）：持有指纹与当前指纹一致才保留确认。
       const held = context?.confirmations ?? {};
       const preservedIds = new Set(pairs

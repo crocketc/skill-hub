@@ -216,7 +216,7 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     const sharedCard = page.getByTestId("agent-card-phys-agents");
     await expect(sharedCard).toHaveCount(1);
     await expect(sharedCard.getByText("Shared directory")).toBeVisible();
-    await expect(sharedCard.getByText("Shared by 2 registered clients")).toBeVisible();
+    await expect(sharedCard.getByText("Shared by 3 registered clients")).toBeVisible();
     await expect(sharedCard.getByText("C:\\Users\\demo\\.agents\\skills")).toBeVisible();
     const sharedPresentation = sharedCard.locator(".sh-agent-presentation");
     await expect(sharedPresentation).toHaveCount(1);
@@ -295,12 +295,56 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
       "title",
       "C:\\Users\\demo\\.codex\\skills\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\skills",
     );
-    const pathGeometry = await longPath.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    }));
-    expect(pathGeometry.scrollWidth).toBeGreaterThan(pathGeometry.clientWidth);
+    const pathGeometry = await longPath.evaluate((element) => {
+      const text = element.querySelector(".sh-discovery-workbench__agent-path-text")!;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return { frameWidth: element.clientWidth, textWidth: range.getBoundingClientRect().width };
+    });
+    expect(pathGeometry.textWidth).toBeGreaterThan(pathGeometry.frameWidth);
     await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test("keeps the Agent path text centered in its visible frame at wide and narrow widths", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(PREVIEW);
+
+    const path = page.getByTestId("agent-card-phys-openai").locator(".sh-discovery-workbench__agent-path");
+    const sharedCard = page.getByTestId("agent-card-phys-codebuddy");
+    const chip = sharedCard.locator(".sh-discovery-workbench__agent-path-label .sh-agent-card__shared-chip");
+    await expect(chip).toBeVisible();
+    await expect(path).toHaveAttribute(
+      "title",
+      "C:\\Users\\demo\\.codex\\skills\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\skills",
+    );
+    const measure = () => path.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const frame = element.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      return { frameCenter: (frame.top + frame.bottom) / 2, textCenter: (text.top + text.bottom) / 2 };
+    });
+
+    const measureChip = () => sharedCard.evaluate((card) => {
+      const labelRect = card.querySelector(".sh-discovery-workbench__agent-path-label")!.getBoundingClientRect();
+      const chipRect = card.querySelector(".sh-agent-card__shared-chip")!.getBoundingClientRect();
+      return { labelBottom: labelRect.bottom, labelTop: labelRect.top, chipBottom: chipRect.bottom, chipTop: chipRect.top };
+    });
+    const wide = await measure();
+    const wideChip = await measureChip();
+    expect.soft(Math.abs(wide.textCenter - wide.frameCenter)).toBeLessThanOrEqual(1);
+    expect.soft(wideChip.chipTop).toBeGreaterThanOrEqual(wideChip.labelTop);
+    expect.soft(wideChip.chipBottom).toBeLessThanOrEqual(wideChip.labelBottom);
+    await page.screenshot({ path: test.info().outputPath("discovery-agent-path-wide.png"), fullPage: true });
+
+    await page.setViewportSize({ width: 560, height: 900 });
+    const narrow = await measure();
+    const narrowChip = await measureChip();
+    expect.soft(Math.abs(narrow.textCenter - narrow.frameCenter)).toBeLessThanOrEqual(1);
+    expect.soft(narrowChip.chipTop).toBeGreaterThanOrEqual(narrowChip.labelTop);
+    expect.soft(narrowChip.chipBottom).toBeLessThanOrEqual(narrowChip.labelBottom);
+    await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath("discovery-agent-path-narrow.png"), fullPage: true });
   });
 
   test("exclusion runs after confirmation, removes only that card, and never deletes files", async ({ page }) => {
@@ -430,7 +474,7 @@ test.describe("discovery cards in Simplified Chinese", () => {
     const sharedCard = page.getByTestId("agent-card-phys-agents");
     await expect(sharedCard).toHaveCount(1);
     await expect(sharedCard.getByText("共享目录")).toBeVisible();
-    await expect(sharedCard.getByText("被 2 个已登记客户端共享")).toBeVisible();
+    await expect(sharedCard.getByText("被 3 个已登记客户端共享")).toBeVisible();
     await expect(page.getByText("暂不可用")).toBeVisible();
   });
 });

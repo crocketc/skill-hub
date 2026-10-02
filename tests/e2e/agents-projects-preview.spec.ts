@@ -44,21 +44,20 @@ test("agent cards expose identity, directory facts, and deployment capabilities"
 
   // Every card exposes only copy and combined link capabilities; the
   // tooltip/accessible label carries the user-facing explanation.
-  // DEV-108 预览夹具新增共享目录卡后共 7 张卡，每卡两枚能力图标。
+  // DEV-108 预览夹具含共享目录与只读内置目录后共 8 张卡，每卡两枚能力图标。
   const deploymentMethods = page.getByLabel("Deployment methods");
-  await expect(deploymentMethods).toHaveCount(7);
+  await expect(deploymentMethods).toHaveCount(8);
   await expect(deploymentMethods.first().locator(".sh-agent-card__deployment-method")).toHaveCount(2);
-  await expect(deploymentMethods.first().getByLabel("Copy import unavailable")).toBeVisible();
-  await expect(deploymentMethods.first().getByLabel("Link import unavailable")).toBeVisible();
+  const builtinCard = page.locator(".sh-agent-card").filter({
+    has: page.locator(".sh-agent-directory-role-badge--builtin"),
+  });
+  await expect(builtinCard.locator(".sh-agent-card__deployment-method.is-unsupported")).toHaveCount(2);
   // 共享目录卡的复制与链接能力均支持，图标共用同一规则。
-  const sharedCard = page.getByRole("listitem").filter({ has: page.getByText("/Users/preview/.agents/skills") });
-  await expect(sharedCard.getByLabel("Copy import supported")).toBeVisible();
-  await expect(sharedCard.getByLabel("Link import supported")).toBeVisible();
+  const sharedCard = page.locator('.sh-agent-card:has(.sh-agent-card__path[title="/Users/preview/.agents/skills"])');
+  await expect(sharedCard.locator(".sh-agent-card__deployment-method.is-supported")).toHaveCount(2);
 
   // Custom agents have a detail link; editing/removal is not a card action.
-  const reviewerCard = page.getByRole("listitem").filter({
-    has: page.getByText("D:\\Custom Agents\\Release Reviewer\\global skill directory", { exact: true }),
-  });
+  const reviewerCard = page.locator('.sh-agent-card:has(.sh-agent-card__path--pending_creation)');
   await expect(reviewerCard.getByRole("link")).toBeVisible();
   await expect(reviewerCard.getByRole("button")).toHaveCount(0);
 });
@@ -201,16 +200,31 @@ test("registration drawer agent list scrolls internally without horizontal overf
   await expect(registration.getByRole("button", { name: "Register project" }).last()).toBeVisible();
 });
 
-test("long directory paths wrap instead of being clipped at 800px", async ({ page }) => {
+test("long Agent paths stay single-line with a full normalized title at 800px", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/__preview/agents");
 
-  const longPath = page.getByText(
-    "D:\\Very\\Long\\Windows\\Library\\Directory\\On\\A\\Second\\Volume\\with\\project\\workspace\\skills",
-  );
+  const longPath = page
+    .locator('.sh-agent-card:has(.sh-agent-presentation[aria-label^="Cursor"])')
+    .locator(".sh-agent-card__path");
   await expect(longPath).toBeVisible();
-  const box = (await longPath.boundingBox())!;
-  expect(box.height, "a long path must wrap onto multiple lines").toBeGreaterThan(24);
+  await expect(longPath).toHaveAttribute("title", /^D:\\Very\\Long\\Windows\\Library\\Directory/);
+  await expect(longPath.locator(".sh-agent-card__path-text")).toHaveCSS("white-space", "nowrap");
+  await expect(longPath.locator(".sh-agent-card__path-text")).toHaveCSS("text-overflow", "ellipsis");
+  const geometry = await longPath.evaluate((element) => {
+    const text = element.querySelector(".sh-agent-card__path-text")!;
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    return {
+      frameHeight: element.getBoundingClientRect().height,
+      frameWidth: element.clientWidth,
+      textWidth: range.getBoundingClientRect().width,
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  expect(geometry.frameHeight).toBe(30);
+  expect(geometry.textWidth).toBeGreaterThan(geometry.frameWidth);
+  expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
 });
 
 test("the last agent card detail link stays reachable at the 800x600 minimum", async ({ page }) => {

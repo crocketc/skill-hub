@@ -340,7 +340,9 @@ function AgentCard({
           <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
         ) : null}
       </div>
-      <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>{displayPath(card.path)}</code>
+      <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>
+        <span className="sh-discovery-workbench__agent-path-text">{displayPath(card.path)}</span>
+      </code>
       <div className="sh-discovery-workbench__agent-footer">
         <DeploymentCapabilityIcons
           directory={directory}
