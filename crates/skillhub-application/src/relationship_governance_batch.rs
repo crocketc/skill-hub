@@ -33,9 +33,8 @@ use skillhub_core::api::{
     RollbackOriginalMigration, RollbackRelationGovernanceBatch, RollbackRelationMigration,
 };
 use skillhub_core::relationship::{
-    project_unified_governance_ledger, GovernableRelationFact, RelationGovernanceFilters,
-    RelationGovernanceNames, RelationGovernanceReadiness, RelationGovernanceRow,
-    SourceCopyDecision,
+    project_unified_governance_ledger_with_context, GovernableRelationFact,
+    RelationGovernanceFilters, RelationGovernanceNames, RelationGovernanceRow, SourceCopyDecision,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, OperationId, OperationPhase, OriginalMigrationState,
@@ -94,17 +93,17 @@ impl LocalApplicationFacade {
                     .collect::<std::collections::BTreeSet<_>>(),
                 None => std::collections::BTreeSet::new(),
             };
-            Ok(
-                skillhub_core::relationship::project_unified_governance_ledger(
-                    &request.filters,
-                    &facts,
-                    &relationship_repository.list_capabilities()?,
-                    &batch_relation_ids,
-                    &names,
-                    revision,
-                    last_verified_at,
-                ),
-            )
+            Ok(project_unified_governance_ledger_with_context(
+                &request.filters,
+                &facts,
+                &relationship_repository.list_capabilities()?,
+                &database.directory_repository().list_nodes()?,
+                &relationship_repository.list_relation_governance_confirmations()?,
+                &batch_relation_ids,
+                &names,
+                revision,
+                last_verified_at,
+            ))
         })?;
         Ok(AppQueryResult::RelationGovernanceLedger(ledger))
     }
@@ -173,7 +172,7 @@ impl LocalApplicationFacade {
         request: PrepareRelationGovernanceBatch,
     ) -> AppResult<AppCommandResult> {
         let batch_id = OperationId::new();
-        let relation_ids = dedupe_preserving_order(&request.relation_ids)?;
+        let requested_relation_ids = dedupe_preserving_order(&request.relation_ids)?;
 
         let rows = self.with_database("query.relation_governance_ledger", |database| {
             let relationship_repository = database.relationship_repository();
@@ -186,10 +185,12 @@ impl LocalApplicationFacade {
             for relation in relationship_repository.list_relations()? {
                 facts.push(GovernableRelationFact::Deployment(relation));
             }
-            let ledger = project_unified_governance_ledger(
+            let ledger = project_unified_governance_ledger_with_context(
                 &RelationGovernanceFilters::default(),
                 &facts,
                 &relationship_repository.list_capabilities()?,
+                &database.directory_repository().list_nodes()?,
+                &relationship_repository.list_relation_governance_confirmations()?,
                 &std::collections::BTreeSet::new(),
                 &relationship_names(database)?,
                 relationship_repository.relationship_revision()?,
@@ -198,13 +199,40 @@ impl LocalApplicationFacade {
             Ok(ledger
                 .rows
                 .into_iter()
-                .map(|row| (row.relation_id().to_owned(), row))
+                .flat_map(|row| {
+                    row.evidence_relation_ids
+                        .clone()
+                        .into_iter()
+                        .map(move |evidence_id| (evidence_id, row.clone()))
+                })
                 .collect::<HashMap<_, _>>())
         })?;
 
+        // A governance row can combine several stored facts that point at the
+        // same verified target. Resolve every evidence ID back to that row's
+        // executable representative before preparing children; otherwise a
+        // secondary alias appears to be missing, or could be prepared as a
+        // second operation against the same target.
+        let relation_ids = dedupe_preserving_order(
+            &requested_relation_ids
+                .iter()
+                .map(|requested_id| {
+                    rows.get(requested_id)
+                        .map(|row| row.relation_id().to_owned())
+                        .unwrap_or_else(|| requested_id.clone())
+                })
+                .collect::<Vec<_>>(),
+        )?;
+
         // 批次约束（plan 7.5）：来源副本与部署边不可混在同一个批次里。
-        let has_source_copy = rows.values().any(|row| row.source_copy().is_some());
-        let has_deployment = rows.values().any(|row| row.deployment().is_some());
+        let selected_rows = relation_ids
+            .iter()
+            .filter_map(|relation_id| rows.get(relation_id))
+            .collect::<Vec<_>>();
+        let has_source_copy = selected_rows
+            .iter()
+            .any(|row| row.source_copy().is_some() && row.deployment().is_none());
+        let has_deployment = selected_rows.iter().any(|row| row.deployment().is_some());
         if has_source_copy && has_deployment {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Warning)
                 .with_param("reason", "mixed_relation_governance_batch_kinds"));
@@ -237,6 +265,14 @@ impl LocalApplicationFacade {
             let confirmation_token = request
                 .confirmations
                 .get(&relation_id)
+                .or_else(|| {
+                    requested_relation_ids.iter().find_map(|requested_id| {
+                        let row = rows.get(requested_id)?;
+                        (row.relation_id() == relation_id)
+                            .then(|| request.confirmations.get(requested_id))
+                            .flatten()
+                    })
+                })
                 .filter(|token| !token.trim().is_empty())
                 .cloned();
             // 8.16：按 action 分派到各自的逐行状态机；批处理本身只做编排。
@@ -987,22 +1023,23 @@ fn batch_row_is_executable(
     row: &skillhub_core::relationship::RelationGovernanceRow,
     confirmation_token: Option<&str>,
 ) -> bool {
-    match row.readiness {
-        RelationGovernanceReadiness::EligibleToCentralize => true,
-        RelationGovernanceReadiness::NeedsValidation => {
-            confirmation_token.is_some()
-                && !row.blockers.is_empty()
-                && row
-                    .blockers
-                    .iter()
-                    .all(|blocker| {
-                        *blocker
-                            == skillhub_core::relationship::RelationGovernanceBlocker::SharedImpactConfirmationRequired
-                    })
-        }
-        RelationGovernanceReadiness::Blocked
-        | RelationGovernanceReadiness::AlreadyCentralized => false,
+    let Some(condition) = row.governance.action_conditions.iter().find(|condition| {
+        condition.action
+            == skillhub_core::relationship::RelationGovernanceAction::CentralizeManagement
+    }) else {
+        return false;
+    };
+    if condition.available {
+        return true;
     }
+    condition.reasons
+        == [skillhub_core::relationship::RelationGovernanceReason::SharedImpactConfirmationRequired]
+        && confirmation_token.is_some_and(|token| !token.trim().is_empty())
+        && !row.blockers.is_empty()
+        && row.blockers.iter().all(|blocker| {
+            *blocker
+                == skillhub_core::relationship::RelationGovernanceBlocker::SharedImpactConfirmationRequired
+        })
 }
 
 fn dedupe_preserving_order(relation_ids: &[String]) -> AppResult<Vec<String>> {

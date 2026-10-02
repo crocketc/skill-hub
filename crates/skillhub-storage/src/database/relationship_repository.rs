@@ -11,8 +11,9 @@ use skillhub_core::duplicate::{
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryRecognition,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    SourceCopyArchiveReason, SourceCopyRelationFact, SourceRelationFact,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState,
+    RelationGovernanceConfirmationFact, RelationGovernanceDecision, RelationManagementStatus,
+    RelationshipType, SourceCopyArchiveReason, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
@@ -124,6 +125,41 @@ impl<'a> RelationshipRepository<'a> {
         rows.map(|row| {
             let row = row.map_err(database_error)?;
             decode_capability(row).ok_or_else(invalid_record)
+        })
+        .collect()
+    }
+
+    pub fn list_relation_governance_confirmations(
+        &self,
+    ) -> AppResult<Vec<RelationGovernanceConfirmationFact>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT relation_id, management_status, decision, confirmed_at
+                 FROM relation_governance_confirmations ORDER BY relation_id",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| {
+            let (relation_id, management_status, decision, confirmed_at) =
+                row.map_err(database_error)?;
+            Ok(RelationGovernanceConfirmationFact {
+                relation_id,
+                management_status: parse_management_status(&management_status)
+                    .ok_or_else(invalid_record)?,
+                decision: parse_governance_decision(&decision).ok_or_else(invalid_record)?,
+                confirmed_at,
+            })
         })
         .collect()
     }
@@ -569,7 +605,7 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
         "excluded.ownership='skillhub_managed'
                 OR deployment_relations.ownership<>'skillhub_managed'"
     };
-    transaction
+    let changed = transaction
         .execute(
             &format!(
                 "INSERT INTO deployment_relations
@@ -627,8 +663,9 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                 relation.released_at,
             ],
     )
-        .map(|changed| changed != 0)
-        .map_err(database_error)
+        .map_err(database_error)?;
+    let confirmation_changed = upsert_confirmation_for_deployment_tx(transaction, relation)?;
+    Ok(changed != 0 || confirmation_changed)
 }
 
 pub(crate) fn bump_relationship_revision_tx(transaction: &Transaction<'_>) -> AppResult<()> {
@@ -664,7 +701,7 @@ pub(crate) fn sync_reconciled_deployment_tx(
         Some(hash) => (hash, "content_verified"),
         None => (expected_hash, "content_verified"),
     };
-    transaction
+    let changed = transaction
         .execute(
             "UPDATE deployment_relations
              SET content_fingerprint=?1, match_state=?2, active=1,
@@ -682,6 +719,49 @@ pub(crate) fn sync_reconciled_deployment_tx(
                 observed_at,
                 format!("managed:{id}")
             ],
+        )
+        .map_err(database_error)?;
+    Ok(changed != 0)
+}
+
+fn upsert_confirmation_for_deployment_tx(
+    transaction: &Transaction<'_>,
+    relation: &DeploymentRelationFact,
+) -> AppResult<bool> {
+    let is_explicit_managed_link = matches!(relation.relationship, RelationshipType::ManagedLink)
+        && relation.ownership == OwnershipState::SkillhubManaged
+        && matches!(
+            relation.file_representation,
+            FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+        );
+    let (management_status, confirmed_at) = if is_explicit_managed_link {
+        ("taken_over", Some(relation.observed_at))
+    } else {
+        ("not_taken_over", None)
+    };
+    transaction
+        .execute(
+            "INSERT INTO relation_governance_confirmations
+             (relation_id, management_status, decision, confirmed_at)
+             VALUES (?1, ?2, 'undecided', ?3)
+             ON CONFLICT(relation_id) DO UPDATE SET
+               management_status = CASE
+                 WHEN excluded.management_status='taken_over' THEN 'taken_over'
+                 ELSE relation_governance_confirmations.management_status
+               END,
+               decision = CASE
+                 WHEN excluded.management_status='taken_over' THEN 'undecided'
+                 ELSE relation_governance_confirmations.decision
+               END,
+               confirmed_at = CASE
+                 WHEN excluded.management_status='taken_over' THEN excluded.confirmed_at
+                 ELSE relation_governance_confirmations.confirmed_at
+               END
+             WHERE (excluded.management_status='taken_over'
+                    AND (relation_governance_confirmations.management_status<>'taken_over'
+                         OR relation_governance_confirmations.decision<>'undecided'
+                         OR relation_governance_confirmations.confirmed_at IS NOT excluded.confirmed_at))",
+            params![relation.relation_id, management_status, confirmed_at],
         )
         .map(|changed| changed != 0)
         .map_err(database_error)
@@ -1359,8 +1439,17 @@ pub struct GovernanceTaskRepository<'a> {
 }
 
 impl<'a> GovernanceTaskRepository<'a> {
-    pub fn confirm_handled(&self, task_id: &str, record: &skillhub_core::pending::PendingConfirmation, now: i64) -> AppResult<()> {
-        let transaction = self.database.connection.unchecked_transaction().map_err(database_error)?;
+    pub fn confirm_handled(
+        &self,
+        task_id: &str,
+        record: &skillhub_core::pending::PendingConfirmation,
+        now: i64,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
         self.resolve(task_id, now)?;
         let json = serde_json::to_string(record).map_err(|_| invalid_record())?;
         transaction.execute(
@@ -1370,10 +1459,17 @@ impl<'a> GovernanceTaskRepository<'a> {
         transaction.commit().map_err(database_error)
     }
 
-    pub fn list_confirmations(&self) -> AppResult<Vec<skillhub_core::pending::PendingConfirmation>> {
+    pub fn list_confirmations(
+        &self,
+    ) -> AppResult<Vec<skillhub_core::pending::PendingConfirmation>> {
         let mut statement = self.database.connection.prepare("SELECT value_json FROM settings WHERE key LIKE 'pending.confirmed.%' ORDER BY updated_at DESC").map_err(database_error)?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(database_error)?;
-        rows.map(|row| serde_json::from_str(&row.map_err(database_error)?).map_err(|_| invalid_record())).collect()
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.map(|row| {
+            serde_json::from_str(&row.map_err(database_error)?).map_err(|_| invalid_record())
+        })
+        .collect()
     }
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
@@ -1707,6 +1803,22 @@ fn relationship_code(value: RelationshipType) -> &'static str {
         RelationshipType::ObservedCopy => "observed_copy",
         RelationshipType::ObservedLink => "observed_link",
         RelationshipType::Unknown => "unknown",
+    }
+}
+
+fn parse_management_status(value: &str) -> Option<RelationManagementStatus> {
+    match value {
+        "not_taken_over" => Some(RelationManagementStatus::NotTakenOver),
+        "taken_over" => Some(RelationManagementStatus::TakenOver),
+        _ => None,
+    }
+}
+
+fn parse_governance_decision(value: &str) -> Option<RelationGovernanceDecision> {
+    match value {
+        "undecided" => Some(RelationGovernanceDecision::Undecided),
+        "retained_independent_copy" => Some(RelationGovernanceDecision::RetainedIndependentCopy),
+        _ => None,
     }
 }
 

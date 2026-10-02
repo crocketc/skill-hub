@@ -82,7 +82,11 @@ impl SourceCopyRelationFact {
             source_path_key: source_path_key.into(),
             physical_source_id: physical_source_id.into(),
             source_container_id: event.source_container_id.clone(),
-            directory_node_id: None,
+            // Import classification has already bound this source to a
+            // registered Agent/project directory (or a logical target). The
+            // governance projection resolves only a matching directory fact;
+            // it never infers identity from a similar name or path.
+            directory_node_id: event.source_container_id.clone(),
             agent_client_id: event.agent_client_id.clone(),
             expected_fingerprint: event.content_fingerprint.clone(),
             current_fingerprint: None,

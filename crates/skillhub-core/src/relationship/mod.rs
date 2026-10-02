@@ -24,16 +24,20 @@ pub use classifier::{
 pub use governance::{
     legacy_bucket_statuses, project_governable_relation, project_relation_governance_ledger,
     project_relation_governance_ledger_with_names, project_unified_governance_ledger,
-    GovernableRelationFact, GovernableRelationProjection, GovernableRelationStatus,
-    RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
-    RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceImpact,
+    project_unified_governance_ledger_with_context, GovernableRelationFact,
+    GovernableRelationProjection, GovernableRelationStatus, RelationGovernanceAction,
+    RelationGovernanceActionCondition, RelationGovernanceBlocker, RelationGovernanceBucket,
+    RelationGovernanceClassification, RelationGovernanceConfirmationFact, RelationGovernanceCounts,
+    RelationGovernanceDecision, RelationGovernanceFilters, RelationGovernanceImpact,
     RelationGovernanceLedger, RelationGovernanceNames, RelationGovernanceReadiness,
-    RelationGovernanceRow,
+    RelationGovernanceReason, RelationGovernanceRow, RelationGovernanceState,
+    RelationGovernanceTargetKind, RelationManagementStatus, RelationTargetIdentity,
 };
 pub use graph::{
-    project_skill_relationship_graph, RelationshipGraphEdgeKind, RelationshipGraphFactCounts,
-    RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus,
-    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode,
+    project_skill_relationship_graph, project_skill_relationship_graph_with_governance,
+    RelationshipGraphEdgeKind, RelationshipGraphFactCounts, RelationshipGraphFilters,
+    RelationshipGraphNodeKind, RelationshipGraphStatus, SkillRelationshipEdge,
+    SkillRelationshipGraph, SkillRelationshipNode,
 };
 pub use history::{
     GovernanceHistoryAgent, GovernanceHistoryEntry, GovernanceHistoryPage, ListGovernanceHistory,
