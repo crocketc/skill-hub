@@ -192,7 +192,7 @@ it("keeps high-risk reasons visible before expanding with an exact deep link", a
 });
 
 it("maps group selection onto exact snoozable items and keeps source-work groups out of batch", async () => {
-  const defer = vi.fn(async () => undefined);
+  const defer = vi.fn(async (_items: PendingItem[], _days: number, _reason: string) => undefined);
   await renderPage(fakeFacade({
     list: async () => [
       trialItem,
