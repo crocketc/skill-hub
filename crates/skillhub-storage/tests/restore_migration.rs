@@ -34,6 +34,37 @@ fn restores_portable_skills_without_reusing_device_targets() {
 }
 
 #[test]
+fn restoring_legacy_archived_backup_metadata_normalizes_only_skill_lifecycle() {
+    let root = tempdir().unwrap();
+    let package_root = root.path().join("packages");
+    let library_root = root.path().join("library");
+    let metadata = r#"{
+        "skills": [
+            {"id":"skill-one","lifecycle":"Archived","trial_due":"2026-10-01","tags":["kept"]},
+            {"id":"skill-two","lifecycle":"Deprecated"}
+        ],
+        "deployments": []
+    }"#;
+    let input = BackupInput::new(BackupScope::Full, metadata, vec![]);
+    let backup = BackupService::new(package_root);
+    let package = backup
+        .create(&input, &backup.prepare(&input).unwrap(), &[])
+        .unwrap();
+
+    let restore = RestoreService::new(library_root.clone());
+    let plan = restore.prepare(&package).unwrap();
+    restore.commit(&package, &plan, &[]).unwrap();
+
+    let restored: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(library_root.join("portable/skills.json")).unwrap())
+            .unwrap();
+    assert_eq!(restored["skills"][0]["lifecycle"], "Normal");
+    assert_eq!(restored["skills"][0]["trial_due"], "2026-10-01");
+    assert_eq!(restored["skills"][0]["tags"][0], "kept");
+    assert_eq!(restored["skills"][1]["lifecycle"], "Deprecated");
+}
+
+#[test]
 fn restore_conflict_can_skip_and_staged_failure_preserves_live_library() {
     let root = tempdir().unwrap();
     let package_root = root.path().join("packages");

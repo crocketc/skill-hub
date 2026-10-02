@@ -219,7 +219,29 @@ fn sanitize_portable_metadata(metadata: &str) -> Vec<u8> {
         return metadata.as_bytes().to_vec();
     };
     strip_device_fields(&mut value);
+    normalize_archived_skill_lifecycle(&mut value);
     serde_json::to_vec_pretty(&value).unwrap_or_else(|_| metadata.as_bytes().to_vec())
+}
+
+fn normalize_archived_skill_lifecycle(value: &mut serde_json::Value) {
+    let Some(skills) = value
+        .as_object_mut()
+        .and_then(|metadata| metadata.get_mut("skills"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for skill in skills {
+        let Some(lifecycle) = skill
+            .as_object_mut()
+            .and_then(|record| record.get_mut("lifecycle"))
+        else {
+            continue;
+        };
+        if matches!(lifecycle.as_str(), Some("Archived" | "archived")) {
+            *lifecycle = serde_json::Value::String("Normal".to_owned());
+        }
+    }
 }
 
 fn strip_device_fields(value: &mut serde_json::Value) {
