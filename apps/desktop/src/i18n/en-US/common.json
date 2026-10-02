@@ -1273,7 +1273,8 @@
     "drawer": {
       "actions": {
         "addTags": "Add tags",
-        "delete": "Delete from library"
+        "delete": "Delete from library",
+        "viewVersions": "View versions"
       },
       "configure": "Configure quick drawer",
       "description": "Skill summary, common actions, and configurable detail modules.",
@@ -1308,7 +1309,7 @@
       },
       "moduleVisibility": "Drawer modules",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
-      "metadataFailure": "Alias or note was not saved. The last saved content was restored.",
+      "metadataFailure": "Alias, purpose, or note was not saved. The last saved content was restored.",
       "presets": {
         "label": "Quick drawer width",
         "nearFull": "Near full screen",
@@ -1337,6 +1338,7 @@
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
+        "agentDestinations": "Agent destinations",
         "alias": "Alias",
         "currentVersion": "Current version: {{version}}",
         "dependencies": "Dependencies",
@@ -1350,6 +1352,7 @@
         "originalName": "Original name",
         "ownership": "Ownership",
         "purpose": "My purpose",
+        "projectDestinations": "Project destinations",
         "projects": "Projects",
         "source": "Source",
         "tags": "Tags",

@@ -1273,7 +1273,8 @@
     "drawer": {
       "actions": {
         "addTags": "添加标签",
-        "delete": "从库中删除 Skill"
+        "delete": "从库中删除 Skill",
+        "viewVersions": "查看版本"
       },
       "configure": "配置快速抽屉",
       "description": "Skill 摘要、常用操作和可配置详情模块。",
@@ -1308,7 +1309,7 @@
       },
       "moduleVisibility": "抽屉模块",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
-      "metadataFailure": "别名或备注未保存，已恢复为已保存的内容。",
+      "metadataFailure": "别名、用途或备注未保存，已恢复为已保存的内容。",
       "presets": {
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",
@@ -1337,6 +1338,7 @@
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
+        "agentDestinations": "Agent 去向",
         "alias": "别名",
         "currentVersion": "当前版本：{{version}}",
         "dependencies": "依赖",
@@ -1350,6 +1352,7 @@
         "originalName": "原名",
         "ownership": "归属",
         "purpose": "我的用途",
+        "projectDestinations": "项目去向",
         "projects": "项目",
         "source": "来源",
         "tags": "标签",

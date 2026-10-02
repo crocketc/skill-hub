@@ -1097,3 +1097,39 @@ describe("drawer primary actions equivalence (DEV-19)", () => {
     expect(locations.at(-1)).toContain(JSON.stringify({ exportSkillIds: ["skill-pdf"] }));
   });
 });
+
+it("keeps the skill overview and its primary action grouped before configurable details", async () => {
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    onDelete: vi.fn(),
+    onCheckUpdates: vi.fn(),
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const overview = drawer.querySelector(".sh-skill-drawer__overview");
+  expect(overview).not.toBeNull();
+  expect(overview).toContainElement(within(drawer).getByRole("heading", { name: "PDF Reader" }));
+  expect(overview).toContainElement(within(drawer).getByText("Extracts text from PDF files."));
+  expect(overview).toContainElement(within(drawer).getByText("Read and extract PDFs"));
+  expect(overview?.querySelector(".sh-skill-drawer__summary-grid")).not.toBeNull();
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--lifecycle")).toHaveTextContent("LifecycleActive");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--version")).toHaveTextContent("Version1.4.0");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--agents")).toHaveTextContent("Agent destinations2");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--projects")).toHaveTextContent("Project destinations3");
+
+  const actions = drawer.querySelector(".sh-skill-drawer__actions-main");
+  expect(actions).toContainElement(within(drawer).getByRole("button", { name: "Add to…" }));
+  const modules = drawer.querySelector(".sh-skill-drawer__modules");
+  expect(modules).not.toBeNull();
+  expect(overview!.compareDocumentPosition(modules as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("does not show a delete action without a delete handler", async () => {
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    onCheckUpdates: vi.fn(),
+  });
+
+  await screen.findByTestId("skill-quick-drawer");
+  expect(screen.queryByRole("button", { name: "Delete from library" })).not.toBeInTheDocument();
+});

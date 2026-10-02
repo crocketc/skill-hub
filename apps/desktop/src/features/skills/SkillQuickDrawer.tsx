@@ -40,6 +40,7 @@ import {
   normalizeDrawerPreferences,
   reorderDrawerModule,
 } from "./drawerModules";
+import "./skillQuickDrawer.css";
 
 export interface SkillQuickDrawerProps {
   detailSearch?: string;
@@ -100,6 +101,12 @@ const PRESET_LABEL_KEYS = {
   standard: "skillLibrary.drawer.presets.standard",
   wide: "skillLibrary.drawer.presets.wide",
 } as const satisfies Record<DrawerPreset, string>;
+
+const LIFECYCLE_LABEL_KEYS = {
+  active: "skillLibrary.filters.lifecycleOptions.active",
+  archived: "skillLibrary.filters.lifecycleOptions.archived",
+  trial: "skillLibrary.filters.lifecycleOptions.trial",
+} as const satisfies Record<SkillQuickView["lifecycle"], string>;
 
 function ModuleCard({ children, title }: ModuleCardProps) {
   return (
@@ -375,48 +382,116 @@ function IdentityRegion({
 }: IdentityRegionProps) {
   const { t } = useTranslation();
   return (
-    <section className="sh-skill-drawer__identity">
+    <section className="sh-skill-drawer__identity sh-skill-drawer__overview">
       <div className="sh-skill-drawer__identity-heading">
-        <h2>{view.name}</h2>
-        {/* P1-10：别名场景下原名与别名同屏；无别名（同名）时不重复展示。 */}
-        {view.originalName && view.originalName !== view.name ? (
-          <span className="sh-skill-drawer__original-name">
+        <div className="sh-skill-drawer__identity-title">
+          <h2>{view.name}</h2>
+          {/* P1-10：别名场景下原名与别名同屏；无别名（同名）时不重复展示。 */}
+          {view.originalName && view.originalName !== view.name ? (
+            <span className="sh-skill-drawer__original-name">
+              <span className="sh-skill-drawer__field-label">
+                {t("skillLibrary.drawer.values.originalName")}:
+              </span>{" "}
+              <span>{view.originalName}</span>
+            </span>
+          ) : null}
+        </div>
+        <div className="sh-skill-drawer__summary-grid">
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--alias">
             <span className="sh-skill-drawer__field-label">
-              {t("skillLibrary.drawer.values.originalName")}:
-            </span>{" "}
-            <span>{view.originalName}</span>
-          </span>
-        ) : null}
-        <span className="sh-skill-drawer__field-label">
-          {t("skillLibrary.drawer.values.alias")}:
-        </span>
-        {editingField === "alias" ? (
-          <input
-            aria-label={t("skillLibrary.drawer.values.alias")}
-            autoFocus
-            onBlur={onCommit}
-            onChange={(event) => onChange(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") onCommit();
-              if (event.key === "Escape") onCommit();
-            }}
-            type="text"
-            value={editingValue}
-          />
-        ) : (
-          <span>{view.alias ?? <EmptyValue />}</span>
-        )}
-        <Button
-          aria-label={t("skillLibrary.drawer.editAlias")}
-          className="sh-skill-drawer__edit-icon"
-          onClick={() => onBeginEdit("alias")}
-          size="sm"
-          variant="ghost"
-        >
-          {t("skillLibrary.drawer.editAlias")}
-        </Button>
+              {t("skillLibrary.drawer.values.alias")}
+            </span>
+            <div className="sh-skill-drawer__summary-value">
+              {editingField === "alias" ? (
+                <input
+                  aria-label={t("skillLibrary.drawer.values.alias")}
+                  autoFocus
+                  onBlur={onCommit}
+                  onChange={(event) => onChange(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") onCommit();
+                    if (event.key === "Escape") onCommit();
+                  }}
+                  type="text"
+                  value={editingValue}
+                />
+              ) : (
+                <span>{view.alias ?? <EmptyValue />}</span>
+              )}
+              <Button
+                aria-label={t("skillLibrary.drawer.editAlias")}
+                className="sh-skill-drawer__edit-icon"
+                onClick={() => onBeginEdit("alias")}
+                size="sm"
+                variant="ghost"
+              >
+                {t("skillLibrary.drawer.editAlias")}
+              </Button>
+            </div>
+          </div>
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--tags">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.tags")}
+            </span>
+            <div className="sh-skill-drawer__summary-value sh-skill-drawer__summary-tags">
+              {view.tags.length > 0 ? (
+                <ul className="sh-skill-drawer__tag-list">
+                  {view.tags.map((tag) => (
+                    <li className="sh-skill-drawer__tag" key={tag}>
+                      <span>{tag}</span>
+                      <Button
+                        aria-label={t("skillLibrary.drawer.removeTag", { tag })}
+                        onClick={() => onRemoveTag(tag)}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        <Icon name="close" size={16} />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyValue />
+              )}
+              <Button
+                className="sh-skill-drawer__edit-icon"
+                onClick={onAddTags}
+                size="sm"
+                variant="ghost"
+              >
+                {t("skillLibrary.drawer.actions.addTags")}
+              </Button>
+            </div>
+          </div>
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--lifecycle">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.filters.lifecycle")}
+            </span>
+            <span className="sh-skill-drawer__summary-value sh-skill-drawer__lifecycle-value">
+              {t(LIFECYCLE_LABEL_KEYS[view.lifecycle])}
+            </span>
+          </div>
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--version">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.filters.version")}
+            </span>
+            <span className="sh-skill-drawer__summary-value">{view.currentVersion}</span>
+          </div>
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--agents">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.agentDestinations")}
+            </span>
+            <span className="sh-skill-drawer__summary-value">{view.agentDeploymentCount}</span>
+          </div>
+          <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--projects">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.projectDestinations")}
+            </span>
+            <span className="sh-skill-drawer__summary-value">{view.projectDeploymentCount}</span>
+          </div>
+        </div>
       </div>
-      <div className="sh-skill-drawer__field">
+      <div className="sh-skill-drawer__field sh-skill-drawer__description-block">
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.originalDescription")}:
         </span>
@@ -524,40 +599,6 @@ function IdentityRegion({
           {t("skillLibrary.drawer.editNote")}
         </Button>
       </div>
-      {/* P1-10：标签读写。展示当前标签并支持逐个移除与批量添加；
-          保存经 set_metadata 的整体覆盖契约，失败可见不静默。 */}
-      <div className="sh-skill-drawer__tags">
-        <span className="sh-skill-drawer__note-label">
-          {t("skillLibrary.drawer.values.tags")}:
-        </span>
-        {view.tags.length > 0 ? (
-          <ul className="sh-skill-drawer__tag-list">
-            {view.tags.map((tag) => (
-              <li className="sh-skill-drawer__tag" key={tag}>
-                <span>{tag}</span>
-                <Button
-                  aria-label={t("skillLibrary.drawer.removeTag", { tag })}
-                  onClick={() => onRemoveTag(tag)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <Icon name="close" size={16} />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyValue />
-        )}
-        <Button
-          className="sh-skill-drawer__edit-icon"
-          onClick={onAddTags}
-          size="sm"
-          variant="ghost"
-        >
-          {t("skillLibrary.drawer.actions.addTags")}
-        </Button>
-      </div>
     </section>
   );
 }
@@ -568,7 +609,13 @@ interface PrimaryActionsProps extends ModuleProps {
   onCheckUpdates?: (skillId: string, skillName: string) => void;
 }
 
-function PrimaryActions({ onCheckUpdates, onDelete, view }: PrimaryActionsProps) {
+function PrimaryActions({
+  onCheckUpdates,
+  onDelete,
+  versionsHref,
+  versionsState,
+  view,
+}: PrimaryActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   // DEV-19（2026-09-20 收口）：抽屉动作与批量栏/详情页在「真实可用契约」
@@ -579,24 +626,46 @@ function PrimaryActions({ onCheckUpdates, onDelete, view }: PrimaryActionsProps)
   if (!onDelete && !onCheckUpdates) return null;
   return (
     <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions">
-      <Button onClick={() => navigate(`/deploy?skill=${encodeURIComponent(view.id)}`)} size="sm" variant="secondary">
-        {t("skillLibrary.page.batch.addTo")}
-      </Button>
-      {onCheckUpdates ? (
-        <Button onClick={() => onCheckUpdates(view.id, view.name)} size="sm" variant="secondary">
-          {t("skillLibrary.page.batch.checkUpdates")}
+      <div className="sh-skill-drawer__actions-main">
+        <Button
+          className="sh-skill-drawer__dispatch"
+          onClick={() => navigate(`/deploy?skill=${encodeURIComponent(view.id)}`)}
+          size="sm"
+          variant="primary"
+        >
+          {t("skillLibrary.page.batch.addTo")}
+        </Button>
+        {onCheckUpdates ? (
+          <Button onClick={() => onCheckUpdates(view.id, view.name)} size="sm" variant="secondary">
+            {t("skillLibrary.page.batch.checkUpdates")}
+          </Button>
+        ) : null}
+        <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${encodeURIComponent(view.id)}/security`}>
+          {t("skillLibrary.drawer.security.open")}
+        </Link>
+        {versionsHref ? (
+          <Link className="sh-button sh-button--secondary sh-button--sm" state={versionsState} to={versionsHref}>
+            {t("skillLibrary.drawer.actions.viewVersions")}
+          </Link>
+        ) : null}
+        <Button
+          onClick={() => navigate("/settings/data-protection", { state: { exportSkillIds: [view.id] } })}
+          size="sm"
+          variant="secondary"
+        >
+          {t("skillLibrary.page.batch.startExport")}
+        </Button>
+      </div>
+      {onDelete ? (
+        <Button
+          className="sh-skill-drawer__delete-action"
+          onClick={() => onDelete(view.id, view.name)}
+          size="sm"
+          variant="danger"
+        >
+          {t("skillLibrary.drawer.actions.delete")}
         </Button>
       ) : null}
-      <Button
-        onClick={() => navigate("/settings/data-protection", { state: { exportSkillIds: [view.id] } })}
-        size="sm"
-        variant="secondary"
-      >
-        {t("skillLibrary.page.batch.startExport")}
-      </Button>
-      <Button onClick={() => onDelete?.(view.id, view.name)} size="sm" variant="danger">
-        {t("skillLibrary.drawer.actions.delete")}
-      </Button>
     </section>
   );
 }
@@ -1305,7 +1374,13 @@ export function SkillQuickDrawer({
                 translationLoading={translationLoading}
                 view={view}
               />
-              <PrimaryActions onDelete={onDelete} onCheckUpdates={onCheckUpdates} view={view} />
+              <PrimaryActions
+                onDelete={onDelete}
+                onCheckUpdates={onCheckUpdates}
+                versionsHref={versionsHref}
+                versionsState={versionsState}
+                view={view}
+              />
               <RiskSummary view={view} />
             </div>
           ) : null}
