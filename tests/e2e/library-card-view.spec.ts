@@ -63,7 +63,7 @@ test("filter collapse keeps search visible and shows the active condition count"
 
   // 生成两个生效条件：搜索文本 + 基础检查筛选。
   await search.fill("PDF");
-  await page.getByRole("button", { name: "Basic check" }).click();
+  await page.getByRole("button", { name: "Basic check", exact: true }).click();
   await page.getByRole("menuitemcheckbox", { name: "Passed" }).click();
   await expect(toggle).toContainText("2 active");
 
@@ -71,7 +71,16 @@ test("filter collapse keeps search visible and shows the active condition count"
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(search).toBeVisible();
-  await expect(page.getByRole("button", { name: "Basic check" })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Basic check", exact: true })).not.toBeVisible();
+  const activeBasicCheck = page.getByRole("button", {
+    name: "Remove filter: Basic check: Passed",
+    exact: true,
+  });
+  await expect(activeBasicCheck).toBeVisible();
+  await activeBasicCheck.click();
+  await expect(activeBasicCheck).toHaveCount(0);
+  await expect(search).toHaveValue("PDF");
+  await expect(toggle).toContainText("1 active");
 
   // 一键清除筛选，计数归零。
   await page.getByRole("button", { name: "Clear filters" }).click();
@@ -147,6 +156,23 @@ test("table mode keeps a single horizontal scroll owner and fits the default col
   expect(regionOverflow.scrollWidth).toBeLessThanOrEqual(
     regionOverflow.clientWidth + 1,
   );
+
+  const selectTarget = page.locator(
+    '.sh-skill-table tbody td[data-column="select"] .sh-skill-table__checkbox-target',
+  ).first();
+  const selectGeometry = await selectTarget.evaluate((target) => {
+    const bounds = target.getBoundingClientRect();
+    const cell = target.closest("td")!;
+    return {
+      width: bounds.width,
+      height: bounds.height,
+      cellClientWidth: cell.clientWidth,
+      cellScrollWidth: cell.scrollWidth,
+    };
+  });
+  expect(selectGeometry.width).toBeGreaterThanOrEqual(40);
+  expect(selectGeometry.height).toBeGreaterThanOrEqual(32);
+  expect(selectGeometry.cellScrollWidth).toBeLessThanOrEqual(selectGeometry.cellClientWidth);
 });
 
 test("hidden table columns stay reachable through a visible horizontal scrollbar at 800", async ({ page }) => {

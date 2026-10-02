@@ -101,9 +101,10 @@
    rem 宽度：剩余空间按列宽比例分配（默认列集 1280px 仍放得下），启用列的
    总和超过区域宽度时溢出交给结果区域横向滚动兜底，末列经滚动完全可达。
    min-width:0 继续中和 base.css 的固定像素列 min-width。 */
-.sh-skill-library .sh-skill-table [data-column="select"] { width: 2.5rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="select"] { width: 2.5rem; min-width: 0; padding: 0; }
+.sh-skill-library .sh-skill-table__checkbox-target { min-width: 2.5rem; min-height: 2rem; }
 .sh-skill-library .sh-skill-table [data-column="name"] { width: 10rem; min-width: 0; }
-.sh-skill-library .sh-skill-table [data-column="purpose"] { width: 8rem; min-width: 0; }
+.sh-skill-library .sh-skill-table [data-column="purpose"] { width: 7rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="tags"] { width: 6rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="lifecycle"] { width: 6rem; min-width: 0; }
 .sh-skill-library .sh-skill-table [data-column="agent_deployments"] { width: 9rem; min-width: 0; }
