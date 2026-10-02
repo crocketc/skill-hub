@@ -364,6 +364,32 @@ interface IdentityRegionProps extends ModuleProps {
   translationLoading?: boolean;
 }
 
+function PencilIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.75"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <path d="m15 5 4 4M4 20l4.3-1 11.3-11.3a2.1 2.1 0 0 0-3-3L5.3 16 4 20Z" />
+    </svg>
+  );
+}
+
+function PinnedDrawerTitle({ name }: { name: string }) {
+  return (
+    <div className="sh-skill-drawer__pinned-title">
+      <h2>{name}</h2>
+    </div>
+  );
+}
+
 function IdentityRegion({
   editingField,
   editingValue,
@@ -384,18 +410,15 @@ function IdentityRegion({
   return (
     <section className="sh-skill-drawer__identity sh-skill-drawer__overview">
       <div className="sh-skill-drawer__identity-heading">
-        <div className="sh-skill-drawer__identity-title">
-          <h2>{view.name}</h2>
-          {/* P1-10：别名场景下原名与别名同屏；无别名（同名）时不重复展示。 */}
-          {view.originalName && view.originalName !== view.name ? (
-            <span className="sh-skill-drawer__original-name">
-              <span className="sh-skill-drawer__field-label">
-                {t("skillLibrary.drawer.values.originalName")}:
-              </span>{" "}
-              <span>{view.originalName}</span>
-            </span>
-          ) : null}
-        </div>
+        {/* 别名时仍在可滚正文中保留原始运行时名称，不把它挤进固定标题区。 */}
+        {view.originalName && view.originalName !== view.name ? (
+          <span className="sh-skill-drawer__original-name">
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.originalName")}:
+            </span>{" "}
+            <span>{view.originalName}</span>
+          </span>
+        ) : null}
         <div className="sh-skill-drawer__summary-grid">
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--alias">
             <span className="sh-skill-drawer__field-label">
@@ -421,11 +444,12 @@ function IdentityRegion({
               <Button
                 aria-label={t("skillLibrary.drawer.editAlias")}
                 className="sh-skill-drawer__edit-icon"
+                data-tooltip={t("skillLibrary.drawer.editAlias")}
                 onClick={() => onBeginEdit("alias")}
                 size="sm"
                 variant="ghost"
               >
-                {t("skillLibrary.drawer.editAlias")}
+                <PencilIcon />
               </Button>
             </div>
           </div>
@@ -454,12 +478,14 @@ function IdentityRegion({
                 <EmptyValue />
               )}
               <Button
+                aria-label={t("skillLibrary.drawer.actions.addTags")}
                 className="sh-skill-drawer__edit-icon"
+                data-tooltip={t("skillLibrary.drawer.actions.addTags")}
                 onClick={onAddTags}
                 size="sm"
                 variant="ghost"
               >
-                {t("skillLibrary.drawer.actions.addTags")}
+                <PencilIcon />
               </Button>
             </div>
           </div>
@@ -495,7 +521,7 @@ function IdentityRegion({
         <span className="sh-skill-drawer__field-label">
           {t("skillLibrary.drawer.values.originalDescription")}:
         </span>
-        <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">
+        <span className="sh-skill-drawer__field-value">
           {view.originalDescription ?? <EmptyValue />}
         </span>
         {onTranslateDescription ? (
@@ -528,7 +554,7 @@ function IdentityRegion({
           <span className="sh-skill-drawer__field-label">
             {t("skillLibrary.drawer.values.translatedDescription")}:
           </span>
-          <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped sh-skill-drawer__secondary">
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
             {view.translatedDescription}
           </span>
         </div>
@@ -553,18 +579,19 @@ function IdentityRegion({
             value={editingValue}
           />
         ) : (
-          <span className="sh-skill-drawer__field-value sh-skill-drawer__field-value--clamped">
+          <span className="sh-skill-drawer__field-value">
             {view.purpose || <EmptyValue />}
           </span>
         )}
         <Button
           aria-label={t("skillLibrary.drawer.editPurpose")}
           className="sh-skill-drawer__edit-icon"
+          data-tooltip={t("skillLibrary.drawer.editPurpose")}
           onClick={() => onBeginEdit("purpose")}
           size="sm"
           variant="ghost"
         >
-          {t("skillLibrary.drawer.editPurpose")}
+          <PencilIcon />
         </Button>
       </div>
       <div className="sh-skill-drawer__note">
@@ -592,11 +619,12 @@ function IdentityRegion({
         <Button
           aria-label={t("skillLibrary.drawer.editNote")}
           className="sh-skill-drawer__edit-icon"
+          data-tooltip={t("skillLibrary.drawer.editNote")}
           onClick={() => onBeginEdit("note")}
           size="sm"
           variant="ghost"
         >
-          {t("skillLibrary.drawer.editNote")}
+          <PencilIcon />
         </Button>
       </div>
     </section>
@@ -1321,7 +1349,16 @@ export function SkillQuickDrawer({
               </Button>
             </div>
           </div>
+          {view ? <PinnedDrawerTitle name={view.name} /> : null}
+        </div>
 
+        <div
+          aria-label={t("skillLibrary.drawer.description")}
+          className="sh-skill-drawer__scroll"
+          data-testid="drawer-modules-scroll"
+          role="region"
+          tabIndex={0}
+        >
           {(preferenceSaveFailed ?? localPreferenceSaveFailed) ? (
             <p className="sh-skill-drawer__alert" role="alert">
               {t("skillLibrary.drawer.preferenceFailure")}
@@ -1354,7 +1391,7 @@ export function SkillQuickDrawer({
               </Button>
             </div>
           ) : view ? (
-            <div className="sh-skill-drawer__fixed">
+            <div className="sh-skill-drawer__summary-stack">
               <IdentityRegion
                 editingField={editingField}
                 editingValue={editingValue}
@@ -1384,12 +1421,7 @@ export function SkillQuickDrawer({
               <RiskSummary view={view} />
             </div>
           ) : null}
-        </div>
 
-        <div
-          className="sh-skill-drawer__scroll"
-          data-testid="drawer-modules-scroll"
-        >
           {configurationOpen ? (
             <DrawerConfiguration
               onMoveAfter={moveModuleAfter}

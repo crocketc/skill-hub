@@ -892,23 +892,32 @@ it("translates the original description and only writes the result to purpose af
   });
 });
 
-it("clamps long description fields into scrollable areas instead of stretching the drawer", async () => {
+it("keeps long summary text intact in the drawer's single body scroll area", async () => {
+  const originalDescription = "很长的原始描述内容。".repeat(120);
+  const translatedDescription = "A very long translated description.".repeat(120);
+  const purpose = "A long user purpose that remains available in the drawer. ".repeat(40);
   const facade = createMockSkillLibraryFacade({
     quickView: {
       ...QUICK_VIEW,
-      originalDescription: "很长的原始描述内容。".repeat(120),
-      translatedDescription: "A very long translated description.".repeat(120),
+      originalDescription,
+      translatedDescription,
+      purpose,
     },
   });
   await renderDrawer({ facade });
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
-  await waitFor(() => {
-    // 原始描述 + 描述译文 + 用途 = 3 个固定高度可滚动区域。
-    expect(
-      drawer.querySelectorAll(".sh-skill-drawer__field-value--clamped").length,
-    ).toBe(3);
-  });
+  const body = drawer.querySelector("[data-testid='drawer-modules-scroll']");
+  expect(body).toBeInTheDocument();
+  expect(body).toContainElement(drawer.querySelector(".sh-skill-drawer__overview"));
+  expect(drawer.querySelectorAll(".sh-skill-drawer__field-value--clamped")).toHaveLength(0);
+  expect(drawer.querySelector(".sh-skill-drawer__description-block .sh-skill-drawer__field-value"))
+    .toHaveTextContent(originalDescription);
+  expect(Array.from(drawer.querySelectorAll(".sh-skill-drawer__field-value"))
+    .find((field) => field.textContent?.includes(translatedDescription)))
+    .toHaveTextContent(translatedDescription);
+  expect(drawer.querySelector(".sh-skill-drawer__purpose-row .sh-skill-drawer__field-value")?.textContent)
+    .toBe(purpose);
 });
 
 it("labels drawer identity fields in source-first and user-metadata order", async () => {
@@ -917,8 +926,10 @@ it("labels drawer identity fields in source-first and user-metadata order", asyn
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
   const identity = within(drawer).getByRole("heading", { name: "PDF Reader" });
-  const region = identity.closest(".sh-skill-drawer__identity");
+  const region = drawer.querySelector(".sh-skill-drawer__identity");
   expect(region).toBeInTheDocument();
+  expect(drawer.querySelector(".sh-skill-drawer__chrome")).toContainElement(identity);
+  expect(region).not.toContainElement(identity);
 
   const originalDescription = within(region as HTMLElement).getByText(/Original description/);
   const purpose = within(region as HTMLElement).getByText(/My purpose/);
@@ -1007,17 +1018,24 @@ it("reports a failure instead of silently dropping edits when the facade cannot 
   expect(within(drawer).queryByText("Unsaved alias")).not.toBeInTheDocument();
 });
 
-it("replaces glyph-only edit controls with labelled text buttons", async () => {
+it("uses keyboard-labelled pencil controls for metadata edits", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
 
   const editAlias = await screen.findByRole("button", { name: "Edit alias" });
-  expect(editAlias).not.toHaveTextContent("✎");
-  expect(editAlias).toHaveTextContent("Edit alias");
+  expect(editAlias).toHaveTextContent(/^\s*$/);
+  expect(editAlias).toHaveAttribute("data-tooltip", "Edit alias");
+  expect(editAlias.querySelector("svg[aria-hidden='true']")).not.toBeNull();
 
   const editNote = screen.getByRole("button", { name: "Edit note" });
-  expect(editNote).not.toHaveTextContent("✎");
-  expect(editNote).toHaveTextContent("Edit note");
+  expect(editNote).toHaveTextContent(/^\s*$/);
+  expect(editNote).toHaveAttribute("data-tooltip", "Edit note");
+  expect(editNote.querySelector("svg[aria-hidden='true']")).not.toBeNull();
+
+  const editPurpose = screen.getByRole("button", { name: "Edit purpose" });
+  expect(editPurpose).toHaveAttribute("data-tooltip", "Edit purpose");
+  const addTags = screen.getByRole("button", { name: "Add tags" });
+  expect(addTags).toHaveAttribute("data-tooltip", "Add tags");
 });
 
 it("closes with the shared close icon instead of a character glyph", async () => {
@@ -1106,9 +1124,14 @@ it("keeps the skill overview and its primary action grouped before configurable 
   });
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
-  const overview = drawer.querySelector(".sh-skill-drawer__overview");
+  const title = within(drawer).getByRole("heading", { name: "PDF Reader" });
+  const chrome = drawer.querySelector<HTMLElement>(".sh-skill-drawer__chrome");
+  const overview = drawer.querySelector<HTMLElement>(".sh-skill-drawer__overview");
+  const body = drawer.querySelector<HTMLElement>("[data-testid='drawer-modules-scroll']");
   expect(overview).not.toBeNull();
-  expect(overview).toContainElement(within(drawer).getByRole("heading", { name: "PDF Reader" }));
+  expect(chrome).toContainElement(title);
+  expect(body).not.toContainElement(title);
+  expect(body).toContainElement(overview);
   expect(overview).toContainElement(within(drawer).getByText("Extracts text from PDF files."));
   expect(overview).toContainElement(within(drawer).getByText("Read and extract PDFs"));
   expect(overview?.querySelector(".sh-skill-drawer__summary-grid")).not.toBeNull();
@@ -1117,8 +1140,10 @@ it("keeps the skill overview and its primary action grouped before configurable 
   expect(overview?.querySelector(".sh-skill-drawer__summary-item--agents")).toHaveTextContent("Agent destinations2");
   expect(overview?.querySelector(".sh-skill-drawer__summary-item--projects")).toHaveTextContent("Project destinations3");
 
-  const actions = drawer.querySelector(".sh-skill-drawer__actions-main");
+  const actions = drawer.querySelector<HTMLElement>(".sh-skill-drawer__actions-main");
   expect(actions).toContainElement(within(drawer).getByRole("button", { name: "Add to…" }));
+  expect(body).toContainElement(actions);
+  expect(body).toContainElement(drawer.querySelector<HTMLElement>(".sh-skill-drawer__risk"));
   const modules = drawer.querySelector(".sh-skill-drawer__modules");
   expect(modules).not.toBeNull();
   expect(overview!.compareDocumentPosition(modules as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

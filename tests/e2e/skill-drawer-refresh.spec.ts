@@ -4,6 +4,145 @@ import { expect, test } from "./fixtures";
 
 const screenshotDirectory = path.resolve(process.cwd(), "test-results/ui/skill-drawer");
 
+test("quick drawer keeps only its toolbar and name fixed while long content scrolls without clipping", async ({ page }, testInfo) => {
+  await page.goto("/__preview/skill-library");
+  await page.getByRole("heading", { name: "PDF Reader" }).click();
+
+  const drawer = page.getByTestId("skill-quick-drawer");
+  const panel = page.getByTestId("drawer-panel");
+  const title = drawer.locator(".sh-skill-drawer__pinned-title h2");
+  const openingMotion = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { name: style.animationName, duration: style.animationDuration };
+  });
+  expect(openingMotion).toEqual({ name: "sh-skill-drawer-in", duration: "0.36s" });
+  const body = drawer.getByTestId("drawer-modules-scroll");
+  await expect(body).toHaveAttribute("role", "region");
+  await expect(body).toHaveAttribute("tabindex", "0");
+  const editButtons = drawer.locator(".sh-skill-drawer__edit-icon");
+  await expect(editButtons).toHaveCount(4);
+  const editButtonGeometry = await editButtons.evaluateAll((buttons) => buttons.map((button) => {
+    const rect = button.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  }));
+  expect(editButtonGeometry.every(({ width, height }) => width >= 40 && height >= 40)).toBe(true);
+  for (let tabCount = 0; tabCount < 60; tabCount += 1) {
+    if (await drawer.locator(".sh-skill-drawer__edit-icon:focus-visible").count()) break;
+    await page.keyboard.press("Tab");
+  }
+  const keyboardFocusedEdit = drawer.locator(".sh-skill-drawer__edit-icon:focus-visible").first();
+  await expect(keyboardFocusedEdit).toBeFocused();
+  await expect.poll(() => keyboardFocusedEdit.evaluate((button) =>
+    getComputedStyle(button, "::after").visibility,
+  )).toBe("visible");
+  await keyboardFocusedEdit.evaluate((button) => (button as HTMLElement).blur());
+  await editButtons.first().hover();
+  await expect.poll(() => editButtons.first().evaluate((button) =>
+    getComputedStyle(button, "::after").visibility,
+  )).toBe("visible");
+  await page.mouse.move(0, 0);
+
+  const longDescription = "Source description remains available while the rest of the drawer scrolls. ".repeat(90);
+  await drawer.locator(".sh-skill-drawer__description-block .sh-skill-drawer__field-value")
+    .evaluate((field, content) => { field.textContent = content; }, longDescription);
+
+  for (const viewport of [
+    { width: 800, height: 600 },
+    { width: 900, height: 600 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const measurements = await drawer.evaluate((root) => {
+      const panel = document.querySelector<HTMLElement>('[data-testid="drawer-panel"]')!;
+      const scroll = root.querySelector<HTMLElement>('[data-testid="drawer-modules-scroll"]')!;
+      const chrome = root.querySelector<HTMLElement>(".sh-skill-drawer__chrome")!;
+      const identity = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
+      const actions = root.querySelector<HTMLElement>(".sh-skill-drawer__actions")!;
+      const risk = root.querySelector<HTMLElement>(".sh-skill-drawer__risk")!;
+      const description = root.querySelector<HTMLElement>(".sh-skill-drawer__description-block .sh-skill-drawer__field-value")!;
+      const style = getComputedStyle(description);
+      const lineHeight = Number.parseFloat(style.lineHeight);
+      return {
+        panelHeight: panel.clientHeight,
+        bodyHeight: scroll.clientHeight,
+        identityInBody: scroll.contains(identity),
+        actionsInBody: scroll.contains(actions),
+        riskInBody: scroll.contains(risk),
+        titleInChrome: chrome.contains(root.querySelector(".sh-skill-drawer__pinned-title h2")),
+        descriptionHeight: description.getBoundingClientRect().height,
+        threeLines: lineHeight * 3,
+      };
+    });
+
+    expect(measurements.bodyHeight / measurements.panelHeight).toBeGreaterThanOrEqual(0.6);
+    expect(measurements.identityInBody).toBe(true);
+    expect(measurements.actionsInBody).toBe(true);
+    expect(measurements.riskInBody).toBe(true);
+    expect(measurements.titleInChrome).toBe(true);
+    expect(measurements.descriptionHeight).toBeGreaterThan(measurements.threeLines);
+
+    await page.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath(`quick-drawer-${viewport.width}x${viewport.height}-top.png`),
+    });
+    const titleTopBeforeScroll = await title.evaluate((element) => element.getBoundingClientRect().top);
+    await body.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect(title).toBeVisible();
+    await expect.poll(() => title.evaluate((element) => element.getBoundingClientRect().top))
+      .toBe(titleTopBeforeScroll);
+    await page.screenshot({
+      animations: "disabled",
+      path: testInfo.outputPath(`quick-drawer-${viewport.width}x${viewport.height}-scrolled.png`),
+    });
+    await body.evaluate((element) => { element.scrollTop = 0; });
+  }
+
+  await drawer.getByRole("button", { name: "Close" }).click();
+  const closingPanel = page.locator(".sh-skill-drawer[data-state='closed']");
+  await expect(closingPanel).toHaveCount(1);
+  const closingMotion = await closingPanel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { name: style.animationName, duration: style.animationDuration };
+  });
+  expect(closingMotion).toEqual({ name: "sh-skill-drawer-out", duration: "0.32s" });
+  await expect(panel).toBeHidden();
+});
+
+test("quick drawer honors its reduced-motion setting", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
+  await page.goto("/__preview/skill-library");
+  await page.getByRole("heading", { name: "PDF Reader" }).click();
+
+  const panel = page.getByTestId("drawer-panel");
+  await expect(panel).toHaveAttribute("data-reduced-motion", "true");
+  await expect.poll(() => panel.evaluate((element) => getComputedStyle(element).animationName))
+    .toBe("none");
+  await page.getByTestId("skill-quick-drawer").getByRole("button", { name: "Close" }).click();
+  await expect(panel).toBeHidden();
+});
+
+test("quick drawer stays readable at the minimum viewport in a dark theme", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("skillhub.appearance", "dark");
+    localStorage.setItem("skillhub.reduced-motion", "true");
+  });
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto("/__preview/skill-library");
+  await page.getByRole("heading", { name: "PDF Reader" }).click();
+
+  const drawer = page.getByTestId("skill-quick-drawer");
+  const body = drawer.getByTestId("drawer-modules-scroll");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "grok-night");
+  await expect.poll(() => body.evaluate((element) =>
+    element.clientHeight / document.querySelector<HTMLElement>("[data-testid='drawer-panel']")!.clientHeight,
+  )).toBeGreaterThanOrEqual(0.6);
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("quick-drawer-dark-800x600.png"),
+  });
+});
+
 test("quick drawer keeps its lifecycle summary, actions, and module controls usable", async ({ page }) => {
   mkdirSync(screenshotDirectory, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -102,18 +241,18 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   const modulesScroll = drawer.getByTestId("drawer-modules-scroll");
   await expect.poll(() => modulesScroll.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(140);
 
-  const overview = drawer.locator(".sh-skill-drawer__overview");
-  await expect.poll(() => overview.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-  await overview.evaluate((element) => {
+  const body = drawer.getByTestId("drawer-modules-scroll");
+  await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await body.evaluate((element) => {
     element.scrollTop = 0;
   });
-  await expect.poll(() => overview.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBe(0);
   await expect.poll(() => drawer.evaluate((root) => {
-    const overview = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
-    const title = root.querySelector<HTMLElement>(".sh-skill-drawer__identity-title h2")!;
-    const overviewBounds = overview.getBoundingClientRect();
+    const chrome = root.querySelector<HTMLElement>(".sh-skill-drawer__chrome")!;
+    const title = root.querySelector<HTMLElement>(".sh-skill-drawer__pinned-title h2")!;
+    const chromeBounds = chrome.getBoundingClientRect();
     const titleBounds = title.getBoundingClientRect();
-    return titleBounds.top >= overviewBounds.top && titleBounds.bottom <= overviewBounds.bottom;
+    return titleBounds.top >= chromeBounds.top && titleBounds.bottom <= chromeBounds.bottom;
   })).toBe(true);
   await page.screenshot({
     animations: "disabled",
@@ -121,28 +260,33 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     path: path.join(screenshotDirectory, "skill-drawer-900x600-long-summary.png"),
   });
 
-  await overview.evaluate((element) => {
-    element.querySelector<HTMLElement>(".sh-skill-drawer__summary-item--projects")
-      ?.scrollIntoView({ block: "nearest" });
+  await drawer.locator(".sh-skill-drawer__summary-item--projects").evaluate((element) => {
+    element.scrollIntoView({ block: "nearest" });
   });
   await expect.poll(() => drawer.evaluate((root) => {
-    const overview = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
+    const body = root.querySelector<HTMLElement>("[data-testid='drawer-modules-scroll']")!;
     const lastFact = root.querySelector<HTMLElement>(".sh-skill-drawer__summary-item--projects")!;
-    const overviewBounds = overview.getBoundingClientRect();
+    const bodyBounds = body.getBoundingClientRect();
     const factBounds = lastFact.getBoundingClientRect();
-    return factBounds.top >= overviewBounds.top && factBounds.bottom <= overviewBounds.bottom + 1;
+    return factBounds.top >= bodyBounds.top && factBounds.bottom <= bodyBounds.bottom + 1;
   })).toBe(true);
   await expect(drawer.getByRole("button", { name: "Add to…" })).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();
 
-  const panelBounds = await panel.boundingBox();
-  const actionsBounds = await drawer.locator(".sh-skill-drawer__actions").boundingBox();
-  const riskBounds = await drawer.getByRole("region", { name: "Risk summary" }).boundingBox();
-  expect(panelBounds).not.toBeNull();
-  expect(actionsBounds).not.toBeNull();
-  expect(riskBounds).not.toBeNull();
-  expect(actionsBounds!.y + actionsBounds!.height).toBeLessThanOrEqual(panelBounds!.y + panelBounds!.height);
-  expect(riskBounds!.y + riskBounds!.height).toBeLessThanOrEqual(panelBounds!.y + panelBounds!.height);
+  for (const [section, selector] of [
+    [drawer.locator(".sh-skill-drawer__actions"), ".sh-skill-drawer__actions"],
+    [drawer.getByRole("region", { name: "Risk summary" }), ".sh-skill-drawer__risk"],
+  ] as const) {
+    await section.scrollIntoViewIfNeeded();
+    const contentIsVisible = await drawer.evaluate((root, targetSelector) => {
+      const body = root.querySelector<HTMLElement>("[data-testid='drawer-modules-scroll']")!;
+      const content = root.querySelector<HTMLElement>(targetSelector)!;
+      const bodyBounds = body.getBoundingClientRect();
+      const contentBounds = content.getBoundingClientRect();
+      return contentBounds.top >= bodyBounds.top && contentBounds.bottom <= bodyBounds.bottom;
+    }, selector);
+    expect(contentIsVisible, selector).toBe(true);
+  }
 
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
