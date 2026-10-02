@@ -222,7 +222,7 @@ it("searches settings in Chinese, opens the matching section, and focuses its co
   );
 
   await user.type(screen.getByRole("searchbox", { name: "搜索设置" }), "信息密度");
-  await user.click(screen.getByRole("button", { name: "信息密度", exact: true }));
+  await user.click(screen.getByRole("button", { name: "信息密度" }));
 
   expect(screen.getByRole("tab", { name: "界面与视图" })).toHaveAttribute("aria-selected", "true");
   expect(document.getElementById("settings-density")).toHaveFocus();

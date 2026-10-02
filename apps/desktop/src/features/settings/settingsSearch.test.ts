@@ -6,7 +6,7 @@ it("backs every search index entry with a real localized label in both locales",
   for (const locale of ["zh-CN", "en-US"] as const) {
     const i18n = await createSkillHubI18n([locale]);
     for (const entry of SETTINGS_SEARCH_INDEX) {
-      const label = i18n.t(entry.labelKey);
+      const label = String(i18n.t(entry.labelKey as never));
       // i18next 在键缺失时回退返回原始 key：那会把技术标识漏进界面。
       expect(label, `${locale}:${entry.id}`).not.toBe(entry.labelKey);
       expect(label, `${locale}:${entry.id}`).not.toMatch(/^settings\./);
@@ -16,7 +16,7 @@ it("backs every search index entry with a real localized label in both locales",
 
 it("matches every entry through at least one of its own aliases", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  const translate = (key: string) => String(i18n.t(key));
+  const translate = (key: string) => String(i18n.t(key as never));
   const searchableOf = (entry: (typeof SETTINGS_SEARCH_INDEX)[number]) =>
     [translate(entry.labelKey), translate(`settings.sections.${entry.sectionId}`), ...entry.aliases].join(" ");
 

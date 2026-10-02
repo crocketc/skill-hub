@@ -3037,6 +3037,7 @@
       "path": "Library path",
       "migrationAvailable": "A library migration entry is available when the native service is connected.",
       "runHealthCheck": "Run health check",
+      "unnamedSkill": "Unnamed skill",
       "healthScope": "The health check only looks for unfinished application operations (such as interrupted imports or additions) and offers recovery/repair paths. It does not include duplicate or same-name detection (duplicate analysis runs during import), content validation, or deployment consistency checks.",
       "checking": "Checking…",
       "checkFailed": "Health check failed. Please try again later.",
