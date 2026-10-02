@@ -114,6 +114,82 @@ test("clicking a notification stack expands all notices without marking them rea
   await popover.screenshot({ path: testInfo.outputPath("notification-expanded.png") });
 });
 
+test("folded notification action remains inside its card and navigates without expanding", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
+  await page.goto(`${LIBRARY_ROUTE}?notificationActions`);
+  await page.getByRole("button", { name: "Create action notifications" }).click();
+
+  const bell = page.getByRole("button", { name: "Notifications, 2 unread", exact: true });
+  await bell.click();
+  const popover = page.getByRole("dialog", { name: "Notifications" });
+  const card = popover.locator(".sh-notification-popover__stack .sh-notification-popover__card");
+  const action = card.getByRole("link", { name: "Review Agents" });
+  const expand = popover.getByRole("button", { name: "Expand 2 notifications" });
+  await expect(card).toHaveCount(1);
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(action).toBeVisible();
+
+  const overlap = await card.evaluate((visualCard) => {
+    const actionLink = visualCard.querySelector("a");
+    const edge = document.querySelector<HTMLElement>(".sh-notification-popover__edge");
+    if (!actionLink || !edge) return null;
+    const cardRect = visualCard.getBoundingClientRect();
+    const actionRect = actionLink.getBoundingClientRect();
+    const cardLayer = Number.parseInt(getComputedStyle(visualCard.parentElement!).zIndex, 10);
+    const edgeLayer = Number.parseInt(getComputedStyle(edge).zIndex, 10);
+    const actionWithinCard = visualCard.contains(actionLink)
+      && actionRect.top >= cardRect.top
+      && actionRect.bottom <= cardRect.bottom;
+    return { actionWithinCard, cardLayer, edgeLayer };
+  });
+  expect(overlap).not.toBeNull();
+  expect(overlap!.actionWithinCard).toBe(true);
+  expect(overlap!.cardLayer).toBeGreaterThan(overlap!.edgeLayer);
+  await popover.screenshot({ path: testInfo.outputPath("notification-action-folded.png") });
+
+  await action.click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await expect(popover).toHaveCount(0);
+});
+
+test("expanded notification actions stay inside their cards and navigate without collapsing", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript(() => localStorage.setItem("skillhub.reduced-motion", "true"));
+  await page.goto(`${LIBRARY_ROUTE}?notificationActions`);
+  await page.getByRole("button", { name: "Create action notifications" }).click();
+
+  const bell = page.getByRole("button", { name: "Notifications, 2 unread", exact: true });
+  await bell.click();
+  const popover = page.getByRole("dialog", { name: "Notifications" });
+  await popover.getByRole("button", { name: "Expand 2 notifications" }).click();
+
+  const cards = popover.locator(".sh-notification-popover__list .sh-notification-popover__card");
+  await expect(cards).toHaveCount(2);
+  const geometry = await cards.evaluateAll((visualCards) => visualCards.map((visualCard) => {
+    const actionLink = visualCard.querySelector("a");
+    const cardRect = visualCard.getBoundingClientRect();
+    const actionRect = actionLink?.getBoundingClientRect();
+    return {
+      hasActionInside: Boolean(actionLink && visualCard.contains(actionLink)),
+      actionFits: Boolean(actionRect && actionRect.top >= cardRect.top && actionRect.bottom <= cardRect.bottom),
+    };
+  }));
+  expect(geometry).toEqual([
+    { hasActionInside: true, actionFits: true },
+    { hasActionInside: true, actionFits: true },
+  ]);
+  await popover.screenshot({ path: testInfo.outputPath("notification-action-expanded.png") });
+
+  await popover.getByRole("link", { name: "Open library" }).click();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(popover).toHaveCount(0);
+});
+
 test("notification popover aligns to the window edge, uses frosted glass, and slides in/out", async ({
   page,
 }) => {
