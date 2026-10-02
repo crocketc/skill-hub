@@ -2,11 +2,22 @@ import { useTranslation } from "react-i18next";
 import type {
   RelationGovernanceLedger,
   RelationGovernanceRow,
+  RelationGovernanceActionCondition,
   RemovalImpactFact,
   RelationshipCheckReport,
 } from "../../../api/bindings";
 import type { RelationGovernanceFacade } from "./api";
 import { RelationshipGovernancePage } from "./RelationshipGovernancePage";
+
+function governanceState(
+  governance_status: RelationGovernanceRow["governance"]["governance_status"],
+  management_status: RelationGovernanceRow["governance"]["management_status"],
+  decision: RelationGovernanceRow["governance"]["decision"],
+  health_reasons: RelationGovernanceRow["governance"]["health_reasons"],
+  action_conditions: RelationGovernanceActionCondition[],
+): RelationGovernanceRow["governance"] {
+  return { governance_status, management_status, decision, management_confirmed_at: null, health_reasons, action_conditions };
+}
 
 const rows: RelationGovernanceRow[] = [
   {
@@ -44,6 +55,12 @@ const rows: RelationGovernanceRow[] = [
       backup_required: true,
       rollback_available: true,
     },
+    governance: governanceState("pending", "not_taken_over", "undecided", [], [
+      { action: "centralize_management", available: true, reasons: [] },
+      { action: "revalidate", available: true, reasons: [] },
+    ]),
+    target_identity: null,
+    evidence_relation_ids: ["preview:centralize-pdf"],
   },
   {
     relation: {
@@ -80,6 +97,12 @@ const rows: RelationGovernanceRow[] = [
       backup_required: false,
       rollback_available: false,
     },
+    governance: governanceState("pending", "not_taken_over", "undecided", ["verification_required"], [
+      { action: "centralize_management", available: false, reasons: ["verification_required"] },
+      { action: "revalidate", available: true, reasons: [] },
+    ]),
+    target_identity: null,
+    evidence_relation_ids: ["preview:verify-notes"],
   },
   {
     relation: {
@@ -116,6 +139,12 @@ const rows: RelationGovernanceRow[] = [
       backup_required: false,
       rollback_available: true,
     },
+    governance: governanceState("pending", "not_taken_over", "undecided", ["shared_impact_confirmation_required"], [
+      { action: "centralize_management", available: false, reasons: ["shared_impact_confirmation_required"] },
+      { action: "revalidate", available: true, reasons: [] },
+    ]),
+    target_identity: null,
+    evidence_relation_ids: ["preview:shared-attention"],
   },
   {
     relation: {
@@ -152,6 +181,12 @@ const rows: RelationGovernanceRow[] = [
       backup_required: false,
       rollback_available: false,
     },
+    governance: governanceState("pending", "not_taken_over", "undecided", ["relationship_not_convertible"], [
+      { action: "centralize_management", available: false, reasons: ["relationship_not_convertible"] },
+      { action: "revalidate", available: false, reasons: ["relationship_not_convertible"] },
+    ]),
+    target_identity: null,
+    evidence_relation_ids: ["preview:blocked-directory"],
   },
   {
     relation: {
@@ -188,6 +223,12 @@ const rows: RelationGovernanceRow[] = [
       backup_required: false,
       rollback_available: true,
     },
+    governance: governanceState("completed", "taken_over", "undecided", [], [
+      { action: "undeploy", available: true, reasons: [] },
+      { action: "revalidate", available: true, reasons: [] },
+    ]),
+    target_identity: null,
+    evidence_relation_ids: ["preview:managed-link"],
   },
   {
     relation: {
@@ -224,6 +265,9 @@ const rows: RelationGovernanceRow[] = [
       backup_required: false,
       rollback_available: true,
     },
+    governance: governanceState("completed", "not_taken_over", "retained_independent_copy", [], []),
+    target_identity: null,
+    evidence_relation_ids: ["preview:retained-source"],
   },
 ];
 

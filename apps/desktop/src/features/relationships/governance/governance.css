@@ -261,10 +261,10 @@
   display: grid;
   flex: 1 1 0;
   gap: var(--space-3);
-  grid-template-columns: repeat(4, minmax(16rem, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   height: 100%;
   min-height: 0;
-  min-width: 69rem;
+  min-width: 0;
   padding: 0 0 var(--space-2);
 }
 
@@ -280,19 +280,11 @@
   overflow: hidden;
 }
 
-.sh-governance__board-column--manageable {
-  border-top: 2px solid var(--ui-accent-strong);
-}
-
-.sh-governance__board-column--needsValidation {
+.sh-governance__board-column--pending {
   border-top: 2px solid var(--ui-warning-foreground);
 }
 
-.sh-governance__board-column--blocked {
-  border-top: 2px solid var(--ui-danger-foreground);
-}
-
-.sh-governance__board-column--settled {
+.sh-governance__board-column--completed {
   border-top: 2px solid var(--ui-success-foreground);
 }
 
@@ -467,8 +459,29 @@
 }
 
 .sh-governance__identity > strong {
+  display: block;
   font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-governance__identity > strong:focus-visible,
+.sh-relationship-path:focus-visible {
+  border-radius: var(--space-1);
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
+}
+
+.sh-relationship-path {
+  display: inline-block;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
 .sh-governance__board-card .sh-governance__identity {
@@ -480,6 +493,26 @@
 
 .sh-governance__board-card .sh-governance__identity > strong {
   flex: 1 1 100%;
+}
+
+.sh-governance__identity [data-testid^="governance-short-name-"]:focus-visible {
+  border-radius: var(--space-1);
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
+}
+
+.sh-governance__decision {
+  color: var(--ui-ink-muted);
+  flex: 1 1 100%;
+  font-size: var(--font-size-xs);
+}
+
+.sh-governance__reason-list {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+  max-width: 28rem;
+  padding-inline-start: 1.25rem;
 }
 
 .sh-governance__board-target {
@@ -741,8 +774,14 @@
     margin-inline-start: auto;
   }
 
+  .sh-governance__secondary-filters {
+    position: static;
+  }
+
   .sh-governance__secondary-filter-popover {
-    left: auto;
+    left: 0;
+    max-width: none;
+    min-width: 0;
     right: 0;
   }
 }

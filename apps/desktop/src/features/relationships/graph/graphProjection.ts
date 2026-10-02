@@ -3,11 +3,12 @@ import type {
   RelationshipGraphFactCounts,
   RelationshipGraphNodeKind,
   RelationshipGraphStatus,
+  RelationGovernanceClassification,
+  RelationManagementStatus,
   RelationshipType,
   SkillRelationshipEdge,
   SkillRelationshipGraphResult,
   SkillRelationshipNode,
-  SourceCopyRelationFact,
 } from "../../../api/bindings";
 
 /**
@@ -21,7 +22,10 @@ export const CANVAS_SIZE = { width: 960, height: 640 } as const;
 /** 事实筛选：与 URL/query key 携带同一份筛选事实；空数组表示不筛选。 */
 export interface GraphFactFilters {
   relationshipTypes: RelationshipType[];
+  /** Current relationship health (active/released/content evidence). */
   statuses: RelationshipGraphStatus[];
+  governance?: RelationGovernanceClassification[];
+  management?: RelationManagementStatus[];
 }
 
 /** 显示设置：纯展示开关，不影响查询事实。 */
@@ -57,9 +61,8 @@ export interface ProjectedEdge {
   line: GraphEdgeLine;
   state: GraphEdgeVisualState;
   /**
-   * 治理深链目标（任务 12B）：部署边自带 relation_id；来源边由当前
-   * 来源副本台账按 latest_provenance_id 关联得出。null 表示只读事实，
-   * 详情面板不得提供治理入口。
+   * 治理深链只允许 R1 明确投影为治理关系的目标使用边。来源与共享
+   * 识别事实没有治理状态，必须保持只读语义。
    */
   governanceRelationId: string | null;
   x1: number;
@@ -144,6 +147,14 @@ function edgeHiddenByFactFilters(
   if (filters.statuses.length > 0 && !filters.statuses.includes(edgeStatus(edge))) {
     return true;
   }
+  if (edge.governance && filters.governance?.length
+    && !filters.governance.includes(edge.governance.governance_status)) {
+    return true;
+  }
+  if (edge.governance && filters.management?.length
+    && !filters.management.includes(edge.governance.management_status)) {
+    return true;
+  }
   return false;
 }
 
@@ -185,15 +196,13 @@ function sourceLocatorKey(source: NonNullable<SkillRelationshipNode["source"]>):
 
 /**
  * 把快照投影为单中心、一跳、固定坐标的分层布局。
- * sourceCopies 是当前来源副本台账（任务 7/9）：来源边借此获得治理 relation
- * 深链；同一业务 locator 的多次 provenance 合并为一个展示节点。
+ * 同一业务 locator 的多次 provenance 合并为一个展示节点。
  * 纯函数：不修改入参；事实计数与修订号原样透传。
  */
 export function projectGraph(
   graph: SkillRelationshipGraphResult,
   filters: GraphFactFilters,
   display: GraphDisplaySettings,
-  sourceCopies: readonly SourceCopyRelationFact[] = [],
 ): GraphProjection {
   const nodeById = new Map(graph.nodes.map((node) => [node.node_id, node]));
   const center = nodeById.get(
@@ -367,7 +376,6 @@ export function projectGraph(
 
   // 后端折叠节点：按折叠类别受显示设置约束，其余作为底部 chip 展示。
   const backendCollapsed = graph.nodes.filter((node) => node.kind === "collapsed");
-  const collapsedRow: { label: string; x: number }[] = [];
   backendCollapsed.forEach((node) => {
     const kind = node.collapsed_kind ?? "skill";
     if (!categoryShown(kind, display)) {
@@ -376,7 +384,6 @@ export function projectGraph(
     }
     collapsedChips.push({ kind, count: node.collapsed_count, reason: "collapsed" });
     projectedNodes.push({ node, layer: "collapsed", x: 0, y: COLLAPSED_ROW_Y });
-    collapsedRow.push({ label: node.node_id, x: 0 });
   });
 
   const positionCollapsedRow = () => {
@@ -398,10 +405,6 @@ export function projectGraph(
   );
 
   const projectedPosition = new Map(projectedNodes.map((node) => [node.node.node_id, node]));
-  // 任务 12B：来源边的治理 relation 由当前来源副本台账按 provenance 关联。
-  const relationByProvenance = new Map(
-    sourceCopies.map((copy) => [copy.latest_provenance_id, copy.relation_id]),
-  );
   const projectedEdges: ProjectedEdge[] = [];
   for (const candidate of [...centerEdges, ...sharedAssociationEdges]) {
     if (!edgeHiddenByFactFilters(candidate, filters)) {
@@ -413,10 +416,9 @@ export function projectGraph(
           edge: candidate,
           line: visual.line,
           state: visual.state,
-          governanceRelationId: candidate.relation_id
-            ?? (candidate.kind === "source" && candidate.provenance_id
-              ? relationByProvenance.get(candidate.provenance_id) ?? null
-              : null),
+          governanceRelationId: candidate.governance !== null && candidate.relation_id !== null
+            ? candidate.relation_id
+            : null,
           x1: from.x,
           y1: from.y,
           x2: to.x,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RelationGovernanceRow } from "../../../api/bindings";
-import { relationIdOf } from "./api";
+import { relationIdOf, rowIsNaturallyExecutable } from "./api";
 import { projectGovernanceBoard, type GovernanceBoardColumn } from "./governanceProjection";
 import {
   GovernanceRelationActions,
@@ -22,24 +22,14 @@ const BOARD_COLUMNS: readonly {
   testId: string;
 }[] = [
   {
-    key: "manageable",
-    labelKey: "relationships.governance.board.manageable",
-    testId: "governance-board-column-manageable",
+    key: "pending",
+    labelKey: "relationships.governance.classification.pending",
+    testId: "governance-board-column-pending",
   },
   {
-    key: "needsValidation",
-    labelKey: "relationships.governance.board.needsValidation",
-    testId: "governance-board-column-verification",
-  },
-  {
-    key: "blocked",
-    labelKey: "relationships.governance.board.blocked",
-    testId: "governance-board-column-blocked",
-  },
-  {
-    key: "settled",
-    labelKey: "relationships.governance.board.settled",
-    testId: "governance-board-column-settled",
+    key: "completed",
+    labelKey: "relationships.governance.classification.completed",
+    testId: "governance-board-column-completed",
   },
 ];
 
@@ -54,7 +44,6 @@ export interface GovernanceBoardProps extends Omit<GovernanceRelationTableProps,
 export function GovernanceBoard({
   busyRelationIds,
   onCentralize,
-  onClean,
   onRevalidate,
   onRetain,
   onToggleAll,
@@ -66,7 +55,7 @@ export function GovernanceBoard({
 }: GovernanceBoardProps) {
   const { t } = useTranslation();
   const projection = projectGovernanceBoard(rows);
-  const selectableRows = rows.filter((row) => row.readiness !== "blocked" && row.status !== "blocked");
+  const selectableRows = rows.filter(rowIsNaturallyExecutable);
   const allSelectableChecked = selectableRows.length > 0
     && selectableRows.every((row) => selectedIds.has(relationIdOf(row.relation)));
 
@@ -98,7 +87,6 @@ export function GovernanceBoard({
               key={key}
               labelKey={labelKey}
               onCentralize={onCentralize}
-              onClean={onClean}
               onRevalidate={onRevalidate}
               onRetain={onRetain}
               onToggleRow={onToggleRow}
@@ -119,7 +107,6 @@ function GovernanceBoardColumnView({
   column,
   labelKey,
   onCentralize,
-  onClean,
   onRevalidate,
   onRetain,
   onToggleRow,
@@ -133,7 +120,6 @@ function GovernanceBoardColumnView({
   column: GovernanceBoardColumn;
   labelKey: string;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
-  onClean: GovernanceRelationTableProps["onClean"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
@@ -227,7 +213,6 @@ function GovernanceBoardColumnView({
                 busy={busyRelationIds.has(relationIdOf(row.relation))}
                 key={relationIdOf(row.relation)}
                 onCentralize={onCentralize}
-                onClean={onClean}
                 onRevalidate={onRevalidate}
                 onRetain={onRetain}
                 onToggleRow={onToggleRow}
@@ -257,7 +242,6 @@ function RocketUpIcon() {
 function GovernanceBoardCard({
   busy,
   onCentralize,
-  onClean,
   onRevalidate,
   onRetain,
   onToggleRow,
@@ -267,7 +251,6 @@ function GovernanceBoardCard({
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
-  onClean: GovernanceRelationTableProps["onClean"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
@@ -326,7 +309,6 @@ function GovernanceBoardCard({
           <GovernanceRelationActions
             busy={busy}
             onCentralize={onCentralize}
-            onClean={onClean}
             onRevalidate={onRevalidate}
             onRetain={onRetain}
             onUndeploy={onUndeploy}

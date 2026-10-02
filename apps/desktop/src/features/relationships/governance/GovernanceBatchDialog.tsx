@@ -1,4 +1,3 @@
-import { displayPath } from "../../../platform/displayPath";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type {
@@ -14,8 +13,11 @@ import {
   relationPathOf,
   rowIsNaturallyExecutable,
   rowNeedsSharedImpactConfirmation,
+  governanceReasonKeys,
   summarizeBatchSelection,
 } from "./api";
+import { governanceReasonLabelKey } from "./governancePresenter";
+import { RelationshipPath } from "../RelationshipPath";
 
 export interface GovernanceBatchDialogProps {
   /** 进入对话框的选中行：既包含可执行行，也包含选中但受阻的行。 */
@@ -28,9 +30,6 @@ export interface GovernanceBatchDialogProps {
   error: string | null;
   /** commit 完成后的批次结果；null 表示仍在预览/执行阶段。 */
   result: RelationGovernanceBatchOutcome | null;
-  /** 批量清理的所有权确认（任务 11.15）：单一开关覆盖全部勾选行。 */
-  ownershipConfirmed: boolean;
-  onOwnershipConfirm: (checked: boolean) => void;
   onToggleItem: (relationId: string, checked: boolean) => void;
   onSharedImpactConfirm: (relationId: string, checked: boolean) => void;
   onConfirm: () => void;
@@ -49,12 +48,10 @@ export function GovernanceBatchDialog({
   error,
   onClose,
   onConfirm,
-  onOwnershipConfirm,
   onRetry,
   onRollback,
   onSharedImpactConfirm,
   onToggleItem,
-  ownershipConfirmed,
   result,
   rows,
   running,
@@ -69,6 +66,9 @@ export function GovernanceBatchDialog({
   const checkedRows = executableRows.filter((row) => checkedIds.has(relationIdOf(row.relation)));
   const selection = summarizeBatchSelection(checkedRows);
   const isMixed = selection.kind === "mixed";
+  const dialogTitleKey = selection.kind === "source_copy"
+    ? "relationships.governance.batch.retainTitle"
+    : "relationships.governance.batch.title";
   const checkedCount = checkedRows.length;
   const missingSharedConfirmation = selection.kind === "deployment" && executableRows.some((row) => {
     const relationId = relationIdOf(row.relation);
@@ -76,16 +76,14 @@ export function GovernanceBatchDialog({
       && checkedIds.has(relationId)
       && !sharedConfirmedIds.has(relationId);
   });
-  const needsOwnershipConfirmation = selection.kind === "source_copy";
   const confirmDisabled = running
     || isMixed
     || checkedCount === 0
-    || missingSharedConfirmation
-    || (needsOwnershipConfirmation && !ownershipConfirmed);
+    || missingSharedConfirmation;
 
   return (
-    <div aria-label={t("relationships.governance.batch.title")} className="sh-governance__dialog" data-testid="governance-batch-dialog" role="dialog">
-      <h3>{t("relationships.governance.batch.title")}</h3>
+    <div aria-label={t(dialogTitleKey as never)} className="sh-governance__dialog" data-testid="governance-batch-dialog" role="dialog">
+      <h3>{t(dialogTitleKey as never)}</h3>
       {result ? (
         <BatchResult
           onRetry={onRetry}
@@ -123,7 +121,7 @@ export function GovernanceBatchDialog({
                     <span>{row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill")}</span>
                     <span>{t("relationships.governance.batch.itemExecutable")}</span>
                   </label>
-                  <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
+                  <span>{t("agents.pathLabel")} <RelationshipPath path={relationPathOf(row.relation)} /></span>
                   {needsConfirmation ? (
                     <label className="sh-governance__confirm-check">
                       <input
@@ -155,10 +153,10 @@ export function GovernanceBatchDialog({
                     <span>{row.skill_display_name ?? t("relationshipGovernance.matrix.unknownSkill")}</span>
                     <span>{t("relationships.governance.batch.itemBlocked")}</span>
                   </label>
-                  <ul className="sh-governance__blockers">
-                    {row.blockers.map((blocker) => (
-                      <li key={blocker}>
-                        {t(`relationships.governance.blockers.${blocker}` as never)}
+                  <ul className="sh-governance__reason-list">
+                    {governanceReasonKeys(row).map((reason) => (
+                      <li key={reason}>
+                        {t(governanceReasonLabelKey(reason) as never)}
                       </li>
                     ))}
                   </ul>
@@ -166,18 +164,6 @@ export function GovernanceBatchDialog({
               );
             })}
           </ul>
-          {needsOwnershipConfirmation && !isMixed ? (
-            <label className="sh-governance__confirm-check">
-              <input
-                checked={ownershipConfirmed}
-                data-testid="governance-batch-ownership"
-                disabled={running}
-                onChange={(event) => onOwnershipConfirm(event.target.checked)}
-                type="checkbox"
-              />
-              {t("relationships.governance.clean.ownership")}
-            </label>
-          ) : null}
           {running ? (
             <p role="status">{t("relationships.governance.batch.running")}</p>
           ) : null}
@@ -222,7 +208,7 @@ export function BatchResult({
   return (
     <div data-testid="governance-batch-result">
       <p data-testid="governance-batch-result-title">
-        {t(batchResultTitleKey(result.state) as never, {
+        {t(batchResultTitleKey(result.state, result.action) as never, {
           committed: result.committed_count,
           count: result.committed_count,
           failed: result.failed_count,

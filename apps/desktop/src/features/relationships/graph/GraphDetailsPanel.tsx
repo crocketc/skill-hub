@@ -1,10 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { formatTimestamp, resolveLocale } from "../../../i18n";
-import { displayPath } from "../../../platform/displayPath";
-import { readableAgentIdName } from "../../skills/AgentDeploymentIcons";
 import { AgentPresentation } from "../../../ui/AgentPresentation";
 import type { RelationshipGraphFactCounts } from "../../../api/bindings";
+import { governanceStateReasonKeys } from "../governance/api";
+import { governanceReasonLabelKey, presentGovernanceState } from "../governance/governancePresenter";
+import { RelationshipPath } from "../RelationshipPath";
+import { presentRelationshipPath } from "../pathPresentation";
 import {
   edgeStatusLabelKey,
   edgeTypeLabelKey,
@@ -12,6 +14,7 @@ import {
   type ProjectedEdge,
   type ProjectedNode,
 } from "./graphProjection";
+
 
 export interface GraphDetailsPanelProps {
   centerSkillId: string;
@@ -23,7 +26,6 @@ export interface GraphDetailsPanelProps {
   projection: GraphProjection;
   /** Resolve internal Skill ids to the current user-facing display name. */
   resolveSkillName?: (skillId: string) => string | undefined;
-  relationshipRevision: string;
   selectedEdgeId: string | null;
   selectedNodeId: string | null;
 }
@@ -36,12 +38,10 @@ function nodeLabel(
   switch (node.kind) {
     case "skill":
       return node.skill_id ? resolveSkillName?.(node.skill_id) ?? fallback : fallback;
-    case "agent":
-      return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
-      return node.path ? displayPath(node.path) : fallback;
+      return node.path ? presentRelationshipPath(node.path).label : fallback;
     case "conflict":
-      return node.conflict_id ?? fallback;
+      return fallback;
     case "source":
       // 任务 12B：在线来源展示用户可读 URL，不暴露缓存路径；本地来源展示路径。
       if (node.source) {
@@ -53,9 +53,34 @@ function nodeLabel(
         if (locator.https_url) return locator.https_url;
         if (locator.git_url) return locator.git_url;
       }
-      return node.path ? displayPath(node.path) : fallback;
+      return node.path ? presentRelationshipPath(node.path).label : fallback;
     default:
       return fallback;
+  }
+}
+
+function localNodePath(node: ProjectedNode["node"]): string | null {
+  if (node.kind === "directory") return node.path;
+  if (node.kind !== "source") return null;
+  const locator = node.source?.locator as { https_url?: string; git_url?: string } | undefined;
+  return locator?.https_url || locator?.git_url ? null : node.path;
+}
+
+function nodeKindLabel(node: ProjectedNode["node"], t: (key: string) => string): string {
+  if (node.kind === "directory" && node.role === "shared_directory") {
+    return t("agents.kind.sharedDirectory");
+  }
+  switch (node.kind) {
+    case "skill":
+    case "agent":
+    case "project":
+    case "directory":
+    case "source":
+    case "conflict":
+    case "collapsed":
+      return t(`relationships.graph.nodeKind.${node.kind}`);
+    default:
+      return t("relationships.graph.nodeKind.unknown");
   }
 }
 
@@ -85,7 +110,7 @@ function EdgeFacts({ projected }: { projected: ProjectedEdge }) {
         <dd>{t(edgeTypeLabelKey(edge))}</dd>
       </div>
       <div>
-        <dt>{t("relationships.graph.detailsState")}</dt>
+        <dt>{t("relationships.graph.detailsHealth")}</dt>
         <dd>
           {t(edgeStatusLabelKey(edge))}
           {edge.active === false ? (
@@ -100,7 +125,66 @@ function EdgeFacts({ projected }: { projected: ProjectedEdge }) {
           ) : null}
         </dd>
       </div>
+      {edge.governance ? <GraphGovernanceFacts governance={edge.governance} edgeId={edge.edge_id} /> : null}
       <VerifiedLine lastVerifiedAt={edge.last_verified_at} />
+    </>
+  );
+}
+
+function GraphGovernanceFacts({
+  edgeId,
+  governance,
+}: {
+  edgeId: string;
+  governance: NonNullable<ProjectedEdge["edge"]["governance"]>;
+}) {
+  const { t } = useTranslation();
+  const presentation = presentGovernanceState(governance, governanceStateReasonKeys(governance));
+  const descriptionId = `graph-governance-description-${edgeId}`;
+  return (
+    <>
+      <div data-testid="graph-governance-classification">
+        <dt>{t("relationships.graph.governanceClassification")}</dt>
+        <dd>{t(presentation.classificationKey as never)}</dd>
+      </div>
+      <div data-testid="graph-governance-management">
+        <dt>{t("relationships.graph.governanceManagement")}</dt>
+        <dd>{t(presentation.managementKey as never)}</dd>
+      </div>
+      <div>
+        <dt>{t("relationships.graph.governanceSummary")}</dt>
+        <dd>
+          <span
+            aria-describedby={descriptionId}
+            data-testid="graph-governance-summary"
+            tabIndex={0}
+            title={String(t(presentation.descriptionKey as never))}
+          >
+            {t(presentation.summaryKey as never)}
+          </span>
+          <p className="sh-visually-hidden sh-graph-details__governance-description" id={descriptionId}>
+            {t(presentation.descriptionKey as never)}
+          </p>
+        </dd>
+      </div>
+      {presentation.decisionKey ? (
+        <div>
+          <dt>{t("relationships.graph.governanceDecision")}</dt>
+          <dd>{t(presentation.decisionKey as never)}</dd>
+        </div>
+      ) : null}
+      {presentation.reasonKeys.length > 0 ? (
+        <div data-testid="graph-governance-reasons">
+          <dt>{t("relationships.graph.governanceReasons")}</dt>
+          <dd>
+            <ul className="sh-graph-details__governance-reasons">
+              {presentation.reasonKeys.map((reason) => (
+                <li key={reason}>{t(governanceReasonLabelKey(reason) as never)}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -117,17 +201,25 @@ export function GraphDetailsPanel({
   onBeforeNavigate,
   projection,
   resolveSkillName,
-  relationshipRevision,
   selectedEdgeId,
   selectedNodeId,
 }: GraphDetailsPanelProps) {
   const { t } = useTranslation();
+  const translateGraphKind = (key: string) => String(t(key as never));
   const selectedEdge = selectedEdgeId
     ? projection.edges.find((projected) => projected.edge.edge_id === selectedEdgeId) ?? null
     : null;
   const selectedNodeEntry = selectedNodeId
     ? projection.nodes.find((projected) => projected.node.node_id === selectedNodeId) ?? null
     : null;
+  const selectedNodePath = selectedNodeEntry ? localNodePath(selectedNodeEntry.node) : null;
+  const selectedNodeLabel = selectedNodeEntry
+    ? nodeLabel(
+        selectedNodeEntry.node,
+        nodeKindLabel(selectedNodeEntry.node, translateGraphKind),
+        resolveSkillName,
+      )
+    : "";
   const selectedNodeEdge: ProjectedEdge | null = (() => {
     if (!selectedNodeEntry || selectedNodeEntry.layer === "center") return null;
     const nodeId = selectedNodeEntry.node.node_id;
@@ -152,18 +244,6 @@ export function GraphDetailsPanel({
             </dd>
           </div>
           <VerifiedLine lastVerifiedAt={lastVerifiedAt} />
-          {relationshipRevision ? (
-            <details className="sh-graph-details__technical">
-              <summary>{t("relationships.graph.technicalDetails")}</summary>
-              {/* DEV-99：Skill ID 不进界面，技术详情只保留用户可读的修订号。 */}
-              <dl>
-                <div>
-                  <dt>{t("relationships.graph.revisionLabel")}</dt>
-                  <dd>{relationshipRevision}</dd>
-                </div>
-              </dl>
-            </details>
-          ) : null}
         </dl>
         <div className="sh-graph-details__actions">
           <Link
@@ -206,28 +286,36 @@ export function GraphDetailsPanel({
                 {t("relationships.graph.governRelation")}
               </Link>
             ) : null}
+            {selectedEdge.edge.kind === "source" ? (
+              <Link
+                className="sh-button sh-button--secondary sh-button--sm"
+                to={`/library/${encodeURIComponent(centerSkillId)}#versions`}
+                onClick={onBeforeNavigate}
+              >
+                {t("relationships.graph.openSourceLifecycle")}
+              </Link>
+            ) : null}
           </>
         ) : selectedNodeEntry ? (
           <>
             <h3>
               {selectedNodeEntry.node.kind === "agent" && selectedNodeEntry.node.agent_client_id ? (
                 <AgentPresentation agentId={selectedNodeEntry.node.agent_client_id} />
+              ) : selectedNodePath ? (
+                <RelationshipPath path={selectedNodePath} />
               ) : (
-                nodeLabel(
-                  selectedNodeEntry.node,
-                  selectedNodeEntry.node.kind === "directory"
-                    ? selectedNodeEntry.node.role === "shared_directory"
-                      ? t("agents.kind.sharedDirectory")
-                      : t("relationships.graph.nodeKind.directory")
-                    : selectedNodeEntry.node.node_id,
-                  resolveSkillName,
-                )
+                <span
+                  aria-label={selectedNodeLabel}
+                  className="sh-graph-details__node-label"
+                  tabIndex={0}
+                  title={selectedNodeLabel}
+                >
+                  {selectedNodeLabel}
+                </span>
               )}
             </h3>
             <p className="sh-graph-details__kind">
-              {selectedNodeEntry.node.kind === "directory" && selectedNodeEntry.node.role === "shared_directory"
-                ? t("agents.kind.sharedDirectory")
-                : t(`relationships.graph.nodeKind.${selectedNodeEntry.node.kind}`)}
+              {nodeKindLabel(selectedNodeEntry.node, translateGraphKind)}
             </p>
             {selectedNodeEdge ? (
               <dl>
@@ -246,6 +334,15 @@ export function GraphDetailsPanel({
                   onClick={onBeforeNavigate}
                 >
                   {t("relationships.graph.viewSkill")}
+                </Link>
+              ) : null}
+              {selectedNodeEntry.node.kind === "source" ? (
+                <Link
+                  className="sh-button sh-button--secondary sh-button--sm"
+                  to={`/library/${encodeURIComponent(centerSkillId)}#versions`}
+                  onClick={onBeforeNavigate}
+                >
+                  {t("relationships.graph.openSourceLifecycle")}
                 </Link>
               ) : null}
               {selectedNodeEntry.node.kind === "conflict" && selectedNodeEntry.node.conflict_id ? (

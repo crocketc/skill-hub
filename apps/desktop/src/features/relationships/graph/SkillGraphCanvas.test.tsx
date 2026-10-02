@@ -73,6 +73,9 @@ function graphFixture(): SkillRelationshipGraphResult {
         match_state: "content_verified",
         active: true,
         last_verified_at: LAST_VERIFIED,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
       {
         edge_id: "e2",
@@ -86,6 +89,9 @@ function graphFixture(): SkillRelationshipGraphResult {
         match_state: null,
         active: true,
         last_verified_at: LAST_VERIFIED,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
       {
         edge_id: "e3",
@@ -99,6 +105,9 @@ function graphFixture(): SkillRelationshipGraphResult {
         match_state: null,
         active: false,
         last_verified_at: null,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
       {
         edge_id: "e4",
@@ -112,9 +121,12 @@ function graphFixture(): SkillRelationshipGraphResult {
         match_state: null,
         active: null,
         last_verified_at: null,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
     ],
-    fact_counts: { deployment_relations: 1, source_relations: 0, conflict_cases: 1 },
+    fact_counts: { deployment_relations: 1, source_relations: 0, conflict_cases: 1, usage_relations: 1 },
     collapsed_count: 2,
     relationship_revision: "r42",
     last_verified_at: LAST_VERIFIED,
@@ -130,7 +142,7 @@ function sparseProjection(): GraphProjection {
   return projectGraph({ ...graph, nodes, edges }, NO_FILTERS, ALL_DISPLAY_ON);
 }
 
-const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [] };
+const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [], governance: [], management: [] };
 
 async function renderCanvas(options: {
   onBeforeJump?: () => void;
@@ -141,6 +153,7 @@ async function renderCanvas(options: {
   onNodeDrag?: (nodeId: string, x: number, y: number) => void;
   onNodeDragStart?: (nodeId: string) => void;
   onNodeDragEnd?: (nodeId: string) => void;
+  resolveSkillName?: (skillId: string) => string | undefined;
   layoutSize?: GraphLayoutSize;
   projection?: GraphProjection;
   selectedEdgeId?: string | null;
@@ -166,6 +179,10 @@ async function renderCanvas(options: {
         selectedEdgeId={options.selectedEdgeId ?? null}
         selectedNodeId={options.selectedNodeId ?? null}
         viewport={viewport}
+        resolveSkillName={options.resolveSkillName ?? ((skillId) => ({
+          "pdf-reader": "PDF Reader",
+          "doc-reader": "Document Reader",
+        }[skillId]))}
       />
     </I18nextProvider>,
   );
@@ -190,6 +207,62 @@ function ControlledCanvas({ initialViewport }: { initialViewport: GraphViewport 
 }
 
 describe("SkillGraphCanvas interaction", () => {
+  it("keeps internal conflict and fallback node IDs out of canvas labels", async () => {
+    const graph = graphFixture();
+    graph.nodes = [
+      graph.nodes[0]!,
+      node({
+        node_id: "conflict-node-internal-9",
+        kind: "conflict",
+        conflict_id: "conflict-case-opaque-42",
+      }),
+      node({ node_id: "source-node-internal-77", kind: "source" }),
+    ];
+    graph.edges = [
+      {
+        ...graph.edges[3]!,
+        edge_id: "edge-conflict-internal-1",
+        from_node_id: "n-center",
+        to_node_id: "conflict-node-internal-9",
+        conflict_id: "conflict-case-opaque-42",
+      },
+      {
+        ...graph.edges[0]!,
+        edge_id: "edge-source-internal-1",
+        from_node_id: "n-center",
+        to_node_id: "source-node-internal-77",
+        kind: "source",
+        relationship: null,
+        relation_id: null,
+        match_state: null,
+      },
+    ];
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    await renderCanvas({ projection });
+
+    expect(screen.getByRole("button", { name: /Conflict/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Source/ })).toBeVisible();
+    expect(screen.queryByText("conflict-case-opaque-42")).not.toBeInTheDocument();
+    expect(screen.queryByText("conflict-node-internal-9")).not.toBeInTheDocument();
+    expect(screen.queryByText("source-node-internal-77")).not.toBeInTheDocument();
+  });
+
+  it("does not fall back to an internal Skill ID when a display name is unavailable", async () => {
+    const graph = graphFixture();
+    graph.center_skill_id = "skill-id-internal-42";
+    graph.nodes = [
+      node({ node_id: "skill-node-internal-42", kind: "skill", skill_id: "skill-id-internal-42" }),
+    ];
+    graph.edges = [];
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    expect(projection.nodes).toHaveLength(1);
+    await renderCanvas({ projection, resolveSkillName: () => undefined });
+
+    expect(screen.getByRole("button", { name: "Skill" })).toBeVisible();
+    expect(screen.queryByText("skill-id-internal-42")).not.toBeInTheDocument();
+    expect(screen.queryByText("skill-node-internal-42")).not.toBeInTheDocument();
+  });
+
   it("labels shared directory nodes without exposing IDs and keeps the intermediate topology", async () => {
     const graph = graphFixture();
     graph.nodes = [
@@ -227,7 +300,7 @@ describe("SkillGraphCanvas interaction", () => {
     const onNodeDragEnd = vi.fn();
     await renderCanvas({ onNodeDrag, onNodeDragStart, onNodeDragEnd });
 
-    const node = screen.getByRole("button", { name: /pdf-reader/ });
+    const node = screen.getByRole("button", { name: /PDF Reader/ });
     fireEvent.pointerDown(node, { pointerId: 3, clientX: 100, clientY: 100 });
     expect(onNodeDragStart).toHaveBeenCalledWith("n-center");
     expect(screen.getByTestId("skill-graph-surface")).toHaveClass("is-dragging");
@@ -282,7 +355,7 @@ describe("SkillGraphCanvas interaction", () => {
     const onSelectNode = vi.fn();
     await renderCanvas({ onFocusSkill, onSelectNode });
 
-    fireEvent.click(screen.getByRole("button", { name: "doc-reader" }));
+    fireEvent.click(screen.getByRole("button", { name: /Document Reader/ }));
 
     expect(onFocusSkill).toHaveBeenCalledTimes(1);
     expect(onFocusSkill).toHaveBeenCalledWith("doc-reader");
@@ -380,5 +453,20 @@ describe("SkillGraphCanvas interaction", () => {
     fireEvent(screen.getByTestId("skill-graph-surface"), pointerMove);
 
     expect(onViewportChange).toHaveBeenLastCalledWith({ x: 50, y: 55, zoom: 1 });
+  });
+
+  it("elides graph path prefixes while keeping the normalized full path on the focused node", async () => {
+    const graph = graphFixture();
+    const longPath = "\\\\?\\C:\\Users\\profile\\AppData\\Local\\SkillHub\\agents\\codex\\skills\\pdf-reader";
+    graph.nodes = graph.nodes.map((candidate) => candidate.node_id === "n-dir-1"
+      ? { ...candidate, path: longPath }
+      : candidate);
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    await renderCanvas({ projection, selectedNodeId: "n-dir-1" });
+
+    const normalized = "C:\\Users\\profile\\AppData\\Local\\SkillHub\\agents\\codex\\skills\\pdf-reader";
+    const node = screen.getByRole("button", { name: `Directory: ${normalized}` });
+    expect(node).toHaveAttribute("title", normalized);
+    expect(node).toHaveTextContent("…\\codex\\skills\\pdf-reader");
   });
 });

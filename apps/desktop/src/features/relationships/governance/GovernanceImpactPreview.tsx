@@ -10,8 +10,8 @@ import {
   relationshipKeyOf,
   rowNeedsSharedImpactConfirmation,
 } from "./api";
-import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
+import { RelationshipPath } from "../RelationshipPath";
 
 export interface GovernanceImpactPreviewProps {
   row: RelationGovernanceRow;
@@ -68,7 +68,7 @@ export function GovernanceImpactPreview({
           <dt>{t("relationships.governance.preview.targetLabel")}</dt>
           <dd>
             {agentId ? <AgentIdentity agentId={agentId} /> : null}
-            <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
+            <span>{t("agents.pathLabel")} <RelationshipPath path={relationPathOf(row.relation)} /></span>
           </dd>
         </div>
         <div>

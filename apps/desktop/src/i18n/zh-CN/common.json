@@ -2482,7 +2482,10 @@
       "tagsApply": "应用标签",
       "filters": "筛选",
       "filterTypes": "关系类型",
-      "filterStatuses": "验证状态",
+      "filterStatuses": "关系健康",
+      "filterHealth": "关系健康",
+      "filterGovernance": "治理进度",
+      "filterManagement": "集中库管理",
       "filtersClear": "清除筛选",
       "displaySettings": "显示设置",
       "displaySources": "来源",
@@ -2492,10 +2495,10 @@
       "legend": {
         "label": "图谱图例",
         "title": "图谱阅读方式",
-        "statesLabel": "验证状态",
+        "statesLabel": "关系健康",
         "showDetails": "展开图谱图例说明",
         "hideDetails": "收起图谱图例说明",
-        "typeHint": "边上的文字表示关系类型，线型表示关系验证状态。"
+        "typeHint": "边上的文字表示关系类型，线型表示关系健康；有治理信息的使用关系还会显示待处理/已完成和集中库管理状态。"
       },
       "canvasLabel": "技能关系图",
       "zoomIn": "放大",
@@ -2520,7 +2523,8 @@
         "project": "项目",
         "directory": "目录",
         "conflict": "冲突",
-        "collapsed": "折叠"
+        "collapsed": "折叠",
+        "unknown": "其他项目"
       },
       "edgeType": {
         "import_copy": "导入副本",
@@ -2555,7 +2559,14 @@
       "neverVerified": "尚未验证",
       "revisionLabel": "关系事实修订",
       "detailsRelationship": "关系类型",
-      "detailsState": "状态",
+      "detailsState": "关系健康",
+      "detailsHealth": "关系健康",
+      "governanceClassification": "治理进度",
+      "governanceManagement": "集中库管理",
+      "governanceSummary": "当前说明",
+      "governanceDecision": "处理决定",
+      "governanceReasons": "原因与条件",
+      "openSourceLifecycle": "查看来源生命周期",
       "inaccessible": "不可访问",
       "needsValidation": "待校验",
       "viewSkill": "查看 Skill",
@@ -2739,7 +2750,54 @@
         "blocked": "受阻",
         "withCount": "{{label}}（{{count}}）",
         "scopeLabel": "类别",
-        "statusLabel": "状态"
+        "statusLabel": "状态",
+        "managementLabel": "集中库管理"
+      },
+      "classification": {
+        "all": "全部",
+        "pending": "待处理",
+        "completed": "已完成"
+      },
+      "management": {
+        "not_taken_over": "待集中管理",
+        "taken_over": "已集中管理"
+      },
+      "decision": {
+        "retained_independent_copy": "已保留为独立副本"
+      },
+      "shortName": {
+        "link_issue": "链接需处理",
+        "link_issueDescription": "目标不可访问或链接目标已变化。先重新检查关系，再查看可用处理方式。",
+        "content_changed": "内容有变化",
+        "content_changedDescription": "目标内容与上次确认时不同。重新检查后再决定如何处理。",
+        "needs_review": "待重新检查",
+        "needs_reviewDescription": "当前证据不足以支持后续操作。重新检查目标并确认身份后再继续。",
+        "operation_failed": "操作未完成",
+        "operation_failedDescription": "最近一次操作没有完成。检查当前关系状态后再重试。",
+        "restricted": "暂不可操作",
+        "restrictedDescription": "当前权限或关系条件不支持此操作。查看原因，或先处理所列条件。",
+        "retained": "已保留副本",
+        "retainedDescription": "这条关系已明确保留为独立副本；它仍未纳入集中库管理。",
+        "taken_over": "已集中管理",
+        "taken_overDescription": "此目标当前由集中库管理。若下方显示异常，请先重新检查关系。",
+        "not_taken_over": "待集中管理",
+        "not_taken_overDescription": "此关系尚未纳入集中库管理。请先查看原因，再使用当前可用操作。",
+        "completed": "已完成",
+        "completedDescription": "此关系已有明确处理结果；集中库管理状态请单独查看。"
+      },
+      "reasonMessages": {
+        "decision_required": "需要先确认这条关系的处理决定。",
+        "verification_required": "当前验证结果不足，请重新检查目标。",
+        "content_changed": "目标内容已变化，请重新检查后再决定。",
+        "permission_limited": "当前权限不足，暂时无法执行该操作。",
+        "managed_target_occupied": "目标位置已被其他受管关系占用，请先检查冲突。",
+        "operation_failed": "最近一次关系操作未能完成，请检查当前状态后重试。",
+        "target_identity_unconfirmed": "尚未确认目标身份，请重新检查目标。",
+        "relationship_not_convertible": "此关系类型暂不支持纳入集中库管理。",
+        "shared_impact_confirmation_required": "其他 Agent 也在使用此共享目录，需要先查看并确认影响。",
+        "link_target_unavailable": "链接目标当前无法访问，请确认目标位置后重新检查。",
+        "link_replaced": "原链接目标已被替换，请检查当前目标内容。",
+        "subject_unavailable": "关系主体当前不可用，请先恢复可访问状态再检查。"
       },
       "importBatch": {
         "banner": "本次导入留下 {{count}} 个本地来源副本"
@@ -2802,6 +2860,7 @@
         "centralize_management": "纳入集中库管理",
         "undeploy": "从 Agent/项目移除",
         "revalidate": "重新检查",
+        "keep_independent_copy": "保留为独立副本",
         "none": "受阻"
       },
       "history": {
@@ -2874,7 +2933,8 @@
       },
       "selection": {
         "selectedCount": "已选 {{count}} 条",
-        "openBatch": "批量纳入集中库管理"
+        "openBatch": "批量纳入集中库管理",
+        "openBatchRetain": "批量保留为独立副本"
       },
       "batchSummary": {
         "executable": "可执行 {{count}}",
@@ -2899,6 +2959,7 @@
       },
       "batch": {
         "title": "批量纳入集中库管理",
+        "retainTitle": "批量保留为独立副本",
         "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
         "mixing": "来源副本与部署关系不能加入同一批次；请分开处理",
         "itemExecutable": "可执行",
@@ -2911,6 +2972,7 @@
         "resultTitle": "批量结果",
         "resultPartial": "部分成功：{{committed}} 条成功，{{failed}} 条失败",
         "resultAll": "已全部纳入集中库管理（{{count}} 条）",
+        "resultAllRetained": "已保留为独立副本（{{count}} 条）",
         "resultNone": "本次没有成功，请逐条查看失败原因",
         "resultCancelled": "已取消 {{count}} 条",
         "itemCommitted": "成功",

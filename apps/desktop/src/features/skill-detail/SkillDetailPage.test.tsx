@@ -751,6 +751,23 @@ function governanceLedgerRow(relationId: string, kind: "deployment" | "source_co
       backup_required: true,
       rollback_available: true,
     },
+    governance: {
+      governance_status: "pending",
+      management_status: "not_taken_over",
+      decision: "undecided",
+      management_confirmed_at: null,
+      health_reasons: [],
+      action_conditions: [
+        {
+          action: kind === "source_copy" ? "keep_independent_copy" : "centralize_management",
+          available: true,
+          reasons: [],
+        },
+        { action: "revalidate", available: true, reasons: [] },
+      ],
+    },
+    target_identity: null,
+    evidence_relation_ids: [relationId],
   };
 }
 

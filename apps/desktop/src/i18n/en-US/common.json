@@ -2482,7 +2482,10 @@
       "tagsApply": "Apply tags",
       "filters": "Filters",
       "filterTypes": "Relationship types",
-      "filterStatuses": "Verification states",
+      "filterStatuses": "Relationship health",
+      "filterHealth": "Relationship health",
+      "filterGovernance": "Governance progress",
+      "filterManagement": "Central library management",
       "filtersClear": "Clear filters",
       "displaySettings": "Display settings",
       "displaySources": "Sources",
@@ -2492,10 +2495,10 @@
       "legend": {
         "label": "Graph legend",
         "title": "How to read the graph",
-        "statesLabel": "Verification states",
+        "statesLabel": "Relationship health",
         "showDetails": "Show graph legend details",
         "hideDetails": "Hide graph legend details",
-        "typeHint": "Edge labels identify the relationship type; line style identifies its verification state."
+        "typeHint": "Edge labels identify the relationship type; line style identifies relationship health. Governable use relationships also show completion and central library management status."
       },
       "canvasLabel": "Skill relationship graph",
       "zoomIn": "Zoom in",
@@ -2520,7 +2523,8 @@
         "project": "Project",
         "directory": "Directory",
         "conflict": "Conflict",
-        "collapsed": "Folded"
+        "collapsed": "Folded",
+        "unknown": "Other item"
       },
       "edgeType": {
         "import_copy": "Import copy",
@@ -2555,7 +2559,14 @@
       "neverVerified": "Never verified",
       "revisionLabel": "Relationship facts revision",
       "detailsRelationship": "Relationship",
-      "detailsState": "State",
+      "detailsState": "Relationship health",
+      "detailsHealth": "Relationship health",
+      "governanceClassification": "Governance progress",
+      "governanceManagement": "Central library management",
+      "governanceSummary": "Current summary",
+      "governanceDecision": "Decision",
+      "governanceReasons": "Reasons and conditions",
+      "openSourceLifecycle": "View source lifecycle",
       "inaccessible": "Inaccessible",
       "needsValidation": "Needs validation",
       "viewSkill": "View Skill",
@@ -2739,7 +2750,54 @@
         "blocked": "Blocked",
         "withCount": "{{label}} ({{count}})",
         "scopeLabel": "Type",
-        "statusLabel": "Status"
+        "statusLabel": "Status",
+        "managementLabel": "Central library management"
+      },
+      "classification": {
+        "all": "All",
+        "pending": "Pending",
+        "completed": "Completed"
+      },
+      "management": {
+        "not_taken_over": "Not centrally managed",
+        "taken_over": "Centrally managed"
+      },
+      "decision": {
+        "retained_independent_copy": "Kept as an independent copy"
+      },
+      "shortName": {
+        "link_issue": "Link needs attention",
+        "link_issueDescription": "The target is unavailable or has changed. Re-check the relationship before choosing an available action.",
+        "content_changed": "Content changed",
+        "content_changedDescription": "The target content differs from the last confirmed state. Re-check before deciding what to do.",
+        "needs_review": "Re-check needed",
+        "needs_reviewDescription": "The current evidence does not support the next action. Re-check the target and confirm its identity first.",
+        "operation_failed": "Operation incomplete",
+        "operation_failedDescription": "The last operation did not complete. Review the current relationship state before retrying.",
+        "restricted": "Action unavailable",
+        "restrictedDescription": "Current permissions or relationship conditions do not allow this action. Review the reason or resolve the listed condition first.",
+        "retained": "Copy kept",
+        "retainedDescription": "This relationship was explicitly kept as an independent copy; it is not under central library management.",
+        "taken_over": "Centrally managed",
+        "taken_overDescription": "This target is currently managed by the central library. Re-check the relationship if an issue is listed below.",
+        "not_taken_over": "Not centrally managed",
+        "not_taken_overDescription": "This relationship has not been brought under central library management. Review the reason before using an available action.",
+        "completed": "Completed",
+        "completedDescription": "This relationship has a recorded outcome. Check central library management separately."
+      },
+      "reasonMessages": {
+        "decision_required": "Choose how this relationship should be handled first.",
+        "verification_required": "The current verification is insufficient. Re-check the target.",
+        "content_changed": "The target content changed. Re-check before deciding.",
+        "permission_limited": "Current permissions do not allow this action.",
+        "managed_target_occupied": "Another managed relationship occupies the target. Review the conflict first.",
+        "operation_failed": "The last relationship operation did not complete. Review the current state before retrying.",
+        "target_identity_unconfirmed": "The target identity has not been confirmed. Re-check the target.",
+        "relationship_not_convertible": "This relationship type cannot currently be brought under central library management.",
+        "shared_impact_confirmation_required": "Other Agents also use this shared directory. Review and confirm the impact first.",
+        "link_target_unavailable": "The link target cannot currently be reached. Check its location and re-check the relationship.",
+        "link_replaced": "The original link target was replaced. Review the current target content.",
+        "subject_unavailable": "The relationship subject is unavailable. Restore access before checking again."
       },
       "importBatch": {
         "banner": "This import left {{count}} local source copies"
@@ -2802,6 +2860,7 @@
         "centralize_management": "Bring under central library management",
         "undeploy": "Remove from Agent/Project",
         "revalidate": "Re-check",
+        "keep_independent_copy": "Keep as an independent copy",
         "none": "Blocked"
       },
       "history": {
@@ -2874,7 +2933,8 @@
       },
       "selection": {
         "selectedCount": "{{count}} selected",
-        "openBatch": "Bring the selection under central library management"
+        "openBatch": "Bring the selection under central library management",
+        "openBatchRetain": "Keep selection as independent copies"
       },
       "batchSummary": {
         "executable": "Executable {{count}}",
@@ -2899,6 +2959,7 @@
       },
       "batch": {
         "title": "Bring the selection under central library management",
+        "retainTitle": "Keep selection as independent copies",
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
         "mixing": "Source copies and deployment relations cannot join the same batch; handle them separately",
         "itemExecutable": "Executable",
@@ -2911,6 +2972,7 @@
         "resultTitle": "Batch result",
         "resultPartial": "Partially committed: {{committed}} succeeded, {{failed}} failed",
         "resultAll": "All brought under central library management ({{count}} items)",
+        "resultAllRetained": "Kept as independent copies ({{count}} items)",
         "resultNone": "Nothing succeeded this time; review the per-item failures",
         "resultCancelled": "{{count}} items cancelled",
         "itemCommitted": "Succeeded",

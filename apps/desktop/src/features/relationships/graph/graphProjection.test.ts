@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type {
+  RelationGovernanceState,
   RelationshipGraphFactCounts,
   SkillRelationshipEdge,
   SkillRelationshipGraphResult,
   SkillRelationshipNode,
-  SourceCopyRelationFact,
 } from "../../../api/bindings";
 import {
   CANVAS_SIZE,
@@ -68,6 +68,9 @@ function edge(overrides: Partial<SkillRelationshipEdge>): SkillRelationshipEdge 
     match_state: null,
     active: null,
     last_verified_at: null,
+    governance: null,
+    target_identity: null,
+    evidence_relation_ids: [],
     ...overrides,
   };
 }
@@ -133,6 +136,7 @@ function baseGraph(): SkillRelationshipGraphResult {
     deployment_relations: 1,
     source_relations: 1,
     conflict_cases: 1,
+    usage_relations: 1,
   };
   return {
     center_skill_id: "pdf-reader",
@@ -145,7 +149,7 @@ function baseGraph(): SkillRelationshipGraphResult {
   };
 }
 
-const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [] };
+const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [], governance: [], management: [] };
 const ALL_DISPLAY_ON: GraphDisplaySettings = {
   showSources: true,
   showAgentsProjects: true,
@@ -414,31 +418,16 @@ describe("filter purity", () => {
   });
 });
 
-// —— 任务 12B：在线来源按业务 locator 合并 + 来源/部署边的治理深链 ——
+// —— 关系图治理投影：来源保留生命周期语义，治理只来自 R1 使用边状态 ——
 
-function sourceCopy(overrides: Partial<SourceCopyRelationFact>): SourceCopyRelationFact {
-  return {
-    relation_id: "rel-src",
-    skill_id: "pdf-reader",
-    latest_provenance_id: "prov-1",
-    source_class: "agent_local",
-    source_path: "C:/agents/claude/skills/pdf-reader",
-    source_path_key: "c-agents-claude-skills-pdf-reader",
-    physical_source_id: "phys-1",
-    source_container_id: null,
-    directory_node_id: null,
-    agent_client_id: "claude",
-    expected_fingerprint: "fp-1",
-    current_fingerprint: "fp-1",
-    decision: "pending",
-    health: "normal",
-    active: true,
-    last_verified_at: LAST_VERIFIED,
-    archived_at: null,
-    archive_reason: null,
-    ...overrides,
-  };
-}
+const PENDING_GOVERNANCE: RelationGovernanceState = {
+  governance_status: "pending",
+  management_status: "not_taken_over",
+  decision: "undecided",
+  management_confirmed_at: null,
+  health_reasons: [],
+  action_conditions: [],
+};
 
 function sourceContextNode(
   nodeId: string,
@@ -480,7 +469,7 @@ function governanceGraph(): SkillRelationshipGraphResult {
       { kind: "git", locator: { git_url: "https://gitlab.com/demo/skills.git" } },
       "C:/cache/git/demo-skills/pdf-reader",
     ),
-    // 本地来源副本：由台账 source copy 关联治理 relation。
+    // 本地来源也仍是来源生命周期事实，不由治理台账替换它的语义。
     sourceContextNode(
       "n-src-local-1",
       "prov-1",
@@ -518,10 +507,15 @@ function governanceGraph(): SkillRelationshipGraphResult {
       provenance_id: "prov-1",
     }),
   );
-  // 部署边由后端携带 relation_id（任务 6 契约）。
+  // 只有后端明确投影的使用关系边携带治理层。
   graph.edges = graph.edges.map((candidate) =>
     candidate.kind === "deployment"
-      ? { ...candidate, relation_id: "rel-deploy-1" }
+      ? {
+          ...candidate,
+          relation_id: "rel-deploy-1",
+          governance: PENDING_GOVERNANCE,
+          evidence_relation_ids: ["rel-deploy-1"],
+        }
       : candidate,
   );
   return graph;
@@ -550,48 +544,33 @@ describe("governance graph projection (12B)", () => {
     expect(mergedEdgeEndpoints).toEqual([mergedId, mergedId]);
   });
 
-  it("attaches the current source-copy relation id to source edges and keeps deployment relation ids", () => {
-    const projection = projectGraph(
-      governanceGraph(),
-      NO_FILTERS,
-      ALL_DISPLAY_ON,
-      [
-        sourceCopy({ relation_id: "rel-local-1", latest_provenance_id: "prov-1" }),
-        sourceCopy({ relation_id: "rel-online-2", latest_provenance_id: "prov-online-2" }),
-      ],
-    );
+  it("only deep-links an explicitly governed use edge, never a source edge", () => {
+    const projection = projectGraph(governanceGraph(), NO_FILTERS, ALL_DISPLAY_ON);
 
     const byEdgeId = new Map(
       projection.edges.map((projected) => [projected.edge.edge_id, projected]),
     );
-    // 来源边：台账里存在当前来源副本时才有治理 relation 深链。
-    expect(byEdgeId.get("e-local-1")?.governanceRelationId).toBe("rel-local-1");
-    expect(byEdgeId.get("e-online-2")?.governanceRelationId).toBe("rel-online-2");
-    // 台账没有对应来源副本（如纯在线 provenance）→ 无治理入口，只有来源详情。
+    // 来源和上游副本边不共享治理/接管状态。
+    expect(byEdgeId.get("e-local-1")?.governanceRelationId).toBeNull();
+    expect(byEdgeId.get("e-online-2")?.governanceRelationId).toBeNull();
     expect(byEdgeId.get("e-online-1")?.governanceRelationId).toBeNull();
     expect(byEdgeId.get("e-online-3")?.governanceRelationId).toBeNull();
-    // 部署边自带 relation_id：治理深链来自边本身。
+    // 部署使用边必须由后端明确提供治理状态，relation id 本身不足以推定。
     const deployment = byEdgeId.get("e3");
     expect(deployment?.edge.relation_id).toBe("rel-deploy-1");
     expect(deployment?.governanceRelationId).toBe("rel-deploy-1");
   });
 
-  it("repoints merged source edges to the merged node even when only one provenance has a current copy", () => {
+  it("filters governable edges by authoritative layers but keeps provenance edges visible", () => {
     const graph = governanceGraph();
     const projection = projectGraph(
       graph,
-      NO_FILTERS,
+      { ...NO_FILTERS, governance: ["completed"] },
       ALL_DISPLAY_ON,
-      [sourceCopy({ relation_id: "rel-online-2", latest_provenance_id: "prov-online-2" })],
     );
-    const merged = projection.edges.filter(
-      (projected) => projected.edge.edge_id === "e-online-1"
-        || projected.edge.edge_id === "e-online-2",
-    );
-    expect(merged.map((projected) => projected.edge.to_node_id)).toEqual(
-      merged.map(() => merged[0]?.edge.to_node_id),
-    );
-    expect(merged.find((projected) => projected.edge.edge_id === "e-online-1")
-      ?.governanceRelationId).toBeNull();
+    const ids = projection.edges.map((projected) => projected.edge.edge_id);
+    expect(ids).not.toContain("e3");
+    expect(ids).toContain("e-local-1");
+    expect(ids).toContain("e-online-1");
   });
 });

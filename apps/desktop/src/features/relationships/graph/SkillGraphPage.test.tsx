@@ -126,6 +126,9 @@ function graphFor(skillId: string, revision = REVISIONS[skillId] ?? "r42"): Skil
         match_state: "content_verified",
         active: true,
         last_verified_at: "2026-09-01T08:00:00Z",
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
       {
         edge_id: `e-agent-${skillId}`,
@@ -139,9 +142,12 @@ function graphFor(skillId: string, revision = REVISIONS[skillId] ?? "r42"): Skil
         match_state: null,
         active: true,
         last_verified_at: "2026-09-01T08:00:00Z",
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
     ],
-    fact_counts: { deployment_relations: 1, source_relations: 0, conflict_cases: 0 },
+    fact_counts: { deployment_relations: 1, source_relations: 0, conflict_cases: 0, usage_relations: 1 },
     collapsed_count: 0,
     relationship_revision: revision,
     last_verified_at: "2026-09-01T08:00:00Z",
@@ -259,7 +265,7 @@ describe("first-load center selection", () => {
       "aria-expanded",
       "false",
     );
-    expect(within(legend).queryByText("Edge labels identify the relationship type; line style identifies its verification state.")).not.toBeInTheDocument();
+    expect(within(legend).queryByText(/Edge labels identify the relationship type; line style identifies relationship health/)).not.toBeInTheDocument();
 
     await user.click(within(legend).getByRole("button", { name: "Show graph legend details" }));
 
@@ -267,7 +273,7 @@ describe("first-load center selection", () => {
       "aria-expanded",
       "true",
     );
-    expect(within(legend).getByText("Edge labels identify the relationship type; line style identifies its verification state.")).toBeVisible();
+    expect(within(legend).getByText(/Edge labels identify the relationship type; line style identifies relationship health/)).toBeVisible();
   });
 
   it("picks the center once from candidates and replaces the URL", async () => {

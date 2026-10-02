@@ -10,6 +10,10 @@ import type {
   RelationshipsFacade,
   SkillRelationshipCandidate,
 } from "../api";
+import type {
+  RelationGovernanceClassification,
+  RelationManagementStatus,
+} from "../../../api/bindings";
 import { relationshipsKeys } from "../api";
 import {
   applyPositions,
@@ -50,6 +54,9 @@ const GRAPH_STATUSES: RelationshipGraphStatus[] = [
   "diverged",
 ];
 
+const GOVERNANCE_STATUSES: RelationGovernanceClassification[] = ["pending", "completed"];
+const MANAGEMENT_STATUSES: RelationManagementStatus[] = ["not_taken_over", "taken_over"];
+
 const DEFAULT_VIEWPORT: GraphViewport = { x: 0, y: 0, zoom: 1 };
 
 function restoreGraphDisplay(
@@ -62,6 +69,8 @@ export interface GraphUrlState {
   skillId: string | null;
   types: RelationshipType[];
   statuses: RelationshipGraphStatus[];
+  governance: RelationGovernanceClassification[];
+  management: RelationManagementStatus[];
   tags: string[];
 }
 
@@ -71,10 +80,18 @@ export function parseGraphSearchParams(params: URLSearchParams): GraphUrlState {
       .split(/[,，]/)
       .map((item) => item.trim())
       .filter(Boolean);
+  const governance = list("governance").filter(
+    (item): item is RelationGovernanceClassification => GOVERNANCE_STATUSES.includes(item as RelationGovernanceClassification),
+  );
+  const management = list("management").filter(
+    (item): item is RelationManagementStatus => MANAGEMENT_STATUSES.includes(item as RelationManagementStatus),
+  );
   return {
     skillId: params.get("skillId") || null,
     types: list("types") as RelationshipType[],
     statuses: list("statuses") as RelationshipGraphStatus[],
+    governance,
+    management,
     tags: list("tags"),
   };
 }
@@ -86,6 +103,8 @@ export function buildGraphSearchParams(
   params.set("skillId", state.skillId);
   if (state.types.length > 0) params.set("types", state.types.join(","));
   if (state.statuses.length > 0) params.set("statuses", state.statuses.join(","));
+  if (state.governance.length > 0) params.set("governance", state.governance.join(","));
+  if (state.management.length > 0) params.set("management", state.management.join(","));
   if (state.tags.length > 0) params.set("tags", state.tags.join(","));
   return params;
 }
@@ -358,30 +377,22 @@ export function SkillGraphPage({
 
   // 任务 12B：当前来源副本台账（按中心 Skill 过滤）——来源边借此获得治理
   // relation 深链；查询失败不阻塞图谱，只是没有深链。
-  const governanceQuery = useQuery({
-    queryKey: relationshipsKeys.governance({ skill_id: skillId ?? "" }),
-    queryFn: () => facade.listGovernance({ skill_id: skillId ?? "" }),
-    enabled: skillId !== null,
-  });
-  const sourceCopies = useMemo(
-    () =>
-      (governanceQuery.data?.rows ?? []).flatMap((row) =>
-        row.relation.kind === "source_copy" ? [row.relation.fact] : []),
-      [governanceQuery.data],
-  );
-
   const graph = skillId ? graphQuery.data ?? null : null;
   const projection = useMemo(
     () =>
       graph
         ? projectGraph(
             graph,
-            { relationshipTypes: urlState.types, statuses: urlState.statuses },
+            {
+              relationshipTypes: urlState.types,
+              statuses: urlState.statuses,
+              governance: urlState.governance,
+              management: urlState.management,
+            },
             display,
-            sourceCopies,
           )
         : null,
-    [graph, urlState.types, urlState.statuses, display, sourceCopies],
+    [graph, urlState.types, urlState.statuses, urlState.governance, urlState.management, display],
   );
 
   // DEV-24：力导向布局（确定性 d3-force 族实现）。关系事实或筛选变化时
@@ -580,7 +591,7 @@ export function SkillGraphPage({
         ))}
       </fieldset>
       <fieldset>
-        <legend>{t("relationships.graph.filterStatuses")}</legend>
+        <legend>{t("relationships.graph.filterHealth")}</legend>
         {GRAPH_STATUSES.map((status) => (
           <label key={status}>
             <input
@@ -594,10 +605,36 @@ export function SkillGraphPage({
           </label>
         ))}
       </fieldset>
+      <fieldset>
+        <legend>{t("relationships.graph.filterGovernance")}</legend>
+        {GOVERNANCE_STATUSES.map((status) => (
+          <label key={status}>
+            <input
+              type="checkbox"
+              checked={urlState.governance.includes(status)}
+              onChange={() => updateParams({ governance: toggleInList(urlState.governance, status) })}
+            />
+            {t(`relationships.governance.classification.${status}` as never)}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>{t("relationships.graph.filterManagement")}</legend>
+        {MANAGEMENT_STATUSES.map((status) => (
+          <label key={status}>
+            <input
+              type="checkbox"
+              checked={urlState.management.includes(status)}
+              onChange={() => updateParams({ management: toggleInList(urlState.management, status) })}
+            />
+            {t(`relationships.governance.management.${status}` as never)}
+          </label>
+        ))}
+      </fieldset>
       <button
         type="button"
         className="sh-button sh-button--ghost sh-button--sm"
-        onClick={() => updateParams({ types: [], statuses: [] })}
+        onClick={() => updateParams({ types: [], statuses: [], governance: [], management: [] })}
       >
         {t("relationships.graph.filtersClear")}
       </button>
@@ -709,7 +746,6 @@ export function SkillGraphPage({
           onBeforeNavigate={saveReturnState}
           projection={projection}
           resolveSkillName={resolveSkillName}
-          relationshipRevision={graph.relationship_revision}
           selectedEdgeId={selectedEdgeId}
           selectedNodeId={selectedNodeId}
         />
