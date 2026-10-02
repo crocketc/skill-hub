@@ -2655,7 +2655,25 @@
     "governance": {
       "title": "Relationship governance",
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
-      "description": "Manage every governable relationship in one place — source copies and deployment edges. Preview the impact first, then confirm. Online sources and the full topology live in the skill graph.",
+      "description": "Manage source copies and deployment edges; preview changes before confirming. See the full topology in the skill graph.",
+      "unnamedSkill": "Unnamed skill",
+      "previewFixtureNotice": "Preview data: these fictional relationships do not read or change local Skill or Agent folders.",
+      "viewSwitch": {
+        "label": "View",
+        "board": "Board",
+        "table": "Table"
+      },
+      "board": {
+        "label": "Relationship status board",
+        "relationInfo": "View relationship information",
+        "manageable": "Ready to manage",
+        "needsValidation": "Needs review",
+        "blocked": "Blocked",
+        "settled": "Already managed or retained",
+        "emptyColumn": "No relationships match this column",
+        "relationshipCount": "{{count}} relationships",
+        "countScope": "Column counts follow the current filters; quick-filter counts cover all relationships."
+      },
       "loading": "Loading the relationship governance ledger…",
       "loadError": "The relationship governance ledger is unavailable.",
       "retryLoad": "Reload",
@@ -2668,10 +2686,13 @@
       },
       "deployEntry": {
         "action": "Add to Agent/Project",
-        "hint": "This ledger only handles established relationship edges; new skills go through the regular add flow, separate from governance here."
+        "hint": "This view manages existing relationships; use regular deployment to add Skills."
       },
       "filters": {
         "label": "Quick filters",
+        "secondaryLabel": "Filters",
+        "activeCount": "{{count}} selected",
+        "clearSecondary": "Clear filters",
         "all": "All",
         "eligible_to_centralize": "Ready to centralize",
         "needs_validation": "Needs validation",

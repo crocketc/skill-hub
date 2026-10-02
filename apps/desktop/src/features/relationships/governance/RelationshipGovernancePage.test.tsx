@@ -356,24 +356,134 @@ function rowAction(relationId: string): HTMLButtonElement {
   return screen.getByTestId(`governance-action-${relationId}`) as HTMLButtonElement;
 }
 
+function openRelationDetails(relationId: string) {
+  const source = screen.getByTestId(`governance-source-${relationId}`);
+  const details = source.closest("details");
+  if (!details) throw new Error("expected relationship facts to be in a details disclosure");
+  fireEvent.click(within(details).getByText("查看关系信息"));
+  return details;
+}
+
 describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
-  it("renders one row per relationship edge with relation/source/target/impact columns", async () => {
+  it("opens in a four-column board with one relationship edge per card", async () => {
     await renderGovernanceApp();
     await waitRows();
 
-    // 五条关系边各一行；即使多条边属于同一个 Skill 也不按 Skill 合并。
+    // 五条关系边各一张卡；即使多条边属于同一个 Skill 也不按 Skill 合并。
     expect(screen.getAllByTestId("governance-row")).toHaveLength(5);
     expect(screen.getByText("PDF 阅读器")).toBeVisible();
+    openRelationDetails("managed:dep-undeploy");
     expect(screen.getByText("C:\\agents\\codex\\skills\\link-reader")).toBeVisible();
 
-    expect(screen.getByTestId("governance-header-relation")).toHaveTextContent("关系");
-    expect(screen.getByTestId("governance-header-source")).toHaveTextContent("来源");
-    expect(screen.getByTestId("governance-header-target")).toHaveTextContent("目标");
-    expect(screen.getByTestId("governance-header-impact")).toHaveTextContent("影响");
+    expect(screen.getByTestId("governance-board-column-manageable")).toHaveTextContent("可纳入管理");
+    expect(screen.getByTestId("governance-board-column-verification")).toHaveTextContent("待核验");
+    expect(screen.getByTestId("governance-board-column-blocked")).toHaveTextContent("受阻");
+    expect(screen.getByTestId("governance-board-column-settled")).toHaveTextContent("已明确");
     expect(screen.getByTestId("governance-source-managed:dep-eligible")).toHaveTextContent("导入登记");
     expect(screen.getByTestId("governance-target-managed:dep-eligible")).toHaveTextContent("Codex");
     // 影响列展示其他共享消费者。
     expect(screen.getByTestId("governance-impact-managed:dep-shared")).toHaveTextContent("Cursor");
+  });
+
+  it("keeps secondary scope and status filters collapsed in the compact tool area", async () => {
+    await renderGovernanceApp();
+    await waitRows();
+
+    const filters = screen.getByTestId("governance-secondary-filters");
+    expect(filters).not.toHaveAttribute("open");
+    expect(screen.getByRole("button", { name: "搜索" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "表格" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "全部（5）" })).toBeVisible();
+  });
+
+  it("summarizes deep-linked secondary filters and clears them without dropping the bucket", async () => {
+    const retainedSource = makeSourceRow({
+      relationId: "src-retained-summary",
+      decision: "retained",
+      health: "normal",
+      status: "retained",
+      readiness: "already_centralized",
+      primaryAction: "none",
+    });
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?bucket=blocked&scope=source_copy&status=retained"],
+      facade: createFacade({ ...FULL_LEDGER, rows: [retainedSource], total: 1 }),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    const filters = screen.getByTestId("governance-secondary-filters");
+    expect(filters).toHaveAttribute("open");
+    expect(filters.querySelector("summary")?.textContent).toContain("来源副本");
+    expect(filters.querySelector("summary")?.textContent).toContain("已保留");
+    fireEvent.click(screen.getByTestId("governance-clear-secondary-filters"));
+
+    await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent("?bucket=blocked"));
+    expect(screen.getByTestId("location-search")).not.toHaveTextContent("scope=");
+    expect(screen.getByTestId("location-search")).not.toHaveTextContent("status=");
+  });
+
+  it("keeps card details compact while leaving blockers and actions immediately available", async () => {
+    const blocked = makeRow({
+      relationId: "blocked-compact-card",
+      readiness: "blocked",
+      primaryAction: "none",
+      blockers: ["unverifiable_representation"],
+      displayName: "受阻关系",
+    });
+    await renderGovernanceApp({
+      facade: createFacade({ ...FULL_LEDGER, rows: [blocked], total: 1 }),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    const card = screen.getByTestId("governance-row");
+    const details = within(card).getByTestId("governance-relation-details");
+    expect(details).not.toHaveAttribute("open");
+    expect(within(card).getByText(/目录联接或未知表示无法被安全校验/)).toBeVisible();
+    expect(within(card).getByTestId("governance-action-blocked-compact-card")).toBeDisabled();
+    expect(within(details).getByText("C:\\agents\\codex\\skills\\pdf-reader")).toBeInTheDocument();
+    fireEvent.click(within(details).getByText("查看关系信息"));
+    expect(details).toHaveAttribute("open");
+  });
+
+  it("switches between board and table without losing selection or URL filters", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?from=agent&agent=codex"],
+    });
+    await waitRows();
+
+    fireEvent.click(rowCheckbox("managed:dep-eligible"));
+    fireEvent.click(screen.getByRole("button", { name: "表格" }));
+    expect(screen.getByTestId("governance-header-relation")).toHaveTextContent("关系");
+    expect(rowCheckbox("managed:dep-eligible").checked).toBe(true);
+    expect(screen.getByTestId("location-search")).toHaveTextContent("?from=agent&agent=codex&view=table");
+
+    fireEvent.click(screen.getByRole("button", { name: "看板" }));
+    expect(screen.getByTestId("governance-board-column-manageable")).toBeVisible();
+    expect(rowCheckbox("managed:dep-eligible").checked).toBe(true);
+  });
+
+  it("uses a readable fallback name instead of exposing internal identifiers", async () => {
+    const unnamed = makeRow({
+      relationId: "internal-relation-731",
+      readiness: "eligible_to_centralize",
+      primaryAction: "centralize_management",
+      skillId: "internal-skill-284",
+      displayName: null,
+    });
+    await renderGovernanceApp({
+      facade: createFacade({
+        ...FULL_LEDGER,
+        rows: [unnamed],
+        counts: { ...FULL_LEDGER.counts, all: 1 },
+        total: 1,
+      }),
+    });
+    await screen.findByTestId("governance-select-internal-relation-731");
+
+    expect(screen.getByText("未命名技能")).toBeVisible();
+    expect(screen.getByLabelText("选择关系 未命名技能")).toBeVisible();
+    expect(document.body).not.toHaveTextContent("internal-skill-284");
+    expect(document.body).not.toHaveTextContent("internal-relation-731");
   });
 
   it("shows the four bucket filters with ledger counts and filters by bucket", async () => {
@@ -432,6 +542,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     // 直接渲染 relationships.governance.* 键名。
     await renderGovernanceApp();
     await waitRows();
+    fireEvent.click(screen.getByText("筛选", { selector: "summary span" }));
 
     for (const name of ["全部类别", "来源副本", "部署边"]) {
       expect(screen.getByRole("button", { name })).toBeVisible();
@@ -1048,7 +1159,11 @@ describe("RelationshipGovernancePage 来源治理入口（任务 11）", () => {
     await waitRows();
     expect(screen.getAllByTestId("governance-row")).toHaveLength(3);
 
-    // 五个快捷状态与三个 scope 全部可点；未选时不过滤。
+    const secondaryFilters = screen.getByTestId("governance-secondary-filters");
+    expect(secondaryFilters).not.toHaveAttribute("open");
+    fireEvent.click(secondaryFilters.querySelector("summary")!);
+
+    // 展开后五个快捷状态与三个 scope 全部可点；未选时不过滤。
     for (const status of ["normal", "retained", "needs_validation", "needs_attention", "blocked"]) {
       expect(screen.getByTestId(`governance-status-${status}`)).toBeVisible();
     }
@@ -1082,7 +1197,10 @@ describe("RelationshipGovernancePage 行展示（任务 11.4）", () => {
       rows: [SOURCE_ROW, ELIGIBLE_ROW],
       total: 2,
     };
-    await renderGovernanceApp({ facade: createFacade(ledger) });
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?view=table"],
+      facade: createFacade(ledger),
+    });
     const rows = await screen.findAllByTestId("governance-row");
     expect(rows).toHaveLength(2);
 
@@ -1270,6 +1388,32 @@ function sourceLedger(rows: RelationGovernanceRow[]): RelationGovernanceLedger {
 }
 
 describe("RelationshipGovernancePage 来源副本动作（任务 11.7-11.9）", () => {
+  it("uses source-copy status instead of the generic already-centralized readiness", async () => {
+    const normalSource = makeSourceRow({
+      relationId: "src-normal",
+      decision: "pending",
+      health: "normal",
+      status: "normal",
+      readiness: "already_centralized",
+      primaryAction: "none",
+    });
+    const retainedSource = makeSourceRow({
+      relationId: "src-retained-centralized-readiness",
+      decision: "retained",
+      health: "normal",
+      status: "retained",
+      readiness: "already_centralized",
+      primaryAction: "none",
+    });
+    await renderGovernanceApp({ facade: createFacade(sourceLedger([normalSource, retainedSource])) });
+    await screen.findByTestId("governance-row-list");
+
+    const sourceCards = screen.getAllByTestId("governance-row");
+    expect(sourceCards[0].querySelector(".sh-governance__identity")).toHaveTextContent("正常");
+    expect(sourceCards[1].querySelector(".sh-governance__identity")).toHaveTextContent("已保留");
+    expect(document.body).not.toHaveTextContent("已由集中库管理");
+  });
+
   it("offers clean/retain by decision, gates unhealthy rows behind revalidate, and hides dangerous commits when blocked", async () => {
     const facade = createFacade(sourceLedger([
       PENDING_SOURCE_ROW,
@@ -1472,6 +1616,7 @@ describe("RelationshipGovernancePage 清理失败（任务 11.16）", () => {
     expect(within(result).getByTestId("governance-batch-retry-src-pending")).toBeVisible();
     // 行没有被本地假删：清单里仍可见，其他行的重新检查仍可用；
     // 该行按钮因自身预览打开而互斥锁定，属预期。
+    openRelationDetails("src-pending");
     expect(screen.getByTestId("governance-source-src-pending")).toBeVisible();
     expect(screen.getByTestId("governance-action-src-import-1")).toBeEnabled();
     unmount();

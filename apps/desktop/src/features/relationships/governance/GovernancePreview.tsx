@@ -1,0 +1,288 @@
+import { useTranslation } from "react-i18next";
+import type {
+  RelationGovernanceLedger,
+  RelationGovernanceRow,
+  RemovalImpactFact,
+  RelationshipCheckReport,
+} from "../../../api/bindings";
+import type { RelationGovernanceFacade } from "./api";
+import { RelationshipGovernancePage } from "./RelationshipGovernancePage";
+
+const rows: RelationGovernanceRow[] = [
+  {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: "preview:centralize-pdf",
+        skill_id: "preview-skill-pdf-reader",
+        agent_client_id: "codex.cli",
+        path: "C:/Preview/Agents/Codex/skills/pdf-reader",
+        path_key: "c:/preview/agents/codex/skills/pdf-reader",
+        directory_node_id: "preview-codex-directory",
+        relationship: "import_copy",
+        file_representation: "copy",
+        ownership: "observed_unmanaged",
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "preview-fingerprint-pdf",
+        origin: "import",
+        match_state: "content_verified",
+        active: true,
+        observed_at: "2026-09-24T08:00:00Z",
+        released_at: null,
+      },
+    },
+    status: "normal",
+    skill_display_name: "PDF 文档提取",
+    readiness: "eligible_to_centralize",
+    primary_action: "centralize_management",
+    blockers: [],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: true,
+      rollback_available: true,
+    },
+  },
+  {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: "preview:verify-notes",
+        skill_id: "preview-skill-release-notes",
+        agent_client_id: "cursor.editor",
+        path: "C:/Preview/Agents/Cursor/skills/release-notes",
+        path_key: "c:/preview/agents/cursor/skills/release-notes",
+        directory_node_id: "preview-cursor-directory",
+        relationship: "observed_copy",
+        file_representation: "copy",
+        ownership: "observed_unmanaged",
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "preview-fingerprint-notes",
+        origin: "scan",
+        match_state: "name_only",
+        active: true,
+        observed_at: "2026-09-24T08:10:00Z",
+        released_at: null,
+      },
+    },
+    status: "needs_validation",
+    skill_display_name: "发布说明整理",
+    readiness: "needs_validation",
+    primary_action: "revalidate",
+    blockers: ["verification_not_current"],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: false,
+      rollback_available: false,
+    },
+  },
+  {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: "preview:shared-attention",
+        skill_id: "preview-skill-release-notes",
+        agent_client_id: "cursor.editor",
+        path: "C:/Preview/Agents/Cursor/shared/release-notes",
+        path_key: "c:/preview/agents/cursor/shared/release-notes",
+        directory_node_id: "preview-shared-directory",
+        relationship: "shared_directory_read",
+        file_representation: "directory",
+        ownership: "shared_reference",
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "preview-fingerprint-shared",
+        origin: "scan",
+        match_state: "content_verified",
+        active: true,
+        observed_at: "2026-09-24T08:20:00Z",
+        released_at: null,
+      },
+    },
+    status: "needs_attention",
+    skill_display_name: "发布说明整理",
+    readiness: "already_centralized",
+    primary_action: "revalidate",
+    blockers: ["shared_impact_confirmation_required"],
+    impact: {
+      other_consumer_agent_ids: ["codex.cli"],
+      other_skill_paths: [],
+      backup_required: false,
+      rollback_available: true,
+    },
+  },
+  {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: "preview:blocked-directory",
+        skill_id: "preview-skill-audit",
+        agent_client_id: "cursor.cli",
+        path: "C:/Preview/Agents/Cursor/skills/audit-checklist",
+        path_key: "c:/preview/agents/cursor/skills/audit-checklist",
+        directory_node_id: null,
+        relationship: "unknown",
+        file_representation: "unknown",
+        ownership: "observed_unmanaged",
+        link_target_path: null,
+        link_target_path_key: null,
+        link_target_directory_id: null,
+        content_fingerprint: "preview-fingerprint-audit",
+        origin: "scan",
+        match_state: "name_only",
+        active: true,
+        observed_at: "2026-09-24T08:30:00Z",
+        released_at: null,
+      },
+    },
+    status: "blocked",
+    skill_display_name: "审计检查清单",
+    readiness: "blocked",
+    primary_action: "none",
+    blockers: ["unverifiable_representation"],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: false,
+      rollback_available: false,
+    },
+  },
+  {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: "preview:managed-link",
+        skill_id: "preview-skill-pdf-reader",
+        agent_client_id: "codex.cli",
+        path: "C:/Preview/Agents/Codex/skills/pdf-link",
+        path_key: "c:/preview/agents/codex/skills/pdf-link",
+        directory_node_id: "preview-codex-directory",
+        relationship: "managed_link",
+        file_representation: "symbolic_link",
+        ownership: "skillhub_managed",
+        link_target_path: "C:/Preview/SkillHub/skills/pdf-reader",
+        link_target_path_key: "c:/preview/skillhub/skills/pdf-reader",
+        link_target_directory_id: "preview-library-directory",
+        content_fingerprint: "preview-fingerprint-pdf",
+        origin: "import",
+        match_state: "content_verified",
+        active: true,
+        observed_at: "2026-09-24T08:40:00Z",
+        released_at: null,
+      },
+    },
+    status: "normal",
+    skill_display_name: "PDF 文档提取",
+    readiness: "already_centralized",
+    primary_action: "undeploy",
+    blockers: [],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: false,
+      rollback_available: true,
+    },
+  },
+  {
+    relation: {
+      kind: "source_copy",
+      fact: {
+        relation_id: "preview:retained-source",
+        skill_id: "preview-skill-pdf-reader",
+        latest_provenance_id: "preview-provenance-pdf",
+        source_class: "agent_local",
+        source_path: "C:/Preview/Imported/pdf-reader",
+        source_path_key: "c:/preview/imported/pdf-reader",
+        physical_source_id: "preview-source-volume",
+        source_container_id: null,
+        directory_node_id: null,
+        agent_client_id: "codex.cli",
+        expected_fingerprint: "preview-fingerprint-pdf",
+        current_fingerprint: "preview-fingerprint-pdf",
+        decision: "retained",
+        health: "normal",
+        active: true,
+        last_verified_at: "2026-09-24T08:50:00Z",
+        archived_at: null,
+        archive_reason: null,
+      },
+    },
+    status: "retained",
+    skill_display_name: "PDF 文档提取",
+    readiness: "already_centralized",
+    primary_action: "none",
+    blockers: [],
+    impact: {
+      other_consumer_agent_ids: [],
+      other_skill_paths: [],
+      backup_required: false,
+      rollback_available: true,
+    },
+  },
+];
+
+const ledger: RelationGovernanceLedger = {
+  rows,
+  counts: {
+    all: rows.length,
+    eligible_to_centralize: 1,
+    needs_validation: 2,
+    blocked: 1,
+    status_normal: 1,
+    status_retained: 1,
+    status_needs_validation: 1,
+    status_needs_attention: 1,
+    status_blocked: 1,
+    source_copies: 1,
+    deployments: rows.length - 1,
+  },
+  bucket: "all",
+  total: rows.length,
+  relationship_revision: "preview-relationship-revision",
+  last_verified_at: "2026-09-24T08:55:00Z",
+};
+
+const previewFacade = {
+  listGovernance: async () => ledger,
+  revalidate: async (): Promise<RelationshipCheckReport> => ({
+    items: [],
+    relationship_revision: ledger.relationship_revision,
+  }),
+  getRelationshipRemovalImpact: async (relationId: string): Promise<RemovalImpactFact> => {
+    const row = rows.find((candidate) => candidate.relation.fact.relation_id === relationId);
+    const relation = row?.relation.kind === "deployment" ? row.relation.fact : null;
+    return {
+      relation_id: relationId,
+      relation,
+      ownership: relation?.ownership ?? null,
+      current_agent_reads_shared_directory: false,
+      other_consumers: [],
+      other_skill_paths: [],
+      minimal_action: "convert_copy_to_managed_link",
+      backup: {
+        required: true,
+        rollback_available: true,
+        backup_location: "C:/Preview/SkillHub/backups/pdf-reader",
+        detail: "仅用于预览的备份路径",
+      },
+      governance_tasks: [],
+      permission_limited: false,
+    };
+  },
+} as unknown as RelationGovernanceFacade;
+
+export function GovernancePreview() {
+  const { t } = useTranslation();
+  return (
+    <RelationshipGovernancePage
+      facade={previewFacade}
+      previewNotice={t("relationships.governance.previewFixtureNotice")}
+    />
+  );
+}

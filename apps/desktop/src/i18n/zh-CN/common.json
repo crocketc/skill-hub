@@ -2655,7 +2655,25 @@
     "governance": {
       "title": "关系治理",
       "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。",
-      "description": "这里集中管理全部可管理关系：来源副本与部署边，先预览影响，再确认执行。在线来源与完整拓扑请到技能图谱查看。",
+      "description": "管理来源副本与部署边，变更先预览再确认；完整拓扑请看技能图谱。",
+      "unnamedSkill": "未命名技能",
+      "previewFixtureNotice": "预览数据：以下关系均为虚构示例，不会读取或修改本机 Skill 与 Agent 目录。",
+      "viewSwitch": {
+        "label": "视图",
+        "board": "看板",
+        "table": "表格"
+      },
+      "board": {
+        "label": "关系状态分栏看板",
+        "relationInfo": "查看关系信息",
+        "manageable": "可纳入管理",
+        "needsValidation": "待核验",
+        "blocked": "受阻",
+        "settled": "已明确",
+        "emptyColumn": "暂无符合条件的关系",
+        "relationshipCount": "{{count}} 条关系",
+        "countScope": "列数按当前筛选结果统计；快捷筛选数字按全部关系统计。"
+      },
       "loading": "正在加载关系治理清单…",
       "loadError": "关系治理清单暂不可用。",
       "retryLoad": "重新加载",
@@ -2668,10 +2686,13 @@
       },
       "deployEntry": {
         "action": "添加到 Agent/项目",
-        "hint": "这份清单只处理已建立的关系边；新的 Skill 走普通添加流程，与这里的治理操作相互独立。"
+        "hint": "这里只处理已有关系；新增 Skill 请走普通添加流程。"
       },
       "filters": {
         "label": "快捷筛选",
+        "secondaryLabel": "筛选",
+        "activeCount": "已选 {{count}} 项",
+        "clearSecondary": "清除筛选",
         "all": "全部",
         "eligible_to_centralize": "可纳入集中库管理",
         "needs_validation": "待校验",

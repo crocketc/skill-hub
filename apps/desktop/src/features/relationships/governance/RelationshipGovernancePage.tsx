@@ -18,6 +18,7 @@ import {
 import { runTrackedOperation } from "../../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../../ui/notifications";
 import { Button } from "../../../ui/Button";
+import { Input } from "../../../ui/Input";
 import { DataState } from "../../../ui/DataState";
 import { RelationshipsLayout } from "../RelationshipsLayout";
 import { useRelationshipsReturnState } from "../returnState";
@@ -29,7 +30,6 @@ import {
   parseGovernanceSearchParams,
   relationIdOf,
   relationPathOf,
-  relationSkillIdOf,
   rowIsBatchExecutable,
   rowIsNaturallyExecutable,
   summarizeBatchSelection,
@@ -39,6 +39,8 @@ import {
 import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
+import { governanceSkillDisplayName } from "./GovernanceRelationTable";
+import { GovernanceBoard } from "./GovernanceBoard";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
 import { SourceCopyImpactPreview } from "./SourceCopyImpactPreview";
 import { SourceCleanupResult } from "./SourceCleanupResult";
@@ -52,6 +54,8 @@ export interface RelationshipGovernancePageProps {
   facade?: RelationGovernanceFacade;
   /** 统一执行桥的在途投影；测试注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
+  /** 仅 DEV 预览注入：显式标记夹具数据，不连接本机 Skill/Agent 目录。 */
+  previewNotice?: string;
 }
 
 interface SingleFlowState {
@@ -94,6 +98,7 @@ const INITIAL_BATCH_FLOW: BatchFlowState = {
  */
 export function RelationshipGovernancePage({
   facade = nativeGovernanceFacade,
+  previewNotice,
   tracker = operationTracker,
 }: RelationshipGovernancePageProps) {
   const { t } = useTranslation();
@@ -105,6 +110,12 @@ export function RelationshipGovernancePage({
     () => parseGovernanceSearchParams(searchParams),
     [searchParams],
   );
+  const view = searchParams.get("view") === "table" ? "table" : "board";
+  const hasSecondaryFilters = deepLink.scope !== "all" || deepLink.status.length > 0;
+  const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(hasSecondaryFilters);
+  useEffect(() => {
+    if (hasSecondaryFilters) setSecondaryFiltersOpen(true);
+  }, [hasSecondaryFilters]);
   const returnState = useRelationshipsReturnState("governance");
 
   // 任务 11.5：逐行重校验的在途集合与最近一次逐项结论（按 relation 记忆）。
@@ -155,6 +166,13 @@ export function RelationshipGovernancePage({
     enabled: ledgerQuery.isSuccess && visibleRows.length > 0,
   });
   const counts = ledgerQuery.data?.counts;
+  const secondaryFilterLabels = [
+    ...(deepLink.scope !== "all"
+      ? [String(t(`relationships.governance.scope.${deepLink.scope}` as never))]
+      : []),
+    ...deepLink.status.map((status) => String(t(`relationships.governance.statusFilter.${status}` as never))),
+  ];
+  const secondaryFilterSummary = secondaryFilterLabels.join(" · ");
 
   // —— 会话视图状态：勾选 + 滚动（仅存 return-state，不进 URL/tracker）——
   const [selectedIds, setSelectedIds] = useState<string[]>(
@@ -190,6 +208,14 @@ export function RelationshipGovernancePage({
     }
   }, [ledgerQuery.isSuccess, returnState.initialState]);
 
+  // Board/table share one canvas scroll position. Reapply it after a view
+  // switch remounts the canvas so selection and return context stay aligned.
+  useEffect(() => {
+    if (ledgerQuery.isSuccess && listRef.current) {
+      listRef.current.scrollTop = viewStateRef.current.scrollY;
+    }
+  }, [ledgerQuery.isSuccess, view]);
+
   const onListScroll = useCallback(() => {
     const element = listRef.current;
     if (!element) return;
@@ -222,7 +248,7 @@ export function RelationshipGovernancePage({
       if (!checked) return [];
       // 全选默认跳过受阻行；它们仍可被单独勾选（勾选后在预览里按受阻呈现）。
       return visibleRows
-        .filter((row) => row.readiness !== "blocked")
+        .filter((row) => row.readiness !== "blocked" && row.status !== "blocked")
         .map((row) => relationIdOf(row.relation));
     });
   }, [visibleRows]);
@@ -445,8 +471,7 @@ export function RelationshipGovernancePage({
   const centralizeDoneText = useCallback((flow: SingleFlowState) => t(
     "relationships.governance.centralize.done",
     {
-      skill: flow.row.skill_display_name ?? relationSkillIdOf(flow.row.relation)
-        ?? t("relationshipGovernance.matrix.unknownSkill"),
+      skill: governanceSkillDisplayName(flow.row, t),
     },
   ), [t]);
 
@@ -760,6 +785,9 @@ export function RelationshipGovernancePage({
       ) : null}
 
       <header className="sh-governance__head">
+        {previewNotice ? (
+          <p className="sh-governance__preview-notice" role="note">{previewNotice}</p>
+        ) : null}
         <div className="sh-governance__head-row">
           <p className="sh-governance__intro">{t("relationships.governance.description")}</p>
           <Link
@@ -802,49 +830,79 @@ export function RelationshipGovernancePage({
             </Button>
           ))}
         </div>
-        <div className="sh-governance__chip-group" role="group">
-          <span className="sh-governance__chip-label">{t("relationships.governance.filters.scopeLabel")}</span>
-          {(["all", "source_copy", "deployment"] as const).map((scope) => (
-            <Button
-              aria-pressed={deepLink.scope === scope}
-              data-testid={`governance-scope-${scope}`}
-              key={`scope-${scope}`}
-              onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
-              size="sm"
-              variant={deepLink.scope === scope ? "primary" : "secondary"}
-            >
-              {t(`relationships.governance.scope.${scope}` as never)}
-            </Button>
-          ))}
-        </div>
-        <div className="sh-governance__chip-group" role="group">
-          <span className="sh-governance__chip-label">{t("relationships.governance.filters.statusLabel")}</span>
-          {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
-            <Button
-              // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
-              // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
-              aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
-              data-testid={`governance-status-${status}`}
-              key={`status-${status}`}
-              onClick={() =>
-                applyParams({
-                  status:
+        <details
+          className="sh-governance__secondary-filters"
+          data-testid="governance-secondary-filters"
+          onToggle={(event) => setSecondaryFiltersOpen(event.currentTarget.open)}
+          open={secondaryFiltersOpen}
+        >
+          <summary>
+            <span>{t("relationships.governance.filters.secondaryLabel")}</span>
+            {hasSecondaryFilters ? (
+              <>
+                <span className="sh-governance__active-filter-count">
+                  {t("relationships.governance.filters.activeCount", { count: secondaryFilterLabels.length })}
+                </span>
+                <span className="sh-governance__active-filter-summary">{secondaryFilterSummary}</span>
+              </>
+            ) : null}
+          </summary>
+          <div className="sh-governance__secondary-filter-controls">
+            <div className="sh-governance__chip-group" role="group">
+              <span className="sh-governance__chip-label">{t("relationships.governance.filters.scopeLabel")}</span>
+              {(["all", "source_copy", "deployment"] as const).map((scope) => (
+                <Button
+                  aria-pressed={deepLink.scope === scope}
+                  data-testid={`governance-scope-${scope}`}
+                  key={`scope-${scope}`}
+                  onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
+                  size="sm"
+                  variant={deepLink.scope === scope ? "primary" : "secondary"}
+                >
+                  {t(`relationships.governance.scope.${scope}` as never)}
+                </Button>
+              ))}
+            </div>
+            <div className="sh-governance__chip-group" role="group">
+              <span className="sh-governance__chip-label">{t("relationships.governance.filters.statusLabel")}</span>
+              {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
+                <Button
+                  // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
+                  // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
+                  aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
+                  data-testid={`governance-status-${status}`}
+                  key={`status-${status}`}
+                  onClick={() =>
+                    applyParams({
+                      status:
+                        deepLink.status.length === 1 && deepLink.status[0] === status
+                          ? null
+                          : status,
+                    })
+                  }
+                  size="sm"
+                  variant={
                     deepLink.status.length === 1 && deepLink.status[0] === status
-                      ? null
-                      : status,
-                })
-              }
-              size="sm"
-              variant={
-                deepLink.status.length === 1 && deepLink.status[0] === status
-                  ? "primary"
-                  : "secondary"
-              }
-            >
-              {t(`relationships.governance.statusFilter.${status}` as never)}
-            </Button>
-          ))}
-        </div>
+                      ? "primary"
+                      : "secondary"
+                  }
+                >
+                  {t(`relationships.governance.statusFilter.${status}` as never)}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </details>
+        {hasSecondaryFilters ? (
+          <Button
+            data-testid="governance-clear-secondary-filters"
+            onClick={() => applyParams({ scope: null, status: null })}
+            size="sm"
+            variant="ghost"
+          >
+            {t("relationships.governance.filters.clearSecondary")}
+          </Button>
+        ) : null}
         <form
           className="sh-governance__search"
           onSubmit={(event) => {
@@ -852,14 +910,40 @@ export function RelationshipGovernancePage({
             applyParams({ text: searchDraft });
           }}
         >
-          <input
+          <Input
             aria-label={t("relationships.governance.search.label")}
+            className="sh-governance__search-input"
             onChange={(event) => setSearchDraft(event.target.value)}
             placeholder={t("relationships.governance.search.label")}
+            type="search"
             value={searchDraft}
           />
-          <button type="submit">{t("relationships.governance.search.apply")}</button>
+          <Button size="sm" type="submit" variant="secondary">
+            {t("relationships.governance.search.apply")}
+          </Button>
         </form>
+        <div
+          aria-label={t("relationships.governance.viewSwitch.label")}
+          className="sh-governance__view-switch"
+          data-testid="governance-view-switch"
+          role="group"
+        >
+          {(["board", "table"] as const).map((nextView) => (
+            <Button
+              aria-pressed={view === nextView}
+              data-testid={`governance-view-${nextView}`}
+              key={nextView}
+              onClick={() => applyParams({ view: nextView === "board" ? null : nextView })}
+              size="sm"
+              variant={view === nextView ? "primary" : "secondary"}
+            >
+              {t(`relationships.governance.viewSwitch.${nextView}` as never)}
+            </Button>
+          ))}
+        </div>
+        <p className="sh-governance__filter-note" data-testid="governance-count-scope">
+          {t("relationships.governance.board.countScope")}
+        </p>
       </div>
 
       {ledgerQuery.isError ? (
@@ -904,20 +988,37 @@ export function RelationshipGovernancePage({
                 </Button>
               </div>
             ) : null}
-            <GovernanceRelationTable
-              busyRelationIds={busyRelationIds}
-              listRef={listRef}
-              onCentralize={(row) => openSingle("centralize", row)}
-              onClean={(row) => openSingle("clean", row)}
-              onListScroll={onListScroll}
-              onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
-              onRetain={(row) => retainSourceCopyRow(row)}
-              onToggleAll={toggleAll}
-              onToggleRow={toggleRow}
-              onUndeploy={(row) => openSingle("undeploy", row)}
-              rows={visibleRows}
-              selectedIds={new Set(selectedIds)}
-            />
+            {view === "table" ? (
+              <GovernanceRelationTable
+                busyRelationIds={busyRelationIds}
+                listRef={listRef}
+                onCentralize={(row) => openSingle("centralize", row)}
+                onClean={(row) => openSingle("clean", row)}
+                onListScroll={onListScroll}
+                onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
+                onRetain={(row) => retainSourceCopyRow(row)}
+                onToggleAll={toggleAll}
+                onToggleRow={toggleRow}
+                onUndeploy={(row) => openSingle("undeploy", row)}
+                rows={visibleRows}
+                selectedIds={new Set(selectedIds)}
+              />
+            ) : (
+              <GovernanceBoard
+                busyRelationIds={busyRelationIds}
+                listRef={listRef}
+                onCentralize={(row) => openSingle("centralize", row)}
+                onClean={(row) => openSingle("clean", row)}
+                onListScroll={onListScroll}
+                onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
+                onRetain={(row) => retainSourceCopyRow(row)}
+                onToggleAll={toggleAll}
+                onToggleRow={toggleRow}
+                onUndeploy={(row) => openSingle("undeploy", row)}
+                rows={visibleRows}
+                selectedIds={new Set(selectedIds)}
+              />
+            )}
             {[...revalidateResults.entries()].map(([relationId, item]) => (
               <p
                 data-testid={`governance-revalidate-result-${relationId}`}

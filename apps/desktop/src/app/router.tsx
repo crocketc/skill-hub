@@ -30,6 +30,7 @@ import { OverviewPreviewShell, overviewPreviewRelationshipsFacade } from "../fea
 import { PendingPreview } from "../features/pending/PendingPreview";
 import { OperationsPreview, OperationProgressPreview } from "../features/operations/OperationsPreview";
 import { RecoveryPreview } from "../features/recovery/RecoveryPreview";
+import { GovernancePreview } from "../features/relationships/governance/GovernancePreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
@@ -389,6 +390,7 @@ export const appRouter = createBrowserRouter([
             { path: "operations-records", element: <OperationsPreview /> },
             { path: "operation-progress", element: <OperationProgressPreview /> },
             { path: "recovery", element: <RecoveryPreview /> },
+            { path: "relationship-governance", element: <GovernancePreview /> },
           ],
         },
         {

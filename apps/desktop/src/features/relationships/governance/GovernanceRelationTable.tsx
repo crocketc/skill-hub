@@ -6,7 +6,6 @@ import {
   relationAgentIdOf,
   relationIdOf,
   relationPathOf,
-  relationSkillIdOf,
   relationSourceKeyOf,
   relationVerificationKeyOf,
   relationshipKeyOf,
@@ -106,104 +105,37 @@ export function GovernanceRelationTable({
         <tbody>
           {rows.map((row) => {
             const relationId = relationIdOf(row.relation);
-            const rowAgentId = relationAgentIdOf(row.relation);
             const busy = busyRelationIds.has(relationId);
             return (
               <tr data-testid="governance-row" key={relationId}>
                 <td>
-                  <input
-                    aria-label={t("relationships.governance.table.selectRow", {
-                    name: row.skill_display_name ?? relationSkillIdOf(row.relation) ?? relationId,
-                  })}
-                    checked={selectedIds.has(relationId)}
-                    data-testid={`governance-select-${relationId}`}
-                    onChange={(event) => onToggleRow(relationId, event.target.checked)}
-                    type="checkbox"
+                  <GovernanceRelationSelection
+                    onToggleRow={onToggleRow}
+                    row={row}
+                    selected={selectedIds.has(relationId)}
                   />
                 </td>
-                <td>
-                  <strong>
-                    {row.skill_display_name ?? relationSkillIdOf(row.relation)
-                      ?? t("relationshipGovernance.matrix.unknownSkill")}
-                  </strong>
-                  <StatusBadge tone="info">
-                    {t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never)}
-                  </StatusBadge>
-                  <span className="sh-governance__readiness">
-                    {t(`relationships.governance.readiness.${row.readiness}` as never)}
-                  </span>
-                </td>
+                <td><GovernanceRelationIdentity row={row} /></td>
                 <td data-testid={`governance-source-${relationId}`}>
-                  {t(`relationships.governance.source.${relationSourceKeyOf(row.relation)}` as never)}
+                  <GovernanceRelationSource row={row} />
                 </td>
                 <td data-testid={`governance-target-${relationId}`}>
-                  <strong className="sh-governance__directory-kind">
-                    {directoryGovernanceLabel(row, t)}
-                  </strong>
-                  {/* 来源副本边没有 Agent 归属，仅部署边呈现 Agent 身份。 */}
-                  {row.relation.kind === "deployment" && rowAgentId ? (
-                    <AgentIdentity agentId={rowAgentId} />
-                  ) : null}
-                  <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
+                  <GovernanceRelationTarget row={row} />
                 </td>
                 <td data-testid={`governance-impact-${relationId}`}>
-                  {row.impact.other_consumer_agent_ids.length > 0
-                    ? <>
-                        {t("relationships.governance.impact.otherConsumers", {
-                          agents: "",
-                          count: row.impact.other_consumer_agent_ids.length,
-                        })}
-                        {row.impact.other_consumer_agent_ids.map((agentId, index) => (
-                          <span key={agentId}>
-                            {index > 0 ? "、" : ""}
-                            <AgentPresentation agentId={agentId} />
-                          </span>
-                        ))}
-                      </>
-                    : t("relationships.governance.impact.noOtherConsumers")}
-                  <span>
-                    {row.impact.rollback_available
-                      ? t("relationships.governance.impact.rollbackAvailable")
-                      : t("relationships.governance.impact.rollbackUnavailable")}
-                  </span>
+                  <GovernanceRelationImpact row={row} />
                 </td>
-                <td>
-                  <span>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</span>
-                  {row.blockers.length > 0 ? (
-                    /* 受阻原因是一行浅色说明：整句列表会把行高撑到三四倍，
-                       扫读清单时噪声远大于信息（2026-09-25 重设）。 */
-                    <p
-                      className="sh-governance__blockers"
-                      data-testid={`governance-blockers-${relationId}`}
-                    >
-                      {row.blockers
-                        .map((blocker) => t(`relationships.governance.blockers.${blocker}` as never))
-                        .join(" ")}
-                    </p>
-                  ) : null}
-                </td>
+                <td><GovernanceRelationVerification row={row} /></td>
                 <td className="sh-governance__actions">
-                  <PrimaryActionButton
+                  <GovernanceRelationActions
                     busy={busy}
                     onCentralize={onCentralize}
+                    onClean={onClean}
                     onRevalidate={onRevalidate}
+                    onRetain={onRetain}
                     onUndeploy={onUndeploy}
-                    primary={row.primary_action}
                     row={row}
                   />
-                  {sourceCopyActionButtons(row, busy, onClean, onRetain)}
-                  {/* 仅待共享影响确认的行：主操作是重新检查，另给带确认的纳入入口。 */}
-                  {rowNeedsSharedImpactConfirmation(row) ? (
-                    <Button
-                      data-testid={`governance-centralize-${relationId}`}
-                      disabled={busy}
-                      onClick={() => onCentralize(row)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {t("relationships.governance.actions.centralize_management")}
-                    </Button>
-                  ) : null}
                 </td>
               </tr>
             );
@@ -212,6 +144,213 @@ export function GovernanceRelationTable({
       </table>
     </div>
   );
+}
+
+export function governanceSkillDisplayName(row: RelationGovernanceRow, t: TFunction): string {
+  const name = row.skill_display_name?.trim();
+  return name || String(t("relationships.governance.unnamedSkill"));
+}
+
+export function GovernanceRelationSelection({
+  onToggleRow,
+  row,
+  selected,
+}: {
+  onToggleRow: GovernanceRelationTableProps["onToggleRow"];
+  row: RelationGovernanceRow;
+  selected: boolean;
+}) {
+  const { t } = useTranslation();
+  const relationId = relationIdOf(row.relation);
+  return (
+    <input
+      aria-label={t("relationships.governance.table.selectRow", {
+        name: governanceSkillDisplayName(row, t),
+      })}
+      checked={selected}
+      data-testid={`governance-select-${relationId}`}
+      onChange={(event) => onToggleRow(relationId, event.target.checked)}
+      type="checkbox"
+    />
+  );
+}
+
+export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  const needsAttention = row.status === "needs_attention"
+    || row.status === "needs_validation"
+    || row.status === "blocked";
+  return (
+    <div className="sh-governance__identity">
+      <strong>{governanceSkillDisplayName(row, t)}</strong>
+      <StatusBadge tone="info">
+        {t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never)}
+      </StatusBadge>
+      <StatusBadge tone={statusTone(row.status)}>
+        {t(`relationships.governance.statusFilter.${row.status}` as never)}
+      </StatusBadge>
+      {!needsAttention && row.relation.kind === "deployment" ? (
+        <span className="sh-governance__readiness">
+          {t(`relationships.governance.readiness.${row.readiness}` as never)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+export function GovernanceRelationTargetSummary({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  const rowAgentId = relationAgentIdOf(row.relation);
+  return (
+    <div className="sh-governance__board-target-summary">
+      <strong className="sh-governance__directory-kind">{directoryGovernanceLabel(row, t)}</strong>
+      {row.relation.kind === "deployment" && rowAgentId ? (
+        <AgentIdentity agentId={rowAgentId} />
+      ) : null}
+    </div>
+  );
+}
+
+export function GovernanceRelationSource({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  return <>{t(`relationships.governance.source.${relationSourceKeyOf(row.relation)}` as never)}</>;
+}
+
+export function GovernanceRelationTarget({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  const rowAgentId = relationAgentIdOf(row.relation);
+  return (
+    <>
+      <strong className="sh-governance__directory-kind">{directoryGovernanceLabel(row, t)}</strong>
+      {/* 来源副本边没有 Agent 归属；部署边使用统一的品牌 + 用户视角类型 presenter。 */}
+      {row.relation.kind === "deployment" && rowAgentId ? (
+        <AgentIdentity agentId={rowAgentId} />
+      ) : null}
+      <span>{t("agents.pathLabel")} <code>{displayPath(relationPathOf(row.relation))}</code></span>
+    </>
+  );
+}
+
+export function GovernanceRelationImpact({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {row.impact.other_consumer_agent_ids.length > 0
+        ? <>
+            {t("relationships.governance.impact.otherConsumers", {
+              agents: "",
+              count: row.impact.other_consumer_agent_ids.length,
+            })}
+            {row.impact.other_consumer_agent_ids.map((agentId, index) => (
+              <span key={agentId}>
+                {index > 0 ? "、" : ""}
+                <AgentPresentation agentId={agentId} />
+              </span>
+            ))}
+          </>
+        : t("relationships.governance.impact.noOtherConsumers")}
+      <span>
+        {row.impact.rollback_available
+          ? t("relationships.governance.impact.rollbackAvailable")
+          : t("relationships.governance.impact.rollbackUnavailable")}
+      </span>
+    </>
+  );
+}
+
+export function GovernanceRelationVerification({ row }: { row: RelationGovernanceRow }) {
+  return (
+    <>
+      <GovernanceRelationVerificationLabel row={row} />
+      <GovernanceRelationBlockers row={row} />
+    </>
+  );
+}
+
+export function GovernanceRelationVerificationLabel({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  return (
+    <span>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</span>
+  );
+}
+
+export function GovernanceRelationBlockers({ row }: { row: RelationGovernanceRow }) {
+  const { t } = useTranslation();
+  const relationId = relationIdOf(row.relation);
+  const sourceCopyHealth = row.relation.kind === "source_copy"
+    ? row.relation.fact.health
+    : null;
+  return (
+    <>
+      {sourceCopyHealth && row.status === "needs_attention" ? (
+        <p className="sh-governance__blockers">
+          {t(`relationshipGovernance.fingerprint.${sourceCopyHealth}` as never)}
+        </p>
+      ) : null}
+      {row.blockers.length > 0 ? (
+        <p
+          className="sh-governance__blockers"
+          data-testid={`governance-blockers-${relationId}`}
+        >
+          {row.blockers
+            .map((blocker) => t(`relationships.governance.blockers.${blocker}` as never))
+            .join(" ")}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+export function GovernanceRelationActions({
+  busy,
+  onCentralize,
+  onClean,
+  onRevalidate,
+  onRetain,
+  onUndeploy,
+  row,
+}: {
+  busy: boolean;
+  onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onClean: GovernanceRelationTableProps["onClean"];
+  onRevalidate: GovernanceRelationTableProps["onRevalidate"];
+  onRetain: GovernanceRelationTableProps["onRetain"];
+  onUndeploy: GovernanceRelationTableProps["onUndeploy"];
+  row: RelationGovernanceRow;
+}) {
+  const { t } = useTranslation();
+  const relationId = relationIdOf(row.relation);
+  return (
+    <>
+      <PrimaryActionButton
+        busy={busy}
+        onCentralize={onCentralize}
+        onRevalidate={onRevalidate}
+        onUndeploy={onUndeploy}
+        primary={row.primary_action}
+        row={row}
+      />
+      {sourceCopyActionButtons(row, busy, onClean, onRetain)}
+      {/* 仅待共享影响确认的行：主操作是重新检查，另给带确认的纳入入口。 */}
+      {rowNeedsSharedImpactConfirmation(row) ? (
+        <Button
+          data-testid={`governance-centralize-${relationId}`}
+          disabled={busy}
+          onClick={() => onCentralize(row)}
+          size="sm"
+          variant="secondary"
+        >
+          {t("relationships.governance.actions.centralize_management")}
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+function statusTone(status: RelationGovernanceRow["status"]): "success" | "warning" | "danger" {
+  if (status === "normal" || status === "retained") return "success";
+  if (status === "blocked") return "danger";
+  return "warning";
 }
 
 /**
