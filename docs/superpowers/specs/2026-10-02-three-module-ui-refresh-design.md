@@ -44,3 +44,13 @@
 行为变更先写失败测试，再最小实现。各分支运行相关 Vitest、ESLint、TypeScript、生产构建及浏览器 E2E，截图检查宽/窄窗口；并发测试限制资源使用。整合后运行全量前端测试、静态检查、构建及三模块交叉 E2E，检查主题、键盘、焦点、筛选/排序、跨视图选择与确认取消路径。
 
 浏览器使用预览夹具，不等同原生文件操作与真实 Windows/macOS 桌面验收。真机按当前人工验收清单执行完整用户流程并独立取证，未真实复验保持待验收。
+
+## 交付摘要（2026-10-02）
+
+- 产品定位：`AGENTS.md`，提交 `ca2bd4b0`。
+- DEV-113：`SavedViews`、`SkillFilters`、`SkillLibraryPage`、`SkillTable`、`skills.css` 及相关单元/E2E测试；列表分支交付 `a6ca0125`、短屏补充 `4a3008fe` 和默认列宽/选择区域修复 `d536130a`。
+- DEV-114：`SkillQuickDrawer`、独立 `skillQuickDrawer.css`、单元测试与 `skill-drawer-refresh.spec.ts`；抽屉分支交付 `4607021f`。
+- DEV-115：`RelationshipGovernancePage`、`GovernanceBoard`、共享表格 presenter、分栏投影、`governance.css` 和 DEV-only 预览夹具及测试；治理分支交付 `5213fe30`。
+- 中英文翻译按模块增量更新；开发状态、自动化说明、人工清单与完成矩阵由负责人统一更新。后端业务逻辑与生成绑定保持既有契约。
+- 三个模块已整合到 `feat/v0.2.0-product-completion`，保留各独立分支与 worktree。最终验证命令、结果与真实桌面边界见当前四份开发文档。
+- 最终实现基线为 `04fad86e`：列表整合提交 `e7834b96`、`4d2d09ae`、`04fad86e`，抽屉 `78f19d37`，治理 `811192fb`。
