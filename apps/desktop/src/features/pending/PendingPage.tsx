@@ -34,6 +34,9 @@ const RISK_ICONS: Record<PendingRisk, IconName> = {
 
 type PendingAction = { kind: string; label: string; perform: (target: PendingItem) => Promise<void> };
 
+// 组行折叠摘要最多点名 3 个对象，其余以 +N 计数保持行高稳定。
+const SUMMARY_NAME_LIMIT = 3;
+
 function PendingGroupRow({
   group,
   facade,
@@ -61,6 +64,8 @@ function PendingGroupRow({
   const [expanded, setExpanded] = useState(false);
   const selectedCount = group.selectableIds.filter((id) => selectedIds.includes(id)).length;
   const allSelected = group.selectableIds.length > 0 && selectedCount === group.selectableIds.length;
+  const summaryNames = group.category === "agents" || group.objectNames.length < 2 ? [] : group.objectNames.slice(0, SUMMARY_NAME_LIMIT);
+  const hiddenNameCount = group.objectNames.length - summaryNames.length;
   const title = group.category === "agents"
     ? group.sharedDirectory ? String(t("agents.sharedDirectoryTitle")) : group.agentBrand ?? group.displayName ?? String(t("pending.kinds.agent_compatibility"))
     : group.category === "skill_review"
@@ -81,6 +86,7 @@ function PendingGroupRow({
           checked={allSelected}
           disabled={busy || group.selectableIds.length === 0}
           onChange={() => toggleGroup(group)}
+          ref={(node) => { if (node) node.indeterminate = selectedCount > 0 && !allSelected; }}
           type="checkbox"
         />
       </label>
@@ -101,6 +107,8 @@ function PendingGroupRow({
         <div className="sh-pending-group__facts">
           <span>{t("pending.group.items", { count: group.count })}</span>
           <span>{t("pending.group.objects", { count: group.objectCount })}</span>
+          {summaryNames.map((name) => <span className="sh-pending-group__object" key={name}>{name}</span>)}
+          {hiddenNameCount > 0 ? <span className="sh-pending-group__object sh-pending-group__object--overflow">+{hiddenNameCount}</span> : null}
           {factKinds.map((kind) => <span className="sh-pending-group__kind" key={kind}>{t(`pending.kinds.${kind}` as never)}</span>)}
           {group.highestRisk ? <span className={`sh-pending-item__risk sh-pending-item__risk--${group.highestRisk}`}>
             <Icon aria-hidden="true" name={RISK_ICONS[group.highestRisk]} />{t(`pending.risk.${group.highestRisk}` as never)}

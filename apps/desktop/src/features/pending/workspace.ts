@@ -28,6 +28,8 @@ export interface PendingGroup {
   items: PendingItem[];
   count: number;
   objectCount: number;
+  /** Readable involved-object names for the collapsed summary; identifiers stay out. */
+  objectNames: string[];
   highestRisk?: PendingItem["risk"];
   selectableIds: string[];
   href: string;
@@ -86,6 +88,7 @@ export function groupPendingItems(items: PendingItem[]): PendingGroup[] {
         items: [],
         count: 0,
         objectCount: 0,
+        objectNames: [],
         selectableIds: [],
         agentBrands: [],
         agentKinds: [],
@@ -114,6 +117,7 @@ export function groupPendingItems(items: PendingItem[]): PendingGroup[] {
   }
   for (const group of groups.values()) {
     group.objectCount = new Set(group.items.map((item) => item.subject)).size;
+    group.objectNames = [...new Set(group.items.flatMap((item) => item.displayName ? [item.displayName] : []))];
     group.agentBrands.sort((left, right) => left.localeCompare(right));
     group.agentKinds.sort((left, right) => left.localeCompare(right));
     group.agentBrand = group.agentBrands.length === 1 ? group.agentBrands[0] : undefined;

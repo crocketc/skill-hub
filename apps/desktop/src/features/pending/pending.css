@@ -196,9 +196,17 @@
   margin-top: var(--space-1);
 }
 
-.sh-pending-group__kind {
+.sh-pending-group__kind,
+.sh-pending-group__object {
   border-inline-start: 1px solid var(--ui-border-subtle);
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding-inline-start: var(--space-2);
+}
+
+.sh-pending-group__object--overflow {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 .sh-pending-group__risk-reasons {

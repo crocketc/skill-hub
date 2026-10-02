@@ -75,6 +75,23 @@ it("keeps many Skills under a small number of review-purpose entrances", () => {
     ["source_update", 2, 2],
     ["trial_review", 1, 1],
   ]);
+  // 折叠摘要点名可读对象名（按事项顺序去重），不携带任何技术标识。
+  expect(groups[0]?.objectNames.slice(0, 3)).toEqual(["Skill 0", "Skill 1", "Skill 2"]);
+  // 没有可读名称的对象不进入摘要，也不伪造名称。
+  expect(groups[2]?.objectNames).toEqual([]);
+});
+
+it("collects readable object names for the collapsed summary without identifiers", () => {
+  const groups = groupPendingItems([
+    { id: "medium-a", subject: "skill-a", displayName: "PDF Reader", kind: "security_finding", risk: "medium" } as PendingItem,
+    { id: "basic-b", subject: "skill-b", displayName: "PDF Reader Pro", kind: "basic_check" } as PendingItem,
+    { id: "basic-b2", subject: "skill-b", displayName: "PDF Reader Pro", kind: "basic_check" } as PendingItem,
+    { id: "no-name", subject: "skill-c", kind: "basic_check" } as PendingItem,
+  ]);
+
+  const securityGroup = groups.find((group) => group.reviewPurpose === "security_check");
+  expect(securityGroup?.objectNames).toEqual(["PDF Reader", "PDF Reader Pro"]);
+  expect(securityGroup?.highestRisk).toBe("medium");
 });
 
 it("keeps one destination summary per relationship workbench and one recovery entry", () => {
