@@ -7,7 +7,9 @@
   flex-direction: column;
   gap: var(--space-3);
   height: 100%;
-  min-height: 0;
+  /* PageFrame sits in an auto-sized app-shell grid track at desktop widths;
+     establish the available canvas height locally so the board can distribute it. */
+  min-height: max(0px, calc(100dvh - var(--topbar-height) - var(--space-5) - var(--space-5) - 2.5rem - var(--space-5)));
   min-width: 0;
 }
 
@@ -73,19 +75,29 @@
   margin: 0;
 }
 
-/* 筛选工具条：桶分段（账本的四个区）在左，类别/状态分组与搜索在右。
-   分组整体换行，绝不从组中间断开。 */
+/* 筛选工具条：快捷分类在左，搜索与视图切换靠右；展开筛选浮层不占行高。 */
 .sh-governance__filters {
+  align-items: start;
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  position: relative;
+}
+
+.sh-governance__filters-primary {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .sh-governance__buckets {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .sh-governance__chip-group {
@@ -107,8 +119,9 @@
 .sh-governance__search {
   align-items: center;
   display: flex;
+  flex: 0 1 auto;
   gap: var(--space-2);
-  margin-left: auto;
+  min-width: 0;
 }
 
 .sh-governance__search-input,
@@ -118,7 +131,8 @@
 
 .sh-governance__search-input {
   flex: 0 1 18rem;
-  width: min(18rem, 36vw);
+  min-width: 8rem;
+  width: min(18rem, 34vw);
 }
 
 .sh-governance__search .sh-button {
@@ -127,19 +141,16 @@
 }
 
 .sh-governance__secondary-filters {
-  flex: 0 1 auto;
   min-width: 0;
+  position: relative;
+  z-index: 5;
 }
 
-.sh-governance__secondary-filters > summary {
+.sh-governance__secondary-filter-trigger {
   align-items: center;
-  color: var(--ui-ink);
-  cursor: pointer;
   display: flex;
-  flex-wrap: wrap;
-  font-size: var(--font-size-sm);
+  flex-wrap: nowrap;
   gap: var(--space-1) var(--space-2);
-  min-height: 2rem;
   max-width: 100%;
 }
 
@@ -158,26 +169,68 @@
   white-space: nowrap;
 }
 
+.sh-governance__secondary-filter-popover {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--space-2);
+  box-shadow: var(--shadow-lg);
+  left: 0;
+  max-height: min(60vh, 28rem);
+  max-width: min(38rem, calc(100vw - 2rem));
+  min-width: min(24rem, calc(100vw - 2rem));
+  overflow: auto;
+  padding: var(--space-3);
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  z-index: 30;
+}
+
+.sh-governance__secondary-filter-heading {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-3);
+}
+
 .sh-governance__secondary-filter-controls {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
 }
 
-.sh-governance__view-switch {
-  display: flex;
+.sh-governance__secondary-filter-section {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-governance__scope-explainer {
+  color: var(--ui-ink-muted);
+  display: grid;
+  font-size: var(--font-size-xs);
   gap: var(--space-1);
-  margin-left: auto;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.sh-governance__clear-secondary {
+  justify-self: start;
+}
+
+.sh-governance__filter-tools {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .sh-governance__filter-note {
   color: var(--ui-ink-muted);
-  flex: 1 0 100%;
+  grid-column: 1 / -1;
   font-size: var(--font-size-xs);
   margin: 0;
 }
 
-/* 清单：唯一弹性滚动区；表头随滚动吸附在容器顶。 */
+/* 表格保留单一清单滚动区；看板自身横向滚动，每列内部独立纵向滚动。 */
 .sh-governance__list {
   flex: 1 1 auto;
   max-width: 100%;
@@ -188,7 +241,10 @@
 }
 
 .sh-governance__board-scroll {
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .sh-governance__board-selection {
@@ -201,11 +257,13 @@
 }
 
 .sh-governance__board {
-  align-items: start;
+  align-items: stretch;
   display: grid;
+  flex: 1 1 0;
   gap: var(--space-3);
   grid-template-columns: repeat(4, minmax(16rem, 1fr));
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   min-width: 69rem;
   padding: 0 0 var(--space-2);
 }
@@ -214,7 +272,12 @@
   background: var(--ui-surface-subtle);
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .sh-governance__board-column--manageable {
@@ -239,6 +302,7 @@
   border-bottom: 1px solid var(--ui-border-subtle);
   border-radius: var(--space-2) var(--space-2) 0 0;
   display: flex;
+  flex: 0 0 auto;
   font-size: var(--font-size-sm);
   font-weight: 650;
   justify-content: space-between;
@@ -247,6 +311,22 @@
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.sh-governance__board-heading-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sh-governance__board-heading-title {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  font-size: inherit;
+  font-weight: inherit;
+  justify-content: space-between;
+  margin: 0;
+  min-width: 0;
 }
 
 .sh-governance__board-count {
@@ -263,6 +343,56 @@
   padding: 0 var(--space-1);
 }
 
+.sh-governance__board-scroll-top {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--space-1);
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  justify-content: center;
+  margin-inline-start: var(--space-1);
+  padding: 0;
+  width: 2rem;
+}
+
+.sh-governance__board-scroll-top:hover:not(:disabled) {
+  background: var(--ui-hover-surface);
+  color: var(--ui-accent-strong);
+}
+
+.sh-governance__board-scroll-top:focus-visible {
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
+}
+
+.sh-governance__board-scroll-top:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.sh-governance__board-column-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  touch-action: pan-y;
+}
+
+.sh-governance__board-column-body::-webkit-scrollbar {
+  display: none;
+}
+
+.sh-governance__board-column-body:focus-visible {
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: -2px;
+}
+
 .sh-governance__board-cards {
   display: grid;
   gap: var(--space-2);
@@ -276,6 +406,36 @@
   font-size: var(--font-size-sm);
   margin: 0;
   padding: var(--space-3);
+}
+
+.sh-governance__view-toggle {
+  align-items: center;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--space-1);
+  color: var(--ui-ink);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2.25rem;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  width: 2.5rem;
+}
+
+.sh-governance__view-toggle:hover {
+  background: var(--ui-hover-surface);
+  border-color: var(--ui-accent-strong);
+}
+
+.sh-governance__view-toggle:focus-visible {
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
+}
+
+.sh-governance__view-toggle svg {
+  height: 1.25rem;
+  width: 1.25rem;
 }
 
 .sh-governance__board-card {
@@ -564,4 +724,41 @@
    与相邻的动作按钮同级、不抢主操作视觉。 */
 .sh-governance__row-link {
   font-size: 0.9rem;
+}
+
+@media (max-width: 70rem) {
+  .sh-governance__filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sh-governance__filters-primary,
+  .sh-governance__filter-tools,
+  .sh-governance__filter-note {
+    grid-column: 1;
+  }
+
+  .sh-governance__filter-tools {
+    margin-inline-start: auto;
+  }
+
+  .sh-governance__secondary-filter-popover {
+    left: auto;
+    right: 0;
+  }
+}
+
+@media (max-width: 36rem) {
+  .sh-governance__filter-tools {
+    width: 100%;
+  }
+
+  .sh-governance__search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .sh-governance__search-input {
+    flex: 1 1 auto;
+    width: auto;
+  }
 }

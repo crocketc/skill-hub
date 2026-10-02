@@ -111,11 +111,46 @@ export function RelationshipGovernancePage({
     [searchParams],
   );
   const view = searchParams.get("view") === "table" ? "table" : "board";
+  const boardScrollResetKey = JSON.stringify([
+    deepLink.agentClientId,
+    deepLink.batchId,
+    deepLink.bucket,
+    deepLink.relationId,
+    deepLink.scope,
+    deepLink.skillId,
+    deepLink.status,
+    deepLink.text,
+  ]);
   const hasSecondaryFilters = deepLink.scope !== "all" || deepLink.status.length > 0;
   const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(hasSecondaryFilters);
+  const secondaryFilterTriggerRef = useRef<HTMLButtonElement>(null);
+  const secondaryFilterPopoverRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (hasSecondaryFilters) setSecondaryFiltersOpen(true);
   }, [hasSecondaryFilters]);
+  useEffect(() => {
+    if (!secondaryFiltersOpen) return undefined;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setSecondaryFiltersOpen(false);
+      secondaryFilterTriggerRef.current?.focus();
+    };
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (secondaryFilterTriggerRef.current?.contains(target)) return;
+      if (secondaryFilterPopoverRef.current?.contains(target)) return;
+      setSecondaryFiltersOpen(false);
+      secondaryFilterTriggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("click", handleOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("click", handleOutsideClick);
+    };
+  }, [secondaryFiltersOpen]);
   const returnState = useRelationshipsReturnState("governance");
 
   // 任务 11.5：逐行重校验的在途集合与最近一次逐项结论（按 relation 记忆）。
@@ -203,15 +238,14 @@ export function RelationshipGovernancePage({
     if (restoredScrollRef.current || !ledgerQuery.isSuccess) return;
     restoredScrollRef.current = true;
     const saved = returnState.initialState?.scrollY;
-    if (saved && listRef.current) {
+    if (view === "table" && saved && listRef.current) {
       listRef.current.scrollTop = saved;
     }
-  }, [ledgerQuery.isSuccess, returnState.initialState]);
+  }, [ledgerQuery.isSuccess, returnState.initialState, view]);
 
-  // Board/table share one canvas scroll position. Reapply it after a view
-  // switch remounts the canvas so selection and return context stay aligned.
+  // Table view owns one scroll canvas; board columns keep their own scroll state.
   useEffect(() => {
-    if (ledgerQuery.isSuccess && listRef.current) {
+    if (ledgerQuery.isSuccess && view === "table" && listRef.current) {
       listRef.current.scrollTop = viewStateRef.current.scrollY;
     }
   }, [ledgerQuery.isSuccess, view]);
@@ -812,134 +846,169 @@ export function RelationshipGovernancePage({
       </header>
 
       <div aria-label={t("relationships.governance.filters.label")} className="sh-governance__filters" role="group">
-        <div className="sh-governance__buckets" role="group">
-          {GOVERNANCE_BUCKETS.map((bucket) => (
-            <Button
-              aria-pressed={deepLink.bucket === bucket}
-              className="sh-governance__bucket"
-              data-testid={`governance-bucket-${bucket}`}
-              key={bucket}
-              onClick={() => applyParams({ bucket })}
-              size="sm"
-              variant={deepLink.bucket === bucket ? "primary" : "secondary"}
-            >
-              {t("relationships.governance.filters.withCount", {
-                count: counts ? counts[bucket] : 0,
-                label: t(`relationships.governance.filters.${bucket}` as never),
-              })}
-            </Button>
-          ))}
-        </div>
-        <details
-          className="sh-governance__secondary-filters"
-          data-testid="governance-secondary-filters"
-          onToggle={(event) => setSecondaryFiltersOpen(event.currentTarget.open)}
-          open={secondaryFiltersOpen}
-        >
-          <summary>
-            <span>{t("relationships.governance.filters.secondaryLabel")}</span>
-            {hasSecondaryFilters ? (
-              <>
-                <span className="sh-governance__active-filter-count">
-                  {t("relationships.governance.filters.activeCount", { count: secondaryFilterLabels.length })}
-                </span>
-                <span className="sh-governance__active-filter-summary">{secondaryFilterSummary}</span>
-              </>
-            ) : null}
-          </summary>
-          <div className="sh-governance__secondary-filter-controls">
-            <div className="sh-governance__chip-group" role="group">
-              <span className="sh-governance__chip-label">{t("relationships.governance.filters.scopeLabel")}</span>
-              {(["all", "source_copy", "deployment"] as const).map((scope) => (
-                <Button
-                  aria-pressed={deepLink.scope === scope}
-                  data-testid={`governance-scope-${scope}`}
-                  key={`scope-${scope}`}
-                  onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
-                  size="sm"
-                  variant={deepLink.scope === scope ? "primary" : "secondary"}
-                >
-                  {t(`relationships.governance.scope.${scope}` as never)}
-                </Button>
-              ))}
-            </div>
-            <div className="sh-governance__chip-group" role="group">
-              <span className="sh-governance__chip-label">{t("relationships.governance.filters.statusLabel")}</span>
-              {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
-                <Button
-                  // 任务 12.6：状态 chips 是单选；并集深链（如概览待治理）进来时
-                  // 不点亮任何单个 chip，点击 chip 会收窄为该状态的单选。
-                  aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
-                  data-testid={`governance-status-${status}`}
-                  key={`status-${status}`}
-                  onClick={() =>
-                    applyParams({
-                      status:
-                        deepLink.status.length === 1 && deepLink.status[0] === status
-                          ? null
-                          : status,
-                    })
-                  }
-                  size="sm"
-                  variant={
-                    deepLink.status.length === 1 && deepLink.status[0] === status
-                      ? "primary"
-                      : "secondary"
-                  }
-                >
-                  {t(`relationships.governance.statusFilter.${status}` as never)}
-                </Button>
-              ))}
-            </div>
+        <div className="sh-governance__filters-primary">
+          <div className="sh-governance__buckets" role="group">
+            {GOVERNANCE_BUCKETS.map((bucket) => (
+              <Button
+                aria-pressed={deepLink.bucket === bucket}
+                className="sh-governance__bucket"
+                data-testid={`governance-bucket-${bucket}`}
+                key={bucket}
+                onClick={() => applyParams({ bucket })}
+                size="sm"
+                variant={deepLink.bucket === bucket ? "primary" : "secondary"}
+              >
+                {t("relationships.governance.filters.withCount", {
+                  count: counts ? counts[bucket] : 0,
+                  label: t(`relationships.governance.filters.${bucket}` as never),
+                })}
+              </Button>
+            ))}
           </div>
-        </details>
-        {hasSecondaryFilters ? (
-          <Button
-            data-testid="governance-clear-secondary-filters"
-            onClick={() => applyParams({ scope: null, status: null })}
-            size="sm"
-            variant="ghost"
-          >
-            {t("relationships.governance.filters.clearSecondary")}
-          </Button>
-        ) : null}
-        <form
-          className="sh-governance__search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyParams({ text: searchDraft });
-          }}
-        >
-          <Input
-            aria-label={t("relationships.governance.search.label")}
-            className="sh-governance__search-input"
-            onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder={t("relationships.governance.search.label")}
-            type="search"
-            value={searchDraft}
-          />
-          <Button size="sm" type="submit" variant="secondary">
-            {t("relationships.governance.search.apply")}
-          </Button>
-        </form>
-        <div
-          aria-label={t("relationships.governance.viewSwitch.label")}
-          className="sh-governance__view-switch"
-          data-testid="governance-view-switch"
-          role="group"
-        >
-          {(["board", "table"] as const).map((nextView) => (
+          <div className="sh-governance__secondary-filters">
             <Button
-              aria-pressed={view === nextView}
-              data-testid={`governance-view-${nextView}`}
-              key={nextView}
-              onClick={() => applyParams({ view: nextView === "board" ? null : nextView })}
+              aria-controls="governance-filter-popover"
+              aria-expanded={secondaryFiltersOpen}
+              aria-haspopup="dialog"
+              className="sh-governance__secondary-filter-trigger"
+              data-testid="governance-filter-trigger"
+              onClick={() => setSecondaryFiltersOpen((open) => !open)}
+              ref={secondaryFilterTriggerRef}
               size="sm"
-              variant={view === nextView ? "primary" : "secondary"}
+              variant={hasSecondaryFilters ? "primary" : "secondary"}
             >
-              {t(`relationships.governance.viewSwitch.${nextView}` as never)}
+              <span>{t("relationships.governance.filters.secondaryLabel")}</span>
+              {hasSecondaryFilters ? (
+                <>
+                  <span className="sh-governance__active-filter-count">
+                    {t("relationships.governance.filters.activeCount", { count: secondaryFilterLabels.length })}
+                  </span>
+                  <span className="sh-governance__active-filter-summary">{secondaryFilterSummary}</span>
+                </>
+              ) : null}
             </Button>
-          ))}
+            {secondaryFiltersOpen ? (
+              <div
+                aria-label={t("relationships.governance.filters.secondaryLabel")}
+                className="sh-governance__secondary-filter-popover"
+                data-testid="governance-filter-popover"
+                id="governance-filter-popover"
+                ref={secondaryFilterPopoverRef}
+                role="dialog"
+              >
+                <h2 className="sh-governance__secondary-filter-heading">
+                  {t("relationships.governance.filters.secondaryLabel")}
+                </h2>
+                <div className="sh-governance__secondary-filter-controls">
+                  <div className="sh-governance__secondary-filter-section">
+                    <div
+                      aria-label={t("relationships.governance.filters.scopeLabel")}
+                      className="sh-governance__chip-group"
+                      role="group"
+                    >
+                      <span className="sh-governance__chip-label">{t("relationships.governance.filters.scopeLabel")}</span>
+                      {(["all", "source_copy", "deployment"] as const).map((scope) => (
+                        <Button
+                          aria-pressed={deepLink.scope === scope}
+                          data-testid={`governance-scope-${scope}`}
+                          key={`scope-${scope}`}
+                          onClick={() => applyParams({ scope: scope === "all" ? null : scope })}
+                          size="sm"
+                          variant={deepLink.scope === scope ? "primary" : "secondary"}
+                        >
+                          {t(`relationships.governance.scope.${scope}` as never)}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="sh-governance__scope-explainer" data-testid="governance-scope-explanations">
+                      <span><strong>{t("relationships.governance.scope.source_copy")}：</strong>{t("relationships.governance.scope.source_copyDescription")}</span>
+                      <span><strong>{t("relationships.governance.scope.deployment")}：</strong>{t("relationships.governance.scope.deploymentDescription")}</span>
+                    </p>
+                  </div>
+                  <div className="sh-governance__secondary-filter-section">
+                    <div
+                      aria-label={t("relationships.governance.filters.statusLabel")}
+                      className="sh-governance__chip-group"
+                      role="group"
+                    >
+                      <span className="sh-governance__chip-label">{t("relationships.governance.filters.statusLabel")}</span>
+                      {(["normal", "retained", "needs_validation", "needs_attention", "blocked"] as const).map((status) => (
+                        <Button
+                          // 任务 12.6：状态 chips 是单选；并集深链进来时不点亮单个项。
+                          aria-pressed={deepLink.status.length === 1 && deepLink.status[0] === status}
+                          data-testid={`governance-status-${status}`}
+                          key={`status-${status}`}
+                          onClick={() =>
+                            applyParams({
+                              status:
+                                deepLink.status.length === 1 && deepLink.status[0] === status
+                                  ? null
+                                  : status,
+                            })
+                          }
+                          size="sm"
+                          variant={
+                            deepLink.status.length === 1 && deepLink.status[0] === status
+                              ? "primary"
+                              : "secondary"
+                          }
+                        >
+                          {t(`relationships.governance.statusFilter.${status}` as never)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  {hasSecondaryFilters ? (
+                    <Button
+                      className="sh-governance__clear-secondary"
+                      data-testid="governance-clear-secondary-filters"
+                      onClick={() => {
+                        applyParams({ scope: null, status: null });
+                        setSecondaryFiltersOpen(false);
+                        secondaryFilterTriggerRef.current?.focus();
+                      }}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      {t("relationships.governance.filters.clearSecondary")}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="sh-governance__filter-tools">
+          <form
+            className="sh-governance__search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              applyParams({ text: searchDraft });
+            }}
+          >
+            <Input
+              aria-label={t("relationships.governance.search.label")}
+              className="sh-governance__search-input"
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder={t("relationships.governance.search.label")}
+              type="search"
+              value={searchDraft}
+            />
+            <Button size="sm" type="submit" variant="secondary">
+              {t("relationships.governance.search.apply")}
+            </Button>
+          </form>
+          <button
+            aria-label={t(`relationships.governance.viewSwitch.switchTo${view === "board" ? "Table" : "Board"}` as never)}
+            className="sh-governance__view-toggle"
+            data-current-view={view}
+            data-testid="governance-view-toggle"
+            onClick={() => applyParams({ view: view === "board" ? "table" : null })}
+            title={t(`relationships.governance.viewSwitch.switchTo${view === "board" ? "Table" : "Board"}` as never)}
+            type="button"
+          >
+            <GovernanceViewIcon view={view} />
+          </button>
         </div>
         <p className="sh-governance__filter-note" data-testid="governance-count-scope">
           {t("relationships.governance.board.countScope")}
@@ -1006,12 +1075,11 @@ export function RelationshipGovernancePage({
             ) : (
               <GovernanceBoard
                 busyRelationIds={busyRelationIds}
-                listRef={listRef}
                 onCentralize={(row) => openSingle("centralize", row)}
                 onClean={(row) => openSingle("clean", row)}
-                onListScroll={onListScroll}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
                 onRetain={(row) => retainSourceCopyRow(row)}
+                scrollResetKey={boardScrollResetKey}
                 onToggleAll={toggleAll}
                 onToggleRow={toggleRow}
                 onUndeploy={(row) => openSingle("undeploy", row)}
@@ -1148,5 +1216,21 @@ export function RelationshipGovernancePage({
       </div>
       </div>
     </RelationshipsLayout>
+  );
+}
+
+function GovernanceViewIcon({ view }: { view: "board" | "table" }) {
+  return view === "board" ? (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <rect height="7" rx="1" stroke="currentColor" strokeWidth="1.7" width="7" x="3" y="4" />
+      <rect height="7" rx="1" stroke="currentColor" strokeWidth="1.7" width="7" x="14" y="4" />
+      <rect height="7" rx="1" stroke="currentColor" strokeWidth="1.7" width="7" x="3" y="14" />
+      <rect height="7" rx="1" stroke="currentColor" strokeWidth="1.7" width="7" x="14" y="14" />
+    </svg>
+  ) : (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <rect height="17" rx="1.5" stroke="currentColor" strokeWidth="1.7" width="19" x="2.5" y="3.5" />
+      <path d="M3 8h18M8 8v12M14 8v12M3 13h18M3 17h18" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }

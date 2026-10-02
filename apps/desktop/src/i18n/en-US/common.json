@@ -2695,13 +2695,15 @@
     "governance": {
       "title": "Relationship governance",
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
-      "description": "Manage source copies and deployment edges; preview changes before confirming. See the full topology in the skill graph.",
+      "description": "Manage import sources and dispatch relationships; preview changes before confirming. See the full topology in the skill graph.",
       "unnamedSkill": "Unnamed skill",
       "previewFixtureNotice": "Preview data: these fictional relationships do not read or change local Skill or Agent folders.",
       "viewSwitch": {
         "label": "View",
         "board": "Board",
-        "table": "Table"
+        "table": "Table",
+        "switchToBoard": "Switch to board view",
+        "switchToTable": "Switch to table view"
       },
       "board": {
         "label": "Relationship status board",
@@ -2712,6 +2714,8 @@
         "settled": "Already managed or retained",
         "emptyColumn": "No relationships match this column",
         "relationshipCount": "{{count}} relationships",
+        "columnScrollRegion": "{{label}} column, {{count}} relationships",
+        "scrollToTop": "Back to top of the {{label}} column",
         "countScope": "Column counts follow the current filters; quick-filter counts cover all relationships."
       },
       "loading": "Loading the relationship governance ledger…",
@@ -2932,8 +2936,10 @@
       "manageRelations": "Manage relations",
       "scope": {
         "all": "All types",
-        "source_copy": "Source copies",
-        "deployment": "Deployment edges"
+        "source_copy": "Import sources",
+        "source_copyDescription": "Files copied into the central library that remain at their original locations.",
+        "deployment": "Dispatch relationships",
+        "deploymentDescription": "Usage relationships between central-library Skills and Agent or project directories."
       },
       "statusFilter": {
         "normal": "Normal",

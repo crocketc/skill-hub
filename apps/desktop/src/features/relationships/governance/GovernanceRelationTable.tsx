@@ -180,11 +180,14 @@ export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow
   const needsAttention = row.status === "needs_attention"
     || row.status === "needs_validation"
     || row.status === "blocked";
+  const relationshipLabel = row.relation.kind === "source_copy"
+    ? t("relationships.governance.scope.source_copy")
+    : t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never);
   return (
     <div className="sh-governance__identity">
       <strong>{governanceSkillDisplayName(row, t)}</strong>
       <StatusBadge tone="info">
-        {t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never)}
+        {relationshipLabel}
       </StatusBadge>
       <StatusBadge tone={statusTone(row.status)}>
         {t(`relationships.governance.statusFilter.${row.status}` as never)}

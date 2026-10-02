@@ -389,10 +389,10 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     await renderGovernanceApp();
     await waitRows();
 
-    const filters = screen.getByTestId("governance-secondary-filters");
-    expect(filters).not.toHaveAttribute("open");
+    const filters = screen.getByTestId("governance-filter-trigger");
+    expect(filters).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "搜索" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "表格" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "切换到表格视图" })).toBeVisible();
     expect(screen.getByRole("button", { name: "全部（5）" })).toBeVisible();
   });
 
@@ -411,10 +411,10 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     });
     await screen.findByTestId("governance-row-list");
 
-    const filters = screen.getByTestId("governance-secondary-filters");
-    expect(filters).toHaveAttribute("open");
-    expect(filters.querySelector("summary")?.textContent).toContain("来源副本");
-    expect(filters.querySelector("summary")?.textContent).toContain("已保留");
+    const filters = screen.getByTestId("governance-filter-trigger");
+    expect(filters).toHaveAttribute("aria-expanded", "true");
+    expect(filters).toHaveTextContent("导入来源");
+    expect(filters).toHaveTextContent("已保留");
     fireEvent.click(screen.getByTestId("governance-clear-secondary-filters"));
 
     await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent("?bucket=blocked"));
@@ -452,12 +452,12 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     await waitRows();
 
     fireEvent.click(rowCheckbox("managed:dep-eligible"));
-    fireEvent.click(screen.getByRole("button", { name: "表格" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到表格视图" }));
     expect(screen.getByTestId("governance-header-relation")).toHaveTextContent("关系");
     expect(rowCheckbox("managed:dep-eligible").checked).toBe(true);
     expect(screen.getByTestId("location-search")).toHaveTextContent("?from=agent&agent=codex&view=table");
 
-    fireEvent.click(screen.getByRole("button", { name: "看板" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到看板视图" }));
     expect(screen.getByTestId("governance-board-column-manageable")).toBeVisible();
     expect(rowCheckbox("managed:dep-eligible").checked).toBe(true);
   });
@@ -542,9 +542,9 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     // 直接渲染 relationships.governance.* 键名。
     await renderGovernanceApp();
     await waitRows();
-    fireEvent.click(screen.getByText("筛选", { selector: "summary span" }));
+    fireEvent.click(screen.getByTestId("governance-filter-trigger"));
 
-    for (const name of ["全部类别", "来源副本", "部署边"]) {
+    for (const name of ["全部类别", "导入来源", "派发关系"]) {
       expect(screen.getByRole("button", { name })).toBeVisible();
     }
     // 行内动作也会出现「受阻」按钮、桶页签带计数，名字会撞；
@@ -561,8 +561,10 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
       expect(screen.getByTestId(`governance-status-${status}`).textContent).not.toContain("relationships.governance");
     }
     expect(screen.getByTestId("governance-scope-all")).toHaveTextContent("全部类别");
-    expect(screen.getByTestId("governance-scope-source_copy")).toHaveTextContent("来源副本");
-    expect(screen.getByTestId("governance-scope-deployment")).toHaveTextContent("部署边");
+    expect(screen.getByTestId("governance-scope-source_copy")).toHaveTextContent("导入来源");
+    expect(screen.getByTestId("governance-scope-deployment")).toHaveTextContent("派发关系");
+    expect(screen.getByTestId("governance-scope-explanations")).toHaveTextContent("复制进集中库后仍留在原位置的文件");
+    expect(screen.getByTestId("governance-scope-explanations")).toHaveTextContent("集中库 Skill 与 Agent/项目目录之间的使用关系");
     expect(screen.getByText("类别")).toBeVisible();
     expect(screen.getByText("状态")).toBeVisible();
   });
@@ -1022,7 +1024,7 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
 
   it("restores selection, filters and scroll after leaving to a detail and returning", async () => {
     await renderGovernanceApp({
-      entries: ["/relationships/governance", "/operations/op-1"],
+      entries: ["/relationships/governance?view=table", "/operations/op-1"],
     });
     await waitRows();
 
@@ -1159,9 +1161,9 @@ describe("RelationshipGovernancePage 来源治理入口（任务 11）", () => {
     await waitRows();
     expect(screen.getAllByTestId("governance-row")).toHaveLength(3);
 
-    const secondaryFilters = screen.getByTestId("governance-secondary-filters");
-    expect(secondaryFilters).not.toHaveAttribute("open");
-    fireEvent.click(secondaryFilters.querySelector("summary")!);
+    const secondaryFilters = screen.getByTestId("governance-filter-trigger");
+    expect(secondaryFilters).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(secondaryFilters);
 
     // 展开后五个快捷状态与三个 scope 全部可点；未选时不过滤。
     for (const status of ["normal", "retained", "needs_validation", "needs_attention", "blocked"]) {
@@ -1182,6 +1184,7 @@ describe("RelationshipGovernancePage 来源治理入口（任务 11）", () => {
 
     // 浏览器后退恢复上一次已提交筛选：scope 回到 all，状态保持。
     fireEvent.click(screen.getByTestId("nav-back"));
+    fireEvent.click(secondaryFilters);
     expect(await screen.findByTestId("governance-scope-all")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("governance-status-needs_attention")).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findAllByTestId("governance-row")).toHaveLength(1);
@@ -1203,6 +1206,7 @@ describe("RelationshipGovernancePage 行展示（任务 11.4）", () => {
     });
     const rows = await screen.findAllByTestId("governance-row");
     expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText("导入来源")).toBeVisible();
 
     // 两类关系的单元格数量与列语义一致：选择、名称、来源、目标、影响、校验、操作。
     const sourceCells = rows[0]!.querySelectorAll("td");
