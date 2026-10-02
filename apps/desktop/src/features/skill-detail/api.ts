@@ -163,15 +163,6 @@ export interface SemanticDuplicateReport {
   source: "deterministic_only" | "llm";
 }
 
-export interface SkillFinding {
-  code: string;
-  disposition: "actionable" | "acknowledged" | "dismissed";
-  file?: string;
-  highRisk: boolean;
-  id: string;
-  severity: "info" | "warning" | "error" | "critical";
-}
-
 export interface SkillVersionEntry {
   basicCheck?: CheckState;
   changes: { added: number; changed: number; removed: number };
@@ -241,11 +232,6 @@ export interface SkillDetailFacade {
     query: SkillLibraryQuery,
   ): Promise<AdjacentSkillContext>;
   getInsights(skillId: string): Promise<SkillDetailInsights>;
-  getFindings(
-    skillId: string,
-    versionId: string,
-    kind: "basic" | "llm",
-  ): Promise<SkillFinding[]>;
   getMetadata(skillId: string): Promise<SkillMetadata>;
   getRelations(skillId: string): Promise<SkillRelation[]>;
   /** OPT-20260914-08：读取导入存证与已观察部署关系（纯查询）。 */
@@ -332,7 +318,6 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   emitIntent: unavailable,
   getAdjacentContext: unavailable,
   getInsights: unavailable,
-  getFindings: unavailable,
   getMetadata: unavailable,
   getRelations: unavailable,
   getProvenance: unavailable,

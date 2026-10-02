@@ -20,7 +20,6 @@ import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import { skillDetailKeys } from "../skill-detail/api";
 import {
   DEFAULT_DRAWER_PREFERENCES,
-  type CheckState,
   type DrawerModuleId,
   type DrawerPreset,
   type SkillDrawerPreferences,
@@ -32,6 +31,8 @@ import {
 import { InvocationBadge } from "./InvocationBadge";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
+import { SecurityResults } from "../security/SecurityResults";
+import type { SecurityFacade } from "../security/api";
 import {
   OPTIONAL_DRAWER_MODULES,
   clampDrawerWidth,
@@ -56,6 +57,7 @@ export interface SkillQuickDrawerProps {
   preferences: SkillDrawerPreferences;
   /** Refresh the bootstrap projection after metadata changes. */
   refreshSnapshot?: () => Promise<void>;
+  securityFacade: SecurityFacade;
   returnFocusRef: RefObject<HTMLElement | null>;
   skillId?: string;
 }
@@ -67,6 +69,8 @@ interface ModuleProps {
   versionsHref?: string;
   versionsState?: { libraryReturn: SkillLibraryReturnState };
 }
+
+type ModuleRendererProps = ModuleProps & { securityFacade: SecurityFacade };
 
 interface ModuleCardProps {
   children: ReactNode;
@@ -87,14 +91,6 @@ const MODULE_LABEL_KEYS = {
   external_changes: "skillLibrary.drawer.modules.externalChanges",
   usage_evidence: "skillLibrary.drawer.modules.usageEvidence",
 } as const;
-
-const CHECK_STATE_KEYS = {
-  failed: "skillLibrary.table.checkStates.failed",
-  not_run: "skillLibrary.table.checkStates.notRun",
-  passed: "skillLibrary.table.checkStates.passed",
-  unavailable: "skillLibrary.table.checkStates.unavailable",
-  warning: "skillLibrary.table.checkStates.warning",
-} as const satisfies Record<CheckState, string>;
 
 const PRESET_LABEL_KEYS = {
   near_full: "skillLibrary.drawer.presets.nearFull",
@@ -253,23 +249,11 @@ function SourceLicenseModule({ view }: ModuleProps) {
   );
 }
 
-function SecurityChecksModule({ view }: ModuleProps) {
+function SecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
   const { t } = useTranslation();
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.security_checks)}>
-      <dl className="sh-skill-drawer__facts">
-        <div>
-          <dt>{t("skillLibrary.filters.basicCheck")}</dt>
-          <dd>{t(CHECK_STATE_KEYS[view.basicCheck])}</dd>
-        </div>
-        <div>
-          <dt>{t("skillLibrary.filters.aiCheck")}</dt>
-          <dd>{t(CHECK_STATE_KEYS[view.aiCheck])}</dd>
-        </div>
-      </dl>
-      <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${encodeURIComponent(view.id)}/security`}>
-        {t("skillLibrary.drawer.security.open")}
-      </Link>
+      <SecurityResults facade={securityFacade} skillId={view.id} variant="embedded" versionId="current" />
     </ModuleCard>
   );
 }
@@ -336,7 +320,7 @@ function UsageEvidenceModule({ view }: ModuleProps) {
 
 const OPTIONAL_MODULE_RENDERERS: Record<
   OptionalDrawerModule,
-  ComponentType<ModuleProps>
+  ComponentType<ModuleRendererProps>
 > = {
   dependencies_duplicates: DependenciesDuplicatesModule,
   external_changes: ExternalChangesModule,
@@ -668,9 +652,6 @@ function PrimaryActions({
             {t("skillLibrary.page.batch.checkUpdates")}
           </Button>
         ) : null}
-        <Link className="sh-button sh-button--secondary sh-button--sm" to={`/library/${encodeURIComponent(view.id)}/security`}>
-          {t("skillLibrary.drawer.security.open")}
-        </Link>
         {versionsHref ? (
           <Link className="sh-button sh-button--secondary sh-button--sm" state={versionsState} to={versionsHref}>
             {t("skillLibrary.drawer.actions.viewVersions")}
@@ -880,6 +861,7 @@ export function SkillQuickDrawer({
   preferenceSaveFailed,
   preferences,
   refreshSnapshot,
+  securityFacade,
   returnFocusRef,
   skillId,
 }: SkillQuickDrawerProps) {
@@ -1447,6 +1429,7 @@ export function SkillQuickDrawer({
                 return (
                   <ModuleRenderer
                     key={moduleId}
+                    securityFacade={securityFacade}
                     versionsHref={versionsHref}
                     versionsState={versionsState}
                     view={view}

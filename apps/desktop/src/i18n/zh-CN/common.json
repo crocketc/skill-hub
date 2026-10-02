@@ -1295,9 +1295,6 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
-      "security": {
-        "open": "打开安全检查"
-      },
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看编辑完整详情",
       "modules": {
@@ -1609,18 +1606,12 @@
       "viewUpdateDiff": "查看更新差异"
     },
     "insights": {
-      "basicSecurity": "基础安全检查",
-      "findings": "检查发现项",
-      "llmFindings": "LLM 检查发现项",
-      "advisoryNote": "AI 检查结果由模型生成，仅供辅助判断；基础检查结论不受影响。",
       "connections": "依赖与组合",
       "invocations_one": "记录到 {{count}} 次调用",
       "invocations_other": "记录到 {{count}} 次调用",
       "none": "暂无已确认的关联",
       "operationHistoryEmpty": "暂无操作日志记录。",
       "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
-      "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
-      "openSecurity": "打开安全检查",
       "usageEvidence": "使用证据"
     },
     "relations": {
@@ -2053,6 +2044,9 @@
     "experimental": "实验功能，仅供参考",
     "findingsHeading": "发现的问题",
     "findingCount": "{{count}} 个问题",
+    "checkedAt": "最近检查：{{date}}",
+    "findingSummaryLabel": "安全问题计数",
+    "findingSummary": "高风险 {{highRisk}} · 待处理 {{pending}}",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
     "locationUnknown": "位置不可用",
@@ -2076,7 +2070,9 @@
       "run": "运行 AI 检查",
       "running": "AI 检查进行中，结果将在完成后展示。",
       "cancel": "取消检查",
+      "cancelFailed": "取消请求未成功：{{message}}",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
+      "configure": "配置 AI 设置",
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",
       "runFailed": "AI 检查运行失败：{{message}}"

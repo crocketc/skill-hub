@@ -4,11 +4,23 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
-import { SecurityEvidence } from "./InsightPanels";
+import { separateCheckFixture, type SecurityFacade, type SecurityFinding } from "../security/api";
 import { SkillDetailPage } from "./SkillDetailPage";
-import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
+import { createMockSkillDetailFacade } from "./testFixtures";
 
-async function renderEvidence(facade = createMockSkillDetailFacade()) {
+function createSecurityFacade(findings?: SecurityFinding[]): SecurityFacade {
+  const fixture = separateCheckFixture();
+  return {
+    getChecks: async () => fixture.checks,
+    listFindings: async () => findings ?? fixture.findings,
+    setFindingDisposition: async () => undefined,
+    getPreferences: async () => ({ llmProvider: "local-model", dataScope: "explicit_selection" }),
+    runBasicCheck: async () => undefined,
+    runLlmCheck: async () => undefined,
+  };
+}
+
+async function renderEvidence(facade = createMockSkillDetailFacade(), securityFacade = createSecurityFacade()) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -16,7 +28,7 @@ async function renderEvidence(facade = createMockSkillDetailFacade()) {
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={["/library/skill-pdf"]}>
           <Routes>
-            <Route element={<SkillDetailPage facade={facade} />} path="/library/:skillId" />
+            <Route element={<SkillDetailPage facade={facade} securityFacade={securityFacade} />} path="/library/:skillId" />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
@@ -34,32 +46,23 @@ describe("Skill detail evidence panels", () => {
 
   it("shows current basic findings in the security section", async () => {
     await renderEvidence();
-    expect(await screen.findByText("检查发现项")).toBeVisible();
-    expect(screen.getByRole("link", { name: "打开安全检查" })).toHaveAttribute("href", "/library/skill-pdf/security");
-    expect(screen.getByText("fixture_rule")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "发现的问题" })).toBeVisible();
+    expect(screen.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+    expect(screen.queryByText("prompt_injection")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行基础检查" })).toBeVisible();
     expect(screen.getAllByText(/SKILL\.md/)[0]).toBeVisible();
   });
 
   it("marks AI check findings as advisory without weakening the deterministic check", async () => {
-    const i18n = await createSkillHubI18n(["zh-CN"]);
-    const fixture = detailFixture();
-    render(
-      <I18nextProvider i18n={i18n}>
-        <MemoryRouter>
-          <SecurityEvidence
-            findings={[{ code: "fixture_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-basic", severity: "warning" }]}
-            llmFindings={[{ code: "llm_rule", disposition: "actionable", file: "SKILL.md", highRisk: false, id: "f-llm", severity: "info" }]}
-            summary={fixture.summary}
-          />
-        </MemoryRouter>
-      </I18nextProvider>,
-    );
+    await renderEvidence(undefined, createSecurityFacade([
+      ...separateCheckFixture().findings,
+      { id: "f-llm", code: "llm_rule", kind: "llm", severity: "low", highRisk: false, disposition: "actionable", message: "模型发现的说明" },
+    ]));
 
-    expect(screen.getByText("基础安全检查")).toBeVisible();
-    expect(screen.getByText("LLM 检查发现项")).toBeVisible();
-    expect(
-      screen.getByText("AI 检查结果由模型生成，仅供辅助判断；基础检查结论不受影响。"),
-    ).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "基础安全检查" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "AI 检查发现" })).toBeVisible();
+    expect(screen.getByText("实验功能，仅供参考")).toBeVisible();
+    expect(screen.getByText("模型发现的说明")).toBeVisible();
   });
 
   it("keeps successful panels visible when relations fail", async () => {

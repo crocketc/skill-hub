@@ -27,38 +27,38 @@ const LLM_FINDING: SecurityFinding = {
  * exercise trigger → progress → findings without any native or network calls.
  */
 export function SecurityLlmPreview() {
-  const [llmRan, setLlmRan] = useState(false);
-  const facade: SecurityFacade = {
-    async getChecks() {
-      return llmRan
-        ? [
-            BASIC_CHECK,
-            {
-              kind: "llm",
-              state: "failed",
-              checkedAt: "2026-09-10T08:00:00Z",
-              findingCount: 1,
-              actionableCount: 1,
-            },
-          ]
-        : [BASIC_CHECK, { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 }];
-    },
-    async listFindings() {
-      return llmRan ? [LLM_FINDING] : [];
-    },
-    async setFindingDisposition() {
-      // 预览不需要持久化处置；SecurityResults 自己更新列表状态。
-    },
-    async getPreferences(): Promise<SecurityPreferences> {
-      return { llmProvider: "preview-provider", dataScope: "explicit_selection" };
-    },
-    async runLlmCheck() {
-      setLlmRan(true);
-    },
-    async cancelLlmCheck() {},
-    async listRunningLlmChecks() {
-      return [];
-    },
-  };
+  const [facade] = useState<SecurityFacade>(() => {
+    let llmRan = false;
+    let findings: SecurityFinding[] = [];
+    return {
+      async getChecks() {
+        return llmRan
+          ? [
+              BASIC_CHECK,
+              {
+                kind: "llm",
+                state: "failed",
+                checkedAt: new Date().toISOString(),
+                findingCount: findings.length,
+                actionableCount: findings.filter((finding) => finding.disposition === "actionable").length,
+              },
+            ]
+          : [BASIC_CHECK, { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 }];
+      },
+      async listFindings() {
+        return findings.map((finding) => ({ ...finding }));
+      },
+      async setFindingDisposition(finding, disposition) {
+        findings = findings.map((item) => item.id === finding.id ? { ...item, disposition } : item);
+      },
+      async getPreferences(): Promise<SecurityPreferences> {
+        return { llmProvider: "preview-provider", dataScope: "explicit_selection" };
+      },
+      async runLlmCheck() {
+        llmRan = true;
+        findings = [{ ...LLM_FINDING }];
+      },
+    };
+  });
   return <SecurityResults facade={facade} skillId="skill-pdf" versionId="current" />;
 }

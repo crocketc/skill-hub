@@ -78,6 +78,7 @@ import {
 } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
+import type { SecurityFacade } from "../security/api";
 import { SkillMatrix } from "./SkillMatrix";
 import { SkillPagination } from "./SkillPagination";
 import { SkillTable } from "./SkillTable";
@@ -101,6 +102,7 @@ export interface SkillLibraryPageProps {
   removalFacade?: RemovalFacade;
   /** Refresh the bootstrap projection after library metadata changes. */
   refreshSnapshot?: () => Promise<void>;
+  securityFacade: SecurityFacade;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -419,6 +421,7 @@ export function SkillLibraryPage({
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
   refreshSnapshot,
+  securityFacade,
   tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
@@ -1639,6 +1642,7 @@ export function SkillLibraryPage({
         preferenceSaveFailed={Boolean(drawerSaveFailure)}
         preferences={effectiveDrawerPreferences}
         refreshSnapshot={refreshSnapshot}
+        securityFacade={securityFacade}
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />

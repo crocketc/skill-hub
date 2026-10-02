@@ -88,6 +88,8 @@ export interface OperationTracker {
   cancel: (id: string) => void;
   /** 记录用户的取消请求；真实取消由后端命令结果经 cancel() 确认。 */
   requestCancel: (id: string) => void;
+  /** 取消命令被拒绝时撤销尚未确认的请求标记。 */
+  clearCancelRequest: (id: string) => void;
   /** Whether any still-in-flight operation has the given kind（导入互斥用）. */
   hasRunningKind: (kind: string) => boolean;
 }
@@ -265,6 +267,11 @@ export function createOperationTracker(): OperationTracker {
       const operation = find(id);
       if (!operation || !isInFlight(operation)) return;
       mutate(id, (current) => ({ ...current, cancelRequested: true }));
+    },
+    clearCancelRequest(id) {
+      const operation = find(id);
+      if (!operation || !isInFlight(operation)) return;
+      mutate(id, (current) => ({ ...current, cancelRequested: false }));
     },
   };
 }

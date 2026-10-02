@@ -12,6 +12,8 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import "../../styles/base.css";
 import baseCssRaw from "../../styles/base.css?raw";
 import { AppNotificationsProvider } from "../../ui/notifications";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
+import type { SecurityFacade } from "../security/api";
 import {
   LibraryViewModeProvider,
   LibraryViewModeSwitch,
@@ -40,6 +42,7 @@ interface RenderLibraryOptions {
   onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
   removalFacade?: RemovalFacade;
+  securityFacade?: SecurityFacade;
   /** 统一执行桥的在途投影（任务 4）；测试注入独立实例。 */
   tracker?: OperationTracker;
   /** "table" (default) simulates a persisted table preference; "unset" keeps
@@ -58,6 +61,7 @@ function renderLibrary({
   onOpenDiscovery,
   queryRetry = false,
   removalFacade,
+  securityFacade,
   tracker,
   persistedViewMode = "table",
 }: RenderLibraryOptions): RenderedLibrary {
@@ -71,7 +75,7 @@ function renderLibrary({
   });
   const router = createMemoryRouter(
     [
-      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} tracker={tracker} /> },
+      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} securityFacade={securityFacade ?? createPreviewSecurityFacade()} tracker={tracker} /> },
       // P1-11：卡片“查看”按钮跳完整详情页。
       { path: "/library/:skillId", element: <p>Skill detail page</p> },
       { path: "/deploy", element: <p>Batch deployment</p> },

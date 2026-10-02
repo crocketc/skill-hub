@@ -195,6 +195,12 @@ describe("operationTracker lifecycle states (统一执行生命周期)", () => {
     expect(tracker.getSnapshot()[0].cancelRequested).toBe(true);
     expect(tracker.getSnapshot()[0].status).toBe("running");
 
+    tracker.clearCancelRequest(id);
+    expect(tracker.getSnapshot()[0].cancelRequested).toBe(false);
+    expect(tracker.getSnapshot()[0].status).toBe("running");
+
+    tracker.requestCancel(id);
+
     // 用户随后经后端确认取消：状态才真正落为 cancelled。
     tracker.cancel(id);
     expect(tracker.getSnapshot()[0].status).toBe("cancelled");

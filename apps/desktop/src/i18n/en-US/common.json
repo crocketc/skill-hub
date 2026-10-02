@@ -1295,9 +1295,6 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
-      "security": {
-        "open": "Open security checks"
-      },
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
       "fullDetails": "View and edit full details",
       "modules": {
@@ -1609,18 +1606,12 @@
       "viewUpdateDiff": "View update diff"
     },
     "insights": {
-      "basicSecurity": "Basic security check",
-      "findings": "Check findings",
-      "llmFindings": "LLM check findings",
-      "advisoryNote": "AI check results are model-generated and advisory; the deterministic basic check conclusion is unaffected.",
       "connections": "Dependencies and combinations",
       "invocations_one": "{{count}} recorded invocation",
       "invocations_other": "{{count}} recorded invocations",
       "none": "No established relationships",
       "operationHistoryEmpty": "No operation journal entries yet.",
       "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
-      "riskSummary": "{{high}} high-risk and {{pending}} pending findings",
-      "openSecurity": "Open security checks",
       "usageEvidence": "Usage evidence"
     },
     "relations": {
@@ -2053,6 +2044,9 @@
     "experimental": "Experimental; informational only",
     "findingsHeading": "Findings",
     "findingCount": "{{count}} findings",
+    "checkedAt": "Last checked: {{date}}",
+    "findingSummaryLabel": "Security finding counts",
+    "findingSummary": "High risk {{highRisk}} · Pending {{pending}}",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
     "locationUnknown": "Location unavailable",
@@ -2076,7 +2070,9 @@
       "run": "Run AI check",
       "running": "AI check is running; results will appear once it completes.",
       "cancel": "Cancel check",
+      "cancelFailed": "The cancellation request failed: {{message}}",
       "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
+      "configure": "Configure AI settings",
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",
       "runFailed": "AI check failed: {{message}}"

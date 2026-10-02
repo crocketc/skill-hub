@@ -28,6 +28,7 @@ import type {
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { governanceContextCheckStorageKey } from "../relationships/governance/useRelationshipContextCheck";
+import { separateCheckFixture, type SecurityFacade } from "../security/api";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
@@ -37,6 +38,19 @@ interface RenderDetailOptions {
   removalFacade?: RemovalFacade;
   tracker?: OperationTracker;
   governanceFacade?: RelationGovernanceFacade;
+  securityFacade?: SecurityFacade;
+}
+
+function createTestSecurityFacade(): SecurityFacade {
+  const fixture = separateCheckFixture();
+  return {
+    getChecks: async () => fixture.checks,
+    listFindings: async () => fixture.findings,
+    setFindingDisposition: async () => undefined,
+    getPreferences: async () => ({ llmProvider: "local-model", dataScope: "explicit_selection" }),
+    runBasicCheck: async () => undefined,
+    runLlmCheck: async () => undefined,
+  };
 }
 
 async function renderDetail({
@@ -47,6 +61,7 @@ async function renderDetail({
   removalFacade,
   tracker,
   governanceFacade,
+  securityFacade = createTestSecurityFacade(),
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
@@ -58,11 +73,11 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -95,6 +110,27 @@ describe("SkillDetailPage shell", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("provides the same actionable security review from full details", async () => {
+    const fixture = separateCheckFixture();
+    const runBasicCheck = vi.fn(async () => undefined);
+    const securityFacade: SecurityFacade = {
+      getChecks: async () => fixture.checks,
+      listFindings: async () => fixture.findings,
+      setFindingDisposition: async () => undefined,
+      getPreferences: async () => ({ llmProvider: "local-model", dataScope: "explicit_selection" }),
+      runBasicCheck,
+      runLlmCheck: async () => undefined,
+    };
+    await renderDetail({ securityFacade });
+
+    expect(await screen.findByRole("button", { name: "Run basic check" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run AI check" })).toBeVisible();
+    expect(screen.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run basic check" }));
+    await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "current"));
   });
 
   it("loads deletion impact and returns to the library after confirmation", async () => {

@@ -54,11 +54,46 @@ test("organizes the detail page into five information zones", async ({ page }) =
   ).toBeVisible();
 });
 
+test("full Skill details expose the shared security checks and finding dispositions", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/__preview/skill-detail/skill-pdf");
+
+  const security = page.locator("#security");
+  const runBasicCheck = security.getByRole("button", { name: "Run basic check" });
+  await runBasicCheck.scrollIntoViewIfNeeded();
+  await expect(runBasicCheck).toBeInViewport();
+  await expect(security.getByRole("button", { name: "Run AI check" })).toBeVisible();
+  await expect(security.getByText("High risk 1 · Pending 1")).toBeVisible();
+  await expect(security.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+  await expect(security.getByText("prompt_injection")).toHaveCount(0);
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("skill-detail-security-1440x900.png"),
+  });
+
+  const basicCheckTime = security.locator("#basic-security-heading").locator("xpath=..").locator("time");
+  const previousBasicCheckTime = await basicCheckTime.getAttribute("datetime");
+  await runBasicCheck.click();
+  await expect.poll(() => basicCheckTime.getAttribute("datetime")).not.toBe(previousBasicCheckTime);
+  await expect(security.getByText("High risk 1 · Pending 1")).toBeVisible();
+
+  const llmSection = security.locator("#llm-security-heading").locator("xpath=..");
+  const llmCheckTime = llmSection.locator("time");
+  const previousLlmCheckTime = await llmCheckTime.getAttribute("datetime");
+  await llmSection.getByRole("button", { name: "Run AI check" }).click();
+  await expect.poll(() => llmCheckTime.getAttribute("datetime")).not.toBe(previousLlmCheckTime);
+  await expect(llmSection).toContainText("Passed");
+
+  await security.getByRole("button", { name: "Acknowledge" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Confirm high-risk finding action" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Acknowledge this finding" })).toBeVisible();
+});
+
 test("states each fact once and keeps deterministic candidates ahead of the optional AI layer", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
 
   // P1-12：五区标题唯一，块标题是该块唯一导航标题（面板不再重复）。
-  const zoneHeadings = await page.getByRole("heading", { level: 2 }).allTextContents();
+  const zoneHeadings = await page.locator(".sh-skill-detail__zone > h2").allTextContents();
   expect(new Set(zoneHeadings).size).toBe(zoneHeadings.length);
   expect(zoneHeadings).toEqual(["Identity", "Status", "Content", "Relations", "Lifecycle"]);
   await expect(page.getByRole("heading", { name: "Source identity" })).toHaveCount(0);

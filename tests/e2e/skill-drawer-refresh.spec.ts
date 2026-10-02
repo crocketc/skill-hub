@@ -16,14 +16,19 @@ test("quick drawer keeps only its toolbar and name fixed while long content scro
     return { name: style.animationName, duration: style.animationDuration };
   });
   expect(openingMotion).toEqual({ name: "sh-skill-drawer-in", duration: "0.36s" });
+  await expect(drawer).toBeVisible();
+  await expect.poll(() => panel.evaluate((element) =>
+    element.getAnimations().filter((animation) => animation.playState === "running").length,
+  )).toBe(0);
   const body = drawer.getByTestId("drawer-modules-scroll");
   await expect(body).toHaveAttribute("role", "region");
   await expect(body).toHaveAttribute("tabindex", "0");
   const editButtons = drawer.locator(".sh-skill-drawer__edit-icon");
   await expect(editButtons).toHaveCount(4);
   const editButtonGeometry = await editButtons.evaluateAll((buttons) => buttons.map((button) => {
-    const rect = button.getBoundingClientRect();
-    return { width: rect.width, height: rect.height };
+    // offsetWidth/Height measure the CSS hit box before fractional transforms
+    // from the drawer's slide animation are applied to the visual rect.
+    return { width: (button as HTMLElement).offsetWidth, height: (button as HTMLElement).offsetHeight };
   }));
   expect(editButtonGeometry.every(({ width, height }) => width >= 40 && height >= 40)).toBe(true);
   for (let tabCount = 0; tabCount < 60; tabCount += 1) {
@@ -141,9 +146,27 @@ test("quick drawer stays readable at the minimum viewport in a dark theme", asyn
     animations: "disabled",
     path: testInfo.outputPath("quick-drawer-dark-800x600.png"),
   });
+  const pinnedTitle = drawer.locator(".sh-skill-drawer__pinned-title h2");
+  const titleTop = await pinnedTitle.evaluate((element) => element.getBoundingClientRect().top);
+  const runBasicCheck = drawer.getByRole("button", { name: "Run basic check" });
+  await runBasicCheck.scrollIntoViewIfNeeded();
+  await expect(runBasicCheck).toBeInViewport();
+  await expect.poll(() => pinnedTitle.evaluate((element) => element.getBoundingClientRect().top)).toBe(titleTop);
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("quick-drawer-security-dark-800x600.png"),
+  });
+  const finding = drawer.getByText("发现疑似凭据字符串，请先确认来源。");
+  await finding.scrollIntoViewIfNeeded();
+  await expect(finding).toBeInViewport();
+  await expect(drawer.getByRole("button", { name: "Acknowledge" })).toBeInViewport();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("quick-drawer-security-finding-dark-800x600.png"),
+  });
 });
 
-test("quick drawer keeps its lifecycle summary, actions, and module controls usable", async ({ page }) => {
+test("quick drawer keeps its lifecycle summary, actions, and module controls usable", async ({ page }, testInfo) => {
   mkdirSync(screenshotDirectory, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/skill-library");
@@ -158,7 +181,18 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   await expect(drawer.locator(".sh-skill-drawer__summary-item--agents")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--projects")).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Add to…" })).toBeVisible();
-  await expect(drawer.getByRole("region", { name: "Primary actions" }).getByRole("link", { name: "Open security checks" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Run basic check" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Run AI check" })).toBeVisible();
+  await expect(drawer.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+  await expect(drawer.getByRole("link", { name: "Open security checks" })).toHaveCount(0);
+  const runBasicCheck = drawer.getByRole("button", { name: "Run basic check" });
+  await runBasicCheck.scrollIntoViewIfNeeded();
+  await expect(runBasicCheck).toBeInViewport();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("quick-drawer-security-module-1440x900.png"),
+  });
+  await drawer.getByTestId("drawer-modules-scroll").evaluate((element) => { element.scrollTop = 0; });
   await expect(drawer.getByRole("link", { name: "View versions" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Delete from library" })).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();

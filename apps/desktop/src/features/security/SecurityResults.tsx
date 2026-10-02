@@ -1,28 +1,50 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation, type TrackedOperationHandle } from "../../platform/runTrackedOperation";
+import { skillDetailKeys } from "../skill-detail/api";
+import { skillLibraryKeys } from "../skills/api";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { FindingActions } from "./FindingActions";
-import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences, unavailableSecurityFacade } from "./api";
+import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences } from "./api";
+import "./securityResults.css";
 
 export interface SecurityResultsProps {
-  facade?: SecurityFacade;
+  facade: SecurityFacade;
   skillId: string;
   versionId: string;
   findingId?: string;
   checkKind?: string;
+  variant?: "page" | "embedded";
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade = unavailableSecurityFacade, skillId, tracker = operationTracker, versionId, findingId, checkKind }: SecurityResultsProps) {
+export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page" }: SecurityResultsProps) {
   const { t } = useTranslation();
-  const [resolvedVersionId, setResolvedVersionId] = useState(versionId);
+  const queryClient = useQueryClient();
+  const scopeKey = `${skillId}\u0000${versionId}`;
+  const [resolvedVersion, setResolvedVersion] = useState({ scope: scopeKey, id: versionId });
+  const [loadedScope, setLoadedScope] = useState<string>();
+  const resolvedVersionId = resolvedVersion.scope === scopeKey ? resolvedVersion.id : versionId;
+  const scopeRef = useRef(scopeKey);
+  scopeRef.current = scopeKey;
+  const mountedRef = useRef(false);
+  const basicRunScopeRef = useRef<string | undefined>(undefined);
+  const llmRunScopeRef = useRef<string | undefined>(undefined);
+  const handleScopeRef = useRef<string | undefined>(undefined);
+  const cancelledScopeRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const isCurrentScope = (capturedScope: string) => mountedRef.current && scopeRef.current === capturedScope;
   const targetHref = `/library/${encodeURIComponent(skillId)}/security?${new URLSearchParams({ version: resolvedVersionId })}`;
   const notifications = useOptionalAppNotifications();
   const [checks, setChecks] = useState<SecurityCheck[]>([]);
@@ -34,14 +56,27 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   const [basicError, setBasicError] = useState<string>();
   const [running, setRunning] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [runningOperation, setRunningOperation] = useState<string | undefined>(undefined);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [cancelError, setCancelError] = useState<string>();
+  const [dispositionError, setDispositionError] = useState<string>();
+  const handleRef = useRef<TrackedOperationHandle | null>(null);
+  useEffect(() => {
+    setResolvedVersion({ scope: scopeKey, id: versionId });
+    setBasicRunning(false); setBasicError(undefined);
+    setRunning(false); setRunError(undefined); setRunningOperation(undefined); setCancelRequested(false); setCancelError(undefined);
+    setDispositionError(undefined);
+    setPreferences(undefined);
+  }, [facade, scopeKey, versionId]);
   useEffect(() => {
     let active = true;
+    setLoadedScope(undefined);
     setChecks([]); setFindings([]); setError(undefined);
     void (facade.resolveVersion ? facade.resolveVersion(skillId, versionId) : Promise.resolve(versionId)).then(async (resolved) => {
       const results = await Promise.all([
         facade.getChecks(skillId, resolved), facade.listFindings(skillId, resolved), facade.getPreferences?.().catch(() => undefined),
       ]);
-      if (active) setResolvedVersionId(resolved);
+      if (active) setResolvedVersion({ scope: scopeKey, id: resolved });
       return results;
     })
       .then(([nextChecks, nextFindings, nextPreferences]) => {
@@ -49,10 +84,11 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         setChecks(nextChecks);
         setFindings(nextFindings);
         setPreferences(nextPreferences);
+        setLoadedScope(scopeKey);
       })
       .catch((reason: unknown) => { if (active) setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "security.errors.generic")); });
     return () => { active = false; };
-  }, [facade, skillId, versionId, reloadKey]);
+  }, [facade, skillId, versionId, scopeKey, reloadKey]);
 
   const checkByKind = (kind: SecurityCheck["kind"]) => checks.find((check) => check.kind === kind);
   // 结构化 AppError 必须转成可读文本：桥的缺省 describeError 用 String()，
@@ -65,8 +101,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
     );
   // 统一执行反馈（任务 4）：处置是用户可触发的单次写入，失败必须可见——
   // 之前 `void handleDisposition(...)` 会把拒绝吞掉，页面既不更新也不报错。
-  const [dispositionError, setDispositionError] = useState<string>();
   const handleDisposition = async (finding: SecurityFinding, disposition: SecurityFinding["disposition"], options: { highRiskConfirmed: boolean }) => {
+    const operationScope = scopeKey;
     setDispositionError(undefined);
     try {
       await runTrackedOperation({
@@ -89,6 +125,8 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
           detail: message,
         }),
         describeError: describeFailure,
+        queryClient,
+        invalidateQueryKeys: [skillLibraryKeys.root, skillDetailKeys.summary(skillId)],
         run: () =>
           facade.setFindingDisposition(
             finding,
@@ -98,15 +136,21 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
             options.highRiskConfirmed,
           ),
       });
-      setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
+      if (isCurrentScope(operationScope)) {
+        setFindings((current) => current.map((item) => item.id === finding.id ? { ...item, disposition } : item));
+        setReloadKey((key) => key + 1);
+      }
     } catch (reason: unknown) {
       // 处置未保存：列表保持原状态，并把原因留在页面上（通知只是补充）。
       // 局部提示与通知的补充说明取自同一段描述，两处不会互相矛盾。
-      setDispositionError(describeFailure(reason));
+      if (isCurrentScope(operationScope)) setDispositionError(describeFailure(reason));
     }
   };
   const handleRunBasic = async () => {
     if (!facade.runBasicCheck) return;
+    const operationScope = scopeKey;
+    if (basicRunScopeRef.current === operationScope) return;
+    basicRunScopeRef.current = operationScope;
     setBasicRunning(true);
     setBasicError(undefined);
     try {
@@ -121,29 +165,33 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         successNotice: () => ({ tone: "success", title: t("security.tracker.basicCheckLabel") }),
         errorNotice: (_error, message) => ({ tone: "danger", title: t("security.basic.runFailed", { message }), detail: message }),
         describeError: describeFailure,
+        queryClient,
+        invalidateQueryKeys: [skillLibraryKeys.root, skillDetailKeys.summary(skillId)],
         run: () => facade.runBasicCheck!(skillId, resolvedVersionId),
       });
-      setReloadKey((key) => key + 1);
+      if (isCurrentScope(operationScope)) setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
-      setBasicError(describeFailure(reason));
+      if (isCurrentScope(operationScope)) setBasicError(describeFailure(reason));
     } finally {
-      setBasicRunning(false);
+      if (basicRunScopeRef.current === operationScope) basicRunScopeRef.current = undefined;
+      if (isCurrentScope(operationScope)) setBasicRunning(false);
     }
   };
   const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
-  const [runningOperation, setRunningOperation] = useState<string | undefined>(undefined);
-  const [cancelRequested, setCancelRequested] = useState(false);
-  const cancelledRef = useRef(false);
   // 统一执行桥（任务 4）：在途句柄挂在 ref 上，供取消路径与运行中的
   // operation id 发现逻辑随时关联/落终态。
-  const handleRef = useRef<TrackedOperationHandle | null>(null);
   const handleRun = async () => {
     if (!facade.runLlmCheck || !llmConfigured) return;
+    const operationScope = scopeKey;
+    if (llmRunScopeRef.current === operationScope) return;
+    llmRunScopeRef.current = operationScope;
     // 守卫后捕获可选方法：闭包内 TS 不会保留 facade.runLlmCheck 的收窄。
     const runCheck = facade.runLlmCheck;
     setRunning(true);
     setRunError(undefined);
-    cancelledRef.current = false;
+    setCancelError(undefined);
+    cancelledScopeRef.current = undefined;
+    handleScopeRef.current = operationScope;
     try {
       await runTrackedOperation({
         targetHref,
@@ -156,21 +204,30 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
         successNotice: () => ({ tone: "success", title: t("security.tracker.aiCheckLabel") }),
         errorNotice: (_error, message) => ({ tone: "danger", title: t("security.llm.runFailed", { message }), detail: message }),
         describeError: describeFailure,
+        queryClient,
+        invalidateQueryKeys: [skillLibraryKeys.root, skillDetailKeys.summary(skillId)],
         run: async (handle) => {
           handleRef.current = handle;
           await runCheck(skillId, resolvedVersionId);
         },
       });
-      setReloadKey((key) => key + 1);
+      if (isCurrentScope(operationScope)) setReloadKey((key) => key + 1);
     } catch (reason: unknown) {
       // A run the user cancelled must not surface as a failure.
-      if (!cancelledRef.current) {
+      if (cancelledScopeRef.current !== operationScope && isCurrentScope(operationScope)) {
         setRunError(describeFailure(reason));
       }
     } finally {
-      setRunning(false);
-      setRunningOperation(undefined);
-      handleRef.current = null;
+      if (llmRunScopeRef.current === operationScope) llmRunScopeRef.current = undefined;
+      if (isCurrentScope(operationScope)) {
+        setRunning(false);
+        setRunningOperation(undefined);
+        setCancelError(undefined);
+      }
+      if (handleScopeRef.current === operationScope) {
+        handleScopeRef.current = undefined;
+        handleRef.current = null;
+      }
     }
   };
   // While a run is in flight, discover its operation id so the cancel entry
@@ -204,29 +261,36 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
   }, [running, facade, skillId, resolvedVersionId, targetHref]);
   const handleCancel = async () => {
     if (!runningOperation || !facade.cancelLlmCheck) return;
+    const operationScope = scopeKey;
+    setCancelError(undefined);
     setCancelRequested(true);
     // 先记账再等后端确认：取消请求本身是用户动作，顶栏要能看到它。
     handleRef.current?.requestCancel();
     try {
       await facade.cancelLlmCheck(runningOperation);
-      cancelledRef.current = true;
+      cancelledScopeRef.current = operationScope;
       // 后端已确认取消：终态落 cancelled，后续命令异常不再记失败。
       handleRef.current?.markCancelled();
+    } catch (reason: unknown) {
+      handleRef.current?.cancelRequestFailed();
+      if (isCurrentScope(operationScope)) setCancelError(describeFailure(reason));
     } finally {
-      setCancelRequested(false);
+      if (isCurrentScope(operationScope)) setCancelRequested(false);
     }
   };
 
   if (error) return <DataState message={error} state="unavailable" />;
-  if (!checks.length && !findings.length) return <DataState message={t("security.states.loading")} state="loading" />;
+  if (loadedScope !== scopeKey) return <DataState message={t("security.states.loading")} state="loading" />;
   const basicFindings = findings.filter((finding) => finding.kind === "basic");
   const llmFindings = findings.filter((finding) => finding.kind === "llm");
-  return (
-    <main className="sh-page sh-workflow-page">
-      <header className="sh-page__header">
-        <div><p className="sh-eyebrow">{t("security.eyebrow")}</p><h1>{t("security.heading")}</h1><p>{t("security.description")}</p></div>
-      </header>
+  const highRiskCount = findings.filter((finding) => finding.highRisk).length;
+  const pendingCount = findings.filter((finding) => finding.disposition === "actionable").length;
+  const content = (
+    <>
       {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || finding.kind === checkKind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
+      <p aria-label={t("security.findingSummaryLabel")} className="sh-security-results__summary" role="status">
+        {t("security.findingSummary", { highRisk: highRiskCount, pending: pendingCount })}
+      </p>
       <div className="sh-workflow-grid">
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
@@ -244,13 +308,14 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
             ) : null}
           </div>
           {running ? <p className="sh-settings-local-note">{t("security.llm.running")}</p> : null}
+          {cancelError ? <p role="alert">{t("security.llm.cancelFailed", { message: cancelError })}</p> : null}
           {preferences ? (
             <p className="sh-settings-local-note">
               {preferences.llmProvider.trim()
                 ? preferences.dataScope === "explicit_selection"
                   ? t("security.llm.scopeExplicitSelection")
                   : t("security.llm.scopeOther", { scope: preferences.dataScope })
-                : t("security.llm.providerMissing")}
+                : <>{t("security.llm.providerMissing")} <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link></>}
             </p>
           ) : null}
           {runError ? <p role="alert">{t("security.llm.runFailed", { message: runError })}</p> : null}
@@ -266,6 +331,15 @@ export function SecurityResults({ facade = unavailableSecurityFacade, skillId, t
           </>
         )}
       </section>
+    </>
+  );
+  if (variant === "embedded") return <div className="sh-security-results sh-security-results--embedded">{content}</div>;
+  return (
+    <main className="sh-page sh-workflow-page">
+      <header className="sh-page__header">
+        <div><p className="sh-eyebrow">{t("security.eyebrow")}</p><h1>{t("security.heading")}</h1><p>{t("security.description")}</p></div>
+      </header>
+      {content}
     </main>
   );
 }
@@ -316,7 +390,17 @@ const CHECK_TONES: Record<SecurityCheck["state"], "success" | "danger" | "info" 
 };
 
 function CheckSummary({ check, experimental = false }: { check?: SecurityCheck; experimental?: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!check) return <p>{t("security.notChecked")}</p>;
-  return <div className="sh-check-summary"><StatusBadge tone={CHECK_TONES[check.state]}>{t(`security.states.${check.state}`)}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
+  const checkedAt = formatCheckedAt(check.checkedAt, i18n.resolvedLanguage ?? i18n.language);
+  return <div className="sh-check-summary"><StatusBadge tone={CHECK_TONES[check.state]}>{t(`security.states.${check.state}`)}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{checkedAt ? <time className="sh-security-results__checked-at" dateTime={check.checkedAt}>{t("security.checkedAt", { date: checkedAt })}</time> : null}{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
+}
+
+function formatCheckedAt(value: string | undefined, language: string): string | undefined {
+  if (!value) return undefined;
+  const milliseconds = /^\d+$/.test(value)
+    ? Number(value) * (value.length <= 10 ? 1000 : 1)
+    : Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return undefined;
+  return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(milliseconds);
 }

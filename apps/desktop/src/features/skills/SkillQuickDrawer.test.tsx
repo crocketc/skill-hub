@@ -6,6 +6,8 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import { separateCheckFixture, type SecurityFacade } from "../security/api";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
 import "../../styles/base.css";
 import {
   DEFAULT_DRAWER_PREFERENCES,
@@ -176,6 +178,7 @@ interface DrawerHarnessProps {
   open?: boolean;
   preferences?: SkillDrawerPreferences;
   refreshSnapshot?: () => Promise<void>;
+  securityFacade?: SecurityFacade;
   skillId?: string;
 }
 
@@ -188,6 +191,7 @@ function DrawerHarness({
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
   refreshSnapshot,
+  securityFacade,
   skillId = "skill-pdf",
 }: DrawerHarnessProps & {
   onDelete?: (skillId: string, skillName: string) => void;
@@ -215,6 +219,7 @@ function DrawerHarness({
         open={open}
         preferences={controlledPreferences}
         refreshSnapshot={refreshSnapshot}
+        securityFacade={securityFacade ?? createPreviewSecurityFacade()}
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />
@@ -624,10 +629,7 @@ it("resets defaults, keeps modules independently scrollable, and links to full d
   expect(screen.getByRole("link", { name: "View and edit full details" })).toHaveClass(
     "sh-button--primary",
   );
-  expect(screen.getByRole("link", { name: "Open security checks" })).toHaveAttribute(
-    "href",
-    "/library/skill-pdf/security",
-  );
+  expect(screen.queryByRole("link", { name: "Open security checks" })).not.toBeInTheDocument();
   const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
   expect(toolbar?.firstElementChild).toContainElement(
     screen.getByRole("link", { name: "View and edit full details" }),
@@ -1038,6 +1040,28 @@ it("uses keyboard-labelled pencil controls for metadata edits", async () => {
   expect(addTags).toHaveAttribute("data-tooltip", "Add tags");
 });
 
+it("runs security checks and shows findings directly in the drawer", async () => {
+  const fixture = separateCheckFixture();
+  const runBasicCheck = vi.fn(async () => undefined);
+  const securityFacade: SecurityFacade = {
+    getChecks: async () => fixture.checks,
+    listFindings: async () => fixture.findings,
+    setFindingDisposition: async () => undefined,
+    getPreferences: async () => ({ llmProvider: "local-model", dataScope: "explicit_selection" }),
+    runBasicCheck,
+    runLlmCheck: async () => undefined,
+  };
+  await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+
+  expect(await screen.findByRole("button", { name: "Run basic check" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Run AI check" })).toBeVisible();
+  expect(screen.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+  expect(screen.queryByRole("link", { name: "Open security checks" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Run basic check" }));
+  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "current"));
+});
+
 it("closes with the shared close icon instead of a character glyph", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
@@ -1084,6 +1108,7 @@ describe("drawer primary actions equivalence (DEV-19)", () => {
           <button ref={returnFocusRef} type="button">PDF Reader row</button>
           <SkillQuickDrawer
             facade={createMockSkillLibraryFacade()}
+            securityFacade={createPreviewSecurityFacade()}
             onDelete={vi.fn()}
             onCheckUpdates={vi.fn()}
             onOpenChange={() => undefined}

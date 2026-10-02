@@ -1,0 +1,36 @@
+.sh-security-results--embedded {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sh-security-results--embedded .sh-workflow-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sh-security-results__checked-at {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-security-results--embedded .sh-workflow-card {
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.sh-security-results--embedded .sh-workflow-list__item {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sh-security-results--embedded .sh-workflow-list__item > div:first-child {
+  min-width: min(100%, 16rem);
+  overflow-wrap: anywhere;
+}
+
+.sh-security-results__summary {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}

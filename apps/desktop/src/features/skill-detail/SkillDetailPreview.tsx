@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 
@@ -95,5 +96,6 @@ export function SkillDetailPreview() {
     }),
   );
   const [markdownFacade] = useState(() => createMockMarkdownFacade());
-  return <SkillDetailPage facade={facade} markdownFacade={markdownFacade} />;
+  const [securityFacade] = useState(() => createPreviewSecurityFacade());
+  return <SkillDetailPage facade={facade} markdownFacade={markdownFacade} securityFacade={securityFacade} />;
 }

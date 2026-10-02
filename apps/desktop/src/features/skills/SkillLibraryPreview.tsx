@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { useAppNotifications } from "../../ui/notifications";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import { createMockSkillLibraryFacade } from "./testFixtures";
 
@@ -24,6 +25,7 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 };
 
 export function SkillLibraryPreview() {
+  const [securityFacade] = useState(() => createPreviewSecurityFacade());
   const [facade] = useState(() => {
     const previewFacade = createMockSkillLibraryFacade({ total: previewTotal() });
     previewFacade.listCombinations = async () => [];
@@ -34,7 +36,7 @@ export function SkillLibraryPreview() {
   return (
     <>
       {showNotificationPreview ? <NotificationActionPreview /> : null}
-      <SkillLibraryPage facade={facade} />
+      <SkillLibraryPage facade={facade} securityFacade={securityFacade} />
     </>
   );
 }
