@@ -181,6 +181,72 @@ export function SkillFilters(props: SkillFiltersProps) {
     props.onChange({ ...props.query, ...change, page: 1, savedViewId: undefined });
   };
 
+  const activeConditions: Array<{ id: string; label: string; remove: () => void }> = [];
+  const removeSelectedValue = <T extends string>(
+    field: "basicCheck" | "aiCheck" | "lifecycle" | "tags",
+    value: T,
+    selected: T[],
+    fieldLabel: string,
+    valueLabel: string,
+  ) => {
+    const label = `${fieldLabel}: ${valueLabel}`;
+    activeConditions.push({
+      id: `${field}:${value}`,
+      label,
+      remove: () => update({
+        filters: {
+          ...props.query.filters,
+          [field]: selected.filter((current) => current !== value),
+        },
+      }),
+    });
+  };
+
+  if (props.query.text.trim()) {
+    const text = props.query.text;
+    activeConditions.push({
+      id: "text",
+      label: `${t("skillLibrary.filters.search")}: ${text}`,
+      remove: () => update({ text: "" }),
+    });
+  }
+  for (const value of props.query.filters.basicCheck) {
+    removeSelectedValue("basicCheck", value, props.query.filters.basicCheck, t("skillLibrary.filters.basicCheck"), t(CHECK_STATE_LABELS[value]));
+  }
+  for (const value of props.query.filters.aiCheck) {
+    removeSelectedValue("aiCheck", value, props.query.filters.aiCheck, t("skillLibrary.filters.aiCheck"), t(CHECK_STATE_LABELS[value]));
+  }
+  for (const value of props.query.filters.lifecycle) {
+    removeSelectedValue("lifecycle", value, props.query.filters.lifecycle, t("skillLibrary.filters.lifecycle"), t(LIFECYCLE_LABELS[value]));
+  }
+  for (const value of props.query.filters.tags) {
+    removeSelectedValue("tags", value, props.query.filters.tags, t("skillLibrary.filters.tags"), value);
+  }
+  if (props.query.filters.deployment !== "any") {
+    const value = props.query.filters.deployment;
+    const option = DEPLOYMENT_OPTIONS.find(([candidate]) => candidate === value);
+    if (option) {
+      const label = `${t("skillLibrary.filters.deployment")}: ${t(option[1])}`;
+      activeConditions.push({
+        id: `deployment:${value}`,
+        label,
+        remove: () => update({ filters: { ...props.query.filters, deployment: "any" } }),
+      });
+    }
+  }
+  if (props.query.filters.version !== "any") {
+    const value = props.query.filters.version;
+    const option = VERSION_OPTIONS.find(([candidate]) => candidate === value);
+    if (option) {
+      const label = `${t("skillLibrary.filters.version")}: ${t(option[1])}`;
+      activeConditions.push({
+        id: `version:${value}`,
+        label,
+        remove: () => update({ filters: { ...props.query.filters, version: "any" } }),
+      });
+    }
+  }
+
   const toggleAdvanced = () => {
     const next = !advancedOpen;
     setInternalOpen(next);
@@ -191,10 +257,11 @@ export function SkillFilters(props: SkillFiltersProps) {
     <section aria-label={t("skillLibrary.filters.search")} className="sh-skill-filters" id={props.id}>
       <div className="sh-skill-filters__primary">
         <label className="sh-filter-search">
-          {t("skillLibrary.filters.search")}
+          <span className="sh-visually-hidden">{t("skillLibrary.filters.search")}</span>
           <Input
             name="skill-search"
             onChange={(event) => update({ text: event.currentTarget.value })}
+            placeholder={t("skillLibrary.filters.searchPlaceholder")}
             type="search"
             value={props.query.text}
           />
@@ -217,6 +284,27 @@ export function SkillFilters(props: SkillFiltersProps) {
           </button>
         ) : null}
       </div>
+
+      {activeConditions.length > 0 ? (
+        <div
+          aria-label={t("skillLibrary.filters.activeConditions")}
+          className="sh-skill-filters__active-conditions"
+          role="group"
+        >
+          {activeConditions.map((condition) => (
+            <button
+              aria-label={t("skillLibrary.filters.removeCondition", { filter: condition.label })}
+              className="sh-skill-filters__condition"
+              key={condition.id}
+              onClick={condition.remove}
+              type="button"
+            >
+              <span>{condition.label}</span>
+              <span aria-hidden="true">×</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {advancedOpen && controlledOpen === undefined ? (
         <SkillFiltersAdvanced

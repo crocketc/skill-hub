@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -291,6 +292,58 @@ it("sets aria-sort on the actively sorted name header and resets pages when page
   expect(screen.getByRole("columnheader", { name: /Name/ })).toHaveAttribute("aria-sort", "ascending");
   fireEvent.change(screen.getByRole("combobox", { name: "Page size" }), { target: { value: "50" } });
   expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 50 }));
+});
+
+it("shows sort direction arrows only on supported columns and keeps sorting keyboard accessible", async () => {
+  const onQueryChange = vi.fn();
+  const user = userEvent.setup();
+  await renderTable({
+    onQueryChange,
+    query: {
+      ...DEFAULT_SKILL_QUERY,
+      filters: { ...DEFAULT_SKILL_QUERY.filters, tags: ["documents"] },
+      page: 4,
+      sort: { column: "name", direction: "asc" },
+    },
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...DEFAULT_TABLE_PREFERENCES.visibleColumns, "lifecycle"],
+    },
+    sortableColumns: ["name", "lifecycle", "agent_deployments", "project_deployments", "version"],
+  });
+
+  const nameHeader = screen.getByRole("columnheader", { name: "Name / Alias" });
+  expect(nameHeader).toHaveAttribute("aria-sort", "ascending");
+  expect(within(nameHeader).getByText("↑")).toHaveAttribute("aria-hidden", "true");
+
+  const lifecycleHeader = document.querySelector('th[data-column="lifecycle"]');
+  expect(lifecycleHeader).not.toBeNull();
+  expect(lifecycleHeader).toHaveAttribute("aria-sort", "none");
+  expect(within(lifecycleHeader as HTMLElement).getByText("↕")).toHaveAttribute("aria-hidden", "true");
+  expect(screen.getByRole("columnheader", { name: "Purpose" })).not.toHaveAttribute("aria-sort");
+
+  const sortLifecycle = screen.getByRole("button", { name: "Sort by lifecycle" });
+  sortLifecycle.focus();
+  await user.keyboard("{Enter}");
+
+  expect(onQueryChange).toHaveBeenCalledWith(expect.objectContaining({
+    filters: expect.objectContaining({ tags: ["documents"] }),
+    page: 1,
+    sort: { column: "lifecycle", direction: "asc" },
+  }));
+});
+
+it("presents lifecycle values as text status badges", async () => {
+  await renderTable({
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...DEFAULT_TABLE_PREFERENCES.visibleColumns, "lifecycle"],
+    },
+  });
+
+  const row = screen.getByRole("row", { name: /PDF Reader/ });
+  const status = within(row).getByText("Active");
+  expect(status).toHaveClass("sh-status-badge");
 });
 
 it("selects only the current page from the header checkbox", async () => {

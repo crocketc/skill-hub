@@ -1384,6 +1384,7 @@
       },
       "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
+      "searchPlaceholder": "输入 Skill 名称或别名",
       "selectedCount": "已选 {{count}} 项",
       "tags": "标签",
       "version": "版本",
@@ -1393,7 +1394,9 @@
       },
       "versionUnavailable": "上游更新检测尚未接入。",
       "advanced": "筛选",
-      "activeCount": "已生效 {{count}} 项"
+      "activeCount": "已生效 {{count}} 项",
+      "activeConditions": "当前筛选条件",
+      "removeCondition": "移除筛选条件：{{filter}}"
     },
     "savedViews": {
       "builtIn": {

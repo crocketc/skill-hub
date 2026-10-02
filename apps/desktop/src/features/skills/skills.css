@@ -185,8 +185,8 @@
 
 .sh-skill-filters__primary {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-2);
 }
 
@@ -194,7 +194,7 @@
   display: grid;
   min-width: 0;
   flex: 1 1 14rem;
-  gap: var(--space-1);
+  gap: 0;
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
 }
@@ -203,7 +203,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 2rem;
+  min-height: 2.5rem;
   padding: 0 var(--space-2);
   border: 1px solid var(--ui-control-border);
   border-radius: var(--radius-xs);
@@ -239,6 +239,10 @@
   align-items: end;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
 }
 
 .sh-skill-filters__field {
@@ -321,29 +325,81 @@
 .sh-skill-library__toolbar {
   display: grid;
   min-width: 0;
-  gap: var(--space-2);
+  gap: var(--space-1);
+  margin-block-end: var(--space-2);
 }
 
 .sh-skill-library__band--search {
   display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-2) var(--space-3);
 }
 
 .sh-skill-library__band--search > .sh-skill-filters {
-  flex: 0 1 36rem;
+  flex: 0 1 28rem;
   width: 100%;
-  max-width: 36rem;
+  max-width: 28rem;
   min-width: 0;
 }
 
 .sh-skill-library__toolbar-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  flex-wrap: nowrap;
+  gap: var(--space-1) var(--space-2);
   margin-inline-start: auto;
+}
+
+.sh-skill-library__toolbar-actions > .sh-button,
+.sh-skill-library__toolbar-actions > button {
+  min-height: 2.5rem;
+}
+
+.sh-skill-library .sh-skill-filters__active-conditions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+}
+
+.sh-skill-library .sh-skill-filters__condition {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: var(--ui-surface-subtle);
+  color: var(--ui-ink-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.sh-skill-library .sh-skill-filters__condition:hover {
+  border-color: var(--ui-control-border-hover);
+  color: var(--ui-ink);
+}
+
+.sh-skill-library .sh-skill-filters__condition span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-skill-library .sh-skill-filters__condition span:last-child {
+  color: var(--ui-icon-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+.sh-skill-library .sh-skill-filters__condition:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
 
 /* M-21 #7：动作簇内的分组层级分隔（摘要 | 分组切换 | 管理入口；视图切换
@@ -441,6 +497,152 @@
   display: none;
 }
 
+.sh-skill-library .sh-skill-library__saved-views {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+}
+
+.sh-skill-library .sh-skill-library__saved-views[hidden] {
+  display: none;
+}
+
+.sh-skill-library__toolbar-secondary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-skill-library__saved-views > section {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-skill-library .sh-skill-library__saved-views > section > button {
+  min-height: 2.5rem;
+}
+
+.sh-skill-library__view-utilities {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.sh-skill-library .sh-saved-view-list {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: var(--space-1);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.sh-skill-library .sh-saved-view {
+  align-items: center;
+  border-bottom: 2px solid transparent;
+}
+
+.sh-skill-library .sh-saved-view > .sh-saved-view__apply {
+  min-height: 2.25rem;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  background: transparent;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.sh-skill-library .sh-saved-view > .sh-saved-view__apply[aria-pressed="true"] {
+  border-bottom: 2px solid var(--ui-accent);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-accent);
+}
+
+.sh-skill-library .sh-saved-view__remove.sh-icon-button {
+  min-width: 2rem;
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+}
+
+.sh-skill-library .sh-skill-table-workspace {
+  overflow: hidden;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+}
+
+.sh-skill-library .sh-skill-table__toolbar {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ui-border-subtle);
+  background: var(--ui-surface);
+}
+
+.sh-skill-library .sh-skill-table__region-shell {
+  min-height: 0;
+  padding-inline: var(--space-2);
+}
+
+.sh-skill-library .sh-skill-table thead th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-skill-library .sh-skill-table tbody td {
+  border-bottom: 1px solid var(--ui-border-subtle);
+}
+
+.sh-skill-library .sh-skill-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.sh-skill-library .sh-skill-table__sort {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  text-align: start;
+}
+
+.sh-skill-library .sh-skill-table__sort-indicator {
+  display: inline-flex;
+  min-width: 1rem;
+  min-height: 1rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-icon-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-skill-library .sh-skill-table__sort-indicator[data-sort-direction="asc"],
+.sh-skill-library .sh-skill-table__sort-indicator[data-sort-direction="desc"] {
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+.sh-skill-library .sh-skill-table__pagination {
+  position: static;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-top: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  background: var(--ui-surface-subtle);
+  box-shadow: none;
+}
+
 .sh-skill-library__no-results {
   display: grid;
   min-height: 12rem;
@@ -530,6 +732,25 @@
 /* 窄窗口：已保存视图行允许换行，删除按钮不被推出视口（审查 C4）。 */
 .sh-skill-library .sh-skill-library__saved-views > section > div {
   flex-wrap: wrap;
+}
+
+@media (max-width: 64rem) {
+  .sh-skill-library__band--search {
+    flex-wrap: wrap;
+  }
+
+  .sh-skill-library__band--search > .sh-skill-filters {
+    flex-basis: 28rem;
+    width: auto;
+  }
+
+  .sh-skill-library__toolbar-secondary {
+    flex-wrap: wrap;
+  }
+
+  .sh-skill-library__saved-views {
+    flex-basis: 100%;
+  }
 }
 
 /* —— P1-09 组合管理面板：成员徽章、成员选择器与已选成员 ——

@@ -19,7 +19,7 @@ function ViewButton({ activeViewId, onApply, onDelete, view }: Pick<SavedViewsPr
 
   return (
     <span className="sh-saved-view">
-      <button aria-pressed={view.id === activeViewId} onClick={() => onApply(view)} type="button">
+      <button aria-pressed={view.id === activeViewId} className="sh-saved-view__apply" onClick={() => onApply(view)} type="button">
         {label}
       </button>
       {!view.builtIn && onDelete ? (
@@ -44,7 +44,7 @@ export function SavedViews({ activeViewId, dirty, onApply, onDelete, onSave, vie
   return (
     <section aria-label={t("skillLibrary.savedViews.more")}>
       {dirty && <p role="status">{t("skillLibrary.savedViews.unsaved")}</p>}
-      <div>
+      <div aria-label={t("skillLibrary.savedViews.more")} className="sh-saved-view-list" role="group">
         {visibleViews.map((view) => (
           <ViewButton activeViewId={activeViewId} key={view.id} onApply={onApply} onDelete={onDelete} view={view} />
         ))}

@@ -170,6 +170,41 @@ it("delegates clearing to controlled state while preserving page size", async ()
   expect(screen.getByRole("status")).toHaveTextContent("50");
 });
 
+it("shows active conditions as individually removable filters", async () => {
+  const onChange = vi.fn();
+  const query: SkillLibraryQuery = {
+    ...DEFAULT_SKILL_QUERY,
+    filters: {
+      ...DEFAULT_SKILL_QUERY.filters,
+      basicCheck: ["failed"],
+      deployment: "deployed",
+      lifecycle: ["active"],
+      tags: ["docs"],
+      version: "upgrade_available",
+    },
+    page: 4,
+    savedViewId: "saved-review",
+    text: "reader",
+  };
+  await renderSkillFilters({ onChange, query });
+
+  expect(screen.getByRole("button", { name: "Remove filter: Search skills: reader" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Basic check: Failed" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Added to targets: Added" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Lifecycle: Active" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Tags: docs" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Version: Upgrade available" })).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter: Lifecycle: Active" }));
+
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+    filters: expect.objectContaining({ lifecycle: [] }),
+    page: 1,
+    savedViewId: undefined,
+    text: "reader",
+  }));
+});
+
 it("does not repeat the result total inside the filter controls", async () => {
   await renderSkillFilters();
 
@@ -255,16 +290,16 @@ it("keeps the search field bounded inside the primary filter row", () => {
   );
 });
 
-it("keeps the search band on one compact row that wraps by cluster", () => {
-  // 现行契约：检索带整簇折行（flex-wrap），搜索簇以 36rem 上限参与空间平衡，
-  // 100%/110% 缩放下先整簇换行而非控件散架。
+it("keeps the desktop search band compact and wraps whole clusters at narrow widths", () => {
+  // 桌面宽度搜索与动作簇同排，窄窗口再按整簇折行。
   const bandStart = skillsCss.indexOf(".sh-skill-library__band--search {");
   expect(bandStart).toBeGreaterThanOrEqual(0);
   const bandBlock = skillsCss.slice(bandStart, skillsCss.indexOf("}", bandStart));
-  expect(bandBlock).toContain("flex-wrap: wrap");
+  expect(bandBlock).toContain("flex-wrap: nowrap");
   expect(skillsCss).toMatch(
-    /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[\s\S]*?flex:\s*0 1 36rem[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*36rem/,
+    /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[\s\S]*?flex:\s*0 1 28rem[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*28rem/,
   );
+  expect(skillsCss).toMatch(/@media \(max-width:\s*64rem\)[\s\S]*?\.sh-skill-library__band--search\s*\{\s*flex-wrap:\s*wrap/);
 });
 
 it("keeps the desktop shell fixed while enabling outer scroll only for wrapped zoom", () => {

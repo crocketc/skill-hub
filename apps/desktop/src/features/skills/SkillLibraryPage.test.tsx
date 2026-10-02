@@ -1902,6 +1902,22 @@ describe("SkillLibraryPage", () => {
     expect(getComputedStyle(actions.querySelector(".sh-skill-library__toolbar-divider") as HTMLElement).backgroundColor).toBeTruthy();
   });
 
+  it("keeps discovery available beside the persistent search controls", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    const onOpenDiscovery = vi.fn();
+    renderLibrary({ facade, onOpenDiscovery, persistedViewMode: "unset" });
+
+    await screen.findByTestId("skill-card-skill-pdf");
+    const search = screen.getByRole("searchbox", { name: "Search skills" });
+    const actions = document.querySelector(".sh-skill-library__toolbar-actions");
+    const discovery = screen.getByRole("button", { name: "Open discovery" });
+    expect(search).toBeVisible();
+    expect(actions?.contains(discovery)).toBe(true);
+
+    fireEvent.click(discovery);
+    expect(onOpenDiscovery).toHaveBeenCalledOnce();
+  });
+
   it("caps the wide-screen search cluster without removing narrow-window wrapping", async () => {
     const facade = createMockSkillLibraryFacade({ total: 80 });
     facade.listCombinations = vi.fn().mockResolvedValue([]);
@@ -1913,9 +1929,9 @@ describe("SkillLibraryPage", () => {
       ".sh-skill-library__band--search > .sh-skill-filters",
     ) as HTMLElement;
     expect(searchCluster).not.toBeNull();
-    expect(getComputedStyle(searchCluster).maxWidth).toBe("36rem");
+    expect(getComputedStyle(searchCluster).maxWidth).toBe("28rem");
     expect(skillsCssRaw).toMatch(
-      /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[^}]*flex:\s*0 1 36rem[^}]*max-width:\s*36rem/s,
+      /\.sh-skill-library__band--search > \.sh-skill-filters\s*\{[^}]*flex:\s*0 1 28rem[^}]*max-width:\s*28rem/s,
     );
     expect(skillsCssRaw).toMatch(
       /\.sh-skill-library__band--search\s*\{[^}]*flex-wrap:\s*wrap/s,
@@ -1936,16 +1952,15 @@ describe("SkillLibraryPage", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/library/combinations"));
   });
 
-  it("keeps the relation entry at the far right of the search band while the view switch lives in the title bar (D5)", async () => {
+  it("keeps compact search actions separate from grouping tools beside saved views (D5)", async () => {
     const facade = createMockSkillLibraryFacade();
     facade.listCombinations = vi.fn().mockResolvedValue([]);
     renderLibrary({ facade, persistedViewMode: "unset" });
 
     await screen.findByTestId("skill-card-skill-pdf");
 
-    // 结构接缝：检索带是工具栏第一个 band，动作簇是检索带最后一个区块；
-    // 视图切换已迁入壳层标题栏（AppShell topbar-context），动作簇只留
-    // 结果摘要 / 分组 / 组合管理入口 / 收起视图栏。
+    // 检索带只保留摘要、导入、视图栏开关等紧凑主操作；分组与组合入口
+    // 与保存视图一起放在紧邻列表的次级工作区。
     const searchBand = document.querySelector(".sh-skill-library__band--search");
     expect(searchBand).not.toBeNull();
     const actions = searchBand!.querySelector(".sh-skill-library__toolbar-actions");
@@ -1954,7 +1969,12 @@ describe("SkillLibraryPage", () => {
     expect(
       within(actions as HTMLElement).queryByRole("group", { name: "View mode" }),
     ).toBeNull();
-    expect(within(actions as HTMLElement).getByRole("link", { name: "Combination manager" })).toBeTruthy();
+    expect(within(actions as HTMLElement).queryByRole("link", { name: "Combination manager" })).toBeNull();
+    expect(within(actions as HTMLElement).queryByRole("group", { name: /Group by/ })).toBeNull();
+    const utilities = document.querySelector(".sh-skill-library__view-utilities");
+    expect(utilities).not.toBeNull();
+    expect(within(utilities as HTMLElement).getByRole("group", { name: /Group by/ })).toBeTruthy();
+    expect(within(utilities as HTMLElement).getByRole("link", { name: "Combination manager" })).toBeTruthy();
 
     // 右置契约：动作簇通过 margin-inline-start:auto 吸附到检索带最右
     // （jsdom 无布局引擎，几何右缘由浏览器/E2E 兑现）。
@@ -1968,7 +1988,7 @@ describe("SkillLibraryPage", () => {
     }
   });
 
-  it("orders the search band's right cluster as summary, grouping and entries (M-21/D5)", async () => {
+  it("keeps the search band's right cluster compact and places grouping tools beside saved views (M-21/D5)", async () => {
     const facade = createMockSkillLibraryFacade({ total: 80 });
     facade.listCombinations = vi.fn().mockResolvedValue([]);
     renderLibrary({ facade, persistedViewMode: "unset" });
@@ -1979,21 +1999,21 @@ describe("SkillLibraryPage", () => {
       ".sh-skill-library__band--search .sh-skill-library__toolbar-actions",
     ) as HTMLElement;
     expect(actions).not.toBeNull();
-    // 右簇顺序：结果摘要 | 分隔符 | 分组切换 | 组合管理 | 收起视图栏
-    // （视图切换已迁入壳层标题栏，不再占用动作簇首位）。
+    // 检索右簇维持结果摘要 | 分隔符 | 收起视图栏；分组和组合入口邻接
+    // 已保存视图，避免挤占常驻搜索空间。
     const position = (node: Element) => Array.prototype.indexOf.call(actions.children, node);
     const summary = within(actions).getByTestId("library-summary-total").closest("section");
-    const groupSwitch = within(actions).getByRole("group", { name: /Group by/ });
-    const combination = within(actions).getByRole("link", { name: "Combination manager" });
     const collapse = within(actions).getByRole("button", { name: "Collapse view bar" });
     const dividers = Array.from(
       actions.querySelectorAll(".sh-skill-library__toolbar-divider"),
     );
     expect(dividers).toHaveLength(1);
     expect(position(summary!)).toBeLessThan(position(dividers[0]!));
-    expect(position(dividers[0]!)).toBeLessThan(position(groupSwitch));
-    expect(position(groupSwitch)).toBeLessThan(position(combination));
-    expect(position(combination)).toBeLessThan(position(collapse));
+    expect(position(dividers[0]!)).toBeLessThan(position(collapse));
+    const utilities = document.querySelector(".sh-skill-library__view-utilities") as HTMLElement;
+    expect(utilities).not.toBeNull();
+    expect(within(utilities).getByRole("group", { name: /Group by/ })).toBeTruthy();
+    expect(within(utilities).getByRole("link", { name: "Combination manager" })).toBeTruthy();
     // 摘要语义不变：总命中与标签 facet 的 testid 保留。
     expect(summary!.contains(screen.getByTestId("library-summary-tags"))).toBe(true);
   });

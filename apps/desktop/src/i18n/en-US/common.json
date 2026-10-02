@@ -1384,6 +1384,7 @@
       },
       "resultCount": "{{count}} results",
       "search": "Search skills",
+      "searchPlaceholder": "Enter a Skill name or alias",
       "selectedCount": "{{count}} selected",
       "tags": "Tags",
       "version": "Version",
@@ -1393,7 +1394,9 @@
       },
       "versionUnavailable": "Upgrade detection has not been connected yet.",
       "advanced": "Filters",
-      "activeCount": "{{count}} active"
+      "activeCount": "{{count}} active",
+      "activeConditions": "Active filters",
+      "removeCondition": "Remove filter: {{filter}}"
     },
     "savedViews": {
       "builtIn": {
