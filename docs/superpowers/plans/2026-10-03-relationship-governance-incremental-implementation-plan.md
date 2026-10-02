@@ -4,7 +4,7 @@
 
 唯一产品依据为 [统一裁决](../specs/2026-10-03-relationship-governance-product-decisions.md) 和 AGENTS.md。用户已授权整体方案收口后统一派发，并明确已有代码可以且必须按新规则修改，尤其前端。不是把旧四列换几个标题；不新增并行模型、不以旧 readiness 判定用户已完成治理，也不进行无关重构。
 
-状态：产品规则已确认，负责人完成初版源码对照，以下任务待执行/回报。当前验收分支只提交文档；两个执行 Agent 使用各自独立分支/worktree，负责人不写业务代码。开发完成不等于最终整合、release 构建或人工验收通过。
+状态：下游产品规则已确认；R1开发分支已交付aec94104，生成契约/事实投影和管理确认迁移有定向测试报告。B只接收该契约后推进F1，A接续已授权FB-013再协调R2/R3。复用修改等扩展依操作模型统一契约，不临时纳入R1。当前验收分支只提交文档；两个执行Agent使用各自独立分支/worktree，负责人不写业务代码。开发完成不等于最终整合、release构建或人工验收通过。
 
 ## 2. 已有修复与分工边界
 
@@ -33,7 +33,7 @@ B 可以先补失败测试、统一 presenter 和不依赖新 DTO 的稳定结�
 
 ### A：后端
 
-- `crates/skillhub-core/src/relationship/governance.rs`：保留 readiness 用于执行可行性，新增/替换统一治理分类与管理投影；正常来源不再自动完成。同主体同物理入口归并记录证据来源，独立副本保留决定重启稳定。
+- `crates/skillhub-core/src/relationship/governance.rs`：新增/替换统一治理分类与管理投影；readiness仅保留旧契约兼容，不再决定完成、接管或动作可行性，动作依统一action_conditions。正常来源不再自动完成。同主体同物理入口归并记录证据来源，独立副本保留决定重启稳定。
 - `source_copy.rs`、`validation.rs`、application `relationship_validation_service.rs`：替换外部缺失自动归档；最近确认的管理状态与当前入口健康分别记录。历史旧归档兼容明确处理，不盲目复活旧结束记录。
 - application `relationship_governance_service.rs`、`relationship_governance_batch.rs` 和相关命令：优先复用安全转换、预览/提交/回滚；补足内容选择、恢复入口、明确结束及保留撤销；读模型不能同时发出两条同物理目标待办。
 - database 关系/来源/部署 repositories 与 queries：增量持久化/迁移或投影证据兼容，SkillId 身份不变，既有用户文件不删。
