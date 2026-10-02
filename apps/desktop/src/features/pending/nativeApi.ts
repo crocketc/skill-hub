@@ -1,10 +1,10 @@
 import { executeCommand, queryApplication } from "../../api/bindings";
-import { pendingDestination, pendingKinds, canSnoozePendingItem } from "./workspace";
+import { pendingDestination, pendingCategories, pendingKinds, pendingCategoryForKind, canSnoozePendingItem } from "./workspace";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 import { recordAgentCompatibility } from "../agents/nativeApi";
 
 const SAVED_VIEW_KEY = "pending.view.kind";
-const SAVED_VIEW_KINDS = ["all", ...pendingKinds];
+const SAVED_VIEW_KINDS = ["all", ...pendingCategories];
 
 async function skillNames(ids: string[]): Promise<Map<string, string | null>> {
   return new Map(await Promise.all([...new Set(ids)].map(async (id) => {
@@ -70,7 +70,16 @@ export const nativePendingFacade: PendingFacade = {
     const members = projection?.type === "agent_directory_projection"
       ? projection.payload.directories.flatMap((directory) => directory.members) : [];
     const items = result.payload.items.map((work): PendingItem => {
+      const directory = work.kind === "agent_compatibility" && projection?.type === "agent_directory_projection"
+        ? projection.payload.directories.find((candidate) => candidate.members.some((member) => member.logical_target_id === work.subject))
+        : undefined;
       const member = work.kind === "agent_compatibility" ? members.find((candidate) => candidate.logical_target_id === work.subject) : undefined;
+      const sharedAgentBrandKinds = directory?.is_shared_directory
+        ? directory.members.reduce<Record<string, NonNullable<PendingItem["agentKinds"]>>>((byBrand, candidate) => {
+          if (candidate.brand && candidate.kind) byBrand[candidate.brand] = [...new Set([...(byBrand[candidate.brand] ?? []), candidate.kind])];
+          return byBrand;
+        }, {})
+        : undefined;
       const item: PendingItem = {
         id: work.id, subject: work.subject, kind: work.kind, code: work.kind,
         message: work.message_code, displayName: work.display_name,
@@ -79,8 +88,16 @@ export const nativePendingFacade: PendingFacade = {
         checkKind: work.check_kind ?? undefined, path: work.path ?? undefined,
         dueDate: work.due_date, risk: work.risk,
         sourceRoots: work.source_roots, canConfirm: work.can_confirm,
-        agentBrand: member?.brand ?? undefined,
-        agentKinds: member?.kind ? [member.kind] : undefined,
+        ...(member?.brand ? { agentBrand: member.brand } : {}),
+        ...(member?.kind ? { agentKinds: [member.kind] } : {}),
+        ...(directory ? {
+          agentDirectoryKey: `${directory.identity.kind}:${directory.identity.value}`,
+          agentSharedDirectory: directory.is_shared_directory === true,
+        } : {}),
+        ...(directory?.is_shared_directory ? {
+          agentSharedBrands: [...new Set(directory.members.flatMap((candidate) => candidate.brand ? [candidate.brand] : []))],
+          agentSharedBrandKinds: sharedAgentBrandKinds,
+        } : {}),
       };
       return { ...item, href: pendingDestination(item) };
     });
@@ -107,7 +124,8 @@ export const nativePendingFacade: PendingFacade = {
     if (result.type !== "basic_check_result") throw new Error("pending recheck returned an unexpected result");
   },
   async convert(item) {
-    await executeCommand({ type: "set_lifecycle", payload: { skill_id: item.subject, lifecycle: "Normal" } });
+    const result = await executeCommand({ type: "set_trial", payload: { skill_id: item.subject, due: null } });
+    if (result.type !== "operation_summary") throw new Error("trial conversion returned an unexpected native result");
   },
   async remove(item) {
     await nativePendingFacade.resolve(item);
@@ -166,7 +184,10 @@ export const nativePendingFacade: PendingFacade = {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as { kind?: unknown };
-      return typeof parsed?.kind === "string" && SAVED_VIEW_KINDS.includes(parsed.kind) ? parsed.kind : null;
+      if (typeof parsed?.kind !== "string") return null;
+      if (SAVED_VIEW_KINDS.includes(parsed.kind)) return parsed.kind;
+      const legacyKind = pendingKinds.find((kind) => kind === parsed.kind);
+      return legacyKind ? pendingCategoryForKind(legacyKind) : null;
     } catch {
       return null;
     }

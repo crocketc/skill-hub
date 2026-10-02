@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
 import { nativePendingFacade } from "./nativeApi";
+import { groupPendingItems } from "./workspace";
 
 vi.mock("../../api/bindings", () => ({ queryApplication: vi.fn(), executeCommand: vi.fn() }));
 
@@ -28,6 +29,48 @@ it("maps derived pending work to stable page identities", async () => {
 it("requires the finding workflow instead of silently acknowledging risk", async () => {
   await expect(nativePendingFacade.resolve({ id: "finding", subject: "skill", kind: "security_finding", code: "finding", message: "finding" })).rejects.toThrow();
   expect(executeCommand).not.toHaveBeenCalled();
+});
+
+it("enriches compatibility facts from the canonical shared-directory identity and its members", async () => {
+  query.mockImplementation(async (request) => {
+    if (request.type === "get_pending_workspace") return { type: "pending_workspace", payload: { unavailable_sources: [], items: [
+      { id: "openai-copy", subject: "target-openai", kind: "agent_compatibility", message_code: "pending.reasons.agent_compatibility", display_name: "OpenAI", can_defer: true, can_ignore: false, recommended: false, can_confirm: false, version_id: null, finding_id: null, check_kind: "managed_copy", risk: null, path: null, due_date: null, source_roots: [] },
+      { id: "anthropic-link", subject: "target-anthropic", kind: "agent_compatibility", message_code: "pending.reasons.agent_compatibility", display_name: "Anthropic", can_defer: true, can_ignore: false, recommended: false, can_confirm: false, version_id: null, finding_id: null, check_kind: "symbolic_link", risk: null, path: null, due_date: null, source_roots: [] },
+      { id: "openai-cli-junction", subject: "target-openai-cli", kind: "agent_compatibility", message_code: "pending.reasons.agent_compatibility", display_name: "OpenAI", can_defer: true, can_ignore: false, recommended: false, can_confirm: false, version_id: null, finding_id: null, check_kind: "directory_junction", risk: null, path: null, due_date: null, source_roots: [] },
+    ] } } as never;
+    if (request.type === "get_agent_directory_projection") return { type: "agent_directory_projection", payload: { directories: [{
+      role: "agent_user", is_shared_directory: true, identity: { kind: "verified_physical", value: "private-physical-identity" },
+      path: "C:/private/shared-skills", status: "available", exists: true, readable: true, writable: true, available: true,
+      members: [
+        { logical_target_id: "target-openai", brand: "OpenAI", kind: "desktop", client_id: "openai.desktop" },
+        { logical_target_id: "target-anthropic", brand: "Anthropic", kind: "cli", client_id: "anthropic.cli" },
+        { logical_target_id: "target-openai-cli", brand: "OpenAI", kind: "cli", client_id: "openai.cli" },
+      ],
+    }] } } as never;
+    throw new Error(`Unexpected query ${request.type}`);
+  });
+
+  const workspace = await nativePendingFacade.workspace!();
+  expect(workspace.items.map(({ agentDirectoryKey, agentSharedDirectory, agentSharedBrands, agentSharedBrandKinds }) => ({
+    agentDirectoryKey, agentSharedDirectory, agentSharedBrands, agentSharedBrandKinds,
+  }))).toEqual([
+    { agentDirectoryKey: "verified_physical:private-physical-identity", agentSharedDirectory: true, agentSharedBrands: ["OpenAI", "Anthropic"], agentSharedBrandKinds: { OpenAI: ["desktop", "cli"], Anthropic: ["cli"] } },
+    { agentDirectoryKey: "verified_physical:private-physical-identity", agentSharedDirectory: true, agentSharedBrands: ["OpenAI", "Anthropic"], agentSharedBrandKinds: { OpenAI: ["desktop", "cli"], Anthropic: ["cli"] } },
+    { agentDirectoryKey: "verified_physical:private-physical-identity", agentSharedDirectory: true, agentSharedBrands: ["OpenAI", "Anthropic"], agentSharedBrandKinds: { OpenAI: ["desktop", "cli"], Anthropic: ["cli"] } },
+  ]);
+  expect(groupPendingItems(workspace.items)).toMatchObject([
+    { sharedDirectory: true, count: 3, objectCount: 3, agentBrands: ["Anthropic", "OpenAI"], agentSharedBrandKinds: { OpenAI: ["desktop", "cli"], Anthropic: ["cli"] } },
+  ]);
+});
+
+it("converts an expired trial by clearing its trial date and label", async () => {
+  vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: {} as never });
+  await nativePendingFacade.convert({
+    id: "trial_due:skill-a:trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "trial",
+  });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "set_trial", payload: { skill_id: "skill-a", due: null },
+  });
 });
 
 /**
@@ -104,11 +147,17 @@ it("removes an ignore rule by id when undoing a handled entry", async () => {
   expect(executeCommand).toHaveBeenCalledWith({ type: "remove_ignore_rule", payload: { rule_id: "rule-1" } });
 });
 
-it("restores a saved view kind and stores new kinds as JSON", async () => {  query.mockResolvedValue({
+it("restores a saved view and stores the selected category as JSON", async () => {  query.mockResolvedValue({
     type: "ui_preference",
     payload: { key: "pending.view.kind", value_json: "{\"kind\":\"security_finding\"}" },
   });
-  await expect(nativePendingFacade.loadSavedView()).resolves.toBe("security_finding");
+  await expect(nativePendingFacade.loadSavedView()).resolves.toBe("skill_review");
+
+  query.mockResolvedValue({
+    type: "ui_preference",
+    payload: { key: "pending.view.kind", value_json: "{\"kind\":\"agents\"}" },
+  });
+  await expect(nativePendingFacade.loadSavedView()).resolves.toBe("agents");
 
   vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: {} as never });
   await nativePendingFacade.saveSavedView("all");

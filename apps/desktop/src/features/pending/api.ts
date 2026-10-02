@@ -3,6 +3,11 @@ export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
   agentBrand?: string;
   agentKinds?: import("../../ui/AgentPresentation").AgentKindKey[];
+  /** Local projection metadata. Identity values are never rendered. */
+  agentDirectoryKey?: string;
+  agentSharedDirectory?: boolean;
+  agentSharedBrands?: string[];
+  agentSharedBrandKinds?: Record<string, import("../../ui/AgentPresentation").AgentKindKey[]>;
   id: string;
   subject: string;
   kind: PendingKind;
