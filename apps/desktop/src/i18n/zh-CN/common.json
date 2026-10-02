@@ -1268,6 +1268,12 @@
         "label": "技能库统计",
         "total": "当前筛选共 {{count}} 个 Skill",
         "tags": "可选标签 {{count}} 个"
+      },
+      "pendingReview": {
+        "sourceUpdate": "已准备更新复核选择，请确认后检查更新",
+        "unavailable": "无法准备复核选择，请返回待处理重试。",
+        "securityCheck": "已准备安全复核选择，请确认后执行检查",
+        "return": "返回待处理"
       }
     },
     "drawer": {

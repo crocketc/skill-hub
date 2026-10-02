@@ -129,6 +129,68 @@ afterEach(() => {
 });
 
 describe("SkillLibraryPage", () => {
+  it("prepares an exact pending review selection without starting a batch operation", async () => {
+    const facade = createMockSkillLibraryFacade({ matchingSkillIds: ["skill-docx"] });
+    renderLibrary({ facade, initialEntry: {
+      pathname: "/library",
+      state: { pendingReview: { skillIds: ["skill-docx", "skill-docx", "removed-skill"], intent: "security_check", returnTo: "/pending?kind=basic_check" } },
+    } });
+
+    expect(await screen.findByRole("link", { name: "Return to pending items" })).toHaveAttribute("href", "/pending?kind=basic_check");
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select DOCX Writer" })).toBeChecked());
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).not.toBeChecked();
+    expect(screen.getByText("Prepared for safety review")).toBeVisible();
+    expect(facade.calls.emitBatchIntent).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Run security check" }));
+    await waitFor(() => expect(facade.calls.emitBatchIntent).toHaveLength(1));
+    expect(facade.calls.emitBatchIntent[0].target).toEqual({ kind: "skill_ids", skillIds: ["skill-docx"] });
+  });
+
+  it("keeps source review preparation editable and never reapplies cleared selection", async () => {
+    const facade = createMockSkillLibraryFacade({ matchingSkillIds: ["skill-docx"] });
+    const checkUpdates = vi.fn().mockResolvedValue([]);
+    facade.checkSourceUpdates = checkUpdates;
+    renderLibrary({ facade, initialEntry: {
+      pathname: "/library",
+      state: { pendingReview: { skillIds: ["skill-docx"], intent: "source_update", returnTo: "/pending" } },
+    } });
+
+    expect(await screen.findByText("Prepared for update review")).toBeVisible();
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select DOCX Writer" })).toBeChecked());
+    expect(checkUpdates).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Return to pending items" })).toBeVisible();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), { target: { value: "DOCX" } });
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select DOCX Writer" })).not.toBeChecked());
+    expect(checkUpdates).not.toHaveBeenCalled();
+  });
+
+  it("does not select skills from malformed or external pending navigation state", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, initialEntry: {
+      pathname: "/library",
+      state: { pendingReview: { skillIds: ["skill-docx"], intent: "source_update", returnTo: "https://example.invalid" } },
+    } });
+    await screen.findByRole("table");
+    expect(screen.queryByRole("link", { name: "Return to pending items" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select DOCX Writer" })).not.toBeChecked();
+  });
+
+  it("keeps pending selection preparation failures local and does not enable a batch", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.retainMatchingSkillIds = vi.fn().mockRejectedValue(new Error("catalog unavailable"));
+    renderLibrary({ facade, initialEntry: {
+      pathname: "/library",
+      state: { pendingReview: { skillIds: ["skill-docx"], intent: "security_check", returnTo: "/pending" } },
+    } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("The review selection could not be prepared");
+    expect(await screen.findByRole("table")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Select DOCX Writer" })).not.toBeChecked();
+    expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
+    expect(facade.calls.emitBatchIntent).toHaveLength(0);
+  });
+
   // T3-C「每路由唯一 h1」（任务 10 h1 sweep）：技能库页面自持 route-level h1
   // （视觉上隐藏，不改变工具栏布局契约）。
   it("keeps a single page-level h1 for the skill library outline", async () => {

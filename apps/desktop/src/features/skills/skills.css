@@ -838,3 +838,16 @@
   padding: var(--space-2);
   font-size: var(--font-size-sm);
 }
+.sh-skill-library__pending-review {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.sh-skill-library__pending-review a {
+  color: var(--ui-accent);
+  text-underline-offset: 0.2em;
+}

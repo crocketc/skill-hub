@@ -1268,6 +1268,12 @@
         "label": "Library summary",
         "total": "{{count}} skills match the current filters",
         "tags": "{{count}} tags available"
+      },
+      "pendingReview": {
+        "sourceUpdate": "Prepared for update review",
+        "unavailable": "The review selection could not be prepared. Return to pending items and try again.",
+        "securityCheck": "Prepared for safety review",
+        "return": "Return to pending items"
       }
     },
     "drawer": {

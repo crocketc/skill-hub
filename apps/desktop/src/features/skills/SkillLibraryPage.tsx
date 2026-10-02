@@ -59,6 +59,7 @@ import {
   skillFilterKey,
 } from "./queryState";
 import { SavedViews } from "./SavedViews";
+import { readPendingLibraryReview } from "./pendingReviewContext";
 import {
   retainExplicitSelection,
   selectAllFiltered,
@@ -336,6 +337,7 @@ function BatchBar({
       aria-label={t("skillLibrary.page.batch.label")}
       className="sh-skill-library__batch-bar"
       ref={barRef}
+      tabIndex={-1}
     >
       <strong>{scope}</strong>
       {selection.kind === "explicit" && count < page.total ? (
@@ -432,6 +434,11 @@ export function SkillLibraryPage({
     );
   const [searchParams, setSearchParams] = useSearchParams();
   const libraryReturnState = readLibraryReturnState(location.state);
+  const [pendingReview] = useState(() => readPendingLibraryReview(location.state));
+  const [pendingReviewError, setPendingReviewError] = useState(false);
+  const [pendingReviewPrepared, setPendingReviewPrepared] = useState(false);
+  const pendingSelectionTouched = useRef(false);
+  const pendingReviewFocused = useRef(false);
   // 反向发起部署：Agent/项目详情携带的目标预选。
   const deployTarget = (location.state as { deployTarget?: { id: string; label: string } } | null)?.deployTarget;
   const search = searchParams.toString();
@@ -477,9 +484,30 @@ export function SkillLibraryPage({
   };
 
   const changeSelection = (next: SkillSelection) => {
+    pendingSelectionTouched.current = true;
     clearBatchAnnouncement();
     setSelection(next);
   };
+
+  useEffect(() => {
+    if (!pendingReview) return;
+    let active = true;
+    void facade.retainMatchingSkillIds(pendingReview.skillIds, DEFAULT_SKILL_QUERY).then((matchingIds) => {
+      if (!active) return;
+      if (!pendingSelectionTouched.current) {
+        const requested = new Set(pendingReview.skillIds);
+        setSelection(selectExplicit({ kind: "none" }, matchingIds.filter((id) => requested.has(id)), true));
+      }
+      setPendingReviewPrepared(true);
+    }).catch(() => { if (active) setPendingReviewError(true); });
+    return () => { active = false; };
+  }, [facade, pendingReview]);
+
+  useEffect(() => {
+    if (!pendingReviewPrepared || !batchBarElement || pendingReviewFocused.current) return;
+    pendingReviewFocused.current = true;
+    batchBarElement.focus();
+  }, [batchBarElement, pendingReviewPrepared]);
 
   const pageQuery = useQuery({
     placeholderData: keepPreviousData,
@@ -1317,6 +1345,13 @@ export function SkillLibraryPage({
       ref={rootRef}
     >
       {libraryHeading}
+      {pendingReview ? (
+        <div className="sh-skill-library__pending-review" role={pendingReviewError ? "alert" : "note"}>
+          <span>{t(pendingReviewError ? "skillLibrary.page.pendingReview.unavailable"
+            : pendingReview.intent === "security_check" ? "skillLibrary.page.pendingReview.securityCheck" : "skillLibrary.page.pendingReview.sourceUpdate")}</span>
+          <Link to={pendingReview.returnTo}>{t("skillLibrary.page.pendingReview.return")}</Link>
+        </div>
+      ) : null}
       {deployTarget ? (
         <p aria-live="polite" className="sh-notice" role="status">
           {t("skillLibrary.page.deployTargetBanner", { label: deployTarget.label })}
