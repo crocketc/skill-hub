@@ -23,7 +23,11 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 };
 
 export function SkillLibraryPreview() {
-  const [facade] = useState(() => createMockSkillLibraryFacade({ total: previewTotal() }));
+  const [facade] = useState(() => {
+    const previewFacade = createMockSkillLibraryFacade({ total: previewTotal() });
+    previewFacade.listCombinations = async () => [];
+    return previewFacade;
+  });
   return <SkillLibraryPage facade={facade} />;
 }
 

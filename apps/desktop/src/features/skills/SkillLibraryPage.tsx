@@ -16,6 +16,7 @@ import "./batchBar.css";
 import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { describeNativeError } from "../../api/nativeErrors";
 // M-21 #5：页面直接消费全局通知中心（AppShell 级单例服务），不再保留
@@ -1452,6 +1453,7 @@ export function SkillLibraryPage({
             </div>
             {facade.listCombinations ? (
               <Link className="sh-skill-library__combination-entry" to="/library/combinations">
+                <Icon name="relationships" size={16} />
                 {t("skillLibrary.combinations.managerEntry")}
               </Link>
             ) : null}
