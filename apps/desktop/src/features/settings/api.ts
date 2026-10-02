@@ -57,6 +57,7 @@ export type SettingsSnapshot = {
   updatePolicy: UpdatePolicy;
 };
 export type SettingsCommand =
+  | { type: "set_application_update_policy"; payload: UpdatePolicy }
   | { type: "set_network_enabled"; payload: { enabled: boolean } }
   | { type: "set_theme"; payload: { theme: string } }
   | { type: "set_language"; payload: { language: SettingsSnapshot["appearance"]["language"] } }
@@ -80,6 +81,8 @@ export interface ApplicationUpdateOperations {
 export interface SettingsFacade {
   execute(command: SettingsCommand): Promise<void>;
   get?: () => Promise<SettingsSnapshot>;
+  /** Read-only label lookup used to keep internal Skill IDs out of backup prompts. */
+  resolveSkillName?: (skillId: string) => Promise<string | null>;
   updates?: ApplicationUpdateOperations;
   backup?: BackupFacade;
   /** When provided, the library card renders the health check entry (FE-16). */

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Field } from "../../ui/Field";
 import { Select } from "../../ui/Select";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
@@ -34,6 +35,7 @@ export function ViewSettings({ facade, settings }: { facade: SettingsFacade; set
       <h2>{t("settings.view.heading")}</h2>
       <Field
         help={t("settings.view.density", { density: t(`settings.view.densities.${density}`) })}
+        id="settings-density"
         label={t("settings.view.densityLabel")}
       >
         <Select
@@ -46,6 +48,29 @@ export function ViewSettings({ facade, settings }: { facade: SettingsFacade; set
         </Select>
       </Field>
       {error ? <p role="alert">{t("settings.view.saveFailed")}</p> : null}
+      <div className="sh-settings-view-links">
+        <div className="sh-settings-view-link">
+          <div>
+            <strong>{t("settings.view.skillViews")}</strong>
+            <p>{t("settings.view.skillViewsDescription")}</p>
+          </div>
+          <Link className="sh-button sh-button--secondary sh-button--md" to="/library">{t("settings.view.manageSkillViews")}</Link>
+        </div>
+        <div className="sh-settings-view-link">
+          <div>
+            <strong>{t("settings.view.projectViews")}</strong>
+            <p>{t("settings.view.projectViewsDescription")}</p>
+          </div>
+          <Link className="sh-button sh-button--secondary sh-button--md" to="/projects">{t("settings.view.manageProjectViews")}</Link>
+        </div>
+        <div className="sh-settings-view-link">
+          <div>
+            <strong>{t("settings.view.quickDrawer")}</strong>
+            <p>{t("settings.view.quickDrawerDescription")}</p>
+          </div>
+          <Link className="sh-button sh-button--secondary sh-button--md" to="/library">{t("settings.view.manageQuickDrawer")}</Link>
+        </div>
+      </div>
     </section>
   );
 }

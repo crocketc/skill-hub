@@ -6,6 +6,7 @@ import type {
   HealthReport,
   IgnoreRule,
   OperationSummary,
+  RepairAction,
   RepairPlan,
 } from "../../api/bindings";
 import { Button } from "../../ui/Button";
@@ -25,6 +26,7 @@ export interface LibrarySettingsProps {
   settings: SettingsSnapshot;
   /** When provided, the card renders the library health check entry. */
   health?: LibraryHealthOperations;
+  resolveSkillName?: (skillId: string) => Promise<string | null>;
 }
 
 type SeverityKey =
@@ -63,7 +65,32 @@ function subjectKey(kind: SubjectKind): string {
   }
 }
 
-export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
+function findingLabel(finding: HealthFinding, t: (key: string) => string): string {
+  return finding.code === "health.unfinished_operation"
+    ? t("settings.library.findingUnfinishedOperation")
+    : t("settings.library.findingGeneric");
+}
+
+function repairLabel(action: RepairAction | null, t: (key: string) => string): string {
+  switch (action) {
+    case "remove_orphan_metadata": return t("settings.library.repairRemoveOrphanMetadata");
+    case "restore_missing_target": return t("settings.library.repairRestoreMissingTarget");
+    case "clean_stale_temporary_file": return t("settings.library.repairCleanTemporaryFile");
+    case "rebuild_missing_manifest": return t("settings.library.repairRebuildManifest");
+    case "mark_operation_needs_recovery": return t("settings.library.repairMarkOperationNeedsRecovery");
+    default: return t("settings.library.repairGeneric");
+  }
+}
+
+function subjectValueLabel(rule: IgnoreRule, skillLabels: Record<string, string>, t: (key: string) => string): string {
+  switch (rule.subject.type) {
+    case "exact_path": return displayPath(rule.subject.value);
+    case "exact_skill": return skillLabels[rule.subject.value] ?? t("settings.library.unnamedSkill");
+    default: return t("settings.ignore.subjectPendingItem");
+  }
+}
+
+export function LibrarySettings({ settings, health, resolveSkillName }: LibrarySettingsProps) {
   const { t } = useTranslation();
   const [checking, setChecking] = useState(false);
   const [report, setReport] = useState<HealthReport | null>(null);
@@ -72,6 +99,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
   const [rules, setRules] = useState<IgnoreRule[]>([]);
   const [rulesLoaded, setRulesLoaded] = useState(false);
   const [rulesError, setRulesError] = useState(false);
+  const [skillLabels, setSkillLabels] = useState<Record<string, string>>({});
   const [subjectKind, setSubjectKind] = useState<SubjectKind>("exact_path");
   const [subjectValue, setSubjectValue] = useState("");
   const [reason, setReason] = useState("");
@@ -106,6 +134,23 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
       cancelled = true;
     };
   }, [health]);
+
+  useEffect(() => {
+    if (!resolveSkillName) return;
+    let cancelled = false;
+    const skillIds = [...new Set(rules.flatMap((rule) => rule.subject.type === "exact_skill" ? [rule.subject.value] : []))];
+    if (skillIds.length === 0) return;
+    void Promise.all(skillIds.map(async (skillId) => {
+      try {
+        return [skillId, (await resolveSkillName(skillId))?.trim() || String(t("settings.library.unnamedSkill"))] as const;
+      } catch {
+        return [skillId, String(t("settings.library.unnamedSkill"))] as const;
+      }
+    })).then((labels) => {
+      if (!cancelled) setSkillLabels(Object.fromEntries(labels));
+    });
+    return () => { cancelled = true; };
+  }, [resolveSkillName, rules, t]);
 
   const runCheck = async () => {
     if (!health) return;
@@ -217,7 +262,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
       {health ? (
         <>
           <div className="sh-settings-card__health">
-            <Button disabled={checking} onClick={() => void runCheck()} variant="secondary">
+            <Button disabled={checking} id="settings-health-check" onClick={() => void runCheck()} variant="secondary">
               {checking ? t("settings.library.checking") : t("settings.library.runHealthCheck")}
             </Button>
             <p className="sh-settings-note">{t("settings.library.healthScope")}</p>
@@ -232,7 +277,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                   <ul>
                     {report.findings.map((finding, index) => (
                       <li key={`${report.id}:${index}`}>
-                        <span>{finding.code}</span>
+                        <span>{findingLabel(finding, (key) => String(t(key as never)))}</span>
                         <span>{t(severityKey(finding.severity))}</span>
                         {finding.repair ? (
                           <Button
@@ -255,7 +300,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                 <ul>
                   <li>
                     <span>{t("settings.repair.findingLabel")}</span>
-                    <span>{plan.finding.code}</span>
+                    <span>{findingLabel(plan.finding, (key) => String(t(key as never)))}</span>
                   </li>
                   <li>
                     <span>{t("settings.repair.severityLabel")}</span>
@@ -263,7 +308,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                   </li>
                   <li>
                     <span>{t("settings.repair.actionLabel")}</span>
-                    <span>{plan.finding.repair}</span>
+                    <span>{repairLabel(plan.finding.repair, (key) => String(t(key as never)))}</span>
                   </li>
                 </ul>
                 {commitError ? <p role="alert">{commitError}</p> : null}
@@ -291,8 +336,8 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                   <li key={rule.id} className="sh-settings-ignore__row">
                     <div className="sh-settings-ignore__head">
                       <StatusBadge>{String(t(subjectKey(rule.subject.type) as never))}</StatusBadge>
-                      <span className="sh-settings-ignore__value" title={rule.subject.value}>
-                        {rule.subject.value}
+                      <span className="sh-settings-ignore__value" title={rule.subject.type === "exact_path" ? displayPath(rule.subject.value) : undefined}>
+                        {subjectValueLabel(rule, skillLabels, (key) => String(t(key as never)))}
                       </span>
                     </div>
                     {rule.reason ? (
@@ -308,7 +353,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                         cancelLabel={t("actions.cancel")}
                         confirmLabel={t("settings.ignore.confirmRemove")}
                         description={t("settings.ignore.confirmRemoveDescription", {
-                          subject: rule.subject.value,
+                          subject: subjectValueLabel(rule, skillLabels, (key) => String(t(key as never))),
                         })}
                         onConfirm={() => void removeRule()}
                         title={t("settings.ignore.confirmRemoveTitle")}
@@ -346,7 +391,7 @@ export function LibrarySettings({ settings, health }: LibrarySettingsProps) {
                   ))}
                 </Select>
               </Field>
-              <Field error={valueError ?? undefined} label={t("settings.ignore.valueLabel")}>
+              <Field error={valueError ?? undefined} id="settings-ignore-rule-value" label={t("settings.ignore.valueLabel")}>
                 <Input
                   onChange={(event) => {
                     setSubjectValue(event.target.value);

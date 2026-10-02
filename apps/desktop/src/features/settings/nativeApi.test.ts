@@ -88,3 +88,34 @@ it("persists view density and automation choices without replacing unrelated pre
   expect(execute).toHaveBeenNthCalledWith(1, { type: "set_desktop_preferences", payload: { ...preferences, density: "comfortable" } });
   expect(execute).toHaveBeenNthCalledWith(2, { type: "set_desktop_preferences", payload: { ...preferences, automation_per_skill: true, automation_batch: true, automation_global: false } });
 });
+
+it("persists application update policy through its dedicated native command", async () => {
+  execute.mockResolvedValue({
+    type: "application_update_policy",
+    payload: { enabled: false, check_on_startup: false },
+  });
+
+  await nativeSettingsFacade.execute({
+    type: "set_application_update_policy",
+    payload: { enabled: false, checkOnStartup: false },
+  });
+
+  expect(execute).toHaveBeenCalledWith({
+    type: "set_application_update_policy",
+    payload: { enabled: false, check_on_startup: false },
+  });
+  expect(query).not.toHaveBeenCalled();
+});
+
+it("resolves a backup skill label using the existing readable skill contract", async () => {
+  query.mockResolvedValue({
+    type: "skill",
+    payload: { skill_id: "skill-id-private", display_name: "PDF helper", runtime_name: "pdf-helper" } as never,
+  });
+
+  await expect(nativeSettingsFacade.resolveSkillName?.("skill-id-private")).resolves.toBe("PDF helper");
+  expect(query).toHaveBeenCalledWith({
+    type: "get_skill",
+    payload: { skill_id: "skill-id-private" },
+  });
+});

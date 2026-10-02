@@ -46,6 +46,16 @@ async function save(command: SettingsCommand): Promise<void> {
   if (command.type === "set_library_path") {
     throw new Error("Library migration must be completed through the initialization workflow.");
   }
+  if (command.type === "set_application_update_policy") {
+    const result = await executeCommand({
+      type: "set_application_update_policy",
+      payload: { enabled: command.payload.enabled, check_on_startup: command.payload.checkOnStartup },
+    });
+    if (result.type !== "application_update_policy") {
+      throw new Error("set_application_update_policy returned an unexpected native result.");
+    }
+    return;
+  }
 
   const current = await preferences();
   const next: DesktopPreferences = { ...current };
@@ -115,6 +125,12 @@ async function get(): Promise<SettingsSnapshot> {
 export const nativeSettingsFacade: SettingsFacade = {
   execute: save,
   get,
+  async resolveSkillName(skillId) {
+    const result = await queryApplication({ type: "get_skill", payload: { skill_id: skillId } });
+    if (result.type !== "skill") return null;
+    const name = result.payload.display_name.trim() || result.payload.runtime_name.trim();
+    return name || null;
+  },
   backup: nativeBackupFacade,
   llm: nativeLlmFacade,
   libraryHealth: {

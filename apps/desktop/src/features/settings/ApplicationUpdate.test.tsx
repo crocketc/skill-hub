@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
@@ -70,14 +70,12 @@ it("offers install only after verification succeeded", async () => {
   expect(onInstall).toHaveBeenCalledTimes(1);
 });
 
-it("exposes source and hash in developer details", async () => {
-  const user = userEvent.setup();
+it("keeps package source and integrity identifiers out of the settings interface", async () => {
   await renderCard({ state: "ready_to_install", update });
 
-  await user.click(screen.getByText("开发者详情"));
-
-  expect(screen.getByText(update.assetUrl as string)).toBeVisible();
-  expect(screen.getByText(update.sha256 as string)).toBeVisible();
+  expect(screen.queryByText(update.assetUrl as string)).not.toBeInTheDocument();
+  expect(screen.queryByText(update.sha256 as string)).not.toBeInTheDocument();
+  expect(screen.queryByText("开发者详情")).not.toBeInTheDocument();
 });
 
 it("maps verification failure to an actionable message and retry", async () => {
@@ -123,6 +121,39 @@ it("keeps the official release page as the unsigned fallback", async () => {
 
   await user.click(screen.getByRole("button", { name: "打开 GitHub Release" }));
   expect(onOpenRelease).toHaveBeenCalledTimes(1);
+});
+
+it("blocks duplicate policy saves and restores the previous choice after a save failure", async () => {
+  const user = userEvent.setup();
+  let rejectSave: ((reason: Error) => void) | undefined;
+  const onPolicyChange = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectSave = reject; }));
+  await renderCard({ onPolicyChange });
+
+  const startup = screen.getByRole("switch", { name: "启动时检查" });
+  await user.click(startup);
+  expect(onPolicyChange).toHaveBeenCalledTimes(1);
+  expect(startup).toBeDisabled();
+  await user.click(startup);
+  expect(onPolicyChange).toHaveBeenCalledTimes(1);
+
+  await act(async () => rejectSave?.(new Error("policy save failed")));
+  await waitFor(() => expect(startup).toBeChecked());
+  expect(screen.getByRole("alert")).toHaveTextContent("无法保存应用更新偏好。");
+});
+
+it("keeps local update preferences editable while network checks remain disabled", async () => {
+  const user = userEvent.setup();
+  const onCheck = vi.fn();
+  const onPolicyChange = vi.fn(async () => undefined);
+  await renderCard({ networkEnabled: false, onCheck, onPolicyChange });
+
+  expect(screen.getByText(/网络功能已关闭/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "检查更新" })).toBeDisabled();
+  const startup = screen.getByRole("switch", { name: "启动时检查" });
+  expect(startup).toBeEnabled();
+  await user.click(startup);
+  expect(onPolicyChange).toHaveBeenCalledWith({ enabled: true, checkOnStartup: false });
+  expect(onCheck).not.toHaveBeenCalled();
 });
 
 it("reports the phase as checking while a check is in flight", async () => {

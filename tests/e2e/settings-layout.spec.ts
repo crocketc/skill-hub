@@ -78,7 +78,7 @@ test.describe("settings section layout across widths", () => {
 
       // 宽度切换只改变尺寸与间距；键盘/指针路径保持一致。
       await tablist.getByRole("tab", { name: "Automation" }).click();
-      await expect(page.getByRole("switch", { name: "Batch checks" })).toBeVisible();
+      await expect(page.getByRole("switch", { name: "Batch preference" })).toBeVisible();
     });
   }
 
