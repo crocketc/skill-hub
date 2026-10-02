@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Switch } from "../../ui/Switch";
+import { Link } from "react-router-dom";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
+import { Switch } from "../../ui/Switch";
 import type { SettingsFacade, SettingsSnapshot } from "./api";
 
 export function AutomationSettings({ facade, settings }: { facade: SettingsFacade; settings: SettingsSnapshot }) {
@@ -30,8 +31,10 @@ export function AutomationSettings({ facade, settings }: { facade: SettingsFacad
     });
   };
   return (
-    <section className="sh-settings-card">
-      <h2>{t("settings.automation.heading")}</h2>
+    <section aria-labelledby="settings-skill-automation" className="sh-settings-card">
+      <h2 id="settings-skill-automation" tabIndex={-1}>{t("settings.automation.skillPolicyHeading")}</h2>
+      <p>{t("settings.automation.skillPolicyUnavailable")}</p>
+      <p className="sh-settings-note">{t("settings.automation.legacyPreferencesNote")}</p>
       <div className="sh-settings-capabilities">
         {(["perSkill", "batch", "global"] as const).map((key) => (
           <Switch
@@ -44,6 +47,11 @@ export function AutomationSettings({ facade, settings }: { facade: SettingsFacad
         ))}
       </div>
       {error ? <p role="alert">{t("settings.automation.saveFailed")}</p> : null}
+      <div className="sh-settings-form-actions">
+        <Link className="sh-button sh-button--secondary sh-button--md" to="/library">{t("settings.automation.openSkillLibrary")}</Link>
+        <Link className="sh-button sh-button--secondary sh-button--md" to="/projects">{t("settings.automation.openProjects")}</Link>
+        <Link className="sh-button sh-button--ghost sh-button--md" to="/settings?section=appUpdate">{t("settings.automation.openAppUpdates")}</Link>
+      </div>
     </section>
   );
 }

@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
+import { Switch } from "../../ui/Switch";
 import type {
   AppUpdate,
   BuildTrust,
@@ -17,7 +19,9 @@ export type ApplicationUpdateProps = {
   errorCode?: string | null;
   buildTrust?: BuildTrust;
   busy?: boolean;
+  networkEnabled?: boolean;
   onCheck?: () => void;
+  onPolicyChange?: (policy: UpdatePolicy) => Promise<unknown>;
   onDownload?: () => void;
   onInstall?: () => void;
   onCancel?: () => void;
@@ -39,13 +43,35 @@ export function ApplicationUpdate({
   onDownload,
   onInstall,
   onOpenRelease,
+  onPolicyChange,
   onRollback,
-  policy,
+  networkEnabled = true,
+  policy: initialPolicy,
   progress,
   state,
   update,
 }: ApplicationUpdateProps) {
   const { t } = useTranslation();
+  const [policy, setPolicy] = useState(initialPolicy);
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [policyError, setPolicyError] = useState(false);
+  useEffect(() => setPolicy(initialPolicy), [initialPolicy.enabled, initialPolicy.checkOnStartup]);
+  const togglePolicy = async (key: keyof UpdatePolicy) => {
+    if (!onPolicyChange || policyBusy) return;
+    const previous = policy;
+    const next = { ...policy, [key]: !policy[key] };
+    setPolicy(next);
+    setPolicyError(false);
+    setPolicyBusy(true);
+    try {
+      await onPolicyChange(next);
+    } catch {
+      setPolicy(previous);
+      setPolicyError(true);
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
   const unsigned = buildTrust === "windows_unsigned" || buildTrust === "unknown";
   const percent = percentOf(progress);
   const installReady = state === "ready_to_install";
@@ -54,6 +80,30 @@ export function ApplicationUpdate({
     <section aria-labelledby="settings-update-heading" className="sh-settings-card">
       <h2 id="settings-update-heading">{t("settings.update.heading")}</h2>
       <p>{t("settings.update.securityNotice")}</p>
+      <div className="sh-settings-update-policy">
+        <Switch
+          checked={policy.enabled}
+          describedBy="settings-update-policy-help"
+          disabled={policyBusy || !onPolicyChange}
+          id="settings-update-policy-enabled"
+          label={t("settings.update.policyEnabled")}
+          name="application-update-checks-enabled"
+          onChange={() => void togglePolicy("enabled")}
+        />
+        <p className="sh-field__help" id="settings-update-policy-help">{t("settings.update.policyDescription")}</p>
+        <Switch
+          checked={policy.checkOnStartup}
+          describedBy="settings-update-startup-help"
+          disabled={policyBusy || !onPolicyChange}
+          id="settings-update-policy-startup"
+          label={t("settings.update.checkOnStartup")}
+          name="application-update-check-on-startup"
+          onChange={() => void togglePolicy("checkOnStartup")}
+        />
+        <p className="sh-field__help" id="settings-update-startup-help">{t("settings.update.checkOnStartupDescription")}</p>
+        {policyError ? <p className="sh-settings-update-policy__error" role="alert">{t("settings.update.policySaveFailed")}</p> : null}
+      </div>
+      {!networkEnabled ? <p className="sh-settings-note">{t("settings.update.networkDisabled")}</p> : null}
       {state === "checking" ? <p>{t("settings.update.checking")}</p> : null}
       {state === "not_checked" ? <p>{t("settings.update.notChecked")}</p> : null}
       {state === "up_to_date" ? <p>{t("settings.update.current")}</p> : null}
@@ -94,13 +144,13 @@ export function ApplicationUpdate({
       {policy.enabled ? null : <p>{t("settings.update.policyDisabled")}</p>}
 
       {onCheck && policy.enabled && (state === "not_checked" || state === "up_to_date") ? (
-        <Button disabled={busy} onClick={onCheck}>
+        <Button disabled={busy || !networkEnabled} onClick={onCheck}>
           {t("settings.update.check")}
         </Button>
       ) : null}
 
       {onDownload && (state === "available" || state === "failed" || state === "rolled_back") ? (
-        <Button disabled={busy} onClick={onDownload}>
+        <Button disabled={busy || !networkEnabled} onClick={onDownload}>
           {state === "failed" ? t("settings.update.retry") : state === "rolled_back" ? t("settings.update.reDownload") : t("settings.update.download")}
         </Button>
       ) : null}
@@ -123,27 +173,12 @@ export function ApplicationUpdate({
         </Button>
       ) : null}
 
-      {onOpenRelease && (state === "available" || state === "failed" || state === "rolled_back") ? (
+      {onOpenRelease && networkEnabled && (state === "available" || state === "failed" || state === "rolled_back") ? (
         <Button disabled={busy} onClick={onOpenRelease} variant="secondary">
           {t("settings.update.openRelease")}
         </Button>
       ) : null}
 
-      {installReady && (update?.assetUrl || update?.sha256) ? (
-        <details>
-          <summary>{t("settings.update.details")}</summary>
-          {update?.assetUrl ? (
-            <p>
-              <span>{t("settings.update.detailsSource")}</span> {update.assetUrl}
-            </p>
-          ) : null}
-          {update?.sha256 ? (
-            <p>
-              <span>{t("settings.update.detailsHash")}</span> {update.sha256}
-            </p>
-          ) : null}
-        </details>
-      ) : null}
     </section>
   );
 }

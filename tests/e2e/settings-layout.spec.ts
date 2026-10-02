@@ -57,7 +57,7 @@ async function layoutMetrics(page: Page) {
 }
 
 test.describe("settings section layout across widths", () => {
-  for (const width of [800, 1024, 1280, 1440] as const) {
+  for (const width of [800, 900, 1024, 1280, 1440] as const) {
     test(`no horizontal overflow and single-column content at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       const tablist = await openSettings(page);
@@ -78,11 +78,11 @@ test.describe("settings section layout across widths", () => {
 
       // 宽度切换只改变尺寸与间距；键盘/指针路径保持一致。
       await tablist.getByRole("tab", { name: "Automation" }).click();
-      await expect(page.getByRole("switch", { name: "Batch checks" })).toBeVisible();
+      await expect(page.getByRole("switch", { name: "Batch preference" })).toBeVisible();
     });
   }
 
-  for (const width of [800, 1280] as const) {
+  for (const width of [800, 900, 1280] as const) {
     test(`minimum height 600px keeps sections reachable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 600 });
       const tablist = await openSettings(page);
@@ -94,6 +94,71 @@ test.describe("settings section layout across widths", () => {
       await expect(page.getByRole("tabpanel", { name: "App update" })).toBeVisible();
     });
   }
+});
+
+test.describe("narrow and short window 900x600", () => {
+  /**
+   * 上一轮复核：窄窗口下内容列太窄、部分字段被截断。这里把 900x600 的验收
+   * 固化为三类断言：逐元素无横向裁切（含真实长路径 dd）、内容列保持可读
+   * 最小宽度、每个分区的最后一个操作入口滚动后可达。
+   */
+  test("every section keeps fields fully readable and the last action reachable", async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 600 });
+    const tablist = await openSettings(page);
+    const tabs = tablist.getByRole("tab");
+    const tabCount = await tabs.count();
+
+    for (let index = 0; index < tabCount; index += 1) {
+      const tab = tabs.nth(index);
+      const name = (await tab.textContent())!.trim();
+      await tab.click();
+      await expect(page.locator(".sh-settings-panel:not([hidden])")).toBeVisible();
+
+      const metrics = await page.evaluate(() => {
+        const panels = document.querySelector<HTMLElement>(".sh-settings-panels")!;
+        const clipped: string[] = [];
+        for (const el of document.querySelectorAll(".sh-settings-panel:not([hidden]), .sh-settings-panel:not([hidden]) *")) {
+          if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) {
+            clipped.push(`${(el as HTMLElement).className || el.tagName} ${el.scrollWidth}>${el.clientWidth}`);
+          }
+        }
+        const card = document.querySelector<HTMLElement>(".sh-settings-panel:not([hidden]) .sh-settings-card");
+        panels.scrollTop = panels.scrollHeight;
+        const focusables = [
+          ...document.querySelectorAll<HTMLElement>(
+            ".sh-settings-panel:not([hidden]) a[href], .sh-settings-panel:not([hidden]) button, .sh-settings-panel:not([hidden]) input, .sh-settings-panel:not([hidden]) select, .sh-settings-panel:not([hidden]) summary",
+          ),
+        ].filter((el) => el.offsetParent !== null);
+        const last = focusables[focusables.length - 1];
+        const panelBox = panels.getBoundingClientRect();
+        const lastBox = last?.getBoundingClientRect();
+        return {
+          clipped,
+          cardWidth: card ? card.getBoundingClientRect().width : null,
+          lastAction: last ? (last.textContent || last.tagName).trim().slice(0, 40) : null,
+          lastReachable: lastBox ? lastBox.bottom <= panelBox.bottom + 1 : null,
+          docScrollWidth: document.documentElement.scrollWidth,
+          docClientWidth: document.documentElement.clientWidth,
+        };
+      });
+
+      expect(
+        metrics.docScrollWidth,
+        `${name}: document has no horizontal overflow`,
+      ).toBeLessThanOrEqual(metrics.docClientWidth);
+      expect(metrics.clipped, `${name}: no element clips its content`).toEqual([]);
+      expect(
+        metrics.cardWidth,
+        `${name}: content card keeps a readable minimum width`,
+      ).toBeGreaterThanOrEqual(340);
+      if (metrics.lastAction) {
+        expect(
+          metrics.lastReachable,
+          `${name}: last action "${metrics.lastAction}" is reachable by scrolling`,
+        ).toBe(true);
+      }
+    }
+  });
 });
 
 test.describe("long text and multiple providers", () => {

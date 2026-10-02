@@ -5,7 +5,7 @@ import { Field } from "../../ui/Field";
 import { Select } from "../../ui/Select";
 import { ThemeChoiceGrid } from "../../styles/ThemeChoiceGrid";
 import { useTheme } from "../../styles/ThemeProvider";
-import type { ThemeName } from "../../styles/theme";
+import type { AppearancePreference, ThemeName } from "../../styles/theme";
 import { setUserReducedMotion, useUserReducedMotion } from "../../ui/reducedMotion";
 import { Switch } from "../../ui/Switch";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
@@ -24,13 +24,13 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
   const [language, setLanguage] = useState(settings.appearance.language);
   const [error, setError] = useState<string>();
   const userReducedMotion = useUserReducedMotion();
-  const selectTheme = (theme: ThemeName) => {
+  const selectAppearance = (theme: AppearancePreference) => {
     const previous = appearance;
     setAppearance(theme);
     setError(undefined);
     void runTrackedOperation({
       kind: "settings_theme",
-      label: t("settings.general.heading"),
+      label: t("settings.general.appearance"),
       mode: "instant",
       notifications,
       translate: (name, options) => t(name as never, options),
@@ -42,6 +42,7 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
       setError(t("settings.general.themeSaveError"));
     });
   };
+  const selectTheme = (theme: ThemeName) => selectAppearance(theme);
 
   const selectLanguage = (next: SettingsSnapshot["appearance"]["language"]) => {
     const previous = language;
@@ -65,8 +66,8 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
   };
 
   return <section className="sh-settings-card">
-    <h2>{t("settings.general.heading")}</h2>
-    <Field help={t("settings.general.languageDescription")} label={t("settings.general.language")}>
+    <h2>{t("settings.general.groupHeading")}</h2>
+      <Field help={t("settings.general.languageDescription")} id="settings-language" label={t("settings.general.language")}>
       <Select
         onChange={(event) => selectLanguage(event.target.value as SettingsSnapshot["appearance"]["language"])}
         value={language}
@@ -76,9 +77,20 @@ export function GeneralSettings({ facade, settings }: { facade: SettingsFacade; 
         <option value="en-US">{t("settings.general.languages.enUS")}</option>
       </Select>
     </Field>
-    <dl className="sh-facts"><dt>{t("settings.general.theme")}</dt><dd>{resolvedTheme}</dd></dl>
-    <p>{t("settings.general.themeDescription")}</p>
-    <ThemeChoiceGrid onChange={selectTheme} value={resolvedTheme} />
+    <Field help={t("settings.general.appearanceDescription")} id="settings-appearance" label={t("settings.general.appearance")}>
+      <Select onChange={(event) => selectAppearance(event.target.value as AppearancePreference)} value={appearance}>
+        <option value="system">{t("settings.general.appearances.system")}</option>
+        <option value="light">{t("settings.general.appearances.light")}</option>
+        <option value="dark">{t("settings.general.appearances.dark")}</option>
+      </Select>
+    </Field>
+    <div className="sh-settings-theme-row">
+      <div className="sh-settings-theme-row__copy">
+        <span>{t("settings.general.theme")}</span>
+        <p className="sh-field__help">{t("settings.general.themeDescription")}</p>
+      </div>
+      <ThemeChoiceGrid onChange={selectTheme} value={resolvedTheme} />
+    </div>
     <div className="sh-settings-toggle">
       <Switch
         checked={userReducedMotion}

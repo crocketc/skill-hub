@@ -1,17 +1,23 @@
 import { useTranslation } from "react-i18next";
+import { Icon, type IconName } from "../../ui/Icon";
 
 export type SettingsSectionId =
   | "general"
+  | "interfaceView"
   | "dataProtection"
   | "networkAi"
   | "automation"
   | "libraryMaintenance"
   | "appUpdate";
 
+export type SettingsNavGroup = "preferences" | "data" | "network" | "maintenance";
+
 export interface SettingsSection {
   id: SettingsSectionId;
   heading: string;
   description: string;
+  group: SettingsNavGroup;
+  icon: IconName;
 }
 
 export const SECTION_TAB_ID_PREFIX = "settings-tab";
@@ -69,20 +75,25 @@ export function SettingsSectionNav({ sections, activeId, onChange }: SettingsSec
       onKeyDown={onKeyDown}
       role="tablist"
     >
-      {sections.map((section) => (
-        <button
-          aria-controls={sectionPanelId(section.id)}
-          aria-selected={section.id === activeId}
-          className="sh-settings-nav__tab"
-          id={sectionTabId(section.id)}
-          key={section.id}
-          onClick={() => onChange(section.id)}
-          role="tab"
-          tabIndex={section.id === activeId ? 0 : -1}
-          type="button"
-        >
-          {section.heading}
-        </button>
+      {sections.map((section, index) => (
+        <div className="sh-settings-nav__item" key={section.id} role="presentation">
+          {index === 0 || section.group !== sections[index - 1]?.group ? (
+            <span aria-hidden="true" className="sh-settings-nav__group">{t(`settings.navGroups.${section.group}`)}</span>
+          ) : null}
+          <button
+            aria-controls={sectionPanelId(section.id)}
+            aria-selected={section.id === activeId}
+            className="sh-settings-nav__tab"
+            id={sectionTabId(section.id)}
+            onClick={() => onChange(section.id)}
+            role="tab"
+            tabIndex={section.id === activeId ? 0 : -1}
+            type="button"
+          >
+            <Icon name={section.icon} size={16} />
+            <span>{section.heading}</span>
+          </button>
+        </div>
       ))}
     </div>
   );

@@ -1,8 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter } from "react-router-dom";
-import { expect, it } from "vitest";
+import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { AiNetworkSettings } from "./AiNetworkSettings";
@@ -11,6 +11,11 @@ import { NetworkStoragePlaceholder } from "./NetworkStoragePlaceholder";
 import { availableUpdate, networkSettings, settingsFixture, type SettingsFacade } from "./api";
 import settingsCss from "./settings.css?raw";
 import { SettingsPage } from "./SettingsPage";
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</output>;
+}
 
 // P2-01：设置页与概览、发现共用同一档页头↔正文的留白节奏（--page-gap），
 // 不允许页面级另写一档间距。
@@ -130,6 +135,29 @@ it("lets users choose and immediately apply a named theme", async () => {
   expect(commands).toContainEqual({ type: "set_theme", payload: { theme: "sakura" } });
 });
 
+it("lets users choose system, light, or dark appearance without exposing theme slugs", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const commands: unknown[] = [];
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async (command) => { commands.push(command); } }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  await user.selectOptions(screen.getByLabelText("外观"), "dark");
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "grok-night");
+  expect(commands).toContainEqual({ type: "set_theme", payload: { theme: "dark" } });
+  expect(screen.queryByText("moss-neutral")).not.toBeInTheDocument();
+  expect(screen.queryByText("grok-night")).not.toBeInTheDocument();
+  expect(within(screen.getByRole("group", { name: "主题颜色" })).getAllByRole("button")).toHaveLength(9);
+});
+
 it("lets users choose and immediately apply the interface language", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -167,14 +195,209 @@ it("persists view density and automation choices", async () => {
     </MemoryRouter>,
   );
 
+  await user.click(screen.getByRole("tab", { name: "界面与视图" }));
   await user.selectOptions(screen.getByLabelText("信息密度"), "comfortable");
   await user.click(screen.getByRole("tab", { name: "自动化" }));
-  // 自动化开关立即生效：以 Switch 语义暴露。
-  expect(screen.getByRole("switch", { name: "批量检查" })).not.toBeChecked();
-  await user.click(screen.getByRole("switch", { name: "批量检查" }));
+  // DesktopPreferences 只保存用户偏好；文案明确不代表后台自动更新策略。
+  expect(screen.getByText(/不会触发 Skill 更新检查或升级/)).toBeVisible();
+  expect(screen.getByRole("switch", { name: "批量处理偏好" })).not.toBeChecked();
+  await user.click(screen.getByRole("switch", { name: "批量处理偏好" }));
 
   expect(commands).toContainEqual({ type: "set_density", payload: { density: "comfortable" } });
   expect(commands).toContainEqual({ type: "set_automation", payload: { automation: { perSkill: true, batch: true, global: false } } });
+});
+
+it("searches settings in Chinese, opens the matching section, and focuses its control", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+          <LocationProbe />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  await user.type(screen.getByRole("searchbox", { name: "搜索设置" }), "信息密度");
+  await user.click(screen.getByRole("button", { name: "信息密度" }));
+
+  expect(screen.getByRole("tab", { name: "界面与视图" })).toHaveAttribute("aria-selected", "true");
+  expect(document.getElementById("settings-density")).toHaveFocus();
+  expect(screen.getByTestId("location")).toHaveTextContent("/settings?section=interfaceView#settings-density");
+});
+
+it("searches with English terms in the current locale and gives a clear empty state", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["en-US"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+          <LocationProbe />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "Search settings" });
+  await user.type(search, "startup update check");
+  const startupResult = screen.getByRole("button", { name: "Check at startup" });
+  expect(startupResult).toBeVisible();
+  await user.click(startupResult);
+  expect(document.getElementById("settings-update-policy-startup")).toHaveFocus();
+  expect(screen.getByRole("tab", { name: "App update" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByTestId("location")).toHaveTextContent("/settings?section=appUpdate#settings-update-policy-startup");
+  await user.clear(search);
+  await user.type(search, "no such setting");
+  expect(screen.getByText("No settings match that search.")).toBeVisible();
+  await user.clear(search);
+  expect(screen.queryByText("No settings match that search.")).not.toBeInTheDocument();
+});
+
+it("moves focus from the search input to the first result with ArrowDown", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+  const results = screen.getAllByRole("button", { name: "数据保护" });
+  expect(results.length).toBeGreaterThan(0);
+  await user.keyboard("{ArrowDown}");
+
+  expect(document.getElementById("settings-search-result-section-data")).toHaveFocus();
+});
+
+it("clears the query with Escape and keeps focus in the search input", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+  expect(screen.getAllByRole("button", { name: "数据保护" }).length).toBeGreaterThan(0);
+
+  await user.keyboard("{Escape}");
+
+  expect(search).toHaveValue("");
+  expect(screen.queryAllByRole("button", { name: "数据保护" })).toEqual([]);
+  expect(search).toHaveFocus();
+  // 再次输入即可恢复完整结果列表，清空不破坏后续搜索。
+  await user.type(search, "主题");
+  expect(screen.getAllByRole("button", { name: "通用" }).length).toBeGreaterThan(0);
+});
+
+it("restores focus to the search input after using the dedicated clear button", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+
+  await user.click(screen.getByRole("button", { name: "清除搜索" }));
+
+  expect(search).toHaveValue("");
+  expect(screen.queryAllByRole("button", { name: "数据保护" })).toEqual([]);
+  expect(search).toHaveFocus();
+});
+
+
+it("keeps the requested section deep link and browser history in sync", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const router = createMemoryRouter([{
+    path: "/settings",
+    element: <><SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} /><LocationProbe /></>,
+  }], { initialEntries: ["/settings?section=appUpdate"] });
+  render(<I18nextProvider i18n={i18n}><ThemeProvider><RouterProvider router={router} /></ThemeProvider></I18nextProvider>);
+
+  expect(screen.getByRole("tab", { name: "应用更新" })).toHaveAttribute("aria-selected", "true");
+  await userEvent.setup().click(screen.getByRole("tab", { name: "技能库维护" }));
+  expect(screen.getByTestId("location")).toHaveTextContent("/settings?section=libraryMaintenance");
+  await act(async () => { await router.navigate(-1); });
+  expect(screen.getByRole("tab", { name: "应用更新" })).toHaveAttribute("aria-selected", "true");
+});
+
+it("ignores an invalid percent-encoded deep link without breaking the settings page", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings?section=general#%E0%A4%A"]}>
+      <I18nextProvider i18n={i18n}><ThemeProvider><SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} /></ThemeProvider></I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("tabpanel", { name: "通用" })).toBeVisible();
+  expect(screen.getByLabelText("外观")).toBeVisible();
+});
+
+it("limits Ctrl+F to the settings page and removes the shortcut listener on unmount", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const removeListener = vi.spyOn(window, "removeEventListener");
+  const { unmount } = render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}><ThemeProvider><SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} /></ThemeProvider></I18nextProvider>
+    </MemoryRouter>,
+  );
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  const pageEvent = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, key: "f" });
+  window.dispatchEvent(pageEvent);
+  expect(pageEvent.defaultPrevented).toBe(true);
+  expect(search).toHaveFocus();
+
+  const inputEvent = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, key: "f" });
+  search.dispatchEvent(inputEvent);
+  expect(inputEvent.defaultPrevented).toBe(false);
+
+  unmount();
+  expect(removeListener).toHaveBeenCalledWith("keydown", expect.any(Function));
+  removeListener.mockRestore();
+});
+
+it("saves app update check preferences through the application update policy command", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const commands: unknown[] = [];
+  render(
+    <MemoryRouter initialEntries={["/settings?section=appUpdate"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async (command) => { commands.push(command); } }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  await user.click(screen.getByRole("switch", { name: "启动时检查" }));
+
+  expect(commands).toContainEqual({ type: "set_application_update_policy", payload: { enabled: true, checkOnStartup: false } });
 });
 
 it("turns off online helpers while leaving local management enabled", async () => {
@@ -242,7 +465,7 @@ it("keeps rendering the loading state while the snapshot is being fetched", asyn
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
 });
 
-it("exposes six sections behind a keyboard-usable section navigation", async () => {
+it("exposes seven sections behind a keyboard-usable section navigation", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);
 
@@ -260,21 +483,21 @@ it("exposes six sections behind a keyboard-usable section navigation", async () 
   );
 
   // AR-027：分区按盘点顺序出现在分区导航中，默认选中“通用”。
-  const order = ["通用", "数据保护", "网络与 AI", "自动化", "技能库维护", "应用更新"];
+  const order = ["通用", "界面与视图", "数据保护", "网络与 AI", "自动化", "技能库维护", "应用更新"];
   const tabs = within(screen.getByRole("tablist", { name: "设置分区" })).getAllByRole("tab");
-  expect(tabs).toHaveLength(6);
+  expect(tabs).toHaveLength(7);
   expect(tabs.map((tab) => tab.textContent)).toEqual(order);
   expect(tabs[0]).toHaveAttribute("aria-selected", "true");
 
   // 默认显示“通用”分区；其他分区隐藏但保持挂载，切换回来不丢状态。
   expect(screen.getByRole("tabpanel", { name: "通用" })).toBeVisible();
-  expect(screen.getByLabelText("信息密度")).toBeVisible();
-  expect(screen.getByLabelText("批量检查")).toBeInTheDocument();
-  expect(screen.getByLabelText("批量检查")).not.toBeVisible();
+  expect(screen.getByLabelText("外观")).toBeVisible();
+  expect(screen.getByLabelText("批量处理偏好")).toBeInTheDocument();
+  expect(screen.getByLabelText("批量处理偏好")).not.toBeVisible();
 
   await user.click(screen.getByRole("tab", { name: "自动化" }));
-  expect(screen.getByLabelText("批量检查")).toBeVisible();
-  expect(screen.getByLabelText("信息密度")).not.toBeVisible();
+  expect(screen.getByLabelText("批量处理偏好")).toBeVisible();
+  expect(screen.getByLabelText("外观")).not.toBeVisible();
 
   // 方向键切换到下一个分区并移动焦点（自动激活的标签页模式）。
   screen.getByRole("tab", { name: "自动化" }).focus();

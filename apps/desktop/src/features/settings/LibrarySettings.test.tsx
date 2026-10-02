@@ -3,6 +3,7 @@ import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { HealthReport, IgnoreRule, RepairPlan } from "../../api/bindings";
+import { displayPath } from "../../platform/displayPath";
 import { settingsFixture, type LibraryHealthOperations } from "./api";
 import settingsCss from "./settings.css?raw";
 import { LibrarySettings } from "./LibrarySettings";
@@ -64,11 +65,11 @@ function healthFacade(overrides: Partial<LibraryHealthOperations> = {}): Library
   };
 }
 
-async function renderLibrary(health: LibraryHealthOperations) {
+async function renderLibrary(health: LibraryHealthOperations, resolveSkillName: (skillId: string) => Promise<string | null> = async () => null) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <I18nextProvider i18n={i18n}>
-      <LibrarySettings health={health} settings={settingsFixture()} />
+      <LibrarySettings health={health} resolveSkillName={resolveSkillName} settings={settingsFixture()} />
     </I18nextProvider>,
   );
 }
@@ -90,7 +91,8 @@ it("runs a library health check and shows each finding", async () => {
 
   expect(runHealthCheck).toHaveBeenCalledWith();
   expect(await screen.findByText("发现 1 个问题")).toBeVisible();
-  expect(screen.getByText("orphan_metadata")).toBeVisible();
+  expect(screen.getByText("技能库中有一项可修复的问题")).toBeVisible();
+  expect(screen.queryByText("orphan_metadata")).not.toBeInTheDocument();
   expect(screen.getByText("警告")).toBeVisible();
 });
 
@@ -126,10 +128,10 @@ it("shows an error message when the health check fails", async () => {
 
 it("lists existing ignore rules with subject, reason and creation time", async () => {
   const listIgnoreRules = vi.fn(async () => [pathRule, skillRule]);
-  await renderLibrary(healthFacade({ listIgnoreRules }));
+  await renderLibrary(healthFacade({ listIgnoreRules }), async () => "PDF helper");
 
-  expect(await screen.findByText("C:/SkillHub/library/drafts")).toBeVisible();
-  expect(screen.getByText("pdf-helper")).toBeVisible();
+  expect(await screen.findByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
+  expect(screen.getByText("PDF helper")).toBeVisible();
   expect(screen.getByText("草稿目录不参与检查")).toBeVisible();
   expect(screen.getByText("稳定复现问题，先跳过")).toBeVisible();
   expect(screen.getByText("创建于: 2026-09-01T08:00:00Z")).toBeVisible();
@@ -169,16 +171,19 @@ it("shows the empty state through DataState without rendering a list", async () 
 });
 
 it("renders mixed ignore rules as structured rows with type badges", async () => {
-  await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule, skillRule, pendingRule] }));
+  await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule, skillRule, pendingRule] }), async () => "PDF helper");
 
   const rows = await screen.findAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(rows[0]).toHaveClass("sh-settings-ignore__row");
   // 徽标文案在每行行首（与主体类型下拉的 option 文案区分，按行内断言）。
   expect(within(rows[0]).getByText("路径忽略")).toBeVisible();
-  expect(within(rows[1]).getByText("精确 Skill ID")).toBeVisible();
-  expect(within(rows[2]).getByText("精确待处理 ID")).toBeVisible();
-  expect(screen.getByText("pending-7")).toBeVisible();
+  expect(within(rows[1]).getByText("指定技能")).toBeVisible();
+  expect(within(rows[2]).getByText("待检查的待处理项")).toBeVisible();
+  expect(within(rows[2]).getByText("待处理事项")).toBeVisible();
+  expect(within(rows[1]).getByText("PDF helper")).toBeVisible();
+  expect(document.body).not.toHaveTextContent("pdf-helper");
+  expect(document.body).not.toHaveTextContent("pending-7");
   expect(screen.getByText("等待上游修复后再检查")).toBeVisible();
   expect(screen.getByText("创建于: 2026-09-03T08:00:00Z")).toBeVisible();
   expect(screen.getAllByRole("button", { name: "移除" })).toHaveLength(3);
@@ -189,14 +194,14 @@ it("keeps the rule and reports the failure when removal fails", async () => {
     throw new Error("remove_ignore_rule failed");
   });
   await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule], removeIgnoreRule }));
-  expect(await screen.findByText("C:/SkillHub/library/drafts")).toBeVisible();
+  expect(await screen.findByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
 
   await click(screen.getByRole("button", { name: "移除" }));
   await click(await screen.findByRole("button", { name: "确认移除" }));
 
   expect(removeIgnoreRule).toHaveBeenCalledWith("rule-1");
   expect(await screen.findByText("忽略规则移除失败。")).toBeVisible();
-  expect(screen.getByText("C:/SkillHub/library/drafts")).toBeVisible();
+  expect(screen.getByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
 });
 
 it("wraps very long paths without breaking the row", async () => {
@@ -207,9 +212,9 @@ it("wraps very long paths without breaking the row", async () => {
     ],
   }));
 
-  const value = await screen.findByText(longPath);
+  const value = await screen.findByText(displayPath(longPath));
   expect(value).toHaveClass("sh-settings-ignore__value");
-  expect(value).toHaveAttribute("title", longPath);
+  expect(value).toHaveAttribute("title", displayPath(longPath));
   expect(value.closest("li")).toHaveClass("sh-settings-ignore__row");
   // 长值依赖 overflow-wrap:anywhere 折行，卡片不产生横向溢出容器。
   expect(settingsCss).toMatch(
@@ -244,7 +249,7 @@ it("adds a directory ignore rule and no longer offers raw skill ids as subjects"
     reason: "草稿目录不参与检查",
     deferUntil: null,
   });
-  expect(await screen.findByText("C:/temp/drafts")).toBeVisible();
+  expect(await screen.findByText("C:\\temp\\drafts")).toBeVisible();
   // 成功后表单清空，可直接继续录入下一条。
   expect(screen.getByLabelText("要忽略的目录路径")).toHaveValue("");
   expect(screen.getByLabelText("理由")).toHaveValue("");
@@ -275,18 +280,18 @@ it("blocks adding an ignore rule without a reason and reports it", async () => {
 it("removes an ignore rule only after an explicit confirmation", async () => {
   const removeIgnoreRule = vi.fn(async () => undefined);
   await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule], removeIgnoreRule }));
-  expect(await screen.findByText("C:/SkillHub/library/drafts")).toBeVisible();
+  expect(await screen.findByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
 
   await click(screen.getByRole("button", { name: "移除" }));
   expect(removeIgnoreRule).not.toHaveBeenCalled();
   expect(
-    await screen.findByText("移除后C:/SkillHub/library/drafts将重新参与健康检查。"),
+    await screen.findByText("移除后C:\\SkillHub\\library\\drafts将重新参与健康检查。"),
   ).toBeVisible();
 
   await click(await screen.findByRole("button", { name: "确认移除" }));
   expect(removeIgnoreRule).toHaveBeenCalledWith("rule-1");
   await act(async () => {});
-  expect(screen.queryByText("C:/SkillHub/library/drafts")).toBeNull();
+  expect(screen.queryByText("C:\\SkillHub\\library\\drafts")).toBeNull();
 });
 
 it("prepares a repair preview from a health finding without committing", async () => {
@@ -309,9 +314,11 @@ it("prepares a repair preview from a health finding without committing", async (
   expect(prepareRepair).toHaveBeenCalledWith("op-health-1", 0);
   const detail = await screen.findByRole("region", { name: "修复计划" });
   expect(detail).toBeVisible();
-  expect(detail).toHaveTextContent("orphan_metadata");
+  expect(detail).toHaveTextContent("技能库中有一项可修复的问题");
   expect(detail).toHaveTextContent("警告");
-  expect(detail).toHaveTextContent("remove_orphan_metadata");
+  expect(detail).toHaveTextContent("检查技能库中的孤立信息并修复");
+  expect(detail).not.toHaveTextContent("orphan_metadata");
+  expect(detail).not.toHaveTextContent("remove_orphan_metadata");
   expect(commitRepair).not.toHaveBeenCalled();
 });
 
@@ -375,6 +382,7 @@ it("hides the repair preview entry when a finding has no repair action", async (
 
   await click(screen.getByRole("button", { name: "运行健康检查" }));
 
-  expect(await screen.findByText("mystery")).toBeVisible();
+  expect(await screen.findByText("技能库中有一项可修复的问题")).toBeVisible();
+  expect(screen.queryByText("mystery")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "修复预览" })).toBeNull();
 });
