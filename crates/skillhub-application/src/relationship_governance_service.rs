@@ -19,10 +19,11 @@ use skillhub_core::deployment::reconcile::normalized_path_key;
 use skillhub_core::deployment::{DeploymentMode, TargetChange, TargetPlan};
 use skillhub_core::relationship::{
     build_conflict_workspace, calculate_removal_impact, plan_conflict_decision,
-    plan_conflict_governance_handoff, project_skill_relationship_graph, ConflictCaseFact,
-    ConflictClassification, ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    RemovalFacts, SourceRelationFact,
+    plan_conflict_governance_handoff, project_skill_relationship_graph_with_governance,
+    project_unified_governance_ledger_with_context, ConflictCaseFact, ConflictClassification,
+    ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact, FileRepresentation,
+    GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType, RemovalFacts,
+    SourceRelationFact,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
@@ -220,12 +221,39 @@ impl LocalApplicationFacade {
             let relationship_repository = database.relationship_repository();
             let revision = relationship_repository.relationship_revision()?;
             let last_verified_at = relationship_repository.last_verified_at()?;
-            let projection = project_skill_relationship_graph(
+            let deployments = relationship_repository.list_relations()?;
+            let source_relations = relationship_repository.list_source_relations()?;
+            let directory_nodes = database.directory_repository().list_nodes()?;
+            let directory_capabilities = relationship_repository.list_capabilities()?;
+            let mut governance_facts = relationship_repository
+                .list_source_copy_relations(true)?
+                .into_iter()
+                .map(skillhub_core::relationship::GovernableRelationFact::SourceCopy)
+                .collect::<Vec<_>>();
+            governance_facts.extend(
+                deployments
+                    .iter()
+                    .cloned()
+                    .map(skillhub_core::relationship::GovernableRelationFact::Deployment),
+            );
+            let governance = project_unified_governance_ledger_with_context(
+                &skillhub_core::relationship::RelationGovernanceFilters::default(),
+                &governance_facts,
+                &directory_capabilities,
+                &directory_nodes,
+                &relationship_repository.list_relation_governance_confirmations()?,
+                &std::collections::BTreeSet::new(),
+                &Vec::new(),
+                revision,
+                last_verified_at,
+            );
+            let projection = project_skill_relationship_graph_with_governance(
                 request.skill_id,
-                &relationship_repository.list_relations()?,
-                &relationship_repository.list_source_relations()?,
-                &database.directory_repository().list_nodes()?,
-                &relationship_repository.list_capabilities()?,
+                &deployments,
+                &source_relations,
+                &governance.rows,
+                &directory_nodes,
+                &directory_capabilities,
                 &database.conflict_repository().list_cases()?,
                 &request.filters,
             );

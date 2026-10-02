@@ -15,12 +15,13 @@
 //!    shared-body rewrites and unconfirmed shared impact all surface here
 //!    *before* a user can select a row.
 //!
-//! Readiness is deliberately narrower than "the migration command would accept
-//! this edge": links are already the centralized form, so they are reported as
-//! `AlreadyCentralized` and never enter the eligible bucket.  The migration
-//! command remains the authority for a single explicit conversion.
+//! Readiness describes legacy conversion feasibility only. `AlreadyCentralized`
+//! is retained for serialized compatibility with existing link rows; it is not
+//! evidence of a user's decision, takeover, completed governance or action
+//! availability. The `governance` projection and its action conditions are the
+//! authoritative user-facing facts.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -28,9 +29,9 @@ use super::source_copy::{SourceCopyDecision, SourceCopyHealth, SourceCopyRelatio
 use crate::deployment::{DeploymentRelationFact, ObservedMatchState};
 use crate::import::ImportSourceClass;
 use crate::relationship::{
-    calculate_removal_impact, AgentDirectoryCapabilityFact, DirectoryRecognition,
-    FileRepresentation, OwnershipState, RelatedSkillPath, RelationshipType, RemovalFacts,
-    RemovalImpactFact,
+    calculate_removal_impact, AgentDirectoryCapabilityFact, DirectoryNodeFact,
+    DirectoryRecognition, DirectoryRole, FileRepresentation, OwnershipState, RelatedSkillPath,
+    RelationshipType, RemovalFacts, RemovalImpactFact,
 };
 use crate::SkillId;
 
@@ -142,7 +143,8 @@ pub enum RelationGovernanceReadiness {
     NeedsValidation,
     /// Not convertible until the listed fact-level obstacle is resolved.
     Blocked,
-    /// Already a managed/observed link, so there is nothing to centralize.
+    /// Legacy link representation value. It does not imply the link is healthy,
+    /// taken over or governed, and must not suppress its action conditions.
     AlreadyCentralized,
 }
 
@@ -162,6 +164,108 @@ pub enum RelationGovernanceAction {
     DetachKeepFiles,
     /// 受阻或无适用动作。
     None,
+}
+
+/// User-facing governance classification. This is independent of the
+/// feasibility/readiness needed to execute a particular action.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceClassification {
+    Pending,
+    Completed,
+}
+
+/// The last confirmed management state for one relationship target.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationManagementStatus {
+    NotTakenOver,
+    TakenOver,
+}
+
+/// A durable user decision that is separate from the current health facts.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceDecision {
+    Undecided,
+    RetainedIndependentCopy,
+}
+
+/// Current conditions shown by the governance presenter. These are facts, not
+/// action labels, and multiple reasons may be present at once.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceReason {
+    DecisionRequired,
+    VerificationRequired,
+    ContentChanged,
+    PermissionLimited,
+    ManagedTargetOccupied,
+    OperationFailed,
+    TargetIdentityUnconfirmed,
+    RelationshipNotConvertible,
+    SharedImpactConfirmationRequired,
+    LinkTargetUnavailable,
+    LinkReplaced,
+    SubjectUnavailable,
+}
+
+/// An executable option and the conditions that currently prevent it. The
+/// caller can render only the user-facing action and explanation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationGovernanceActionCondition {
+    pub action: RelationGovernanceAction,
+    pub available: bool,
+    pub reasons: Vec<RelationGovernanceReason>,
+}
+
+/// One authoritative projection shared by the governance list and graph.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationGovernanceState {
+    pub governance_status: RelationGovernanceClassification,
+    pub management_status: RelationManagementStatus,
+    pub decision: RelationGovernanceDecision,
+    #[serde(with = "crate::i64_option_string")]
+    #[specta(type = Option<String>)]
+    pub management_confirmed_at: Option<i64>,
+    pub health_reasons: Vec<RelationGovernanceReason>,
+    pub action_conditions: Vec<RelationGovernanceActionCondition>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationGovernanceTargetKind {
+    Agent,
+    Project,
+    SharedDirectory,
+}
+
+/// Stable identity for deduplicating one Skill's use at one verified physical
+/// target. `entry_path_key` is the normalized full entry path; the directory
+/// id is retained from the registered target fact even when its current health
+/// later becomes abnormal.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationTargetIdentity {
+    pub skill_id: SkillId,
+    pub target_kind: RelationGovernanceTargetKind,
+    pub directory_node_id: String,
+    pub entry_path_key: String,
+}
+
+/// Persisted, explicit management/decision facts for deployment relationships.
+/// Source-copy decisions remain stored in their source-copy JSON fact.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RelationGovernanceConfirmationFact {
+    pub relation_id: String,
+    pub management_status: RelationManagementStatus,
+    pub decision: RelationGovernanceDecision,
+    #[serde(with = "crate::i64_option_string")]
+    #[specta(type = Option<String>)]
+    pub confirmed_at: Option<i64>,
 }
 
 /// Why an edge is not `EligibleToCentralize`.  The list is exhaustive and
@@ -215,6 +319,15 @@ pub struct RelationGovernanceRow {
     pub primary_action: RelationGovernanceAction,
     pub blockers: Vec<RelationGovernanceBlocker>,
     pub impact: RelationGovernanceImpact,
+    /// New authoritative three-layer model. Legacy status/readiness fields
+    /// remain during the frontend transition, but do not determine completion.
+    pub governance: RelationGovernanceState,
+    /// Absent when the facts do not carry a registered, verified target.
+    pub target_identity: Option<RelationTargetIdentity>,
+    /// Every internal fact represented by this single physical use relation.
+    /// `relation` remains the deterministic representative for existing
+    /// commands; callers can use these ids to resolve merged evidence.
+    pub evidence_relation_ids: Vec<String>,
 }
 
 impl RelationGovernanceRow {
@@ -388,6 +501,43 @@ pub fn project_unified_governance_ledger(
     relationship_revision: i64,
     last_verified_at: Option<i64>,
 ) -> RelationGovernanceLedger {
+    project_unified_governance_ledger_with_context(
+        filters,
+        facts,
+        directory_capabilities,
+        &[],
+        &[],
+        batch_relation_ids,
+        names,
+        relationship_revision,
+        last_verified_at,
+    )
+}
+
+/// Projects the authoritative governance rows from relationship, registered
+/// directory, and explicit management-confirmation facts. The graph query uses
+/// these exact rows rather than rebuilding governance from `active` or
+/// `match_state`.
+#[allow(clippy::too_many_arguments)]
+pub fn project_unified_governance_ledger_with_context(
+    filters: &RelationGovernanceFilters,
+    facts: &[GovernableRelationFact],
+    directory_capabilities: &[AgentDirectoryCapabilityFact],
+    directory_nodes: &[DirectoryNodeFact],
+    confirmations: &[RelationGovernanceConfirmationFact],
+    batch_relation_ids: &BTreeSet<String>,
+    names: &RelationGovernanceNames,
+    relationship_revision: i64,
+    last_verified_at: Option<i64>,
+) -> RelationGovernanceLedger {
+    let confirmation_by_relation_id = confirmations
+        .iter()
+        .map(|fact| (fact.relation_id.as_str(), fact))
+        .collect::<HashMap<_, _>>();
+    let directory_by_node_id = directory_nodes
+        .iter()
+        .map(|directory| (directory.node_id.as_str(), directory))
+        .collect::<HashMap<_, _>>();
     let deployment_facts = facts
         .iter()
         .filter_map(|fact| match fact {
@@ -401,28 +551,70 @@ pub fn project_unified_governance_ledger(
     let mut rows = facts
         .iter()
         .filter_map(|fact| {
+            // 普通用户目录仅作为来源事实保留，不是 Agent/项目的使用目标。
+            if matches!(fact, GovernableRelationFact::SourceCopy(copy)
+                if copy.source_class == ImportSourceClass::UserLocal)
+            {
+                return None;
+            }
             let projection = project_governable_relation(fact)?;
             let status = projection.status;
             Some((fact, projection.relation_id, status))
         })
         .map(|(fact, _relation_id, status)| match fact {
-            GovernableRelationFact::SourceCopy(copy) => RelationGovernanceRow {
-                relation: GovernableRelationFact::SourceCopy(copy.clone()),
-                status,
-                skill_display_name: names
-                    .iter()
-                    .find(|(candidate, _)| *candidate == copy.skill_id)
-                    .map(|(_, name)| name.clone()),
-                // 来源副本已是集中库治理形态，不存在"再纳入"。
-                readiness: RelationGovernanceReadiness::AlreadyCentralized,
-                primary_action: source_copy_action(copy, status),
-                blockers: Vec::new(),
-                impact: RelationGovernanceImpact::default(),
-            },
+            GovernableRelationFact::SourceCopy(copy) => {
+                let target_identity = target_identity_for_fact(fact, &directory_by_node_id);
+                let management_status = RelationManagementStatus::NotTakenOver;
+                let decision = match copy.decision {
+                    SourceCopyDecision::Pending => RelationGovernanceDecision::Undecided,
+                    SourceCopyDecision::Retained => {
+                        RelationGovernanceDecision::RetainedIndependentCopy
+                    }
+                };
+                let readiness = RelationGovernanceReadiness::AlreadyCentralized;
+                let primary_action = source_copy_action(copy, status);
+                let governance =
+                    governance_state(fact, management_status, decision, None, primary_action, &[]);
+                RelationGovernanceRow {
+                    relation: GovernableRelationFact::SourceCopy(copy.clone()),
+                    status,
+                    skill_display_name: names
+                        .iter()
+                        .find(|(candidate, _)| *candidate == copy.skill_id)
+                        .map(|(_, name)| name.clone()),
+                    // Compatibility value only. Importing a source copy is not a
+                    // user's management decision and does not complete governance.
+                    readiness,
+                    primary_action,
+                    blockers: Vec::new(),
+                    impact: RelationGovernanceImpact::default(),
+                    governance,
+                    target_identity,
+                    evidence_relation_ids: vec![copy.relation_id.clone()],
+                }
+            }
             GovernableRelationFact::Deployment(relation) => {
                 let impact = calculate_removal_impact(&relation.relation_id, &removal_facts);
                 let blockers = blockers_for(relation, directory_capabilities, &impact);
                 let readiness = readiness_for(relation, &blockers);
+                let confirmation = confirmation_by_relation_id
+                    .get(relation.relation_id.as_str())
+                    .copied();
+                let management_status = confirmation
+                    .map(|fact| fact.management_status)
+                    .unwrap_or(RelationManagementStatus::NotTakenOver);
+                let decision = confirmation
+                    .map(|fact| fact.decision)
+                    .unwrap_or(RelationGovernanceDecision::Undecided);
+                let primary_action = primary_action_for(relation, readiness);
+                let governance = governance_state(
+                    fact,
+                    management_status,
+                    decision,
+                    confirmation.and_then(|fact| fact.confirmed_at),
+                    primary_action,
+                    &blockers,
+                );
                 RelationGovernanceRow {
                     relation: GovernableRelationFact::Deployment(relation.clone()),
                     status: deployment_status(relation),
@@ -433,7 +625,7 @@ pub fn project_unified_governance_ledger(
                             .map(|(_, name)| name.clone())
                     }),
                     readiness,
-                    primary_action: primary_action_for(relation, readiness),
+                    primary_action,
                     blockers,
                     impact: RelationGovernanceImpact {
                         other_consumer_agent_ids: impact
@@ -447,10 +639,14 @@ pub fn project_unified_governance_ledger(
                         backup_required: impact.backup.required,
                         rollback_available: impact.backup.rollback_available,
                     },
+                    governance,
+                    target_identity: target_identity_for_fact(fact, &directory_by_node_id),
+                    evidence_relation_ids: vec![relation.relation_id.clone()],
                 }
             }
         })
         .collect::<Vec<_>>();
+    rows = merge_rows_for_same_target(rows);
     rows.sort_by(|left, right| left.relation_id().cmp(right.relation_id()));
 
     let counts = RelationGovernanceCounts {
@@ -482,7 +678,7 @@ pub fn project_unified_governance_ledger(
     let text = filters.text.trim().to_lowercase();
     let selected = rows
         .into_iter()
-        .filter(|row| filters.bucket.accepts(row.readiness))
+        .filter(|row| bucket_accepts_governance_actions(filters.bucket, row))
         .filter(|row| filters.statuses.is_empty() || filters.statuses.contains(&row.status))
         .filter(|row| {
             filters
@@ -551,8 +747,382 @@ pub fn project_unified_governance_ledger(
     }
 }
 
+fn target_identity_for_fact(
+    fact: &GovernableRelationFact,
+    directories: &HashMap<&str, &DirectoryNodeFact>,
+) -> Option<RelationTargetIdentity> {
+    if let GovernableRelationFact::Deployment(relation) = fact {
+        let skill_id = relation.skill_id?;
+        if let Some(directory_node_id) =
+            relation
+                .link_target_directory_id
+                .as_deref()
+                .filter(|directory_id| {
+                    directories
+                        .get(directory_id)
+                        .is_some_and(|directory| directory.role == DirectoryRole::SharedDirectory)
+                })
+        {
+            let entry_path_key = relation
+                .link_target_path_key
+                .as_deref()
+                .filter(|key| !key.trim().is_empty())
+                .map(str::to_owned)
+                .or_else(|| {
+                    relation
+                        .link_target_path
+                        .as_deref()
+                        .map(crate::deployment::observed_path_key)
+                })?;
+            return Some(RelationTargetIdentity {
+                skill_id,
+                target_kind: RelationGovernanceTargetKind::SharedDirectory,
+                directory_node_id: directory_node_id.to_owned(),
+                entry_path_key,
+            });
+        }
+    }
+    let (skill_id, directory_node_id, entry_path_key) = match fact {
+        GovernableRelationFact::SourceCopy(copy) => {
+            if !matches!(
+                copy.source_class,
+                ImportSourceClass::AgentLocal | ImportSourceClass::RegisteredProject
+            ) {
+                return None;
+            }
+            (
+                copy.skill_id,
+                copy.directory_node_id
+                    .as_deref()
+                    .or(copy.source_container_id.as_deref())?,
+                copy.source_path_key.as_str(),
+            )
+        }
+        GovernableRelationFact::Deployment(relation) => (
+            relation.skill_id?,
+            relation.directory_node_id.as_deref()?,
+            relation.path_key.as_str(),
+        ),
+    };
+    let directory = directories.get(directory_node_id)?;
+    let target_kind = match directory.role {
+        DirectoryRole::AgentNative => RelationGovernanceTargetKind::Agent,
+        DirectoryRole::Project => RelationGovernanceTargetKind::Project,
+        DirectoryRole::SharedDirectory => RelationGovernanceTargetKind::SharedDirectory,
+        DirectoryRole::CentralLibrary => return None,
+    };
+    let entry_path_key = if entry_path_key.trim().is_empty() {
+        match fact {
+            GovernableRelationFact::SourceCopy(copy) => {
+                crate::deployment::observed_path_key(&copy.source_path)
+            }
+            GovernableRelationFact::Deployment(relation) => {
+                crate::deployment::observed_path_key(&relation.path)
+            }
+        }
+    } else {
+        entry_path_key.to_owned()
+    };
+    Some(RelationTargetIdentity {
+        skill_id,
+        target_kind,
+        directory_node_id: directory_node_id.to_owned(),
+        entry_path_key,
+    })
+}
+
+fn governance_state(
+    fact: &GovernableRelationFact,
+    management_status: RelationManagementStatus,
+    decision: RelationGovernanceDecision,
+    management_confirmed_at: Option<i64>,
+    primary_action: RelationGovernanceAction,
+    blockers: &[RelationGovernanceBlocker],
+) -> RelationGovernanceState {
+    let health_reasons = match fact {
+        GovernableRelationFact::SourceCopy(copy) => match copy.health {
+            SourceCopyHealth::Normal => Vec::new(),
+            SourceCopyHealth::NeedsValidation => {
+                vec![RelationGovernanceReason::VerificationRequired]
+            }
+            SourceCopyHealth::ContentChanged => vec![RelationGovernanceReason::ContentChanged],
+            SourceCopyHealth::PermissionLimited => {
+                vec![RelationGovernanceReason::PermissionLimited]
+            }
+            SourceCopyHealth::ManagedOccupied => {
+                vec![RelationGovernanceReason::ManagedTargetOccupied]
+            }
+            SourceCopyHealth::OperationFailed => vec![RelationGovernanceReason::OperationFailed],
+        },
+        GovernableRelationFact::Deployment(relation) => {
+            let mut reasons = match relation.match_state {
+                ObservedMatchState::ContentVerified => Vec::new(),
+                ObservedMatchState::NameOnly => {
+                    vec![RelationGovernanceReason::VerificationRequired]
+                }
+                ObservedMatchState::Diverged => {
+                    vec![RelationGovernanceReason::ContentChanged]
+                }
+            };
+            if management_status == RelationManagementStatus::TakenOver
+                && !(matches!(
+                    relation.relationship,
+                    RelationshipType::ManagedLink | RelationshipType::ObservedLink
+                ) && relation.ownership == OwnershipState::SkillhubManaged)
+            {
+                reasons.push(RelationGovernanceReason::LinkReplaced);
+            }
+            if relation.skill_id.is_none() {
+                reasons.push(RelationGovernanceReason::TargetIdentityUnconfirmed);
+            }
+            reasons
+        }
+    };
+    let governance_status = if health_reasons.is_empty()
+        && (management_status == RelationManagementStatus::TakenOver
+            || decision == RelationGovernanceDecision::RetainedIndependentCopy)
+    {
+        RelationGovernanceClassification::Completed
+    } else {
+        RelationGovernanceClassification::Pending
+    };
+    let action_conditions = action_conditions(
+        fact,
+        management_status,
+        primary_action,
+        blockers,
+        &health_reasons,
+    );
+    RelationGovernanceState {
+        governance_status,
+        management_status,
+        decision,
+        management_confirmed_at,
+        health_reasons,
+        action_conditions,
+    }
+}
+
+fn action_conditions(
+    fact: &GovernableRelationFact,
+    management_status: RelationManagementStatus,
+    primary_action: RelationGovernanceAction,
+    blockers: &[RelationGovernanceBlocker],
+    health_reasons: &[RelationGovernanceReason],
+) -> Vec<RelationGovernanceActionCondition> {
+    let mut conditions = Vec::new();
+    match fact {
+        GovernableRelationFact::SourceCopy(_) => {
+            if primary_action != RelationGovernanceAction::None {
+                conditions.push(RelationGovernanceActionCondition {
+                    action: primary_action,
+                    available: true,
+                    reasons: Vec::new(),
+                });
+            }
+        }
+        GovernableRelationFact::Deployment(relation) => {
+            if primary_action == RelationGovernanceAction::Revalidate
+                && blockers.iter().any(|blocker| {
+                    *blocker != RelationGovernanceBlocker::SharedImpactConfirmationRequired
+                })
+            {
+                conditions.push(RelationGovernanceActionCondition {
+                    action: RelationGovernanceAction::Revalidate,
+                    available: true,
+                    reasons: Vec::new(),
+                });
+            }
+
+            if management_status == RelationManagementStatus::TakenOver {
+                if relation.relationship == RelationshipType::ManagedLink
+                    && relation.ownership == OwnershipState::SkillhubManaged
+                {
+                    conditions.push(RelationGovernanceActionCondition {
+                        action: RelationGovernanceAction::Undeploy,
+                        available: true,
+                        reasons: Vec::new(),
+                    });
+                }
+                return conditions;
+            }
+
+            let reasons = if !health_reasons.is_empty() {
+                health_reasons.to_vec()
+            } else {
+                blockers
+                    .iter()
+                    .map(|blocker| match blocker {
+                        RelationGovernanceBlocker::VerificationNotCurrent
+                        | RelationGovernanceBlocker::DirectoryRecognitionUnknown => {
+                            RelationGovernanceReason::VerificationRequired
+                        }
+                        RelationGovernanceBlocker::SharedImpactConfirmationRequired => {
+                            RelationGovernanceReason::SharedImpactConfirmationRequired
+                        }
+                        RelationGovernanceBlocker::SkillIdentityUnconfirmed => {
+                            RelationGovernanceReason::TargetIdentityUnconfirmed
+                        }
+                        _ => RelationGovernanceReason::RelationshipNotConvertible,
+                    })
+                    .collect()
+            };
+            conditions.push(RelationGovernanceActionCondition {
+                action: RelationGovernanceAction::CentralizeManagement,
+                available: reasons.is_empty(),
+                reasons,
+            });
+        }
+    }
+    conditions
+}
+
+fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationGovernanceRow> {
+    let mut merged: Vec<RelationGovernanceRow> = Vec::new();
+    for mut row in rows {
+        let Some(identity) = row.target_identity.as_ref() else {
+            merged.push(row);
+            continue;
+        };
+        let Some(existing_index) = merged
+            .iter()
+            .position(|existing| existing.target_identity.as_ref() == Some(identity))
+        else {
+            merged.push(row);
+            continue;
+        };
+        let existing = &mut merged[existing_index];
+        let mut evidence = existing.evidence_relation_ids.clone();
+        evidence.append(&mut row.evidence_relation_ids);
+        evidence.sort();
+        evidence.dedup();
+
+        // Deployment facts are the executable representative when a source
+        // copy and deployment describe the same verified physical target.
+        let replace_representative = existing.deployment().is_none() && row.deployment().is_some();
+        let retained_decision = [existing.governance.decision, row.governance.decision]
+            .contains(&RelationGovernanceDecision::RetainedIndependentCopy);
+        let taken_over = [
+            existing.governance.management_status,
+            row.governance.management_status,
+        ]
+        .contains(&RelationManagementStatus::TakenOver);
+        let mut reasons = existing.governance.health_reasons.clone();
+        reasons.extend(row.governance.health_reasons.iter().copied());
+        reasons.sort_by_key(|reason| *reason as u8);
+        reasons.dedup();
+        let decision = if taken_over {
+            RelationGovernanceDecision::Undecided
+        } else if retained_decision {
+            RelationGovernanceDecision::RetainedIndependentCopy
+        } else {
+            RelationGovernanceDecision::Undecided
+        };
+        let management_status = if taken_over {
+            RelationManagementStatus::TakenOver
+        } else {
+            RelationManagementStatus::NotTakenOver
+        };
+        let governance_status = if reasons.is_empty()
+            && (management_status == RelationManagementStatus::TakenOver
+                || decision == RelationGovernanceDecision::RetainedIndependentCopy)
+        {
+            RelationGovernanceClassification::Completed
+        } else {
+            RelationGovernanceClassification::Pending
+        };
+        existing.governance.management_status = management_status;
+        existing.governance.decision = decision;
+        existing.governance.management_confirmed_at = existing
+            .governance
+            .management_confirmed_at
+            .into_iter()
+            .chain(row.governance.management_confirmed_at)
+            .max();
+        existing.governance.governance_status = governance_status;
+        existing.governance.health_reasons = reasons;
+        existing.governance.action_conditions = action_conditions(
+            &existing.relation,
+            existing.governance.management_status,
+            existing.primary_action,
+            &existing.blockers,
+            &existing.governance.health_reasons,
+        );
+        existing.evidence_relation_ids = evidence;
+        existing
+            .impact
+            .other_consumer_agent_ids
+            .extend(row.impact.other_consumer_agent_ids.into_iter());
+        existing.impact.other_consumer_agent_ids.sort();
+        existing.impact.other_consumer_agent_ids.dedup();
+        if replace_representative {
+            let evidence_relation_ids = existing.evidence_relation_ids.clone();
+            let merged_consumers = existing.impact.other_consumer_agent_ids.clone();
+            let mut governance = existing.governance.clone();
+            governance.action_conditions = action_conditions(
+                &row.relation,
+                governance.management_status,
+                row.primary_action,
+                &row.blockers,
+                &governance.health_reasons,
+            );
+            row.governance = governance;
+            row.evidence_relation_ids = evidence_relation_ids;
+            row.impact.other_consumer_agent_ids = merged_consumers;
+            merged[existing_index] = row;
+        }
+    }
+    merged.sort_by(|left, right| left.relation_id().cmp(right.relation_id()));
+    merged
+}
+
 fn status_count(rows: &[RelationGovernanceRow], status: GovernableRelationStatus) -> u32 {
     rows.iter().filter(|row| row.status == status).count() as u32
+}
+
+fn bucket_accepts_governance_actions(
+    bucket: RelationGovernanceBucket,
+    row: &RelationGovernanceRow,
+) -> bool {
+    match bucket {
+        RelationGovernanceBucket::All => true,
+        RelationGovernanceBucket::EligibleToCentralize => {
+            row.governance.action_conditions.iter().any(|condition| {
+                matches!(
+                    condition.action,
+                    RelationGovernanceAction::CentralizeManagement
+                        | RelationGovernanceAction::KeepIndependentCopy
+                ) && condition.available
+            })
+        }
+        RelationGovernanceBucket::NeedsValidation => {
+            row.governance.action_conditions.iter().any(|condition| {
+                (condition.action == RelationGovernanceAction::Revalidate && condition.available)
+                    || (condition.action == RelationGovernanceAction::CentralizeManagement
+                        && !condition.available
+                        && condition.reasons.iter().any(|reason| {
+                            matches!(
+                                reason,
+                                RelationGovernanceReason::VerificationRequired
+                                    | RelationGovernanceReason::SharedImpactConfirmationRequired
+                            )
+                        }))
+            })
+        }
+        RelationGovernanceBucket::Blocked => {
+            row.governance.action_conditions.iter().any(|condition| {
+                condition.action == RelationGovernanceAction::CentralizeManagement
+                    && !condition.available
+                    && condition.reasons.iter().any(|reason| {
+                        !matches!(
+                            reason,
+                            RelationGovernanceReason::VerificationRequired
+                                | RelationGovernanceReason::SharedImpactConfirmationRequired
+                        )
+                    })
+            })
+        }
+    }
 }
 
 /// Deployment edges carry no source-copy health, so their quick status is

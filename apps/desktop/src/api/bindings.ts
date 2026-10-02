@@ -2853,6 +2853,16 @@ export type RelationGovernanceAction =
 "none";
 
 /**
+ *  An executable option and the conditions that currently prevent it. The
+ *  caller can render only the user-facing action and explanation.
+ */
+export type RelationGovernanceActionCondition = {
+	action: RelationGovernanceAction,
+	available: boolean,
+	reasons: RelationGovernanceReason[],
+};
+
+/**
  *  Which governance change a batch applies to every selected relationship
  *  edge.
  */
@@ -2945,6 +2955,12 @@ export type RelationGovernanceBlocker =
  */
 export type RelationGovernanceBucket = "all" | "eligible_to_centralize" | "needs_validation" | "blocked";
 
+/**
+ *  User-facing governance classification. This is independent of the
+ *  feasibility/readiness needed to execute a particular action.
+ */
+export type RelationGovernanceClassification = "pending" | "completed";
+
 export type RelationGovernanceCounts = {
 	all: number,
 	eligible_to_centralize: number,
@@ -2960,6 +2976,9 @@ export type RelationGovernanceCounts = {
 	source_copies: number,
 	deployments: number,
 };
+
+/**  A durable user decision that is separate from the current health facts. */
+export type RelationGovernanceDecision = "undecided" | "retained_independent_copy";
 
 export type RelationGovernanceFilters = {
 	bucket?: RelationGovernanceBucket,
@@ -3008,8 +3027,17 @@ export type RelationGovernanceReadiness =
 "needs_validation" |
 /**  Not convertible until the listed fact-level obstacle is resolved. */
 "blocked" |
-/**  Already a managed/observed link, so there is nothing to centralize. */
+/**
+ *  Legacy link representation value. It does not imply the link is healthy,
+ *  taken over or governed, and must not suppress its action conditions.
+ */
 "already_centralized";
+
+/**
+ *  Current conditions shown by the governance presenter. These are facts, not
+ *  action labels, and multiple reasons may be present at once.
+ */
+export type RelationGovernanceReason = "decision_required" | "verification_required" | "content_changed" | "permission_limited" | "managed_target_occupied" | "operation_failed" | "target_identity_unconfirmed" | "relationship_not_convertible" | "shared_impact_confirmation_required" | "link_target_unavailable" | "link_replaced" | "subject_unavailable";
 
 /**
  *  One relationship edge, ready for display and for batch selection. The
@@ -3029,7 +3057,35 @@ export type RelationGovernanceRow = {
 	primary_action: RelationGovernanceAction,
 	blockers: RelationGovernanceBlocker[],
 	impact: RelationGovernanceImpact,
+	/**
+	 *  New authoritative three-layer model. Legacy status/readiness fields
+	 *  remain during the frontend transition, but do not determine completion.
+	 */
+	governance: RelationGovernanceState,
+	/**  Absent when the facts do not carry a registered, verified target. */
+	target_identity: RelationTargetIdentity | null,
+	/**
+	 *  Every internal fact represented by this single physical use relation.
+	 *  `relation` remains the deterministic representative for existing
+	 *  commands; callers can use these ids to resolve merged evidence.
+	 */
+	evidence_relation_ids: string[],
 };
+
+/**  One authoritative projection shared by the governance list and graph. */
+export type RelationGovernanceState = {
+	governance_status: RelationGovernanceClassification,
+	management_status: RelationManagementStatus,
+	decision: RelationGovernanceDecision,
+	management_confirmed_at: string | null,
+	health_reasons: RelationGovernanceReason[],
+	action_conditions: RelationGovernanceActionCondition[],
+};
+
+export type RelationGovernanceTargetKind = "agent" | "project" | "shared_directory";
+
+/**  The last confirmed management state for one relationship target. */
+export type RelationManagementStatus = "not_taken_over" | "taken_over";
 
 export type RelationMigrationResult = {
 	operation_id: OperationId,
@@ -3056,6 +3112,19 @@ export type RelationMigrationResult = {
 export type RelationMigrationState = "prepared" | "committed" | "rolled_back" | "failed" | "cancelled";
 
 export type RelationMigrationTargetMode = "managed_link";
+
+/**
+ *  Stable identity for deduplicating one Skill's use at one verified physical
+ *  target. `entry_path_key` is the normalized full entry path; the directory
+ *  id is retained from the registered target fact even when its current health
+ *  later becomes abnormal.
+ */
+export type RelationTargetIdentity = {
+	skill_id: SkillId,
+	target_kind: RelationGovernanceTargetKind,
+	directory_node_id: string,
+	entry_path_key: string,
+};
 
 export type RelationshipCheckItem = {
 	relation_id: string,
@@ -3108,7 +3177,10 @@ export type RelationshipCheckScope = "all_active" | ({ relation_ids: {
 export type RelationshipGraphEdgeKind = "related_skill" | "source" | "deployment" | "located_in" | "shared" | "conflict";
 
 export type RelationshipGraphFactCounts = {
+	/**  Distinct current use relations from the authoritative governance rows. */
+	usage_relations: number,
 	deployment_relations: number,
+	/**  Import/upstream provenance facts; these are not use relations. */
 	source_relations: number,
 	conflict_cases: number,
 };
@@ -3845,6 +3917,13 @@ export type SkillRelationshipEdge = {
 	match_state: ObservedMatchState | null,
 	active: boolean | null,
 	last_verified_at: string | null,
+	/**
+	 *  Present only on the one target-use edge backed by a governance row.
+	 *  Structural, provenance and conflict edges intentionally have no state.
+	 */
+	governance: RelationGovernanceState | null,
+	target_identity: RelationTargetIdentity | null,
+	evidence_relation_ids: string[],
 };
 
 /**
