@@ -667,8 +667,17 @@
   border-top: 1px solid var(--ui-border-subtle);
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr);
+  /* 决策行在窄内容列（如 900px 窗口）必须退化为单列，双列最小宽度和
+     （2×12rem）超过卡片内宽时会截断选择框。 */
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
   padding: var(--space-3) 0;
+}
+
+/* 事实清单（备份位置、技能库路径等）：去掉 dd 的浏览器默认 40px 缩进以
+   节省窄列宽度，并保证无断点的长路径 token 也完整换行而不是被裁切。 */
+.sh-settings-panel:not([data-section="networkAi"]) .sh-facts dd {
+  margin-inline-start: 0;
+  overflow-wrap: anywhere;
 }
 
 @container workspace (min-width: 64rem) {
@@ -690,7 +699,8 @@
 
 @media (max-width: 1024px) {
   .sh-settings-layout {
-    grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr);
+    /* 窄窗口优先保证内容列可读宽度：侧栏收到 9-11rem。 */
+    grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr);
   }
 
   .sh-settings-panel:not([data-section="networkAi"]) .sh-field {
