@@ -6,7 +6,7 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import { AppNotificationsProvider } from "../../ui/notifications";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 import { PendingPage } from "./PendingPage";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
 function fakeFacade(overrides: Partial<PendingFacade> = {}): PendingFacade {
   return {
@@ -41,6 +41,7 @@ const findingItem: PendingItem = {
   subject: "skill-b", displayName: "skill-b",
   kind: "security_finding",
   code: "finding-7",
+  findingId: "finding-7",
   message: "finding",
   risk: "high",
   affectedDeployments: 3,
@@ -56,8 +57,10 @@ it("links required work to its source without exposing identifiers or offering i
     href: "/relationships/decisions?conflictId=internal-case", canSnooze: false,
   }] });
   render(<MemoryRouter><I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider></MemoryRouter>);
-  expect(await screen.findByText("Notes")).toBeVisible();
-  expect(screen.getByRole("link", { name: "去处理" })).toHaveAttribute("href", "/relationships/decisions?conflictId=internal-case");
+  expect(await screen.findByRole("button", { name: "查看事项明细: 技能冲突" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "查看事项明细: 技能冲突" }));
+  const exactLink = document.querySelector<HTMLAnchorElement>('.sh-pending-item a[href="/relationships/decisions?conflictId=internal-case"]');
+  expect(exactLink).toBeInTheDocument();
   expect(screen.queryByText("internal-case")).not.toBeInTheDocument();
   expect(screen.getByRole("checkbox", { name: "选择 Notes" })).toBeDisabled();
   expect(screen.queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
@@ -68,6 +71,9 @@ it("refreshes resolved work on window focus and retries a failed source", async 
   const list = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([trialItem]).mockResolvedValue([]);
   await renderPage(fakeFacade({ list }));
   fireEvent.click(await screen.findByRole("button", { name: "刷新待办" }));
+  // 刷新后组行重新收拢：等组出现再展开，才能看到组内对象明细。
+  expect(await screen.findByRole("button", { name: "查看事项明细: 试用复核" })).toBeVisible();
+  expandPendingGroups();
   expect(await screen.findByText("skill-a")).toBeVisible();
   fireEvent(window, new Event("focus"));
   expect(await screen.findByText("没有待处理事项")).toBeVisible();
@@ -76,16 +82,26 @@ it("refreshes resolved work on window focus and retries a failed source", async 
 it("keeps the explicit overview category ahead of a saved filter", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const facade = fakeFacade({ loadSavedView: async () => "trial_due", list: async () => [trialItem] });
-  render(<I18nextProvider i18n={i18n}><PendingPage facade={facade} initialKind="conflict" /></I18nextProvider>);
-  expect(await screen.findByLabelText("事项类型")).toHaveValue("conflict");
+  render(<MemoryRouter><I18nextProvider i18n={i18n}><PendingPage facade={facade} initialKind="conflict" /></I18nextProvider></MemoryRouter>);
+  expect(await screen.findByLabelText("具体事项")).toHaveValue("conflict");
   expect(screen.queryByText("skill-a")).not.toBeInTheDocument();
 });
 
 async function renderPage(facade: PendingFacade) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  render(<I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider>);
+  render(<MemoryRouter><I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider></MemoryRouter>);
   // 刷新挂载时的异步加载（list / listHandled / loadSavedView），避免 act 告警。
   await act(async () => {});
+  expandPendingGroups();
+}
+
+function LocationStateProbe() {
+  const location = useLocation();
+  return <output data-testid="route-state">{JSON.stringify(location.state ?? {})}</output>;
+}
+
+function expandPendingGroups() {
+  for (const toggle of screen.queryAllByRole("button", { name: /^查看事项明细/ })) fireEvent.click(toggle);
 }
 
 // T3-C「每路由唯一 h1」（任务 10 h1 sweep）：待处理页自持 route-level h1。
@@ -94,6 +110,34 @@ it("keeps a single page-level h1 for the pending heading outline", async () => {
 
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(screen.getByRole("heading", { level: 1, name: "完成待处理事项" })).toBeVisible();
+});
+
+it("keeps work groups compact until opened and hands valid Skill selections back with current filters", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const facade = fakeFacade({ list: async () => [
+    { id: "basic-a", subject: "skill-a", displayName: "PDF Reader", kind: "basic_check", code: "basic", message: "基础检查", canSnooze: false },
+    { id: "medium-a", subject: "skill-a", displayName: "PDF Reader", kind: "security_finding", code: "medium", message: "中风险发现", risk: "medium", canSnooze: false },
+    { id: "high-b", subject: "skill-b", displayName: "PDF Reader Pro", kind: "security_finding", code: "high", message: "高风险发现", risk: "high", canSnooze: false },
+    { id: "source-c", subject: "skill-c", displayName: "PDF Source", kind: "source_update", code: "source", message: "来源有更新", canSnooze: true },
+  ] });
+  render(<MemoryRouter initialEntries={["/pending?category=skill_review&search=pdf"]}><I18nextProvider i18n={i18n}><PendingPage facade={facade} /><LocationStateProbe /></I18nextProvider></MemoryRouter>);
+  await screen.findByRole("heading", { name: "待处理工作台" });
+
+  const groupToggle = screen.getByRole("button", { name: "查看事项明细: 安全与基础检查" });
+  expect(groupToggle).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("checkbox", { name: "选择 PDF Reader" })).not.toBeInTheDocument();
+  fireEvent.click(groupToggle);
+  expect(screen.getAllByRole("checkbox", { name: "选择 PDF Reader" })).toHaveLength(2);
+  const batchLink = screen.getByRole("link", { name: "到技能库批量检查 (1)" });
+  expect(batchLink).toBeVisible();
+
+  fireEvent.click(batchLink);
+  const routeState = JSON.parse(screen.getByTestId("route-state").textContent ?? "{}") as { pendingReview?: { skillIds: string[]; intent: string; returnTo: string } };
+  expect(routeState.pendingReview).toEqual({
+    skillIds: ["skill-a"],
+    intent: "security_check",
+    returnTo: "/pending?category=skill_review&search=pdf",
+  });
 });
 
 it("does not offer a generic delete action for pending work", async () => {
@@ -113,7 +157,7 @@ it("filters pending work by its actual kind", async () => {
   }));
   await screen.findByText("skill-a");
 
-  fireEvent.change(screen.getByLabelText("事项类型"), { target: { value: "recovery" } });
+  fireEvent.change(screen.getByLabelText("具体事项"), { target: { value: "recovery" } });
 
   expect(screen.getByText("未完成部署")).toBeInTheDocument();
   expect(screen.queryByText("skill-a")).not.toBeInTheDocument();
@@ -143,7 +187,7 @@ it("shows due date, risk badge and deployment impact per item", async () => {
 
   expect(screen.getByText("到期日：2026-09-30")).toBeInTheDocument();
   expect(screen.getByText("影响 2 个部署关系")).toBeInTheDocument();
-  const riskBadge = screen.getByText("高风险");
+  const riskBadge = screen.getAllByText("高风险")[0]!;
   expect(riskBadge).toHaveClass("sh-pending-item__risk--high");
   expect(screen.getByText("影响 3 个部署关系")).toBeInTheDocument();
 });
@@ -299,18 +343,19 @@ it("restores the saved view on mount and persists kind changes", async () => {
   expect(loadSavedView).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(screen.queryByText("skill-a")).not.toBeInTheDocument());
 
-  fireEvent.change(screen.getByLabelText("事项类型"), { target: { value: "all" } });
+  fireEvent.click(screen.getByRole("button", { name: /^全部\s+\d+$/ }));
   await act(async () => {});
   await waitFor(() => expect(saveSavedView).toHaveBeenCalledWith("all"));
+  expandPendingGroups();
   expect(screen.getByText("skill-a")).toBeInTheDocument();
 });
 
-it("exposes each item's suggested actions as a named group after its risk and impact", async () => {
+it("keeps a safety finding in its workbench and never offers overview ignore", async () => {
   await renderPage(fakeFacade({ list: async () => [findingItem] }));
   await screen.findByText("skill-b");
 
   const group = screen.getByRole("group", { name: "处理 skill-b 的建议操作" });
-  expect(within(group).getByRole("button", { name: "重新检查" })).toBeInTheDocument();
+  expect(within(group).getByRole("link", { name: "去处理" })).toHaveAttribute("href", "/library/skill-b/security?finding=finding-7");
   expect(within(group).queryByRole("button", { name: "暂缓" })).not.toBeInTheDocument();
   expect(within(group).queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
 });
@@ -348,13 +393,12 @@ it("announces how many items are selected in the batch bar", async () => {
 async function renderBridgedPage(facade: PendingFacade, tracker: OperationTracker = createOperationTracker()) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
-      <AppNotificationsProvider>
-        <PendingPage facade={facade} tracker={tracker} />
-      </AppNotificationsProvider>
-    </I18nextProvider>,
+    <MemoryRouter><I18nextProvider i18n={i18n}>
+      <AppNotificationsProvider><PendingPage facade={facade} tracker={tracker} /></AppNotificationsProvider>
+    </I18nextProvider></MemoryRouter>,
   );
   await act(async () => {});
+  expandPendingGroups();
   return tracker;
 }
 
@@ -434,7 +478,8 @@ it("reports a mid-batch failure readably in notice, page and tracker terminal st
     firstDeferred = true;
   });
   const list = vi.fn(async () => firstDeferred ? [optionalItem] : [trialItem, optionalItem]);
-  const tracker = await renderBridgedPage(fakeFacade({ list, defer }));
+  const listHandled = vi.fn(async () => []);
+  const tracker = await renderBridgedPage(fakeFacade({ list, defer, listHandled }));
   await screen.findByText("skill-a");
 
   fireEvent.click(screen.getByLabelText("选择 skill-a"));
@@ -452,6 +497,7 @@ it("reports a mid-batch failure readably in notice, page and tracker terminal st
     expect(ops[0]?.status).toBe("failed");
     expect(ops[0]?.error).toBe(readable);
   });
+  await waitFor(() => expect(listHandled).toHaveBeenCalledTimes(2));
   // 首错即停：第二项失败后不再继续，但已完成的第一项保留（刷新反映真实进度）。
   expect(defer).toHaveBeenCalledTimes(2);
   await waitFor(() => expect(screen.queryByText("skill-a")).not.toBeInTheDocument());
@@ -473,20 +519,15 @@ it("notifies a successful handled-entry undo through the bridge", async () => {
   await waitFor(() => expect(listHandled).toHaveBeenCalledTimes(2));
 });
 
-it("records manual confirmation for an advisory without resolving a safety finding", async () => {
+it("routes relationship follow-up to its workbench without confirming it on the overview", async () => {
   const item: PendingItem = { id: "work:followup:task", subject: "task", displayName: "Import reminder", kind: "governance_followup", code: "followup", message: "pending.reasons.governance_followup", canConfirm: true };
-  let confirmed = false;
-  const confirm = vi.fn(async () => { confirmed = true; });
+  const confirm = vi.fn(async () => undefined);
   const resolve = vi.fn(async () => undefined);
   await renderBridgedPage(fakeFacade({
-    list: async () => confirmed ? [findingItem] : [item, findingItem], confirm, resolve,
-    listHandled: async () => confirmed ? [{ id: item.id, pendingId: item.id, reason: "用户确认已人工处理", createdAt: "2026-09-28T00:00:00Z", deferUntil: null, confirmed: true }] : [],
+    list: async () => [item, findingItem], confirm, resolve,
   }));
-  fireEvent.click(await screen.findByRole("button", { name: "确认已人工处理" }));
-  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "确认已人工处理" }));
-  await waitFor(() => expect(confirm).toHaveBeenCalledWith(item, "用户确认已人工处理"));
-  await waitFor(() => expect(screen.queryByText("Import reminder")).not.toBeInTheDocument());
+  expect([...screen.getAllByRole("link", { name: "去处理" })].map((link) => link.getAttribute("href"))).toContain("/discovery/local?task=task");
   expect(screen.getByText("skill-b")).toBeVisible();
+  expect(confirm).not.toHaveBeenCalled();
   expect(resolve).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "撤销" })).not.toBeInTheDocument();
 });

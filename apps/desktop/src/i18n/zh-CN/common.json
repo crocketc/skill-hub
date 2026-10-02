@@ -2151,10 +2151,10 @@
   "pending": {
     "eyebrow": "待处理事项",
     "heading": "完成待处理事项",
-    "description": "集中处理安全发现、试用到期、技能冲突、关系治理和异常恢复。完成处理后，事项会自动移出列表。",
+    "description": "按处理归属查看待办。安全、关系、Agent 兼容性和恢复事项会带你进入对应工作台；可处理的建议集中在这里。",
     "loading": "正在加载待处理事项",
     "empty": "没有待处理事项",
-    "listHeading": "需要关注的事项",
+    "listHeading": "待处理工作台",
     "filteredEmpty": "没有符合当前筛选条件的事项",
     "dueDate": "到期日：{{date}}",
     "risk": {
@@ -2167,8 +2167,37 @@
       "actionsGroup": "处理 {{subject}} 的建议操作"
     },
     "filters": {
-      "kind": "事项类型",
+      "kind": "具体事项",
       "all": "全部事项"
+    },
+    "categories": {
+      "all": "全部",
+      "software": "软件建议",
+      "skill_review": "技能复核",
+      "relationships": "关系处理",
+      "agents": "Agent 兼容性",
+      "recovery": "恢复"
+    },
+    "search": {
+      "label": "搜索名称或事项",
+      "placeholder": "搜索技能、工作台或事项名称"
+    },
+    "group": {
+      "items": "{{count}} 项待办",
+      "objects": "涉及 {{count}} 个对象",
+      "details": "查看事项明细",
+      "collapse": "收起事项明细",
+      "selectGroup": "选择此组中可批量处理的 {{count}} 项",
+      "reviewBatch": "到技能库批量检查",
+      "sourceBatch": "到技能库批量检查来源更新",
+      "highRiskIndividual": "高风险事项请逐项查看",
+      "highRiskReasons": "高风险原因（{{count}} 项）",
+      "emptySearch": "没有匹配的处理目标"
+    },
+    "reviewPurpose": {
+      "security_check": "安全与基础检查",
+      "source_update": "来源更新",
+      "trial_review": "试用复核"
     },
     "kinds": {
       "trial_due": "待确认试用",
@@ -2253,8 +2282,9 @@
       "agent_compatibility": "请试用此导入方式并在 Agent 中检查发现和加载结果，然后记录本机兼容性结论。", "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
       "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。"
     },
-    "count": "共 {{count}} 项待办",
-    "recommendedCount": "{{count}} 条使用建议",
+    "count": "需处理 {{count}} 项",
+    "totalCount": "共 {{count}} 项待办",
+    "recommendedCount": "另有 {{count}} 条建议",
     "recommended": "使用建议",
     "partial": "部分事项暂时无法核实，已保留可用结果。请刷新后确认，当前数量可能不完整。",
     "focusFinding": "已定位到这条检查发现，请在下方高亮项中处理。",

@@ -2151,10 +2151,10 @@
   "pending": {
     "eyebrow": "Pending work",
     "heading": "Close the loop on pending items",
-    "description": "Handle security findings, expired trials, skill conflicts, relationship governance and recovery. Resolved items leave the list automatically.",
+    "description": "View work by where it belongs. Security, relationship, Agent compatibility and recovery items open their own workbenches; eligible suggestions stay here.",
     "loading": "Loading pending items",
     "empty": "No pending items",
-    "listHeading": "Items needing attention",
+    "listHeading": "Pending workbench",
     "filteredEmpty": "No pending items match this filter.",
     "dueDate": "Due {{date}}",
     "risk": {
@@ -2167,8 +2167,37 @@
       "actionsGroup": "Suggested actions for {{subject}}"
     },
     "filters": {
-      "kind": "Item type",
+      "kind": "Specific item",
       "all": "All items"
+    },
+    "categories": {
+      "all": "All",
+      "software": "Software suggestions",
+      "skill_review": "Skill review",
+      "relationships": "Relationships",
+      "agents": "Agent compatibility",
+      "recovery": "Recovery"
+    },
+    "search": {
+      "label": "Search names or items",
+      "placeholder": "Search Skills, workbenches or item names"
+    },
+    "group": {
+      "items": "{{count}} pending item(s)",
+      "objects": "{{count}} related object(s)",
+      "details": "Show item details",
+      "collapse": "Hide item details",
+      "selectGroup": "Select {{count}} eligible item(s) in this group",
+      "reviewBatch": "Batch check in Skill Library",
+      "sourceBatch": "Check source updates in Skill Library",
+      "highRiskIndividual": "Review high-risk items individually",
+      "highRiskReasons": "High-risk reasons ({{count}})",
+      "emptySearch": "No matching work targets"
+    },
+    "reviewPurpose": {
+      "security_check": "Security and basic checks",
+      "source_update": "Source updates",
+      "trial_review": "Trial review"
     },
     "kinds": {
       "trial_due": "Trial review",
@@ -2253,7 +2282,8 @@
       "agent_compatibility": "Agent import compatibility verification", "source_update": "A newer source version is available. Review the changes before updating.",
       "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate."
     },
-    "count": "{{count}} pending tasks",
+    "count": "{{count}} items need action",
+    "totalCount": "{{count}} pending items",
     "recommendedCount": "{{count}} suggestions",
     "recommended": "Suggestion",
     "partial": "Some work could not be verified. Available results are retained; refresh to confirm. Counts may be incomplete.",

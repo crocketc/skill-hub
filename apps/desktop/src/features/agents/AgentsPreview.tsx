@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { AgentDirectoryMemberFact } from "../../api/bindings";
 import { type AgentFacade, type AgentView } from "./api";
 import { AgentDetailPage } from "./AgentDetailPage";
 import { AgentListPage } from "./AgentListPage";
@@ -302,9 +303,34 @@ const previewDetailAgent: AgentView = {
 
 /** DEV-only agents detail board (/__preview/agents/detail); never in production. */
 export function AgentDetailPreview() {
+  const params = new URLSearchParams(window.location.search);
+  const compatibilityScenario = params.get("compatibility") === "1";
+  const failCompatibilityWrite = params.get("actionError") === "1";
   const facade = useMemo(
-    () => ({ ...createPreviewAgentFacade(false), get: async () => previewDetailAgent }),
-    [],
+    () => {
+      const member: AgentDirectoryMemberFact = {
+        logical_target_id: "preview-agent",
+        brand: "OpenAI",
+        client_id: "openai.codex-desktop",
+        kind: "desktop",
+        availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+        capabilities: { deployment: { copy: true, symlink: true, junction: true }, modes: ["managed_copy", "symbolic_link", "directory_junction"], preferred_mode: "directory_junction" },
+        deployment_status: "deployed",
+        managed_deployment_relation_count: 1,
+        managed_deployment_count: 1,
+      };
+      return {
+        ...createPreviewAgentFacade(false),
+        get: async () => compatibilityScenario ? { ...previewDetailAgent, directoryMembers: [member] } : previewDetailAgent,
+        ...(compatibilityScenario ? {
+          recordCompatibility: async () => {
+            if (failCompatibilityWrite) throw new Error("library.locked: preview write failure");
+            window.sessionStorage.setItem("preview-agent-compatibility-verified", "1");
+          },
+        } : {}),
+      };
+    },
+    [compatibilityScenario, failCompatibilityWrite],
   );
   return <AgentDetailPage agentId="custom-auditor" facade={facade} picker={previewPicker} />;
 }
