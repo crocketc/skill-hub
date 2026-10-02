@@ -47,9 +47,9 @@ test("card view current-page select-all matches the batch bar", async ({ page })
   await expect(batchBar).toContainText("24 items selected");
 });
 
-test("batch tag results toast leaves after 2s and stays reachable in the history drawer", async ({
+test("batch tag results toast leaves after 2s and stays reachable inside its history card", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto(LIBRARY_ROUTE);
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   await page.getByRole("button", { name: "Add tags" }).click();
@@ -74,6 +74,16 @@ test("batch tag results toast leaves after 2s and stays reachable in the history
   const history = page.getByRole("dialog", { name: "Notifications" });
   await expect(history).toBeVisible();
   await expect(history.getByText("Batch tag update finished")).toBeVisible();
+  const noticeCard = history.locator(".sh-notification-popover__card").filter({
+    hasText: "Batch tag update finished",
+  });
+  await expect(noticeCard).toHaveCount(1);
+  await expect(noticeCard.locator(".sh-notification-popover__card-read")).toBeVisible();
+  await expect(noticeCard.locator('[data-testid="batch-summary"]')).toBeVisible();
+  expect(await noticeCard.evaluate((card) =>
+    card.querySelector('[data-testid="batch-summary"]')?.closest(".sh-notification-popover__card") === card,
+  )).toBe(true);
+  await history.screenshot({ path: testInfo.outputPath("notification-card-with-details.png") });
 
   // 显式清理路径：清空历史后回到空态。
   await history.getByRole("button", { name: "Clear all" }).click();

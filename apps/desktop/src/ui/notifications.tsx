@@ -441,33 +441,38 @@ export function NotificationHistoryDrawer({
   const latest = notices[0];
   const language = i18n.resolvedLanguage ?? i18n.language ?? "en";
 
-  const renderCard = (notice: AppNoticeRecord) => (
-    <li className="sh-notification-popover__item" key={notice.id}>
-      {/* 消息本体是可聚焦按钮（点击/回车先标已读再收起浮层）；action 链接
-          是交互元素不能嵌进按钮，保持为兄弟节点；detailNode 含流内容，同样
-          留在按钮外。 */}
-      <button
-        aria-label={t("notifications.markOneRead", { title: notice.title })}
-        className={[
-          "sh-notification-popover__card",
-          notice.read ? "" : "sh-notification-popover__card--unread",
-        ].filter(Boolean).join(" ")}
-        onClick={() => readAndClose(notice.id)}
-        type="button"
-      >
-        <span className="sh-notification-popover__card-head">
-          <span className={`sh-notification-popover__dot sh-notification-popover__dot--${notice.tone}`} aria-hidden="true" />
-          <NoticeSourceBadge source={notice.source ?? "system"} />
-          <span className="sh-notification-popover__title">{notice.title}</span>
-          <time className="sh-notification-popover__time" dateTime={new Date(notice.createdAt).toISOString()}>
-            {formatNoticeTime(notice.createdAt, language)}
-          </time>
-        </span>
-        {notice.detail ? (
-          <span className="sh-notification-popover__detail">{notice.detail}</span>
-        ) : null}
-      </button>
-      {notice.detailNode}
+  const renderCardBody = (
+    notice: AppNoticeRecord,
+    label: string,
+    onClick: () => void,
+    expanded?: boolean,
+  ) => (
+    <button
+      aria-label={label}
+      aria-expanded={expanded}
+      className="sh-notification-popover__card-read"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="sh-notification-popover__card-head">
+        <span className={`sh-notification-popover__dot sh-notification-popover__dot--${notice.tone}`} aria-hidden="true" />
+        <NoticeSourceBadge source={notice.source ?? "system"} />
+        <span className="sh-notification-popover__title">{notice.title}</span>
+        <time className="sh-notification-popover__time" dateTime={new Date(notice.createdAt).toISOString()}>
+          {formatNoticeTime(notice.createdAt, language)}
+        </time>
+      </span>
+      {notice.detail ? (
+        <span className="sh-notification-popover__detail">{notice.detail}</span>
+      ) : null}
+    </button>
+  );
+
+  const renderCardExtras = (notice: AppNoticeRecord) => (
+    <>
+      {notice.detailNode ? (
+        <div className="sh-notification-popover__card-detail">{notice.detailNode}</div>
+      ) : null}
       {notice.action ? (
         <Link
           className="sh-notification-popover__action"
@@ -477,6 +482,26 @@ export function NotificationHistoryDrawer({
           {notice.action.label}
         </Link>
       ) : null}
+    </>
+  );
+
+  const renderCard = (notice: AppNoticeRecord) => (
+    <li className="sh-notification-popover__item" key={notice.id}>
+      {/* 视觉卡片包住正文、流内容和操作；正文按钮、内部流控件与 Link 各自
+          保持独立的键盘和指针语义，避免嵌套交互元素。 */}
+      <article
+        className={[
+          "sh-notification-popover__card",
+          notice.read ? "" : "sh-notification-popover__card--unread",
+        ].filter(Boolean).join(" ")}
+      >
+        {renderCardBody(
+          notice,
+          t("notifications.markOneRead", { title: notice.title }),
+          () => readAndClose(notice.id),
+        )}
+        {renderCardExtras(notice)}
+      </article>
     </li>
   );
 
@@ -525,40 +550,22 @@ export function NotificationHistoryDrawer({
           <ul className="sh-notification-popover__stack">
             {latest ? (
               <li className="sh-notification-popover__item">
-                <button
-                  aria-label={notices.length > 1
-                    ? t("notifications.expandStack", { count: notices.length })
-                    : t("notifications.markOneRead", { title: latest.title })}
-                  aria-expanded={notices.length > 1 ? false : undefined}
+                <article
                   className={[
                     "sh-notification-popover__card",
                     latest.read ? "" : "sh-notification-popover__card--unread",
                   ].filter(Boolean).join(" ")}
-                  onClick={() => notices.length > 1 ? setExpanded(true) : readAndClose(latest.id)}
-                  type="button"
                 >
-                  <span className="sh-notification-popover__card-head">
-                    <span className={`sh-notification-popover__dot sh-notification-popover__dot--${latest.tone}`} aria-hidden="true" />
-                    <NoticeSourceBadge source={latest.source ?? "system"} />
-                    <span className="sh-notification-popover__title">{latest.title}</span>
-                    <time className="sh-notification-popover__time" dateTime={new Date(latest.createdAt).toISOString()}>
-                      {formatNoticeTime(latest.createdAt, language)}
-                    </time>
-                  </span>
-                  {latest.detail ? (
-                    <span className="sh-notification-popover__detail">{latest.detail}</span>
-                  ) : null}
-                </button>
-                {latest.detailNode}
-                {latest.action ? (
-                  <Link
-                    className="sh-notification-popover__action"
-                    onClick={() => readAndClose(latest.id)}
-                    to={latest.action.to}
-                  >
-                    {latest.action.label}
-                  </Link>
-                ) : null}
+                  {renderCardBody(
+                    latest,
+                    notices.length > 1
+                      ? t("notifications.expandStack", { count: notices.length })
+                      : t("notifications.markOneRead", { title: latest.title }),
+                    () => notices.length > 1 ? setExpanded(true) : readAndClose(latest.id),
+                    notices.length > 1 ? false : undefined,
+                  )}
+                  {renderCardExtras(latest)}
+                </article>
               </li>
             ) : null}
             {Array.from({ length: stackEdges }, (_, index) => (

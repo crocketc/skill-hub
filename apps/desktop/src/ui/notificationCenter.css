@@ -275,16 +275,39 @@
   background: var(--color-surface);
   color: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
-.sh-notification-popover__card:hover {
+.sh-notification-popover__card:hover,
+.sh-notification-popover__card:focus-within {
   border-color: var(--ui-border);
   background: var(--ui-surface-subtle);
 }
 
 .sh-notification-popover__card--unread {
   border-color: var(--ui-accent);
+}
+
+.sh-notification-popover__card-read {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sh-notification-popover__card-read:focus-visible {
+  outline-offset: 1px;
+}
+
+.sh-notification-popover__card-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sh-notification-popover__card-head {
@@ -346,8 +369,21 @@
 
 .sh-notification-popover__action {
   justify-self: start;
+  border-radius: var(--radius-sm);
+  color: var(--ui-accent-strong);
   font-size: var(--font-size-sm);
   font-weight: 650;
+  text-decoration: none;
+  text-underline-offset: 0.2em;
+}
+
+.sh-notification-popover__action:visited {
+  color: var(--ui-accent-strong);
+}
+
+.sh-notification-popover__action:hover,
+.sh-notification-popover__action:focus-visible {
+  text-decoration: underline;
 }
 
 .sh-notification-popover__footer {

@@ -14,12 +14,12 @@ import {
   NOTICE_TOAST_EXIT_MS,
   NotificationBell,
   useAppNotifications,
-  type AppNotice,
+  type AppNoticeInput,
 } from "./notifications";
 import notificationCss from "./notificationCenter.css?raw";
 
 interface HarnessHandles {
-  notify: (notice: AppNotice) => string;
+  notify: (notice: AppNoticeInput) => string;
   dismiss: (id: string) => void;
   noticeCount: () => number;
   unreadCount: () => number;
@@ -492,6 +492,51 @@ describe("history drawer marks an entry read on activation", () => {
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(handles.current?.unreadCount()).toBe(0);
     expect(handles.current?.noticeCount()).toBe(1);
+  });
+
+  it("keeps the body, rich details, and action inside one visual card without nesting controls", async () => {
+    const user = userEvent.setup();
+    const detailAction = vi.fn();
+    await renderNotificationShell();
+
+    act(() => {
+      handles.current?.notify({
+        tone: "warning",
+        title: "deployment needs attention",
+        detail: "Review the result before continuing.",
+        detailNode: <button onClick={detailAction} type="button">Show findings</button>,
+        action: { label: "Open deployment", to: "/library" },
+      });
+    });
+
+    const drawer = await openHistoryDrawer();
+    const card = drawer.querySelector(".sh-notification-popover__card");
+    expect(card).not.toBeNull();
+    expect(card?.tagName).toBe("ARTICLE");
+    expect(card).toContainElement(within(drawer).getByRole("button", {
+      name: 'Mark "deployment needs attention" as read',
+    }));
+    expect(card).toContainElement(within(drawer).getByRole("button", { name: "Show findings" }));
+    expect(card).toContainElement(within(drawer).getByRole("link", { name: "Open deployment" }));
+
+    const body = within(drawer).getByRole("button", {
+      name: 'Mark "deployment needs attention" as read',
+    });
+    const findings = within(drawer).getByRole("button", { name: "Show findings" });
+    const action = within(drawer).getByRole("link", { name: "Open deployment" });
+    expect(body).not.toContainElement(findings);
+    expect(body).not.toContainElement(action);
+
+    await user.click(findings);
+    expect(detailAction).toHaveBeenCalledOnce();
+    expect(screen.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+    expect(handles.current?.unreadCount()).toBe(1);
+
+    await user.click(action);
+    finishPopoverExitAnimation();
+    expect(screen.getByText("page@/library")).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(handles.current?.unreadCount()).toBe(0);
   });
 
   it("activates the message body with Enter from keyboard focus", async () => {
