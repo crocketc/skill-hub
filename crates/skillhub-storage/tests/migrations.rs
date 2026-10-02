@@ -22,6 +22,89 @@ fn empty_database_migrates_to_current_schema_and_enables_fts5() {
 }
 
 #[test]
+fn v22_archived_skills_become_normal_without_losing_skill_facts() {
+    let file = NamedTempFile::new().unwrap();
+    {
+        let database = Database::open(file.path()).unwrap();
+        let connection = database.connection_for_test();
+        connection
+            .execute_batch(
+                "INSERT INTO skills(id, display_name, runtime_name, lifecycle, created_at, updated_at)
+                     VALUES
+                       ('archived-skill', 'Archived skill', 'archived-skill', 'archived', 1, 2),
+                       ('deprecated-skill', 'Deprecated skill', 'deprecated-skill', 'deprecated', 1, 2);
+                 INSERT INTO versions(id, skill_id, content_hash, manifest_json, created_at)
+                     VALUES ('sha256:archived-version', 'archived-skill', 'sha256:content', '{}', 3);
+                 INSERT INTO current_pointers(skill_id, version_id, updated_at)
+                     VALUES ('archived-skill', 'sha256:archived-version', 3);
+                 INSERT INTO catalog_skill_metadata(skill_id, trial_due)
+                     VALUES ('archived-skill', '2026-10-01');
+                 INSERT INTO tags(id, name) VALUES ('tag-1', 'preserved-tag');
+                 INSERT INTO skill_tags(skill_id, tag_id) VALUES ('archived-skill', 'tag-1');
+                 INSERT INTO check_runs(id, skill_id, version_id, kind, state, started_at)
+                     VALUES ('check-1', 'archived-skill', 'sha256:archived-version', 'basic', 'passed', 4);
+                 PRAGMA user_version = 22;",
+            )
+            .unwrap();
+    }
+
+    let migrated = Database::open(file.path()).unwrap();
+    assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
+    assert_eq!(migrated.migration_report().applied_versions, vec![23]);
+    let connection = migrated.connection_for_test();
+    let archived_lifecycle: String = connection
+        .query_row(
+            "SELECT lifecycle FROM skills WHERE id='archived-skill'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived_lifecycle, "normal");
+    let deprecated_lifecycle: String = connection
+        .query_row(
+            "SELECT lifecycle FROM skills WHERE id='deprecated-skill'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(deprecated_lifecycle, "deprecated");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT trial_due FROM catalog_skill_metadata WHERE skill_id='archived-skill'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+        "2026-10-01"
+    );
+    for (table, sql) in [
+        (
+            "current version",
+            "SELECT COUNT(*) FROM current_pointers WHERE skill_id='archived-skill' AND version_id='sha256:archived-version'",
+        ),
+        (
+            "skill tag",
+            "SELECT COUNT(*) FROM skill_tags WHERE skill_id='archived-skill' AND tag_id='tag-1'",
+        ),
+        (
+            "check result",
+            "SELECT COUNT(*) FROM check_runs WHERE id='check-1' AND state='passed'",
+        ),
+    ] {
+        let count: i64 = connection.query_row(sql, [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 1, "migration must preserve {table}");
+    }
+    drop(migrated);
+
+    let reopened = Database::open(file.path()).unwrap();
+    assert!(
+        reopened.migration_report().applied_versions.is_empty(),
+        "a completed migration must not be applied twice"
+    );
+}
+
+#[test]
 fn v15_upgrade_initializes_one_safe_relationship_projection_state() {
     let file = NamedTempFile::new().unwrap();
     let connection = Connection::open(file.path()).unwrap();

@@ -72,7 +72,7 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
             .expect("seed legacy relation");
     }
     // Recreate a v21 database state while preserving the persisted relationship
-    // facts, then let the normal opener run only migration 22.
+    // facts, then let the normal opener run migration 22 and the current data migration.
     db.connection_for_test()
         .execute_batch("DROP TABLE relation_governance_confirmations; PRAGMA user_version=21;")
         .expect("restore prior schema version");

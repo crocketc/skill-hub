@@ -40,7 +40,6 @@ pub struct ListTranslations {
 pub enum SkillLifecycleFilter {
     Active,
     Trial,
-    Archived,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

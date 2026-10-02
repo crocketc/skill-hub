@@ -1448,6 +1448,42 @@ async fn pending_query_uses_the_same_date_boundary_as_bootstrap() {
 }
 
 #[tokio::test]
+async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let database = Database::open(&database_path).expect("database");
+    let skill =
+        Skill::new(skillhub_core::SkillId::new(), "Legacy trial").with_trial_due(2026, 8, 29);
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert legacy trial");
+    database
+        .connection_for_test()
+        .execute_batch("UPDATE skills SET lifecycle='archived'; PRAGMA user_version=22;")
+        .expect("simulate legacy database");
+    drop(database);
+
+    let facade = LocalApplicationFacade::new_with_today(
+        Database::open(&database_path).expect("migrate legacy database"),
+        (2026, 8, 29),
+    );
+    let result = facade
+        .query(RootAppQuery::ListPendingItems(
+            skillhub_core::ListPendingItems,
+        ))
+        .await
+        .expect("pending result");
+
+    let AppQueryResult::PendingItems(items) = result else {
+        panic!("expected pending items");
+    };
+    assert!(items.iter().any(|item| item.code == "trial.due"));
+}
+
+#[tokio::test]
 async fn ignore_rules_survive_reopening_the_application_database() {
     let workspace = tempfile::tempdir().expect("workspace");
     let database_path = workspace.path().join("skillhub.sqlite");
@@ -2876,11 +2912,11 @@ async fn list_skills_query_filters_by_tags_lifecycle_and_deployment_state() {
         None,
         None,
         skillhub_core::catalog::CallPolicy::AutomaticAndManual,
-        skillhub_core::catalog::SkillLifecycle::Archived,
+        skillhub_core::catalog::SkillLifecycle::Deprecated,
         Vec::new(),
         None,
     )
-    .expect("archived skill");
+    .expect("deprecated skill");
     let repository = database.catalog_repository().expect("catalog repository");
     repository.insert(&alpha).await.expect("insert alpha");
     repository.insert(&beta).await.expect("insert beta");
@@ -2965,19 +3001,6 @@ async fn list_skills_query_filters_by_tags_lifecycle_and_deployment_state() {
         )
         .await,
         vec!["Alpha".to_owned()]
-    );
-    assert_eq!(
-        query_skill_names(
-            &facade,
-            filters(
-                &[],
-                &[skillhub_core::api::SkillLifecycleFilter::Archived],
-                skillhub_core::api::SkillDeploymentFilter::Any
-            ),
-            default_sort.clone()
-        )
-        .await,
-        vec!["Gamma".to_owned()]
     );
     assert_eq!(
         query_skill_names(

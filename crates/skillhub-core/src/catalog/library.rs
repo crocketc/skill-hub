@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::CallPolicy;
+use crate::catalog::{CallPolicy, SkillLifecycle};
 use crate::{SkillId, VersionId};
 
 /// Portable paths and files that make up the central Skill library.
@@ -75,8 +75,13 @@ pub struct PortableSkillRecord {
     pub note: Option<String>,
     #[serde(default)]
     pub user_purpose: Option<String>,
+    #[serde(default = "default_skill_lifecycle")]
+    pub lifecycle: SkillLifecycle,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Optional trial review date kept with portable user metadata.
+    #[serde(default)]
+    pub trial_due: Option<String>,
     #[serde(default)]
     pub author: Option<String>,
     #[serde(default)]
@@ -106,7 +111,9 @@ impl PortableSkillRecord {
             translated_description: None,
             note: None,
             user_purpose: None,
+            lifecycle: SkillLifecycle::Normal,
             tags: Vec::new(),
+            trial_due: None,
             author: None,
             license: None,
             call_policy: CallPolicy::default(),
@@ -116,4 +123,8 @@ impl PortableSkillRecord {
             current_version: None,
         }
     }
+}
+
+fn default_skill_lifecycle() -> SkillLifecycle {
+    SkillLifecycle::Normal
 }

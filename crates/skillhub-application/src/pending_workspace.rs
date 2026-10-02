@@ -66,9 +66,6 @@ impl LocalApplicationFacade {
                 let Some(detail) = catalog.get_detail(id)? else {
                     continue;
                 };
-                if detail.lifecycle == skillhub_core::catalog::SkillLifecycle::Archived {
-                    continue;
-                }
                 let name = Some(detail.display_name);
                 let today = format!(
                     "{:04}-{:02}-{:02}",

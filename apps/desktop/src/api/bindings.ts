@@ -3769,14 +3769,14 @@ export type SkillDeploymentFilter = "any" | "deployed" | "not_deployed";
 
 export type SkillId = string;
 
-export type SkillLifecycle = "Normal" | "Deprecated" | "Archived";
+export type SkillLifecycle = "Normal" | "Deprecated";
 
 /**
  *  User-facing lifecycle bucket used by the library list filter. `Trial`
  *  covers any skill with a pending trial date regardless of the stored
  *  lifecycle, mirroring the display mapping used by the desktop clients.
  */
-export type SkillLifecycleFilter = "active" | "trial" | "archived";
+export type SkillLifecycleFilter = "active" | "trial";
 
 /**
  *  Combined library list filter. Empty vectors match every value; the tag and
