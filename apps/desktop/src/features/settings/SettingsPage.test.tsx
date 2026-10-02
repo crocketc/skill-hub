@@ -258,6 +258,79 @@ it("searches with English terms in the current locale and gives a clear empty st
   expect(screen.queryByText("No settings match that search.")).not.toBeInTheDocument();
 });
 
+it("moves focus from the search input to the first result with ArrowDown", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+  const results = screen.getAllByRole("button", { name: "数据保护" });
+  expect(results.length).toBeGreaterThan(0);
+  await user.keyboard("{ArrowDown}");
+
+  expect(document.getElementById("settings-search-result-section-data")).toHaveFocus();
+});
+
+it("clears the query with Escape and keeps focus in the search input", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+  expect(screen.getAllByRole("button", { name: "数据保护" }).length).toBeGreaterThan(0);
+
+  await user.keyboard("{Escape}");
+
+  expect(search).toHaveValue("");
+  expect(screen.queryAllByRole("button", { name: "数据保护" })).toEqual([]);
+  expect(search).toHaveFocus();
+  // 再次输入即可恢复完整结果列表，清空不破坏后续搜索。
+  await user.type(search, "主题");
+  expect(screen.getAllByRole("button", { name: "通用" }).length).toBeGreaterThan(0);
+});
+
+it("restores focus to the search input after using the dedicated clear button", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/settings"]}>
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <SettingsPage facade={{ execute: async () => undefined }} initialSettings={settingsFixture()} />
+        </ThemeProvider>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const search = screen.getByRole("searchbox", { name: "搜索设置" });
+  await user.type(search, "备份");
+
+  await user.click(screen.getByRole("button", { name: "清除搜索" }));
+
+  expect(search).toHaveValue("");
+  expect(screen.queryAllByRole("button", { name: "数据保护" })).toEqual([]);
+  expect(search).toHaveFocus();
+});
+
+
 it("keeps the requested section deep link and browser history in sync", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const router = createMemoryRouter([{
