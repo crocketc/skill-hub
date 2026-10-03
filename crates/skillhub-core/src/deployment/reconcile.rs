@@ -167,6 +167,7 @@ impl RelationTargetFact {
             content_fingerprint: self.content_fingerprint.clone(),
             origin: self.origin,
             match_state: self.match_state,
+            health_reasons: None,
             active: self.active,
             observed_at: self.observed_at,
             released_at: self.released_at,

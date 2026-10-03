@@ -340,6 +340,7 @@ mod tests {
             current_fingerprint: None,
             decision: SourceCopyDecision::Pending,
             health: SourceCopyHealth::NeedsValidation,
+            health_reasons: None,
             active: true,
             last_verified_at: None,
             archived_at: None,

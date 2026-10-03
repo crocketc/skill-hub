@@ -36,6 +36,7 @@ fn deployment(
         content_fingerprint: format!("sha256:{relation_id}"),
         origin: ObservedOrigin::Scan,
         match_state: ObservedMatchState::ContentVerified,
+        health_reasons: Some(Vec::new()),
         active: true,
         observed_at: 10,
         released_at: None,

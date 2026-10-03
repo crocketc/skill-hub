@@ -26,6 +26,7 @@ use std::collections::{BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
 
 use super::source_copy::{SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact};
+use super::RelationHealthReason;
 use crate::deployment::{DeploymentRelationFact, ObservedMatchState};
 use crate::import::ImportSourceClass;
 use crate::relationship::{
@@ -840,42 +841,9 @@ fn governance_state(
     blockers: &[RelationGovernanceBlocker],
 ) -> RelationGovernanceState {
     let health_reasons = match fact {
-        GovernableRelationFact::SourceCopy(copy) => match copy.health {
-            SourceCopyHealth::Normal => Vec::new(),
-            SourceCopyHealth::NeedsValidation => {
-                vec![RelationGovernanceReason::VerificationRequired]
-            }
-            SourceCopyHealth::ContentChanged => vec![RelationGovernanceReason::ContentChanged],
-            SourceCopyHealth::PermissionLimited => {
-                vec![RelationGovernanceReason::PermissionLimited]
-            }
-            SourceCopyHealth::ManagedOccupied => {
-                vec![RelationGovernanceReason::ManagedTargetOccupied]
-            }
-            SourceCopyHealth::OperationFailed => vec![RelationGovernanceReason::OperationFailed],
-        },
+        GovernableRelationFact::SourceCopy(copy) => source_copy_health_reasons(copy),
         GovernableRelationFact::Deployment(relation) => {
-            let mut reasons = match relation.match_state {
-                ObservedMatchState::ContentVerified => Vec::new(),
-                ObservedMatchState::NameOnly => {
-                    vec![RelationGovernanceReason::VerificationRequired]
-                }
-                ObservedMatchState::Diverged => {
-                    vec![RelationGovernanceReason::ContentChanged]
-                }
-            };
-            if management_status == RelationManagementStatus::TakenOver
-                && !(matches!(
-                    relation.relationship,
-                    RelationshipType::ManagedLink | RelationshipType::ObservedLink
-                ) && relation.ownership == OwnershipState::SkillhubManaged)
-            {
-                reasons.push(RelationGovernanceReason::LinkReplaced);
-            }
-            if relation.skill_id.is_none() {
-                reasons.push(RelationGovernanceReason::TargetIdentityUnconfirmed);
-            }
-            reasons
+            deployment_health_reasons(relation)
         }
     };
     let governance_status = if health_reasons.is_empty()
@@ -901,6 +869,84 @@ fn governance_state(
         health_reasons,
         action_conditions,
     }
+}
+
+fn source_copy_health_reasons(
+    copy: &SourceCopyRelationFact,
+) -> Vec<RelationGovernanceReason> {
+    let mut reasons: Vec<RelationGovernanceReason> = copy
+        .health_reasons
+        .as_deref()
+        .map(|reasons| reasons.iter().copied().map(governance_health_reason).collect())
+        .unwrap_or_default();
+    if copy.health_reasons.is_none() {
+        reasons.push(RelationGovernanceReason::VerificationRequired);
+    }
+    match copy.health {
+        SourceCopyHealth::Normal => {}
+        SourceCopyHealth::NeedsValidation => {
+            reasons.push(RelationGovernanceReason::VerificationRequired)
+        }
+        SourceCopyHealth::ContentChanged => reasons.push(RelationGovernanceReason::ContentChanged),
+        SourceCopyHealth::PermissionLimited => {
+            reasons.push(RelationGovernanceReason::PermissionLimited)
+        }
+        SourceCopyHealth::ManagedOccupied => {
+            reasons.push(RelationGovernanceReason::ManagedTargetOccupied)
+        }
+        SourceCopyHealth::OperationFailed => {
+            reasons.push(RelationGovernanceReason::OperationFailed)
+        }
+    }
+    sort_dedup_reasons(&mut reasons);
+    reasons
+}
+
+fn deployment_health_reasons(
+    relation: &DeploymentRelationFact,
+) -> Vec<RelationGovernanceReason> {
+    let mut reasons: Vec<RelationGovernanceReason> = relation
+        .health_reasons
+        .as_deref()
+        .map(|reasons| reasons.iter().copied().map(governance_health_reason).collect())
+        .unwrap_or_default();
+    if relation.health_reasons.is_none() {
+        reasons.push(RelationGovernanceReason::VerificationRequired);
+    }
+    match relation.match_state {
+        ObservedMatchState::ContentVerified => {}
+        ObservedMatchState::NameOnly => reasons.push(RelationGovernanceReason::VerificationRequired),
+        ObservedMatchState::Diverged => reasons.push(RelationGovernanceReason::ContentChanged),
+    }
+    if relation.skill_id.is_none() {
+        reasons.push(RelationGovernanceReason::TargetIdentityUnconfirmed);
+    }
+    sort_dedup_reasons(&mut reasons);
+    reasons
+}
+
+fn governance_health_reason(reason: RelationHealthReason) -> RelationGovernanceReason {
+    match reason {
+        RelationHealthReason::TargetEntryMissing | RelationHealthReason::TargetLinkUnavailable => {
+            RelationGovernanceReason::LinkTargetUnavailable
+        }
+        RelationHealthReason::TargetEntryReplaced => RelationGovernanceReason::LinkReplaced,
+        RelationHealthReason::PermissionLimited => RelationGovernanceReason::PermissionLimited,
+        RelationHealthReason::ContentChanged => RelationGovernanceReason::ContentChanged,
+        RelationHealthReason::ManagedTargetOccupied => {
+            RelationGovernanceReason::ManagedTargetOccupied
+        }
+        RelationHealthReason::OperationFailed => RelationGovernanceReason::OperationFailed,
+        RelationHealthReason::SubjectUnavailable => RelationGovernanceReason::SubjectUnavailable,
+        RelationHealthReason::ProbeUnavailable => {
+            RelationGovernanceReason::VerificationRequired
+        }
+    }
+}
+
+fn sort_dedup_reasons(reasons: &mut Vec<RelationGovernanceReason>) {
+    reasons.sort_by_key(|reason| *reason as u8);
+    reasons.dedup();
 }
 
 fn action_conditions(

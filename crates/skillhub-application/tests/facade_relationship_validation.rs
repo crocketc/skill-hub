@@ -1,5 +1,5 @@
 //! Task 5A 验收回归：RunRelationshipCheck 按 scope 只检查活动本地关系，
-//! MissingWithAccessibleParent 是唯一归档形态（ExternalRemoved 历史），
+//! MissingWithAccessibleParent 只记录当前目标健康异常，不自动结束关系，
 //! 权限/离线等失败保留活动关系，重复检查不重复写历史、相同状态不推进
 //! revision（plan 5.3–5.5、5.11）。
 
@@ -304,7 +304,7 @@ async fn batch_scope_selects_relations_created_inside_the_batch() {
 }
 
 #[tokio::test]
-async fn missing_source_archives_once_with_external_removed_history() {
+async fn missing_source_stays_active_without_external_removed_history() {
     let workspace = tempfile::tempdir().expect("workspace");
     let facade = facade_with(workspace.path());
     let source = workspace.path().join("vanish-src");
@@ -318,36 +318,40 @@ async fn missing_source_archives_once_with_external_removed_history() {
         RelationshipCheckScope::AllActive,
     )
     .await;
-    assert_eq!(first.items[0].status, RelationshipCheckItemStatus::Archived);
+    assert_eq!(first.items[0].status, RelationshipCheckItemStatus::Checked);
     assert_eq!(
-        first.items[0].reason.as_deref(),
-        Some("external_removed"),
-        "MissingWithAccessibleParent is the only archiving verdict"
+        first.items[0].health,
+        Some(skillhub_core::relationship::SourceCopyHealth::NeedsValidation)
     );
 
-    // 归档后关系离开活动集合，历史只写一条（plan 5.5）。
+    // A missing entry remains a current relationship with a health issue.
     let second = run_check(
         &facade,
         RelationshipCheckLevel::Full,
         RelationshipCheckScope::AllActive,
     )
     .await;
-    assert!(
-        second.items.is_empty(),
-        "archived relation leaves the scope"
-    );
+    assert_eq!(second.items.len(), 1, "missing relation remains in scope");
+    assert_eq!(second.items[0].status, RelationshipCheckItemStatus::Unchanged);
 
     let database = facade.database_for_tests().clone();
     let database = database.lock().unwrap();
+    let active = database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("active relations");
+    assert_eq!(active.len(), 1, "missing relation is not ended");
+    assert_eq!(active[0].archive_reason, None);
+    assert_eq!(
+        active[0].health_reasons,
+        Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
+    );
     let history = database
         .governance_history_repository()
         .list_for_relation(&first.items[0].relation_id)
         .expect("history");
-    assert_eq!(history.len(), 1, "no duplicate history for one removal");
-    assert_eq!(history[0].result, "archived");
-    assert_eq!(history[0].reason.as_deref(), Some("external_removed"));
+    assert!(history.is_empty(), "missing is health, not end history");
 }
-
 #[tokio::test]
 async fn permission_denied_and_offline_volume_keep_relations_active() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -746,10 +750,10 @@ mod watch_confirmation {
         assert_eq!(report.confirmed_file_hints, 0);
         assert!(
             report.facts_changed,
-            "the compensation scan archived a genuinely removed source"
+            "the compensation scan recorded the missing-target health fact"
         );
 
-        // 第二次补偿（Overflow）继续走同一通道；归档后重扫无活动关系。
+        // 第二次补偿（Overflow）继续走同一通道；重复健康事实不结束关系。
         runtime.on_overflow(source.to_string_lossy().into_owned());
         runtime.collect().expect("collect");
         let report = runtime.confirm_pending(&executor);
@@ -761,9 +765,10 @@ mod watch_confirmation {
             .relationship_repository()
             .list_source_copy_relations(true)
             .expect("relations");
-        assert!(
-            relations.is_empty(),
-            "the removed source was archived by the compensation scan"
+        assert_eq!(relations.len(), 1, "the relationship remains active");
+        assert_eq!(
+            relations[0].health_reasons,
+            Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
         );
     }
 

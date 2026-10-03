@@ -48,6 +48,10 @@ pub struct SourceCopyRelationFact {
     pub current_fingerprint: Option<String>,
     pub decision: SourceCopyDecision,
     pub health: SourceCopyHealth,
+    /// `None` distinguishes a legacy/unverified fact from a newly checked
+    /// target with no reported health issue.
+    #[serde(default)]
+    pub health_reasons: Option<Vec<super::RelationHealthReason>>,
     pub active: bool,
     #[serde(with = "crate::i64_option_string")]
     #[specta(type = Option<String>)]
@@ -92,6 +96,7 @@ impl SourceCopyRelationFact {
             current_fingerprint: None,
             decision: SourceCopyDecision::Pending,
             health: SourceCopyHealth::NeedsValidation,
+            health_reasons: None,
             active: true,
             last_verified_at: None,
             archived_at: None,
@@ -132,6 +137,8 @@ pub enum SourceCopyProbe {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SourceCopyTransition {
     Update(SourceCopyRelationFact),
+    /// Reserved for an explicit relationship-ending flow; validation probes
+    /// never emit this transition.
     Archive {
         fact: SourceCopyRelationFact,
         reason: SourceCopyArchiveReason,
@@ -147,18 +154,15 @@ pub fn validate_source_copy_transition(
     updated.last_verified_at = Some(verified_at);
     match probe {
         SourceCopyProbe::MissingWithAccessibleParent => {
-            updated.active = false;
-            updated.archived_at = Some(verified_at);
-            updated.archive_reason = Some(SourceCopyArchiveReason::ExternalRemoved);
-            SourceCopyTransition::Archive {
-                fact: updated,
-                reason: SourceCopyArchiveReason::ExternalRemoved,
-            }
+            updated.health = SourceCopyHealth::NeedsValidation;
+            updated.health_reasons = Some(vec![super::RelationHealthReason::TargetEntryMissing]);
+            SourceCopyTransition::Update(updated)
         }
         _ => {
             updated.health = match probe {
                 SourceCopyProbe::AccessibleDirectory => {
                     updated.current_fingerprint = None;
+                    updated.health_reasons = Some(Vec::new());
                     SourceCopyHealth::NeedsValidation
                 }
                 SourceCopyProbe::VerifiedDirectory {
@@ -167,22 +171,51 @@ pub fn validate_source_copy_transition(
                 } => {
                     updated.current_fingerprint = Some(content_fingerprint.clone());
                     if physical_source_id != updated.physical_source_id {
+                        updated.health_reasons = Some(vec![
+                            super::RelationHealthReason::TargetEntryReplaced,
+                        ]);
                         SourceCopyHealth::NeedsValidation
                     } else if content_fingerprint != updated.expected_fingerprint {
+                        updated.health_reasons =
+                            Some(vec![super::RelationHealthReason::ContentChanged]);
                         SourceCopyHealth::ContentChanged
                     } else {
+                        updated.health_reasons = Some(Vec::new());
                         SourceCopyHealth::Normal
                     }
                 }
-                SourceCopyProbe::FingerprintChanged | SourceCopyProbe::PhysicalIdentityChanged => {
+                SourceCopyProbe::FingerprintChanged => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::ContentChanged]);
                     SourceCopyHealth::ContentChanged
                 }
-                SourceCopyProbe::PermissionDenied => SourceCopyHealth::PermissionLimited,
-                SourceCopyProbe::ManagedOccupied => SourceCopyHealth::ManagedOccupied,
+                SourceCopyProbe::PhysicalIdentityChanged => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::TargetEntryReplaced]);
+                    SourceCopyHealth::ContentChanged
+                }
+                SourceCopyProbe::PermissionDenied => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::PermissionLimited]);
+                    SourceCopyHealth::PermissionLimited
+                }
+                SourceCopyProbe::ManagedOccupied => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::ManagedTargetOccupied]);
+                    SourceCopyHealth::ManagedOccupied
+                }
                 SourceCopyProbe::ParentMissing
                 | SourceCopyProbe::DriveOrVolumeUnavailable
-                | SourceCopyProbe::TimeoutOrUnknown
-                | SourceCopyProbe::WrongRepresentation => SourceCopyHealth::NeedsValidation,
+                | SourceCopyProbe::TimeoutOrUnknown => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::ProbeUnavailable]);
+                    SourceCopyHealth::NeedsValidation
+                }
+                SourceCopyProbe::WrongRepresentation => {
+                    updated.health_reasons =
+                        Some(vec![super::RelationHealthReason::TargetEntryReplaced]);
+                    SourceCopyHealth::NeedsValidation
+                }
                 SourceCopyProbe::MissingWithAccessibleParent => unreachable!(),
             };
             SourceCopyTransition::Update(updated)

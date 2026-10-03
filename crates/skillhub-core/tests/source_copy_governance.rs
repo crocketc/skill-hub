@@ -6,8 +6,8 @@ use skillhub_core::import::{
 use skillhub_core::relationship::{
     project_governable_relation, validate_source_copy_transition, DeploymentRelationFact,
     FileRepresentation, GovernableRelationFact, GovernableRelationStatus, RelationshipType,
-    SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth, SourceCopyProbe,
-    SourceCopyRelationFact, SourceCopyTransition,
+    SourceCopyDecision, SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact,
+    SourceCopyTransition,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::SkillId;
@@ -241,6 +241,7 @@ fn current_projection_excludes_archived_source_and_released_deployment() {
         content_fingerprint: "hash".into(),
         origin: ObservedOrigin::Scan,
         match_state: ObservedMatchState::ContentVerified,
+        health_reasons: Some(Vec::new()),
         active: true,
         observed_at: 1,
         released_at: Some(4),
@@ -254,7 +255,7 @@ fn current_projection_excludes_archived_source_and_released_deployment() {
 }
 
 #[test]
-fn only_confirmed_missing_with_accessible_parent_archives_external_removed() {
+fn missing_with_accessible_parent_does_not_end_governance_relation() {
     let copy = relation(SkillId::new(), "r", "/source");
     for probe in [
         SourceCopyProbe::ParentMissing,
@@ -267,13 +268,15 @@ fn only_confirmed_missing_with_accessible_parent_archives_external_removed() {
             SourceCopyTransition::Archive { .. }
         ));
     }
-    assert!(matches!(
-        validate_source_copy_transition(&copy, SourceCopyProbe::MissingWithAccessibleParent, 2),
-        SourceCopyTransition::Archive {
-            reason: SourceCopyArchiveReason::ExternalRemoved,
-            ..
-        }
-    ));
+    let SourceCopyTransition::Update(missing) = validate_source_copy_transition(
+        &copy,
+        SourceCopyProbe::MissingWithAccessibleParent,
+        2,
+    ) else {
+        panic!("missing target remains a current relation");
+    };
+    assert!(missing.active);
+    assert!(project_governable_relation(&GovernableRelationFact::SourceCopy(missing)).is_some());
 }
 
 // ===================== 8A：来源关系维度的原始文件清理 =====================

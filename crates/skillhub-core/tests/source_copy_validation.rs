@@ -6,7 +6,7 @@ use skillhub_core::import::ImportProvenanceEvent;
 use skillhub_core::relationship::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
     validate_source_copy_transition, RelationshipCheckLevel, RelationshipPathProbe,
-    SourceCopyArchiveReason, SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact,
+    SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact,
     SourceCopyTransition,
 };
 use skillhub_core::{ImportSourceClass, SkillId};
@@ -236,7 +236,7 @@ fn permission_denied_sets_permission_limited_without_archiving() {
 }
 
 #[test]
-fn only_missing_with_accessible_parent_archives_as_external_removed() {
+fn missing_with_accessible_parent_stays_active_as_health_fact() {
     let relation = relation();
     let probe = RelationshipPathProbe::MissingWithAccessibleParent;
     let transition = evaluate_relationship_probe(
@@ -247,16 +247,62 @@ fn only_missing_with_accessible_parent_archives_as_external_removed() {
         None,
         100,
     );
-    let SourceCopyTransition::Archive { fact, reason } = transition else {
-        panic!("verified missing must archive");
+    let SourceCopyTransition::Update(mut fact) = transition else {
+        panic!("validation cannot end a relationship");
     };
-    assert_eq!(reason, SourceCopyArchiveReason::ExternalRemoved);
-    assert!(!fact.active);
+    fact.source_class = ImportSourceClass::AgentLocal;
+    assert!(fact.active);
+    assert_eq!(fact.archive_reason, None);
+    assert_eq!(fact.archived_at, None);
     assert_eq!(
-        fact.archive_reason,
-        Some(SourceCopyArchiveReason::ExternalRemoved)
+        fact.health_reasons,
+        Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
     );
-    assert_eq!(fact.archived_at, Some(100));
+    let ledger = skillhub_core::relationship::project_unified_governance_ledger(
+        &skillhub_core::relationship::RelationGovernanceFilters::default(),
+        &[skillhub_core::relationship::GovernableRelationFact::SourceCopy(fact)],
+        &[],
+        &std::collections::BTreeSet::new(),
+        &Vec::new(),
+        0,
+        None,
+    );
+    assert_eq!(ledger.rows.len(), 1);
+    assert_eq!(
+        ledger.rows[0].governance.health_reasons,
+        vec![
+            skillhub_core::relationship::RelationGovernanceReason::VerificationRequired,
+            skillhub_core::relationship::RelationGovernanceReason::LinkTargetUnavailable,
+        ]
+    );
+    assert_eq!(
+        ledger.rows[0].governance.governance_status,
+        skillhub_core::relationship::RelationGovernanceClassification::Pending
+    );
+}
+
+#[test]
+fn legacy_source_copy_health_evidence_decodes_as_unknown_not_confirmed_normal() {
+    let mut legacy = serde_json::to_value(relation()).expect("serialize relation");
+    legacy
+        .as_object_mut()
+        .expect("source-copy object")
+        .remove("health_reasons");
+    let decoded: SourceCopyRelationFact = serde_json::from_value(legacy).expect("legacy fact");
+    assert_eq!(decoded.health_reasons, None);
+
+    let transition = validate_source_copy_transition(
+        &decoded,
+        skillhub_core::relationship::SourceCopyProbe::VerifiedDirectory {
+            physical_source_id: decoded.physical_source_id.clone(),
+            content_fingerprint: decoded.expected_fingerprint.clone(),
+        },
+        101,
+    );
+    let SourceCopyTransition::Update(verified) = transition else {
+        panic!("verification does not end a relationship");
+    };
+    assert_eq!(verified.health_reasons, Some(Vec::new()));
 }
 
 #[test]
@@ -280,6 +326,7 @@ fn identical_update_never_counts_as_a_meaningful_change() {
     let mut normal = relation.clone();
     normal.health = SourceCopyHealth::Normal;
     normal.current_fingerprint = Some("hash-a".to_owned());
+    normal.health_reasons = Some(Vec::new());
     assert!(!update_is_meaningful(&normal, &updated));
     // NeedsValidation → Normal 是有意义变化。
     assert!(update_is_meaningful(&relation, &updated));

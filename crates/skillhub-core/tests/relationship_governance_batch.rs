@@ -102,6 +102,7 @@ impl RelationSpec {
             content_fingerprint: format!("sha256:{}", self.relation_id),
             origin: ObservedOrigin::Scan,
             match_state: self.match_state,
+            health_reasons: Some(Vec::new()),
             active: self.active,
             observed_at: 1_700_000_000,
             released_at: (!self.active).then_some(1_700_000_100),

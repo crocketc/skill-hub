@@ -497,6 +497,7 @@ impl<'a> RelationshipRepository<'a> {
                 content_fingerprint: deployment.expected_hash.clone(),
                 origin: ObservedOrigin::Import,
                 match_state: ObservedMatchState::ContentVerified,
+                health_reasons: None,
                 active: matches!(deployment.state, DeploymentState::Deployed),
                 observed_at: now(),
                 released_at: None,
@@ -612,8 +613,8 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
              (relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
               relationship, file_representation, ownership, link_target_path,
               link_target_path_key, link_target_directory_id, content_fingerprint,
-              origin, match_state, active, observed_at, released_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+              origin, match_state, active, observed_at, released_at, health_reasons_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
              ON CONFLICT(agent_client_id, path_key) DO UPDATE SET
              relation_id=excluded.relation_id, skill_id=excluded.skill_id, path=excluded.path,
              directory_node_id=excluded.directory_node_id, relationship=excluded.relationship,
@@ -622,7 +623,8 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
              link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
              match_state=excluded.match_state, active=excluded.active,
-             observed_at=excluded.observed_at, released_at=excluded.released_at
+             observed_at=excluded.observed_at, released_at=excluded.released_at,
+             health_reasons_json=excluded.health_reasons_json
              WHERE ({ownership_guard}) AND (
                  deployment_relations.relation_id IS NOT excluded.relation_id
                  OR deployment_relations.skill_id IS NOT excluded.skill_id
@@ -640,6 +642,7 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                  OR deployment_relations.active IS NOT excluded.active
                  OR deployment_relations.observed_at IS NOT excluded.observed_at
                  OR deployment_relations.released_at IS NOT excluded.released_at
+                 OR deployment_relations.health_reasons_json IS NOT excluded.health_reasons_json
              )"
             ),
             params![
@@ -661,6 +664,11 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                 i64::from(relation.active),
                 relation.observed_at,
                 relation.released_at,
+                relation.health_reasons
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|error| serialization_error(error.to_string()))?,
             ],
     )
         .map_err(database_error)?;
@@ -1543,7 +1551,8 @@ impl<'a> GovernanceTaskRepository<'a> {
 const DEPLOYMENT_SELECT: &str =
     "SELECT relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
      relationship, file_representation, ownership, link_target_path, link_target_path_key,
-     link_target_directory_id, content_fingerprint, origin, match_state, active, observed_at, released_at
+     link_target_directory_id, content_fingerprint, origin, match_state, active, observed_at, released_at,
+     health_reasons_json
      FROM deployment_relations";
 
 const SOURCE_SELECT: &str =
@@ -1581,6 +1590,7 @@ type StoredDeployment = (
     i64,
     i64,
     Option<i64>,
+    Option<String>,
 );
 
 type StoredSource = (
@@ -1640,6 +1650,7 @@ fn deployment_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredDeployment>
         row.get(15)?,
         row.get(16)?,
         row.get(17)?,
+        row.get(18)?,
     ))
 }
 
@@ -1692,6 +1703,12 @@ fn decode_deployment(row: StoredDeployment) -> Option<DeploymentRelationFact> {
         content_fingerprint: row.12,
         origin: parse_origin(&row.13)?,
         match_state: parse_match_state(&row.14)?,
+        health_reasons: row
+            .18
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .ok()?,
         active: row.15 != 0,
         observed_at: row.16,
         released_at: row.17,

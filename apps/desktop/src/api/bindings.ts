@@ -1080,6 +1080,12 @@ export type DeploymentRelationFact = {
 	content_fingerprint: string,
 	origin: ObservedOrigin,
 	match_state: ObservedMatchState,
+	/**
+	 *  Explicit probe/file health evidence. `None` means an older or never
+	 *  confirmed fact; `Some([])` means a check confirmed no current health
+	 *  anomaly. This field never carries management decisions or status.
+	 */
+	health_reasons?: RelationHealthReason[] | null,
 	active: boolean,
 	observed_at: string,
 	released_at: string | null,
@@ -3084,6 +3090,13 @@ export type RelationGovernanceState = {
 
 export type RelationGovernanceTargetKind = "agent" | "project" | "shared_directory";
 
+/**
+ *  Persisted reasons describe observed target/subject health only.
+ *  Management decisions and governance classification live in a separate
+ *  authoritative projection.
+ */
+export type RelationHealthReason = "target_entry_missing" | "target_entry_replaced" | "target_link_unavailable" | "permission_limited" | "content_changed" | "managed_target_occupied" | "operation_failed" | "subject_unavailable" | "probe_unavailable";
+
 /**  The last confirmed management state for one relationship target. */
 export type RelationManagementStatus = "not_taken_over" | "taken_over";
 
@@ -4031,6 +4044,11 @@ export type SourceCopyRelationFact = {
 	current_fingerprint: string | null,
 	decision: SourceCopyDecision,
 	health: SourceCopyHealth,
+	/**
+	 *  `None` distinguishes a legacy/unverified fact from a newly checked
+	 *  target with no reported health issue.
+	 */
+	health_reasons?: RelationHealthReason[] | null,
 	active: boolean,
 	last_verified_at: string | null,
 	archived_at: string | null,

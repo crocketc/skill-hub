@@ -163,6 +163,7 @@ pub fn update_is_meaningful(
 ) -> bool {
     before.health != after.health
         || before.current_fingerprint != after.current_fingerprint
+        || before.health_reasons != after.health_reasons
         || before.active != after.active
         || before.decision != after.decision
 }

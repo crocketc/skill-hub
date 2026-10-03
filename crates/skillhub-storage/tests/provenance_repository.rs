@@ -313,12 +313,16 @@ fn observed_relation_marks_divergence_without_duplicating_rows() {
     assert_eq!(rows[0].content_fingerprint, "sha256:ff22");
     let normalized = database.relationship_repository().list_relations().unwrap();
     assert_eq!(normalized.len(), 1);
-    assert_eq!(normalized[0].skill_id, None);
+    assert_eq!(normalized[0].skill_id, Some(skill));
     assert_eq!(
         normalized[0].match_state,
         skillhub_core::ObservedMatchState::Diverged
     );
     assert_eq!(normalized[0].content_fingerprint, "sha256:ff22");
+    assert_eq!(
+        normalized[0].health_reasons,
+        Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged])
+    );
 }
 
 #[test]
@@ -449,6 +453,7 @@ fn original_migration_records_support_rollback_audit() {
                 current_fingerprint: None,
                 decision: skillhub_core::relationship::SourceCopyDecision::Pending,
                 health: skillhub_core::relationship::SourceCopyHealth::Normal,
+                health_reasons: None,
                 active: true,
                 last_verified_at: None,
                 archived_at: None,
@@ -506,6 +511,7 @@ fn original_migration_records_support_rollback_audit() {
                 current_fingerprint: None,
                 decision: skillhub_core::relationship::SourceCopyDecision::Pending,
                 health: skillhub_core::relationship::SourceCopyHealth::Normal,
+                health_reasons: None,
                 // 活动槽位 (skill, path) 唯一：占位行必须不活动。
                 active: false,
                 last_verified_at: None,

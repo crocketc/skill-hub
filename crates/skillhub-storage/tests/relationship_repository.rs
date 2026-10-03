@@ -12,7 +12,7 @@ use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, DeploymentRelationFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
     RelationshipType, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
-    SourceCopyRelationFact, SourceRelationFact,
+    RelationHealthReason, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -72,9 +72,13 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
             .expect("seed legacy relation");
     }
     // Recreate a v21 database state while preserving the persisted relationship
-    // facts, then let the normal opener run migration 22 and the current data migration.
+    // facts, then let the normal opener run migration 22 and the later additive migrations.
     db.connection_for_test()
-        .execute_batch("DROP TABLE relation_governance_confirmations; PRAGMA user_version=21;")
+        .execute_batch(
+            "ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+             DROP TABLE relation_governance_confirmations;
+             PRAGMA user_version=21;",
+        )
         .expect("restore prior schema version");
     drop(db);
 
@@ -125,6 +129,7 @@ fn deployment(skill_id: SkillId) -> DeploymentRelationFact {
         content_fingerprint: "sha256:notes".into(),
         origin: ObservedOrigin::Scan,
         match_state: ObservedMatchState::ContentVerified,
+        health_reasons: Some(Vec::new()),
         active: true,
         observed_at: 42,
         released_at: None,
@@ -617,6 +622,38 @@ fn observed_deployment_release_advances_the_relationship_revision() {
         released,
         "releasing an already released relation writes no new fact"
     );
+}
+
+#[test]
+fn deployment_health_reasons_preserve_legacy_unknown_and_checked_states() {
+    let db = Database::open_in_memory().expect("database");
+    let skill_id = SkillId::new();
+    skill(&db, skill_id);
+
+    let mut relation = deployment(skill_id);
+    relation.health_reasons = None;
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("legacy/unknown relation");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(loaded[0].health_reasons, None);
+
+    relation.health_reasons = Some(vec![RelationHealthReason::TargetEntryMissing]);
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("missing-target health");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(
+        loaded[0].health_reasons,
+        Some(vec![RelationHealthReason::TargetEntryMissing])
+    );
+
+    relation.health_reasons = Some(Vec::new());
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("confirmed no target health anomaly");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(loaded[0].health_reasons, Some(Vec::new()));
 }
 
 /// v19 governance fixture: a user-local import event with a filesystem-verified
