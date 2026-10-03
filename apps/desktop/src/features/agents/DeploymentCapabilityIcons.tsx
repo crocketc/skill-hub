@@ -24,7 +24,7 @@ export function DeploymentCapabilityIcons({
     ["link", "↗", link],
   ] as const;
   return (
-    <div aria-label={String(t("agents.deploymentMethods.label"))} className="sh-agent-card__deployment-footer">
+    <div aria-label={String(t("agents.deploymentMethods.label"))} className="sh-agent-card__deployment-footer" role="group">
       <div className="sh-agent-card__deployment-methods">
       {methods.map(([mode, symbol, status]) => {
         const text = String(t(`agents.deploymentMethods.${mode}.${status}`));
@@ -33,6 +33,7 @@ export function DeploymentCapabilityIcons({
             aria-label={text}
             className={`sh-agent-card__deployment-method is-${status}`}
             key={mode}
+            role="img"
             title={directory.builtin ? String(t("agents.deploymentMethods.readonly")) : text}
           >
             <span aria-hidden="true">{symbol}</span>

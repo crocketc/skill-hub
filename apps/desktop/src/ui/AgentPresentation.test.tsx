@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { expect, it, vi } from "vitest";
 import type { ClientKind } from "../api/bindings";
 import { createSkillHubI18n } from "../i18n";
 import { AgentPresentation } from "./AgentPresentation";
@@ -9,9 +11,11 @@ import { AgentPresentation } from "./AgentPresentation";
 async function renderPresentation(props: ComponentProps<typeof AgentPresentation>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   return render(
-    <I18nextProvider i18n={i18n}>
-      <AgentPresentation {...props} />
-    </I18nextProvider>,
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <AgentPresentation {...props} />
+      </I18nextProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -126,6 +130,96 @@ it("wraps a bounded set of shared logos and exposes the remaining brands in a re
     "title",
     "Kimi · 桌面端 / Windsurf · 桌面端",
   );
+});
+
+it("opens all shared brands in an accessible popover and restores trigger focus on close", async () => {
+  const user = userEvent.setup();
+  await renderPresentation({
+    agentId: "agent-skills.shared-directory",
+    sharedDirectory: true,
+    sharedAgentBrands: ["anthropic", "codex", "cursor", "google", "kimi", "windsurf"],
+    sharedAgentBrandKinds: {
+      anthropic: ["desktop"],
+      codex: ["cli"],
+      cursor: ["ide_extension"],
+      google: ["web"],
+      kimi: ["desktop"],
+      windsurf: ["desktop"],
+    },
+  });
+
+  const trigger = screen.getByRole("button", { name: "查看共享目录识别的全部 6 个品牌" });
+  expect(trigger).toHaveTextContent("+2");
+  await user.click(trigger);
+
+  const popover = screen.getByRole("dialog", { name: "可识别该共享目录的品牌" });
+  const rows = within(popover).getAllByRole("listitem");
+  expect(popover).toBeVisible();
+  expect(rows).toHaveLength(6);
+  expect(within(popover).getByText("Claude")).toBeVisible();
+  expect(within(popover).getByText("Codex")).toBeVisible();
+  expect(within(popover).getByText("IDE 插件")).toBeVisible();
+  expect(within(popover).getByText("Windsurf")).toBeVisible();
+  expect(within(popover).queryByText(/agent-skills|shared-directory|logical_target_id/i)).not.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog", { name: "可识别该共享目录的品牌" })).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("dialog", { name: "可识别该共享目录的品牌" })).toBeVisible();
+  const outside = document.createElement("button");
+  outside.textContent = "外部按钮";
+  document.body.append(outside);
+  await user.click(outside);
+  expect(screen.queryByRole("dialog", { name: "可识别该共享目录的品牌" })).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  outside.remove();
+});
+
+it("keeps the overflow summary non-interactive inside a parent control", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const onClick = vi.fn();
+  const { container } = render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <button onClick={onClick} type="button">
+          <AgentPresentation
+            agentId="agent-skills.shared-directory"
+            sharedDirectory
+            sharedAgentBrands={["anthropic", "codex", "cursor", "google", "kimi", "windsurf"]}
+            sharedAgentBrandKinds={{ kimi: ["desktop"], windsurf: ["desktop"] }}
+            sharedBrandOverflowInteractive={false}
+          />
+        </button>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+
+  const parent = screen.getByRole("button");
+  expect(container.querySelector("button button")).toBeNull();
+  expect(within(parent).getByText("+2")).toHaveAttribute("title", "Kimi · 桌面端 / Windsurf · 桌面端");
+  await user.click(within(parent).getByText("+2"));
+  expect(onClick).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("keeps the shared directory detail link separate from its brand overflow control", async () => {
+  const { container } = await renderPresentation({
+    agentId: "agent-skills.shared-directory",
+    detailTo: "/agents/agent-skills%2Fshared%2Fcatalog",
+    sharedDirectory: true,
+    sharedAgentBrands: ["anthropic", "codex", "cursor", "google", "kimi"],
+    sharedAgentBrandKinds: { anthropic: ["desktop"], codex: ["cli"] },
+  });
+
+  const titleLink = screen.getByRole("link", { name: /Agent共享目录/ });
+  const overflow = screen.getByRole("button", { name: "查看共享目录识别的全部 5 个品牌" });
+  expect(titleLink).toHaveAttribute("href", "/agents/agent-skills%2Fshared%2Fcatalog");
+  expect(titleLink).toContainElement(screen.getByText("Agent共享目录"));
+  expect(overflow.closest("a")).toBeNull();
+  expect(container.querySelector("a button")).toBeNull();
 });
 
 it("uses an icon-only compact presentation while retaining the full accessible identity", async () => {

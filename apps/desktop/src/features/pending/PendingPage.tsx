@@ -99,6 +99,7 @@ function PendingGroupRow({
               sharedDirectory={group.sharedDirectory}
               sharedAgentBrands={group.sharedDirectory ? group.agentBrands : undefined}
               sharedAgentBrandKinds={group.sharedDirectory ? group.agentSharedBrandKinds : undefined}
+              sharedBrandOverflowInteractive={false}
             /> : <strong>{title}</strong>}
             <span className="sh-pending-group__chevron" aria-hidden="true">{expanded ? "−" : "+"}</span>
           </Button>

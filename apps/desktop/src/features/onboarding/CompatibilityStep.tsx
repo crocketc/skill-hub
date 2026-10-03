@@ -234,6 +234,7 @@ function TargetCard({
                 sharedDirectory={group.sharedDirectory}
                 sharedAgentBrands={group.sharedAgentBrands}
                 sharedAgentBrandKinds={group.sharedAgentBrandKinds}
+                sharedBrandOverflowInteractive={false}
               />
             </span>
             <span className="sh-onboarding__target-role">

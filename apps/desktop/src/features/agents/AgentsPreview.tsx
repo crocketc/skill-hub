@@ -142,10 +142,15 @@ const previewAgents: AgentView[] = [
   },
 ];
 
-function createPreviewAgentFacade(empty: boolean): AgentFacade {
+function createPreviewAgentFacade(empty: boolean, pathStyleTarget = false): AgentFacade {
+  const agents = pathStyleTarget
+    ? previewAgents.map((agent) => agent.kinds?.includes("shared_directory")
+      ? { ...agent, id: "agent-skills/shared/catalog/root" }
+      : agent)
+    : previewAgents;
   return {
-    list: async () => (empty ? [] : previewAgents),
-    get: async (id) => previewAgents.find((agent) => agent.id === id) ?? previewAgents[0]!,
+    list: async () => (empty ? [] : agents),
+    get: async (id) => agents.find((agent) => agent.id === id) ?? agents[0]!,
     rescan: async () => undefined,
     createCustomAgent: async () => undefined,
     updateCustomAgent: async () => undefined,
@@ -337,7 +342,9 @@ export function AgentDetailPreview() {
 
 /** DEV-only agents board (/__preview/agents); never wired into production. */
 export function AgentsPreview() {
-  const empty = new URLSearchParams(window.location.search).has("empty");
-  const facade = useMemo(() => createPreviewAgentFacade(empty), [empty]);
+  const params = new URLSearchParams(window.location.search);
+  const empty = params.has("empty");
+  const pathStyleTarget = params.has("path-style-target");
+  const facade = useMemo(() => createPreviewAgentFacade(empty, pathStyleTarget), [empty, pathStyleTarget]);
   return <AgentListPage facade={facade} picker={previewPicker} />;
 }

@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { ClientKind } from "../api/bindings";
 import { brandDisplayName, BrandTag, BRAND_DISPLAY_NAMES } from "./BrandTag";
 import "./AgentPresentation.css";
@@ -139,6 +141,10 @@ export interface AgentPresentationProps {
   sharedAgentBrands?: readonly string[];
   /** Raw ClientKind values used in each shared brand logo tooltip. */
   sharedAgentBrandKinds?: Record<string, readonly string[]>;
+  /** Use a popover for the overflow badge when the presenter is outside another interactive control. */
+  sharedBrandOverflowInteractive?: boolean;
+  /** Optional detail route for the represented Agent or shared directory. */
+  detailTo?: string;
   deploymentStatus?: "deployed" | "partially_deployed" | "not_deployed" | "unknown";
   density?: AgentPresentationDensity;
 }
@@ -153,10 +159,17 @@ export function AgentPresentation({
   sharedDirectory = false,
   sharedAgentBrands = [],
   sharedAgentBrandKinds = {},
+  sharedBrandOverflowInteractive = true,
+  detailTo,
   deploymentStatus = "unknown",
   density = "full",
 }: AgentPresentationProps): JSX.Element {
   const { t } = useTranslation();
+  const [showAllSharedBrands, setShowAllSharedBrands] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number; maxHeight: number }>();
+  const sharedBrandsRef = useRef<HTMLSpanElement | null>(null);
+  const overflowButtonRef = useRef<HTMLButtonElement | null>(null);
+  const popoverId = useId();
   const resolvedKinds = normalizeAgentKinds(kinds, agentId, instance);
   const isShared = sharedDirectory || resolvedKinds.includes("shared_directory");
   const visibleKinds = isShared ? ["shared_directory" as const] : resolvedKinds;
@@ -182,41 +195,75 @@ export function AgentPresentation({
       .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
     return [brandDisplayName(candidate), ...kindLabels].join(" · ");
   });
+  const updatePopoverPosition = useCallback(() => {
+    if (!showAllSharedBrands) return;
+    const anchor = overflowButtonRef.current;
+    const popover = sharedBrandsRef.current?.querySelector<HTMLElement>(".sh-agent-presentation__shared-brands-popover");
+    if (!anchor || !popover) return;
 
-  return (
-    <span
-      aria-label={accessibleName}
-      className={["sh-agent-presentation", `sh-agent-presentation--${density}`, className].filter(Boolean).join(" ")}
-      data-agent-kind={visibleKinds.join(",")}
-      title={accessibleName}
-    >
-      {isShared ? (
-        <>
-          <span aria-hidden="true" className="sh-agent-presentation__vercel-logo" />
-          {density === "full" ? <span className="sh-agent-presentation__shared-title">{sharedTitle}</span> : null}
-          <span className="sh-agent-presentation__shared-brands">
-            {visibleSharedBrands.map((candidate) => {
-              const kindLabels = (sharedAgentBrandKinds[candidate] ?? [])
-                .filter(isAgentKindKey)
-                .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
-              const label = [brandDisplayName(candidate), ...kindLabels].join(" · ");
-              return <BrandTag brand={candidate} iconOnly title={label} key={candidate} />;
-            })}
-            {hiddenSharedBrands.length > 0 ? (
-              <span
-                aria-label={String(t("agents.sharedBrandOverflow", {
-                  count: hiddenSharedBrands.length,
-                  brands: hiddenSharedBrandLabels.join(" / "),
-                }))}
-                className="sh-agent-presentation__shared-brand-overflow"
-                title={hiddenSharedBrandLabels.join(" / ")}
-              >+{hiddenSharedBrands.length}</span>
-            ) : null}
-          </span>
-        </>
-      ) : (
-        <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />
-      )}
+    const anchorRect = anchor.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const viewportMargin = 12;
+    const anchorGap = 8;
+    const availableBelow = Math.max(0, window.innerHeight - anchorRect.bottom - anchorGap - viewportMargin);
+    const availableAbove = Math.max(0, anchorRect.top - anchorGap - viewportMargin);
+    const placeAbove = popoverRect.height > availableBelow && availableAbove > availableBelow;
+    const maxHeight = Math.max(96, Math.min(window.innerHeight - viewportMargin * 2, placeAbove ? availableAbove : availableBelow));
+    const height = Math.min(popoverRect.height, maxHeight);
+    const left = Math.max(viewportMargin, Math.min(anchorRect.right - popoverRect.width, window.innerWidth - viewportMargin - popoverRect.width));
+    const top = placeAbove
+      ? Math.max(viewportMargin, anchorRect.top - anchorGap - height)
+      : Math.min(window.innerHeight - viewportMargin - height, anchorRect.bottom + anchorGap);
+    setPopoverPosition({ left, top, maxHeight });
+  }, [showAllSharedBrands, uniqueSharedBrands.length]);
+  useLayoutEffect(() => {
+    updatePopoverPosition();
+  }, [updatePopoverPosition]);
+  useEffect(() => {
+    if (!showAllSharedBrands) return undefined;
+    window.addEventListener("resize", updatePopoverPosition);
+    window.addEventListener("scroll", updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePopoverPosition);
+      window.removeEventListener("scroll", updatePopoverPosition, true);
+    };
+  }, [showAllSharedBrands, updatePopoverPosition]);
+  useEffect(() => {
+    if (!showAllSharedBrands) return undefined;
+
+    const closeAndRestoreFocus = () => {
+      setShowAllSharedBrands(false);
+      overflowButtonRef.current?.focus();
+    };
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !sharedBrandsRef.current?.contains(target)) {
+        closeAndRestoreFocus();
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeAndRestoreFocus();
+    };
+
+    document.addEventListener("click", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("click", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showAllSharedBrands]);
+
+  const sharedIdentity = (
+    <>
+      <span aria-hidden="true" className="sh-agent-presentation__vercel-logo" />
+      {density === "full" ? <span className="sh-agent-presentation__shared-title">{sharedTitle}</span> : null}
+    </>
+  );
+  const agentIdentity = (
+    <>
+      <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />
       {!isShared && density === "full" ? (
         <>
           {deploymentStatus === "deployed" || deploymentStatus === "partially_deployed" ? (
@@ -228,6 +275,88 @@ export function AgentPresentation({
           ) : null}
           <span className="sh-agent-presentation__kind" title={accessibleName}>{labels.join("/")}</span>
         </>
+      ) : null}
+    </>
+  );
+
+  return (
+    <span
+      aria-label={accessibleName}
+      className={["sh-agent-presentation", `sh-agent-presentation--${density}`, className].filter(Boolean).join(" ")}
+      data-agent-kind={visibleKinds.join(",")}
+      title={accessibleName}
+    >
+      {detailTo ? (
+        <Link aria-label={accessibleName} className="sh-agent-presentation__identity-link" to={detailTo}>
+          {isShared ? sharedIdentity : agentIdentity}
+        </Link>
+      ) : isShared ? sharedIdentity : agentIdentity}
+      {isShared ? (
+        <span className="sh-agent-presentation__shared-brands" ref={sharedBrandsRef}>
+          {visibleSharedBrands.map((candidate) => {
+            const kindLabels = (sharedAgentBrandKinds[candidate] ?? [])
+              .filter(isAgentKindKey)
+              .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+            const label = [brandDisplayName(candidate), ...kindLabels].join(" · ");
+            return (
+              <span aria-label={label} className="sh-agent-presentation__shared-brand-mark" key={candidate} tabIndex={0} title={label}>
+                <BrandTag brand={candidate} iconOnly />
+              </span>
+            );
+          })}
+          {hiddenSharedBrands.length > 0 ? sharedBrandOverflowInteractive ? (
+            <>
+              <button
+                aria-controls={popoverId}
+                aria-expanded={showAllSharedBrands}
+                aria-label={String(t("agents.sharedBrandOverflowButton", { count: uniqueSharedBrands.length }))}
+                className="sh-agent-presentation__shared-brand-overflow"
+                onClick={() => setShowAllSharedBrands((visible) => !visible)}
+                ref={overflowButtonRef}
+                title={hiddenSharedBrandLabels.join(" / ")}
+                type="button"
+              >+{hiddenSharedBrands.length}</button>
+              {showAllSharedBrands ? (
+                <div
+                  aria-label={String(t("agents.sharedBrandsPopoverTitle"))}
+                  className="sh-agent-presentation__shared-brands-popover"
+                  id={popoverId}
+                  role="dialog"
+                  style={popoverPosition
+                    ? { left: `${popoverPosition.left}px`, maxHeight: `${popoverPosition.maxHeight}px`, top: `${popoverPosition.top}px` }
+                    : { visibility: "hidden" }}
+                >
+                  <h2 className="sh-agent-presentation__shared-brands-heading">{t("agents.sharedBrandsPopoverTitle")}</h2>
+                  <ul className="sh-agent-presentation__shared-brands-list">
+                    {uniqueSharedBrands.map((candidate) => {
+                      const kindLabels = (sharedAgentBrandKinds[candidate] ?? [])
+                        .filter(isAgentKindKey)
+                        .map((kind) => agentKindLabel(kind, (key) => String(t(key as never))));
+                      const label = [brandDisplayName(candidate), ...kindLabels].join(" · ");
+                      return (
+                        <li aria-label={label} className="sh-agent-presentation__shared-brand-row" key={candidate} tabIndex={0} title={label}>
+                          <BrandTag brand={candidate} iconOnly title={label} />
+                          <span className="sh-agent-presentation__shared-brand-name">{brandDisplayName(candidate)}</span>
+                          {kindLabels.length > 0 ? (
+                            <span className="sh-agent-presentation__shared-brand-kinds">
+                              {kindLabels.map((kindLabel) => <span className="sh-agent-presentation__kind" key={kindLabel}>{kindLabel}</span>)}
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <span
+              aria-label={hiddenSharedBrandLabels.join(" / ")}
+              className="sh-agent-presentation__shared-brand-overflow is-static"
+              title={hiddenSharedBrandLabels.join(" / ")}
+            >+{hiddenSharedBrands.length}</span>
+          ) : null}
+        </span>
       ) : null}
     </span>
   );

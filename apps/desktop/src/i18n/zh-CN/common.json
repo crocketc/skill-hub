@@ -818,6 +818,8 @@
     "sharedDirectoryChip": "支持共享目录",
     "sharedDirectoryTitle": "Agent共享目录",
     "sharedBrandOverflow": "还有 {{count}} 个品牌：{{brands}}",
+    "sharedBrandOverflowButton": "查看共享目录识别的全部 {{count}} 个品牌",
+    "sharedBrandsPopoverTitle": "可识别该共享目录的品牌",
     "compatibility": {
       "pendingError": "此导入方式的 Agent 兼容性尚未验证，请先在待处理中完成验证；这不代表系统无法创建链接。",
       "saved": "本机验证结果已保存；尚未确定的事项继续保留在待处理。",

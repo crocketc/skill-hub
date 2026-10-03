@@ -324,7 +324,7 @@ export function ProjectListPage({
                       disabled={registering || !agent.available}
                       indeterminate={projectCandidateCheckState(agent, selectedAgentIds) === "mixed"}
                       key={agent.id}
-                      label={<AgentPresentation agentId={agent.agentId} brand={agent.brand} kinds={agent.kinds} sharedAgentBrands={agent.sharedAgentBrands} sharedAgentBrandKinds={agent.sharedAgentBrandKinds} sharedDirectory={agent.sharedDirectory} />}
+                      label={<AgentPresentation agentId={agent.agentId} brand={agent.brand} kinds={agent.kinds} sharedAgentBrands={agent.sharedAgentBrands} sharedAgentBrandKinds={agent.sharedAgentBrandKinds} sharedBrandOverflowInteractive={false} sharedDirectory={agent.sharedDirectory} />}
                       ariaLabel={projectCandidateAccessibleName(agent, (key) => String(t(key as never)))}
                       onChange={() => setSelectedAgentIds((current) => toggleProjectCandidateIds(current, agent))}
                     />

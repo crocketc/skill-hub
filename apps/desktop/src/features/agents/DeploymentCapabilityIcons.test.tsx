@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -27,8 +28,9 @@ describe("DeploymentCapabilityIcons", () => {
     render(<DeploymentCapabilityIcons directory={{ ...directory, supportedModes: [],
       importCompatibility: { copy: "unverified", symlink: "supported", junction: "unverified" } }}
       t={(key) => String(i18n.t(key as never))} />);
-    expect(screen.getByLabelText("复制导入兼容性待验证")).toHaveClass("is-unverified");
-    expect(screen.getByLabelText("支持链接导入")).toHaveClass("is-supported");
+    const methods = screen.getByRole("group", { name: "派发方式" });
+    expect(within(methods).getByRole("img", { name: "复制导入兼容性待验证" })).toHaveClass("is-unverified");
+    expect(within(methods).getByRole("img", { name: "支持链接导入" })).toHaveClass("is-supported");
   });
   it("shows copy and combined link capability with the agreed import labels", async () => {
     const i18n = await createSkillHubI18n(["zh-CN"]);

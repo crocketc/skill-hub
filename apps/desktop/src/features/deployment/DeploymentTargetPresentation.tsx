@@ -11,10 +11,12 @@ export function DeploymentTargetPresentation({
   target,
   fallback,
   model,
+  sharedBrandOverflowInteractive = true,
 }: {
   target?: DeploymentTarget;
   fallback: string;
   model?: AgentCardModel;
+  sharedBrandOverflowInteractive?: boolean;
 }) {
   const { t } = useTranslation();
   const directory = model?.directories[0];
@@ -46,6 +48,7 @@ export function DeploymentTargetPresentation({
       kinds={model.kinds}
       sharedAgentBrands={model.sharedAgentBrands}
       sharedAgentBrandKinds={model.sharedAgentBrandKinds}
+      sharedBrandOverflowInteractive={sharedBrandOverflowInteractive}
       sharedDirectory={model.sharedDirectory}
     />
   ) : target?.agentClientId ? (
@@ -54,6 +57,7 @@ export function DeploymentTargetPresentation({
         brand={target.agentProfileId}
         sharedAgentBrands={target.sharedAgentBrands}
         sharedAgentBrandKinds={target.sharedAgentBrandKinds}
+        sharedBrandOverflowInteractive={sharedBrandOverflowInteractive}
         sharedDirectory={target.sharedDirectory}
       />
   ) : <strong>{target?.label ?? fallback}</strong>;

@@ -818,6 +818,8 @@
     "sharedDirectoryChip": "Shared-directory ready",
     "sharedDirectoryTitle": "Agent shared directory",
     "sharedBrandOverflow": "{{count}} more brands: {{brands}}",
+    "sharedBrandOverflowButton": "View all {{count}} brands recognised for the shared directory",
+    "sharedBrandsPopoverTitle": "Brands that recognise this shared directory",
     "compatibility": {
       "pendingError": "Agent compatibility for this import method is unverified. Complete verification in Pending first; this does not mean the system cannot create links.",
       "saved": "Local verification saved. Unverified items remain pending.",
