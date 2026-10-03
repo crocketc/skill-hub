@@ -104,6 +104,8 @@ export interface SkillPage {
 }
 
 export interface SkillQuickView extends SkillTableRow {
+  /** Relationships with unreadable target identity; never counted as Agent/project. */
+  unresolvedDeploymentCount?: number;
   dependencies: string[];
   duplicateCandidates: string[];
   externalChanges: string[];

@@ -501,7 +501,7 @@ it("links available updates to the version review in full details", async () => 
   await renderDrawer({ detailSearch: "?text=pdf", facade: createMockSkillLibraryFacade() });
 
   const updateLink = await screen.findByRole("link", { name: "View update" });
-  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#versions");
+  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#source");
 });
 
 it("shows agent tags and project names with paths in the relations module", async () => {
@@ -1145,14 +1145,13 @@ it("keeps core drawer content visible when stored layout preferences hide or reo
   expect(within(drawer).getByText("Read and extract PDFs")).toBeVisible();
   expect(within(drawer).getByRole("heading", { name: "Security checks" })).toBeVisible();
   expect(within(drawer).getByRole("heading", { name: "Relations" })).toBeVisible();
-  expect(within(drawer).getByRole("heading", { name: "Source and license" })).toBeVisible();
-  expect(within(drawer).getByRole("heading", { name: "Versions" })).toBeVisible();
+  expect(within(drawer).getByRole("heading", { name: "Source and version" })).toBeVisible();
 
   const moduleHeadings = [...drawer.querySelectorAll(".sh-skill-drawer__module h3")]
     .map((heading) => heading.textContent?.trim());
   expect(moduleHeadings.indexOf("Security checks")).toBeLessThan(moduleHeadings.indexOf("Relations"));
-  expect(moduleHeadings.indexOf("Relations")).toBeLessThan(moduleHeadings.indexOf("Source and license"));
-  expect(moduleHeadings.indexOf("Source and license")).toBeLessThan(moduleHeadings.indexOf("Versions"));
+  expect(moduleHeadings.indexOf("Relations")).toBeLessThan(moduleHeadings.indexOf("Source and version"));
+  expect(moduleHeadings.at(-1)).toBe("Source and version");
 });
 
 
@@ -1259,4 +1258,44 @@ it("does not show a delete action without a delete handler", async () => {
 
   await screen.findByTestId("skill-quick-drawer");
   expect(screen.queryByRole("button", { name: "Delete from library" })).not.toBeInTheDocument();
+});
+
+
+it("combines source and version into one final overview with update navigation", async () => {
+  await renderDrawer({ facade: createMockSkillLibraryFacade() });
+  const title = await screen.findByRole("heading", { name: "Source and version" });
+  const module = title.closest("section")!;
+  expect(within(module).getByText("1.4.0")).toBeInTheDocument();
+  expect(within(module).getByText("Internal catalog")).toBeInTheDocument();
+  expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#source");
+  expect(screen.queryByRole("heading", { name: "Versions" })).not.toBeInTheDocument();
+});
+
+it("keeps unresolved targets distinct from empty Agent and project destinations", async () => {
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade({
+      quickView: {
+        ...QUICK_VIEW,
+        agentDeploymentCount: 0,
+        agentDeployments: [],
+        projectDeploymentCount: 0,
+        projectDeployments: [],
+        unresolvedDeploymentCount: 2,
+      },
+    }),
+    initialEntry: "/library?text=pdf",
+    libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 220 },
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
+  expect(within(relations).getAllByText("Known destinations: 0")).toHaveLength(2);
+  expect(within(relations).getAllByText("Some destinations could not be identified yet.")).toHaveLength(2);
+  expect(within(relations).getByRole("status")).toHaveTextContent(
+    "2 relationship targets could not be identified.",
+  );
+  expect(within(relations).getByRole("link", { name: "Review relationship governance" })).toHaveAttribute(
+    "href",
+    "/relationships/governance?from=library&skillId=skill-pdf",
+  );
 });

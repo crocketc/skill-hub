@@ -1313,6 +1313,7 @@
         "relations": "Relations",
         "riskSummary": "Risk summary",
         "securityChecks": "Security checks",
+        "sourceVersion": "Source and version",
         "sourceLicense": "Source and license",
         "usageEvidence": "Usage evidence",
         "versions": "Versions"
@@ -1367,11 +1368,14 @@
         "saveFailed": "The translation could not be saved as my purpose.",
         "useAsPurpose": "Use as my purpose"
       },
+      "reviewRelationships": "Review relationship governance",
+      "unresolvedTargets": "{{count}} relationship targets could not be identified. Retry the lookup or review the relationships.",
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
         "agentDestinations": "Agent destinations",
         "alias": "Alias",
+        "knownDestinationCount": "Known destinations: {{count}}",
         "currentVersion": "Current version: {{version}}",
         "invocation": "Invocation:",
         "requirements": "Requirements",
@@ -1385,6 +1389,7 @@
         "purpose": "My purpose",
         "projectDestinations": "Project destinations",
         "projects": "Projects",
+        "unresolvedDestinationGroup": "Some destinations could not be identified yet.",
         "source": "Source",
         "tags": "Tags",
         "translatedDescription": "Translation",
