@@ -29,6 +29,7 @@ const RESTRICTED_REASONS = new Set<RelationGovernanceReason>([
   "managed_target_occupied",
   "relationship_not_convertible",
   "shared_impact_confirmation_required",
+  "managed_entry_requires_verified_removal",
 ]);
 
 /**

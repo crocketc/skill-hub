@@ -122,15 +122,19 @@ test("exposes the three relationship thumbnail entries with frozen deep links", 
   const conflictsEntry = page.getByRole("link", { name: relationEntryNames[1] });
   await expect(conflictsEntry).toHaveAttribute("href", "/relationships/decisions");
   const governanceEntry = page.getByRole("link", { name: relationEntryNames[2] });
-    // 48220057 起治理入口只覆盖「需处理」口径，深链携带同一状态并集。
+  // 治理入口与工作台统一使用权威的待处理分类深链。
   await expect(governanceEntry).toHaveAttribute(
     "href",
-    "/relationships/governance?status=needs_validation,needs_attention,blocked",
+    "/relationships/governance?governance=pending",
   );
 
   // 深链真实可达：点击冲突入口导航到冲突处理页。
   await conflictsEntry.click();
   await expect(page).toHaveURL(/\/relationships\/decisions$/);
+
+  await page.goBack();
+  await governanceEntry.click();
+  await expect(page).toHaveURL(/\/relationships\/governance\?governance=pending$/);
 });
 
 test("drills the conflict metric into the decisions workbench (P1-07 flip)", async ({

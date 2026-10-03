@@ -1,11 +1,12 @@
 import userEvent2 from "@testing-library/user-event";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
+import type { RelationshipOverview } from "../../api/bindings";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import "../../styles/base.css";
@@ -27,6 +28,113 @@ import {
 } from "./drawerModules";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
+import type { SkillDetailFacade, SkillProvenance } from "../skill-detail/api";
+
+const RELATIONSHIP_OVERVIEW: RelationshipOverview = {
+  scope: { type: "skill", value: { skill_id: "skill-pdf" } },
+  directory_nodes: [
+    {
+      node_id: "node-agent",
+      path: "C:/Users/demo/.codex/skills",
+      path_key: "agent-path-key",
+      role: "agent_native",
+      profile_id: "openai",
+      agent_client_id: "openai.codex-cli",
+      exists: true,
+      observed_at: "2026-10-03T00:00:00Z",
+      scan_source: "profile",
+    },
+    {
+      node_id: "node-project",
+      path: "C:/workspace/project/.agents/skills",
+      path_key: "project-path-key",
+      role: "project",
+      profile_id: null,
+      agent_client_id: null,
+      exists: true,
+      observed_at: "2026-10-03T00:00:00Z",
+      scan_source: "project",
+    },
+  ],
+  agent_directory_capabilities: [],
+  source_relations: [],
+  deployment_relations: [
+    {
+      relation_id: "rel-agent",
+      skill_id: "skill-pdf",
+      agent_client_id: "openai.codex-cli",
+      path: "C:/Users/demo/.codex/skills/pdf-reader",
+      path_key: "agent-skill-path-key",
+      directory_node_id: "node-agent",
+      relationship: "managed_copy",
+      file_representation: "copy",
+      ownership: "skillhub_managed",
+      link_target_path: null,
+      link_target_path_key: null,
+      link_target_directory_id: null,
+      content_fingerprint: "sha256:do-not-render-this",
+      origin: "scan",
+      match_state: "content_verified",
+      active: true,
+      observed_at: "2026-10-03T00:00:00Z",
+      released_at: null,
+    },
+    {
+      relation_id: "rel-project",
+      skill_id: "skill-pdf",
+      agent_client_id: "",
+      path: "C:/workspace/project/.agents/skills/pdf-reader",
+      path_key: "project-skill-path-key",
+      directory_node_id: "node-project",
+      relationship: "managed_copy",
+      file_representation: "copy",
+      ownership: "skillhub_managed",
+      link_target_path: null,
+      link_target_path_key: null,
+      link_target_directory_id: null,
+      content_fingerprint: "sha256:do-not-render-this-either",
+      origin: "scan",
+      match_state: "content_verified",
+      active: true,
+      observed_at: "2026-10-03T00:00:00Z",
+      released_at: null,
+    },
+  ],
+  conflict_cases: [],
+  pending_governance_tasks: [],
+  agent_execution_confirmed: false,
+};
+
+const PROVENANCE: SkillProvenance = {
+  provenance: {
+    agentClientId: "openai.codex-cli",
+    contentFingerprint: "sha256:private-fingerprint",
+    importedAt: "1757808000",
+    originalPath: "C:/source/pdf-reader",
+    ownership: "known_agent_target",
+    sourceKind: "local",
+    sourceLocator: "C:/source/pdf-reader",
+  },
+  observedDeployments: [],
+};
+
+function createMockRelationshipFacade(options: {
+  failProvenance?: boolean;
+  failOverview?: boolean;
+  overview?: RelationshipOverview;
+  provenance?: SkillProvenance;
+} = {}): Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview"> {
+  return {
+    getProvenance: vi.fn(async () => {
+      if (options.failProvenance) throw new Error("provenance unavailable");
+      return options.provenance ?? PROVENANCE;
+    }),
+    getRelationshipOverview: vi.fn(async () => {
+      if (options.failOverview) throw new Error("relationship overview unavailable");
+      return options.overview ?? RELATIONSHIP_OVERVIEW;
+    }),
+  };
+}
 
 const QUICK_VIEW: SkillQuickView = {
   aiCheck: "unavailable",
@@ -177,6 +285,8 @@ interface DrawerHarnessProps {
   detailSearch?: string;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
+  relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
+  onLocationChange?: (location: ReturnType<typeof useLocation>) => void;
   onDelete?: (skillId: string, skillName: string) => void;
   trialFacade?: TrialFacade;
   open?: boolean;
@@ -192,6 +302,8 @@ function DrawerHarness({
   libraryReturn,
   onDelete,
   trialFacade,
+  relationshipFacade,
+  onLocationChange,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
   refreshSnapshot,
@@ -204,6 +316,10 @@ function DrawerHarness({
     clonePreferences(preferences),
   );
   const returnFocusRef = useRef<HTMLButtonElement>(null);
+  const location = useLocation();
+  useEffect(() => {
+    onLocationChange?.(location);
+  }, [location, onLocationChange]);
   // 探针：让技能库列表查询在抽屉测试中真实存在，用于断言元数据保存后的缓存失效。
   useQuery({ queryFn: () => facade.listSkills(DEFAULT_SKILL_QUERY), queryKey: skillLibraryKeys.root });
   return (
@@ -215,6 +331,7 @@ function DrawerHarness({
         detailSearch={detailSearch}
         facade={facade}
         libraryReturn={libraryReturn}
+        relationshipFacade={relationshipFacade}
         onDelete={onDelete}
         trialFacade={trialFacade}
         onOpenChange={() => undefined}
@@ -1297,5 +1414,106 @@ it("keeps unresolved targets distinct from empty Agent and project destinations"
   expect(within(relations).getByRole("link", { name: "Review relationship governance" })).toHaveAttribute(
     "href",
     "/relationships/governance?from=library&skillId=skill-pdf",
+  );
+});
+
+it("uses relationship facts for exact Agent and project destination links with library return context", async () => {
+  const relationshipFacade = createMockRelationshipFacade();
+  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 24, scrollTop: 416 };
+  let currentLocation: ReturnType<typeof useLocation> | undefined;
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    relationshipFacade,
+    libraryReturn,
+    onLocationChange: (location) => { currentLocation = location; },
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const agents = within(drawer).getByRole("region", { name: "Added to Agents: 1" });
+  const projects = within(drawer).getByRole("region", { name: "Added to projects: 1" });
+  const agentDetail = within(agents).getByRole("link", { name: /OpenAI/i });
+  expect(agentDetail).toHaveAttribute("href", "/agents/openai.codex-cli");
+  expect(within(agents).getByText("C:\\Users\\demo\\.codex\\skills\\pdf-reader")).toBeVisible();
+
+  const projectReview = within(projects).getByRole("link", { name: "Review project relationship" });
+  expect(projectReview).toHaveAttribute(
+    "href",
+    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-project",
+  );
+  expect(within(projects).getByText("C:\\workspace\\project\\.agents\\skills\\pdf-reader")).toBeVisible();
+  expect(within(projects).queryByRole("link", { name: /project detail|manage project/i })).not.toBeInTheDocument();
+  expect(relationshipFacade.getRelationshipOverview).toHaveBeenCalledWith("skill-pdf");
+  expect(relationshipFacade.getProvenance).toHaveBeenCalledWith("skill-pdf");
+
+  await userEvent2.setup().click(projectReview);
+  await waitFor(() => expect(currentLocation?.pathname).toBe("/relationships/governance"));
+  expect(currentLocation?.search).toBe("?from=library&skillId=skill-pdf&relationId=rel-project");
+  expect(currentLocation?.state).toEqual({ libraryReturn });
+
+  expect(within(drawer).getByText("Local directory")).toBeVisible();
+  expect(within(drawer).getByText("C:\\source\\pdf-reader")).toBeVisible();
+  expect(within(drawer).queryByText(/private-fingerprint|do-not-render-this/)).not.toBeInTheDocument();
+});
+
+it("shows unknown relationship targets separately from known Agent and project facts", async () => {
+  const overview: RelationshipOverview = {
+    ...RELATIONSHIP_OVERVIEW,
+    deployment_relations: [
+      ...RELATIONSHIP_OVERVIEW.deployment_relations,
+      {
+        ...RELATIONSHIP_OVERVIEW.deployment_relations[0]!,
+        relation_id: "rel-unresolved",
+        directory_node_id: "node-not-returned",
+        path: "C:/unknown-target/pdf-reader",
+        path_key: "unknown-key",
+      },
+    ],
+  };
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    relationshipFacade: createMockRelationshipFacade({ overview }),
+    initialEntry: "/library?text=pdf",
+    libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 220 },
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
+  expect(within(relations).getAllByText("Known destinations: 1")).toHaveLength(2);
+  expect(within(relations).getByRole("status")).toHaveTextContent("1 relationship target could not be identified.");
+  expect(within(relations).getByRole("link", { name: "Review unresolved relationship" })).toHaveAttribute(
+    "href",
+    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-unresolved",
+  );
+  expect(within(relations).queryByText("No linked Agents")).not.toBeInTheDocument();
+  expect(within(relations).queryByText("No linked project directories")).not.toBeInTheDocument();
+});
+
+it("reports relationship lookup failure without presenting stale aggregate counts as current facts", async () => {
+  const relationshipFacade = createMockRelationshipFacade({ failOverview: true });
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    relationshipFacade,
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  expect(within(drawer).getByRole("alert")).toHaveTextContent("Could not load destination relationships.");
+  expect(within(drawer).queryByText("Agent destinations2")).not.toBeInTheDocument();
+  expect(within(drawer).queryByText("Project destinations3")).not.toBeInTheDocument();
+  expect(within(drawer).getByText("C:\\source\\pdf-reader")).toBeVisible();
+});
+
+it("reports provenance failure independently while keeping successfully loaded relationship targets", async () => {
+  const relationshipFacade = createMockRelationshipFacade({ failProvenance: true });
+  await renderDrawer({
+    facade: createMockSkillLibraryFacade(),
+    relationshipFacade,
+  });
+
+  const drawer = await screen.findByTestId("skill-quick-drawer");
+  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
+  expect(within(drawer).getByRole("alert")).toHaveTextContent("Could not load import provenance.");
+  expect(within(relations).getByRole("link", { name: "Review project relationship" })).toHaveAttribute(
+    "href",
+    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-project",
   );
 });

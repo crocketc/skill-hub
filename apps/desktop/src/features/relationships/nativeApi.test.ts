@@ -252,4 +252,62 @@ describe("nativeRelationshipsFacade", () => {
       },
     });
   });
+
+  it("revokes a retained-copy decision with the exact operation id and ledger revision", async () => {
+    const mutation = { relation_id: "source-1", relationship_revision: "rev-8", replayed: false };
+    executeCommandMock.mockResolvedValueOnce({
+      type: "relationship_governance_mutation",
+      payload: mutation,
+    });
+
+    await expect(nativeGovernanceFacade.revokeRetention({
+      operationId: "operation-1",
+      relationId: "source-1",
+      expectedRelationshipRevision: "rev-7",
+    })).resolves.toBe(mutation);
+    expect(executeCommandMock).toHaveBeenCalledWith({
+      type: "revoke_retention",
+      payload: {
+        operation_id: "operation-1",
+        relation_id: "source-1",
+        expected_relationship_revision: "rev-7",
+      },
+    });
+
+    executeCommandMock.mockResolvedValueOnce({ type: "operation_summary", payload: {} });
+    await expect(nativeGovernanceFacade.revokeRetention({
+      operationId: "operation-2",
+      relationId: "source-1",
+      expectedRelationshipRevision: "rev-7",
+    })).rejects.toThrow("revoke_retention returned an unexpected native result.");
+  });
+
+  it("ends a relationship through its dedicated non-destructive command", async () => {
+    const mutation = { relation_id: "source-2", relationship_revision: "rev-9", replayed: true };
+    executeCommandMock.mockResolvedValueOnce({
+      type: "relationship_governance_mutation",
+      payload: mutation,
+    });
+
+    await expect(nativeGovernanceFacade.endRelationship({
+      operationId: "operation-3",
+      relationId: "source-2",
+      expectedRelationshipRevision: "rev-8",
+    })).resolves.toBe(mutation);
+    expect(executeCommandMock).toHaveBeenCalledWith({
+      type: "end_relationship",
+      payload: {
+        operation_id: "operation-3",
+        relation_id: "source-2",
+        expected_relationship_revision: "rev-8",
+      },
+    });
+
+    executeCommandMock.mockResolvedValueOnce({ type: "operation_summary", payload: {} });
+    await expect(nativeGovernanceFacade.endRelationship({
+      operationId: "operation-4",
+      relationId: "source-2",
+      expectedRelationshipRevision: "rev-8",
+    })).rejects.toThrow("end_relationship returned an unexpected native result.");
+  });
 });
