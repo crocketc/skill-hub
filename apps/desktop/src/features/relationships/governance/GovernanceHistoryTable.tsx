@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next";
 import type { GovernanceHistoryEntry } from "../../../api/bindings";
 import { Button } from "../../../ui/Button";
-import { displayPath } from "../../../platform/displayPath";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
+import { RelationshipPath } from "../RelationshipPath";
 
 /**
  * 动作/结果的展示映射：已知词表走 i18n，未知值原样展示（诚实降级），
@@ -115,7 +115,7 @@ export function GovernanceHistoryTable({
                   {failed && entry.reason ? <span>{entry.reason}</span> : null}
                 </td>
                 <td>
-                  <code>{displayPath(entry.path)}</code>
+                  <RelationshipPath path={entry.path} />
                 </td>
                 <td>
                   {externalRemoved ? (

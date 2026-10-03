@@ -110,13 +110,8 @@ export const nativePendingFacade: PendingFacade = {
     if (result.type !== "operation_summary") throw new Error("Unexpected confirmation result.");
   },
   async resolve(item) {
-    if (item.kind === "conflict" || item.kind === "governance") throw new Error("Open the item's handling page.");
-    if (item.kind !== "trial_due" && item.kind !== "recovery") throw new Error("Open the item's handling page.");
-    if (item.kind === "recovery") {
-      await resolveRecoverableOperation(item.subject);
-      return;
-    }
-    await executeCommand({ type: "set_lifecycle", payload: { skill_id: item.subject, lifecycle: "Archived" } });
+    if (item.kind !== "recovery") throw new Error("Open the item's handling page.");
+    await resolveRecoverableOperation(item.subject);
   },
   async recheck(item) {
     const versionId = await currentVersion(item.subject);

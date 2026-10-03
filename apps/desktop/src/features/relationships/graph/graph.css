@@ -570,10 +570,40 @@
   margin: 0;
 }
 
+.sh-graph-details .sh-relationship-path {
+  display: inline-block;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.sh-graph-details .sh-relationship-path:focus-visible {
+  border-radius: var(--space-1);
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
+}
+
 .sh-graph-details__kind {
   color: var(--ui-ink-muted);
   font-size: 0.8125rem;
   margin: 0 0 var(--space-2);
+}
+
+.sh-graph-details__node-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.sh-graph-details__node-label:focus-visible {
+  border-radius: var(--space-1);
+  outline: 2px solid var(--ui-accent-strong);
+  outline-offset: 2px;
 }
 
 .sh-graph-details__actions {

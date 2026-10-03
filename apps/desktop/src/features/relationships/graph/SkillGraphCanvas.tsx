@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { displayPath } from "../../../platform/displayPath";
-import { AgentIdentity, readableAgentIdName } from "../../skills/AgentDeploymentIcons";
+import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
+import { presentRelationshipPath } from "../pathPresentation";
 import {
   CANVAS_SIZE,
   edgeStatusLabelKey,
@@ -11,6 +11,7 @@ import {
 } from "./graphProjection";
 import type { GraphLayoutSize } from "./forceLayout";
 import "./graph.css";
+
 
 export interface GraphViewport {
   x: number;
@@ -62,21 +63,42 @@ function nodeLabel(
 ): string {
   switch (node.kind) {
     case "skill": {
-      if (node.skill_id) {
-        return resolveSkillName?.(node.skill_id) ?? node.skill_id;
-      }
+      if (node.skill_id) return resolveSkillName?.(node.skill_id) ?? fallback;
       return fallback;
     }
-    case "agent":
-      return node.agent_client_id ? readableAgentIdName(node.agent_client_id) : fallback;
     case "directory":
-      return node.path ? displayPath(node.path) : fallback;
+      return node.path ? presentRelationshipPath(node.path).label : fallback;
     case "conflict":
-      return node.conflict_id ?? fallback;
+      return fallback;
     case "source":
-      return node.path ? displayPath(node.path) : fallback;
+      return node.path ? presentRelationshipPath(node.path).label : fallback;
     default:
       return fallback;
+  }
+}
+
+function localNodePath(node: ProjectedNode["node"]): string | null {
+  if (node.kind === "directory") return node.path;
+  if (node.kind !== "source") return null;
+  const locator = node.source?.locator as { https_url?: string; git_url?: string } | undefined;
+  return locator?.https_url || locator?.git_url ? null : node.path;
+}
+
+function nodeKindLabel(node: ProjectedNode["node"], t: (key: string) => string): string {
+  if (node.kind === "directory" && node.role === "shared_directory") {
+    return t("agents.kind.sharedDirectory");
+  }
+  switch (node.kind) {
+    case "skill":
+    case "agent":
+    case "project":
+    case "directory":
+    case "source":
+    case "conflict":
+    case "collapsed":
+      return t(`relationships.graph.nodeKind.${node.kind}`);
+    default:
+      return t("relationships.graph.nodeKind.unknown");
   }
 }
 
@@ -106,6 +128,7 @@ export function SkillGraphCanvas({
   viewport,
 }: SkillGraphCanvasProps) {
   const { t } = useTranslation();
+  const translateGraphKind = (key: string) => String(t(key as never));
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef(viewport);
   const initialViewportRef = useRef(viewport);
@@ -404,20 +427,12 @@ export function SkillGraphCanvas({
           {projection.nodes.map((projected) => {
             const { node } = projected;
             const selected = node.node_id === selectedNodeId;
+            const kindLabel = nodeKindLabel(node, translateGraphKind);
+            const pathValue = localNodePath(node);
+            const fullPath = pathValue ? presentRelationshipPath(pathValue).fullPath : null;
             const label = node.kind === "collapsed"
               ? t("relationships.graph.collapsedNodeLabel", { count: node.collapsed_count })
-              : nodeLabel(
-                node,
-                node.kind === "directory"
-                  ? node.role === "shared_directory"
-                    ? t("agents.kind.sharedDirectory")
-                    : t("relationships.graph.nodeKind.directory")
-                  : node.node_id,
-                resolveSkillName,
-              );
-            const kindLabel = node.kind === "directory" && node.role === "shared_directory"
-              ? t("agents.kind.sharedDirectory")
-              : t(`relationships.graph.nodeKind.${node.kind}`);
+              : nodeLabel(node, "", resolveSkillName);
             const handleClick = () => {
               // 拖拽（位移超阈值）不算点击：不触发选中/跳转。
               if (nodeDragRef.current?.moved) {
@@ -442,6 +457,12 @@ export function SkillGraphCanvas({
                   selected ? "is-selected" : "",
                 ].filter(Boolean).join(" ")}
                 style={{ left: projected.x, top: projected.y }}
+                title={fullPath ?? label ?? undefined}
+                aria-label={node.kind === "agent" && node.agent_client_id
+                  ? undefined
+                  : fullPath
+                    ? `${kindLabel}: ${fullPath}`
+                    : label ? `${kindLabel}: ${label}` : kindLabel}
                 onPointerDown={(event) => {
                   if (onNodeDrag) {
                     handleNodePointerDown(event, node.node_id);
@@ -459,9 +480,9 @@ export function SkillGraphCanvas({
                 </span>
                 {node.kind === "agent" && node.agent_client_id ? (
                   <AgentIdentity agentId={node.agent_client_id} density="compact" />
-                ) : (
+                ) : label ? (
                   <span className="sh-graph-node__label">{label}</span>
-                )}
+                ) : null}
               </button>
             );
           })}

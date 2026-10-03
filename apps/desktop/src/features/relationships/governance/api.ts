@@ -1,12 +1,14 @@
 import type {
   GovernanceHistoryPage,
+  RelationGovernanceAction,
   RelationGovernanceBatchAction,
   RelationGovernanceBatchItem,
   RelationGovernanceBatchOutcome,
   RelationGovernanceBlocker,
-  RelationGovernanceBucket,
   RelationGovernanceLedger,
+  RelationGovernanceReason,
   RelationGovernanceRow,
+  RelationManagementStatus,
   RelationshipCheckLevel,
   RelationshipCheckReport,
   RemovalImpactFact,
@@ -15,16 +17,12 @@ import type {
 } from "../../../api/bindings";
 import type { RelationshipGovernanceParams } from "../api";
 
-/**
- * 关系治理四桶（任务 3 契约）：all / eligible-to-centralize / needs-validation /
- * blocked 是同一份清单的快捷筛选，不是四个页面。
- */
-export const GOVERNANCE_BUCKETS: RelationGovernanceBucket[] = [
-  "all",
-  "eligible_to_centralize",
-  "needs_validation",
-  "blocked",
-];
+/** Top-level governance filter. Action readiness remains a separate fact. */
+export const GOVERNANCE_CLASSIFICATIONS = ["all", "pending", "completed"] as const;
+export type GovernanceClassificationFilter = (typeof GOVERNANCE_CLASSIFICATIONS)[number];
+
+export const GOVERNANCE_MANAGEMENT_FILTERS = ["not_taken_over", "taken_over"] as const;
+export type GovernanceManagementFilter = RelationManagementStatus | null;
 
 const GOVERNANCE_SOURCES = [
   "library",
@@ -44,15 +42,6 @@ export type GovernanceSourceParam = (typeof GOVERNANCE_SOURCES)[number];
  */
 const GOVERNANCE_SCOPES = ["all", "source_copy", "deployment"] as const;
 export type GovernanceScopeParam = (typeof GOVERNANCE_SCOPES)[number];
-
-/** 行状态过滤候选（与 GovernableRelationStatus 词表对齐）。 */
-const GOVERNANCE_STATUSES = [
-  "normal",
-  "retained",
-  "needs_validation",
-  "needs_attention",
-  "blocked",
-] as const;
 
 /** 共享影响确认令牌：后端只校验非空；事实校验仍由四段安全链路负责。 */
 export const SHARED_IMPACT_CONFIRMATION_TOKEN = "shared_impact_confirmed";
@@ -168,7 +157,8 @@ export interface RelationGovernanceFacade {
 /** URL 是可复现状态的唯一载体：来源、桶、搜索与对象过滤都进查询参数。 */
 export interface GovernanceDeepLink {
   from: GovernanceSourceParam | null;
-  bucket: RelationGovernanceBucket;
+  classification: GovernanceClassificationFilter;
+  management: GovernanceManagementFilter;
   text: string;
   skillId: string | null;
   agentClientId: string | null;
@@ -177,11 +167,6 @@ export interface GovernanceDeepLink {
   relationId: string | null;
   /** 行类别过滤（计划 9.5）：source_copy / deployment / all。 */
   scope: GovernanceScopeParam;
-  /**
-   * 行状态过滤（计划 9.5/12.6）：五状态词表的并集列表（逗号分隔解析）；
-   * 空数组表示不过滤，词表之外的值逐个丢弃。
-   */
-  status: (typeof GOVERNANCE_STATUSES)[number][];
   /** 导入批次过滤（计划 9.5）：只显示该批次映射的关系。 */
   batchId: string | null;
 }
@@ -193,20 +178,14 @@ const SHARED_IMPACT_BLOCKER: RelationGovernanceBlocker = "shared_impact_confirma
  * 不让恶意或过期的 URL 制造查询错误。
  */
 export function parseGovernanceSearchParams(searchParams: URLSearchParams): GovernanceDeepLink {
-  const bucketParam = searchParams.get("bucket");
+  const classificationParam = searchParams.get("governance");
+  const managementParam = searchParams.get("management");
   const fromParam = searchParams.get("from");
   const scopeParam = searchParams.get("scope");
-  const statusParam = searchParams.get("status");
-  const status = (statusParam ?? "")
-    .split(/[,，]/)
-    .map((candidate) => candidate.trim())
-    .flatMap((candidate) => {
-      const known = GOVERNANCE_STATUSES.find((status) => status === candidate);
-      return known ? [known] : [];
-    });
   return {
     from: GOVERNANCE_SOURCES.find((candidate) => candidate === fromParam) ?? null,
-    bucket: GOVERNANCE_BUCKETS.find((candidate) => candidate === bucketParam) ?? "all",
+    classification: GOVERNANCE_CLASSIFICATIONS.find((candidate) => candidate === classificationParam) ?? "all",
+    management: GOVERNANCE_MANAGEMENT_FILTERS.find((candidate) => candidate === managementParam) ?? null,
     text: searchParams.get("text") ?? "",
     skillId: searchParams.get("skillId"),
     agentClientId: searchParams.get("agent"),
@@ -214,46 +193,53 @@ export function parseGovernanceSearchParams(searchParams: URLSearchParams): Gove
     conflictId: searchParams.get("conflictId"),
     relationId: searchParams.get("relationId"),
     scope: GOVERNANCE_SCOPES.find((candidate) => candidate === scopeParam) ?? "all",
-    status,
     batchId: searchParams.get("batch"),
   };
 }
 
 /** 仅差显式共享影响确认即可纳入集中库管理的行。 */
 export function rowNeedsSharedImpactConfirmation(row: RelationGovernanceRow): boolean {
-  return row.readiness === "needs_validation"
-    && row.blockers.length > 0
-    && row.blockers.every((blocker) => blocker === SHARED_IMPACT_BLOCKER);
+  const condition = actionConditionOf(row, "centralize_management");
+  return condition !== null
+    && !condition.available
+    && condition.reasons.length > 0
+    && condition.reasons.every((reason) => reason === SHARED_IMPACT_BLOCKER);
 }
 
-/** 来源副本动作的可用性：hidden 不出按钮，disabled 出但先校验。 */
-export type SourceCopyActionAvailability = "enabled" | "disabled" | "hidden";
-
-function sourceCopyEdgeAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
-  if (row.relation.kind !== "source_copy") return "hidden";
-  // 受阻行只展示原因，不提供危险提交（任务 11.7）。
-  if (row.status === "blocked") return "hidden";
-  // 存证不是指纹一致：先重新检查，再清理/保留。
-  return row.relation.fact.health === "normal" ? "enabled" : "disabled";
+/** The generated action condition is the only authority for enabling actions. */
+export function actionConditionOf(
+  row: RelationGovernanceRow,
+  action: RelationGovernanceAction,
+) {
+  return row.governance.action_conditions.find((condition) => condition.action === action) ?? null;
 }
 
-/** 清理来源副本：pending 与 retained 都可清理。 */
-export function sourceCopyCleanAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
-  return sourceCopyEdgeAvailability(row);
+export function isGovernanceActionAvailable(
+  row: RelationGovernanceRow,
+  action: RelationGovernanceAction,
+): boolean {
+  return actionConditionOf(row, action)?.available ?? false;
 }
 
-/** 保留来源副本：仅 pending 提供；retained 已是保留态，不再重复出卡。 */
-export function sourceCopyRetainAvailability(row: RelationGovernanceRow): SourceCopyActionAvailability {
-  if (row.relation.kind !== "source_copy") return "hidden";
-  if (row.relation.fact.decision === "retained" || row.status === "retained") return "hidden";
-  return sourceCopyEdgeAvailability(row);
+export function governanceReasonKeys(row: RelationGovernanceRow): RelationGovernanceReason[] {
+  return governanceStateReasonKeys(row.governance);
+}
+
+export function governanceStateReasonKeys(
+  governance: RelationGovernanceRow["governance"],
+): RelationGovernanceReason[] {
+  const reasons = new Set<RelationGovernanceReason>(governance.health_reasons);
+  for (const condition of governance.action_conditions) {
+    if (!condition.available) condition.reasons.forEach((reason) => reasons.add(reason));
+  }
+  return [...reasons];
 }
 
 /** 一个批次只处理一类关系边、只执行一个动作（任务 11.10/11.15）。 */
 export type BatchSelectionSummary =
   | { kind: "empty"; action: null }
   | { kind: "mixed"; action: null }
-  | { kind: "source_copy"; action: "clean_source_copy" }
+  | { kind: "source_copy"; action: "retain_source_copy" }
   | { kind: "deployment"; action: "centralize_management" };
 
 export function summarizeBatchSelection(
@@ -262,8 +248,14 @@ export function summarizeBatchSelection(
   const kinds = new Set(rows.map((row) => row.relation.kind));
   if (kinds.size === 0) return { kind: "empty", action: null };
   if (kinds.size > 1) return { kind: "mixed", action: null };
-  return kinds.has("source_copy")
-    ? { kind: "source_copy", action: "clean_source_copy" }
+  const kind = rows[0]?.relation.kind;
+  if (!kind) return { kind: "empty", action: null };
+  const batchAction = kind === "source_copy" ? "retain_source_copy" : "centralize_management";
+  if (rows.some((row) => !rowCanRunBatchAction(row, batchAction))) {
+    return { kind: "mixed", action: null };
+  }
+  return kind === "source_copy"
+    ? { kind: "source_copy", action: "retain_source_copy" }
     : { kind: "deployment", action: "centralize_management" };
 }
 
@@ -273,21 +265,35 @@ export function rowIsBatchExecutableFor(
   kind: BatchSelectionSummary["kind"],
 ): boolean {
   if (kind === "source_copy") {
-    return rowIsNaturallyExecutable(row);
+    return rowCanRunBatchAction(row, "retain_source_copy");
   }
-  return rowIsBatchExecutable(row);
+  if (kind === "deployment") return rowCanRunBatchAction(row, "centralize_management");
+  return false;
 }
 
 /** 行按自身类别可执行：部署走 centralize 判定，来源副本要求健康可清理。 */
 export function rowIsNaturallyExecutable(row: RelationGovernanceRow): boolean {
   return row.relation.kind === "source_copy"
-    ? row.status !== "blocked" && row.relation.fact.health === "normal"
+    ? rowCanRunBatchAction(row, "retain_source_copy")
     : rowIsBatchExecutable(row);
 }
 
-/** 该行是否可被批量纳入集中库管理（与后端 batch_row_is_executable 对齐）。 */
+/** 该行是否允许批量纳入集中库管理。 */
 export function rowIsBatchExecutable(row: RelationGovernanceRow): boolean {
-  return row.readiness === "eligible_to_centralize" || rowNeedsSharedImpactConfirmation(row);
+  return rowCanRunBatchAction(row, "centralize_management");
+}
+
+function rowCanRunBatchAction(
+  row: RelationGovernanceRow,
+  action: "centralize_management" | "retain_source_copy",
+): boolean {
+  if (action === "retain_source_copy") {
+    return row.relation.kind === "source_copy"
+      && isGovernanceActionAvailable(row, "keep_independent_copy");
+  }
+  return row.relation.kind === "deployment"
+    && (isGovernanceActionAvailable(row, "centralize_management")
+      || rowNeedsSharedImpactConfirmation(row));
 }
 
 /** 行列表的批量摘要：可执行与受阻分开统计，任何受阻项都不计入可执行。
@@ -329,10 +335,15 @@ export function batchItemStateLabelKey(
 }
 
 /** 批次整体终态标题：partial/failed/cancelled 都不允许被汇总成成功。 */
-export function batchResultTitleKey(state: RelationGovernanceBatchOutcome["state"]): string {
+export function batchResultTitleKey(
+  state: RelationGovernanceBatchOutcome["state"],
+  action: RelationGovernanceBatchAction = "centralize_management",
+): string {
   switch (state) {
     case "committed":
-      return "relationships.governance.batch.resultAll";
+      return action === "retain_source_copy"
+        ? "relationships.governance.batch.resultAllRetained"
+        : "relationships.governance.batch.resultAll";
     case "partially_committed":
       return "relationships.governance.batch.resultPartial";
     case "cancelled":

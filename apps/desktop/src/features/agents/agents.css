@@ -63,18 +63,6 @@
   text-decoration: none;
 }
 
-.sh-agent-card__title:hover {
-  color: var(--ui-accent-strong);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.sh-agent-card__title:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-  border-radius: var(--radius-xs);
-}
-
 /* 目录路径事实：等宽、可换行、不逐字压缩。 */
 .sh-agent-card__paths {
   display: grid;

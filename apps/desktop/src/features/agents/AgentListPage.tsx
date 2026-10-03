@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
 import { onDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import { onDiscoveryFactsChanged } from "../../platform/discoveryEvents";
@@ -138,17 +137,17 @@ export function AgentListPage({
                       +类型与差异色「内置 · 只读」徽标，可访问状态徽标独占
                       右上角，与其他卡片位置一致。 */}
                   <div className="sh-agent-card__head-main">
-                    <Link className="sh-agent-card__title" to={`/agents/${model.detailTarget}`}>
-                      <AgentPresentation
-                        agentId={agent.client}
-                        brand={model.brand}
-                        deploymentStatus={model.deploymentStatus}
-                        kinds={model.kinds}
-                        sharedAgentBrands={model.sharedAgentBrands}
-                        sharedAgentBrandKinds={model.sharedAgentBrandKinds}
-                        sharedDirectory={model.sharedDirectory}
-                      />
-                    </Link>
+                    <AgentPresentation
+                      className="sh-agent-card__title"
+                      detailTo={`/agents/${encodeURIComponent(model.detailTarget)}`}
+                      agentId={agent.client}
+                      brand={model.brand}
+                      deploymentStatus={model.deploymentStatus}
+                      kinds={model.kinds}
+                      sharedAgentBrands={model.sharedAgentBrands}
+                      sharedAgentBrandKinds={model.sharedAgentBrandKinds}
+                      sharedDirectory={model.sharedDirectory}
+                    />
                   </div>
                 </div>
                 <div className="sh-agent-card__role-line">

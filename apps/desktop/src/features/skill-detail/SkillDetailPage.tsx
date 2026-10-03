@@ -36,11 +36,9 @@ import { LifecyclePanel } from "./LifecyclePanel";
 import { RelationsPanel } from "./RelationsPanel";
 import { ProvenancePanel } from "./ProvenancePanel";
 import { RequirementsPanel } from "./RequirementsPanel";
-import {
-  ConnectionEvidence,
-  ExternalHistoryEvidence,
-  SecurityEvidence,
-} from "./InsightPanels";
+import { ConnectionEvidence, ExternalHistoryEvidence } from "./InsightPanels";
+import { SecurityResults } from "../security/SecurityResults";
+import type { SecurityFacade } from "../security/api";
 import { Button } from "../../ui/Button";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -67,6 +65,7 @@ interface SkillDetailPageProps {
   /** 任务 12C：治理门面（上下文自动检查 + 来源事件摘要）；缺省用原生实现。 */
   governanceFacade?: RelationGovernanceFacade;
   removalFacade?: RemovalFacade;
+  securityFacade: SecurityFacade;
   refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
 }
@@ -116,6 +115,7 @@ export function SkillDetailPage({
   markdownFacade = nativeMarkdownFacade,
   governanceFacade = nativeGovernanceFacade,
   removalFacade,
+  securityFacade,
   refreshSnapshot,
   tracker = operationTracker,
 }: SkillDetailPageProps) {
@@ -187,18 +187,6 @@ export function SkillDetailPage({
   const insightsQuery = useQuery({
     queryFn: () => facade.getInsights(skillId),
     queryKey: skillDetailKeys.insights(skillId),
-  });
-  const currentVersion = summaryQuery.data?.currentVersion;
-  const hasCurrentVersion = Boolean(currentVersion && currentVersion !== "unknown");
-  const basicFindingsQuery = useQuery({
-    enabled: hasCurrentVersion,
-    queryFn: () => facade.getFindings(skillId, currentVersion ?? "", "basic"),
-    queryKey: [...skillDetailKeys.summary(skillId), "findings", "basic", currentVersion],
-  });
-  const llmFindingsQuery = useQuery({
-    enabled: hasCurrentVersion,
-    queryFn: () => facade.getFindings(skillId, currentVersion ?? "", "llm"),
-    queryKey: [...skillDetailKeys.summary(skillId), "findings", "llm", currentVersion],
   });
   const [removalImpact, setRemovalImpact] = useState<RemovalImpact | null>(null);
   const [removalLoading, setRemovalLoading] = useState(false);
@@ -401,11 +389,7 @@ export function SkillDetailPage({
             </div>
             <div className="sh-skill-detail__block" id="security">
               <h3>{t("skillDetail.navigation.sections.security")}</h3>
-              <SecurityEvidence
-                findings={basicFindingsQuery.data}
-                llmFindings={llmFindingsQuery.data}
-                summary={summaryQuery.data}
-              />
+              <SecurityResults facade={securityFacade} skillId={skillId} variant="embedded" versionId="current" />
             </div>
           </section>
           <section aria-labelledby="zone-content-heading" className="sh-skill-detail__zone" id="zone-content">

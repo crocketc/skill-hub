@@ -329,7 +329,7 @@ it("uses canonical directory cards for the native list while keeping the member 
       available: true,
       members: [
         {
-          logical_target_id: "openai.codex-cli",
+          logical_target_id: "openai/codex-cli/primary",
           brand: "OpenAI",
           client_id: "codex-cli",
           kind: "cli",
@@ -363,7 +363,7 @@ it("uses canonical directory cards for the native list while keeping the member 
   const card = await screen.findByTestId("agent-card");
   expect(within(card).getByRole("link", { name: "OpenAI · 桌面端 · 终端" })).toHaveAttribute(
     "href",
-    "/agents/openai.codex-cli",
+    "/agents/openai%2Fcodex-cli%2Fprimary",
   );
   expect(within(card).getByLabelText("支持复制导入")).toBeVisible();
   expect(within(card).getByLabelText("链接导入兼容性待验证")).toHaveClass("is-unverified");

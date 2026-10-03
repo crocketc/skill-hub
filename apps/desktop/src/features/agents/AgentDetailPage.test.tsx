@@ -298,6 +298,19 @@ function governanceLedgerRow(relationId: string): RelationGovernanceRow {
       backup_required: true,
       rollback_available: true,
     },
+    governance: {
+      governance_status: "pending",
+      management_status: "not_taken_over",
+      decision: "undecided",
+      management_confirmed_at: null,
+      health_reasons: [],
+      action_conditions: [
+        { action: "centralize_management", available: true, reasons: [] },
+        { action: "revalidate", available: true, reasons: [] },
+      ],
+    },
+    target_identity: null,
+    evidence_relation_ids: [relationId],
   };
 }
 

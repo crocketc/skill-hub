@@ -98,6 +98,19 @@ describe("native skill library facade", () => {
     expect(page.facets.tags).toEqual(["documents"]);
   });
 
+  it("maps Deprecated independently from archive and keeps a real trial date visible", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      skillPage([
+        nativeItem({ lifecycle: "Deprecated", trial_due: null }),
+        nativeItem({ skill_id: "skill-trial", lifecycle: "Normal", trial_due: "2026-11-03" }),
+      ]),
+    );
+
+    const page = await nativeSkillLibraryFacade.listSkills(DEFAULT_SKILL_QUERY);
+
+    expect(page.items.map(({ lifecycle }) => lifecycle)).toEqual(["deprecated", "trial"]);
+  });
+
   // P1-10：别名只覆盖展示名；原名（runtime_name）必须在读模型中如实可达。
   it("maps an aliased display name to the alias plus the untouched runtime name", async () => {
     vi.mocked(queryApplication).mockResolvedValue(skillPage([nativeItem()]));
@@ -141,6 +154,16 @@ describe("native skill library facade", () => {
 
     expect(view.alias).toBeUndefined();
     expect(view.originalName).toBe("pdf-reader");
+  });
+
+  it("preserves the Deprecated lifecycle in the quick view", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      persistedSkill({ lifecycle: "Deprecated", trial_due: null }),
+    );
+
+    const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-1");
+
+    expect(view.lifecycle).toBe("deprecated");
   });
 
   it("maps the persisted status read model onto the table row", async () => {
@@ -230,7 +253,7 @@ describe("native skill library facade", () => {
         basicCheck: ["passed", "warning"],
         aiCheck: ["not_run"],
         deployment: "deployed",
-        lifecycle: ["trial", "archived"],
+        lifecycle: ["trial"],
         tags: ["documents"],
       },
       sort: { column: "agent_deployments", direction: "desc" },
@@ -246,7 +269,7 @@ describe("native skill library facade", () => {
           ai_check: ["not_checked"],
           basic_check: ["passed", "running"],
           deployment: "deployed",
-          lifecycle: ["trial", "archived"],
+          lifecycle: ["trial"],
           tags: ["documents"],
           version: "any",
         },

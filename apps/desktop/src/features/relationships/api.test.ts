@@ -53,48 +53,39 @@ describe("relationships query keys", () => {
 });
 
 // 计划 9.5 + 12.6：治理页 URL 支持来源深链、行类别、行状态与批次过滤；
-// 状态过滤是五状态词表的并集列表（概览“待治理”深链需要多状态并集），
-// 未知值 fail-safe 逐个丢弃，绝不让过期 URL 制造查询错误。
 describe("governance deep link params", () => {
-  it("parses import source, source-copy scope, status and batch filters", () => {
+  it("parses governance classification and management independently from scope", () => {
     const params = new URLSearchParams(
-      "from=import&scope=source_copy&status=needs_attention&batch=batch-42",
+      "from=import&scope=source_copy&governance=pending&management=taken_over&batch=batch-42",
     );
     expect(parseGovernanceSearchParams(params)).toEqual(
       expect.objectContaining({
         from: "import",
         scope: "source_copy",
-        status: ["needs_attention"],
+        classification: "pending",
+        management: "taken_over",
         batchId: "batch-42",
       }),
     );
   });
 
-  it("parses a comma-separated status union for the overview needs-governance deep link", () => {
-    const params = new URLSearchParams(
-      "status=needs_validation,needs_attention,blocked",
-    );
-    expect(parseGovernanceSearchParams(params).status).toEqual([
-      "needs_validation",
-      "needs_attention",
-      "blocked",
-    ]);
-    // 单个未知值被丢弃，已知值保留（fail-safe 过滤而非整串拒绝）。
-    expect(
-      parseGovernanceSearchParams(new URLSearchParams("status=needs_validation,exploded"))
-        .status,
-    ).toEqual(["needs_validation"]);
+  it("fails safe for unknown classifications and management filters", () => {
+    const link = parseGovernanceSearchParams(new URLSearchParams(
+      "governance=exploded&management=all&bucket=blocked&status=blocked",
+    ));
+    expect(link.classification).toBe("all");
+    expect(link.management).toBeNull();
   });
 
   it("falls back to unfiltered values for unknown or missing params", () => {
     const params = new URLSearchParams(
-      "from=malware&scope=kernel&status=exploded&bucket=everything",
+      "from=malware&scope=kernel&governance=exploded&management=exploded",
     );
     const link = parseGovernanceSearchParams(params);
     expect(link.from).toBeNull();
     expect(link.scope).toBe("all");
-    expect(link.status).toEqual([]);
-    expect(link.bucket).toBe("all");
+    expect(link.classification).toBe("all");
+    expect(link.management).toBeNull();
     expect(link.batchId).toBeNull();
   });
 
@@ -103,6 +94,7 @@ describe("governance deep link params", () => {
       "deployment",
     );
     expect(parseGovernanceSearchParams(new URLSearchParams()).scope).toBe("all");
-    expect(parseGovernanceSearchParams(new URLSearchParams()).status).toEqual([]);
+    expect(parseGovernanceSearchParams(new URLSearchParams()).classification).toBe("all");
+    expect(parseGovernanceSearchParams(new URLSearchParams()).management).toBeNull();
   });
 });

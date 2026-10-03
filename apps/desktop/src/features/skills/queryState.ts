@@ -1,10 +1,11 @@
 import {
   DEFAULT_SKILL_QUERY,
   type CheckState,
+  type SkillLibraryFilters,
   type SavedSkillView,
   type SkillColumnId,
   type SkillLibraryQuery,
-  type SkillLifecycle,
+  type SkillLifecycleFilter,
 } from "./api";
 
 const PARAMS = {
@@ -23,7 +24,7 @@ const PARAMS = {
 } as const;
 
 const CHECK_STATES: readonly CheckState[] = ["passed", "warning", "failed", "not_run", "unavailable"];
-const LIFECYCLES: readonly SkillLifecycle[] = ["active", "trial", "archived"];
+const LIFECYCLES: readonly SkillLifecycleFilter[] = ["active", "trial"];
 const COLUMN_IDS: readonly SkillColumnId[] = [
   "select",
   "name",
@@ -114,7 +115,7 @@ export function parseSkillLibrarySearchParams(params: URLSearchParams | string):
         aiCheck: normaliseValues(source.getAll(PARAMS.aiCheck), CHECK_STATES) as CheckState[],
         basicCheck: normaliseValues(source.getAll(PARAMS.basicCheck), CHECK_STATES) as CheckState[],
         deployment,
-        lifecycle: normaliseValues(source.getAll(PARAMS.lifecycle), LIFECYCLES) as SkillLifecycle[],
+        lifecycle: normaliseValues(source.getAll(PARAMS.lifecycle), LIFECYCLES) as SkillLifecycleFilter[],
         tags: normaliseValues(source.getAll(PARAMS.tags)) as string[],
         version,
       },
@@ -155,6 +156,59 @@ export function skillFilterKey(query: SkillLibraryQuery): string {
   appendFilters(params, query);
   if (query.text) params.set(PARAMS.text, query.text);
   return params.toString();
+}
+
+/** The saved-view query shape as stored before Skill archive removal. */
+export type PersistedSavedSkillView = Omit<SavedSkillView, "query"> & {
+  query: Omit<SavedSkillView["query"], "filters"> & {
+    filters: Omit<SkillLibraryFilters, "lifecycle"> & { lifecycle: string[] };
+  };
+};
+
+function hasNonLifecycleRestriction(
+  filters: PersistedSavedSkillView["query"]["filters"],
+  text: string,
+): boolean {
+  return Boolean(
+    text.trim() ||
+      filters.aiCheck.length ||
+      filters.basicCheck.length ||
+      filters.tags.length ||
+      filters.deployment !== "any" ||
+      filters.version !== "any",
+  );
+}
+
+/**
+ * Drops the removed archive filter from persisted views. An archive-only view
+ * is omitted so it cannot silently turn into an unfiltered view.
+ */
+export function sanitizeSavedViews(
+  views: readonly PersistedSavedSkillView[],
+): SavedSkillView[] {
+  const sanitized: SavedSkillView[] = [];
+  for (const view of views) {
+    const persistedLifecycle = view.query.filters.lifecycle;
+    const lifecycle = persistedLifecycle.filter(
+      (value): value is SkillLifecycleFilter => LIFECYCLES.includes(value as SkillLifecycleFilter),
+    );
+    const hadArchivedFilter = persistedLifecycle.includes("archived");
+    if (
+      hadArchivedFilter &&
+      lifecycle.length === 0 &&
+      !hasNonLifecycleRestriction(view.query.filters, view.query.text)
+    ) {
+      continue;
+    }
+    sanitized.push({
+      ...view,
+      query: {
+        ...view.query,
+        filters: { ...view.query.filters, lifecycle },
+      },
+    });
+  }
+  return sanitized;
 }
 
 export function applySavedView(

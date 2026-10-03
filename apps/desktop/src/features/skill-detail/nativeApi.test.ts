@@ -100,6 +100,32 @@ describe("native skill detail facade", () => {
     });
   });
 
+  it("presents Deprecated without treating it as Skill archive", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Deprecated",
+        trial_due: null,
+        current_version: null,
+      },
+    } as never);
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      lifecycle: "deprecated",
+      trialDue: undefined,
+    });
+  });
+
   it("falls back to the translated description for the overview purpose when no user purpose exists", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication).mockResolvedValue({
@@ -301,36 +327,6 @@ describe("native skill detail facade", () => {
       currentVersion: "v3",
     });
     expect(queryApplication).toHaveBeenCalledTimes(3);
-  });
-
-  it("maps structured findings for the selected check kind", async () => {
-    vi.clearAllMocks();
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "findings",
-      payload: [{
-        id: "finding-1",
-        code: "prompt_injection",
-        severity: "critical",
-        file: "SKILL.md",
-        line_start: 4,
-        line_end: 4,
-        disposition: "actionable",
-        high_risk: true,
-      }],
-    });
-
-    await expect(nativeSkillDetailFacade.getFindings(
-      "skill-1",
-      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "basic",
-    )).resolves.toEqual([{
-      id: "finding-1",
-      code: "prompt_injection",
-      severity: "critical",
-      file: "SKILL.md",
-      disposition: "actionable",
-      highRisk: true,
-    }]);
   });
 
   it("maps native deployment relations with their registered target labels and paths", async () => {

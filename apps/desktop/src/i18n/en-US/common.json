@@ -818,6 +818,8 @@
     "sharedDirectoryChip": "Shared-directory ready",
     "sharedDirectoryTitle": "Agent shared directory",
     "sharedBrandOverflow": "{{count}} more brands: {{brands}}",
+    "sharedBrandOverflowButton": "View all {{count}} brands recognised for the shared directory",
+    "sharedBrandsPopoverTitle": "Brands that recognise this shared directory",
     "compatibility": {
       "pendingError": "Agent compatibility for this import method is unverified. Complete verification in Pending first; this does not mean the system cannot create links.",
       "saved": "Local verification saved. Unverified items remain pending.",
@@ -1177,7 +1179,6 @@
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
-        "archive": "Archive",
         "delete": "Delete selected Skills from library",
         "error": "The batch workflow could not be started",
         "export": "Submit export job",
@@ -1281,10 +1282,15 @@
       "actions": {
         "addTags": "Add tags",
         "delete": "Delete from library",
+        "deleteShort": "Delete",
+        "dispatch": "Dispatch",
+        "dispatchSkill": "Dispatch {{name}}",
+        "export": "Export",
+        "exportSkill": "Export {{name}}",
         "viewVersions": "View versions"
       },
       "configure": "Configure quick drawer",
-      "description": "Skill summary, common actions, and configurable detail modules.",
+      "description": "Skill summary and quick actions.",
       "detail": {
         "empty": "Select a skill to view details",
         "error": "Could not load skill details",
@@ -1295,17 +1301,14 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
-      "security": {
-        "open": "Open security checks"
-      },
+      "allTags": "All tags",
+      "moreTags_one": "{{count}} more tag",
+      "moreTags_other": "{{count}} more tags",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
-      "fullDetails": "View and edit full details",
+      "fullDetails": "View full details",
       "modules": {
-        "dependenciesDuplicates": "Dependencies and duplicates",
-        "externalChanges": "External changes",
         "fullDetails": "Full details",
         "identity": "Identity",
-        "invocationRequirements": "Invocation and requirements",
         "primaryActions": "Primary actions",
         "relations": "Relations",
         "riskSummary": "Risk summary",
@@ -1318,6 +1321,7 @@
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
       "metadataFailure": "Alias, purpose, or note was not saved. The last saved content was restored.",
       "presets": {
+        "cycle": "Current width: {{current}}. Next: {{next}}",
         "label": "Quick drawer width",
         "nearFull": "Near full screen",
         "standard": "Standard width",
@@ -1329,9 +1333,30 @@
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
-      "relations": {
-        "showFewerProjects": "Show fewer projects",
-        "showMoreProjects": "Show {{count}} more projects"
+      "trial": {
+        "adjustDate": "Adjust review date",
+        "convert": "Make regular",
+        "converted": "This Skill is now in the regular lifecycle.",
+        "noDate": "No review date set",
+        "reviewDate": "Trial review date",
+        "reviewDateLabel": "Review date",
+        "saveDate": "Save review date"
+      },
+      "collections": {
+        "add": "Add to combination",
+        "addShort": "Add",
+        "addTo": "Add to {{name}}",
+        "added": "Added to {{name}}.",
+        "dialogTitle": "Add {{skill}} to a combination",
+        "empty": "No combinations have been created yet.",
+        "label": "Combinations",
+        "loadFailed": "Could not load combinations. Retry to manage membership.",
+        "manage": "Manage combinations",
+        "memberships": "Combinations containing this Skill",
+        "none": "Not in a combination",
+        "remove": "Remove {{skill}} from {{name}}",
+        "removeShort": "Remove",
+        "removed": "Removed from {{name}}."
       },
       "title": "Skill details",
       "translation": {
@@ -1348,9 +1373,8 @@
         "agentDestinations": "Agent destinations",
         "alias": "Alias",
         "currentVersion": "Current version: {{version}}",
-        "dependencies": "Dependencies",
-        "duplicates": "Possible duplicates",
         "invocation": "Invocation:",
+        "requirements": "Requirements",
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
@@ -1388,8 +1412,8 @@
       },
       "lifecycle": "Lifecycle",
       "lifecycleOptions": {
-        "active": "Active",
-        "archived": "Archived",
+        "active": "Regular",
+        "deprecated": "Deprecated",
         "trial": "Trial"
       },
       "resultCount": "{{count}} results",
@@ -1410,7 +1434,7 @@
     },
     "savedViews": {
       "builtIn": {
-        "active": "Active",
+        "active": "Regular",
         "all": "All skills",
         "attention": "Needs attention",
         "updates": "Updates"
@@ -1423,6 +1447,7 @@
     },
     "table": {
       "agentDeploymentSummary": "Added to Agents: {{count}}",
+      "projectDeploymentSummary": "Added to projects: {{count}}",
       "aliasLabel": "Alias",
       "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
@@ -1461,8 +1486,8 @@
       "densityLabel": "Density",
       "highRiskCount": "{{count}} high risk",
       "lifecycle": {
-        "active": "Active",
-        "archived": "Archived",
+        "active": "Regular",
+        "deprecated": "Deprecated",
         "trial": "Trial"
       },
       "moveBefore": "Move {{column}} before {{before}}",
@@ -1609,18 +1634,12 @@
       "viewUpdateDiff": "View update diff"
     },
     "insights": {
-      "basicSecurity": "Basic security check",
-      "findings": "Check findings",
-      "llmFindings": "LLM check findings",
-      "advisoryNote": "AI check results are model-generated and advisory; the deterministic basic check conclusion is unaffected.",
       "connections": "Dependencies and combinations",
       "invocations_one": "{{count}} recorded invocation",
       "invocations_other": "{{count}} recorded invocations",
       "none": "No established relationships",
       "operationHistoryEmpty": "No operation journal entries yet.",
       "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
-      "riskSummary": "{{high}} high-risk and {{pending}} pending findings",
-      "openSecurity": "Open security checks",
       "usageEvidence": "Usage evidence"
     },
     "relations": {
@@ -1696,11 +1715,11 @@
       "invocation": "Invocation"
     },
     "lifecycle": {
-      "active": "Managed",
-      "archived": "Archived",
+      "active": "Regular",
+      "deprecated": "Deprecated",
       "description": {
-        "active": "This Skill is part of the managed library.",
-        "archived": "This Skill is retained but no longer active.",
+        "active": "This Skill is in the regular lifecycle.",
+        "deprecated": "This Skill is marked as deprecated in the library.",
         "trial": "This Skill has a review date for a later keep-or-remove decision."
       },
       "reviewDue": "Review on {{date}}",
@@ -2053,8 +2072,26 @@
     "experimental": "Experimental; informational only",
     "findingsHeading": "Findings",
     "findingCount": "{{count}} findings",
+    "checkedAt": "Last checked: {{date}}",
+    "findingSummaryLabel": "Security finding counts",
+    "findingSummary": "High risk {{highRisk}} · Pending {{pending}}",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
+    "drawer": {
+      "basicAction": "Recheck",
+      "dateUnavailable": "time unavailable",
+      "findingListUnavailable": "The check recorded findings, but their details are not available here. Open full details to review them.",
+      "findingsSummary": "Review {{count}} findings",
+      "llmAction": "AI check",
+      "resultDetails": "{{name}}: {{status}} for version {{version}} at {{date}}. {{count}} original finding(s); {{pending}} still need attention and {{handled}} have a recorded disposition. A disposition does not erase the original finding.",
+      "status": {
+        "failed": "{{name}} check failed; {{count}} findings, {{pending}} pending.",
+        "findings": "{{name}} found {{count}} item(s); {{pending}} still need attention.",
+        "notChecked": "{{name}} has not been checked.",
+        "passed": "{{name}} passed with no findings.",
+        "running": "{{name}} check is running."
+      }
+    },
     "locationUnknown": "Location unavailable",
     "actions": {
       "acknowledge": "Acknowledge",
@@ -2076,7 +2113,9 @@
       "run": "Run AI check",
       "running": "AI check is running; results will appear once it completes.",
       "cancel": "Cancel check",
+      "cancelFailed": "The cancellation request failed: {{message}}",
       "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
+      "configure": "Configure AI settings",
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",
       "runFailed": "AI check failed: {{message}}"
@@ -2486,7 +2525,10 @@
       "tagsApply": "Apply tags",
       "filters": "Filters",
       "filterTypes": "Relationship types",
-      "filterStatuses": "Verification states",
+      "filterStatuses": "Relationship health",
+      "filterHealth": "Relationship health",
+      "filterGovernance": "Governance progress",
+      "filterManagement": "Central library management",
       "filtersClear": "Clear filters",
       "displaySettings": "Display settings",
       "displaySources": "Sources",
@@ -2496,10 +2538,10 @@
       "legend": {
         "label": "Graph legend",
         "title": "How to read the graph",
-        "statesLabel": "Verification states",
+        "statesLabel": "Relationship health",
         "showDetails": "Show graph legend details",
         "hideDetails": "Hide graph legend details",
-        "typeHint": "Edge labels identify the relationship type; line style identifies its verification state."
+        "typeHint": "Edge labels identify the relationship type; line style identifies relationship health. Governable use relationships also show completion and central library management status."
       },
       "canvasLabel": "Skill relationship graph",
       "zoomIn": "Zoom in",
@@ -2524,7 +2566,8 @@
         "project": "Project",
         "directory": "Directory",
         "conflict": "Conflict",
-        "collapsed": "Folded"
+        "collapsed": "Folded",
+        "unknown": "Other item"
       },
       "edgeType": {
         "import_copy": "Import copy",
@@ -2559,7 +2602,14 @@
       "neverVerified": "Never verified",
       "revisionLabel": "Relationship facts revision",
       "detailsRelationship": "Relationship",
-      "detailsState": "State",
+      "detailsState": "Relationship health",
+      "detailsHealth": "Relationship health",
+      "governanceClassification": "Governance progress",
+      "governanceManagement": "Central library management",
+      "governanceSummary": "Current summary",
+      "governanceDecision": "Decision",
+      "governanceReasons": "Reasons and conditions",
+      "openSourceLifecycle": "View source lifecycle",
       "inaccessible": "Inaccessible",
       "needsValidation": "Needs validation",
       "viewSkill": "View Skill",
@@ -2695,13 +2745,15 @@
     "governance": {
       "title": "Relationship governance",
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
-      "description": "Manage source copies and deployment edges; preview changes before confirming. See the full topology in the skill graph.",
+      "description": "Manage import sources and dispatch relationships; preview changes before confirming. See the full topology in the skill graph.",
       "unnamedSkill": "Unnamed skill",
       "previewFixtureNotice": "Preview data: these fictional relationships do not read or change local Skill or Agent folders.",
       "viewSwitch": {
         "label": "View",
         "board": "Board",
-        "table": "Table"
+        "table": "Table",
+        "switchToBoard": "Switch to board view",
+        "switchToTable": "Switch to table view"
       },
       "board": {
         "label": "Relationship status board",
@@ -2712,6 +2764,8 @@
         "settled": "Already managed or retained",
         "emptyColumn": "No relationships match this column",
         "relationshipCount": "{{count}} relationships",
+        "columnScrollRegion": "{{label}} column, {{count}} relationships",
+        "scrollToTop": "Back to top of the {{label}} column",
         "countScope": "Column counts follow the current filters; quick-filter counts cover all relationships."
       },
       "loading": "Loading the relationship governance ledger…",
@@ -2739,7 +2793,54 @@
         "blocked": "Blocked",
         "withCount": "{{label}} ({{count}})",
         "scopeLabel": "Type",
-        "statusLabel": "Status"
+        "statusLabel": "Status",
+        "managementLabel": "Central library management"
+      },
+      "classification": {
+        "all": "All",
+        "pending": "Pending",
+        "completed": "Completed"
+      },
+      "management": {
+        "not_taken_over": "Not centrally managed",
+        "taken_over": "Centrally managed"
+      },
+      "decision": {
+        "retained_independent_copy": "Kept as an independent copy"
+      },
+      "shortName": {
+        "link_issue": "Link needs attention",
+        "link_issueDescription": "The target is unavailable or has changed. Re-check the relationship before choosing an available action.",
+        "content_changed": "Content changed",
+        "content_changedDescription": "The target content differs from the last confirmed state. Re-check before deciding what to do.",
+        "needs_review": "Re-check needed",
+        "needs_reviewDescription": "The current evidence does not support the next action. Re-check the target and confirm its identity first.",
+        "operation_failed": "Operation incomplete",
+        "operation_failedDescription": "The last operation did not complete. Review the current relationship state before retrying.",
+        "restricted": "Action unavailable",
+        "restrictedDescription": "Current permissions or relationship conditions do not allow this action. Review the reason or resolve the listed condition first.",
+        "retained": "Copy kept",
+        "retainedDescription": "This relationship was explicitly kept as an independent copy; it is not under central library management.",
+        "taken_over": "Centrally managed",
+        "taken_overDescription": "This target is currently managed by the central library. Re-check the relationship if an issue is listed below.",
+        "not_taken_over": "Not centrally managed",
+        "not_taken_overDescription": "This relationship has not been brought under central library management. Review the reason before using an available action.",
+        "completed": "Completed",
+        "completedDescription": "This relationship has a recorded outcome. Check central library management separately."
+      },
+      "reasonMessages": {
+        "decision_required": "Choose how this relationship should be handled first.",
+        "verification_required": "The current verification is insufficient. Re-check the target.",
+        "content_changed": "The target content changed. Re-check before deciding.",
+        "permission_limited": "Current permissions do not allow this action.",
+        "managed_target_occupied": "Another managed relationship occupies the target. Review the conflict first.",
+        "operation_failed": "The last relationship operation did not complete. Review the current state before retrying.",
+        "target_identity_unconfirmed": "The target identity has not been confirmed. Re-check the target.",
+        "relationship_not_convertible": "This relationship type cannot currently be brought under central library management.",
+        "shared_impact_confirmation_required": "Other Agents also use this shared directory. Review and confirm the impact first.",
+        "link_target_unavailable": "The link target cannot currently be reached. Check its location and re-check the relationship.",
+        "link_replaced": "The original link target was replaced. Review the current target content.",
+        "subject_unavailable": "The relationship subject is unavailable. Restore access before checking again."
       },
       "importBatch": {
         "banner": "This import left {{count}} local source copies"
@@ -2802,6 +2903,7 @@
         "centralize_management": "Bring under central library management",
         "undeploy": "Remove from Agent/Project",
         "revalidate": "Re-check",
+        "keep_independent_copy": "Keep as an independent copy",
         "none": "Blocked"
       },
       "history": {
@@ -2874,7 +2976,8 @@
       },
       "selection": {
         "selectedCount": "{{count}} selected",
-        "openBatch": "Bring the selection under central library management"
+        "openBatch": "Bring the selection under central library management",
+        "openBatchRetain": "Keep selection as independent copies"
       },
       "batchSummary": {
         "executable": "Executable {{count}}",
@@ -2899,6 +3002,7 @@
       },
       "batch": {
         "title": "Bring the selection under central library management",
+        "retainTitle": "Keep selection as independent copies",
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
         "mixing": "Source copies and deployment relations cannot join the same batch; handle them separately",
         "itemExecutable": "Executable",
@@ -2911,6 +3015,7 @@
         "resultTitle": "Batch result",
         "resultPartial": "Partially committed: {{committed}} succeeded, {{failed}} failed",
         "resultAll": "All brought under central library management ({{count}} items)",
+        "resultAllRetained": "Kept as independent copies ({{count}} items)",
         "resultNone": "Nothing succeeded this time; review the per-item failures",
         "resultCancelled": "{{count}} items cancelled",
         "itemCommitted": "Succeeded",
@@ -2932,8 +3037,10 @@
       "manageRelations": "Manage relations",
       "scope": {
         "all": "All types",
-        "source_copy": "Source copies",
-        "deployment": "Deployment edges"
+        "source_copy": "Import sources",
+        "source_copyDescription": "Files copied into the central library that remain at their original locations.",
+        "deployment": "Dispatch relationships",
+        "deploymentDescription": "Usage relationships between central-library Skills and Agent or project directories."
       },
       "statusFilter": {
         "normal": "Normal",

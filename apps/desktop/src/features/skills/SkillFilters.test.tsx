@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { vi, expect, it } from "vitest";
@@ -146,6 +146,16 @@ it("keeps multi-value filters inside a compact dropdown menu", async () => {
   expect(screen.queryByRole("listbox", { name: "Tags" })).not.toBeInTheDocument();
 });
 
+it("offers only lifecycle filters supported by the native contract", async () => {
+  await renderSkillFilters();
+  fireEvent.click(screen.getByRole("button", { name: "Lifecycle" }));
+
+  const lifecycleMenu = screen.getByRole("menu", { name: "Lifecycle" });
+  expect(within(lifecycleMenu).getByRole("menuitemcheckbox", { name: "Regular" })).toBeVisible();
+  expect(within(lifecycleMenu).getByRole("menuitemcheckbox", { name: "Trial" })).toBeVisible();
+  expect(within(lifecycleMenu).queryByRole("menuitemcheckbox", { name: /archive|deprecated/i })).not.toBeInTheDocument();
+});
+
 it("closes an open multi-value filter when focus moves outside the menu", async () => {
   await renderSkillFilters();
   fireEvent.click(screen.getByRole("button", { name: "Tags" }));
@@ -191,11 +201,11 @@ it("shows active conditions as individually removable filters", async () => {
   expect(screen.getByRole("button", { name: "Remove filter: Search skills: reader" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Remove filter: Basic check: Failed" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Remove filter: Added to targets: Added" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Remove filter: Lifecycle: Active" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Remove filter: Lifecycle: Regular" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Remove filter: Tags: docs" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Remove filter: Version: Upgrade available" })).toBeVisible();
 
-  fireEvent.click(screen.getByRole("button", { name: "Remove filter: Lifecycle: Active" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove filter: Lifecycle: Regular" }));
 
   expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
     filters: expect.objectContaining({ lifecycle: [] }),
@@ -246,7 +256,7 @@ it("translates built-in view labels and preserves user labels verbatim", async (
     </I18nextProvider>,
   );
 
-  expect(screen.getByRole("button", { name: "活跃" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "常规" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Custom review" })).toBeVisible();
 });
 

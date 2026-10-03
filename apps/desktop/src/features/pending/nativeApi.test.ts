@@ -73,6 +73,20 @@ it("converts an expired trial by clearing its trial date and label", async () =>
   });
 });
 
+it("does not archive a trial when a legacy remove action is requested", async () => {
+  const item = {
+    id: "trial_due:skill-a:trial",
+    subject: "skill-a",
+    kind: "trial_due" as const,
+    code: "trial",
+    message: "trial",
+  };
+
+  await expect(nativePendingFacade.remove(item)).rejects.toThrow();
+
+  expect(executeCommand).not.toHaveBeenCalled();
+});
+
 /**
  * 「需要恢复」的待办也必须走 `resolve_recovery`：`acknowledge_recovery` 在应用层
  * 没有实现分支，用它换来的只是 `internal.error`，这些待办项永远处置不掉。

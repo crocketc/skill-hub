@@ -3,7 +3,7 @@ import { clearWizardSession } from "../features/import/wizardSession";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { BootstrapSnapshot, GovernanceTaskFact } from "../api/bindings";
 import * as bindings from "../api/bindings";
@@ -22,6 +22,7 @@ import { DiscoveryRoute } from "./DiscoveryRoute";
 import type { BootstrapOutletContext } from "./AppShell";
 import { queryClient } from "./queryClient";
 import { relationshipsKeys } from "../features/relationships/api";
+import { parseGovernanceSearchParams } from "../features/relationships/governance/api";
 
 const relationshipOverviewQueryKey = ["relationship-overview", "all"] as const;
 
@@ -104,10 +105,15 @@ function todoOnlyCommit(facade: ImportFacade): void {
 
 function GovernanceLocationProbe() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const deepLink = parseGovernanceSearchParams(searchParams);
   return (
     <div>
       <h1>关系治理工作台</h1>
       <p data-testid="governance-location">{`${location.pathname}${location.search}`}</p>
+      <p data-testid="governance-classification">{deepLink.classification}</p>
+      <p data-testid="governance-scope">{deepLink.scope}</p>
+      <p data-testid="governance-batch">{deepLink.batchId}</p>
     </div>
   );
 }
@@ -371,11 +377,14 @@ it("opens governance scoped to this import's source copies via the batch deep li
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
-  // 深链锁定本次导入：from/scope/status 固定词表 + 编码后的批次 id。
+  // 完成页真实导航到治理路由，由当前 URL presenter 消费分类、范围与批次。
   await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
 
   const location = await screen.findByTestId("governance-location");
   expect(location.textContent).toBe(
-    "/relationships/governance?from=import&scope=source_copy&status=needs_attention&batch=batch%20deep%2042",
+    "/relationships/governance?from=import&scope=source_copy&governance=pending&batch=batch%20deep%2042",
   );
+  expect(screen.getByTestId("governance-classification")).toHaveTextContent("pending");
+  expect(screen.getByTestId("governance-scope")).toHaveTextContent("source_copy");
+  expect(screen.getByTestId("governance-batch")).toHaveTextContent("batch deep 42");
 });

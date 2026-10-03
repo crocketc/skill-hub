@@ -2,6 +2,7 @@ import {
   DEFAULT_DRAWER_PREFERENCES,
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
+  type CombinationResult,
   type SavedSkillView,
   type SkillBatchIntent,
   type SkillDrawerPreferences,
@@ -202,6 +203,7 @@ export function createMockSkillLibraryFacade(
   };
   const total = options.total ?? options.pageItems?.length ?? NAMED_ROWS.length;
   let savedViews = [USER_SAVED_VIEW];
+  const combinations: CombinationResult[] = [];
   const metadata = new Map<string, SkillMetadataPatch>([
     ["skill-pdf", { note: "Keep this reader near document workflows." }],
   ]);
@@ -227,6 +229,17 @@ export function createMockSkillLibraryFacade(
     },
     async listSavedViews() {
       return clone(savedViews);
+    },
+    async listCombinations() {
+      return clone(combinations);
+    },
+    async updateCombination(name, members) {
+      const existing = combinations.find((combination) => combination.name === name);
+      if (existing) {
+        existing.members = [...members];
+      } else {
+        combinations.push({ name, members: [...members] });
+      }
     },
     async deleteView(viewId) {
       calls.deleteView.push(viewId);

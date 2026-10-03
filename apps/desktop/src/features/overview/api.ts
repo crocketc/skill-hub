@@ -216,7 +216,7 @@ export function getOverviewRelationEntryHref(key: OverviewRelationEntryKey): str
     return "/relationships";
   }
   if (key === "governance") {
-    return "/relationships/governance?status=needs_validation,needs_attention,blocked";
+    return "/relationships/governance?governance=pending";
   }
   return "/relationships/decisions";
 }

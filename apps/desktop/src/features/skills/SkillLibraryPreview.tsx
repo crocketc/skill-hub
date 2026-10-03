@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
+import { useAppNotifications } from "../../ui/notifications";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import { createMockSkillLibraryFacade } from "./testFixtures";
 
@@ -23,8 +25,44 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 };
 
 export function SkillLibraryPreview() {
+  const [securityFacade] = useState(() => createPreviewSecurityFacade());
   const [facade] = useState(() => createMockSkillLibraryFacade({ total: previewTotal() }));
-  return <SkillLibraryPage facade={facade} />;
+  const showNotificationPreview = new URLSearchParams(window.location.search)
+    .has("notificationActions");
+  return (
+    <>
+      {showNotificationPreview ? <NotificationActionPreview /> : null}
+      <SkillLibraryPage facade={facade} securityFacade={securityFacade} />
+    </>
+  );
+}
+
+function NotificationActionPreview() {
+  const { notify } = useAppNotifications();
+  return (
+    <button
+      className="sh-button sh-button--secondary"
+      onClick={() => {
+        notify({
+          source: "library",
+          tone: "success",
+          title: "Skill library refreshed",
+          detail: "The central library is ready to review.",
+          action: { label: "Open library", to: "/library" },
+        });
+        notify({
+          source: "discovery",
+          tone: "info",
+          title: "New Agents were detected",
+          detail: "Review the newly available Agent destinations.",
+          action: { label: "Review Agents", to: "/agents" },
+        });
+      }}
+      type="button"
+    >
+      Create action notifications
+    </button>
+  );
 }
 
 /** DEV-only harness knob: ?total=N seeds a deterministic N-skill catalog for scale checks. */

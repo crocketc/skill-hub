@@ -173,7 +173,7 @@ it("maps each relation entry key to its frozen relationship subpage route", asyn
   expect(getOverviewRelationEntryHref("graph")).toBe("/relationships");
   expect(getOverviewRelationEntryHref("conflicts")).toBe("/relationships/decisions");
   expect(getOverviewRelationEntryHref("governance")).toBe(
-    "/relationships/governance?status=needs_validation,needs_attention,blocked",
+    "/relationships/governance?governance=pending",
   );
 });
 

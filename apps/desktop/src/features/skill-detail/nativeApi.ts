@@ -19,7 +19,6 @@ import {
   type SkillDetailFacade,
   type SkillDetailInsights,
   type SkillDetailSummary,
-  type SkillFinding,
   type SkillMetadata,
   type SkillMetadataPatch,
   type SkillObservedDeployment,
@@ -44,7 +43,7 @@ function asSkill(result: AppQueryResult): SkillResult {
 
 function lifecycleOf(skill: SkillResult): SkillDetailSummary["lifecycle"] {
   if (skill.trial_due) return "trial";
-  return skill.lifecycle === "Normal" ? "active" : "archived";
+  return skill.lifecycle === "Deprecated" ? "deprecated" : "active";
 }
 
 async function getSkill(skillId: string): Promise<SkillResult> {
@@ -486,25 +485,6 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     });
     if (result.type !== "relationship_removal_impact") throw unavailableResult();
     return result.payload;
-  },
-  async getFindings(skillId, versionId, kind): Promise<SkillFinding[]> {
-    const result = await queryApplication({
-      type: "list_findings",
-      payload: {
-        skill_id: skillId,
-        version_id: versionId,
-        kind: kind === "basic" ? "basic" : "llm",
-      },
-    });
-    if (result.type !== "findings") throw unavailableResult();
-    return result.payload.map((finding) => ({
-      code: finding.code,
-      disposition: finding.disposition,
-      file: finding.file ?? undefined,
-      highRisk: finding.high_risk,
-      id: finding.id,
-      severity: finding.severity,
-    }));
   },
   async getInsights(skillId): Promise<SkillDetailInsights> {
     const result = await queryApplication({

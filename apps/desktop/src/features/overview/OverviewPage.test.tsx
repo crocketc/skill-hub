@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import type {
   BootstrapSnapshot,
@@ -18,6 +18,7 @@ import baseCss from "../../styles/base.css?raw";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import overviewCss from "./overview.css?raw";
 import { OverviewPage } from "./OverviewPage";
+import { parseGovernanceSearchParams } from "../relationships/governance/api";
 
 const overviewSnapshot: BootstrapSnapshot = {
   initialization_state: "initialized",
@@ -195,6 +196,17 @@ function LocationDisplay() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 }
 
+function GovernanceLocationDisplay() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const deepLink = parseGovernanceSearchParams(searchParams);
+  return (
+    <output data-classification={deepLink.classification} data-testid="governance-location">
+      {`${location.pathname}${location.search}`}
+    </output>
+  );
+}
+
 function OverviewRoute({ snapshot }: { snapshot: BootstrapSnapshot }) {
   return <Outlet context={{ refreshSnapshot: async () => undefined, snapshot }} />;
 }
@@ -249,7 +261,7 @@ async function renderOverview(
                 <Route path="pending" element={<LocationDisplay />} />
                 <Route path="relationships" element={<LocationDisplay />} />
                 <Route path="relationships/decisions" element={<LocationDisplay />} />
-                <Route path="relationships/governance" element={<LocationDisplay />} />
+                <Route path="relationships/governance" element={<GovernanceLocationDisplay />} />
               </Route>
             </Routes>
           </MemoryRouter>
@@ -494,11 +506,24 @@ it("deep-links the three relationship entries into their subpages", async () => 
   ).toHaveAttribute("href", "/relationships/decisions");
   expect(
     screen.getByRole("link", { name: "Open needs-governance relations (3 to handle)" }),
-  ).toHaveAttribute("href", "/relationships/governance?status=needs_validation,needs_attention,blocked");
+  ).toHaveAttribute("href", "/relationships/governance?governance=pending");
 
   fireEvent.click(screen.getByRole("link", { name: "Open relationship graph (2 skills with displayable relations)" }));
 
   expect(screen.getByTestId("location")).toHaveTextContent("/relationships");
+});
+
+it("navigates the overview governance entry into the pending classification", async () => {
+  await renderOverview();
+
+  const link = await screen.findByRole("link", {
+    name: "Open needs-governance relations (3 to handle)",
+  });
+  fireEvent.click(link);
+
+  const destination = screen.getByTestId("governance-location");
+  expect(destination).toHaveAttribute("data-classification", "pending");
+  expect(destination).toHaveTextContent("/relationships/governance?governance=pending");
 });
 
 it("counts overview conflicts from the workspace projection instead of recomputing", async () => {

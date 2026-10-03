@@ -38,6 +38,8 @@ export interface TrackedOperationHandle {
   needsUser: (phase?: string) => void;
   /** 记录用户取消请求；真实取消由调用方经后端命令确认。 */
   requestCancel: () => void;
+  /** 取消命令被拒绝时撤销仍未确认的请求标记。 */
+  cancelRequestFailed: () => void;
   /** 后端确认取消后调用：终态落 cancelled；随后的异常按取消处理，既不记失败
    *  也不发失败通知（取消是用户主动动作，不是失败）。 */
   markCancelled: () => void;
@@ -228,6 +230,9 @@ export async function runTrackedOperation<T>(
     },
     requestCancel() {
       if (mode === "phased") tracker.requestCancel(trackedId);
+    },
+    cancelRequestFailed() {
+      if (mode === "phased") tracker.clearCancelRequest(trackedId);
     },
     markCancelled() {
       cancelled = true;

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Input } from "../../ui/Input";
 import { MultiSelectMenu } from "../../ui/MultiSelectMenu";
 import { Select } from "../../ui/Select";
-import { type CheckState, type SkillLibraryQuery, type SkillLifecycle } from "./api";
+import { type CheckState, type SkillLibraryQuery, type SkillLifecycleFilter } from "./api";
 
 /** 高级筛选带所需的最小契约：无清除入口（清除留在检索带）。 */
 export interface SkillFiltersAdvancedProps {
@@ -31,7 +31,7 @@ export interface SkillFiltersProps {
 }
 
 const CHECK_STATES: readonly CheckState[] = ["passed", "warning", "failed", "not_run", "unavailable"];
-const LIFECYCLES: readonly SkillLifecycle[] = ["active", "trial", "archived"];
+const LIFECYCLES: readonly SkillLifecycleFilter[] = ["active", "trial"];
 const CHECK_STATE_LABELS = {
   failed: "skillLibrary.filters.checkStates.failed",
   not_run: "skillLibrary.filters.checkStates.notRun",
@@ -41,9 +41,8 @@ const CHECK_STATE_LABELS = {
 } as const satisfies Record<CheckState, string>;
 const LIFECYCLE_LABELS = {
   active: "skillLibrary.filters.lifecycleOptions.active",
-  archived: "skillLibrary.filters.lifecycleOptions.archived",
   trial: "skillLibrary.filters.lifecycleOptions.trial",
-} as const satisfies Record<SkillLifecycle, string>;
+} as const satisfies Record<SkillLifecycleFilter, string>;
 const DEPLOYMENT_OPTIONS = [
   ["any", "skillLibrary.filters.deploymentOptions.any"],
   ["deployed", "skillLibrary.filters.deploymentOptions.deployed"],
@@ -119,7 +118,7 @@ export function SkillFiltersAdvanced({
 
       <MultiSelectMenu
         label={t("skillLibrary.filters.lifecycle")}
-        onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycle[] })}
+        onChange={(values) => updateFilters({ lifecycle: values as SkillLifecycleFilter[] })}
         options={LIFECYCLES.map((state) => ({ label: t(LIFECYCLE_LABELS[state]), value: state }))}
         selected={query.filters.lifecycle}
         summary={query.filters.lifecycle.length > 0 ? t("skillLibrary.filters.selectedCount", { count: query.filters.lifecycle.length }) : t("skillLibrary.filters.any")}

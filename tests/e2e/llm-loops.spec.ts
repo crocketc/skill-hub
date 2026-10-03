@@ -44,7 +44,8 @@ test("the LLM security check runs on demand and surfaces AI findings", async ({ 
   await page.getByRole("button", { name: "Run AI check" }).click();
   await expect(llmCard.getByText("Failed")).toBeVisible();
   await expect(page.getByRole("heading", { name: "AI check findings" })).toBeVisible();
-  await expect(page.getByText("prompt-injection-risk")).toBeVisible();
+  await expect(page.getByText("Instructions ask the model to exfiltrate environment variables.")).toBeVisible();
+  await expect(page.getByText("prompt-injection-risk")).toHaveCount(0);
 });
 
 test("AI-assisted online search marks extended hits and keeps the plain query results", async ({

@@ -209,7 +209,7 @@ function ProjectListRoute() {
 
 function SkillDetailRoute() {
   const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
-  return <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} /></RouteSuspense>;
+  return <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} securityFacade={nativeSecurityFacade} /></RouteSuspense>;
 }
 
 function RecoveryRoute() {
@@ -295,6 +295,8 @@ function SkillLibraryRoute() {
       facade={nativeSkillLibraryFacade}
       onOpenDiscovery={() => navigate("/discovery")}
       refreshSnapshot={refreshSnapshot}
+      securityFacade={nativeSecurityFacade}
+      trialFacade={nativeSkillDetailFacade}
     />
     </RouteSuspense>
   );

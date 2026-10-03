@@ -818,6 +818,8 @@
     "sharedDirectoryChip": "支持共享目录",
     "sharedDirectoryTitle": "Agent共享目录",
     "sharedBrandOverflow": "还有 {{count}} 个品牌：{{brands}}",
+    "sharedBrandOverflowButton": "查看共享目录识别的全部 {{count}} 个品牌",
+    "sharedBrandsPopoverTitle": "可识别该共享目录的品牌",
     "compatibility": {
       "pendingError": "此导入方式的 Agent 兼容性尚未验证，请先在待处理中完成验证；这不代表系统无法创建链接。",
       "saved": "本机验证结果已保存；尚未确定的事项继续保留在待处理。",
@@ -1177,7 +1179,6 @@
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
-        "archive": "归档",
         "delete": "从库中删除所选 Skill",
         "error": "无法启动批量流程",
         "export": "提交导出任务",
@@ -1281,10 +1282,15 @@
       "actions": {
         "addTags": "添加标签",
         "delete": "从库中删除 Skill",
+        "deleteShort": "删除",
+        "dispatch": "派发",
+        "dispatchSkill": "派发 {{name}}",
+        "export": "导出",
+        "exportSkill": "导出 {{name}}",
         "viewVersions": "查看版本"
       },
       "configure": "配置快速抽屉",
-      "description": "Skill 摘要、常用操作和可配置详情模块。",
+      "description": "Skill 摘要与快捷操作。",
       "detail": {
         "empty": "选择一项 Skill 以查看详情",
         "error": "无法加载 Skill 详情",
@@ -1295,17 +1301,14 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
-      "security": {
-        "open": "打开安全检查"
-      },
+      "allTags": "全部标签",
+      "moreTags_one": "其余 {{count}} 个标签",
+      "moreTags_other": "其余 {{count}} 个标签",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
-      "fullDetails": "查看编辑完整详情",
+      "fullDetails": "查看完整详情",
       "modules": {
-        "dependenciesDuplicates": "依赖与重复项",
-        "externalChanges": "外部变更",
         "fullDetails": "完整详情",
         "identity": "名称与说明",
-        "invocationRequirements": "调用方式与运行要求",
         "primaryActions": "主要操作",
         "relations": "关联关系",
         "riskSummary": "风险摘要",
@@ -1318,6 +1321,7 @@
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
       "metadataFailure": "别名、用途或备注未保存，已恢复为已保存的内容。",
       "presets": {
+        "cycle": "当前宽度：{{current}}，下一档：{{next}}",
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",
         "standard": "标准宽度",
@@ -1329,9 +1333,30 @@
         "high": "{{count}} 个高风险项",
         "pending": "{{count}} 项待处理"
       },
-      "relations": {
-        "showFewerProjects": "收起项目",
-        "showMoreProjects": "展开另外 {{count}} 个项目"
+      "trial": {
+        "adjustDate": "调整复核日期",
+        "convert": "转为常规",
+        "converted": "此 Skill 已转为常规生命周期。",
+        "noDate": "未设置复核日期",
+        "reviewDate": "试用复核日期",
+        "reviewDateLabel": "复核日期",
+        "saveDate": "保存复核日期"
+      },
+      "collections": {
+        "add": "加入组合",
+        "addShort": "加入",
+        "addTo": "加入{{name}}",
+        "added": "已加入{{name}}。",
+        "dialogTitle": "将{{skill}}加入组合",
+        "empty": "尚未创建组合。",
+        "label": "所属组合",
+        "loadFailed": "无法读取组合，请重试后再管理成员。",
+        "manage": "管理组合",
+        "memberships": "包含此 Skill 的组合",
+        "none": "未加入组合",
+        "remove": "将{{skill}}从{{name}}移出",
+        "removeShort": "移出",
+        "removed": "已从{{name}}移出。"
       },
       "title": "Skill 详情",
       "translation": {
@@ -1348,9 +1373,8 @@
         "agentDestinations": "Agent 去向",
         "alias": "别名",
         "currentVersion": "当前版本：{{version}}",
-        "dependencies": "依赖",
-        "duplicates": "可能的重复项",
         "invocation": "调用方式：",
+        "requirements": "运行要求",
         "invocationCount": "{{count}} 次调用",
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
@@ -1388,8 +1412,8 @@
       },
       "lifecycle": "生命周期",
       "lifecycleOptions": {
-        "active": "活跃",
-        "archived": "已归档",
+        "active": "常规",
+        "deprecated": "已弃用",
         "trial": "试用"
       },
       "resultCount": "{{count}} 个结果",
@@ -1410,7 +1434,7 @@
     },
     "savedViews": {
       "builtIn": {
-        "active": "活跃",
+        "active": "常规",
         "all": "全部 Skill",
         "attention": "需要处理",
         "updates": "可更新"
@@ -1423,6 +1447,7 @@
     },
     "table": {
       "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
+      "projectDeploymentSummary": "已添加到项目：{{count}} 个",
       "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
@@ -1461,8 +1486,8 @@
       "densityLabel": "密度",
       "highRiskCount": "{{count}} 个高风险项",
       "lifecycle": {
-        "active": "活跃",
-        "archived": "已归档",
+        "active": "常规",
+        "deprecated": "已弃用",
         "trial": "试用"
       },
       "moveBefore": "将{{column}}移到{{before}}之前",
@@ -1609,18 +1634,12 @@
       "viewUpdateDiff": "查看更新差异"
     },
     "insights": {
-      "basicSecurity": "基础安全检查",
-      "findings": "检查发现项",
-      "llmFindings": "LLM 检查发现项",
-      "advisoryNote": "AI 检查结果由模型生成，仅供辅助判断；基础检查结论不受影响。",
       "connections": "依赖与组合",
       "invocations_one": "记录到 {{count}} 次调用",
       "invocations_other": "记录到 {{count}} 次调用",
       "none": "暂无已确认的关联",
       "operationHistoryEmpty": "暂无操作日志记录。",
       "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
-      "riskSummary": "{{high}} 个高风险，{{pending}} 个待处理项",
-      "openSecurity": "打开安全检查",
       "usageEvidence": "使用证据"
     },
     "relations": {
@@ -1696,11 +1715,11 @@
       "invocation": "调用方式"
     },
     "lifecycle": {
-      "active": "正式管理",
-      "archived": "已归档",
+      "active": "常规",
+      "deprecated": "已弃用",
       "description": {
-        "active": "此 Skill 已纳入集中库管理。",
-        "archived": "此 Skill 仍被保留，但当前不再启用。",
+        "active": "此 Skill 处于常规生命周期。",
+        "deprecated": "此 Skill 已在技能库中标记为弃用。",
         "trial": "此 Skill 设有复核日期，届时再决定保留或移除。"
       },
       "reviewDue": "复核日期：{{date}}",
@@ -2053,8 +2072,26 @@
     "experimental": "实验功能，仅供参考",
     "findingsHeading": "发现的问题",
     "findingCount": "{{count}} 个问题",
+    "checkedAt": "最近检查：{{date}}",
+    "findingSummaryLabel": "安全问题计数",
+    "findingSummary": "高风险 {{highRisk}} · 待处理 {{pending}}",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
+    "drawer": {
+      "basicAction": "重新检查",
+      "dateUnavailable": "时间不可用",
+      "findingListUnavailable": "检查结果记录了发现项，但此处无法读取明细。请前往完整详情审阅。",
+      "findingsSummary": "查看发现项（{{count}}）",
+      "llmAction": "AI 检查",
+      "resultDetails": "{{name}}：{{status}}，针对版本 {{version}}，检查时间 {{date}}。共记录 {{count}} 个原始发现项；{{pending}} 项仍需处理，{{handled}} 项已有处置记录。处置不会抹去原始发现结论。",
+      "status": {
+        "failed": "{{name}}检查失败；记录 {{count}} 项发现，其中 {{pending}} 项待处理。",
+        "findings": "{{name}}发现 {{count}} 项，其中 {{pending}} 项仍需处理。",
+        "notChecked": "{{name}}尚未检查。",
+        "passed": "{{name}}检查通过，未发现问题。",
+        "running": "{{name}}检查正在运行。"
+      }
+    },
     "locationUnknown": "位置不可用",
     "actions": {
       "acknowledge": "确认已知晓",
@@ -2076,7 +2113,9 @@
       "run": "运行 AI 检查",
       "running": "AI 检查进行中，结果将在完成后展示。",
       "cancel": "取消检查",
+      "cancelFailed": "取消请求未成功：{{message}}",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
+      "configure": "配置 AI 设置",
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",
       "runFailed": "AI 检查运行失败：{{message}}"
@@ -2486,7 +2525,10 @@
       "tagsApply": "应用标签",
       "filters": "筛选",
       "filterTypes": "关系类型",
-      "filterStatuses": "验证状态",
+      "filterStatuses": "关系健康",
+      "filterHealth": "关系健康",
+      "filterGovernance": "治理进度",
+      "filterManagement": "集中库管理",
       "filtersClear": "清除筛选",
       "displaySettings": "显示设置",
       "displaySources": "来源",
@@ -2496,10 +2538,10 @@
       "legend": {
         "label": "图谱图例",
         "title": "图谱阅读方式",
-        "statesLabel": "验证状态",
+        "statesLabel": "关系健康",
         "showDetails": "展开图谱图例说明",
         "hideDetails": "收起图谱图例说明",
-        "typeHint": "边上的文字表示关系类型，线型表示关系验证状态。"
+        "typeHint": "边上的文字表示关系类型，线型表示关系健康；有治理信息的使用关系还会显示待处理/已完成和集中库管理状态。"
       },
       "canvasLabel": "技能关系图",
       "zoomIn": "放大",
@@ -2524,7 +2566,8 @@
         "project": "项目",
         "directory": "目录",
         "conflict": "冲突",
-        "collapsed": "折叠"
+        "collapsed": "折叠",
+        "unknown": "其他项目"
       },
       "edgeType": {
         "import_copy": "导入副本",
@@ -2559,7 +2602,14 @@
       "neverVerified": "尚未验证",
       "revisionLabel": "关系事实修订",
       "detailsRelationship": "关系类型",
-      "detailsState": "状态",
+      "detailsState": "关系健康",
+      "detailsHealth": "关系健康",
+      "governanceClassification": "治理进度",
+      "governanceManagement": "集中库管理",
+      "governanceSummary": "当前说明",
+      "governanceDecision": "处理决定",
+      "governanceReasons": "原因与条件",
+      "openSourceLifecycle": "查看来源生命周期",
       "inaccessible": "不可访问",
       "needsValidation": "待校验",
       "viewSkill": "查看 Skill",
@@ -2695,13 +2745,15 @@
     "governance": {
       "title": "关系治理",
       "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。",
-      "description": "管理来源副本与部署边，变更先预览再确认；完整拓扑请看技能图谱。",
+      "description": "管理导入来源与派发关系，变更先预览再确认；完整拓扑请看技能图谱。",
       "unnamedSkill": "未命名技能",
       "previewFixtureNotice": "预览数据：以下关系均为虚构示例，不会读取或修改本机 Skill 与 Agent 目录。",
       "viewSwitch": {
         "label": "视图",
         "board": "看板",
-        "table": "表格"
+        "table": "表格",
+        "switchToBoard": "切换到看板视图",
+        "switchToTable": "切换到表格视图"
       },
       "board": {
         "label": "关系状态分栏看板",
@@ -2712,6 +2764,8 @@
         "settled": "已明确",
         "emptyColumn": "暂无符合条件的关系",
         "relationshipCount": "{{count}} 条关系",
+        "columnScrollRegion": "{{label}}列，{{count}} 条关系",
+        "scrollToTop": "返回“{{label}}”列顶部",
         "countScope": "列数按当前筛选结果统计；快捷筛选数字按全部关系统计。"
       },
       "loading": "正在加载关系治理清单…",
@@ -2739,7 +2793,54 @@
         "blocked": "受阻",
         "withCount": "{{label}}（{{count}}）",
         "scopeLabel": "类别",
-        "statusLabel": "状态"
+        "statusLabel": "状态",
+        "managementLabel": "集中库管理"
+      },
+      "classification": {
+        "all": "全部",
+        "pending": "待处理",
+        "completed": "已完成"
+      },
+      "management": {
+        "not_taken_over": "待集中管理",
+        "taken_over": "已集中管理"
+      },
+      "decision": {
+        "retained_independent_copy": "已保留为独立副本"
+      },
+      "shortName": {
+        "link_issue": "链接需处理",
+        "link_issueDescription": "目标不可访问或链接目标已变化。先重新检查关系，再查看可用处理方式。",
+        "content_changed": "内容有变化",
+        "content_changedDescription": "目标内容与上次确认时不同。重新检查后再决定如何处理。",
+        "needs_review": "待重新检查",
+        "needs_reviewDescription": "当前证据不足以支持后续操作。重新检查目标并确认身份后再继续。",
+        "operation_failed": "操作未完成",
+        "operation_failedDescription": "最近一次操作没有完成。检查当前关系状态后再重试。",
+        "restricted": "暂不可操作",
+        "restrictedDescription": "当前权限或关系条件不支持此操作。查看原因，或先处理所列条件。",
+        "retained": "已保留副本",
+        "retainedDescription": "这条关系已明确保留为独立副本；它仍未纳入集中库管理。",
+        "taken_over": "已集中管理",
+        "taken_overDescription": "此目标当前由集中库管理。若下方显示异常，请先重新检查关系。",
+        "not_taken_over": "待集中管理",
+        "not_taken_overDescription": "此关系尚未纳入集中库管理。请先查看原因，再使用当前可用操作。",
+        "completed": "已完成",
+        "completedDescription": "此关系已有明确处理结果；集中库管理状态请单独查看。"
+      },
+      "reasonMessages": {
+        "decision_required": "需要先确认这条关系的处理决定。",
+        "verification_required": "当前验证结果不足，请重新检查目标。",
+        "content_changed": "目标内容已变化，请重新检查后再决定。",
+        "permission_limited": "当前权限不足，暂时无法执行该操作。",
+        "managed_target_occupied": "目标位置已被其他受管关系占用，请先检查冲突。",
+        "operation_failed": "最近一次关系操作未能完成，请检查当前状态后重试。",
+        "target_identity_unconfirmed": "尚未确认目标身份，请重新检查目标。",
+        "relationship_not_convertible": "此关系类型暂不支持纳入集中库管理。",
+        "shared_impact_confirmation_required": "其他 Agent 也在使用此共享目录，需要先查看并确认影响。",
+        "link_target_unavailable": "链接目标当前无法访问，请确认目标位置后重新检查。",
+        "link_replaced": "原链接目标已被替换，请检查当前目标内容。",
+        "subject_unavailable": "关系主体当前不可用，请先恢复可访问状态再检查。"
       },
       "importBatch": {
         "banner": "本次导入留下 {{count}} 个本地来源副本"
@@ -2802,6 +2903,7 @@
         "centralize_management": "纳入集中库管理",
         "undeploy": "从 Agent/项目移除",
         "revalidate": "重新检查",
+        "keep_independent_copy": "保留为独立副本",
         "none": "受阻"
       },
       "history": {
@@ -2874,7 +2976,8 @@
       },
       "selection": {
         "selectedCount": "已选 {{count}} 条",
-        "openBatch": "批量纳入集中库管理"
+        "openBatch": "批量纳入集中库管理",
+        "openBatchRetain": "批量保留为独立副本"
       },
       "batchSummary": {
         "executable": "可执行 {{count}}",
@@ -2899,6 +3002,7 @@
       },
       "batch": {
         "title": "批量纳入集中库管理",
+        "retainTitle": "批量保留为独立副本",
         "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
         "mixing": "来源副本与部署关系不能加入同一批次；请分开处理",
         "itemExecutable": "可执行",
@@ -2911,6 +3015,7 @@
         "resultTitle": "批量结果",
         "resultPartial": "部分成功：{{committed}} 条成功，{{failed}} 条失败",
         "resultAll": "已全部纳入集中库管理（{{count}} 条）",
+        "resultAllRetained": "已保留为独立副本（{{count}} 条）",
         "resultNone": "本次没有成功，请逐条查看失败原因",
         "resultCancelled": "已取消 {{count}} 条",
         "itemCommitted": "成功",
@@ -2932,8 +3037,10 @@
       "manageRelations": "管理关系",
       "scope": {
         "all": "全部类别",
-        "source_copy": "来源副本",
-        "deployment": "部署边"
+        "source_copy": "导入来源",
+        "source_copyDescription": "复制进集中库后仍留在原位置的文件。",
+        "deployment": "派发关系",
+        "deploymentDescription": "集中库 Skill 与 Agent/项目目录之间的使用关系。"
       },
       "statusFilter": {
         "normal": "正常",

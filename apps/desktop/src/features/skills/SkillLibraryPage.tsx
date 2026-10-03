@@ -16,6 +16,7 @@ import "./batchBar.css";
 import "./skills.css";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
+import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { describeNativeError } from "../../api/nativeErrors";
 // M-21 #5：页面直接消费全局通知中心（AppShell 级单例服务），不再保留
@@ -55,6 +56,7 @@ import {
 import {
   applySavedView,
   parseSkillLibrarySearchParams,
+  sanitizeSavedViews,
   serializeSkillLibrarySearchParams,
   skillFilterKey,
 } from "./queryState";
@@ -77,6 +79,7 @@ import {
 } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
+import type { SecurityFacade } from "../security/api";
 import { SkillMatrix } from "./SkillMatrix";
 import { SkillPagination } from "./SkillPagination";
 import { SkillTable } from "./SkillTable";
@@ -85,6 +88,7 @@ import { BatchRemovalDrawer } from "./BatchRemovalDrawer";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
+import type { SkillDetailFacade } from "../skill-detail/api";
 
 export interface SkillLibraryCapabilities {
   /** Columns the facade can sort on; omitted keeps every column sortable. */
@@ -100,6 +104,8 @@ export interface SkillLibraryPageProps {
   removalFacade?: RemovalFacade;
   /** Refresh the bootstrap projection after library metadata changes. */
   refreshSnapshot?: () => Promise<void>;
+  securityFacade: SecurityFacade;
+  trialFacade?: Pick<SkillDetailFacade, "setTrial">;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -136,7 +142,6 @@ interface BatchBarProps {
 const BATCH_ACTION_KEYS = {
   add_to: "skillLibrary.page.batch.addTo",
   add_tag: "skillLibrary.page.batch.addTags",
-  archive: "skillLibrary.page.batch.archive",
   export: "skillLibrary.page.batch.export",
   remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
@@ -206,7 +211,7 @@ function savedViewIsDirty(
 function mergeSavedViews(userViews: SavedSkillView[] | undefined): SavedSkillView[] {
   const views = new Map<string, SavedSkillView>();
   for (const view of BUILT_IN_SAVED_VIEWS) views.set(view.id, view);
-  for (const view of userViews ?? []) {
+  for (const view of sanitizeSavedViews(userViews ?? [])) {
     if (!views.has(view.id)) views.set(view.id, view);
   }
   return [...views.values()];
@@ -348,7 +353,7 @@ function BatchBar({
       <Button onClick={onClear} size="sm" variant="ghost">
         {t("skillLibrary.page.selection.clear")}
       </Button>
-      {/* AR-024 按使用频率分组：高频（部署/标签/导出/检查更新）→ 管理类（安全检查/批量流程/归档）→ 破坏性（删除，单独分组降级呈现）。 */}
+      {/* 高频操作、管理操作与破坏性删除分组呈现。 */}
       <div className="sh-skill-library__batch-actions">
         <Button
           onClick={() => onAction("add_to")}
@@ -399,9 +404,6 @@ function BatchBar({
         >
           {t(BATCH_ACTION_KEYS.export)}
         </Button>
-        <Button onClick={() => onAction("archive")} size="sm" variant="ghost">
-          {t(BATCH_ACTION_KEYS.archive)}
-        </Button>
         <div className="sh-skill-library__batch-destructive">
           <Button onClick={onDelete} size="sm" variant="ghost">
             {t("skillLibrary.page.batch.delete")}
@@ -418,6 +420,8 @@ export function SkillLibraryPage({
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
   refreshSnapshot,
+  securityFacade,
+  trialFacade,
   tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
@@ -545,6 +549,26 @@ export function SkillLibraryPage({
     [savedViewsQuery.data],
   );
   const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
+
+  useEffect(() => {
+    const hasArchivedCondition = searchParams
+      .getAll("lifecycle")
+      .some((value) => value === "archived");
+    const hasStaleSavedView =
+      savedViewsQuery.isSuccess && query.savedViewId && !activeSavedView;
+    if (!hasArchivedCondition && !hasStaleSavedView) return;
+
+    const next = new URLSearchParams(searchParams);
+    if (hasArchivedCondition) {
+      const supported = next.getAll("lifecycle").filter(
+        (value) => value === "active" || value === "trial",
+      );
+      next.delete("lifecycle");
+      supported.forEach((value) => next.append("lifecycle", value));
+    }
+    if (hasStaleSavedView) next.delete("view");
+    setSearchParams(next, { replace: true });
+  }, [activeSavedView, query.savedViewId, savedViewsQuery.isSuccess, searchParams, setSearchParams]);
 
   // T3-B 卡片视图：普通用户默认增强卡片视图；表格保留为专业模式。
   // D5：视图模式 state 上提到壳层（libraryViewContext），页面只负责
@@ -940,25 +964,6 @@ export function SkillLibraryPage({
       })
       .finally(() => {
         if (request === batchRequestRef.current) setSourceUpdatesPending(false);
-      });
-  };
-
-  // DEV-19：抽屉内的单技能来源更新检查——与批量栏同一 facade 契约
-  // （check_source_updates）、同一通知形态，仅选择集为单条。
-  const startSingleUpdateCheck = (skillId: string, skillName: string) => {
-    if (!facade.checkSourceUpdates) return;
-    const checkFacade = facade.checkSourceUpdates;
-    void checkFacade([skillId])
-      .then((entries) => {
-        notify({ source: "library",
-          detailNode: <SourceUpdateCheckSummary reports={entries.map((entry) => ({ ...entry, name: skillName || skillId }))} />,
-          kind: "batch",
-          title: t("skillLibrary.page.sourceUpdates.title"),
-          tone: "info",
-        });
-      })
-      .catch(() => {
-        notify({ source: "library", kind: "batch", title: t("skillLibrary.page.batch.unconnected"), tone: "danger" });
       });
   };
 
@@ -1452,6 +1457,7 @@ export function SkillLibraryPage({
             </div>
             {facade.listCombinations ? (
               <Link className="sh-skill-library__combination-entry" to="/library/combinations">
+                <Icon name="relationships" size={16} />
                 {t("skillLibrary.combinations.managerEntry")}
               </Link>
             ) : null}
@@ -1615,6 +1621,7 @@ export function SkillLibraryPage({
       <SkillQuickDrawer
         detailSearch={detailSearchFromLibrary(location.search)}
         facade={drawerFacade}
+        trialFacade={trialFacade}
         libraryReturn={
           skillId
             ? {
@@ -1631,12 +1638,12 @@ export function SkillLibraryPage({
           closeDrawer();
           void startBatchRemoval({ id, name });
         }}
-        onCheckUpdates={facade.checkSourceUpdates ? startSingleUpdateCheck : undefined}
         onPreferencesChange={setDrawerPreferences}
         open={Boolean(skillId)}
         preferenceSaveFailed={Boolean(drawerSaveFailure)}
         preferences={effectiveDrawerPreferences}
         refreshSnapshot={refreshSnapshot}
+        securityFacade={securityFacade}
         returnFocusRef={returnFocusRef}
         skillId={skillId}
       />

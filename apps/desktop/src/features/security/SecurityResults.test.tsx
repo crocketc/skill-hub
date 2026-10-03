@@ -1,10 +1,13 @@
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { AppNotificationsProvider } from "../../ui/notifications";
+import { skillDetailKeys } from "../skill-detail/api";
+import { skillLibraryKeys } from "../skills/api";
 import {
   separateCheckFixture,
   type SecurityCheck,
@@ -47,17 +50,22 @@ interface FacadeOverrides {
   tracker?: OperationTracker;
   /** 非空时处置命令按该原因失败，用于验证失败反馈。 */
   dispositionRejection?: unknown;
+  skillId?: string;
+  versionId?: string;
   /** 挂载全局通知中心，用于断言统一反馈的可见结果。 */
   withNotices?: boolean;
+  variant?: "page" | "embedded" | "drawer";
 }
 
-async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, withNotices }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
-  const listFindings = vi.fn(async () => findings ?? fixture.findings);
+  let currentFindings = findings ?? fixture.findings;
+  const listFindings = vi.fn(async () => currentFindings);
+  const getChecks = vi.fn(async () => checks ?? fixture.checks);
   const runSpy = vi.fn(runLlmCheck ?? (async () => undefined));
   const facade: SecurityFacade = {
-    getChecks: async () => checks ?? fixture.checks,
+    getChecks,
     listFindings,
     setFindingDisposition: async (finding, disposition, skillId, versionId, highRiskConfirmed) => {
       const call: DispositionCall = {
@@ -71,6 +79,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
       dispositionCalls.push(call);
       onDisposition?.(call);
       if (dispositionRejection !== undefined) throw dispositionRejection;
+      currentFindings = currentFindings.map((item) => item.id === finding.id ? { ...item, disposition } : item);
     },
     ...(preferences === undefined ? {} : { getPreferences: async () => preferences }),
     ...(runBasicCheck ? { runBasicCheck: vi.fn(runBasicCheck) } : {}),
@@ -80,25 +89,48 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   };
 
   const i18n = await createSkillHubI18n(["zh-CN"]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // Provider 顺序与生产一致（i18n 在外、通知中心在内）：否则 toast 区拿不到
   // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} skillId="skill-pdf" tracker={tracker} versionId="v1" />
+      <SecurityResults facade={facade} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
     </I18nextProvider>
   );
   const view = render(
-    withNotices
-      ? (
+    <QueryClientProvider client={client}>
+      {withNotices ? (
           <I18nextProvider i18n={i18n}>
             <MemoryRouter><AppNotificationsProvider>{tree}</AppNotificationsProvider></MemoryRouter>
           </I18nextProvider>
-        )
-      : tree,
+        ) : <MemoryRouter>{tree}</MemoryRouter>}
+    </QueryClientProvider>,
   );
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
-  return { dispositionCalls, listFindings, runSpy, cancelSpy, ...view };
+  return { client, facade, i18n, dispositionCalls, getChecks, listFindings, runSpy, cancelSpy, ...view };
 }
+
+it("keeps raw findings visible in the compact drawer status even when a run says passed", async () => {
+  const runBasicCheck = vi.fn(async () => undefined);
+  await renderSecurity({
+    variant: "drawer",
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 1, actionableCount: 1 },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [makeFinding({ id: "drawer-risk", kind: "basic", highRisk: true, severity: "high" })],
+    preferences: { llmProvider: "provider-1", dataScope: "explicit_selection" },
+    runBasicCheck,
+  });
+
+  expect(await screen.findByRole("img", { name: /基础.*检查发现/ })).toBeVisible();
+  expect(screen.queryByRole("img", { name: /基础.*检查通过/ })).not.toBeInTheDocument();
+  expect(screen.getByText("重新检查")).toBeVisible();
+  expect(screen.getByText("AI 检查")).toBeVisible();
+  expect(screen.getByText("1 个问题")).toBeVisible();
+  fireEvent.click(screen.getByText("查看发现项（1）"));
+  expect(screen.getByText("message-drawer-risk")).toBeVisible();
+});
 
 it("offers the deterministic basic check action and refreshes its facts", async () => {
   const runBasicCheck = vi.fn(async () => undefined);
@@ -109,6 +141,70 @@ it("offers the deterministic basic check action and refreshes its facts", async 
 
   await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "v1"));
   expect(view.listFindings).toHaveBeenCalledTimes(2);
+});
+
+it("renders an explicit unchecked state when a successful read contains no saved results", async () => {
+  await renderSecurity({ checks: [], findings: [] });
+
+  expect(await screen.findByText("暂无安全问题记录。")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "基础安全检查" })).toBeVisible();
+  expect(screen.getAllByText("此检查尚未运行。")).toHaveLength(2);
+  expect(screen.queryByText("正在加载安全检查")).not.toBeInTheDocument();
+});
+
+it("invalidates the library and detail security projections after a successful basic check", async () => {
+  const runBasicCheck = vi.fn(async () => undefined);
+  const { client } = await renderSecurity({ runBasicCheck });
+  client.setQueryData(skillLibraryKeys.root, { cached: true });
+  client.setQueryData(skillDetailKeys.summary("skill-pdf"), { cached: true });
+
+  fireEvent.click(await screen.findByRole("button", { name: "运行基础检查" }));
+
+  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledOnce());
+  await waitFor(() => {
+    expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(skillDetailKeys.summary("skill-pdf"))?.isInvalidated).toBe(true);
+  });
+});
+
+it("keeps basic and AI checks independently in flight", async () => {
+  let finishBasic: () => void = () => undefined;
+  let finishAi: () => void = () => undefined;
+  const basicGate = new Promise<void>((resolve) => { finishBasic = resolve; });
+  const aiGate = new Promise<void>((resolve) => { finishAi = resolve; });
+  const runBasicCheck = vi.fn(async () => basicGate);
+  const runLlmCheck = vi.fn(async () => aiGate);
+  await renderSecurity({
+    preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+    runBasicCheck,
+    runLlmCheck,
+  });
+
+  const basicButton = await screen.findByRole("button", { name: "运行基础检查" });
+  const aiButton = screen.getByRole("button", { name: "运行 AI 检查" });
+  fireEvent.click(basicButton);
+  fireEvent.click(aiButton);
+
+  await waitFor(() => {
+    expect(runBasicCheck).toHaveBeenCalledOnce();
+    expect(runLlmCheck).toHaveBeenCalledOnce();
+  });
+  finishBasic();
+  await waitFor(() => expect(basicButton).toBeEnabled());
+  expect(aiButton).toBeDisabled();
+
+  finishAi();
+  await waitFor(() => expect(aiButton).toBeEnabled());
+});
+
+it("keeps basic-check failures visible and preserves the existing findings", async () => {
+  const runBasicCheck = vi.fn(async () => { throw new Error("基础扫描未能启动"); });
+  await renderSecurity({ runBasicCheck, findings: [makeFinding({ id: "still-here" })] });
+
+  fireEvent.click(await screen.findByRole("button", { name: "运行基础检查" }));
+
+  expect(await screen.findByText("基础检查失败：基础扫描未能启动")).toBeVisible();
+  expect(screen.getByText("message-still-here")).toBeVisible();
 });
 
 it("renders basic and LLM checks independently and requires explicit confirmation for high-risk handling", async () => {
@@ -170,6 +266,7 @@ it("disposes LLM findings with the llm kind and without high-risk confirmation f
   });
 
   expect(await screen.findByRole("heading", { name: "AI 检查发现" })).toBeVisible();
+  expect(await screen.findByText("高风险 0 · 待处理 1")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "确认已知晓" }));
 
   await waitFor(() => {
@@ -193,6 +290,7 @@ it("requires the explicit high-risk confirmation dialog when dismissing LLM find
   });
 
   expect(await screen.findByRole("heading", { name: "AI 检查发现" })).toBeVisible();
+  expect(await screen.findByText("高风险 1 · 待处理 1")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "忽略此项" }));
   const dialog = screen.getByRole("alertdialog", { name: "高风险发现项处置确认" });
   fireEvent.click(within(dialog).getByRole("button", { name: "确认并忽略此项" }));
@@ -209,6 +307,20 @@ it("requires the explicit high-risk confirmation dialog when dismissing LLM find
       },
     ]);
   });
+  expect(await screen.findByText("高风险 1 · 待处理 0")).toBeVisible();
+});
+
+it("shows a readable check time so refreshed results are visible in an embedded preview", async () => {
+  await renderSecurity({
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 0, actionableCount: 0 },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [],
+  });
+
+  expect(await screen.findByText(/^最近检查：/)).toBeVisible();
+  expect(screen.getByRole("time")).toHaveAttribute("dateTime", "2026-01-15T12:00:00.000Z");
 });
 
 it("disables the AI check entry with an explanation when no LLM provider is configured", async () => {
@@ -217,6 +329,7 @@ it("disables the AI check entry with an explanation when no LLM provider is conf
   });
 
   expect(await screen.findByText("未配置 LLM 提供商，AI 检查不可用")).toBeVisible();
+  expect(screen.getByRole("link", { name: "配置 AI 设置" })).toHaveAttribute("href", "/settings?section=networkAi");
   expect(screen.queryByText("仅发送显式选择的 Skill 内容")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "运行 AI 检查" })).toBeDisabled();
 
@@ -224,6 +337,44 @@ it("disables the AI check entry with an explanation when no LLM provider is conf
   await waitFor(() => {
     expect(runSpy).not.toHaveBeenCalled();
   });
+});
+
+it("invalidates the library and detail security projections after a disposition is saved", async () => {
+  const { client } = await renderSecurity({ findings: [makeFinding({ id: "f-disposition" })] });
+  client.setQueryData(skillLibraryKeys.root, { cached: true });
+  client.setQueryData(skillDetailKeys.summary("skill-pdf"), { cached: true });
+
+  fireEvent.click(await screen.findByRole("button", { name: "确认已知晓" }));
+
+  await waitFor(() => {
+    expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(skillDetailKeys.summary("skill-pdf"))?.isInvalidated).toBe(true);
+  });
+});
+
+it("does not refresh or show stale security results when an in-flight check finishes after changing Skill", async () => {
+  let finishRun: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { finishRun = resolve; });
+  const { client, facade, i18n, getChecks, runSpy, rerender } = await renderSecurity({
+    preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+    runLlmCheck: async () => gate,
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+  await waitFor(() => expect(runSpy).toHaveBeenCalledOnce());
+
+  rerender(
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <SecurityResults facade={facade} skillId="skill-other" versionId="v2" />
+        </MemoryRouter>
+      </I18nextProvider>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(getChecks).toHaveBeenCalledTimes(2));
+  finishRun();
+  await waitFor(() => expect(screen.queryByText("AI 检查进行中，结果将在完成后展示。")).not.toBeInTheDocument());
+  expect(getChecks).toHaveBeenCalledTimes(2);
 });
 
 it("explains the send scope for explicit selection and refreshes results after running the AI check", async () => {
@@ -288,6 +439,31 @@ it("shows progress and a cancel entry that targets the running operation", async
   await waitFor(() =>
     expect(screen.queryByText("AI 检查进行中，结果将在完成后展示。")).not.toBeInTheDocument(),
   );
+});
+
+it("reports a rejected cancellation request without presenting it as an AI check failure", async () => {
+  let finishRun: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { finishRun = resolve; });
+  const tracker = createOperationTracker();
+  await renderSecurity({
+    preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+    runLlmCheck: async () => gate,
+    listRunningLlmChecks: async () => [
+      { skillId: "skill-pdf", versionId: "v1", operationId: "op-live" },
+    ],
+    cancelLlmCheck: async () => { throw new Error("取消接口不可用"); },
+    tracker,
+  });
+
+  fireEvent.click(await screen.findByRole("button", { name: "运行 AI 检查" }));
+  fireEvent.click(await screen.findByRole("button", { name: "取消检查" }));
+
+  expect(await screen.findByText("取消请求未成功：取消接口不可用")).toBeVisible();
+  expect(screen.queryByText("AI 检查运行失败：取消接口不可用")).not.toBeInTheDocument();
+  expect(screen.getByText("AI 检查进行中，结果将在完成后展示。")).toBeVisible();
+  expect(screen.getByRole("button", { name: "取消检查" })).toBeEnabled();
+  expect(tracker.getSnapshot()[0]).toMatchObject({ status: "running", cancelRequested: false });
+  finishRun();
 });
 
 it("shows the raw data scope next to the AI check when it is not the explicit-selection default", async () => {
@@ -400,6 +576,7 @@ describe("发现项处置与统一执行反馈", () => {
     fireEvent.click(await screen.findByRole("button", { name: "确认已知晓" }));
 
     await waitFor(() => expect(dispositionCalls).toHaveLength(1));
+    expect(await screen.findByText("高风险 0 · 待处理 0")).toBeVisible();
     expect(dispositionCalls[0]).toMatchObject({ disposition: "acknowledged", highRiskConfirmed: false });
     // 单次同步写入：只要结果反馈，不占用在途顶栏。
     expect(tracker.getSnapshot()).toEqual([]);

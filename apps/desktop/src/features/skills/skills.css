@@ -301,23 +301,6 @@
   margin-right: var(--space-1);
 }
 
-/* 别名/备注编辑从字符图标（✎）改为文字按钮（共享 ghost 次要形态），
-   保持字段行内的紧凑形态，颜色走语义 token。 */
-.sh-skill-drawer .sh-skill-drawer__edit-icon.sh-button {
-  width: auto;
-  min-width: 2rem;
-  height: auto;
-  min-height: 2rem;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-xs);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
-
-.sh-skill-drawer .sh-skill-drawer__edit-icon.sh-button:hover:not(:disabled) {
-  color: var(--ui-accent);
-}
-
 /* —— M-21 IA 重排：工具栏三 band（单列 grid，band 间距用 token） ——
    检索带（常驻单行：左簇搜索可伸展 + 筛选开关 + 清除；右簇 = 结果摘要 |
    分组切换 | 组合管理入口 | 收起视图栏；视图切换已迁壳层标题栏，见
@@ -476,8 +459,44 @@
 }
 
 .sh-skill-library__combination-entry {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   margin: 0;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font-weight: 650;
   font-size: var(--font-size-sm);
+  text-decoration: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.sh-skill-library__combination-entry > svg {
+  flex: 0 0 auto;
+  color: var(--color-accent-strong);
+}
+
+.sh-skill-library__combination-entry:hover {
+  border-color: var(--color-accent-strong);
+  background: color-mix(in srgb, var(--color-accent-soft) 82%, var(--color-accent) 18%);
+  text-decoration: none;
+}
+
+.sh-skill-library__combination-entry:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.sh-skill-library__combination-entry:active {
+  transform: translateY(1px);
 }
 
 .sh-skill-library__summary {
@@ -501,7 +520,7 @@
 .sh-skill-library .sh-skill-library__saved-views {
   flex: 1 1 auto;
   min-width: 0;
-  padding-inline: 0;
+  padding-inline: var(--space-3);
   border-bottom: 1px solid var(--ui-border-subtle);
 }
 
@@ -751,13 +770,17 @@
   }
 }
 
-@media (max-width: 48rem) {
+@media (max-width: 56rem) {
   .sh-skill-library__toolbar-secondary {
     flex-wrap: wrap;
   }
 
   .sh-skill-library__saved-views {
     flex-basis: 100%;
+  }
+
+  .sh-skill-library__view-utilities {
+    margin-inline-start: auto;
   }
 }
 

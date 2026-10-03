@@ -48,6 +48,9 @@ function fixture(): SkillRelationshipGraphResult {
         match_state: null,
         active: true,
         last_verified_at: null,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
       {
         edge_id: "e-source",
@@ -61,9 +64,12 @@ function fixture(): SkillRelationshipGraphResult {
         match_state: null,
         active: true,
         last_verified_at: null,
+        governance: null,
+        target_identity: null,
+        evidence_relation_ids: [],
       },
     ],
-    fact_counts: { deployment_relations: 0, source_relations: 0, conflict_cases: 0 },
+    fact_counts: { deployment_relations: 0, source_relations: 0, conflict_cases: 0, usage_relations: 0 },
     collapsed_count: 0,
     relationship_revision: "r1",
     last_verified_at: null,
@@ -84,7 +90,6 @@ describe("GraphDetailsPanel path presentation", () => {
             lastVerifiedAt={null}
             onBeforeNavigate={() => undefined}
             projection={projection}
-            relationshipRevision="r1"
             selectedEdgeId={null}
             selectedNodeId="dir"
           />
@@ -116,7 +121,6 @@ describe("GraphDetailsPanel path presentation", () => {
             lastVerifiedAt={null}
             onBeforeNavigate={() => undefined}
             projection={projection}
-            relationshipRevision="r1"
             selectedEdgeId={null}
             selectedNodeId={"dir"}
           />
@@ -152,7 +156,6 @@ describe("GraphDetailsPanel path presentation", () => {
             lastVerifiedAt={null}
             onBeforeNavigate={() => undefined}
             projection={projection}
-            relationshipRevision="r1"
             resolveSkillName={(skillId) => skillId === "notes-reader" ? "Notes Reader" : undefined}
             selectedEdgeId={null}
             selectedNodeId="related-skill"
@@ -163,9 +166,142 @@ describe("GraphDetailsPanel path presentation", () => {
 
     expect(screen.getByRole("heading", { name: "Notes Reader" })).toBeVisible();
   });
+
+  it("uses a readable kind label when a selected Skill name cannot be resolved", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes.push({
+      ...graph.nodes[0]!,
+      node_id: "skill-node-internal-42",
+      skill_id: "skill-id-internal-42",
+    });
+    graph.edges.push({
+      ...graph.edges[0]!,
+      edge_id: "edge-skill-internal-42",
+      to_node_id: "skill-node-internal-42",
+    });
+    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            selectedEdgeId={null}
+            selectedNodeId="skill-node-internal-42"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Skill" })).toBeVisible();
+    expect(screen.queryByText("skill-id-internal-42")).not.toBeInTheDocument();
+    expect(screen.queryByText("skill-node-internal-42")).not.toBeInTheDocument();
+  });
+
+  it("uses a readable conflict label instead of exposing the conflict identifier", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes.push({
+      ...graph.nodes[0]!,
+      node_id: "conflict-node-internal-9",
+      kind: "conflict",
+      skill_id: null,
+      conflict_id: "conflict-case-opaque-42",
+    });
+    graph.edges.push({
+      ...graph.edges[0]!,
+      edge_id: "edge-conflict-internal-1",
+      to_node_id: "conflict-node-internal-9",
+      kind: "conflict",
+      relationship: null,
+      relation_id: null,
+      conflict_id: "conflict-case-opaque-42",
+    });
+    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            selectedEdgeId={null}
+            selectedNodeId="conflict-node-internal-9"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Conflict" })).toBeVisible();
+    expect(screen.queryByText("conflict-case-opaque-42")).not.toBeInTheDocument();
+    expect(screen.queryByText("conflict-node-internal-9")).not.toBeInTheDocument();
+  });
+
+  it("uses a readable kind label when a node has no user-facing name", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes[2] = {
+      ...graph.nodes[2]!,
+      node_id: "source-node-internal-77",
+      path: null,
+      source: null,
+    };
+    graph.edges[1] = { ...graph.edges[1]!, to_node_id: "source-node-internal-77" };
+    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            selectedEdgeId={null}
+            selectedNodeId="source-node-internal-77"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Source" })).toBeVisible();
+    expect(screen.queryByText("source-node-internal-77")).not.toBeInTheDocument();
+  });
+
+  it("does not display an internal relationship revision in the details panel", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const projection = projectGraph(fixture(), { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            selectedEdgeId={null}
+            selectedNodeId={null}
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.queryByText("internal-revision-r1")).not.toBeInTheDocument();
+  });
 });
 
-// —— 任务 12B：在线来源展示 URL 且无治理按钮；来源边按台账关联治理深链 ——
+// —— 来源保持生命周期入口；只有后端明确投影的使用边进入治理 ——
 
 function governanceFixture(): SkillRelationshipGraphResult {
   const graph = fixture();
@@ -229,6 +365,9 @@ function governanceFixture(): SkillRelationshipGraphResult {
       match_state: null,
       active: true,
       last_verified_at: null,
+      governance: null,
+      target_identity: null,
+      evidence_relation_ids: [],
     },
     {
       edge_id: "e-src-online",
@@ -242,6 +381,9 @@ function governanceFixture(): SkillRelationshipGraphResult {
       match_state: null,
       active: true,
       last_verified_at: null,
+      governance: null,
+      target_identity: null,
+      evidence_relation_ids: [],
     },
   );
   return graph;
@@ -250,14 +392,14 @@ function governanceFixture(): SkillRelationshipGraphResult {
 async function renderSelection(options: {
   selectedEdgeId?: string | null;
   selectNodeId?: (projection: ReturnType<typeof projectGraph>) => string | null;
-  sourceCopies?: Parameters<typeof projectGraph>[3];
+  graph?: SkillRelationshipGraphResult;
+  language?: string;
 }) {
-  const i18n = await createSkillHubI18n(["en-US"]);
+  const i18n = await createSkillHubI18n([options.language ?? "en-US"]);
   const projection = projectGraph(
-    governanceFixture(),
-    { relationshipTypes: [], statuses: [] },
+    options.graph ?? governanceFixture(),
+    { relationshipTypes: [], statuses: [], governance: [], management: [] },
     ALL_DISPLAY_ON,
-    options.sourceCopies,
   );
   const selectedNodeId = options.selectNodeId?.(projection) ?? null;
   render(
@@ -270,7 +412,6 @@ async function renderSelection(options: {
           lastVerifiedAt={null}
           onBeforeNavigate={() => undefined}
           projection={projection}
-          relationshipRevision="r1"
           selectedEdgeId={options.selectedEdgeId ?? null}
           selectedNodeId={selectedNodeId}
         />
@@ -279,7 +420,7 @@ async function renderSelection(options: {
   );
 }
 
-describe("GraphDetailsPanel governance entries (12B)", () => {
+describe("GraphDetailsPanel governance entries", () => {
   it("shows the readable online URL for an online source node with no governance button", async () => {
     await renderSelection({
       // 画布选中的是合并后的展示节点（任务 12B 的 locator 合并 id）。
@@ -298,43 +439,68 @@ describe("GraphDetailsPanel governance entries (12B)", () => {
     expect(screen.queryByText(/C:[/\\]cache[/\\]online/)).not.toBeInTheDocument();
   });
 
-  it("deep-links a source edge to its current source-copy relation from the ledger", async () => {
+  it("routes a source edge to the Skill lifecycle and does not misclassify it as governance", async () => {
     await renderSelection({
       selectedEdgeId: "e-src-local",
-      sourceCopies: [{
-        relation_id: "rel-local-9",
-        skill_id: "pdf-reader",
-        latest_provenance_id: "prov-1",
-        source_class: "agent_local",
-        source_path: "C:/agents/claude/skills/pdf-reader",
-        source_path_key: "c-agents-claude-skills-pdf-reader",
-        physical_source_id: "phys-1",
-        source_container_id: null,
-        directory_node_id: null,
-        agent_client_id: "claude",
-        expected_fingerprint: "fp-1",
-        current_fingerprint: "fp-1",
-        decision: "pending",
-        health: "normal",
-        active: true,
-        last_verified_at: null,
-        archived_at: null,
-        archive_reason: null,
-      }],
     });
 
-    const govern = screen.getByRole("link", { name: "Manage in relationship governance" });
-    expect(govern).toHaveAttribute(
-      "href",
-      "/relationships/governance?from=graph&relationId=rel-local-9",
+    expect(screen.getByRole("link", { name: "View source lifecycle" })).toHaveAttribute(
+      "href", "/library/pdf-reader#versions",
     );
+    expect(screen.queryByRole("link", { name: "Manage in relationship governance" })).not
+      .toBeInTheDocument();
   });
 
   it("keeps the online source edge read-only when no current source copy exists", async () => {
     await renderSelection({ selectedEdgeId: "e-src-online" });
 
-    expect(
-      screen.queryByRole("link", { name: "Manage in relationship governance" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View source lifecycle" })).toHaveAttribute(
+      "href", "/library/pdf-reader#versions",
+    );
+  });
+
+  it("shows governance classification and management independently of a verified graph match", async () => {
+    const graph = governanceFixture();
+    graph.edges[0] = {
+      ...graph.edges[0]!,
+      relation_id: "relation-private-42",
+      match_state: "content_verified",
+      active: true,
+      governance: {
+        governance_status: "pending",
+        management_status: "not_taken_over",
+        decision: "undecided",
+        management_confirmed_at: null,
+        health_reasons: ["verification_required"],
+        action_conditions: [
+          { action: "revalidate", available: true, reasons: [] },
+          { action: "centralize_management", available: false, reasons: ["verification_required"] },
+        ],
+      },
+      target_identity: {
+        skill_id: "pdf-reader",
+        target_kind: "agent",
+        directory_node_id: "dir",
+        entry_path_key: "private-path-key",
+      },
+      evidence_relation_ids: ["relation-private-42", "relation-private-43"],
+    };
+    graph.edges.push({
+      ...graph.edges[0]!,
+      edge_id: "e-use",
+      kind: "deployment",
+      relation_id: "relation-private-42",
+    });
+    graph.edges[0] = { ...graph.edges[0]!, governance: null };
+    await renderSelection({ graph, language: "zh-CN", selectedEdgeId: "e-use" });
+
+    expect(screen.getByTestId("graph-governance-classification")).toHaveTextContent("待处理");
+    expect(screen.getByTestId("graph-governance-management")).toHaveTextContent("待集中管理");
+    expect(screen.getByTestId("graph-governance-reasons")).toHaveTextContent("当前验证结果不足，请重新检查目标。");
+    expect(screen.getByRole("link", { name: "在关系治理中处理" })).toHaveAttribute(
+      "href",
+      "/relationships/governance?from=graph&relationId=relation-private-42",
+    );
+    expect(screen.queryByText(/relation-private-|private-path-key/)).not.toBeInTheDocument();
   });
 });

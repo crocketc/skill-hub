@@ -12,6 +12,8 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import "../../styles/base.css";
 import baseCssRaw from "../../styles/base.css?raw";
 import { AppNotificationsProvider } from "../../ui/notifications";
+import { createPreviewSecurityFacade } from "../security/previewFacade";
+import type { SecurityFacade } from "../security/api";
 import {
   LibraryViewModeProvider,
   LibraryViewModeSwitch,
@@ -40,6 +42,7 @@ interface RenderLibraryOptions {
   onOpenDiscovery?: () => void;
   queryRetry?: boolean | number;
   removalFacade?: RemovalFacade;
+  securityFacade?: SecurityFacade;
   /** 统一执行桥的在途投影（任务 4）；测试注入独立实例。 */
   tracker?: OperationTracker;
   /** "table" (default) simulates a persisted table preference; "unset" keeps
@@ -58,6 +61,7 @@ function renderLibrary({
   onOpenDiscovery,
   queryRetry = false,
   removalFacade,
+  securityFacade,
   tracker,
   persistedViewMode = "table",
 }: RenderLibraryOptions): RenderedLibrary {
@@ -71,7 +75,7 @@ function renderLibrary({
   });
   const router = createMemoryRouter(
     [
-      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} tracker={tracker} /> },
+      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} securityFacade={securityFacade ?? createPreviewSecurityFacade()} tracker={tracker} /> },
       // P1-11：卡片“查看”按钮跳完整详情页。
       { path: "/library/:skillId", element: <p>Skill detail page</p> },
       { path: "/deploy", element: <p>Batch deployment</p> },
@@ -587,7 +591,6 @@ describe("SkillLibraryPage", () => {
       // 管理类
       "Run security check",
       "Submit export job",
-      "Archive",
       // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills from library",
     ]);
@@ -604,6 +607,22 @@ describe("SkillLibraryPage", () => {
     expect(
       within(batchBar).getByRole("button", { name: "Clear selection" }),
     ).toHaveClass("sh-button--ghost");
+    expect(within(actions as HTMLElement).queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+  });
+
+  it("cleans legacy archived URL filters without selecting skills", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const { router } = renderLibrary({
+      facade,
+      initialEntry: "/library?lifecycle=archived&view=old-archive-only",
+    });
+
+    await screen.findByRole("table");
+
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).not.toBeChecked();
+    expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
   });
 
   it("downgrades batch deletion to a secondary action while keeping the force-delete flow", async () => {
@@ -938,17 +957,20 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByRole("table");
     fireEvent.click(skillNameCell("PDF Reader"));
+    // 界面规范§5批注15/16：宽度档位合并为单一循环按钮（默认 wide，点击进入 near_full）；
+    // 保存失败时保留临时偏好并给出可见告警。
     fireEvent.click(
-      await screen.findByRole("button", { name: "Configure quick drawer" }),
+      await screen.findByRole("button", {
+        name: "Current width: Wide. Next: Near full screen",
+      }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Standard width" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Preference was not saved",
     );
     expect(screen.getByTestId("skill-quick-drawer")).toHaveAttribute(
       "data-preset",
-      "standard",
+      "near_full",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -979,7 +1001,7 @@ describe("SkillLibraryPage", () => {
       initialEntry: "/library?page=2&size=25",
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Active" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Regular" }));
 
     await waitFor(() => {
       expect(lastPageCall(facade)).toEqual(
@@ -1466,7 +1488,7 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByRole("table")).toBeVisible();
     const status = screen.getByRole("status", { name: "Preference status" });
     expect(status).toHaveTextContent("Saved views could not be loaded");
-    fireEvent.click(screen.getByRole("button", { name: "Active" }));
+    fireEvent.click(screen.getByRole("button", { name: "Regular" }));
     await waitFor(() => {
       expect(lastPageCall(facade)).toEqual(
         expect.objectContaining({
@@ -1547,7 +1569,12 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByRole("table");
     fireEvent.click(skillNameCell("PDF Reader"));
-    fireEvent.click(await screen.findByRole("button", { name: "Standard width" }));
+    // 界面规范§5批注15/16：宽度档位合并为单一循环按钮。
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Current width: Wide. Next: Near full screen",
+      }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Preference was not saved",
     );

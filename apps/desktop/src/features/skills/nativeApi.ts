@@ -27,7 +27,7 @@ function unavailableResult(): SkillLibraryUnavailableError {
 
 function lifecycleOf(item: SkillListItem): SkillTableRow["lifecycle"] {
   if (item.trial_due) return "trial";
-  return item.lifecycle === "Normal" ? "active" : "archived";
+  return item.lifecycle === "Deprecated" ? "deprecated" : "active";
 }
 
 function checkStateOf(state: NativeCheckState): CheckState {
@@ -322,9 +322,13 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       view.tags = skill.tags;
       view.license = skill.license ?? undefined;
       view.note = skill.user_note ?? undefined;
-      view.lifecycle = skill.trial_due ? "trial" : skill.lifecycle === "Normal" ? "active" : "archived";
-      // 检查状态、来源、待处理计数与上游提示已由 asQuickView 从 get_skill
-      // 同源读取（与列表投影共用 status_columns），不再逐项二次查询。
+      view.lifecycle = skill.trial_due
+        ? "trial"
+        : skill.lifecycle === "Deprecated"
+          ? "deprecated"
+          : "active";
+      view.trialDue = skill.trial_due ?? undefined;
+      // 来源、检查与计数由 get_skill 同源读取，不恢复冗余检查查询。
       try {
         const relations = await queryApplication({ type: "get_deployment_relations", payload: { skill_id: skillId } });
         let targetsResult: AppQueryResult | undefined;

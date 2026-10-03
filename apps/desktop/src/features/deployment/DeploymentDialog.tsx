@@ -423,7 +423,7 @@ export function DeploymentDialog({
                         }}
                         type="checkbox"
                       />
-                    <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />
+                    <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} sharedBrandOverflowInteractive={false} target={target} />
                   </label> : <DeploymentTargetPresentation fallback={target.label} model={card.cardModel} target={target} />}
                   </div>
                   {pendingTargets.map((pendingTarget) => <ConfirmDialog

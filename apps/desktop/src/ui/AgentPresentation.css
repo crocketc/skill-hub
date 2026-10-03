@@ -6,15 +6,18 @@
   min-width: 0;
 }
 
-.sh-agent-card__title .sh-agent-presentation { display: flex; width: 100%; flex-wrap: nowrap; }
-.sh-agent-card__title .sh-agent-presentation__kind { margin-inline-start: auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
-.sh-agent-card__title .sh-agent-presentation[data-agent-kind="shared_directory"] {
+.sh-agent-card__title.sh-agent-presentation { display: flex; width: 100%; flex-wrap: nowrap; }
+.sh-agent-card__title .sh-agent-presentation__identity-link { display: inline-flex; min-width: 0; align-items: center; color: inherit; gap: var(--space-1); text-decoration: none; }
+.sh-agent-card__title .sh-agent-presentation__identity-link:hover { color: var(--ui-accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.sh-agent-card__title .sh-agent-presentation__identity-link:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: var(--radius-xs); }
+.sh-agent-card__title > .sh-agent-presentation__identity-link > .sh-agent-presentation__kind { margin-inline-start: auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
+.sh-agent-card__title.sh-agent-presentation[data-agent-kind="shared_directory"] {
   height: 40px;
   align-content: center;
   flex-wrap: wrap;
   overflow: hidden;
 }
-.sh-agent-card__title .sh-agent-presentation[data-agent-kind="shared_directory"] .sh-agent-presentation__shared-brands {
+.sh-agent-card__title.sh-agent-presentation[data-agent-kind="shared_directory"] .sh-agent-presentation__shared-brands {
   max-height: 2.75rem;
   justify-content: flex-end;
   margin-inline-start: auto;
@@ -64,11 +67,24 @@
 }
 
 .sh-agent-presentation__shared-brands {
+  position: relative;
   display: inline-flex;
   align-items: center;
   /* DEV-102：共享目录关联品牌较多时在卡片宽度内换行，不越出右边界。 */
   flex-wrap: wrap;
   gap: var(--space-1);
+}
+
+.sh-agent-presentation__shared-brand-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.sh-agent-presentation__shared-brand-mark:focus-visible,
+.sh-agent-presentation__shared-brand-overflow:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
 
 .sh-agent-directory-role-badge {
@@ -102,7 +118,9 @@
 }
 
 .sh-agent-presentation__shared-brand-overflow {
+  appearance: none;
   display: inline-flex;
+  flex: 0 0 auto;
   min-width: 1.35rem;
   height: 1.35rem;
   align-items: center;
@@ -114,6 +132,79 @@
   color: var(--ui-ink-muted);
   font-size: 0.65rem;
   font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sh-agent-presentation__shared-brand-overflow.is-static { cursor: default; }
+
+.sh-agent-presentation__shared-brands-popover {
+  position: fixed;
+  z-index: 40;
+  box-sizing: border-box;
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(19rem, calc(100vh - 1.5rem));
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-ink);
+  box-shadow: var(--shadow-lg);
+  text-align: start;
+}
+
+.sh-agent-presentation__shared-brands-heading {
+  margin: 0 0 var(--space-2);
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.sh-agent-presentation__shared-brands-list {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.sh-agent-presentation__shared-brand-row {
+  display: grid;
+  min-width: 0;
+  min-height: 2rem;
+  padding: var(--space-1);
+  align-items: center;
+  grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  border-radius: var(--radius-xs);
+}
+
+.sh-agent-presentation__shared-brand-row:hover,
+.sh-agent-presentation__shared-brand-row:focus-visible {
+  background: var(--ui-surface-subtle);
+}
+
+.sh-agent-presentation__shared-brand-row:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.sh-agent-presentation__shared-brand-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ui-ink);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.sh-agent-presentation__shared-brand-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
 }
 
 .sh-agent-presentation--compact {

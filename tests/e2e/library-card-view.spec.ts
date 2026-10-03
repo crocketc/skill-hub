@@ -286,27 +286,19 @@ test("real mouse dragging reorders columns without toggling visibility", async (
   await expect(source).toHaveAttribute("aria-pressed", "true");
 });
 
-test("real mouse dragging reorders quick drawer modules on the configuration surface", async ({ page }) => {
+test("quick drawer renders the confirmed fixed module order without a configuration surface", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(LIBRARY_ROUTE);
   await page.getByRole("heading", { name: "PDF Reader" }).click();
-  await page.getByRole("button", { name: "Configure quick drawer" }).click();
 
-  const source = page.getByRole("button", { name: "Versions" });
-  const target = page.getByRole("button", { name: "Relations" });
-  const sourceBox = await source.boundingBox();
-  const targetBox = await target.boundingBox();
-  expect(sourceBox).not.toBeNull();
-  expect(targetBox).not.toBeNull();
-  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
-  await page.mouse.up();
-
-  const order = await page.locator(".sh-skill-drawer__module-toggle").evaluateAll((items) =>
-    items.map((item) => item.textContent?.trim()),
+  // 界面规范§5批注3：移除“配置快速抽屉”入口和模块配置面板，内容布局固定。
+  await expect(page.getByRole("button", { name: "Configure quick drawer" })).toHaveCount(0);
+  // 界面规范§2.1：来源/版本放正文最后，固定顺序不可重排。
+  const order = await page.locator(".sh-skill-drawer__module").evaluateAll((items) =>
+    items.map((item) => item.querySelector("h3")?.textContent?.trim()),
   );
-  expect(order.indexOf("Versions")).toBeLessThan(order.indexOf("Relations"));
+  expect(order[order.length - 1]).toBe("Versions");
+  expect(order.indexOf("Versions")).toBeGreaterThan(order.indexOf("Relations"));
 });
 
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {

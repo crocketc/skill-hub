@@ -1,6 +1,12 @@
-export type SkillLifecycle = "active" | "trial" | "archived";
-import type { CombinationResult, DeploymentRecord, DeploymentTarget } from "../../api/bindings";
+import type {
+  CombinationResult,
+  DeploymentRecord,
+  DeploymentTarget,
+  SkillLifecycleFilter as NativeSkillLifecycleFilter,
+} from "../../api/bindings";
 export type { CombinationResult, DeploymentRecord, DeploymentTarget };
+export type SkillLifecycle = "active" | "trial" | "deprecated";
+export type SkillLifecycleFilter = NativeSkillLifecycleFilter;
 export type CheckState = "passed" | "warning" | "failed" | "not_run" | "unavailable";
 export type SkillDensity = "compact" | "standard" | "comfortable";
 export type DrawerPreset = "standard" | "wide" | "near_full";
@@ -44,7 +50,7 @@ export interface SkillLibraryFilters {
   aiCheck: CheckState[];
   basicCheck: CheckState[];
   deployment: "any" | "deployed" | "not_deployed";
-  lifecycle: SkillLifecycle[];
+  lifecycle: SkillLifecycleFilter[];
   tags: string[];
   version: "any" | "upgrade_available";
 }
@@ -103,6 +109,7 @@ export interface SkillQuickView extends SkillTableRow {
   externalChanges: string[];
   note?: string;
   projectDeployments?: ProjectDeployment[];
+  trialDue?: string;
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 
@@ -155,7 +162,6 @@ export type BatchAction =
   | "add_to"
   | "security_check"
   | "export"
-  | "archive"
   | "add_tag"
   | "remove_tag";
 export type SkillFilterSnapshot = Pick<SkillLibraryQuery, "filters" | "text">;
@@ -238,7 +244,7 @@ const DEFAULT_SKILL_FILTERS = freeze<SkillLibraryFilters>({
   aiCheck: freeze<CheckState[]>([]),
   basicCheck: freeze<CheckState[]>([]),
   deployment: "any",
-  lifecycle: freeze<SkillLifecycle[]>([]),
+  lifecycle: freeze<SkillLifecycleFilter[]>([]),
   tags: freeze<string[]>([]),
   version: "any",
 });
@@ -328,7 +334,7 @@ export const BUILT_IN_SAVED_VIEWS = freeze<SavedSkillView[]>([
     query: savedViewQuery(
       freeze<SkillLibraryFilters>({
         ...DEFAULT_SKILL_FILTERS,
-        lifecycle: freeze<SkillLifecycle[]>(["active"]),
+        lifecycle: freeze<SkillLifecycleFilter[]>(["active"]),
       }),
     ),
     table: DEFAULT_TABLE_PREFERENCES,
