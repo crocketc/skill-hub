@@ -591,7 +591,6 @@ describe("SkillLibraryPage", () => {
       // 管理类
       "Run security check",
       "Submit export job",
-      "Archive",
       // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills from library",
     ]);
@@ -608,6 +607,22 @@ describe("SkillLibraryPage", () => {
     expect(
       within(batchBar).getByRole("button", { name: "Clear selection" }),
     ).toHaveClass("sh-button--ghost");
+    expect(within(actions as HTMLElement).queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+  });
+
+  it("cleans legacy archived URL filters without selecting skills", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const { router } = renderLibrary({
+      facade,
+      initialEntry: "/library?lifecycle=archived&view=old-archive-only",
+    });
+
+    await screen.findByRole("table");
+
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).not.toBeChecked();
+    expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
   });
 
   it("downgrades batch deletion to a secondary action while keeping the force-delete flow", async () => {
@@ -983,7 +998,7 @@ describe("SkillLibraryPage", () => {
       initialEntry: "/library?page=2&size=25",
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Active" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Regular" }));
 
     await waitFor(() => {
       expect(lastPageCall(facade)).toEqual(
@@ -1470,7 +1485,7 @@ describe("SkillLibraryPage", () => {
     expect(await screen.findByRole("table")).toBeVisible();
     const status = screen.getByRole("status", { name: "Preference status" });
     expect(status).toHaveTextContent("Saved views could not be loaded");
-    fireEvent.click(screen.getByRole("button", { name: "Active" }));
+    fireEvent.click(screen.getByRole("button", { name: "Regular" }));
     await waitFor(() => {
       expect(lastPageCall(facade)).toEqual(
         expect.objectContaining({

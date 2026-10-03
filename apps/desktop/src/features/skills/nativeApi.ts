@@ -26,7 +26,7 @@ function unavailableResult(): SkillLibraryUnavailableError {
 
 function lifecycleOf(item: SkillListItem): SkillTableRow["lifecycle"] {
   if (item.trial_due) return "trial";
-  return item.lifecycle === "Normal" ? "active" : "archived";
+  return item.lifecycle === "Deprecated" ? "deprecated" : "active";
 }
 
 function checkStateOf(state: NativeCheckState): CheckState {
@@ -317,7 +317,11 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       view.tags = skill.tags;
       view.license = skill.license ?? undefined;
       view.note = skill.user_note ?? undefined;
-      view.lifecycle = skill.trial_due ? "trial" : skill.lifecycle === "Normal" ? "active" : "archived";
+      view.lifecycle = skill.trial_due
+        ? "trial"
+        : skill.lifecycle === "Deprecated"
+          ? "deprecated"
+          : "active";
       if (skill.current_version) {
         const checks = await Promise.all([
           queryApplication({ type: "get_basic_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),

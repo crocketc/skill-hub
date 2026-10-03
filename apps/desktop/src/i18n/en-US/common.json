@@ -1177,7 +1177,6 @@
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
-        "archive": "Archive",
         "delete": "Delete selected Skills from library",
         "error": "The batch workflow could not be started",
         "export": "Submit export job",
@@ -1385,8 +1384,8 @@
       },
       "lifecycle": "Lifecycle",
       "lifecycleOptions": {
-        "active": "Active",
-        "archived": "Archived",
+        "active": "Regular",
+        "deprecated": "Deprecated",
         "trial": "Trial"
       },
       "resultCount": "{{count}} results",
@@ -1407,7 +1406,7 @@
     },
     "savedViews": {
       "builtIn": {
-        "active": "Active",
+        "active": "Regular",
         "all": "All skills",
         "attention": "Needs attention",
         "updates": "Updates"
@@ -1458,8 +1457,8 @@
       "densityLabel": "Density",
       "highRiskCount": "{{count}} high risk",
       "lifecycle": {
-        "active": "Active",
-        "archived": "Archived",
+        "active": "Regular",
+        "deprecated": "Deprecated",
         "trial": "Trial"
       },
       "moveBefore": "Move {{column}} before {{before}}",
@@ -1687,11 +1686,11 @@
       "invocation": "Invocation"
     },
     "lifecycle": {
-      "active": "Managed",
-      "archived": "Archived",
+      "active": "Regular",
+      "deprecated": "Deprecated",
       "description": {
-        "active": "This Skill is part of the managed library.",
-        "archived": "This Skill is retained but no longer active.",
+        "active": "This Skill is in the regular lifecycle.",
+        "deprecated": "This Skill is marked as deprecated in the library.",
         "trial": "This Skill has a review date for a later keep-or-remove decision."
       },
       "reviewDue": "Review on {{date}}",

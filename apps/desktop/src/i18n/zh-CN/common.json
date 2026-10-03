@@ -1177,7 +1177,6 @@
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
-        "archive": "归档",
         "delete": "从库中删除所选 Skill",
         "error": "无法启动批量流程",
         "export": "提交导出任务",
@@ -1385,8 +1384,8 @@
       },
       "lifecycle": "生命周期",
       "lifecycleOptions": {
-        "active": "活跃",
-        "archived": "已归档",
+        "active": "常规",
+        "deprecated": "已弃用",
         "trial": "试用"
       },
       "resultCount": "{{count}} 个结果",
@@ -1407,7 +1406,7 @@
     },
     "savedViews": {
       "builtIn": {
-        "active": "活跃",
+        "active": "常规",
         "all": "全部 Skill",
         "attention": "需要处理",
         "updates": "可更新"
@@ -1458,8 +1457,8 @@
       "densityLabel": "密度",
       "highRiskCount": "{{count}} 个高风险项",
       "lifecycle": {
-        "active": "活跃",
-        "archived": "已归档",
+        "active": "常规",
+        "deprecated": "已弃用",
         "trial": "试用"
       },
       "moveBefore": "将{{column}}移到{{before}}之前",
@@ -1687,11 +1686,11 @@
       "invocation": "调用方式"
     },
     "lifecycle": {
-      "active": "正式管理",
-      "archived": "已归档",
+      "active": "常规",
+      "deprecated": "已弃用",
       "description": {
-        "active": "此 Skill 已纳入集中库管理。",
-        "archived": "此 Skill 仍被保留，但当前不再启用。",
+        "active": "此 Skill 处于常规生命周期。",
+        "deprecated": "此 Skill 已在技能库中标记为弃用。",
         "trial": "此 Skill 设有复核日期，届时再决定保留或移除。"
       },
       "reviewDue": "复核日期：{{date}}",

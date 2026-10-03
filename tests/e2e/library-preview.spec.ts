@@ -1,4 +1,11 @@
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "./fixtures";
+
+const archiveRemovalEvidence = path.resolve(
+  process.cwd(),
+  "apps/desktop/test-results/ui/fb013",
+);
 
 test("skill library search narrows results and recovers from an empty filter", async ({ page }) => {
   await page.goto("/__preview/skill-library");
@@ -42,6 +49,29 @@ test("skill library keeps the professional table reachable with selection", asyn
   await expect(batchBar.getByRole("button", { name: "Run security check" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
+});
+
+test("legacy archive filters are removed and no Skill archive action is offered", async ({ page }) => {
+  mkdirSync(archiveRemovalEvidence, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/__preview/skill-library?lifecycle=archived");
+  await expect(page).toHaveURL(/\/__preview\/skill-library$/);
+
+  await page.getByRole("button", { name: "Table view" }).click();
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+  const batchBar = page.getByRole("complementary", { name: "Batch actions" });
+  await expect(batchBar).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Archive" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Lifecycle" }).click();
+  const lifecycleMenu = page.getByRole("menu", { name: "Lifecycle" });
+  await expect(lifecycleMenu.getByRole("menuitemcheckbox", { name: "Regular" })).toBeVisible();
+  await expect(lifecycleMenu.getByRole("menuitemcheckbox", { name: "Trial" })).toBeVisible();
+  await expect(lifecycleMenu.getByRole("menuitemcheckbox", { name: /archive|deprecated/i })).toHaveCount(0);
+  await page.screenshot({
+    animations: "disabled",
+    path: path.join(archiveRemovalEvidence, "archive-controls-removed-1440x900.png"),
+  });
 });
 
 test("selected skills expose separated batch actions in the default card view", async ({ page }) => {

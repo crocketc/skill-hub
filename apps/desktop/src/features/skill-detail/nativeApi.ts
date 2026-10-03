@@ -43,7 +43,7 @@ function asSkill(result: AppQueryResult): SkillResult {
 
 function lifecycleOf(skill: SkillResult): SkillDetailSummary["lifecycle"] {
   if (skill.trial_due) return "trial";
-  return skill.lifecycle === "Normal" ? "active" : "archived";
+  return skill.lifecycle === "Deprecated" ? "deprecated" : "active";
 }
 
 async function getSkill(skillId: string): Promise<SkillResult> {

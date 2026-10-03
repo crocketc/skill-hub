@@ -100,7 +100,7 @@ const PRESET_LABEL_KEYS = {
 
 const LIFECYCLE_LABEL_KEYS = {
   active: "skillLibrary.filters.lifecycleOptions.active",
-  archived: "skillLibrary.filters.lifecycleOptions.archived",
+  deprecated: "skillLibrary.filters.lifecycleOptions.deprecated",
   trial: "skillLibrary.filters.lifecycleOptions.trial",
 } as const satisfies Record<SkillQuickView["lifecycle"], string>;
 

@@ -342,7 +342,7 @@ it("presents lifecycle values as text status badges", async () => {
   });
 
   const row = screen.getByRole("row", { name: /PDF Reader/ });
-  const status = within(row).getByText("Active");
+  const status = within(row).getByText("Regular");
   expect(status).toHaveClass("sh-status-badge");
 });
 

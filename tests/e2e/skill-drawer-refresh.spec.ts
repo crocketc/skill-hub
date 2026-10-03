@@ -176,7 +176,7 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   const drawer = page.getByTestId("skill-quick-drawer");
   const panel = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
-  await expect(drawer.locator(".sh-skill-drawer__summary-item--lifecycle")).toContainText("Active");
+  await expect(drawer.locator(".sh-skill-drawer__summary-item--lifecycle")).toContainText("Regular");
   await expect(drawer.locator(".sh-skill-drawer__summary-item--version")).toContainText("1.4.0");
   await expect(drawer.locator(".sh-skill-drawer__summary-item--agents")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--projects")).toBeVisible();

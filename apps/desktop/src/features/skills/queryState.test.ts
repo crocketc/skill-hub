@@ -7,8 +7,10 @@ import {
 import {
   applySavedView,
   parseSkillLibrarySearchParams,
+  sanitizeSavedViews,
   serializeSkillLibrarySearchParams,
   skillFilterKey,
+  type PersistedSavedSkillView,
 } from "./queryState";
 
 it("round-trips query and drawer state while normalizing unordered filters", () => {
@@ -86,4 +88,47 @@ it("uses repeated normalized filter parameters and omits defaults", () => {
   });
 
   expect(params.toString()).toBe("basic=failed&basic=passed&tag=docs&tag=pdf");
+});
+
+it("drops archived lifecycle conditions from old URLs and their serialized form", () => {
+  const parsed = parseSkillLibrarySearchParams("lifecycle=archived&lifecycle=trial");
+
+  expect(parsed.query.filters.lifecycle).toEqual(["trial"]);
+  expect(serializeSkillLibrarySearchParams(parsed.query).getAll("lifecycle")).toEqual([
+    "trial",
+  ]);
+  expect(
+    parseSkillLibrarySearchParams("lifecycle=archived").query.filters.lifecycle,
+  ).toEqual([]);
+});
+
+it("removes archive-only saved views and keeps other filters when pruning archived", () => {
+  const base = {
+    builtIn: false,
+    name: "Legacy view",
+    query: {
+      filters: {
+        ...DEFAULT_SKILL_QUERY.filters,
+        lifecycle: ["archived"],
+      },
+      sort: DEFAULT_SKILL_QUERY.sort,
+      text: "",
+    },
+    table: DEFAULT_TABLE_PREFERENCES,
+  } satisfies Omit<PersistedSavedSkillView, "id">;
+
+  const views = sanitizeSavedViews([
+    { ...base, id: "archive-only" },
+    {
+      ...base,
+      id: "tagged-archive",
+      query: {
+        ...base.query,
+        filters: { ...base.query.filters, lifecycle: ["archived", "trial"], tags: ["docs"] },
+      },
+    },
+  ]);
+
+  expect(views.map(({ id }) => id)).toEqual(["tagged-archive"]);
+  expect(views[0].query.filters).toMatchObject({ lifecycle: ["trial"], tags: ["docs"] });
 });

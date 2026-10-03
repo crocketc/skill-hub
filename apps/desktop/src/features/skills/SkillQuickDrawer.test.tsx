@@ -1160,7 +1160,7 @@ it("keeps the skill overview and its primary action grouped before configurable 
   expect(overview).toContainElement(within(drawer).getByText("Extracts text from PDF files."));
   expect(overview).toContainElement(within(drawer).getByText("Read and extract PDFs"));
   expect(overview?.querySelector(".sh-skill-drawer__summary-grid")).not.toBeNull();
-  expect(overview?.querySelector(".sh-skill-drawer__summary-item--lifecycle")).toHaveTextContent("LifecycleActive");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--lifecycle")).toHaveTextContent("LifecycleRegular");
   expect(overview?.querySelector(".sh-skill-drawer__summary-item--version")).toHaveTextContent("Version1.4.0");
   expect(overview?.querySelector(".sh-skill-drawer__summary-item--agents")).toHaveTextContent("Agent destinations2");
   expect(overview?.querySelector(".sh-skill-drawer__summary-item--projects")).toHaveTextContent("Project destinations3");

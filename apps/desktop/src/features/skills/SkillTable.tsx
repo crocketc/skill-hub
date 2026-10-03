@@ -79,7 +79,7 @@ const CHECK_LABELS = {
 
 const LIFECYCLE_LABELS = {
   active: "skillLibrary.table.lifecycle.active",
-  archived: "skillLibrary.table.lifecycle.archived",
+  deprecated: "skillLibrary.table.lifecycle.deprecated",
   trial: "skillLibrary.table.lifecycle.trial",
 } as const;
 

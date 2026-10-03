@@ -56,6 +56,7 @@ import {
 import {
   applySavedView,
   parseSkillLibrarySearchParams,
+  sanitizeSavedViews,
   serializeSkillLibrarySearchParams,
   skillFilterKey,
 } from "./queryState";
@@ -139,7 +140,6 @@ interface BatchBarProps {
 const BATCH_ACTION_KEYS = {
   add_to: "skillLibrary.page.batch.addTo",
   add_tag: "skillLibrary.page.batch.addTags",
-  archive: "skillLibrary.page.batch.archive",
   export: "skillLibrary.page.batch.export",
   remove_tag: "skillLibrary.page.batch.removeTags",
   security_check: "skillLibrary.page.batch.securityCheck",
@@ -209,7 +209,7 @@ function savedViewIsDirty(
 function mergeSavedViews(userViews: SavedSkillView[] | undefined): SavedSkillView[] {
   const views = new Map<string, SavedSkillView>();
   for (const view of BUILT_IN_SAVED_VIEWS) views.set(view.id, view);
-  for (const view of userViews ?? []) {
+  for (const view of sanitizeSavedViews(userViews ?? [])) {
     if (!views.has(view.id)) views.set(view.id, view);
   }
   return [...views.values()];
@@ -351,7 +351,7 @@ function BatchBar({
       <Button onClick={onClear} size="sm" variant="ghost">
         {t("skillLibrary.page.selection.clear")}
       </Button>
-      {/* AR-024 按使用频率分组：高频（部署/标签/导出/检查更新）→ 管理类（安全检查/批量流程/归档）→ 破坏性（删除，单独分组降级呈现）。 */}
+      {/* 高频操作、管理操作与破坏性删除分组呈现。 */}
       <div className="sh-skill-library__batch-actions">
         <Button
           onClick={() => onAction("add_to")}
@@ -401,9 +401,6 @@ function BatchBar({
           variant="ghost"
         >
           {t(BATCH_ACTION_KEYS.export)}
-        </Button>
-        <Button onClick={() => onAction("archive")} size="sm" variant="ghost">
-          {t(BATCH_ACTION_KEYS.archive)}
         </Button>
         <div className="sh-skill-library__batch-destructive">
           <Button onClick={onDelete} size="sm" variant="ghost">
@@ -549,6 +546,26 @@ export function SkillLibraryPage({
     [savedViewsQuery.data],
   );
   const activeSavedView = savedViews.find((view) => view.id === query.savedViewId);
+
+  useEffect(() => {
+    const hasArchivedCondition = searchParams
+      .getAll("lifecycle")
+      .some((value) => value === "archived");
+    const hasStaleSavedView =
+      savedViewsQuery.isSuccess && query.savedViewId && !activeSavedView;
+    if (!hasArchivedCondition && !hasStaleSavedView) return;
+
+    const next = new URLSearchParams(searchParams);
+    if (hasArchivedCondition) {
+      const supported = next.getAll("lifecycle").filter(
+        (value) => value === "active" || value === "trial",
+      );
+      next.delete("lifecycle");
+      supported.forEach((value) => next.append("lifecycle", value));
+    }
+    if (hasStaleSavedView) next.delete("view");
+    setSearchParams(next, { replace: true });
+  }, [activeSavedView, query.savedViewId, savedViewsQuery.isSuccess, searchParams, setSearchParams]);
 
   // T3-B 卡片视图：普通用户默认增强卡片视图；表格保留为专业模式。
   // D5：视图模式 state 上提到壳层（libraryViewContext），页面只负责
