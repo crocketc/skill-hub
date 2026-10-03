@@ -2867,6 +2867,10 @@ export type RelationGovernanceAction =
 "keep_independent_copy" |
 /**  部署副本解除受管但保留目标文件（复用既有 DetachManagement 命令）。 */
 "detach_keep_files" |
+/**  撤销独立副本保留决定；不修改当前健康事实或文件。 */
+"revoke_retention" |
+/**  显式结束来源副本关系；保留来源文件，不绕过受管入口回收。 */
+"end_relationship" |
 /**  受阻或无适用动作。 */
 "none";
 
@@ -3055,7 +3059,7 @@ export type RelationGovernanceReadiness =
  *  Current conditions shown by the governance presenter. These are facts, not
  *  action labels, and multiple reasons may be present at once.
  */
-export type RelationGovernanceReason = "decision_required" | "verification_required" | "content_changed" | "permission_limited" | "managed_target_occupied" | "operation_failed" | "target_identity_unconfirmed" | "relationship_not_convertible" | "shared_impact_confirmation_required" | "link_target_unavailable" | "link_replaced" | "subject_unavailable";
+export type RelationGovernanceReason = "decision_required" | "verification_required" | "content_changed" | "permission_limited" | "managed_target_occupied" | "operation_failed" | "target_identity_unconfirmed" | "relationship_not_convertible" | "shared_impact_confirmation_required" | "link_target_unavailable" | "link_replaced" | "subject_unavailable" | "managed_entry_requires_verified_removal";
 
 /**
  *  One relationship edge, ready for display and for batch selection. The

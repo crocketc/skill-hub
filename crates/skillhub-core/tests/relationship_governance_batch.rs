@@ -647,6 +647,41 @@ mod unified_ledger {
     }
 
     #[test]
+    fn non_destructive_actions_follow_source_evidence_and_retention_decision() {
+        for health in [SourceCopyHealth::Normal, SourceCopyHealth::NeedsValidation,
+            SourceCopyHealth::ContentChanged, SourceCopyHealth::PermissionLimited,
+            SourceCopyHealth::ManagedOccupied, SourceCopyHealth::OperationFailed] {
+            for decision in [SourceCopyDecision::Pending, SourceCopyDecision::Retained] {
+                let ledger = unified_of(vec![GovernableRelationFact::SourceCopy(
+                    source_copy_with_decision("rel-copy", health, decision),
+                )], RelationGovernanceFilters::default());
+                let actions = &ledger.rows[0].governance.action_conditions;
+                let available = |name: &str| actions.iter().any(|action| {
+                    serde_json::to_value(action.action).unwrap() == name && action.available
+                });
+                assert!(available("end_relationship"), "source copy {health:?}/{decision:?}");
+                assert_eq!(available("revoke_retention"), decision == SourceCopyDecision::Retained);
+            }
+        }
+        let ledger = unified_of(vec![GovernableRelationFact::Deployment(
+            RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+        )], RelationGovernanceFilters::default());
+        let end = ledger.rows[0]
+            .governance
+            .action_conditions
+            .iter()
+            .find(|condition| {
+                serde_json::to_value(condition.action).unwrap() == "end_relationship"
+            })
+            .expect("deployment ending condition is explicit");
+        assert!(!end.available, "deployment ending requires verified removal");
+        assert_eq!(
+            serde_json::to_value(&end.reasons).unwrap(),
+            serde_json::json!(["managed_entry_requires_verified_removal"])
+        );
+    }
+
+    #[test]
     fn six_healths_and_two_decisions_project_into_five_quick_statuses() {
         let cases = [
             (SourceCopyHealth::Normal, GovernableRelationStatus::Normal),
@@ -822,6 +857,7 @@ mod unified_ledger {
 
         let skill = skill_id(SKILL);
         let mut copy = source_copy("rel-copy", SourceCopyHealth::Normal);
+        copy.decision = skillhub_core::relationship::SourceCopyDecision::Retained;
         copy.skill_id = skill;
         copy.source_path = "C:/agents/demo/skills/notes".into();
         copy.source_path_key = "c:/agents/demo/skills/notes".into();
@@ -872,6 +908,28 @@ mod unified_ledger {
             "one physical use has one governance row"
         );
         assert_eq!(ledger.rows[0].relation_id(), "rel-deployment");
+        let end = ledger.rows[0]
+            .governance
+            .action_conditions
+            .iter()
+            .find(|condition| {
+                serde_json::to_value(condition.action).unwrap() == "end_relationship"
+            })
+            .expect("merged deployment has an explicit ending condition");
+        assert!(!end.available, "merged deployment ending requires verified removal");
+        assert_eq!(
+            serde_json::to_value(&end.reasons).unwrap(),
+            serde_json::json!(["managed_entry_requires_verified_removal"])
+        );
+        let revoke = ledger.rows[0]
+            .governance
+            .action_conditions
+            .iter()
+            .find(|condition| {
+                serde_json::to_value(condition.action).unwrap() == "revoke_retention"
+            })
+            .expect("merged row retains the source-copy revocation action");
+        assert!(revoke.available);
         assert_eq!(
             ledger.rows[0].evidence_relation_ids,
             ["rel-copy", "rel-deployment"]

@@ -163,6 +163,10 @@ pub enum RelationGovernanceAction {
     KeepIndependentCopy,
     /// 部署副本解除受管但保留目标文件（复用既有 DetachManagement 命令）。
     DetachKeepFiles,
+    /// 撤销独立副本保留决定；不修改当前健康事实或文件。
+    RevokeRetention,
+    /// 显式结束来源副本关系；保留来源文件，不绕过受管入口回收。
+    EndRelationship,
     /// 受阻或无适用动作。
     None,
 }
@@ -209,6 +213,7 @@ pub enum RelationGovernanceReason {
     LinkTargetUnavailable,
     LinkReplaced,
     SubjectUnavailable,
+    ManagedEntryRequiresVerifiedRemoval,
 }
 
 /// An executable option and the conditions that currently prevent it. The
@@ -860,6 +865,7 @@ fn governance_state(
         primary_action,
         blockers,
         &health_reasons,
+        GovernanceActionEvidence::for_fact(fact),
     );
     RelationGovernanceState {
         governance_status,
@@ -955,8 +961,28 @@ fn action_conditions(
     primary_action: RelationGovernanceAction,
     blockers: &[RelationGovernanceBlocker],
     health_reasons: &[RelationGovernanceReason],
+    evidence: GovernanceActionEvidence,
 ) -> Vec<RelationGovernanceActionCondition> {
     let mut conditions = Vec::new();
+    if evidence.contains_source_copy || evidence.contains_deployment {
+        conditions.push(RelationGovernanceActionCondition {
+            action: RelationGovernanceAction::EndRelationship,
+            available: !evidence.contains_deployment,
+            reasons: if evidence.contains_deployment {
+                vec![RelationGovernanceReason::ManagedEntryRequiresVerifiedRemoval]
+            } else {
+                Vec::new()
+            },
+        });
+    }
+    if evidence.contains_retained_source_copy {
+        conditions.push(RelationGovernanceActionCondition {
+            action: RelationGovernanceAction::RevokeRetention,
+            available: true,
+            reasons: Vec::new(),
+        });
+    }
+
     match fact {
         GovernableRelationFact::SourceCopy(_) => {
             if primary_action != RelationGovernanceAction::None {
@@ -1020,14 +1046,51 @@ fn action_conditions(
             });
         }
     }
+
     conditions
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GovernanceActionEvidence {
+    contains_source_copy: bool,
+    contains_deployment: bool,
+    contains_retained_source_copy: bool,
+}
+
+impl GovernanceActionEvidence {
+    fn for_fact(fact: &GovernableRelationFact) -> Self {
+        match fact {
+            GovernableRelationFact::SourceCopy(copy) => Self {
+                contains_source_copy: true,
+                contains_deployment: false,
+                contains_retained_source_copy: copy.decision == SourceCopyDecision::Retained,
+            },
+            GovernableRelationFact::Deployment(_) => Self {
+                contains_source_copy: false,
+                contains_deployment: true,
+                contains_retained_source_copy: false,
+            },
+        }
+    }
+
+    fn merge(self, other: Self) -> Self {
+        Self {
+            contains_source_copy: self.contains_source_copy || other.contains_source_copy,
+            contains_deployment: self.contains_deployment || other.contains_deployment,
+            contains_retained_source_copy: self.contains_retained_source_copy
+                || other.contains_retained_source_copy,
+        }
+    }
 }
 
 fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationGovernanceRow> {
     let mut merged: Vec<RelationGovernanceRow> = Vec::new();
+    let mut action_evidence = Vec::new();
     for mut row in rows {
+        let row_action_evidence = GovernanceActionEvidence::for_fact(&row.relation);
         let Some(identity) = row.target_identity.as_ref() else {
             merged.push(row);
+            action_evidence.push(row_action_evidence);
             continue;
         };
         let Some(existing_index) = merged
@@ -1035,9 +1098,11 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
             .position(|existing| existing.target_identity.as_ref() == Some(identity))
         else {
             merged.push(row);
+            action_evidence.push(row_action_evidence);
             continue;
         };
         let existing = &mut merged[existing_index];
+        let merged_action_evidence = action_evidence[existing_index].merge(row_action_evidence);
         let mut evidence = existing.evidence_relation_ids.clone();
         evidence.append(&mut row.evidence_relation_ids);
         evidence.sort();
@@ -1093,7 +1158,9 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
             existing.primary_action,
             &existing.blockers,
             &existing.governance.health_reasons,
+            merged_action_evidence,
         );
+        action_evidence[existing_index] = merged_action_evidence;
         existing.evidence_relation_ids = evidence;
         existing
             .impact
@@ -1111,6 +1178,7 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
                 row.primary_action,
                 &row.blockers,
                 &governance.health_reasons,
+                merged_action_evidence,
             );
             row.governance = governance;
             row.evidence_relation_ids = evidence_relation_ids;
