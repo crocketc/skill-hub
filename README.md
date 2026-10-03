@@ -239,6 +239,9 @@ docs/                          安装、发布和依赖说明
 
 ## 文档导航
 
+- [Agent通用开发规则](AGENTS.md)：开发、测试、安全与协作约束，以及按任务阅读的文档路由。
+- [产品规范索引](docs/product/README.md)：产品定位/模型边界、界面约定和抽屉/详情/列表操作分工；具体产品规则不在AGENTS.md反复追加。
+
 - [发布流程](docs/release-process.md)
 - [发布检查清单](docs/release-checklist.md)
 - [依赖与供应链策略](docs/dependency-policy.md)
