@@ -62,7 +62,8 @@ test("quick drawer keeps only its toolbar and name fixed while long content scro
       const scroll = root.querySelector<HTMLElement>('[data-testid="drawer-modules-scroll"]')!;
       const chrome = root.querySelector<HTMLElement>(".sh-skill-drawer__chrome")!;
       const identity = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
-      const actions = root.querySelector<HTMLElement>(".sh-skill-drawer__actions")!;
+      // 界面规范§4批注6：派发/导出/删除固定在技能名称附近顶栏，正文不再重复主体动作。
+      const actions = root.querySelector<HTMLElement>(".sh-skill-drawer__header-actions")!;
       const risk = root.querySelector<HTMLElement>(".sh-skill-drawer__risk")!;
       const description = root.querySelector<HTMLElement>(".sh-skill-drawer__description-block .sh-skill-drawer__field-value")!;
       const style = getComputedStyle(description);
@@ -71,7 +72,7 @@ test("quick drawer keeps only its toolbar and name fixed while long content scro
         panelHeight: panel.clientHeight,
         bodyHeight: scroll.clientHeight,
         identityInBody: scroll.contains(identity),
-        actionsInBody: scroll.contains(actions),
+        actionsInChrome: chrome.contains(actions),
         riskInBody: scroll.contains(risk),
         titleInChrome: chrome.contains(root.querySelector(".sh-skill-drawer__pinned-title h2")),
         descriptionHeight: description.getBoundingClientRect().height,
@@ -81,7 +82,7 @@ test("quick drawer keeps only its toolbar and name fixed while long content scro
 
     expect(measurements.bodyHeight / measurements.panelHeight).toBeGreaterThanOrEqual(0.6);
     expect(measurements.identityInBody).toBe(true);
-    expect(measurements.actionsInBody).toBe(true);
+    expect(measurements.actionsInChrome).toBe(true);
     expect(measurements.riskInBody).toBe(true);
     expect(measurements.titleInChrome).toBe(true);
     expect(measurements.descriptionHeight).toBeGreaterThan(measurements.threeLines);
@@ -148,7 +149,7 @@ test("quick drawer stays readable at the minimum viewport in a dark theme", asyn
   });
   const pinnedTitle = drawer.locator(".sh-skill-drawer__pinned-title h2");
   const titleTop = await pinnedTitle.evaluate((element) => element.getBoundingClientRect().top);
-  const runBasicCheck = drawer.getByRole("button", { name: "Run basic check" });
+  const runBasicCheck = drawer.getByRole("button", { name: "Recheck" });
   await runBasicCheck.scrollIntoViewIfNeeded();
   await expect(runBasicCheck).toBeInViewport();
   await expect.poll(() => pinnedTitle.evaluate((element) => element.getBoundingClientRect().top)).toBe(titleTop);
@@ -156,6 +157,10 @@ test("quick drawer stays readable at the minimum viewport in a dark theme", asyn
     animations: "disabled",
     path: testInfo.outputPath("quick-drawer-security-dark-800x600.png"),
   });
+  // 发现项按已确认原型收纳在 <details> 披露区，先展开再断言可读。
+  const findingsDisclosure = drawer.locator(".sh-security-results__drawer-findings summary");
+  await findingsDisclosure.scrollIntoViewIfNeeded();
+  await findingsDisclosure.click();
   const finding = drawer.getByText("发现疑似凭据字符串，请先确认来源。");
   await finding.scrollIntoViewIfNeeded();
   await expect(finding).toBeInViewport();
@@ -180,12 +185,16 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   await expect(drawer.locator(".sh-skill-drawer__summary-item--version")).toContainText("1.4.0");
   await expect(drawer.locator(".sh-skill-drawer__summary-item--agents")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--projects")).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Add to…" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Run basic check" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Run AI check" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Add to combination" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Recheck" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "AI check" })).toBeVisible();
+  // 发现项按已确认原型收纳在 <details> 披露区，先展开再断言可读。
+  const findingsDisclosure = drawer.locator(".sh-security-results__drawer-findings summary");
+  await findingsDisclosure.scrollIntoViewIfNeeded();
+  await findingsDisclosure.click();
   await expect(drawer.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
   await expect(drawer.getByRole("link", { name: "Open security checks" })).toHaveCount(0);
-  const runBasicCheck = drawer.getByRole("button", { name: "Run basic check" });
+  const runBasicCheck = drawer.getByRole("button", { name: "Recheck" });
   await runBasicCheck.scrollIntoViewIfNeeded();
   await expect(runBasicCheck).toBeInViewport();
   await page.screenshot({
@@ -193,12 +202,14 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     path: testInfo.outputPath("quick-drawer-security-module-1440x900.png"),
   });
   await drawer.getByTestId("drawer-modules-scroll").evaluate((element) => { element.scrollTop = 0; });
-  await expect(drawer.getByRole("link", { name: "View versions" })).toBeVisible();
+  // 界面规范§4批注14：版本区经“查看更新”定位详情来源更新区，不再有重复的查看版本链接。
+  await expect(drawer.getByRole("link", { name: "View update" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Delete from library" })).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();
-  const standardWidth = drawer.getByRole("button", { name: "Standard width" });
-  await expect(standardWidth).toHaveAttribute("title", "Standard width");
-  await expect(standardWidth.locator(".sh-skill-drawer__preset-icon")).toBeVisible();
+  // 界面规范§5批注15/16：单一透明图标循环宽度档位，说明当前档与下一档。
+  const widthCycle = drawer.getByRole("button", { name: /Current width: .+ Next: .+/ });
+  await expect(widthCycle).toBeVisible();
+  await expect(widthCycle.locator(".sh-skill-drawer__preset-icon")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-grid")).toBeInViewport();
   await page.screenshot({
     animations: "disabled",
@@ -215,32 +226,12 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   await page.keyboard.press("ArrowRight");
   await expect(resizeHandle).toHaveAttribute("aria-valuenow", String(initialWidth));
 
-  await drawer.getByRole("button", { name: "Configure quick drawer" }).click();
-  const configuration = drawer.getByRole("region", { name: "Configure quick drawer" });
-  const versionsToggle = configuration.getByRole("button", { name: "Versions" });
-  const relationsToggle = configuration.getByRole("button", { name: "Relations" });
-  await expect(versionsToggle).toHaveAttribute("aria-pressed", "true");
-  await expect(relationsToggle).toHaveAttribute("aria-pressed", "true");
-
-  const versionsBox = await versionsToggle.boundingBox();
-  const relationsBox = await relationsToggle.boundingBox();
-  expect(versionsBox).not.toBeNull();
-  expect(relationsBox).not.toBeNull();
-  await page.mouse.move(versionsBox!.x + versionsBox!.width / 2, versionsBox!.y + versionsBox!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(relationsBox!.x + relationsBox!.width / 2, relationsBox!.y + relationsBox!.height / 2, { steps: 6 });
-  await page.mouse.up();
+  // 界面规范§5批注3：模块配置入口与面板已移除，内容布局固定；
+  // 界面规范§4批注9：外部变更不再作为常驻空模块。
+  await expect(drawer.getByRole("button", { name: "Configure quick drawer" })).toHaveCount(0);
   const moduleHeadings = drawer.locator(".sh-skill-drawer__modules .sh-skill-drawer__module h3");
-  await expect(moduleHeadings.first()).toHaveText("Versions");
-
-  const externalChangesToggle = configuration.getByRole("button", { name: "External changes" });
-  await externalChangesToggle.click();
-  await expect(externalChangesToggle).toHaveAttribute("aria-pressed", "false");
   await expect(moduleHeadings.filter({ hasText: "External changes" })).toHaveCount(0);
-  await configuration.getByRole("button", { name: "Reset to default" }).click();
-  await expect(configuration.getByRole("button", { name: "Relations" })).toHaveAttribute("aria-pressed", "true");
-  await expect(moduleHeadings.first()).toHaveText("Relations");
-  await drawer.getByRole("button", { name: "Configure quick drawer" }).click();
+  await expect(moduleHeadings.filter({ hasText: "Dependencies and duplicates" })).toHaveCount(0);
   await drawer.getByTestId("drawer-modules-scroll").evaluate((element) => {
     element.scrollTop = 0;
   });
@@ -255,7 +246,8 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     path: path.join(screenshotDirectory, "skill-drawer-900x600.png"),
   });
   const compactFacts = drawer.locator(".sh-skill-drawer__summary-item");
-  await expect(compactFacts).toHaveCount(6);
+  // 界面规范§4批注2/11：调用方式与运行要求并入画像紧凑行（原名/别名、标签、生命周期、版本、Agent/项目去向、调用方式、运行要求）。
+  await expect(compactFacts).toHaveCount(8);
   await expect.poll(() => drawer.evaluate((root) => {
     const overview = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
     const viewport = overview.getBoundingClientRect();
@@ -304,11 +296,12 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     const factBounds = lastFact.getBoundingClientRect();
     return factBounds.top >= bodyBounds.top && factBounds.bottom <= bodyBounds.bottom + 1;
   })).toBe(true);
-  await expect(drawer.getByRole("button", { name: "Add to…" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Add to combination" })).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();
 
+  // 界面规范§4批注6：主体动作固定在顶栏、不随正文滚动，正文内不再重复；
+  // 风险摘要仍在正文滚动区内完整可见。
   for (const [section, selector] of [
-    [drawer.locator(".sh-skill-drawer__actions"), ".sh-skill-drawer__actions"],
     [drawer.getByRole("region", { name: "Risk summary" }), ".sh-skill-drawer__risk"],
   ] as const) {
     await section.scrollIntoViewIfNeeded();
@@ -321,6 +314,12 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     }, selector);
     expect(contentIsVisible, selector).toBe(true);
   }
+  const headerActionsInBody = await drawer.evaluate((root) => {
+    const body = root.querySelector<HTMLElement>("[data-testid='drawer-modules-scroll']")!;
+    return body.contains(root.querySelector(".sh-skill-drawer__header-actions"));
+  });
+  expect(headerActionsInBody).toBe(false);
+  await expect(drawer.locator(".sh-skill-drawer__header-actions")).toBeVisible();
 
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();

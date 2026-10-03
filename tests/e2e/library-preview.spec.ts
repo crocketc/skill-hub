@@ -92,7 +92,7 @@ test("quick drawer opens from card activation and the version section stays reac
   // P1-11 主次语义对调：卡区激活打开快速抽屉；抽屉内“查看编辑完整详情”进详情页。
   await page.getByRole("heading", { name: "PDF Reader" }).click();
   await expect(page.getByTestId("skill-quick-drawer")).toBeVisible();
-  await page.getByRole("link", { name: "View and edit full details" }).click();
+  await page.getByRole("link", { name: "View full details" }).click();
 
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
