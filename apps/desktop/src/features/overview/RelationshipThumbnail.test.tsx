@@ -199,7 +199,7 @@ it("deep-links each entry to its frozen relationship subpage route", async () =>
   ).toHaveAttribute("href", "/relationships/decisions");
   expect(
     screen.getByRole("link", { name: "Open needs-governance relations (3 to handle)" }),
-  ).toHaveAttribute("href", "/relationships/governance?status=needs_validation,needs_attention,blocked");
+  ).toHaveAttribute("href", "/relationships/governance?governance=pending");
 });
 
 it("keeps every entry navigable when all relationship counts are zero", async () => {

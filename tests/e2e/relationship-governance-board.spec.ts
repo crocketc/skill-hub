@@ -283,3 +283,12 @@ test("governance board has two resolution columns", async ({ page }) => {
   await expect(columns.nth(0).getByRole("heading", { level: 2, name: /^待处理/ })).toBeVisible();
   await expect(columns.nth(1).getByRole("heading", { level: 2, name: /^已完成/ })).toBeVisible();
 });
+
+test("overview governance shortcut navigates to the pending governance route", async ({ page }) => {
+  await page.goto("/__preview/overview");
+
+  const pendingGovernanceEntry = page.locator('a[href="/relationships/governance?governance=pending"]');
+  await expect(pendingGovernanceEntry).toBeVisible();
+  await pendingGovernanceEntry.click();
+  await expect(page).toHaveURL(/\/relationships\/governance\?governance=pending$/);
+});

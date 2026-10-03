@@ -116,7 +116,7 @@ export function DiscoveryRoute({
       onOpenLibrary={() => navigate("/library")}
       onOpenGovernance={(batch) => navigate(
         batch?.batchId
-          ? `/relationships/governance?from=import&scope=source_copy&status=needs_attention&batch=${encodeURIComponent(batch.batchId)}`
+          ? `/relationships/governance?from=import&scope=source_copy&governance=pending&batch=${encodeURIComponent(batch.batchId)}`
           : "/relationships/governance",
       )}
       onOpenGovernanceTask={handleOpenGovernanceTask}
