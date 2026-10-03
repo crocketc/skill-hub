@@ -2143,6 +2143,77 @@ async fn commit_import_copies_skill_into_the_central_library() {
 }
 
 #[tokio::test]
+async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
+    let database = Database::open_in_memory().expect("database");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("initialize library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Notes\n").expect("write skill");
+    let candidate = ImportCandidate::detected(
+        SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(source.path())),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    );
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill { skill_id }))
+        .await
+        .expect("skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    // 抽屉消费的单技能读模型不得比列表读模型更薄：来源、检查状态、
+    // 待处理计数与上游观察必须与 list_skills 同源。
+    assert_eq!(detail.source_kind.as_deref(), Some("local"));
+    assert!(
+        detail
+            .source_locator
+            .as_deref()
+            .is_some_and(|locator| !locator.is_empty())
+    );
+    assert_eq!(detail.basic_check, CheckState::NotChecked);
+    assert_eq!(detail.ai_check, CheckState::NotChecked);
+    assert_eq!(detail.pending_count, 0);
+    assert_eq!(detail.high_risk_count, 0);
+    assert_eq!(detail.upstream_state, None);
+}
+
+#[tokio::test]
 async fn commit_import_blocks_a_source_with_basic_security_findings_before_copying() {
     let database = Database::open_in_memory().expect("database");
     let library_root = tempfile::tempdir().expect("library root");

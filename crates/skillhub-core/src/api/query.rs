@@ -264,6 +264,22 @@ pub struct SkillResult {
     /// Read-only declared runtime requirements. Empty when none are declared.
     #[serde(default)]
     pub declared_requirements: Vec<DeclaredRequirementFact>,
+    /// 与列表投影同源的来源、检查与待处理事实；单技能抽屉读模型不得比
+    /// 列表读模型更薄（get_detail 与 list_page 共用 status_columns）。
+    #[serde(default)]
+    pub source_kind: Option<String>,
+    #[serde(default)]
+    pub source_locator: Option<String>,
+    #[serde(default)]
+    pub basic_check: crate::check::CheckState,
+    #[serde(default)]
+    pub ai_check: crate::check::CheckState,
+    #[serde(default)]
+    pub pending_count: u32,
+    #[serde(default)]
+    pub high_risk_count: u32,
+    #[serde(default)]
+    pub upstream_state: Option<crate::source::SourceState>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {

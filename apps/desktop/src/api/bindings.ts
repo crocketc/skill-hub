@@ -3923,6 +3923,17 @@ export type SkillResult = {
 	invocation_policy?: InvocationPolicyFact | null,
 	/**  Read-only declared runtime requirements. Empty when none are declared. */
 	declared_requirements?: DeclaredRequirementFact[],
+	/**
+	 *  与列表投影同源的来源、检查与待处理事实；单技能抽屉读模型不得比
+	 *  列表读模型更薄（get_detail 与 list_page 共用 status_columns）。
+	 */
+	source_kind?: string | null,
+	source_locator?: string | null,
+	basic_check?: CheckState,
+	ai_check?: CheckState,
+	pending_count?: number,
+	high_risk_count?: number,
+	upstream_state?: SourceState | null,
 };
 
 export type SkillSortColumn = "name" | "lifecycle" | "agent_deployments" | "project_deployments" | "version" | "updated";

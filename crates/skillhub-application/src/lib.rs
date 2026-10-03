@@ -6236,6 +6236,13 @@ impl ApplicationFacade for LocalApplicationFacade {
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,
+                        source_kind: skill.source_kind,
+                        source_locator: skill.source_locator,
+                        basic_check: skill.basic_check,
+                        ai_check: skill.ai_check,
+                        pending_count: skill.pending_count,
+                        high_risk_count: skill.high_risk_count,
+                        upstream_state: skill.upstream_state,
                     }))
                 })
             }

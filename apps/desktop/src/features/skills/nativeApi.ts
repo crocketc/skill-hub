@@ -12,6 +12,7 @@ import {
   unavailableSkillLibraryFacade,
   type AgentDeployment,
   type CheckState,
+  type ProjectDeployment,
   type SkillColumnId,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
@@ -76,9 +77,9 @@ export const NATIVE_SORTABLE_COLUMNS: SkillColumnId[] = [
 /** The list read model persists the latest explicit upstream observation. */
 export const NATIVE_VERSION_UPGRADE_FILTER_SUPPORTED = true;
 
-function upgradeAvailableOf(item: SkillListItem): boolean {
-  return item.upstream_state === "update_available"
-    || item.upstream_state === "update_available_with_local_changes";
+function upgradeAvailableOf(upstreamState: SkillListItem["upstream_state"]): boolean {
+  return upstreamState === "update_available"
+    || upstreamState === "update_available_with_local_changes";
 }
 
 function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployment>): SkillTableRow {
@@ -113,7 +114,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     tags: item.tags,
     translatedDescription: item.translated_description ?? undefined,
     license: item.license ?? undefined,
-    upgradeAvailable: upgradeAvailableOf(item),
+    upgradeAvailable: upgradeAvailableOf(item.upstream_state),
   };
 }
 
@@ -153,17 +154,19 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
   // 未设置别名（与原名同值）时如实省略别名。
   const aliased = payload.display_name !== payload.runtime_name;
   const row: SkillTableRow = {
-    aiCheck: "not_run",
+    // 抽屉读模型与列表同源（get_detail 与 list_page 共用 status_columns）：
+    // 检查状态、来源、待处理计数与上游提示直接来自 get_skill，不再二次查询。
+    aiCheck: checkStateOf(payload.ai_check ?? "not_checked"),
     agentDeploymentCount: 0,
     alias: aliased ? payload.display_name : undefined,
-    basicCheck: "not_run",
+    basicCheck: checkStateOf(payload.basic_check ?? "not_checked"),
     currentVersion: "unknown",
-    highRiskCount: 0,
+    highRiskCount: payload.high_risk_count ?? 0,
     id: payload.skill_id,
     lifecycle: "active",
     name: payload.display_name,
     originalName: payload.runtime_name,
-    pendingCount: 0,
+    pendingCount: payload.pending_count ?? 0,
     projectDeploymentCount: 0,
     purpose: "",
     invocationPolicy: payload.invocation_policy
@@ -174,8 +177,10 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
         }
       : undefined,
     requirements: requirementLabels(payload.declared_requirements),
+    // 与列表同规则：定位器优先，回退来源种类；都没有时如实省略。
+    source: payload.source_locator ?? payload.source_kind ?? undefined,
     tags: [],
-    upgradeAvailable: false,
+    upgradeAvailable: upgradeAvailableOf(payload.upstream_state ?? null),
   };
   return {
     ...row,
@@ -318,14 +323,8 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       view.license = skill.license ?? undefined;
       view.note = skill.user_note ?? undefined;
       view.lifecycle = skill.trial_due ? "trial" : skill.lifecycle === "Normal" ? "active" : "archived";
-      if (skill.current_version) {
-        const checks = await Promise.all([
-          queryApplication({ type: "get_basic_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),
-          queryApplication({ type: "get_llm_safety_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),
-        ]).catch(() => [] as AppQueryResult[]);
-        if (checks[0]?.type === "basic_check_result") view.basicCheck = checkStateOf(checks[0].payload.state);
-        if (checks[1]?.type === "llm_safety_check_result") view.aiCheck = checkStateOf(checks[1].payload.state);
-      }
+      // 检查状态、来源、待处理计数与上游提示已由 asQuickView 从 get_skill
+      // 同源读取（与列表投影共用 status_columns），不再逐项二次查询。
       try {
         const relations = await queryApplication({ type: "get_deployment_relations", payload: { skill_id: skillId } });
         let targetsResult: AppQueryResult | undefined;
@@ -338,19 +337,38 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
               targets.set(target.physical_id, target);
             }
           }
-          view.agentDeployments = relations.payload.flatMap((record) => {
+          const agentEntries: AgentDeployment[] = [];
+          const projectEntries: ProjectDeployment[] = [];
+          for (const record of relations.payload) {
             const target = targets.get(record.target_id);
-            if (!target) return [{ id: record.id, name: record.runtime_name }];
-            if (!target.agent_client_id) return [];
-            return [{
-              id: record.id,
-              name: target.label,
-              agentId: target.agent_client_id,
-              brand: target.agent_profile_id ?? undefined,
-              sharedDirectory: target.shared_directory,
-            }];
-          });
-          view.agentDeploymentCount = relations.payload.length;
+            if (!target) {
+              // 目标读取失败时只保留 Agent 关系的存在性；项目名称/路径
+              // 无法构造，诚实留空，不伪造事实。
+              agentEntries.push({ id: record.id, name: record.runtime_name });
+              continue;
+            }
+            if (target.agent_client_id) {
+              agentEntries.push({
+                id: record.id,
+                name: target.label,
+                agentId: target.agent_client_id,
+                brand: target.agent_profile_id ?? undefined,
+                sharedDirectory: target.shared_directory,
+              });
+            } else {
+              // 项目使用去向：注册目标的可读名称与目录路径；计数与
+              // Agent 分开统计，项目关系不得计入 Agent 数量。
+              projectEntries.push({
+                id: target.id,
+                name: target.label,
+                path: target.path,
+              });
+            }
+          }
+          view.agentDeployments = agentEntries;
+          view.agentDeploymentCount = agentEntries.length;
+          view.projectDeployments = projectEntries;
+          view.projectDeploymentCount = projectEntries.length;
         }
       } catch {
         // 部署关系读取失败时保持占位零值，不在抽屉里伪造数据。
