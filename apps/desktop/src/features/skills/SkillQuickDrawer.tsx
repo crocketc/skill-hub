@@ -70,6 +70,7 @@ export interface SkillQuickDrawerProps {
 type OptionalDrawerModule = (typeof OPTIONAL_DRAWER_MODULES)[number];
 
 interface ModuleProps {
+  libraryReturn?: SkillLibraryReturnState;
   view: SkillQuickView;
   versionsHref?: string;
   versionsState?: { libraryReturn: SkillLibraryReturnState };
@@ -105,7 +106,6 @@ const FIXED_DRAWER_MODULE_ORDER = [
   "relations",
   "usage_evidence",
   "source_license",
-  "versions",
 ] as const satisfies readonly OptionalDrawerModule[];
 
 const DRAWER_PRESET_CYCLE: readonly DrawerPreset[] = ["standard", "wide", "near_full"];
@@ -248,10 +248,12 @@ function DrawerBoundedPopover({
   );
 }
 
-function RelationsModule({ view }: ModuleProps) {
+function RelationsModule({ libraryReturn, view }: ModuleProps) {
   const { t } = useTranslation();
   const agentDeployments = view.agentDeployments ?? [];
   const projects = view.projectDeployments ?? [];
+  const hasUnresolvedTargets = (view.unresolvedDeploymentCount ?? 0) > 0;
+  const governanceHref = `/relationships/governance?from=library&skillId=${encodeURIComponent(view.id)}`;
 
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
@@ -259,7 +261,11 @@ function RelationsModule({ view }: ModuleProps) {
         <div className="sh-skill-drawer__relation-group">
           <div className="sh-skill-drawer__relation-heading">
             <strong>{t("skillLibrary.drawer.values.agents")}</strong>
-            <span className="sh-skill-drawer__relation-count">{view.agentDeploymentCount}</span>
+            <span className="sh-skill-drawer__relation-count">
+              {hasUnresolvedTargets
+                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.agentDeploymentCount })
+                : view.agentDeploymentCount}
+            </span>
           </div>
           {agentDeployments.length > 0 ? (
             <div
@@ -278,13 +284,19 @@ function RelationsModule({ view }: ModuleProps) {
               />
             </div>
           ) : (
-            <EmptyValue />
+            hasUnresolvedTargets
+              ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
+              : <EmptyValue />
           )}
         </div>
         <div className="sh-skill-drawer__relation-group">
           <div className="sh-skill-drawer__relation-heading">
             <strong>{t("skillLibrary.drawer.values.projects")}</strong>
-            <span className="sh-skill-drawer__relation-count">{view.projectDeploymentCount}</span>
+            <span className="sh-skill-drawer__relation-count">
+              {hasUnresolvedTargets
+                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.projectDeploymentCount })
+                : view.projectDeploymentCount}
+            </span>
           </div>
           {projects.length > 0 ? (
             <div
@@ -305,61 +317,45 @@ function RelationsModule({ view }: ModuleProps) {
               </ul>
             </div>
           ) : (
-            <EmptyValue />
+            hasUnresolvedTargets
+              ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
+              : <EmptyValue />
           )}
         </div>
       </div>
+      {hasUnresolvedTargets ? (
+        <div className="sh-skill-drawer__unresolved" role="status">
+          <Icon aria-hidden="true" name="info" size={16} />
+          <p>{t("skillLibrary.drawer.unresolvedTargets", { count: view.unresolvedDeploymentCount })}</p>
+          <Link
+            className="sh-button sh-button--ghost sh-button--sm"
+            state={libraryReturn ? { libraryReturn } : undefined}
+            to={governanceHref}
+          >
+            {t("skillLibrary.drawer.reviewRelationships")}
+          </Link>
+        </div>
+      ) : null}
     </ModuleCard>
   );
 }
 
-function VersionsModule({ versionsHref, versionsState, view }: ModuleProps) {
+function SourceLicenseModule({ versionsHref, versionsState, view }: ModuleProps) {
   const { t } = useTranslation();
   return (
-    <ModuleCard title={t(MODULE_LABEL_KEYS.versions)}>
-      <p>{t("skillLibrary.drawer.values.currentVersion", { version: view.currentVersion })}</p>
+    <ModuleCard title={t("skillLibrary.drawer.modules.sourceVersion")}>
+      <dl className="sh-skill-drawer__facts sh-skill-drawer__facts--stacked">
+        <div><dt>{t("skillLibrary.drawer.values.source")}</dt><dd>{view.source ?? <EmptyValue />}</dd></div>
+        <div><dt>{t("skillLibrary.drawer.modules.versions")}</dt><dd>{view.currentVersion}</dd></div>
+        <div><dt>{t("skillLibrary.drawer.values.ownership")}</dt><dd>{view.ownership ?? <EmptyValue />}</dd></div>
+        <div><dt>{t("skillLibrary.drawer.values.license")}</dt><dd>{view.license ?? <EmptyValue />}</dd></div>
+      </dl>
       {view.upgradeAvailable ? (
         <div className="sh-skill-drawer__version-update">
-          <p className="sh-skill-drawer__secondary">
-            {t("skillLibrary.drawer.values.updateAvailable")}
-          </p>
-          {versionsHref ? (
-            <Link
-              className="sh-button sh-button--secondary sh-button--sm"
-              state={versionsState}
-              to={versionsHref}
-            >
-              {t("skillLibrary.drawer.viewUpdate")}
-            </Link>
-          ) : null}
+          <Icon name="info" /><strong>{t("skillLibrary.drawer.values.updateAvailable")}</strong>
+          {versionsHref ? <Link className="sh-button sh-button--secondary sh-button--sm" state={versionsState} to={versionsHref}>{t("skillLibrary.drawer.viewUpdate")}</Link> : null}
         </div>
-      ) : (
-        <p className="sh-skill-drawer__secondary">
-          {t("skillLibrary.drawer.values.upToDate")}
-        </p>
-      )}
-    </ModuleCard>
-  );
-}
-
-function SourceLicenseModule({ view }: ModuleProps) {
-  const { t } = useTranslation();
-  return (
-    <ModuleCard title={t(MODULE_LABEL_KEYS.source_license)}>
-      <dl className="sh-skill-drawer__facts sh-skill-drawer__facts--stacked">
-        <div>
-          <dt>{t("skillLibrary.drawer.values.source")}</dt>
-          <dd>{view.source ?? <EmptyValue />}</dd>
-        </div>
-        <div>
-          <dt>{t("skillLibrary.drawer.values.ownership")}</dt>
-          <dd>{view.ownership ?? <EmptyValue />}</dd>
-        </div>
-        <div>
-          <dt>{t("skillLibrary.drawer.values.license")}</dt>
-          <dd>{view.license ?? <EmptyValue />}</dd>
-        </div>
-      </dl>
+      ) : <p className="sh-skill-drawer__secondary">{t("skillLibrary.drawer.values.upToDate")}</p>}
     </ModuleCard>
   );
 }
@@ -408,7 +404,6 @@ const OPTIONAL_MODULE_RENDERERS: Record<
   security_checks: SecurityChecksModule,
   source_license: SourceLicenseModule,
   usage_evidence: UsageEvidenceModule,
-  versions: VersionsModule,
 };
 
 interface IdentityRegionProps extends ModuleProps {
@@ -1124,13 +1119,21 @@ function IdentityRegion({
             <span className="sh-skill-drawer__field-label">
               {t("skillLibrary.drawer.values.agentDestinations")}
             </span>
-            <span className="sh-skill-drawer__summary-value">{view.agentDeploymentCount}</span>
+            <span className="sh-skill-drawer__summary-value">
+              {view.unresolvedDeploymentCount
+                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.agentDeploymentCount })
+                : view.agentDeploymentCount}
+            </span>
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--projects">
             <span className="sh-skill-drawer__field-label">
               {t("skillLibrary.drawer.values.projectDestinations")}
             </span>
-            <span className="sh-skill-drawer__summary-value">{view.projectDeploymentCount}</span>
+            <span className="sh-skill-drawer__summary-value">
+              {view.unresolvedDeploymentCount
+                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.projectDeploymentCount })
+                : view.projectDeploymentCount}
+            </span>
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--invocation">
             <span className="sh-skill-drawer__field-label">
@@ -1580,7 +1583,7 @@ export function SkillQuickDrawer({
 
   const view = localView ?? detailQuery.data;
   const versionsHref = skillId
-    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#versions`
+    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#source`
     : undefined;
   const versionsState = libraryReturn ? { libraryReturn } : undefined;
 
@@ -1855,12 +1858,13 @@ export function SkillQuickDrawer({
 
           {view ? (
             <div className="sh-skill-drawer__modules">
-              {FIXED_DRAWER_MODULE_ORDER.map((moduleId) => {
+          {FIXED_DRAWER_MODULE_ORDER.map((moduleId) => {
                 const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
                 return (
                   <ModuleRenderer
                     key={moduleId}
                     securityFacade={securityFacade}
+                    libraryReturn={libraryReturn}
                     versionsHref={versionsHref}
                     versionsState={versionsState}
                     view={view}

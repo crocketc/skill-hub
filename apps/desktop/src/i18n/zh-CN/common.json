@@ -1313,6 +1313,7 @@
         "relations": "关联关系",
         "riskSummary": "风险摘要",
         "securityChecks": "安全检查",
+        "sourceVersion": "来源与版本",
         "sourceLicense": "来源与许可证",
         "usageEvidence": "使用证据",
         "versions": "版本"
@@ -1367,11 +1368,14 @@
         "saveFailed": "译文未能写入我的用途。",
         "useAsPurpose": "写入我的用途"
       },
+      "reviewRelationships": "查看关系治理",
+      "unresolvedTargets": "{{count}} 条关系的目标身份暂时无法读取。请重试查询或查看关系。",
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
         "agentDestinations": "Agent 去向",
         "alias": "别名",
+        "knownDestinationCount": "已识别 {{count}} 个",
         "currentVersion": "当前版本：{{version}}",
         "invocation": "调用方式：",
         "requirements": "运行要求",
@@ -1385,6 +1389,7 @@
         "purpose": "我的用途",
         "projectDestinations": "项目去向",
         "projects": "项目",
+        "unresolvedDestinationGroup": "部分去向暂时无法识别。",
         "source": "来源",
         "tags": "标签",
         "translatedDescription": "描述译文",

@@ -139,7 +139,7 @@ it("keeps the quick view honest when the skill has no current version", async ()
   expect(view.agentDeploymentCount).toBe(0);
 });
 
-it("keeps agent entries honest when deployment targets cannot be read", async () => {
+it("keeps unknown mixed targets out of Agent and project counts", async () => {
   vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
     const request = query as { type: string };
     if (request.type === "get_skill") return skillPayload() as never;
@@ -156,8 +156,9 @@ it("keeps agent entries honest when deployment targets cannot be read", async ()
   });
 
   const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
-  expect(view.agentDeploymentCount).toBe(1);
-  expect(view.agentDeployments?.[0]).toMatchObject({ id: "d1", name: "pdf-reader" });
+  expect(view.agentDeploymentCount).toBe(0);
+  expect(view.agentDeployments).toEqual([]);
+  expect(view.unresolvedDeploymentCount).toBe(1);
   // 目标读取失败时不伪造项目事实：项目列诚实为空，计数为 0。
   expect(view.projectDeployments).toEqual([]);
   expect(view.projectDeploymentCount).toBe(0);

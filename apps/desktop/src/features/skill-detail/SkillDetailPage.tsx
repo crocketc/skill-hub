@@ -492,7 +492,7 @@ export function SkillDetailPage({
                   {t("skillDetail.versions.exportSkill")}
                 </Button>
               </div>
-              <SourceUpdatePanel facade={facade} skillId={skillId} />
+              <div id="source"><SourceUpdatePanel facade={facade} skillId={skillId} /></div>
               <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
             </div>
             <div className="sh-skill-detail__block" id="external">

@@ -343,12 +343,11 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
           }
           const agentEntries: AgentDeployment[] = [];
           const projectEntries: ProjectDeployment[] = [];
+          let unresolvedCount = 0;
           for (const record of relations.payload) {
             const target = targets.get(record.target_id);
             if (!target) {
-              // 目标读取失败时只保留 Agent 关系的存在性；项目名称/路径
-              // 无法构造，诚实留空，不伪造事实。
-              agentEntries.push({ id: record.id, name: record.runtime_name });
+              unresolvedCount += 1;
               continue;
             }
             if (target.agent_client_id) {
@@ -369,6 +368,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
               });
             }
           }
+          view.unresolvedDeploymentCount = unresolvedCount;
           view.agentDeployments = agentEntries;
           view.agentDeploymentCount = agentEntries.length;
           view.projectDeployments = projectEntries;
