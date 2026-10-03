@@ -1,9 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { displayPath } from "../../platform/displayPath";
 import {
   type ComponentType,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
@@ -34,7 +37,7 @@ import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { SecurityResults } from "../security/SecurityResults";
-import type { SecurityFacade } from "../security/api";
+import type { SecurityCheck, SecurityCheckKind, SecurityFacade, SecurityFinding } from "../security/api";
 import {
   OPTIONAL_DRAWER_MODULES,
   clampDrawerWidth,
@@ -108,6 +111,18 @@ const LIFECYCLE_LABEL_KEYS = {
   trial: "skillLibrary.filters.lifecycleOptions.trial",
 } as const satisfies Record<SkillQuickView["lifecycle"], string>;
 
+const PROTOTYPE_ACTION_TITLE_KEYS = {
+  dispatch: "skillLibrary.drawer.prototype.actionTitles.dispatch",
+  export: "skillLibrary.drawer.prototype.actionTitles.export",
+  delete: "skillLibrary.drawer.prototype.actionTitles.delete",
+} as const;
+
+const PROTOTYPE_ACTION_IMPACT_KEYS = {
+  dispatch: "skillLibrary.drawer.prototype.actionImpacts.dispatch",
+  export: "skillLibrary.drawer.prototype.actionImpacts.export",
+  delete: "skillLibrary.drawer.prototype.actionImpacts.delete",
+} as const;
+
 function ModuleCard({ children, title }: ModuleCardProps) {
   return (
     <section className="sh-skill-drawer__module">
@@ -135,10 +150,339 @@ function ValueList({ values }: { values: string[] }) {
 }
 
 const MAX_VISIBLE_PROJECTS = 3;
+const MAX_PROTOTYPE_VISIBLE_TAGS = 4;
+
+function PrototypeTranslationIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="17" viewBox="0 0 24 24" width="17">
+      <path d="m12 2.75 1.45 5.8 5.8 1.45-5.8 1.45-1.45 5.8-1.45-5.8-5.8-1.45 5.8-1.45 1.45-5.8Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.65" />
+      <path d="m19.25 15.25.72 2.78 2.78.72-2.78.72-.72 2.78-.72-2.78-2.78-.72 2.78-.72.72-2.78Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.35" />
+    </svg>
+  );
+}
+
+function PrototypePlusIcon() {
+  return <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /></svg>;
+}
+
+function PrototypeCopyIcon() {
+  return <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16"><rect height="13" rx="2" stroke="currentColor" strokeWidth="1.6" width="13" x="8" y="8" /><path d="M16 5H6a2 2 0 0 0-2 2v10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>;
+}
+
+function PrototypeCalendarIcon() {
+  return <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16"><rect height="15" rx="2" stroke="currentColor" strokeWidth="1.6" width="17" x="3.5" y="5.5" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>;
+}
+
+function useBoundedPrototypePopover() {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 12, top: 12 });
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusOnClose = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (contentRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      restoreFocusOnClose.current = false;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [open]);
+  const close = (restoreFocus = false) => {
+    restoreFocusOnClose.current = restoreFocus;
+    setOpen(false);
+  };
+  const onOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) restoreFocusOnClose.current = true;
+    setOpen(nextOpen);
+  };
+  const onCloseAutoFocus = (event: Event) => {
+    event.preventDefault();
+    if (restoreFocusOnClose.current) triggerRef.current?.focus();
+    restoreFocusOnClose.current = false;
+  };
+  return {
+    close,
+    contentRef,
+    onCloseAutoFocus,
+    onOpenChange,
+    open,
+    position,
+    setPosition,
+    setOpen,
+    triggerRef,
+  };
+}
+
+interface PrototypePopoverProps {
+  ariaLabel: string;
+  children: ReactNode;
+  className: string;
+  contentRef: MutableRefObject<HTMLDivElement | null>;
+  onCloseAutoFocus: (event: Event) => void;
+  onOpenChange: (open: boolean) => void;
+  id?: string;
+  open: boolean;
+  position: { left: number; top: number };
+  setPosition: (position: { left: number; top: number }) => void;
+  triggerRef: MutableRefObject<HTMLButtonElement | null>;
+}
+
+function PrototypePopover({
+  ariaLabel,
+  children,
+  className,
+  contentRef,
+  id,
+  onCloseAutoFocus,
+  onOpenChange,
+  open,
+  position,
+  setPosition,
+  triggerRef,
+}: PrototypePopoverProps) {
+  const { t } = useTranslation();
+  const titleId = useId();
+  const setContentElement = (element: HTMLDivElement | null) => {
+    contentRef.current = element;
+    const trigger = triggerRef.current;
+    if (!element || !trigger) return;
+    const anchor = trigger.getBoundingClientRect();
+    const panel = element.getBoundingClientRect();
+    setPosition({
+      left: Math.max(12, Math.min(anchor.left, window.innerWidth - panel.width - 12)),
+      top: Math.max(12, Math.min(anchor.bottom + 8, window.innerHeight - panel.height - 12)),
+    });
+  };
+  return (
+    <DialogPrimitive.Root modal={false} onOpenChange={onOpenChange} open={open}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content
+          aria-describedby={`${titleId}-description`}
+          aria-labelledby={titleId}
+          className={className}
+          id={id}
+          onCloseAutoFocus={onCloseAutoFocus}
+          onInteractOutside={(event) => event.preventDefault()}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            contentRef.current?.focus();
+          }}
+          ref={setContentElement}
+          style={{ left: position.left, top: position.top }}
+          tabIndex={-1}
+        >
+          <DialogPrimitive.Title className="sh-visually-hidden" id={titleId}>{ariaLabel}</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sh-visually-hidden" id={`${titleId}-description`}>
+            {t("skillLibrary.drawer.prototype.popoverDescription")}
+          </DialogPrimitive.Description>
+          {children}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
+function PrototypeLifecycleControl() {
+  const { t } = useTranslation();
+  const reviewPopover = useBoundedPrototypePopover();
+  const [isTrial, setIsTrial] = useState(true);
+  const [reviewDate, setReviewDate] = useState("2026-10-17");
+  const [draftDate, setDraftDate] = useState(reviewDate);
+  const openDateEditor = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    reviewPopover.triggerRef.current = event.currentTarget;
+    setDraftDate(reviewDate);
+    reviewPopover.setOpen(true);
+  };
+  return (
+    <div className="sh-skill-drawer__prototype-lifecycle">
+      <span className={`sh-skill-drawer__prototype-lifecycle-state${isTrial ? " is-trial" : ""}`}>
+        {isTrial ? t("skillLibrary.drawer.prototype.trial") : t("skillLibrary.drawer.prototype.regular")}
+      </span>
+      {isTrial ? <time dateTime={reviewDate}>{reviewDate}</time> : null}
+      {isTrial ? (
+        <Button aria-expanded={reviewPopover.open} aria-haspopup="dialog" aria-label={t("skillLibrary.drawer.prototype.adjustReviewDate")} className="sh-skill-drawer__prototype-calendar" data-tooltip={t("skillLibrary.drawer.prototype.adjustReviewDate")} onClick={openDateEditor} size="sm" title={t("skillLibrary.drawer.prototype.adjustReviewDate")} variant="ghost">
+          <PrototypeCalendarIcon />
+        </Button>
+      ) : (
+        <Button aria-expanded={reviewPopover.open} aria-haspopup="dialog" aria-label={t("skillLibrary.drawer.prototype.setTrial")} className="sh-skill-drawer__prototype-calendar" data-tooltip={t("skillLibrary.drawer.prototype.setTrial")} onClick={openDateEditor} size="sm" title={t("skillLibrary.drawer.prototype.setTrial")} variant="ghost">
+          <PrototypeCalendarIcon />
+        </Button>
+      )}
+      {isTrial ? (
+        <Button className="sh-skill-drawer__prototype-convert-regular" onClick={() => setIsTrial(false)} size="sm" variant="secondary">
+          {t("skillLibrary.drawer.prototype.convertRegular")}
+        </Button>
+      ) : null}
+      {reviewPopover.open ? (
+        <PrototypePopover
+          ariaLabel={t("skillLibrary.drawer.prototype.reviewDateDialog")}
+          className="sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-lifecycle-popover"
+          contentRef={reviewPopover.contentRef}
+          onCloseAutoFocus={reviewPopover.onCloseAutoFocus}
+          onOpenChange={reviewPopover.onOpenChange}
+          open={reviewPopover.open}
+          position={reviewPopover.position}
+          setPosition={reviewPopover.setPosition}
+          triggerRef={reviewPopover.triggerRef}
+        >
+          <label>
+            {t("skillLibrary.drawer.prototype.reviewDate")}
+            <input aria-label={t("skillLibrary.drawer.prototype.reviewDate")} onChange={(event) => setDraftDate(event.currentTarget.value)} type="date" value={draftDate} />
+          </label>
+          <div className="sh-skill-drawer__prototype-popover-actions">
+            <Button onClick={() => { setReviewDate(draftDate); setIsTrial(true); reviewPopover.close(true); }} size="sm">
+              {t("skillLibrary.drawer.prototype.saveDatePreview")}
+            </Button>
+            <Button onClick={() => reviewPopover.close(true)} size="sm" variant="ghost">
+              {t("actions.cancel")}
+            </Button>
+          </div>
+        </PrototypePopover>
+      ) : null}
+    </div>
+  );
+}
+
+const PROTOTYPE_COLLECTIONS = ["文档工具", "PDF 工作流", "研发工具"];
+
+function PrototypeCollectionsModule() {
+  const { t } = useTranslation();
+  const collectionPopover = useBoundedPrototypePopover();
+  const [selected, setSelected] = useState<string[]>(PROTOTYPE_COLLECTIONS.slice(0, 2));
+  const [draft, setDraft] = useState<string[]>(selected);
+  const collectionLabelId = useId();
+  const openEditor = (event: ReactMouseEvent<HTMLButtonElement>, next = selected) => {
+    collectionPopover.triggerRef.current = event.currentTarget;
+    setDraft([...next]);
+    collectionPopover.setOpen(true);
+  };
+  const toggleCollection = (collection: string) => {
+    setDraft((current) => current.includes(collection)
+      ? current.filter((item) => item !== collection)
+      : [...current, collection]);
+  };
+  return (
+    <ModuleCard title={t("skillLibrary.drawer.prototype.collectionsTitle")}>
+      <div className="sh-skill-drawer__prototype-collections">
+        <div aria-label={t("skillLibrary.drawer.prototype.collectionsTitle")} className="sh-skill-drawer__prototype-collection-chips" role="list">
+          {selected.map((collection) => (
+            <span className="sh-skill-drawer__prototype-collection-chip" key={collection} role="listitem">
+              {collection}
+              <Button aria-label={t("skillLibrary.drawer.prototype.removeCollection", { name: collection })} onClick={(event) => openEditor(event, selected.filter((item) => item !== collection))} size="sm" variant="ghost">
+                <Icon name="close" size={14} />
+              </Button>
+            </span>
+          ))}
+        </div>
+        <Button aria-label={t("skillLibrary.drawer.prototype.editCollections")} className="sh-skill-drawer__prototype-collection-add" onClick={(event) => openEditor(event)} size="sm" variant="ghost">
+          <PrototypePlusIcon />
+        </Button>
+      </div>
+      {collectionPopover.open ? (
+        <PrototypePopover
+          ariaLabel={t("skillLibrary.drawer.prototype.collectionsDialog")}
+          className="sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-collections-popover"
+          contentRef={collectionPopover.contentRef}
+          onCloseAutoFocus={collectionPopover.onCloseAutoFocus}
+          onOpenChange={collectionPopover.onOpenChange}
+          open={collectionPopover.open}
+          position={collectionPopover.position}
+          setPosition={collectionPopover.setPosition}
+          triggerRef={collectionPopover.triggerRef}
+        >
+          <strong id={collectionLabelId}>{t("skillLibrary.drawer.prototype.collectionsDialog")}</strong>
+          <fieldset>
+            <legend>{t("skillLibrary.drawer.prototype.collectionsHelp")}</legend>
+            {PROTOTYPE_COLLECTIONS.map((collection) => (
+              <label key={collection}>
+                <input checked={draft.includes(collection)} onChange={() => toggleCollection(collection)} type="checkbox" />
+                <span>{collection}</span>
+              </label>
+            ))}
+          </fieldset>
+          <div className="sh-skill-drawer__prototype-popover-actions">
+            <Button onClick={() => { setSelected(draft); collectionPopover.close(true); }} size="sm">
+              {t("skillLibrary.drawer.prototype.saveCollections")}
+            </Button>
+            <Button onClick={() => collectionPopover.close(true)} size="sm" variant="ghost">
+              {t("actions.cancel")}
+            </Button>
+          </div>
+        </PrototypePopover>
+      ) : null}
+    </ModuleCard>
+  );
+}
+
+const PROTOTYPE_SKILL_PATH = "C:\\preview\\SkillHub\\skills\\pdf-reader";
+
+function PrototypeSubjectLocationModule() {
+  const { t } = useTranslation();
+  const locationPopover = useBoundedPrototypePopover();
+  const [copyStatus, setCopyStatus] = useState("");
+  const openLocationPreview = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    locationPopover.triggerRef.current = event.currentTarget;
+    locationPopover.setOpen(true);
+  };
+  const copySamplePath = async () => {
+    try {
+      await navigator.clipboard.writeText(PROTOTYPE_SKILL_PATH);
+      setCopyStatus(t("skillLibrary.drawer.prototype.samplePathCopied"));
+    } catch {
+      setCopyStatus(t("skillLibrary.drawer.prototype.samplePathCopyUnavailable"));
+    }
+  };
+  return (
+    <ModuleCard title={t("skillLibrary.drawer.prototype.subjectLocationTitle")}>
+      <div className="sh-skill-drawer__prototype-location">
+        <code title={PROTOTYPE_SKILL_PATH}>{PROTOTYPE_SKILL_PATH}</code>
+        <span>{t("skillLibrary.drawer.prototype.sampleOnly")}</span>
+        <div>
+          <Button aria-label={t("skillLibrary.drawer.prototype.openSampleLocation")} onClick={openLocationPreview} size="sm" variant="ghost">
+            <Icon name="open-external" size={16} />
+          </Button>
+          <Button aria-label={t("skillLibrary.drawer.prototype.copySamplePath")} onClick={() => void copySamplePath()} size="sm" variant="ghost">
+            <PrototypeCopyIcon />
+          </Button>
+        </div>
+        {copyStatus ? <span aria-live="polite" className="sh-visually-hidden" role="status">{copyStatus}</span> : null}
+      </div>
+      {locationPopover.open ? (
+        <PrototypePopover
+          ariaLabel={t("skillLibrary.drawer.prototype.subjectLocationDialog")}
+          className="sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-location-popover"
+          contentRef={locationPopover.contentRef}
+          onCloseAutoFocus={locationPopover.onCloseAutoFocus}
+          onOpenChange={locationPopover.onOpenChange}
+          open={locationPopover.open}
+          position={locationPopover.position}
+          setPosition={locationPopover.setPosition}
+          triggerRef={locationPopover.triggerRef}
+        >
+          <strong>{t("skillLibrary.drawer.prototype.subjectLocationDialog")}</strong>
+          <code title={PROTOTYPE_SKILL_PATH}>{PROTOTYPE_SKILL_PATH}</code>
+          <p>{t("skillLibrary.drawer.prototype.noFilesystemOpen")}</p>
+          <Button onClick={() => locationPopover.close(true)} size="sm" variant="ghost">
+            {t("skillLibrary.drawer.prototype.closeLocationPreview")}
+          </Button>
+        </PrototypePopover>
+      ) : null}
+    </ModuleCard>
+  );
+}
 
 function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { drawerPrototype?: boolean }) {
   const { t } = useTranslation();
   const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const relationPopover = useBoundedPrototypePopover();
+  const [selectedTarget, setSelectedTarget] = useState<{ name: string; type: "agent" | "project"; managed: boolean; path?: string }>();
+  const [relationPreviewSection, setRelationPreviewSection] = useState<"summary" | "target" | "governance">("summary");
   const agentDeployments = (view.agentDeployments ?? []).map((agent) => {
     if (!drawerPrototype) return agent;
     if (agent.id === "codex") {
@@ -150,8 +494,16 @@ function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { draw
     return agent;
   });
   const projects = view.projectDeployments ?? [];
-  const visibleProjects = projectsExpanded ? projects : projects.slice(0, MAX_VISIBLE_PROJECTS);
+  const visibleProjects = drawerPrototype
+    ? projects
+    : projectsExpanded ? projects : projects.slice(0, MAX_VISIBLE_PROJECTS);
   const hiddenProjectCount = Math.max(0, projects.length - MAX_VISIBLE_PROJECTS);
+  const openRelationPreview = (event: ReactMouseEvent<HTMLButtonElement>, target: { name: string; type: "agent" | "project"; managed: boolean; path?: string }) => {
+    relationPopover.triggerRef.current = event.currentTarget;
+    setSelectedTarget(target);
+    setRelationPreviewSection("summary");
+    relationPopover.setOpen(true);
+  };
 
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
@@ -168,9 +520,19 @@ function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { draw
                   count: view.agentDeploymentCount,
                 })}
                 className="sh-skill-drawer__prototype-agent-cards"
+                data-testid="prototype-agent-scroll"
+                role="region"
+                tabIndex={0}
               >
-                {agentDeployments.map((agent) => (
-                  <span className="sh-skill-drawer__prototype-agent-card" key={agent.id} title={agent.name}>
+                {agentDeployments.map((agent, index) => (
+                  <button
+                    aria-label={t("skillLibrary.drawer.prototype.openRelationContext", { target: agent.name })}
+                    className="sh-skill-drawer__prototype-agent-card"
+                    key={agent.id}
+                    onClick={(event) => openRelationPreview(event, { name: agent.name, type: "agent", managed: index === 0 })}
+                    title={agent.name}
+                    type="button"
+                  >
                     <AgentPresentation
                       agentId={agent.agentId ?? agent.id}
                       brand={agent.brand}
@@ -178,7 +540,10 @@ function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { draw
                       instance={agent.name}
                       sharedDirectory={agent.sharedDirectory}
                     />
-                  </span>
+                    <span className={`sh-skill-drawer__prototype-relation-state${index === 0 ? " is-managed" : " is-pending"}`}>
+                      {t(index === 0 ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}
+                    </span>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -199,35 +564,119 @@ function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { draw
             <span className="sh-skill-drawer__relation-count">{view.projectDeploymentCount}</span>
           </div>
           {projects.length > 0 ? (
-            <>
-              <ul className="sh-skill-drawer__project-list">
-                {visibleProjects.map((project) => (
-                  <li key={project.id}>
-                    <strong title={project.name}>{project.name}</strong>
-                    <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
-                  </li>
-                ))}
-              </ul>
-              {hiddenProjectCount > 0 ? (
-                <button
-                  aria-expanded={projectsExpanded}
-                  className="sh-skill-drawer__project-toggle"
-                  onClick={() => setProjectsExpanded((current) => !current)}
-                  type="button"
-                >
-                  {projectsExpanded
-                    ? t("skillLibrary.drawer.relations.showFewerProjects")
-                    : t("skillLibrary.drawer.relations.showMoreProjects", {
-                        count: hiddenProjectCount,
-                      })}
-                </button>
-              ) : null}
-            </>
+            drawerPrototype ? (
+              <div
+                aria-label={t("skillLibrary.drawer.prototype.projectTargets", {
+                  count: view.projectDeploymentCount,
+                })}
+                className="sh-skill-drawer__prototype-project-scroll"
+                data-testid="prototype-project-scroll"
+                role="region"
+                tabIndex={0}
+              >
+                <ul className="sh-skill-drawer__project-list">
+                  {projects.map((project, index) => (
+                    <li key={project.id}>
+                      <button
+                        aria-label={t("skillLibrary.drawer.prototype.openRelationContext", { target: project.name })}
+                        className="sh-skill-drawer__prototype-project-card"
+                        onClick={(event) => openRelationPreview(event, { name: project.name, type: "project", managed: index === 0, path: displayPath(project.path) })}
+                        type="button"
+                      >
+                        <strong title={project.name}>{project.name}</strong>
+                        <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
+                        <span className={`sh-skill-drawer__prototype-relation-state${index === 0 ? " is-managed" : " is-pending"}`}>
+                          {t(index === 0 ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <>
+                <ul className="sh-skill-drawer__project-list">
+                  {visibleProjects.map((project) => (
+                    <li key={project.id}>
+                      <strong title={project.name}>{project.name}</strong>
+                      <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
+                    </li>
+                  ))}
+                </ul>
+                {hiddenProjectCount > 0 ? (
+                  <button
+                    aria-expanded={projectsExpanded}
+                    className="sh-skill-drawer__project-toggle"
+                    onClick={() => setProjectsExpanded((current) => !current)}
+                    type="button"
+                  >
+                    {projectsExpanded
+                      ? t("skillLibrary.drawer.relations.showFewerProjects")
+                      : t("skillLibrary.drawer.relations.showMoreProjects", {
+                          count: hiddenProjectCount,
+                        })}
+                  </button>
+                ) : null}
+              </>
+            )
           ) : (
             <EmptyValue />
           )}
         </div>
       </div>
+      {drawerPrototype && relationPopover.open && selectedTarget ? (
+        <PrototypePopover
+          ariaLabel={t("skillLibrary.drawer.prototype.relationContextTitle", { target: selectedTarget.name })}
+          className="sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-relation-popover"
+          contentRef={relationPopover.contentRef}
+          onCloseAutoFocus={relationPopover.onCloseAutoFocus}
+          onOpenChange={relationPopover.onOpenChange}
+          open={relationPopover.open}
+          position={relationPopover.position}
+          setPosition={relationPopover.setPosition}
+          triggerRef={relationPopover.triggerRef}
+        >
+          <div className="sh-skill-drawer__prototype-popover-heading">
+            <strong>
+              {relationPreviewSection === "governance"
+                ? t("skillLibrary.drawer.prototype.relationGovernanceSample")
+                : relationPreviewSection === "target"
+                  ? t("skillLibrary.drawer.prototype.relationTargetSample")
+                  : t("skillLibrary.drawer.prototype.relationContextTitle", { target: selectedTarget.name })}
+            </strong>
+            <Button aria-label={t("skillLibrary.drawer.prototype.closeRelationPreview")} onClick={() => relationPopover.close(true)} size="sm" variant="ghost">
+              <Icon name="close" size={16} />
+            </Button>
+          </div>
+          {relationPreviewSection === "summary" ? (
+            <>
+              <p><span>{t(selectedTarget.type === "agent" ? "skillLibrary.drawer.values.agents" : "skillLibrary.drawer.values.projects")}</span><strong>{selectedTarget.name}</strong></p>
+              <p><span>{t("skillLibrary.drawer.prototype.relationshipState")}</span><strong>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}</strong></p>
+              <p>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManagedReason" : "skillLibrary.drawer.prototype.samplePendingReason")}</p>
+              <div className="sh-skill-drawer__prototype-popover-actions">
+                <Button onClick={() => setRelationPreviewSection("target")} size="sm" variant="secondary">
+                  {t("skillLibrary.drawer.prototype.openTargetSample", { type: selectedTarget.type === "agent" ? t("skillLibrary.drawer.values.agents") : t("skillLibrary.drawer.values.projects") })}
+                </Button>
+                <Button onClick={() => setRelationPreviewSection("governance")} size="sm" variant="ghost">
+                  {t("skillLibrary.drawer.prototype.openGovernanceSample")}
+                </Button>
+              </div>
+            </>
+          ) : relationPreviewSection === "target" ? (
+            <>
+              <p>{t("skillLibrary.drawer.prototype.targetContextSample", { name: selectedTarget.name, skill: view.name })}</p>
+              {selectedTarget.path ? <code title={selectedTarget.path}>{selectedTarget.path}</code> : null}
+              <Button onClick={() => setRelationPreviewSection("summary")} size="sm" variant="ghost">{t("skillLibrary.drawer.prototype.backToRelationSummary")}</Button>
+            </>
+          ) : (
+            <>
+              <p>{t("skillLibrary.drawer.prototype.governanceContextSample", { skill: view.name, target: selectedTarget.name })}</p>
+              <p>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManagedReason" : "skillLibrary.drawer.prototype.samplePendingReason")}</p>
+              <Button onClick={() => setRelationPreviewSection("summary")} size="sm" variant="ghost">{t("skillLibrary.drawer.prototype.backToRelationSummary")}</Button>
+            </>
+          )}
+        </PrototypePopover>
+      ) : null}
     </ModuleCard>
   );
 }
@@ -292,14 +741,175 @@ function SecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
   );
 }
 
+function PrototypeSecurityRiskIcon({ description, label, title }: { description: string; label: string; title: string }) {
+  return (
+    <span aria-description={description} aria-label={label} className="sh-skill-drawer__prototype-security-icon sh-skill-drawer__prototype-security-icon--risk" role="img" tabIndex={0} title={title}>
+      <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+        <path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="currentColor" />
+        <path d="M12 7.3v6.1" stroke="var(--ui-danger-foreground)" strokeLinecap="round" strokeWidth="2.1" />
+        <circle cx="12" cy="16.7" r="1.15" fill="var(--ui-danger-foreground)" />
+      </svg>
+    </span>
+  );
+}
+
+function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
+  const { t } = useTranslation();
+  const [runningKinds, setRunningKinds] = useState<Set<SecurityCheckKind>>(() => new Set());
+  const [runErrors, setRunErrors] = useState<Partial<Record<SecurityCheckKind, boolean>>>({});
+  const resultQuery = useQuery({
+    queryKey: ["skill-drawer-prototype-security", view.id, view.currentVersion],
+    queryFn: async () => {
+      const [checks, findings] = await Promise.all([
+        securityFacade.getChecks(view.id, "current"),
+        securityFacade.listFindings(view.id, "current"),
+      ]);
+      return { checks, findings };
+    },
+  });
+  const executeCheck = async (kind: SecurityCheckKind) => {
+    const run = kind === "basic" ? securityFacade.runBasicCheck : securityFacade.runLlmCheck;
+    if (!run || runningKinds.has(kind)) return;
+    setRunErrors((current) => ({ ...current, [kind]: false }));
+    setRunningKinds((current) => new Set(current).add(kind));
+    try {
+      if (kind === "basic") await securityFacade.runBasicCheck?.(view.id, "current");
+      else await securityFacade.runLlmCheck?.(view.id, "current");
+      await resultQuery.refetch();
+    } catch {
+      setRunErrors((current) => ({ ...current, [kind]: true }));
+    } finally {
+      setRunningKinds((current) => {
+        const next = new Set(current);
+        next.delete(kind);
+        return next;
+      });
+    }
+  };
+  const checks = resultQuery.data?.checks ?? [];
+  const findings = resultQuery.data?.findings ?? [];
+  const labels: Record<SecurityCheckKind, string> = {
+    basic: t("skillLibrary.drawer.prototype.basicCheck"),
+    llm: t("skillLibrary.drawer.prototype.aiCheck"),
+  };
+  const renderResult = (kind: SecurityCheckKind) => {
+    const check: SecurityCheck | undefined = checks.find((item) => item.kind === kind);
+    const currentFindings: SecurityFinding[] = findings.filter((item) => item.kind === kind);
+    const count = Math.max(check?.findingCount ?? 0, currentFindings.length);
+    const actionable = Math.max(check?.actionableCount ?? 0, currentFindings.filter((item) => item.disposition === "actionable").length);
+    const running = runningKinds.has(kind);
+    const failed = check?.state === "failed" || runErrors[kind] === true || resultQuery.isError;
+    const hasRisk = count > 0;
+    const clean = check?.state === "passed" && !hasRisk;
+    const stateText = resultQuery.isPending
+      ? t("skillLibrary.drawer.prototype.securityLoading")
+      : running
+        ? t("skillLibrary.drawer.prototype.securityRunning")
+        : failed
+          ? t("skillLibrary.drawer.prototype.securityFailed")
+          : hasRisk
+            ? t("skillLibrary.drawer.prototype.securityFindings", { count, actionable })
+            : clean
+              ? t("skillLibrary.drawer.prototype.securityClean")
+              : t("skillLibrary.drawer.prototype.securityNotRun");
+    const compactText = resultQuery.isPending
+      ? t("skillLibrary.drawer.prototype.securityLoading")
+      : running
+        ? t("skillLibrary.drawer.prototype.securityRunning")
+        : failed
+          ? t("skillLibrary.drawer.prototype.securityFailed")
+          : hasRisk
+            ? t("skillLibrary.drawer.prototype.securityCompactFindings", { count, actionable })
+            : clean
+              ? t("skillLibrary.drawer.prototype.securityClean")
+              : t("skillLibrary.drawer.prototype.securityNotRun");
+    const checkedAt = check?.checkedAt ? new Date(check.checkedAt).toLocaleString() : t("skillLibrary.drawer.prototype.securityTimeUnavailable");
+    const longDescription = t("skillLibrary.drawer.prototype.securityTooltip", {
+      check: labels[kind],
+      result: stateText,
+      version: view.currentVersion,
+      time: checkedAt,
+    });
+    const accessibleLabel = failed
+      ? t("skillLibrary.drawer.prototype.securityAccessibleFailed", { check: labels[kind] })
+      : hasRisk
+        ? t("skillLibrary.drawer.prototype.securityAccessibleRisk", { check: labels[kind], count, actionable })
+        : clean
+          ? t("skillLibrary.drawer.prototype.securityAccessibleClean", { check: labels[kind] })
+          : t("skillLibrary.drawer.prototype.securityAccessibleUnknown", { check: labels[kind], result: stateText });
+
+    return (
+      <div className="sh-skill-drawer__prototype-security-result" key={kind}>
+        <div className="sh-skill-drawer__prototype-security-summary">
+          {failed ? (
+            <span aria-description={longDescription} aria-label={accessibleLabel} className="sh-skill-drawer__prototype-security-icon sh-skill-drawer__prototype-security-icon--failed" role="img" tabIndex={0} title={longDescription}>
+              <Icon name="failure" size={20} />
+            </span>
+          ) : hasRisk ? (
+            <PrototypeSecurityRiskIcon description={longDescription} label={accessibleLabel} title={longDescription} />
+          ) : clean ? (
+            <span aria-description={longDescription} aria-label={accessibleLabel} className="sh-skill-drawer__prototype-security-icon sh-skill-drawer__prototype-security-icon--clean" role="img" tabIndex={0} title={longDescription}>
+              <Icon name="success" size={20} />
+            </span>
+          ) : (
+            <span aria-description={longDescription} aria-label={accessibleLabel} className="sh-skill-drawer__prototype-security-icon" role="img" tabIndex={0} title={longDescription}>
+              <Icon name="info" size={20} />
+            </span>
+          )}
+          <span className="sh-skill-drawer__prototype-security-label">{labels[kind]}</span>
+          <strong>{compactText}</strong>
+        </div>
+        {currentFindings[0] ? <p className="sh-skill-drawer__prototype-risk-message" title={currentFindings[0].message}>{currentFindings[0].message}</p> : null}
+        {currentFindings.length > 0 ? (
+          <details className="sh-skill-drawer__prototype-findings-disclosure">
+            <summary>{t("skillLibrary.drawer.prototype.allFindings", { count: currentFindings.length })}</summary>
+            <ul aria-label={t("skillLibrary.drawer.prototype.securityFindingsLabel")} className="sh-skill-drawer__prototype-findings">
+              {currentFindings.map((finding) => (
+                <li key={finding.id}>
+                  <span>{finding.message}</span>
+                  {finding.file ? <small>{finding.file}{finding.line ? ` · ${finding.line}` : ""}</small> : null}
+                  <small>{finding.disposition === "actionable" ? t("skillLibrary.drawer.prototype.securityNeedsAttention") : t("skillLibrary.drawer.prototype.securityDispositionRecorded")}</small>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        {failed ? <p className="sh-skill-drawer__prototype-security-error" role="status">{t("skillLibrary.drawer.prototype.securityFailureDetail")}</p> : null}
+      </div>
+    );
+  };
+  return (
+    <ModuleCard title={t(MODULE_LABEL_KEYS.security_checks)}>
+      <p className="sh-skill-drawer__prototype-security-scope">{t("skillLibrary.drawer.prototype.securityLocalScope")}</p>
+      <section aria-label={t(MODULE_LABEL_KEYS.risk_summary)} className="sh-skill-drawer__prototype-risk-summary">
+        <strong>{t(MODULE_LABEL_KEYS.risk_summary)}</strong>
+        <span>{t("skillLibrary.drawer.risk.high", { count: view.highRiskCount })}</span>
+        <span>{t("skillLibrary.drawer.risk.pending", { count: view.pendingCount })}</span>
+      </section>
+      <div className="sh-skill-drawer__prototype-security-results">
+        {renderResult("basic")}
+        {renderResult("llm")}
+      </div>
+      <div className="sh-skill-drawer__prototype-security-actions">
+        <Button disabled={!securityFacade.runBasicCheck || runningKinds.has("basic")} loading={runningKinds.has("basic")} onClick={() => void executeCheck("basic")} size="sm" variant="secondary">
+          {t("skillLibrary.drawer.prototype.recheck")}
+        </Button>
+        <Button disabled={!securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
+          {t("skillLibrary.drawer.prototype.aiCheck")}
+        </Button>
+      </div>
+    </ModuleCard>
+  );
+}
+
 function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: ModuleProps) {
   const { t } = useTranslation();
   return (
     <ModuleCard title={t("skillLibrary.drawer.prototype.sourceVersionTitle")}>
       <dl className="sh-skill-drawer__prototype-source-facts">
         <div>
-          <dt>{t("skillLibrary.drawer.values.source")}</dt>
-          <dd>{view.source ?? <EmptyValue />}</dd>
+          <dt>{t("skillLibrary.drawer.prototype.importReceipt")}</dt>
+          <dd>{t("skillLibrary.drawer.prototype.importReceiptSample")}</dd>
         </div>
         <div>
           <dt>{t("skillLibrary.filters.version")}</dt>
@@ -309,11 +919,18 @@ function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: Mod
           <dt>{t("skillLibrary.drawer.values.license")}</dt>
           <dd>{view.license ?? <EmptyValue />}</dd>
         </div>
+        <div>
+          <dt>{t("skillLibrary.drawer.prototype.networkUpdateSource")}</dt>
+          <dd title={t("skillLibrary.drawer.prototype.networkUpdateSourceSample")}>{t("skillLibrary.drawer.prototype.networkUpdateSourceSample")}</dd>
+        </div>
       </dl>
+      <p className="sh-skill-drawer__prototype-derived-source">
+        {t("skillLibrary.drawer.prototype.derivedFromSample", { sourceSkill: "PDF Toolkit" })}
+      </p>
       {view.upgradeAvailable ? (
         <div className="sh-skill-drawer__version-update sh-skill-drawer__prototype-update">
           <span aria-hidden="true" className="sh-skill-drawer__prototype-update-mark" />
-          <p>{t("skillLibrary.drawer.values.updateAvailable")}</p>
+          <p>{t("skillLibrary.drawer.prototype.updateAvailable")}</p>
           {versionsHref ? (
             <Link
               className="sh-button sh-button--secondary sh-button--sm"
@@ -325,7 +942,11 @@ function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: Mod
           ) : null}
         </div>
       ) : (
-        <p className="sh-skill-drawer__secondary">{t("skillLibrary.drawer.values.upToDate")}</p>
+        <div className="sh-skill-drawer__version-update sh-skill-drawer__prototype-update">
+          <span aria-hidden="true" className="sh-skill-drawer__prototype-update-mark" />
+          <p className="sh-skill-drawer__secondary">{t("skillLibrary.drawer.values.upToDate")}</p>
+          {versionsHref ? <Link className="sh-button sh-button--secondary sh-button--sm" state={versionsState} to={versionsHref}>{t("skillLibrary.drawer.viewUpdate")}</Link> : null}
+        </div>
       )}
     </ModuleCard>
   );
@@ -407,6 +1028,7 @@ const OPTIONAL_MODULE_RENDERERS: Record<
 
 interface IdentityRegionProps extends ModuleProps {
   drawerPrototype?: boolean;
+  purposeOverride?: string;
   editingField?: "alias" | "note" | "purpose";
   editingValue: string;
   onAddTags: () => void;
@@ -416,6 +1038,7 @@ interface IdentityRegionProps extends ModuleProps {
   onRemoveTag: (tag: string) => void;
   onTranslateDescription?: () => void;
   onConfirmTranslation?: () => void;
+  onUseExistingTranslation?: (value: string) => void;
   onCancelTranslation?: () => void;
   translationDraft?: string;
   translationError?: string;
@@ -459,22 +1082,39 @@ function IdentityRegion({
   onRemoveTag,
   onCancelTranslation,
   onConfirmTranslation,
+  onUseExistingTranslation,
   onTranslateDescription,
+  purposeOverride,
   translationDraft,
   translationError,
   translationLoading = false,
   view,
 }: IdentityRegionProps) {
   const { t } = useTranslation();
+  const [prototypeTranslation, setPrototypeTranslation] = useState(view.translatedDescription ?? "");
+  const [translationEditing, setTranslationEditing] = useState(false);
+  const [translationEditDraft, setTranslationEditDraft] = useState(view.translatedDescription ?? "");
+  useEffect(() => {
+    setPrototypeTranslation(view.translatedDescription ?? "");
+    setTranslationEditDraft(view.translatedDescription ?? "");
+    setTranslationEditing(false);
+  }, [view.id, view.translatedDescription]);
+  const tagPopover = useBoundedPrototypePopover();
+  const tagPopoverId = useId();
+  const toggleTagPopover = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    tagPopover.triggerRef.current = event.currentTarget;
+    if (tagPopover.open) tagPopover.close(true);
+    else tagPopover.setOpen(true);
+  };
+  const displayedTags = drawerPrototype ? view.tags.slice(0, MAX_PROTOTYPE_VISIBLE_TAGS) : view.tags;
+  const hiddenTagCount = Math.max(0, view.tags.length - displayedTags.length);
   return (
     <section className="sh-skill-drawer__identity sh-skill-drawer__overview">
       <div className="sh-skill-drawer__identity-heading">
-        {/* 别名时仍在可滚正文中保留原始运行时名称，不把它挤进固定标题区。 */}
-        {view.originalName && view.originalName !== view.name ? (
+        {drawerPrototype ? <h3 className="sh-skill-drawer__prototype-identity-title">{t("skillLibrary.drawer.prototype.basicInformation")}</h3> : null}
+        {!drawerPrototype && view.originalName && view.originalName !== view.name ? (
           <span className="sh-skill-drawer__original-name">
-            <span className="sh-skill-drawer__field-label">
-              {t("skillLibrary.drawer.values.originalName")}:
-            </span>{" "}
+            <span className="sh-skill-drawer__field-label">{t("skillLibrary.drawer.values.originalName")}:</span>{" "}
             <span>{view.originalName}</span>
           </span>
         ) : null}
@@ -518,9 +1158,9 @@ function IdentityRegion({
             </span>
             <div className="sh-skill-drawer__summary-value sh-skill-drawer__summary-tags">
               {view.tags.length > 0 ? (
-                <ul className="sh-skill-drawer__tag-list">
-                  {view.tags.map((tag) => (
-                    <li className="sh-skill-drawer__tag" key={tag}>
+                <ul className={`sh-skill-drawer__tag-list${drawerPrototype ? " sh-skill-drawer__prototype-tag-list" : ""}`}>
+                  {displayedTags.map((tag) => (
+                    <li className="sh-skill-drawer__tag" key={tag} title={tag}>
                       <span>{tag}</span>
                       <Button
                         aria-label={t("skillLibrary.drawer.removeTag", { tag })}
@@ -532,6 +1172,20 @@ function IdentityRegion({
                       </Button>
                     </li>
                   ))}
+                  {hiddenTagCount > 0 ? (
+                    <li className="sh-skill-drawer__prototype-tag-more">
+                      <Button
+                        aria-controls={tagPopoverId}
+                        aria-expanded={tagPopover.open}
+                        className="sh-skill-drawer__prototype-tag-more-button"
+                        onClick={toggleTagPopover}
+                        size="sm"
+                        variant="secondary"
+                      >
+                        {t("skillLibrary.drawer.prototype.moreTags", { count: hiddenTagCount })}
+                      </Button>
+                    </li>
+                  ) : null}
                 </ul>
               ) : (
                 <EmptyValue />
@@ -546,15 +1200,60 @@ function IdentityRegion({
               >
                 <PencilIcon />
               </Button>
+              {tagPopover.open ? (
+                <PrototypePopover
+                  ariaLabel={t("skillLibrary.drawer.prototype.allTags")}
+                  className="sh-skill-drawer__prototype-tag-popover"
+                  contentRef={tagPopover.contentRef}
+                  id={tagPopoverId}
+                  onCloseAutoFocus={tagPopover.onCloseAutoFocus}
+                  onOpenChange={tagPopover.onOpenChange}
+                  open={tagPopover.open}
+                  position={tagPopover.position}
+                  setPosition={tagPopover.setPosition}
+                  triggerRef={tagPopover.triggerRef}
+                >
+                  <div className="sh-skill-drawer__prototype-tag-popover-heading">
+                    <strong>{t("skillLibrary.drawer.prototype.allTags")}</strong>
+                    <Button
+                      aria-label={t("actions.close")}
+                      onClick={() => tagPopover.close(true)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <Icon name="close" size={16} />
+                    </Button>
+                  </div>
+                  <ul>
+                    {view.tags.map((tag) => (
+                      <li key={tag}>
+                        <span title={tag}>{tag}</span>
+                        <Button
+                          aria-label={t("skillLibrary.drawer.removeTag", { tag })}
+                          onClick={() => onRemoveTag(tag)}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <Icon name="close" size={16} />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </PrototypePopover>
+              ) : null}
             </div>
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--lifecycle">
             <span className="sh-skill-drawer__field-label">
               {t("skillLibrary.filters.lifecycle")}
             </span>
-            <span className="sh-skill-drawer__summary-value sh-skill-drawer__lifecycle-value">
-              {t(LIFECYCLE_LABEL_KEYS[view.lifecycle])}
-            </span>
+            {drawerPrototype ? (
+              <PrototypeLifecycleControl />
+            ) : (
+              <span className="sh-skill-drawer__summary-value sh-skill-drawer__lifecycle-value">
+                {t(LIFECYCLE_LABEL_KEYS[view.lifecycle])}
+              </span>
+            )}
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--version">
             <span className="sh-skill-drawer__field-label">
@@ -577,24 +1276,52 @@ function IdentityRegion({
         </div>
       </div>
       <div className="sh-skill-drawer__field sh-skill-drawer__description-block">
-        <span className="sh-skill-drawer__field-label">
-          {t("skillLibrary.drawer.values.originalDescription")}:
-        </span>
-        <span className="sh-skill-drawer__field-value">
-          {view.originalDescription ?? <EmptyValue />}
-        </span>
-        {onTranslateDescription ? (
-          <Button
-            disabled={translationLoading}
-            onClick={onTranslateDescription}
-            size="sm"
-            variant="ghost"
-          >
-            {translationLoading
-              ? t("skillLibrary.drawer.translation.inProgress")
-              : t("skillLibrary.drawer.translation.action")}
-          </Button>
+        {drawerPrototype ? (
+          <div className="sh-skill-drawer__prototype-description-row">
+            <span className="sh-skill-drawer__field-label">{t("skillLibrary.drawer.values.originalDescription")}:</span>
+            <span className="sh-skill-drawer__field-value">{view.originalDescription ?? <EmptyValue />}</span>
+            <Button
+              aria-label={t("skillLibrary.drawer.prototype.aiTranslate")}
+              className="sh-skill-drawer__prototype-translate"
+              data-tooltip={t("skillLibrary.drawer.prototype.aiTranslate")}
+              disabled={translationLoading || !onTranslateDescription}
+              onClick={onTranslateDescription}
+              size="sm"
+              variant="ghost"
+              title={t("skillLibrary.drawer.prototype.translationPreview")}
+            >
+              {translationLoading ? <span className="sh-skill-drawer__prototype-translate-loading" aria-hidden="true" /> : <PrototypeTranslationIcon />}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <span className="sh-skill-drawer__field-label">
+              {t("skillLibrary.drawer.values.originalDescription")}:
+            </span>
+            <span className="sh-skill-drawer__field-value">
+            {view.originalDescription ?? <EmptyValue />}
+          </span>
+            {onTranslateDescription ? (
+              <Button
+                disabled={translationLoading}
+                onClick={onTranslateDescription}
+                size="sm"
+                variant="ghost"
+              >
+                {translationLoading
+                  ? t("skillLibrary.drawer.translation.inProgress")
+                  : t("skillLibrary.drawer.translation.action")}
+              </Button>
+            ) : null}
+          </>
+        )}
+        {drawerPrototype && !onTranslateDescription ? (
+          <span className="sh-skill-drawer__prototype-translation-unavailable">
+            <span>{t("skillLibrary.drawer.prototype.translationUnavailable")}</span>
+            <Link to="/settings?section=networkAi">{t("skillLibrary.drawer.prototype.configureTranslation")}</Link>
+          </span>
         ) : null}
+        {drawerPrototype ? <span className="sh-visually-hidden">{t("skillLibrary.drawer.prototype.translationPreview")}</span> : null}
         {translationError ? <p role="alert">{translationError}</p> : null}
         {translationDraft ? (
           <div aria-label={t("skillLibrary.drawer.translation.confirmLabel")} role="alertdialog">
@@ -608,14 +1335,45 @@ function IdentityRegion({
           </div>
         ) : null}
       </div>
-      {view.translatedDescription ? (
+      {(drawerPrototype ? prototypeTranslation : view.translatedDescription) ? (
         <div className="sh-skill-drawer__field">
           <span className="sh-skill-drawer__field-label">
             {t("skillLibrary.drawer.values.translatedDescription")}:
           </span>
-          <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
-            {view.translatedDescription}
-          </span>
+          {drawerPrototype && translationEditing ? (
+            <textarea aria-label={t("skillLibrary.drawer.prototype.editTranslation")} onChange={(event) => setTranslationEditDraft(event.currentTarget.value)} value={translationEditDraft} />
+          ) : (
+            <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
+              {drawerPrototype ? prototypeTranslation : view.translatedDescription}
+            </span>
+          )}
+          {drawerPrototype ? (
+            <div className="sh-skill-drawer__prototype-translation-actions">
+              {translationEditing ? (
+                <>
+                  <Button onClick={() => { setPrototypeTranslation(translationEditDraft); setTranslationEditing(false); }} size="sm" variant="secondary">{t("skillLibrary.drawer.prototype.saveTranslationPreview")}</Button>
+                  <Button onClick={() => { setTranslationEditDraft(prototypeTranslation); setTranslationEditing(false); }} size="sm" variant="ghost">{t("actions.cancel")}</Button>
+                </>
+              ) : (
+                <>
+                  <Button aria-label={t("skillLibrary.drawer.prototype.editTranslation")} className="sh-skill-drawer__prototype-translation-edit" data-tooltip={t("skillLibrary.drawer.prototype.editTranslation")} onClick={() => { setTranslationEditDraft(prototypeTranslation); setTranslationEditing(true); }} size="sm" title={t("skillLibrary.drawer.prototype.editTranslation")} variant="ghost">
+                    <PencilIcon />
+                  </Button>
+                  <Button
+                    aria-label={t("skillLibrary.drawer.prototype.useExistingTranslation")}
+                    className="sh-skill-drawer__prototype-use-translation"
+                    data-tooltip={t("skillLibrary.drawer.prototype.useExistingTranslation")}
+                    onClick={() => onUseExistingTranslation?.(prototypeTranslation)}
+                    size="sm"
+                    title={t("skillLibrary.drawer.prototype.useExistingTranslation")}
+                    variant="ghost"
+                  >
+                    {t("skillLibrary.drawer.prototype.setTranslationAsPurpose")}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {/* M-21 #6：“我的用途”在抽屉内提供编辑入口；用途是用户独立撰写的
@@ -639,7 +1397,7 @@ function IdentityRegion({
           />
         ) : (
           <span className="sh-skill-drawer__field-value">
-            {view.purpose || <EmptyValue />}
+            {(purposeOverride ?? view.purpose) || <EmptyValue />}
           </span>
         )}
         <Button
@@ -720,22 +1478,54 @@ function PrimaryActions({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const prototypeActionNoteId = useId();
+  const prototypeActionPopover = useBoundedPrototypePopover();
+  const [prototypeAction, setPrototypeAction] = useState<"dispatch" | "export" | "delete">("dispatch");
+  const showPrototypeAction = (event: ReactMouseEvent<HTMLButtonElement>, action: "dispatch" | "export" | "delete") => {
+    prototypeActionPopover.triggerRef.current = event.currentTarget;
+    setPrototypeAction(action);
+    prototypeActionPopover.setOpen(true);
+  };
   if (drawerPrototype) {
     return (
-      <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions sh-skill-drawer__prototype-actions">
-        <div className="sh-skill-drawer__actions-main">
-          <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__dispatch" data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="primary">
-            {t("skillLibrary.drawer.prototype.dispatch")}
+      <>
+        <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions sh-skill-drawer__prototype-actions">
+          <div className="sh-skill-drawer__actions-main">
+            <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__dispatch" data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "dispatch")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="primary">
+              {t("skillLibrary.drawer.prototype.dispatch")}
+            </Button>
+            <Button aria-describedby={prototypeActionNoteId} data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "export")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="secondary">
+              {t("skillLibrary.drawer.prototype.export")}
+            </Button>
+          </div>
+          <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__delete-action" data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "delete")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="danger">
+            {t("skillLibrary.drawer.prototype.delete")}
           </Button>
-          <Button aria-describedby={prototypeActionNoteId} data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="secondary">
-            {t("skillLibrary.drawer.prototype.export")}
-          </Button>
-        </div>
-        <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__delete-action" data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="danger">
-          {t("skillLibrary.drawer.prototype.delete")}
-        </Button>
-        <p className="sh-visually-hidden" id={prototypeActionNoteId}>{t("skillLibrary.drawer.prototype.previewOnly")}</p>
-      </section>
+          <p className="sh-visually-hidden" id={prototypeActionNoteId}>{t("skillLibrary.drawer.prototype.previewOnly")}</p>
+        </section>
+        {prototypeActionPopover.open ? (
+          <PrototypePopover
+            ariaLabel={t(PROTOTYPE_ACTION_TITLE_KEYS[prototypeAction])}
+            className={`sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-action-popover sh-skill-drawer__prototype-action-popover--${prototypeAction}`}
+            contentRef={prototypeActionPopover.contentRef}
+            onCloseAutoFocus={prototypeActionPopover.onCloseAutoFocus}
+            onOpenChange={prototypeActionPopover.onOpenChange}
+            open={prototypeActionPopover.open}
+            position={prototypeActionPopover.position}
+            setPosition={prototypeActionPopover.setPosition}
+            triggerRef={prototypeActionPopover.triggerRef}
+          >
+            <strong>{t(PROTOTYPE_ACTION_TITLE_KEYS[prototypeAction])}</strong>
+            <p className="sh-skill-drawer__prototype-action-disclaimer">{t("skillLibrary.drawer.prototype.actionNoExecution")}</p>
+            <section>
+              <span>{t("skillLibrary.drawer.prototype.sampleImpactLabel")}</span>
+              <p>{t(PROTOTYPE_ACTION_IMPACT_KEYS[prototypeAction], { skill: view.name })}</p>
+            </section>
+            <Button onClick={() => prototypeActionPopover.close(true)} size="sm" variant="secondary">
+              {t("skillLibrary.drawer.prototype.cancelActionPreview")}
+            </Button>
+          </PrototypePopover>
+        ) : null}
+      </>
     );
   }
   // DEV-19（2026-09-20 收口）：抽屉动作与批量栏/详情页在「真实可用契约」
@@ -985,6 +1775,7 @@ export function SkillQuickDrawer({
   const [tagsSaveFailed, setTagsSaveFailed] = useState(false);
   const [localView, setLocalView] = useState<SkillQuickView>();
   const [translationDraft, setTranslationDraft] = useState<string>();
+  const [prototypePurpose, setPrototypePurpose] = useState<string>();
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string>();
   // 抽屉只经对话框批量添加标签；移除走逐个 chip（onRemoveTag → saveTags）。
@@ -1235,6 +2026,9 @@ export function SkillQuickDrawer({
       setLocalView(undefined);
     }
   }, [detailQuery.data]);
+  useEffect(() => {
+    setPrototypePurpose(undefined);
+  }, [skillId]);
 
   const view = localView ?? detailQuery.data;
   const versionsHref = skillId
@@ -1249,7 +2043,7 @@ export function SkillQuickDrawer({
       field === "alias"
         ? view.alias ?? ""
         : field === "purpose"
-          ? view.purpose ?? ""
+          ? prototypePurpose ?? view.purpose ?? ""
           : view.note ?? "",
     );
   };
@@ -1263,6 +2057,12 @@ export function SkillQuickDrawer({
         : editingField === "purpose"
           ? { purpose: value || null }
           : { note: value || null };
+    if (prototypeEnabled && editingField === "purpose") {
+      setPrototypePurpose(value);
+      setEditingField(undefined);
+      setEditingValue("");
+      return;
+    }
     const persistedView = detailQuery.data;
     setLocalView({
       ...view,
@@ -1319,6 +2119,12 @@ export function SkillQuickDrawer({
   const confirmTranslation = () => {
     if (!view || !translationDraft || !facade.saveSkillMetadata) return;
     const draft = translationDraft;
+    if (prototypeEnabled) {
+      setPrototypePurpose(draft);
+      setTranslationDraft(undefined);
+      setTranslationError(undefined);
+      return;
+    }
     const persistedView = detailQuery.data;
     void facade.saveSkillMetadata(view.id, { purpose: draft }).then(
       () => {
@@ -1410,14 +2216,16 @@ export function SkillQuickDrawer({
               </Link>
             ) : <span />}
             <div className="sh-skill-drawer__toolbar-end">
-              <Button
-                aria-expanded={configurationOpen}
-                onClick={() => setConfigurationOpen((current) => !current)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("skillLibrary.drawer.configure")}
-              </Button>
+              {!prototypeEnabled ? (
+                <Button
+                  aria-expanded={configurationOpen}
+                  onClick={() => setConfigurationOpen((current) => !current)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("skillLibrary.drawer.configure")}
+                </Button>
+              ) : null}
               {prototypeEnabled ? (
                 <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets sh-skill-drawer__prototype-presets" role="group">
                   {(() => {
@@ -1472,6 +2280,7 @@ export function SkillQuickDrawer({
                 className="sh-skill-drawer__close-button"
                 onClick={() => onOpenChange(false)}
                 size="sm"
+                title={t("actions.close")}
                 variant="ghost"
               >
                 <Icon name="close" size={16} />
@@ -1495,6 +2304,7 @@ export function SkillQuickDrawer({
           role="region"
           tabIndex={0}
         >
+          {prototypeEnabled ? <p className="sh-skill-drawer__prototype-preview-note">{t("skillLibrary.drawer.prototype.previewNote")}</p> : null}
           {(preferenceSaveFailed ?? localPreferenceSaveFailed) ? (
             <p className="sh-skill-drawer__alert" role="alert">
               {t("skillLibrary.drawer.preferenceFailure")}
@@ -1542,7 +2352,9 @@ export function SkillQuickDrawer({
                   setTranslationError(undefined);
                 }}
                 onConfirmTranslation={confirmTranslation}
+                onUseExistingTranslation={(value) => setTranslationDraft(value)}
                 onTranslateDescription={facade.translateDescription ? translateDescription : undefined}
+                purposeOverride={prototypePurpose}
                 translationDraft={translationDraft}
                 translationError={translationError}
                 translationLoading={translationLoading}
@@ -1557,11 +2369,11 @@ export function SkillQuickDrawer({
                   view={view}
                 />
               ) : null}
-              <RiskSummary view={view} />
+              {!prototypeEnabled ? <RiskSummary view={view} /> : null}
             </div>
           ) : null}
 
-          {configurationOpen ? (
+          {!prototypeEnabled && configurationOpen ? (
             <DrawerConfiguration
               onMoveAfter={moveModuleAfter}
               onMoveBefore={moveModuleBefore}
@@ -1579,9 +2391,12 @@ export function SkillQuickDrawer({
           {view ? (
             prototypeEnabled ? (
               <div className="sh-skill-drawer__modules sh-skill-drawer__prototype-modules">
-                <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
                 <RelationsModule drawerPrototype view={view} />
+                <PrototypeCollectionsModule />
                 {visibleModules.has("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
+                <PrototypeSubjectLocationModule />
+                <PrototypeSecurityChecksModule securityFacade={securityFacade} view={view} />
+                <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
               </div>
             ) : (
               <div className="sh-skill-drawer__modules">
