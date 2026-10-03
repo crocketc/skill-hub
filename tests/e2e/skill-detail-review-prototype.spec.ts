@@ -4,6 +4,34 @@ const reviewUrl = "/__preview/skill-detail/skill-pdf?detailPrototype=review";
 
 test.use({ locale: "zh-CN" });
 
+test("the confirmed drawer and full-detail prototype return to the same selected Skill", async ({ page }) => {
+  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review&text=pdf");
+
+  const drawer = page.getByTestId("drawer-panel");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("link", { name: /查看完整详情/ }).click();
+
+  await expect(page.getByTestId("skill-detail-review")).toBeVisible();
+  await expect(page).toHaveURL(/detailPrototype=review/);
+  await expect(page).toHaveURL(/drawerPrototype=review/);
+  await expect(page).toHaveURL(/text=pdf/);
+  await page.getByRole("link", { name: "返回技能库" }).click();
+
+  await expect(page).toHaveURL(/__preview\/skill-library/);
+  await expect(page).toHaveURL(/drawerPrototype=review/);
+  await expect(page).toHaveURL(/skill=skill-pdf/);
+  await expect(page.getByTestId("drawer-panel")).toBeVisible();
+  await expect(page.getByTestId("skill-quick-drawer")).toHaveAttribute("data-drawer-prototype", "review");
+});
+
+test("a DEV detail route without prototype parameters keeps the original detail experience", async ({ page }) => {
+  await page.goto("/__preview/skill-detail/skill-pdf");
+
+  await expect(page.getByTestId("skill-detail-review")).toHaveCount(0);
+  await expect(page.getByText("原型示例 · 操作不会更改真实文件、网络来源或技能库数据。", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".sh-skill-detail__layout")).toBeVisible();
+});
+
 test("review detail uses six user-task sections and one compact skill heading", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(reviewUrl);

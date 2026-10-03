@@ -322,6 +322,10 @@ export function SkillDetailPage({
   }
 
   if (reviewPrototype) {
+    const reviewReturnParams = new URLSearchParams(backSearch);
+    reviewReturnParams.delete("detailPrototype");
+    reviewReturnParams.set("drawerPrototype", "review");
+    reviewReturnParams.set("skill", skillId);
     return (
       <SkillDetailReviewExperience
         facade={facade}
@@ -333,6 +337,8 @@ export function SkillDetailPage({
         securityFacade={securityFacade}
         skillId={skillId}
         summary={summaryQuery.data}
+        libraryReturn={libraryReturn}
+        returnToLibrary={`${backPathname}?${reviewReturnParams.toString()}`}
       />
     );
   }

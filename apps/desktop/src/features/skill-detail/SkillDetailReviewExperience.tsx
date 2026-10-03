@@ -14,6 +14,7 @@ import { MetadataPanel } from "./MetadataPanel";
 import { RequirementsPanel } from "./RequirementsPanel";
 import { VersionTimeline } from "./VersionTimeline";
 import { ReviewHeaderActions, ReviewOverviewStatus, ReviewSubjectLocation } from "./SkillDetailReviewScenarios";
+import type { SkillLibraryReturnState } from "./detailContext";
 import type {
   SkillDetailFacade,
   SkillDetailInsights,
@@ -34,6 +35,8 @@ const sections = [
 type ReviewSectionId = typeof sections[number][0];
 
 interface SkillDetailReviewExperienceProps {
+  libraryReturn?: SkillLibraryReturnState;
+  returnToLibrary: string;
   facade: SkillDetailFacade;
   insights?: SkillDetailInsights;
   markdownFacade?: MarkdownFacade;
@@ -47,6 +50,8 @@ interface SkillDetailReviewExperienceProps {
 
 /** DEV review layout; writes remain in the in-memory preview facade. */
 export function SkillDetailReviewExperience({
+  libraryReturn,
+  returnToLibrary,
   facade,
   insights,
   markdownFacade,
@@ -83,7 +88,13 @@ export function SkillDetailReviewExperience({
     <section className="sh-skill-detail sh-skill-detail--review" data-testid="skill-detail-review">
       <div className="sh-skill-detail__layout sh-skill-detail-review__layout">
         <aside className="sh-skill-detail__rail sh-skill-detail-review__rail">
-          <Link className="sh-skill-detail__back" to="/__preview/skill-library">返回技能库</Link>
+          <Link
+            className="sh-skill-detail__back"
+            state={libraryReturn ? { libraryReturn } : undefined}
+            to={returnToLibrary}
+          >
+            返回技能库
+          </Link>
           <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
             {sections.map(([id, label]) => (
               <a

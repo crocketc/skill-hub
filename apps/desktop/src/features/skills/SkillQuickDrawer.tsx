@@ -1797,6 +1797,14 @@ export function SkillQuickDrawer({
   const removePointerListenersRef = useRef<() => void>(() => undefined);
   const normalizedPreferences = normalizeDrawerPreferences(preferences);
   const prototypeEnabled = import.meta.env.DEV && drawerPrototype;
+  const fullDetailsSearch = prototypeEnabled
+    ? (() => {
+        const searchParams = new URLSearchParams(detailSearch);
+        searchParams.set("detailPrototype", "review");
+        const search = searchParams.toString();
+        return search ? `?${search}` : "";
+      })()
+    : detailSearch;
   const visibleModules = new Set(normalizedPreferences.visibleModules);
   const optionalOrder = normalizedPreferences.moduleOrder.filter((moduleId) =>
     OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
@@ -2220,7 +2228,7 @@ export function SkillQuickDrawer({
               <Link
                 className={`sh-button sh-button--primary sh-button--sm${prototypeEnabled ? " sh-skill-drawer__prototype-details" : ""}`}
                 state={libraryReturn ? { libraryReturn } : undefined}
-                to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
+                to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: fullDetailsSearch }}
               >
                 {t(prototypeEnabled ? "skillLibrary.drawer.prototype.fullDetails" : "skillLibrary.drawer.fullDetails")}
               </Link>
