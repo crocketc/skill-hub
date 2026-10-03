@@ -115,3 +115,18 @@ it("keeps the quick view honest when the skill has no current version", async ()
   expect(view.aiCheck).toBe("not_run");
   expect(view.agentDeploymentCount).toBe(0);
 });
+
+it("maps the native review date into the drawer quick view", async () => {
+  const payload = skillPayload();
+  (payload.payload as { trial_due: string | null }).trial_due = "2026-11-03";
+  vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
+    const request = query as { type: string };
+    if (request.type === "get_skill") return payload as never;
+    throw new Error(`unexpected query ${request.type}`);
+  });
+
+  const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
+
+  expect(view.lifecycle).toBe("trial");
+  expect(view.trialDue).toBe("2026-11-03");
+});

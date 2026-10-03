@@ -296,6 +296,7 @@ function SkillLibraryRoute() {
       onOpenDiscovery={() => navigate("/discovery")}
       refreshSnapshot={refreshSnapshot}
       securityFacade={nativeSecurityFacade}
+      trialFacade={nativeSkillDetailFacade}
     />
     </RouteSuspense>
   );

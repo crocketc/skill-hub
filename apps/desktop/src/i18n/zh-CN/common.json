@@ -1282,10 +1282,15 @@
       "actions": {
         "addTags": "添加标签",
         "delete": "从库中删除 Skill",
+        "deleteShort": "删除",
+        "dispatch": "派发",
+        "dispatchSkill": "派发 {{name}}",
+        "export": "导出",
+        "exportSkill": "导出 {{name}}",
         "viewVersions": "查看版本"
       },
       "configure": "配置快速抽屉",
-      "description": "Skill 摘要、常用操作和可配置详情模块。",
+      "description": "Skill 摘要与快捷操作。",
       "detail": {
         "empty": "选择一项 Skill 以查看详情",
         "error": "无法加载 Skill 详情",
@@ -1296,14 +1301,14 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
+      "allTags": "全部标签",
+      "moreTags_one": "其余 {{count}} 个标签",
+      "moreTags_other": "其余 {{count}} 个标签",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
-      "fullDetails": "查看编辑完整详情",
+      "fullDetails": "查看完整详情",
       "modules": {
-        "dependenciesDuplicates": "依赖与重复项",
-        "externalChanges": "外部变更",
         "fullDetails": "完整详情",
         "identity": "名称与说明",
-        "invocationRequirements": "调用方式与运行要求",
         "primaryActions": "主要操作",
         "relations": "关联关系",
         "riskSummary": "风险摘要",
@@ -1316,6 +1321,7 @@
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
       "metadataFailure": "别名、用途或备注未保存，已恢复为已保存的内容。",
       "presets": {
+        "cycle": "当前宽度：{{current}}，下一档：{{next}}",
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",
         "standard": "标准宽度",
@@ -1327,9 +1333,30 @@
         "high": "{{count}} 个高风险项",
         "pending": "{{count}} 项待处理"
       },
-      "relations": {
-        "showFewerProjects": "收起项目",
-        "showMoreProjects": "展开另外 {{count}} 个项目"
+      "trial": {
+        "adjustDate": "调整复核日期",
+        "convert": "转为常规",
+        "converted": "此 Skill 已转为常规生命周期。",
+        "noDate": "未设置复核日期",
+        "reviewDate": "试用复核日期",
+        "reviewDateLabel": "复核日期",
+        "saveDate": "保存复核日期"
+      },
+      "collections": {
+        "add": "加入组合",
+        "addShort": "加入",
+        "addTo": "加入{{name}}",
+        "added": "已加入{{name}}。",
+        "dialogTitle": "将{{skill}}加入组合",
+        "empty": "尚未创建组合。",
+        "label": "所属组合",
+        "loadFailed": "无法读取组合，请重试后再管理成员。",
+        "manage": "管理组合",
+        "memberships": "包含此 Skill 的组合",
+        "none": "未加入组合",
+        "remove": "将{{skill}}从{{name}}移出",
+        "removeShort": "移出",
+        "removed": "已从{{name}}移出。"
       },
       "title": "Skill 详情",
       "translation": {
@@ -1346,9 +1373,8 @@
         "agentDestinations": "Agent 去向",
         "alias": "别名",
         "currentVersion": "当前版本：{{version}}",
-        "dependencies": "依赖",
-        "duplicates": "可能的重复项",
         "invocation": "调用方式：",
+        "requirements": "运行要求",
         "invocationCount": "{{count}} 次调用",
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
@@ -1421,6 +1447,7 @@
     },
     "table": {
       "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
+      "projectDeploymentSummary": "已添加到项目：{{count}} 个",
       "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
@@ -2050,6 +2077,21 @@
     "findingSummary": "高风险 {{highRisk}} · 待处理 {{pending}}",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
+    "drawer": {
+      "basicAction": "重新检查",
+      "dateUnavailable": "时间不可用",
+      "findingListUnavailable": "检查结果记录了发现项，但此处无法读取明细。请前往完整详情审阅。",
+      "findingsSummary": "查看发现项（{{count}}）",
+      "llmAction": "AI 检查",
+      "resultDetails": "{{name}}：{{status}}，针对版本 {{version}}，检查时间 {{date}}。共记录 {{count}} 个原始发现项；{{pending}} 项仍需处理，{{handled}} 项已有处置记录。处置不会抹去原始发现结论。",
+      "status": {
+        "failed": "{{name}}检查失败；记录 {{count}} 项发现，其中 {{pending}} 项待处理。",
+        "findings": "{{name}}发现 {{count}} 项，其中 {{pending}} 项仍需处理。",
+        "notChecked": "{{name}}尚未检查。",
+        "passed": "{{name}}检查通过，未发现问题。",
+        "running": "{{name}}检查正在运行。"
+      }
+    },
     "locationUnknown": "位置不可用",
     "actions": {
       "acknowledge": "确认已知晓",

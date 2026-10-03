@@ -21,7 +21,7 @@ export interface SecurityResultsProps {
   versionId: string;
   findingId?: string;
   checkKind?: string;
-  variant?: "page" | "embedded";
+  variant?: "page" | "embedded" | "drawer";
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -285,6 +285,85 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
   const llmFindings = findings.filter((finding) => finding.kind === "llm");
   const highRiskCount = findings.filter((finding) => finding.highRisk).length;
   const pendingCount = findings.filter((finding) => finding.disposition === "actionable").length;
+  if (variant === "drawer") {
+    const basicCheck = checkByKind("basic");
+    const llmCheck = checkByKind("llm");
+    const basicFindings = findings.filter((finding) => finding.kind === "basic");
+    const llmFindings = findings.filter((finding) => finding.kind === "llm");
+    const findingDetails = (
+      <div className="sh-security-results__drawer-findings-list" aria-label={t("security.findingsHeading")} role="region" tabIndex={0}>
+        <FindingGroup focusedId={findingId} focusedKind={checkKind} heading={t("security.findingsBasic")} findings={basicFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
+        <FindingGroup focusedId={findingId} focusedKind={checkKind} heading={t("security.findingsLlm")} findings={llmFindings} onDisposition={(finding, disposition, options) => void handleDisposition(finding, disposition, options)} />
+      </div>
+    );
+    const basicFindingCount = Math.max(basicCheck?.findingCount ?? 0, basicFindings.length);
+    const llmFindingCount = Math.max(llmCheck?.findingCount ?? 0, llmFindings.length);
+    return (
+      <div className="sh-security-results sh-security-results--drawer">
+        {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || checkKind === finding.kind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
+        <div className="sh-security-results__drawer-checks">
+          <DrawerCheckRow
+            check={basicCheck}
+            checkName={t("security.basicHeading")}
+            findings={basicFindings}
+            findingCount={basicFindingCount}
+            kind="basic"
+            onRun={() => void handleRunBasic()}
+            running={basicRunning}
+            versionId={resolvedVersionId}
+            runAvailable={Boolean(facade.runBasicCheck)}
+          />
+          <DrawerCheckRow
+            check={llmCheck}
+            checkName={t("security.llmHeading")}
+            findings={llmFindings}
+            findingCount={llmFindingCount}
+            kind="llm"
+            onRun={() => void handleRun()}
+            running={running}
+            versionId={resolvedVersionId}
+            runAvailable={Boolean(facade.runLlmCheck)}
+            configured={llmConfigured}
+            onCancel={() => void handleCancel()}
+            cancelAvailable={Boolean(facade.cancelLlmCheck)}
+            cancelEnabled={Boolean(runningOperation)}
+            canceling={cancelRequested}
+          />
+        </div>
+        {basicError ? <p role="alert">{t("security.basic.runFailed", { message: basicError })}</p> : null}
+        {runError ? <p role="alert">{t("security.llm.runFailed", { message: runError })}</p> : null}
+        {running ? <p className="sh-settings-local-note">{t("security.llm.running")}</p> : null}
+        {cancelError ? <p role="alert">{t("security.llm.cancelFailed", { message: cancelError })}</p> : null}
+        {dispositionError ? <p role="alert">{dispositionError}</p> : null}
+        {preferences && !preferences.llmProvider.trim() ? (
+          <p className="sh-security-results__drawer-config-note">
+            {t("security.llm.providerMissing")} <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>
+          </p>
+        ) : preferences ? (
+          <p className="sh-security-results__drawer-scope">{preferences.dataScope === "explicit_selection"
+            ? t("security.llm.scopeExplicitSelection")
+            : t("security.llm.scopeOther", { scope: preferences.dataScope })}</p>
+        ) : null}
+        {findings.length > 0 ? (
+          <details className="sh-security-results__drawer-findings">
+            <summary>{t("security.drawer.findingsSummary", { count: findings.length })}</summary>
+            {findingDetails}
+          </details>
+        ) : highRiskCount > 0 || pendingCount > 0 ? (
+          <p className="sh-security-results__drawer-summary" role="status">
+            {t("security.findingSummary", { highRisk: highRiskCount, pending: pendingCount })}
+            {Math.max(basicCheck?.findingCount ?? 0, llmCheck?.findingCount ?? 0) > 0
+              ? ` · ${t("security.drawer.findingListUnavailable")}`
+              : null}
+          </p>
+        ) : findings.length === 0 && basicFindingCount === 0 && llmFindingCount === 0 ? (
+          <p className="sh-security-results__drawer-empty">{t("security.noFindings")}</p>
+        ) : (
+          <p className="sh-security-results__drawer-summary" role="status">{t("security.drawer.findingListUnavailable")}</p>
+        )}
+      </div>
+    );
+  }
   const content = (
     <>
       {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || finding.kind === checkKind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
@@ -341,6 +420,97 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
       </header>
       {content}
     </main>
+  );
+}
+
+function DrawerCheckRow({
+  check,
+  checkName,
+  configured = true,
+  findingCount,
+  findings,
+  kind,
+  onRun,
+  onCancel,
+  cancelAvailable = false,
+  cancelEnabled = false,
+  canceling = false,
+  runAvailable,
+  running,
+  versionId,
+}: {
+  check?: SecurityCheck;
+  checkName: string;
+  configured?: boolean;
+  findingCount: number;
+  findings: SecurityFinding[];
+  kind: SecurityCheck["kind"];
+  onRun: () => void;
+  onCancel?: () => void;
+  cancelAvailable?: boolean;
+  cancelEnabled?: boolean;
+  canceling?: boolean;
+  runAvailable: boolean;
+  running: boolean;
+  versionId: string;
+}) {
+  const { t, i18n } = useTranslation();
+  const pendingCount = Math.max(check?.actionableCount ?? 0, findings.filter((finding) => finding.disposition === "actionable").length);
+  const handledCount = Math.max(0, findingCount - pendingCount);
+  const status = check?.state === "failed"
+    ? "failed"
+    : findingCount > 0
+      ? "findings"
+      : running || check?.state === "running"
+      ? "running"
+      : check?.state === "passed"
+        ? "passed"
+        : "notChecked";
+  const checkedAt = check?.checkedAt
+    ? formatCheckedAt(check.checkedAt, i18n.resolvedLanguage ?? i18n.language)
+    : undefined;
+  const statusLabel = t(`security.drawer.status.${status}` as never, {
+    name: checkName,
+    count: findingCount,
+    pending: pendingCount,
+  });
+  const details = t("security.drawer.resultDetails", {
+    name: checkName,
+    status: check ? t(`security.states.${check.state}`) : t("security.states.not_checked"),
+    version: versionId,
+    date: checkedAt ?? t("security.drawer.dateUnavailable"),
+    count: findingCount,
+    pending: pendingCount,
+    handled: handledCount,
+  });
+  const icon = status === "findings"
+    ? <svg aria-hidden="true" className="sh-security-results__drawer-mark-svg" viewBox="0 0 24 24"><path className="sh-security-results__drawer-shield" d="M12 3.5 19 6v5.2c0 4.2-2.7 7.4-7 9.3-4.3-1.9-7-5.1-7-9.3V6z" /><path className="sh-security-results__drawer-warning" d="M12 8v5.2M12 16.4v.2" /></svg>
+    : status === "passed"
+      ? <svg aria-hidden="true" className="sh-security-results__drawer-mark-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="m8 12.2 2.5 2.5 5.5-5.8" /></svg>
+      : status === "failed"
+        ? <svg aria-hidden="true" className="sh-security-results__drawer-mark-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6m0-6-6 6" /></svg>
+        : status === "running"
+          ? <svg aria-hidden="true" className="sh-security-results__drawer-mark-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.2 2" /></svg>
+          : <svg aria-hidden="true" className="sh-security-results__drawer-mark-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8v.2" /></svg>;
+
+  return (
+    <div className={`sh-security-results__drawer-row sh-security-results__drawer-row--${status}`}>
+      <span aria-label={statusLabel} className="sh-security-results__drawer-mark" role="img" tabIndex={0} title={details}>
+        {icon}
+      </span>
+      <span className="sh-security-results__drawer-name">{checkName}</span>
+      <span className="sh-security-results__drawer-count">{t("security.findingCount", { count: findingCount })}</span>
+      {kind === "llm" && running && cancelAvailable && onCancel ? (
+        <Button className="sh-security-results__drawer-run" disabled={!cancelEnabled || canceling} loading={canceling} onClick={onCancel} size="sm" variant="danger">
+          {t("security.llm.cancel")}
+        </Button>
+      ) : null}
+      {runAvailable ? (
+        <Button className="sh-security-results__drawer-run" disabled={running || (kind === "llm" && !configured)} loading={running} onClick={onRun} size="sm" variant="ghost">
+          {t(kind === "basic" ? "security.drawer.basicAction" : "security.drawer.llmAction")}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

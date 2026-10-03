@@ -957,17 +957,20 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByRole("table");
     fireEvent.click(skillNameCell("PDF Reader"));
+    // 界面规范§5批注15/16：宽度档位合并为单一循环按钮（默认 wide，点击进入 near_full）；
+    // 保存失败时保留临时偏好并给出可见告警。
     fireEvent.click(
-      await screen.findByRole("button", { name: "Configure quick drawer" }),
+      await screen.findByRole("button", {
+        name: "Current width: Wide. Next: Near full screen",
+      }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Standard width" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Preference was not saved",
     );
     expect(screen.getByTestId("skill-quick-drawer")).toHaveAttribute(
       "data-preset",
-      "standard",
+      "near_full",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -1566,7 +1569,12 @@ describe("SkillLibraryPage", () => {
 
     await screen.findByRole("table");
     fireEvent.click(skillNameCell("PDF Reader"));
-    fireEvent.click(await screen.findByRole("button", { name: "Standard width" }));
+    // 界面规范§5批注15/16：宽度档位合并为单一循环按钮。
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Current width: Wide. Next: Near full screen",
+      }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Preference was not saved",
     );

@@ -1282,10 +1282,15 @@
       "actions": {
         "addTags": "Add tags",
         "delete": "Delete from library",
+        "deleteShort": "Delete",
+        "dispatch": "Dispatch",
+        "dispatchSkill": "Dispatch {{name}}",
+        "export": "Export",
+        "exportSkill": "Export {{name}}",
         "viewVersions": "View versions"
       },
       "configure": "Configure quick drawer",
-      "description": "Skill summary, common actions, and configurable detail modules.",
+      "description": "Skill summary and quick actions.",
       "detail": {
         "empty": "Select a skill to view details",
         "error": "Could not load skill details",
@@ -1296,14 +1301,14 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
+      "allTags": "All tags",
+      "moreTags_one": "{{count}} more tag",
+      "moreTags_other": "{{count}} more tags",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
-      "fullDetails": "View and edit full details",
+      "fullDetails": "View full details",
       "modules": {
-        "dependenciesDuplicates": "Dependencies and duplicates",
-        "externalChanges": "External changes",
         "fullDetails": "Full details",
         "identity": "Identity",
-        "invocationRequirements": "Invocation and requirements",
         "primaryActions": "Primary actions",
         "relations": "Relations",
         "riskSummary": "Risk summary",
@@ -1316,6 +1321,7 @@
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
       "metadataFailure": "Alias, purpose, or note was not saved. The last saved content was restored.",
       "presets": {
+        "cycle": "Current width: {{current}}. Next: {{next}}",
         "label": "Quick drawer width",
         "nearFull": "Near full screen",
         "standard": "Standard width",
@@ -1327,9 +1333,30 @@
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
-      "relations": {
-        "showFewerProjects": "Show fewer projects",
-        "showMoreProjects": "Show {{count}} more projects"
+      "trial": {
+        "adjustDate": "Adjust review date",
+        "convert": "Make regular",
+        "converted": "This Skill is now in the regular lifecycle.",
+        "noDate": "No review date set",
+        "reviewDate": "Trial review date",
+        "reviewDateLabel": "Review date",
+        "saveDate": "Save review date"
+      },
+      "collections": {
+        "add": "Add to combination",
+        "addShort": "Add",
+        "addTo": "Add to {{name}}",
+        "added": "Added to {{name}}.",
+        "dialogTitle": "Add {{skill}} to a combination",
+        "empty": "No combinations have been created yet.",
+        "label": "Combinations",
+        "loadFailed": "Could not load combinations. Retry to manage membership.",
+        "manage": "Manage combinations",
+        "memberships": "Combinations containing this Skill",
+        "none": "Not in a combination",
+        "remove": "Remove {{skill}} from {{name}}",
+        "removeShort": "Remove",
+        "removed": "Removed from {{name}}."
       },
       "title": "Skill details",
       "translation": {
@@ -1346,9 +1373,8 @@
         "agentDestinations": "Agent destinations",
         "alias": "Alias",
         "currentVersion": "Current version: {{version}}",
-        "dependencies": "Dependencies",
-        "duplicates": "Possible duplicates",
         "invocation": "Invocation:",
+        "requirements": "Requirements",
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
@@ -1421,6 +1447,7 @@
     },
     "table": {
       "agentDeploymentSummary": "Added to Agents: {{count}}",
+      "projectDeploymentSummary": "Added to projects: {{count}}",
       "aliasLabel": "Alias",
       "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
@@ -2050,6 +2077,21 @@
     "findingSummary": "High risk {{highRisk}} · Pending {{pending}}",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
+    "drawer": {
+      "basicAction": "Recheck",
+      "dateUnavailable": "time unavailable",
+      "findingListUnavailable": "The check recorded findings, but their details are not available here. Open full details to review them.",
+      "findingsSummary": "Review {{count}} findings",
+      "llmAction": "AI check",
+      "resultDetails": "{{name}}: {{status}} for version {{version}} at {{date}}. {{count}} original finding(s); {{pending}} still need attention and {{handled}} have a recorded disposition. A disposition does not erase the original finding.",
+      "status": {
+        "failed": "{{name}} check failed; {{count}} findings, {{pending}} pending.",
+        "findings": "{{name}} found {{count}} item(s); {{pending}} still need attention.",
+        "notChecked": "{{name}} has not been checked.",
+        "passed": "{{name}} passed with no findings.",
+        "running": "{{name}} check is running."
+      }
+    },
     "locationUnknown": "Location unavailable",
     "actions": {
       "acknowledge": "Acknowledge",

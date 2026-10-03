@@ -88,6 +88,7 @@ import { BatchRemovalDrawer } from "./BatchRemovalDrawer";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
 import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
+import type { SkillDetailFacade } from "../skill-detail/api";
 
 export interface SkillLibraryCapabilities {
   /** Columns the facade can sort on; omitted keeps every column sortable. */
@@ -104,6 +105,7 @@ export interface SkillLibraryPageProps {
   /** Refresh the bootstrap projection after library metadata changes. */
   refreshSnapshot?: () => Promise<void>;
   securityFacade: SecurityFacade;
+  trialFacade?: Pick<SkillDetailFacade, "setTrial">;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -419,6 +421,7 @@ export function SkillLibraryPage({
   removalFacade = nativeRemovalFacade,
   refreshSnapshot,
   securityFacade,
+  trialFacade,
   tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
@@ -961,25 +964,6 @@ export function SkillLibraryPage({
       })
       .finally(() => {
         if (request === batchRequestRef.current) setSourceUpdatesPending(false);
-      });
-  };
-
-  // DEV-19：抽屉内的单技能来源更新检查——与批量栏同一 facade 契约
-  // （check_source_updates）、同一通知形态，仅选择集为单条。
-  const startSingleUpdateCheck = (skillId: string, skillName: string) => {
-    if (!facade.checkSourceUpdates) return;
-    const checkFacade = facade.checkSourceUpdates;
-    void checkFacade([skillId])
-      .then((entries) => {
-        notify({ source: "library",
-          detailNode: <SourceUpdateCheckSummary reports={entries.map((entry) => ({ ...entry, name: skillName || skillId }))} />,
-          kind: "batch",
-          title: t("skillLibrary.page.sourceUpdates.title"),
-          tone: "info",
-        });
-      })
-      .catch(() => {
-        notify({ source: "library", kind: "batch", title: t("skillLibrary.page.batch.unconnected"), tone: "danger" });
       });
   };
 
@@ -1637,6 +1621,7 @@ export function SkillLibraryPage({
       <SkillQuickDrawer
         detailSearch={detailSearchFromLibrary(location.search)}
         facade={drawerFacade}
+        trialFacade={trialFacade}
         libraryReturn={
           skillId
             ? {
@@ -1653,7 +1638,6 @@ export function SkillLibraryPage({
           closeDrawer();
           void startBatchRemoval({ id, name });
         }}
-        onCheckUpdates={facade.checkSourceUpdates ? startSingleUpdateCheck : undefined}
         onPreferencesChange={setDrawerPreferences}
         open={Boolean(skillId)}
         preferenceSaveFailed={Boolean(drawerSaveFailure)}

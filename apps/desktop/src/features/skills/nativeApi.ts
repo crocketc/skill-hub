@@ -322,6 +322,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
         : skill.lifecycle === "Deprecated"
           ? "deprecated"
           : "active";
+      view.trialDue = skill.trial_due ?? undefined;
       if (skill.current_version) {
         const checks = await Promise.all([
           queryApplication({ type: "get_basic_check_result", payload: { skill_id: skillId, version_id: skill.current_version } }),

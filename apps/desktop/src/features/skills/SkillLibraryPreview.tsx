@@ -26,11 +26,7 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 
 export function SkillLibraryPreview() {
   const [securityFacade] = useState(() => createPreviewSecurityFacade());
-  const [facade] = useState(() => {
-    const previewFacade = createMockSkillLibraryFacade({ total: previewTotal() });
-    previewFacade.listCombinations = async () => [];
-    return previewFacade;
-  });
+  const [facade] = useState(() => createMockSkillLibraryFacade({ total: previewTotal() }));
   const showNotificationPreview = new URLSearchParams(window.location.search)
     .has("notificationActions");
   return (

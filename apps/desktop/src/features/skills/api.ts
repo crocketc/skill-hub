@@ -109,6 +109,7 @@ export interface SkillQuickView extends SkillTableRow {
   externalChanges: string[];
   note?: string;
   projectDeployments?: ProjectDeployment[];
+  trialDue?: string;
   usageEvidence?: { invocationCount: number; lastUsedAt?: string };
 }
 

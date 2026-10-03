@@ -54,9 +54,10 @@ interface FacadeOverrides {
   versionId?: string;
   /** 挂载全局通知中心，用于断言统一反馈的可见结果。 */
   withNotices?: boolean;
+  variant?: "page" | "embedded" | "drawer";
 }
 
-async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   let currentFindings = findings ?? fixture.findings;
@@ -93,7 +94,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} skillId={skillId} tracker={tracker} versionId={versionId} />
+      <SecurityResults facade={facade} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
     </I18nextProvider>
   );
   const view = render(
@@ -108,6 +109,28 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   const cancelSpy = facade.cancelLlmCheck ?? vi.fn();
   return { client, facade, i18n, dispositionCalls, getChecks, listFindings, runSpy, cancelSpy, ...view };
 }
+
+it("keeps raw findings visible in the compact drawer status even when a run says passed", async () => {
+  const runBasicCheck = vi.fn(async () => undefined);
+  await renderSecurity({
+    variant: "drawer",
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 1, actionableCount: 1 },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [makeFinding({ id: "drawer-risk", kind: "basic", highRisk: true, severity: "high" })],
+    preferences: { llmProvider: "provider-1", dataScope: "explicit_selection" },
+    runBasicCheck,
+  });
+
+  expect(await screen.findByRole("img", { name: /基础.*检查发现/ })).toBeVisible();
+  expect(screen.queryByRole("img", { name: /基础.*检查通过/ })).not.toBeInTheDocument();
+  expect(screen.getByText("重新检查")).toBeVisible();
+  expect(screen.getByText("AI 检查")).toBeVisible();
+  expect(screen.getByText("1 个问题")).toBeVisible();
+  fireEvent.click(screen.getByText("查看发现项（1）"));
+  expect(screen.getByText("message-drawer-risk")).toBeVisible();
+});
 
 it("offers the deterministic basic check action and refreshes its facts", async () => {
   const runBasicCheck = vi.fn(async () => undefined);
