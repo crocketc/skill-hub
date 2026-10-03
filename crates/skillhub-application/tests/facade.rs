@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::path::Path;
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::check::CheckRepository;
@@ -40,6 +41,156 @@ use skillhub_core::{
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
     ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity, SkillId,
 };
+
+struct SymlinkUndeployFixture {
+    _target_root: tempfile::TempDir,
+    _library_root: tempfile::TempDir,
+    _original_body: tempfile::TempDir,
+    facade: LocalApplicationFacade,
+    deployment_id: skillhub_core::DeploymentId,
+    destination: std::path::PathBuf,
+}
+
+fn create_test_directory_link(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, destination)
+    }
+    #[cfg(windows)]
+    {
+        skillhub_adapters::deployment::create_junction(source, destination)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (source, destination);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "directory links are not supported on this platform",
+        ))
+    }
+}
+
+fn remove_test_directory_link(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(path)
+    }
+    #[cfg(windows)]
+    {
+        skillhub_adapters::deployment::remove_junction(path)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "directory links are not supported on this platform",
+        ))
+    }
+}
+
+fn test_directory_link_mode() -> DeploymentMode {
+    #[cfg(windows)]
+    {
+        DeploymentMode::DirectoryJunction
+    }
+    #[cfg(not(windows))]
+    {
+        DeploymentMode::SymbolicLink
+    }
+}
+
+fn is_test_directory_link(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::fs::symlink_metadata(path)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+    }
+    #[cfg(windows)]
+    {
+        skillhub_adapters::deployment::is_reparse_point(path)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+async fn symlink_undeploy_fixture() -> Option<SymlinkUndeployFixture> {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(SkillId::new(), "Link ownership");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+
+    let target_root = tempfile::tempdir().expect("target root");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("central library");
+    let original_body = tempfile::tempdir().expect("original link target");
+    let destination = target_root.path().join("managed-link");
+    if let Err(error) = create_test_directory_link(original_body.path(), &destination) {
+        eprintln!(
+            "SKILLHUB-TEST-SKIP; symlink_undeploy_fixture; this host cannot create the platform's directory link: {error}"
+        );
+        return None;
+    }
+
+    let target_id = skillhub_core::physical_id_for_path(target_root.path())
+        .expect("target physical identity");
+    let version_id = skillhub_core::VersionId::parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .expect("version id");
+    let deployment_id = skillhub_core::DeploymentId::new();
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![version_id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert version");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'agent-codex', 'global', ?2, 0)",
+            rusqlite::params![target_id, target_root.path().to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    let mode = test_directory_link_mode();
+    let mode_code = match mode {
+        DeploymentMode::SymbolicLink => "symbolic_link",
+        DeploymentMode::DirectoryJunction => "directory_junction",
+        DeploymentMode::ManagedCopy => unreachable!("link test never uses managed copy"),
+    };
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', ?5, 1, 'managed-link', 'sha256:expected', 'sha256:expected', 0, 0)",
+            rusqlite::params![
+                deployment_id.to_string(),
+                skill.id().to_string(),
+                version_id.to_string(),
+                target_id,
+                mode_code,
+            ],
+        )
+        .expect("insert deployment");
+
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    Some(SymlinkUndeployFixture {
+        _target_root: target_root,
+        _library_root: library_root,
+        _original_body: original_body,
+        facade,
+        deployment_id,
+        destination,
+    })
+}
 
 #[tokio::test]
 async fn desktop_preferences_default_and_persist_through_the_real_facade() {
@@ -5041,6 +5192,86 @@ async fn undeploy_preserves_modified_target_and_relation_for_review() {
         panic!("expected deployment records");
     };
     assert_eq!(records[0].state, DeploymentState::Deployed);
+}
+
+#[tokio::test]
+async fn undeploy_fails_closed_when_managed_link_is_replaced_by_an_ordinary_directory() {
+    let Some(fixture) = symlink_undeploy_fixture().await else {
+        return;
+    };
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id: fixture.deployment_id,
+        }))
+        .await
+        .expect("prepare undeploy");
+    let AppCommandResult::RemovalImpact(prepared) = prepared else {
+        panic!("expected prepared removal impact");
+    };
+
+    remove_test_directory_link(&fixture.destination).expect("remove original managed link");
+    std::fs::create_dir(&fixture.destination).expect("replace link with ordinary directory");
+    std::fs::write(fixture.destination.join("user-data.txt"), "keep me")
+        .expect("write replacement data");
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
+            prepared_undeploy_id: prepared.operation_id,
+            decision: RemovalDecision::RemoveOwnedTarget,
+        }))
+        .await
+        .expect_err("an ordinary replacement must not be treated as the managed link");
+    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert_eq!(
+        std::fs::read_to_string(fixture.destination.join("user-data.txt"))
+            .expect("replacement data remains"),
+        "keep me"
+    );
+}
+
+#[tokio::test]
+async fn undeploy_fails_closed_when_managed_link_is_replaced_by_a_different_link() {
+    let Some(fixture) = symlink_undeploy_fixture().await else {
+        return;
+    };
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id: fixture.deployment_id,
+        }))
+        .await
+        .expect("prepare undeploy");
+    let AppCommandResult::RemovalImpact(prepared) = prepared else {
+        panic!("expected prepared removal impact");
+    };
+
+    let replacement_body = tempfile::tempdir().expect("replacement link target");
+    std::fs::write(replacement_body.path().join("user-data.txt"), "keep me")
+        .expect("write replacement target data");
+    remove_test_directory_link(&fixture.destination).expect("remove original managed link");
+    create_test_directory_link(replacement_body.path(), &fixture.destination)
+        .expect("replace with a different directory link");
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
+            prepared_undeploy_id: prepared.operation_id,
+            decision: RemovalDecision::RemoveOwnedTarget,
+        }))
+        .await
+        .expect_err("a different link must not be treated as the managed link");
+    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert!(
+        is_test_directory_link(&fixture.destination),
+        "the replacement link entry must remain in place"
+    );
+    assert_eq!(
+        std::fs::read_to_string(replacement_body.path().join("user-data.txt"))
+            .expect("replacement target data remains"),
+        "keep me"
+    );
 }
 
 #[tokio::test]
