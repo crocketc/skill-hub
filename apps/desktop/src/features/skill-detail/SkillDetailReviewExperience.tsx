@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
+import { Icon } from "../../ui/Icon";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { formatTimestamp } from "../../i18n";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
@@ -116,7 +117,7 @@ export function SkillDetailReviewExperience({
               <p>当前版本 · {summary.currentVersion}</p>
             </div>
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
-              <ReviewHeaderActions />
+              <ReviewHeaderActions currentVersion={summary.currentVersion} />
             </div>
           </header>
           <p className="sh-skill-detail-review__prototype-note" role="note">
@@ -126,24 +127,29 @@ export function SkillDetailReviewExperience({
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-overview">
             <h2>概览</h2>
             <div className="sh-skill-detail-review__overview">
-              <ReviewOverviewStatus summary={summary} />
               {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} skillId={skillId} reviewPresentation /> : (
                 <p role="status">正在读取技能画像…</p>
               )}
-              <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
-              <ReviewSubjectLocation />
+              <div className="sh-skill-detail-review__facts">
+                <ReviewOverviewStatus summary={summary} />
+                <ReviewSubjectLocation />
+                <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
+              </div>
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-content">
             <h2>内容与文件</h2>
-            {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} reviewSaveFlow skillId={skillId} /> : <p role="status">正在读取技能文件…</p>}
+            {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} /> : <p role="status">正在读取技能文件…</p>}
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-safety">
             <h2>安全检查</h2>
             <SecurityResults facade={reviewSecurityFacade} skillId={skillId} versionId="current" variant="embedded" presentationMode="risk-aware" />
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-usage">
-            <h2>使用去向</h2>
+            <div className="sh-skill-detail-review__section-heading">
+              <h2>使用去向</h2>
+              <ReviewGraphEntry />
+            </div>
             <ReviewUsageDestinations />
             {insights ? <details className="sh-skill-detail-review__supplemental"><summary>依赖、重复候选与使用证据</summary><h3>依赖</h3><ul>{insights.dependencies.map((value) => <li key={value}>{value}</li>)}</ul><h3>可能重复的技能</h3><p>PDF Text Extractor · 内容比对候选，尚未确认重复。</p><p>AI 相似性分析未配置，当前保留确定性比对证据。</p><h3>使用证据</h3><p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p></details> : null}
           </section>
@@ -162,7 +168,7 @@ export function SkillDetailReviewExperience({
               </dl>
             ) : null}
           </div>
-            <ReviewSourceUpdates />
+            <ReviewSourceUpdates markdownFacade={markdownFacade} />
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-versions">
             <h2>版本历史</h2>
@@ -172,6 +178,32 @@ export function SkillDetailReviewExperience({
         </main>
       </div>
     </section>
+  );
+}
+
+/** 图谱查阅入口（§16 查阅与定位）：详情提供定位跳转，图谱本身仍是权威事实来源。 */
+function ReviewGraphEntry() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} size="sm" variant="ghost">
+        <Icon aria-hidden="true" name="relationships" size={16} />
+        在图谱中查看
+      </Button>
+      <Dialog.Root open={open} onOpenChange={setOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="sh-dialog__overlay" />
+          <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
+            <Dialog.Title>在技能图谱中查看</Dialog.Title>
+            <Dialog.Description>正式实现将携带此技能身份打开关系图谱，并定位它的使用关系边与“复用修改”追溯边。</Dialog.Description>
+            <p>原型阶段不进行页面跳转；图谱仍是使用关系与复用修改的权威展示，详情页不复制图谱画布。</p>
+            <div className="sh-dialog__actions">
+              <Button onClick={() => setOpen(false)} size="sm">返回技能详情</Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
   );
 }
 
@@ -225,7 +257,7 @@ function ReviewUsageDestinations() {
               </StatusBadge>
             </div>
             <p>{target.detail}</p>
-            <code>{target.path}</code>
+            <code title={target.path}>{target.path}</code>
             <div className="sh-skill-detail-review__source-actions"><Button onClick={() => { setTargetView("target"); setSelectedTarget(target.id); }} size="sm" variant="ghost">{target.kind === "project" ? "进入项目" : "进入 Agent"}</Button><Button onClick={() => { setTargetView("governance"); setSelectedTarget(target.id); }} size="sm" variant="ghost">查看治理详情</Button></div>
           </article>
         );
@@ -251,32 +283,42 @@ function ReviewUsageDestinations() {
   );
 }
 
-function ReviewSourceUpdates() {
+function ReviewSourceUpdates({ markdownFacade }: { markdownFacade?: MarkdownFacade }) {
   const [sourceState, setSourceState] = useState<"missing" | "linked">("missing");
   const [lookup, setLookup] = useState<"idle" | "verified" | "failed">("idle");
   const [chooserOpen, setChooserOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmIntent, setConfirmIntent] = useState<"associate" | "replace" | "adopt">("associate");
+  // §18.1：无来源时允许“关联并采用更新”一次确认；单独关联仍走 associate。
+  const [adoptCombined, setAdoptCombined] = useState(false);
   const [unlinkOpen, setUnlinkOpen] = useState(false);
   const [localChanges, setLocalChanges] = useState(false);
   const [actionResult, setActionResult] = useState<string>();
   const [sourceInput, setSourceInput] = useState("https://example.org/pdf-reader");
   const [derived, setDerived] = useState(false);
   const [upstreamOpen, setUpstreamOpen] = useState(false);
-  const confirmTitle = confirmIntent === "adopt" ? "采用网络更新影响预览"
+  const confirmTitle = confirmIntent === "adopt"
+    ? adoptCombined ? "关联并采用更新影响预览" : "采用网络更新影响预览"
     : confirmIntent === "replace" ? "更换网络来源影响预览"
       : "关联影响预览";
   const confirmDescription = confirmIntent === "associate" ? "关联不会采用或替换当前内容"
     : confirmIntent === "replace" ? "更换来源只变更更新关系，不会采用新内容"
-      : "采用将以核验的来源版本创建当前 Skill 的新版本";
+      : adoptCombined ? "一次确认同时登记更新来源并采用其核验版本；当前内容保留为历史版本。"
+        : "采用将以核验的来源版本创建当前 Skill 的新版本";
   return (
     <section className="sh-skill-detail-review__source-updates" aria-label="网络更新来源">
       <div className="sh-skill-detail-review__section-heading">
         <div>
           <h3>网络更新来源</h3>
           <p>{sourceState === "linked" ? "已关联：PDF Reader 官方维护仓库" : "尚未关联更新来源"}</p>
+          {sourceState === "linked" ? (
+            <p className="sh-skill-detail-review__source-badges" aria-label="来源形态">
+              <span>网络仓库</span>
+              <span>GitHub</span>
+            </p>
+          ) : null}
         </div>
-        <Button onClick={() => { setLookup("idle"); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setChooserOpen(true); }} size="sm" variant="ghost">
+        <Button onClick={() => { setLookup("idle"); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setChooserOpen(true); }} size="sm" variant="ghost">
           {sourceState === "linked" ? "更换来源" : "查找更新来源"}
         </Button>
       </div>
@@ -285,6 +327,16 @@ function ReviewSourceUpdates() {
       {sourceState === "linked" ? (
         <div className="sh-skill-detail-review__source-actions">
           <Button onClick={() => { setLookup("verified"); setActionResult(undefined); }} size="sm" variant="secondary">检查更新</Button>
+          <Button
+            onClick={() => {
+              if (markdownFacade) void markdownFacade.openExternalUrl(sourceInput);
+              setActionResult("原型演示：已请求在浏览器打开来源页面；不会发送技能内容或凭据。");
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            打开来源页面
+          </Button>
           <Button onClick={() => setUnlinkOpen(true)} size="sm" variant="ghost">解除来源关联</Button>
         </div>
       ) : null}
@@ -292,7 +344,17 @@ function ReviewSourceUpdates() {
       {lookup === "verified" && sourceState === "linked" ? (
         <div className="sh-skill-detail-review__source-candidate" role="status">
           <strong>发现可检查的上游更新</strong><span>当前内容没有被替换。</span>
-          <Button onClick={() => { setConfirmIntent("adopt"); setConfirmOpen(true); }} size="sm">预览采用影响</Button>
+          <Button onClick={() => { setAdoptCombined(false); setConfirmIntent("adopt"); setConfirmOpen(true); }} size="sm">预览采用影响</Button>
+          <Button
+            onClick={() => {
+              setLookup("idle");
+              setActionResult("已忽略本次更新；该决定只作用于这一候选，之后的新候选会再次提醒。");
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            忽略本次更新
+          </Button>
         </div>
       ) : null}
       {lookup === "failed" && sourceState === "linked" ? <p role="alert">来源检查失败 · 上次关联仍保留，技能内容没有变化。</p> : null}
@@ -311,7 +373,12 @@ function ReviewSourceUpdates() {
               <div className="sh-skill-detail-review__source-candidate" role="status">
                 <strong>PDF Reader 官方维护仓库</strong>
                 <span>来源已核验，可用于只读检查</span>
-                <Button onClick={() => { setChooserOpen(false); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setConfirmOpen(true); }} size="sm">{sourceState === "linked" ? "更换来源" : "关联来源"}</Button>
+                <div className="sh-skill-detail-review__source-actions">
+                  <Button onClick={() => { setChooserOpen(false); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setConfirmOpen(true); }} size="sm" variant="secondary">{sourceState === "linked" ? "更换来源" : "只关联来源"}</Button>
+                  {sourceState === "missing" ? (
+                    <Button onClick={() => { setChooserOpen(false); setConfirmIntent("adopt"); setAdoptCombined(true); setConfirmOpen(true); }} size="sm">关联并采用更新</Button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             <div className="sh-dialog__actions"><Button onClick={() => setChooserOpen(false)} size="sm" variant="ghost">关闭</Button></div>
@@ -337,15 +404,20 @@ function ReviewSourceUpdates() {
                 if (confirmIntent === "adopt") {
                   setLocalChanges(false);
                   setLookup("idle");
-                  setActionResult("示例更新已采用；新版本已创建，安全发现与独立副本仍保留。");
+                  setActionResult(adoptCombined
+                    ? "已关联来源并采用示例更新；新版本已创建，安全发现与独立副本仍保留。"
+                    : "示例更新已采用；新版本已创建，安全发现与独立副本仍保留。");
+                  setAdoptCombined(false);
                 } else if (confirmIntent === "replace") {
                   setActionResult("更新来源已更换；当前内容和导入记录未改变。");
                 } else {
-                  setActionResult("更新来源已关联；尚未采用任何内容。");
+                  // §6.4：关联成功后自动进行一次只读检查，避免重复点击。
+                  setLookup("verified");
+                  setActionResult("已关联更新来源，并自动完成一次只读检查；未采用任何内容。");
                 }
                 setSourceState("linked");
                 setConfirmOpen(false);
-              }} size="sm">{confirmIntent === "adopt" ? "确认采用更新" : confirmIntent === "replace" ? "确认更换来源" : "确认关联"}</Button>
+              }} size="sm">{confirmIntent === "adopt" ? (adoptCombined ? "确认关联并采用更新" : "确认采用更新") : confirmIntent === "replace" ? "确认更换来源" : "确认关联"}</Button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

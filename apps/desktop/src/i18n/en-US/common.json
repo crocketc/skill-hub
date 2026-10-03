@@ -120,11 +120,15 @@
       "loadingFile": "Loading Markdown file",
       "loadingFiles": "Loading Markdown files",
       "mode": {
+        "compare": "Compare",
         "edit": "Edit",
         "read": "Read",
         "source": "Source"
       },
       "modes": "Markdown view",
+      "compareHint": "Read view beside source; panes scroll in sync.",
+      "fileStructure": "File structure",
+      "primaryFile": "Primary",
       "openDefault": "Open in default app",
       "openFolder": "Open Skill folder",
       "readOnly": {

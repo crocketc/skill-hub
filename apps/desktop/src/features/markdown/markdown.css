@@ -372,11 +372,156 @@
 }
 
 /* QA-012：阅读与源码模式的直出内容同样收敛到桌面高度上限，
-   超长文档在工作区内部滚动，不再无限撑高页面。 */
-.sh-markdown-workspace > .sh-markdown-renderer,
-.sh-markdown-workspace > .sh-markdown-workspace__source {
+   超长文档在工作区内部滚动，不再无限撑高页面。
+   详情原型引入文件侧栏/对照视图后，阅读器与源码块可能嵌在
+   __body/__viewer 容器内，因此按后代选择器收敛。 */
+.sh-markdown-workspace .sh-markdown-renderer,
+.sh-markdown-workspace .sh-markdown-workspace__source {
   max-height: 36rem;
   overflow-y: auto;
+}
+
+/* —— 详情原型（fileRail）：文件结构侧栏 —— */
+.sh-markdown-workspace__body {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.sh-markdown-workspace__rail {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  min-width: 0;
+}
+
+.sh-markdown-workspace__rail ul {
+  display: grid;
+  gap: 1px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-markdown-workspace__rail button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  font: inherit;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  text-align: start;
+  width: 100%;
+}
+
+.sh-markdown-workspace__rail button:hover,
+.sh-markdown-workspace__rail button:focus-visible {
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
+}
+
+.sh-markdown-workspace__rail button.is-active {
+  border-inline-start-color: var(--ui-accent);
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.sh-markdown-workspace__rail-path {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-markdown-workspace__rail-badge {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-ink-muted);
+  flex: none;
+  font-size: var(--font-size-xs);
+  padding-block: 0 0.05rem;
+  padding-inline: var(--space-1);
+}
+
+/* 侧栏与文件下拉按内容区宽度二选一：宽屏用侧栏，窄屏回落下拉。 */
+@container workspace (min-width: 44rem) {
+  .sh-markdown-workspace--rail .sh-markdown-workspace__body {
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  }
+
+  .sh-markdown-workspace--rail .sh-markdown-workspace__header > div:first-child label,
+  .sh-markdown-workspace--rail .sh-markdown-workspace__header > div:first-child .sh-select {
+    display: none;
+  }
+}
+
+@container workspace (max-width: 43.99rem) {
+  .sh-markdown-workspace--rail .sh-markdown-workspace__rail {
+    display: none;
+  }
+}
+
+/* —— 对照模式：阅读|源码双栏，滚动按比例联动 —— */
+.sh-markdown-workspace__compare {
+  display: grid;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.sh-markdown-workspace__pane {
+  block-size: 36rem;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.sh-markdown-workspace__pane + .sh-markdown-workspace__pane {
+  border-inline-start: 1px solid var(--ui-border);
+}
+
+.sh-markdown-workspace__pane .sh-markdown-renderer {
+  max-height: none;
+  overflow: visible;
+  padding: var(--space-4);
+}
+
+.sh-markdown-workspace__pane .sh-markdown-workspace__source {
+  border: 0;
+  border-radius: 0;
+  block-size: 100%;
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.sh-markdown-workspace__compare-hint {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+@media (max-width: 40rem) {
+  .sh-markdown-workspace__compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sh-markdown-workspace__pane {
+    block-size: auto;
+    max-block-size: 24rem;
+  }
+
+  .sh-markdown-workspace__pane + .sh-markdown-workspace__pane {
+    border-inline-start: 0;
+    border-top: 1px solid var(--ui-border);
+  }
 }
 
 .sh-markdown-editor .cm-editor {

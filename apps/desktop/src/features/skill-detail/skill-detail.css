@@ -367,11 +367,13 @@
   overflow-wrap: anywhere;
 }
 
+/* 概览层级：用途是第一眼信息（占满首行、正文级字号），
+   别名/标签次之，原文译文与备注收纳在后。 */
 .sh-skill-detail--review .sh-metadata-panel {
   gap: var(--space-2) var(--space-3);
   grid-template-areas:
-    "alias tags"
     "purpose purpose"
+    "alias tags"
     "secondary secondary"
     "note note";
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -392,6 +394,13 @@
 .sh-skill-detail--review .sh-metadata-panel > .sh-metadata-panel__editable:nth-child(3) { grid-area: purpose; }
 .sh-skill-detail--review .sh-metadata-panel > .sh-metadata-panel__editable:nth-child(4) { grid-area: tags; }
 .sh-skill-detail--review .sh-metadata-panel > .sh-metadata-panel__editable:nth-child(5) { grid-area: note; }
+
+/* 用途作为引导陈述：与其他短字段拉开一档字号与行高。 */
+.sh-skill-detail--review .sh-metadata-panel > .sh-metadata-panel__editable:nth-child(3) p[aria-label] {
+  color: var(--ui-ink);
+  font-size: 1rem;
+  line-height: 1.6;
+}
 
 .sh-skill-detail-review__context-row {
   border-top: 1px solid var(--ui-border-subtle);
@@ -424,16 +433,62 @@
   overflow-wrap: anywhere;
 }
 
-.sh-skill-detail-review__profile-strip {
-  border-bottom: 1px solid var(--ui-border-subtle);
+/* 概览事实网格：生命周期/组合/主体位置/调用方式等短字段并排成格，
+   不再各占一整行；display:contents 让既有 dl/div 结构直接成为格单元。 */
+.sh-skill-detail-review__facts {
+  border-top: 1px solid var(--ui-border-subtle);
   display: grid;
-  gap: var(--space-2) var(--space-4);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0 0 var(--space-2);
-  padding: 0 0 var(--space-2);
+  gap: 0 var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  margin-top: var(--space-1);
 }
 
-.sh-skill-detail-review__profile-strip > div { min-width: 0; }
+.sh-skill-detail-review__facts > .sh-skill-detail-review__profile-strip,
+.sh-skill-detail-review__facts > .sh-skill-detail-review__context-row,
+.sh-skill-detail-review__facts > .sh-detail-requirements {
+  display: contents;
+}
+
+.sh-skill-detail-review__facts > p,
+.sh-skill-detail-review__facts > details {
+  border-bottom: 1px solid var(--ui-border-subtle);
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-block: var(--space-2);
+}
+
+.sh-skill-detail-review__facts > .sh-skill-detail-review__profile-strip > div,
+.sh-skill-detail-review__facts > .sh-skill-detail-review__context-row > div,
+.sh-skill-detail-review__facts .sh-detail-requirements > section,
+.sh-skill-detail-review__facts .sh-detail-requirements > article {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  border-radius: 0;
+  min-width: 0;
+  padding: var(--space-2) 0;
+}
+
+.sh-skill-detail-review__facts .sh-detail-requirements > p[role="status"] {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--space-2) 0;
+}
+
+.sh-skill-detail-review__facts .sh-detail-requirements h3 {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+  margin: 0 0 var(--space-1);
+}
+
+.sh-skill-detail-review__facts .sh-detail-requirements p {
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
 .sh-skill-detail-review__profile-strip dt {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
@@ -555,8 +610,8 @@
 
   .sh-skill-detail--review .sh-skill-detail-review__overview .sh-metadata-panel {
     grid-template-areas:
-      "alias tags"
       "purpose purpose"
+      "alias tags"
       "secondary secondary"
       "note note";
   }
@@ -568,9 +623,8 @@
 
 @container workspace (max-width: 30rem) {
   .sh-skill-detail-review__actions { flex-basis: 100%; }
-  .sh-skill-detail-review__profile-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sh-skill-detail--review .sh-skill-detail-review__overview .sh-metadata-panel {
-    grid-template-areas: "alias" "tags" "purpose" "secondary" "note";
+    grid-template-areas: "purpose" "alias" "tags" "secondary" "note";
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -589,3 +643,114 @@
 .sh-skill-detail-review__publisher-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--ui-border-subtle); padding-top: var(--space-2); }
 @container workspace (min-width: 65rem) { .sh-skill-detail-review__publisher-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @container workspace (max-width: 30rem) { .sh-skill-detail-review__publisher-facts { grid-template-columns: minmax(0, 1fr); } }
+
+/* —— 分区标题行：标题与该区的整体动作（如图谱入口）同行 —— */
+.sh-skill-detail-review__section-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.sh-skill-detail-review__section-heading h2,
+.sh-skill-detail-review__section-heading h3 { margin: 0; }
+
+.sh-skill-detail-review__section-heading > div { min-width: 0; }
+
+/* —— 使用去向：真实目标实体才用卡片，网格自适应 —— */
+.sh-skill-detail-review__destinations {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+.sh-skill-detail-review__destination {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.sh-skill-detail-review__destination-heading {
+  align-items: start;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.sh-skill-detail-review__destination-heading > div { min-width: 0; }
+
+.sh-skill-detail-review__destination > p {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.sh-skill-detail-review__destination code {
+  background: var(--ui-surface-subtle);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  display: block;
+  font-size: var(--font-size-xs);
+  overflow: hidden;
+  padding: var(--space-1) var(--space-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-skill-detail-review__source-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 来源状态徽标：形态/平台是短事实，用轻徽标呈现（§6.3） */
+.sh-skill-detail-review__source-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+}
+
+.sh-skill-detail-review__source-badges span {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  padding-block: 0 0.05rem;
+  padding-inline: var(--space-1);
+}
+
+/* 来源候选横幅：可更新的上游事实 + 采用/忽略动作 */
+.sh-skill-detail-review__source-candidate {
+  align-items: center;
+  background: var(--ui-warning-soft, var(--ui-surface-alt));
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sh-skill-detail-review__source-candidate strong { color: var(--ui-ink); }
+.sh-skill-detail-review__source-candidate span { color: var(--ui-ink-muted); font-size: var(--font-size-sm); }
+
+/* 派发同名占用演示与 DEV 开关的轻量呈现 */
+.sh-skill-detail-review__dev-toggle {
+  align-items: center;
+  color: var(--ui-ink-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.sh-skill-detail-review__conflict { border-color: var(--ui-warning-border, var(--ui-border)); }
+.sh-skill-detail-review__conflict label { display: flex; gap: var(--space-2); align-items: center; font-size: var(--font-size-sm); }

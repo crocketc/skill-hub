@@ -131,7 +131,7 @@ test("review source flow previews the effect and cancelling does not record a de
   await expect(page.getByRole("dialog", { name: "选择网络更新来源" })).toBeVisible();
   await page.getByRole("button", { name: "查找来源" }).click();
   await expect(page.getByText("来源已核验，可用于只读检查", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "关联来源" }).click();
+  await page.getByRole("button", { name: "只关联来源" }).click();
   await expect(page.getByRole("dialog", { name: "关联影响预览" })).toBeVisible();
   await expect(page.getByText("关联不会采用或替换当前内容", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "取消" }).click();
@@ -302,6 +302,7 @@ test("review toolbar provides scoped dispatch, standard export and deletion impa
   await page.getByRole("button", { name: "导出", exact: true }).click();
   const exportDialog = page.getByRole("dialog", { name: "导出技能" });
   await expect(exportDialog.getByLabel("导出格式")).toHaveValue("标准 Skill ZIP");
+  await expect(exportDialog).toContainText("导出当前版本 v2.4.1");
   await exportDialog.getByRole("button", { name: "导出" }).click();
   await expect(exportDialog).toContainText("未生成或保存文件");
   await exportDialog.getByRole("button", { name: "返回技能详情" }).click();
@@ -367,4 +368,106 @@ test("review versions compare, rename and restore with current relationship impa
   await expect(page.getByTestId("review-version-result")).toContainText("已创建新的当前版本");
   await expect(page.getByTestId("review-version-result")).toContainText("受管链接继续跟随当前版本");
   await expect(page.getByTestId("review-version-result")).toContainText("独立副本保持原状");
+});
+
+test("review content explorer lists files, compares side by side and opens the system app", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "内容与文件" }).click();
+
+  const rail = page.getByRole("navigation", { name: "文件结构" });
+  await expect(rail).toBeVisible();
+  await expect(rail.getByText("主文件", { exact: true })).toBeVisible();
+  await expect(rail.locator("button.is-active")).toContainText("SKILL.md");
+  const optionCount = await page.locator("#skillhub-markdown-file option").count();
+  await expect(rail.getByRole("button")).toHaveCount(optionCount);
+  await expect(page.getByRole("button", { name: "使用默认应用打开" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "对照" }).click();
+  const compare = page.locator(".sh-markdown-workspace__compare");
+  await expect(compare).toBeVisible();
+  await expect(compare.locator(".sh-markdown-workspace__pane .sh-markdown-renderer")).toBeVisible();
+  await expect(compare.locator(".sh-markdown-workspace__pane .sh-markdown-workspace__source")).toBeVisible();
+  await compare.locator(".sh-markdown-workspace__pane").first().evaluate((element) => {
+    (element as HTMLElement).scrollTop = (element as HTMLElement).scrollHeight / 2;
+  });
+  await expect(async () => {
+    const ratios = await compare.locator(".sh-markdown-workspace__pane").evaluateAll((elements) =>
+      elements.map((element) => {
+        const pane = element as HTMLElement;
+        return pane.scrollTop / Math.max(1, pane.scrollHeight - pane.clientHeight);
+      }),
+    );
+    expect(Math.abs(ratios[0] - ratios[1])).toBeLessThan(0.05);
+  }).toPass();
+
+  await page.setViewportSize({ width: 750, height: 719 });
+  await expect(rail).toBeHidden();
+  await expect(page.locator("#skillhub-markdown-file")).toBeVisible();
+});
+
+test("review usage offers a bounded graph entry explaining the future jump", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "使用去向" }).click();
+
+  await page.getByRole("button", { name: "在图谱中查看" }).click();
+  const graphDialog = page.getByRole("dialog", { name: "在技能图谱中查看" });
+  await expect(graphDialog).toContainText("使用关系边");
+  await expect(graphDialog).toContainText("复用修改");
+  await graphDialog.getByRole("button", { name: "返回技能详情" }).click();
+  await expect(graphDialog).toHaveCount(0);
+  await expect(page.locator("#review-usage")).toBeVisible();
+});
+
+test("review source flow supports ignore, badges, auto check and combined associate-adopt", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "来源更新" }).click();
+
+  await page.getByRole("button", { name: "查找更新来源" }).click();
+  const chooser = page.getByRole("dialog", { name: "选择网络更新来源" });
+  await chooser.getByRole("button", { name: "查找来源" }).click();
+  await chooser.getByRole("button", { name: "只关联来源" }).click();
+  await page.getByRole("dialog", { name: "关联影响预览" }).getByRole("button", { name: "确认关联" }).click();
+  await expect(page.getByText("已关联更新来源，并自动完成一次只读检查；未采用任何内容。", { exact: true })).toBeVisible();
+  await expect(page.getByText("发现可检查的上游更新", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "忽略本次更新" }).click();
+  await expect(page.getByText("已忽略本次更新；该决定只作用于这一候选，之后的新候选会再次提醒。", { exact: true })).toBeVisible();
+
+  await expect(page.getByText("网络仓库", { exact: true })).toBeVisible();
+  await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "打开来源页面" }).click();
+  await expect(page.getByText(/已请求在浏览器打开来源页面/)).toBeVisible();
+
+  await page.getByRole("button", { name: "解除来源关联" }).click();
+  await page.getByRole("dialog", { name: "解除网络来源关联" }).getByRole("button", { name: "确认解除" }).click();
+  await expect(page.getByText("尚未关联更新来源", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "查找更新来源" }).click();
+  const secondChooser = page.getByRole("dialog", { name: "选择网络更新来源" });
+  await secondChooser.getByRole("button", { name: "查找来源" }).click();
+  await secondChooser.getByRole("button", { name: "关联并采用更新" }).click();
+  const combined = page.getByRole("dialog", { name: "关联并采用更新影响预览" });
+  await expect(combined).toContainText("一次确认同时登记更新来源并采用其核验版本");
+  await combined.getByRole("button", { name: "确认关联并采用更新" }).click();
+  await expect(page.getByText("已关联来源并采用示例更新；新版本已创建，安全发现与独立副本仍保留。", { exact: true })).toBeVisible();
+});
+
+test("review dispatch previews same-name target occupancy handling", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("button", { name: "派发", exact: true }).click();
+  const dispatchDialog = page.getByRole("dialog", { name: "派发到 Agent 或项目" });
+
+  await dispatchDialog.getByLabel("演示：目标已有同名技能").check();
+  await dispatchDialog.getByRole("button", { name: "查看派发影响" }).click();
+  const conflict = dispatchDialog.locator(".sh-skill-detail-review__conflict");
+  await expect(conflict).toContainText("目标已有同名技能");
+  await conflict.getByLabel("替换为本次技能（核验后结束旧使用关系）").check();
+  await dispatchDialog.getByRole("button", { name: "确认派发" }).click();
+  await expect(dispatchDialog).toContainText("同名目标按“替换为本次技能”处理");
+  await dispatchDialog.getByRole("button", { name: "返回技能详情" }).click();
+
+  await page.getByRole("button", { name: "派发", exact: true }).click();
+  const retryDialog = page.getByRole("dialog", { name: "派发到 Agent 或项目" });
+  await expect(retryDialog.getByLabel("演示：目标已有同名技能")).not.toBeChecked();
 });

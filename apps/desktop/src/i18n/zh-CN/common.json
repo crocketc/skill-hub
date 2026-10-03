@@ -120,11 +120,15 @@
       "loadingFile": "正在加载 Markdown 文件",
       "loadingFiles": "正在加载 Markdown 文件列表",
       "mode": {
+        "compare": "对照",
         "edit": "编辑",
         "read": "阅读",
         "source": "源码"
       },
       "modes": "Markdown 视图",
+      "compareHint": "阅读与源码左右对照，滚动联动。",
+      "fileStructure": "文件结构",
+      "primaryFile": "主文件",
       "openDefault": "使用默认应用打开",
       "openFolder": "打开 Skill 文件夹",
       "readOnly": {

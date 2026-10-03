@@ -103,6 +103,15 @@ const registry: Record<string, ReactNode> = {
       <path d="M9 3v18" />
     </>
   ),
+  // 外部打开：文件框加外向箭头，供“用系统默认程序打开”等出口动作使用；
+  // 含义由可见文字或 IconButton 标签承载。
+  openExternal: (
+    <>
+      <path d="M13.5 5H19v5.5" />
+      <path d="m19 5-8.5 8.5" />
+      <path d="M17 13.5V18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4.5" />
+    </>
+  ),
   // —— 导航映射（与 Sidebar 共用，保持单次朗读）——
   overview: <path d="M4 12 12 4l8 8M6 10v9h12v-9M9 19v-5h6v5" />,
   library: (
