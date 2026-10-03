@@ -1,3 +1,4 @@
+import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
@@ -5,6 +6,7 @@ import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
+import { IconButton } from "../../ui/IconButton";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { skillLibraryKeys } from "../skills/api";
@@ -20,6 +22,8 @@ interface MetadataPanelProps {
   metadata: SkillMetadata;
   refreshSnapshot?: () => Promise<void>;
   skillId: string;
+  /** DEV detail review uses compact, user-facing inline profile editing. */
+  reviewPresentation?: boolean;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
@@ -28,6 +32,7 @@ interface EditableTextSectionProps {
   hint?: string;
   label: string;
   multiline?: boolean;
+  reviewPresentation?: boolean;
   /** P1-12：值为 false 时只读态不再重复展示字段值（值已在页面主位置展示一次），
    *  编辑契约（草稿表单与保存流程）保持不变。 */
   showReadValue?: boolean;
@@ -39,6 +44,7 @@ function EditableTextSection({
   hint,
   label,
   multiline = false,
+  reviewPresentation = false,
   showReadValue = true,
   onSave,
   value,
@@ -70,7 +76,17 @@ function EditableTextSection({
     <section className="sh-metadata-panel__editable">
       <div className="sh-metadata-panel__section-heading">
         <h3>{label}</h3>
-        {mode === "read" ? (
+        {mode === "read" ? reviewPresentation ? (
+          <IconButton
+            icon="edit"
+            label={t("skillDetail.metadata.edit", { label })}
+            onClick={() => {
+              setDraft(savedValue);
+              setError(undefined);
+              setMode("edit");
+            }}
+          />
+        ) : (
           <Button
             aria-label={t("skillDetail.metadata.edit", { label })}
             onClick={() => {
@@ -147,6 +163,7 @@ export function MetadataPanel({
   facade,
   metadata,
   refreshSnapshot,
+  reviewPresentation = false,
   skillId,
   tracker = operationTracker,
 }: MetadataPanelProps) {
@@ -155,6 +172,7 @@ export function MetadataPanel({
   const notifications = useOptionalAppNotifications();
   const [translationConfirmation, setTranslationConfirmation] = useState(false);
   const [translationPurposeDraft, setTranslationPurposeDraft] = useState<string>();
+  const [reviewAiPreviewOpen, setReviewAiPreviewOpen] = useState(false);
   const [translationError, setTranslationError] = useState<string>();
   // 结构化失败必须可读：原生命令以 AppError 对象拒绝，默认 String() 会得到
   // "[object Object]"。通知的补充说明与页面局部提示共用同一段描述。
@@ -242,7 +260,7 @@ export function MetadataPanel({
   return (
     <div className="sh-metadata-panel">
       {/* P1-12：块标题"身份与来源"已是该区块唯一标题，事实清单由字段名自说明。 */}
-      <section className="sh-metadata-panel__facts">
+      {!reviewPresentation ? <section className="sh-metadata-panel__facts">
         <dl>
           <div>
             <dt>{t("skillDetail.metadata.source")}</dt>
@@ -265,34 +283,44 @@ export function MetadataPanel({
             <dd>{metadata.copyright ?? t("skillDetail.metadata.empty")}</dd>
           </div>
         </dl>
-      </section>
+      </section> : null}
       {/* P1-12：原文与译文是翻译契约字段，保留但收纳为次级展示，
           避免与正文 Markdown、概览用途三层描述性文本连续堆叠。 */}
-      <details className="sh-metadata-panel__secondary">
+      <details className="sh-metadata-panel__secondary" open={reviewPresentation}>
         <summary>{t("skillDetail.metadata.sourceTexts")}</summary>
         <section>
-          <h3>{t("skillDetail.metadata.originalDescription")}</h3>
+          <div className="sh-metadata-panel__section-heading"><h3>{t("skillDetail.metadata.originalDescription")}</h3>{reviewPresentation ? <IconButton icon="sparkle" label={t("skillDetail.metadata.retranslate")} onClick={() => setReviewAiPreviewOpen(true)} /> : null}</div>
           <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>
         </section>
         <section>
           <div className="sh-metadata-panel__section-heading">
             <h3>{t("skillDetail.metadata.translation")}</h3>
-            <Button
-              onClick={() => {
-                if (metadata.translation?.userRevised) setTranslationConfirmation(true);
-                else void requestTranslation(false);
-              }}
-              size="sm"
-              variant="ghost"
-            >
-              {t("skillDetail.metadata.retranslate")}
-            </Button>
+            <div className="sh-metadata-panel__translation-actions">
+              {reviewPresentation && metadata.translation?.text ? (
+                <Button onClick={() => setTranslationPurposeDraft(metadata.translation?.text)} size="sm" title="将当前用途替换为这段译文" variant="ghost">
+                  设为我的用途
+                </Button>
+              ) : null}
+              {!reviewPresentation ? (
+                <Button
+                  onClick={() => {
+                    if (metadata.translation?.userRevised) setTranslationConfirmation(true);
+                    else void requestTranslation(false);
+                  }}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("skillDetail.metadata.retranslate")}
+                </Button>
+              ) : null}
+            </div>
           </div>
           <EditableTextSection
             key={`translation-${metadata.translation?.text ?? ""}`}
             label={t("skillDetail.metadata.translationText")}
             multiline
             onSave={(translationText) => savePatch({ translationText: translationText || null })}
+            reviewPresentation={reviewPresentation}
             value={metadata.translation?.text ?? ""}
           />
           {metadata.translation ? (
@@ -324,17 +352,24 @@ export function MetadataPanel({
             </div>
           ) : null}
           {translationError ? <p role="alert">{translationError}</p> : null}
-          {translationPurposeDraft ? (
-            <div aria-label={t("skillDetail.metadata.translationPurposeConfirmLabel")} role="alertdialog">
-              <p>{translationPurposeDraft}</p>
-              <Button onClick={() => void saveTranslationAsPurpose()} size="sm">
-                {t("skillDetail.metadata.useTranslationAsPurpose")}
+      {translationPurposeDraft ? (
+        <div aria-label={t("skillDetail.metadata.translationPurposeConfirmLabel")} role="alertdialog">
+          <p>{translationPurposeDraft}</p>
+          <Button onClick={() => void saveTranslationAsPurpose()} size="sm">
+            {reviewPresentation ? "确认替换我的用途" : t("skillDetail.metadata.useTranslationAsPurpose")}
               </Button>
               <Button onClick={() => setTranslationPurposeDraft(undefined)} size="sm" variant="ghost">
                 {t("actions.cancel")}
               </Button>
             </div>
-          ) : null}
+      ) : null}
+      {reviewPresentation ? <Dialog.Root open={reviewAiPreviewOpen} onOpenChange={setReviewAiPreviewOpen}>
+        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
+          <Dialog.Title>{t("skillDetail.metadata.retranslate")}</Dialog.Title>
+          <Dialog.Description>此原型未配置 AI 服务，也不会发送技能内容。正式操作会先说明数据范围，再由你选择是否开始。</Dialog.Description>
+          <div className="sh-dialog__actions"><Button onClick={() => setReviewAiPreviewOpen(false)} size="sm">关闭</Button></div>
+        </Dialog.Content></Dialog.Portal>
+      </Dialog.Root> : null}
         </section>
       </details>
       {/* DEV-16：身份区显示别名与用途的读值——用户要求详情页完整显示所有
@@ -344,6 +379,7 @@ export function MetadataPanel({
         key={`alias-${metadata.alias ?? ""}`}
         label={t("skillDetail.metadata.alias")}
         onSave={(alias) => savePatch({ alias: alias || null })}
+        reviewPresentation={reviewPresentation}
         value={metadata.alias ?? ""}
       />
       <EditableTextSection
@@ -352,6 +388,7 @@ export function MetadataPanel({
         hint={t("skillDetail.metadata.purposeHint")}
         multiline
         onSave={(purpose) => savePatch({ purpose })}
+        reviewPresentation={reviewPresentation}
         value={metadata.purpose}
       />
       <EditableTextSection
@@ -363,6 +400,7 @@ export function MetadataPanel({
             tags: [...new Set(tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))],
           })
         }
+        reviewPresentation={reviewPresentation}
         value={metadata.tags.join(", ")}
       />
       <EditableTextSection
@@ -370,6 +408,7 @@ export function MetadataPanel({
         label={t("skillDetail.metadata.note")}
         multiline
         onSave={(note) => savePatch({ note: note || null })}
+        reviewPresentation={reviewPresentation}
         value={metadata.note ?? ""}
       />
     </div>

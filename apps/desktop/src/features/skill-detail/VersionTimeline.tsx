@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatTimestamp } from "../../i18n";
 import { describeNativeError } from "../../api/nativeErrors";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { Button } from "../../ui/Button";
@@ -15,6 +16,8 @@ interface VersionTimelineProps {
   facade: SkillDetailFacade;
   skillId: string;
   summary?: SkillDetailSummary;
+  userFacingDates?: boolean;
+  reviewPresentation?: boolean;
 }
 
 function toggleComparedVersion(selected: string[], versionId: string): string[] {
@@ -22,8 +25,8 @@ function toggleComparedVersion(selected: string[], versionId: string): string[] 
   return selected.length === 2 ? [selected[1], versionId] : [...selected, versionId];
 }
 
-export function VersionTimeline({ facade, skillId, summary }: VersionTimelineProps) {
-  const { t } = useTranslation();
+export function VersionTimeline({ facade, skillId, summary, userFacingDates = false, reviewPresentation = false }: VersionTimelineProps) {
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
   const [selected, setSelected] = useState<string[]>([]);
@@ -35,6 +38,7 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
   const [renamingId, setRenamingId] = useState<string>();
   const [labelDraft, setLabelDraft] = useState("");
   const [renameError, setRenameError] = useState<string>();
+  const [reviewResult, setReviewResult] = useState<string>();
   const commitGuardRef = useRef(false);
   const previewHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -140,6 +144,7 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
           queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
         ]);
         setRollbackTarget(undefined);
+        if (reviewPresentation) setReviewResult("已创建新的当前版本；受管链接继续跟随当前版本，独立副本保持原状。目标内容已完成示例基础检查；原始风险记录仍保留。");
       },
       () => setCommitError(t("skillDetail.versions.rollbackError")),
     ).finally(() => {
@@ -153,7 +158,8 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
 
   return (
     <div className="sh-version-timeline">
-      {summary ? <VersionUpdateNotice summary={summary} /> : null}
+      {summary && !reviewPresentation ? <VersionUpdateNotice summary={summary} /> : null}
+      {reviewResult ? <p data-testid="review-version-result" role="status">{reviewResult}</p> : null}
       <ol>
         {versionsQuery.data.map((version) => (
           <li key={version.id}>
@@ -164,7 +170,10 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
                 {version.current ? <StatusBadge tone="info">{t("skillDetail.versions.current")}</StatusBadge> : null}
               </div>
               <p>
-                {version.createdAt ? version.createdAt : t("skillDetail.versions.timeUnknown")}
+                {version.createdAt ? userFacingDates
+                  ? formatTimestamp(version.createdAt, i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en-US")
+                  : version.createdAt
+                  : t("skillDetail.versions.timeUnknown")}
                 {version.origin ? ` · ${t(`skillDetail.versions.origin.${version.origin}`)}` : ""}
               </p>
               <p>{t("skillDetail.versions.changes", version.changes)}</p>
@@ -211,7 +220,7 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
               </label>
               {!version.current ? (
                 <Button onClick={() => prepareRollback(version.id)} size="sm" variant="ghost">
-                  {t("skillDetail.versions.rollbackTo", { version: version.label })}
+                  {reviewPresentation ? `恢复到 ${version.label}` : t("skillDetail.versions.rollbackTo", { version: version.label })}
                 </Button>
               ) : null}
             </article>
@@ -239,12 +248,13 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
         </div>
       ) : null}
       {rollbackTarget ? (
-        <section className="sh-version-timeline__rollback">
-          <h3 ref={previewHeadingRef} tabIndex={-1}>{t("skillDetail.versions.rollbackPreview")}</h3>
+        <section aria-label={reviewPresentation ? "恢复影响预览" : t("skillDetail.versions.rollbackPreview")} role="region" className="sh-version-timeline__rollback">
+          <h3 ref={previewHeadingRef} tabIndex={-1}>{reviewPresentation ? "恢复影响预览" : t("skillDetail.versions.rollbackPreview")}</h3>
           {impactQuery.isPending ? <p role="status">{t("skillDetail.versions.impactLoading")}</p> : null}
           {impactQuery.data ? (
             <>
-              <p>{t("skillDetail.versions.createsVersion")}</p>
+              <p>{reviewPresentation ? "恢复会创建新的当前版本，原当前版本保留在历史中。" : t("skillDetail.versions.createsVersion")}</p>
+              {reviewPresentation ? <><p>目标版本内容已进行示例基础检查；发现记录不会因恢复而清空。</p><p>受管链接：2 个，继续跟随新当前版本。独立副本：1 个，原样保留。</p></> : null}
               <ul>
                 {impactQuery.data.deployments.map((deployment) => (
                   <li key={deployment.id}>
@@ -254,9 +264,9 @@ export function VersionTimeline({ facade, skillId, summary }: VersionTimelinePro
                   </li>
                 ))}
               </ul>
-              <p>{t("skillDetail.versions.rerunBasic")}</p>
+              <p>{reviewPresentation ? "恢复后重新执行基础安全检查" : t("skillDetail.versions.rerunBasic")}</p>
               <Button disabled={commitPending} loading={commitPending} onClick={commitRollback} size="sm">
-                {t("skillDetail.versions.confirmRollback")}
+                {reviewPresentation ? "确认创建恢复版本" : t("skillDetail.versions.confirmRollback")}
               </Button>
               <Button disabled={commitPending} onClick={() => setRollbackTarget(undefined)} size="sm" variant="ghost">
                 {t("actions.cancel")}

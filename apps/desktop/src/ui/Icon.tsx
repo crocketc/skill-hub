@@ -30,6 +30,7 @@ const registry: Record<string, ReactNode> = {
       <path d="M12 8v4.5l3 2" />
     </>
   ),
+  edit: <path d="m15.5 5.5 3 3M4 20l4.2-.9L19.1 8.2a2.1 2.1 0 0 0-3-3L5.2 16.1 4 20Z" />,
   restore: (
     <>
       <path d="M4 12a8 8 0 1 0 2.34-5.66" />

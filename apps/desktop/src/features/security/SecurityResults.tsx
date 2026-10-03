@@ -10,6 +10,7 @@ import { skillLibraryKeys } from "../skills/api";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { Icon } from "../../ui/Icon";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { FindingActions } from "./FindingActions";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences } from "./api";
@@ -22,11 +23,13 @@ export interface SecurityResultsProps {
   findingId?: string;
   checkKind?: string;
   variant?: "page" | "embedded";
+  /** Prototype presentation separates run completion from unresolved risk. */
+  presentationMode?: "standard" | "risk-aware";
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page" }: SecurityResultsProps) {
+export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page", presentationMode = "standard" }: SecurityResultsProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const scopeKey = `${skillId}\u0000${versionId}`;
@@ -177,7 +180,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
       if (isCurrentScope(operationScope)) setBasicRunning(false);
     }
   };
-  const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : true;
+  const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : presentationMode !== "risk-aware";
   // 统一执行桥（任务 4）：在途句柄挂在 ref 上，供取消路径与运行中的
   // operation id 发现逻辑随时关联/落终态。
   const handleRun = async () => {
@@ -284,23 +287,29 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
   const basicFindings = findings.filter((finding) => finding.kind === "basic");
   const llmFindings = findings.filter((finding) => finding.kind === "llm");
   const highRiskCount = findings.filter((finding) => finding.highRisk).length;
+  const pendingHighRisk = findings.filter((finding) => finding.highRisk && finding.disposition === "actionable").length;
   const pendingCount = findings.filter((finding) => finding.disposition === "actionable").length;
   const content = (
     <>
       {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || finding.kind === checkKind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
-      <p aria-label={t("security.findingSummaryLabel")} className="sh-security-results__summary" role="status">
+      {presentationMode !== "risk-aware" ? <p aria-label={t("security.findingSummaryLabel")} className="sh-security-results__summary" role="status">
         {t("security.findingSummary", { highRisk: highRiskCount, pending: pendingCount })}
-      </p>
+      </p> : null}
+      {presentationMode === "risk-aware" ? (
+        <p className="sh-skill-detail-review__safety-summary" data-testid="review-safety-summary" role="status">
+          {pendingHighRisk ? t("security.riskAwareSummary", { highRisk: pendingHighRisk, pending: pendingCount }) : highRiskCount ? `已处置高风险 ${highRiskCount} 项 · ${pendingCount} 项待处理。原始风险发现保留，不代表内容无风险。` : `高风险 ${highRiskCount} 项 · ${pendingCount} 项待处理。请结合检查范围与发现记录判断。`}
+        </p>
+      ) : null}
       <div className="sh-workflow-grid">
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
-          <CheckSummary check={checkByKind("basic")} />
+          <CheckSummary check={checkByKind("basic")} riskAware={presentationMode === "risk-aware" && basicFindings.length > 0} />
           {facade.runBasicCheck ? <Button disabled={basicRunning} loading={basicRunning} onClick={() => void handleRunBasic()} size="sm">{t("security.basic.run")}</Button> : null}
           {basicError ? <p role="alert">{t("security.basic.runFailed", { message: basicError })}</p> : null}
         </section>
         <section aria-labelledby="llm-security-heading" className="sh-workflow-card">
           <h2 id="llm-security-heading">{t("security.llmHeading")}</h2>
-          <CheckSummary check={checkByKind("llm")} experimental />
+          <CheckSummary check={checkByKind("llm")} experimental riskAware={presentationMode === "risk-aware"} />
           <div className="sh-workflow-actions">
             <Button disabled={!llmConfigured} loading={running} onClick={() => void handleRun()} size="sm">{t("security.llm.run")}</Button>
             {running && facade.cancelLlmCheck ? (
@@ -315,7 +324,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
                 ? preferences.dataScope === "explicit_selection"
                   ? t("security.llm.scopeExplicitSelection")
                   : t("security.llm.scopeOther", { scope: preferences.dataScope })
-                : <>{t("security.llm.providerMissing")} <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link></>}
+                : <><span>{t("security.llm.providerMissing")}</span> {presentationMode === "risk-aware" ? <span>可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。</span> : <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>}</>}
             </p>
           ) : null}
           {runError ? <p role="alert">{t("security.llm.runFailed", { message: runError })}</p> : null}
@@ -389,11 +398,13 @@ const CHECK_TONES: Record<SecurityCheck["state"], "success" | "danger" | "info" 
   running: "info",
 };
 
-function CheckSummary({ check, experimental = false }: { check?: SecurityCheck; experimental?: boolean }) {
+function CheckSummary({ check, experimental = false, riskAware = false }: { check?: SecurityCheck; experimental?: boolean; riskAware?: boolean }) {
   const { t, i18n } = useTranslation();
   if (!check) return <p>{t("security.notChecked")}</p>;
   const checkedAt = formatCheckedAt(check.checkedAt, i18n.resolvedLanguage ?? i18n.language);
-  return <div className="sh-check-summary"><StatusBadge tone={CHECK_TONES[check.state]}>{t(`security.states.${check.state}`)}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{checkedAt ? <time className="sh-security-results__checked-at" dateTime={check.checkedAt}>{t("security.checkedAt", { date: checkedAt })}</time> : null}{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
+  const hasFindings = riskAware && check.state === "passed" && check.findingCount > 0;
+  const label = hasFindings ? t("security.states.completedWithFindings") : t(`security.states.${check.state}`);
+  return <div className="sh-check-summary">{riskAware ? <span className={`sh-skill-detail-review__check-icon sh-skill-detail-review__check-icon--${hasFindings ? "risk" : check.state}`} role="img" aria-label={label} title={label} tabIndex={0}>{hasFindings ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="var(--ui-warning-background)" stroke="var(--ui-warning-foreground)" /><path d="M12 7v6.5" stroke="var(--ui-danger-foreground)" strokeWidth="2.3" /><circle cx="12" cy="17" r="1.3" fill="var(--ui-danger-foreground)" /></svg> : <Icon name={check.state === "passed" ? "success" : check.state === "failed" ? "error" : "info"} size={24} />}</span> : null}<StatusBadge tone={hasFindings ? "warning" : CHECK_TONES[check.state]}>{label}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{checkedAt ? <time className="sh-security-results__checked-at" dateTime={check.checkedAt}>{t("security.checkedAt", { date: checkedAt })}</time> : null}{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
 }
 
 function formatCheckedAt(value: string | undefined, language: string): string | undefined {

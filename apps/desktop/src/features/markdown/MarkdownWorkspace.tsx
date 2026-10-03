@@ -20,6 +20,7 @@ const MarkdownEditor = lazy(() =>
 
 interface MarkdownWorkspaceProps {
   facade: MarkdownFacade;
+  reviewSaveFlow?: boolean;
   skillId: string;
 }
 
@@ -32,7 +33,7 @@ const readOnlyMessageKey = {
   plugin: "markdown.workspace.readOnly.plugin",
 } as const satisfies Record<MarkdownReadOnlyReason, string>;
 
-export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
+export function MarkdownWorkspace({ facade, reviewSaveFlow = false, skillId }: MarkdownWorkspaceProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedOverride, setSelectedOverride] = useState<string>();
@@ -204,8 +205,9 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
             <MarkdownEditor
               facade={facade}
               file={file}
-              key={`${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
+              key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
               onExit={() => setMode("read")}
+              reviewSaveFlow={reviewSaveFlow}
               onSaved={() => {
                 void queryClient.invalidateQueries({
                   queryKey: ["skill-detail", skillId, "summary"],

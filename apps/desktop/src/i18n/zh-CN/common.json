@@ -2138,6 +2138,7 @@
       "not_checked": "未检查",
       "running": "检查中",
       "passed": "通过",
+      "completedWithFindings": "检查已完成",
       "failed": "失败"
     },
     "basicHeading": "基础安全检查",
@@ -2152,6 +2153,7 @@
     "checkedAt": "最近检查：{{date}}",
     "findingSummaryLabel": "安全问题计数",
     "findingSummary": "高风险 {{highRisk}} · 待处理 {{pending}}",
+    "riskAwareSummary": "仍有高风险待处理 · {{highRisk}} 项高风险 · {{pending}} 项待处理；检查已完成",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
     "locationUnknown": "位置不可用",

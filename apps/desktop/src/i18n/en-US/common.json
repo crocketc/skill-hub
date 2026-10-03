@@ -2138,6 +2138,7 @@
       "not_checked": "Not checked",
       "running": "Running",
       "passed": "Passed",
+      "completedWithFindings": "Check completed",
       "failed": "Failed"
     },
     "basicHeading": "Basic security check",
@@ -2152,6 +2153,7 @@
     "checkedAt": "Last checked: {{date}}",
     "findingSummaryLabel": "Security finding counts",
     "findingSummary": "High risk {{highRisk}} · Pending {{pending}}",
+    "riskAwareSummary": "High-risk findings remain · {{highRisk}} high risk · {{pending}} pending; check completed",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
     "locationUnknown": "Location unavailable",
