@@ -1615,7 +1615,12 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
         .expect("insert legacy trial");
     database
         .connection_for_test()
-        .execute_batch("UPDATE skills SET lifecycle='archived'; PRAGMA user_version=22;")
+        .execute_batch(
+            "UPDATE skills SET lifecycle='archived';
+             ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+             DROP TABLE relationship_governance_mutation_receipts;
+             PRAGMA user_version=22;",
+        )
         .expect("simulate legacy database");
     drop(database);
 
@@ -2302,7 +2307,7 @@ async fn commit_import_copies_skill_into_the_central_library() {
     let AppCommandResult::ImportSummary(summary) = committed else {
         panic!("expected import summary");
     };
-    assert!(summary.committed);
+    assert!(summary.committed, "import summary: {summary:?}");
     let skill_id = summary.items[0].skill_id.expect("imported skill id");
     assert_eq!(
         summary.items[0].decision,
@@ -4908,7 +4913,13 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
 
 /// Registers one logical target as a real discovery fact so prepare/commit
 /// revalidation re-derives the same reality the plan was built from.
-fn seed_registered_target(database: &Database, path: &std::path::Path, logical_id: &str) -> String {
+fn seed_registered_target(
+    database: &Database,
+    path: &std::path::Path,
+    logical_id: &str,
+    profile_id: &str,
+    client_id: &str,
+) -> String {
     let physical_id = skillhub_core::physical_id_for_path(path).expect("target identity");
     database
         .agent_repository()
@@ -4916,8 +4927,8 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
             generation: "1".into(),
             observed_at: "2026-09-24T00:00:00Z".into(),
             instances: vec![ClientInstance {
-                profile_id: "fixture".into(),
-                client_id: logical_id.into(),
+                profile_id: profile_id.into(),
+                client_id: client_id.into(),
                 kind: ClientKind::Cli,
                 display_name: "Fixture".into(),
                 supported_os: vec![OperatingSystem::Windows],
@@ -4925,8 +4936,8 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
             }],
             logical_targets: vec![LogicalTarget {
                 id: logical_id.into(),
-                profile_id: "fixture".into(),
-                client_id: logical_id.into(),
+                profile_id: profile_id.into(),
+                client_id: client_id.into(),
                 scope: TargetScope::Global,
                 path: path.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
@@ -4975,7 +4986,13 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
             rusqlite::params![version_id.to_string(), skill.id().to_string()],
         )
         .expect("insert version");
-    let target_id = seed_registered_target(&database, target.path(), "agent-codex");
+    let target_id = seed_registered_target(
+        &database,
+        target.path(),
+        "agent-codex",
+        "fixture",
+        "openai.codex-cli",
+    );
     database
         .connection_for_test()
         .execute(
@@ -5026,7 +5043,7 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
     let AppCommandResult::DeploymentSummary(summary) = summary else {
         panic!("expected deployment summary");
     };
-    assert!(summary.committed);
+    assert!(summary.committed, "deployment summary: {summary:?}");
     assert!(target.path().join("deployable/SKILL.md").is_file());
     let records = facade
         .query(RootAppQuery::ListDeployments(ListDeployments {
@@ -5108,7 +5125,13 @@ async fn failed_deployment_keeps_prepared_operation_and_source_for_retry() {
         .capture(skill.id(), source.path())
         .expect("capture version")
         .id;
-    let target_id = seed_registered_target(&database, target.path(), "agent-codex");
+    let target_id = seed_registered_target(
+        &database,
+        target.path(),
+        "agent-codex",
+        "fixture",
+        "openai.codex-cli",
+    );
     database
         .connection_for_test()
         .execute(
@@ -5179,7 +5202,7 @@ async fn failed_deployment_keeps_prepared_operation_and_source_for_retry() {
     let AppCommandResult::DeploymentSummary(second) = second else {
         panic!("expected deployment summary");
     };
-    assert!(second.committed);
+    assert!(second.committed, "deployment retry summary: {second:?}");
     assert!(destination.join("SKILL.md").is_file());
 }
 
@@ -6057,7 +6080,13 @@ async fn uninstall_backup_action_creates_restorable_package_before_undeploy() {
             rusqlite::params![version_id.to_string(), skill.id().to_string()],
         )
         .expect("insert version");
-    let target_id = seed_registered_target(&database, target.path(), "agent-codex");
+    let target_id = seed_registered_target(
+        &database,
+        target.path(),
+        "agent-codex",
+        "fixture",
+        "openai.codex-cli",
+    );
     database
         .connection_for_test()
         .execute(
@@ -6099,12 +6128,16 @@ async fn uninstall_backup_action_creates_restorable_package_before_undeploy() {
     let AppCommandResult::PreparedDeployment(prepared) = prepared else {
         panic!("expected prepared deployment");
     };
-    facade
+    let committed = facade
         .execute(AppCommand::CommitDeployment(CommitDeployment {
             prepared_deployment_id: prepared.id,
         }))
         .await
         .expect("commit deployment");
+    let AppCommandResult::DeploymentSummary(summary) = committed else {
+        panic!("expected deployment summary");
+    };
+    assert!(summary.committed, "deployment summary: {summary:?}");
     let records = facade
         .query(RootAppQuery::ListDeployments(ListDeployments {
             skill_id: Some(skill.id()),

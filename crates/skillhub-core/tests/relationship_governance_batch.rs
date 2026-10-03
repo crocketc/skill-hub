@@ -648,33 +648,53 @@ mod unified_ledger {
 
     #[test]
     fn non_destructive_actions_follow_source_evidence_and_retention_decision() {
-        for health in [SourceCopyHealth::Normal, SourceCopyHealth::NeedsValidation,
-            SourceCopyHealth::ContentChanged, SourceCopyHealth::PermissionLimited,
-            SourceCopyHealth::ManagedOccupied, SourceCopyHealth::OperationFailed] {
+        for health in [
+            SourceCopyHealth::Normal,
+            SourceCopyHealth::NeedsValidation,
+            SourceCopyHealth::ContentChanged,
+            SourceCopyHealth::PermissionLimited,
+            SourceCopyHealth::ManagedOccupied,
+            SourceCopyHealth::OperationFailed,
+        ] {
             for decision in [SourceCopyDecision::Pending, SourceCopyDecision::Retained] {
-                let ledger = unified_of(vec![GovernableRelationFact::SourceCopy(
-                    source_copy_with_decision("rel-copy", health, decision),
-                )], RelationGovernanceFilters::default());
+                let ledger = unified_of(
+                    vec![GovernableRelationFact::SourceCopy(
+                        source_copy_with_decision("rel-copy", health, decision),
+                    )],
+                    RelationGovernanceFilters::default(),
+                );
                 let actions = &ledger.rows[0].governance.action_conditions;
-                let available = |name: &str| actions.iter().any(|action| {
-                    serde_json::to_value(action.action).unwrap() == name && action.available
-                });
-                assert!(available("end_relationship"), "source copy {health:?}/{decision:?}");
-                assert_eq!(available("revoke_retention"), decision == SourceCopyDecision::Retained);
+                let available = |name: &str| {
+                    actions.iter().any(|action| {
+                        serde_json::to_value(action.action).unwrap() == name && action.available
+                    })
+                };
+                assert!(
+                    available("end_relationship"),
+                    "source copy {health:?}/{decision:?}"
+                );
+                assert_eq!(
+                    available("revoke_retention"),
+                    decision == SourceCopyDecision::Retained
+                );
             }
         }
-        let ledger = unified_of(vec![GovernableRelationFact::Deployment(
-            RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
-        )], RelationGovernanceFilters::default());
+        let ledger = unified_of(
+            vec![GovernableRelationFact::Deployment(
+                RelationSpec::managed_link("rel-link", "/agent/skills/link").build(),
+            )],
+            RelationGovernanceFilters::default(),
+        );
         let end = ledger.rows[0]
             .governance
             .action_conditions
             .iter()
-            .find(|condition| {
-                serde_json::to_value(condition.action).unwrap() == "end_relationship"
-            })
+            .find(|condition| serde_json::to_value(condition.action).unwrap() == "end_relationship")
             .expect("deployment ending condition is explicit");
-        assert!(!end.available, "deployment ending requires verified removal");
+        assert!(
+            !end.available,
+            "deployment ending requires verified removal"
+        );
         assert_eq!(
             serde_json::to_value(&end.reasons).unwrap(),
             serde_json::json!(["managed_entry_requires_verified_removal"])
@@ -912,11 +932,12 @@ mod unified_ledger {
             .governance
             .action_conditions
             .iter()
-            .find(|condition| {
-                serde_json::to_value(condition.action).unwrap() == "end_relationship"
-            })
+            .find(|condition| serde_json::to_value(condition.action).unwrap() == "end_relationship")
             .expect("merged deployment has an explicit ending condition");
-        assert!(!end.available, "merged deployment ending requires verified removal");
+        assert!(
+            !end.available,
+            "merged deployment ending requires verified removal"
+        );
         assert_eq!(
             serde_json::to_value(&end.reasons).unwrap(),
             serde_json::json!(["managed_entry_requires_verified_removal"])
@@ -925,9 +946,7 @@ mod unified_ledger {
             .governance
             .action_conditions
             .iter()
-            .find(|condition| {
-                serde_json::to_value(condition.action).unwrap() == "revoke_retention"
-            })
+            .find(|condition| serde_json::to_value(condition.action).unwrap() == "revoke_retention")
             .expect("merged row retains the source-copy revocation action");
         assert!(revoke.available);
         assert_eq!(
