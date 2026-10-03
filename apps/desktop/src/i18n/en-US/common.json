@@ -1298,6 +1298,16 @@
       "removeTag": "Remove tag {{tag}}",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
       "fullDetails": "View and edit full details",
+      "prototype": {
+        "cycleWidth": "Current: {{current}}; click to switch to {{next}}",
+        "delete": "Delete",
+        "dispatch": "Dispatch",
+        "export": "Export",
+        "fullDetails": "Full details",
+        "previewOnly": "Layout preview; action buttons are display-only",
+        "requirements": "Requirements",
+        "sourceVersionTitle": "Source and version"
+      },
       "modules": {
         "dependenciesDuplicates": "Dependencies and duplicates",
         "externalChanges": "External changes",

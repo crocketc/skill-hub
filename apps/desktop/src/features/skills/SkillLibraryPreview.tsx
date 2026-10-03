@@ -4,6 +4,8 @@ import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { useAppNotifications } from "../../ui/notifications";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { DEFAULT_DRAWER_PREFERENCES } from "./api";
+import { drawerWidthForPreset } from "./drawerModules";
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import { createMockSkillLibraryFacade } from "./testFixtures";
 
@@ -26,9 +28,18 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 
 export function SkillLibraryPreview() {
   const [securityFacade] = useState(() => createPreviewSecurityFacade());
+  const drawerPrototype = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get("drawerPrototype") === "review";
   const [facade] = useState(() => {
     const previewFacade = createMockSkillLibraryFacade({ total: previewTotal() });
     previewFacade.listCombinations = async () => [];
+    if (drawerPrototype) {
+      previewFacade.loadDrawerPreferences = async () => ({
+        ...DEFAULT_DRAWER_PREFERENCES,
+        preset: "standard",
+        widthPx: drawerWidthForPreset("standard", window.innerWidth),
+      });
+    }
     return previewFacade;
   });
   const showNotificationPreview = new URLSearchParams(window.location.search)
@@ -36,7 +47,11 @@ export function SkillLibraryPreview() {
   return (
     <>
       {showNotificationPreview ? <NotificationActionPreview /> : null}
-      <SkillLibraryPage facade={facade} securityFacade={securityFacade} />
+      <SkillLibraryPage
+        drawerPrototype={drawerPrototype}
+        facade={facade}
+        securityFacade={securityFacade}
+      />
     </>
   );
 }

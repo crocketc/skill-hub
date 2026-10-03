@@ -1298,6 +1298,16 @@
       "removeTag": "移除标签 {{tag}}",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看编辑完整详情",
+      "prototype": {
+        "cycleWidth": "当前：{{current}}；点击切换至{{next}}",
+        "delete": "删除",
+        "dispatch": "派发",
+        "export": "导出",
+        "fullDetails": "完整详情",
+        "previewOnly": "布局预览；操作按钮仅展示，不执行",
+        "requirements": "运行要求",
+        "sourceVersionTitle": "来源与版本"
+      },
       "modules": {
         "dependenciesDuplicates": "依赖与重复项",
         "externalChanges": "外部变更",

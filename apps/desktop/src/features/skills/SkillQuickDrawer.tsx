@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -31,6 +32,7 @@ import {
 import { InvocationBadge } from "./InvocationBadge";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
+import { AgentPresentation } from "../../ui/AgentPresentation";
 import { SecurityResults } from "../security/SecurityResults";
 import type { SecurityFacade } from "../security/api";
 import {
@@ -45,6 +47,8 @@ import "./skillQuickDrawer.css";
 
 export interface SkillQuickDrawerProps {
   detailSearch?: string;
+  /** DEV-only, explicitly opted-in layout review. Does not enable Skill actions. */
+  drawerPrototype?: boolean;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
   onDelete?: (skillId: string, skillName: string) => void;
@@ -132,10 +136,19 @@ function ValueList({ values }: { values: string[] }) {
 
 const MAX_VISIBLE_PROJECTS = 3;
 
-function RelationsModule({ view }: ModuleProps) {
+function RelationsModule({ drawerPrototype = false, view }: ModuleProps & { drawerPrototype?: boolean }) {
   const { t } = useTranslation();
   const [projectsExpanded, setProjectsExpanded] = useState(false);
-  const agentDeployments = view.agentDeployments ?? [];
+  const agentDeployments = (view.agentDeployments ?? []).map((agent) => {
+    if (!drawerPrototype) return agent;
+    if (agent.id === "codex") {
+      return { ...agent, agentId: "codex-cli", brand: "openai", name: "Codex CLI" };
+    }
+    if (agent.id === "claude") {
+      return { ...agent, agentId: "claude-code", brand: "anthropic", name: "Claude Code" };
+    }
+    return agent;
+  });
   const projects = view.projectDeployments ?? [];
   const visibleProjects = projectsExpanded ? projects : projects.slice(0, MAX_VISIBLE_PROJECTS);
   const hiddenProjectCount = Math.max(0, projects.length - MAX_VISIBLE_PROJECTS);
@@ -149,12 +162,33 @@ function RelationsModule({ view }: ModuleProps) {
             <span className="sh-skill-drawer__relation-count">{view.agentDeploymentCount}</span>
           </div>
           {agentDeployments.length > 0 ? (
-            <AgentDeploymentIcons
-              agents={agentDeployments}
-              ariaLabel={t("skillLibrary.table.agentDeploymentSummary", {
-                count: view.agentDeploymentCount,
-              })}
-            />
+            drawerPrototype ? (
+              <div
+                aria-label={t("skillLibrary.table.agentDeploymentSummary", {
+                  count: view.agentDeploymentCount,
+                })}
+                className="sh-skill-drawer__prototype-agent-cards"
+              >
+                {agentDeployments.map((agent) => (
+                  <span className="sh-skill-drawer__prototype-agent-card" key={agent.id} title={agent.name}>
+                    <AgentPresentation
+                      agentId={agent.agentId ?? agent.id}
+                      brand={agent.brand}
+                      density="full"
+                      instance={agent.name}
+                      sharedDirectory={agent.sharedDirectory}
+                    />
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <AgentDeploymentIcons
+                agents={agentDeployments}
+                ariaLabel={t("skillLibrary.table.agentDeploymentSummary", {
+                  count: view.agentDeploymentCount,
+                })}
+              />
+            )
           ) : (
             <EmptyValue />
           )}
@@ -258,6 +292,45 @@ function SecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
   );
 }
 
+function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: ModuleProps) {
+  const { t } = useTranslation();
+  return (
+    <ModuleCard title={t("skillLibrary.drawer.prototype.sourceVersionTitle")}>
+      <dl className="sh-skill-drawer__prototype-source-facts">
+        <div>
+          <dt>{t("skillLibrary.drawer.values.source")}</dt>
+          <dd>{view.source ?? <EmptyValue />}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.filters.version")}</dt>
+          <dd>{view.currentVersion}</dd>
+        </div>
+        <div>
+          <dt>{t("skillLibrary.drawer.values.license")}</dt>
+          <dd>{view.license ?? <EmptyValue />}</dd>
+        </div>
+      </dl>
+      {view.upgradeAvailable ? (
+        <div className="sh-skill-drawer__version-update sh-skill-drawer__prototype-update">
+          <span aria-hidden="true" className="sh-skill-drawer__prototype-update-mark" />
+          <p>{t("skillLibrary.drawer.values.updateAvailable")}</p>
+          {versionsHref ? (
+            <Link
+              className="sh-button sh-button--secondary sh-button--sm"
+              state={versionsState}
+              to={versionsHref}
+            >
+              {t("skillLibrary.drawer.viewUpdate")}
+            </Link>
+          ) : null}
+        </div>
+      ) : (
+        <p className="sh-skill-drawer__secondary">{t("skillLibrary.drawer.values.upToDate")}</p>
+      )}
+    </ModuleCard>
+  );
+}
+
 function InvocationRequirementsModule({ view }: ModuleProps) {
   const { t } = useTranslation();
   return (
@@ -333,6 +406,7 @@ const OPTIONAL_MODULE_RENDERERS: Record<
 };
 
 interface IdentityRegionProps extends ModuleProps {
+  drawerPrototype?: boolean;
   editingField?: "alias" | "note" | "purpose";
   editingValue: string;
   onAddTags: () => void;
@@ -375,6 +449,7 @@ function PinnedDrawerTitle({ name }: { name: string }) {
 }
 
 function IdentityRegion({
+  drawerPrototype = false,
   editingField,
   editingValue,
   onAddTags,
@@ -611,17 +686,31 @@ function IdentityRegion({
           <PencilIcon />
         </Button>
       </div>
+      {drawerPrototype ? (
+        <div className="sh-skill-drawer__prototype-invocation">
+          <div>
+            <span className="sh-skill-drawer__field-label">{t("skillLibrary.drawer.values.invocation")}</span>
+            <InvocationBadge policy={view.invocationPolicy} />
+          </div>
+          <div>
+            <span className="sh-skill-drawer__field-label">{t("skillLibrary.drawer.prototype.requirements")}</span>
+            <ValueList values={view.requirements} />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 interface PrimaryActionsProps extends ModuleProps {
+  drawerPrototype?: boolean;
   onDelete?: (skillId: string, skillName: string) => void;
   /** 单技能来源更新检查；由宿主页面提供（与批量栏同一 facade 契约）。 */
   onCheckUpdates?: (skillId: string, skillName: string) => void;
 }
 
 function PrimaryActions({
+  drawerPrototype = false,
   onCheckUpdates,
   onDelete,
   versionsHref,
@@ -630,6 +719,25 @@ function PrimaryActions({
 }: PrimaryActionsProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const prototypeActionNoteId = useId();
+  if (drawerPrototype) {
+    return (
+      <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions sh-skill-drawer__prototype-actions">
+        <div className="sh-skill-drawer__actions-main">
+          <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__dispatch" data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="primary">
+            {t("skillLibrary.drawer.prototype.dispatch")}
+          </Button>
+          <Button aria-describedby={prototypeActionNoteId} data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="secondary">
+            {t("skillLibrary.drawer.prototype.export")}
+          </Button>
+        </div>
+        <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__delete-action" data-prototype-action="true" disabled title={t("skillLibrary.drawer.prototype.previewOnly")} variant="danger">
+          {t("skillLibrary.drawer.prototype.delete")}
+        </Button>
+        <p className="sh-visually-hidden" id={prototypeActionNoteId}>{t("skillLibrary.drawer.prototype.previewOnly")}</p>
+      </section>
+    );
+  }
   // DEV-19（2026-09-20 收口）：抽屉动作与批量栏/详情页在「真实可用契约」
   // 范围内对齐——添加到…（/deploy 导航）、检查来源更新（check_source_updates）、
   // 发起导出（数据保护页导航）与删除全部可用，且单/批量双模式共用同一 i18n 键。
@@ -851,6 +959,7 @@ function viewportWidth() {
 
 export function SkillQuickDrawer({
   detailSearch = "",
+  drawerPrototype = false,
   facade,
   libraryReturn,
   onDelete,
@@ -886,6 +995,7 @@ export function SkillQuickDrawer({
   const preferenceSaveRequestRef = useRef(0);
   const removePointerListenersRef = useRef<() => void>(() => undefined);
   const normalizedPreferences = normalizeDrawerPreferences(preferences);
+  const prototypeEnabled = import.meta.env.DEV && drawerPrototype;
   const visibleModules = new Set(normalizedPreferences.visibleModules);
   const optionalOrder = normalizedPreferences.moduleOrder.filter((moduleId) =>
     OPTIONAL_DRAWER_MODULES.includes(moduleId as OptionalDrawerModule),
@@ -951,6 +1061,12 @@ export function SkillQuickDrawer({
       preset,
       widthPx: drawerWidthForPreset(preset, drawerViewportWidth),
     });
+  };
+
+  const cyclePreset = () => {
+    const presetOrder: DrawerPreset[] = ["standard", "wide", "near_full"];
+    const currentIndex = presetOrder.indexOf(normalizedPreferences.preset);
+    choosePreset(presetOrder[(currentIndex + 1) % presetOrder.length]);
   };
 
   const toggleModule = (moduleId: DrawerModuleId, visible: boolean) => {
@@ -1269,13 +1385,14 @@ export function SkillQuickDrawer({
       leadingAccessory={resizeHandle}
       onOpenChange={onOpenChange}
       open={open}
-      panelClassName="sh-skill-drawer"
+      panelClassName={`sh-skill-drawer${prototypeEnabled ? " sh-skill-drawer--prototype" : ""}`}
       panelStyle={panelStyle}
       returnFocusRef={returnFocusRef}
       title={view?.name ?? t("skillLibrary.drawer.title")}
     >
       <div
         className="sh-skill-drawer__layout"
+        data-drawer-prototype={prototypeEnabled ? "review" : undefined}
         data-preset={normalizedPreferences.preset}
         data-testid="skill-quick-drawer"
         ref={drawerLayoutRef}
@@ -1285,11 +1402,11 @@ export function SkillQuickDrawer({
           <div className="sh-skill-drawer__toolbar">
             {view && skillId ? (
               <Link
-                className="sh-button sh-button--primary sh-button--sm"
+                className={`sh-button sh-button--primary sh-button--sm${prototypeEnabled ? " sh-skill-drawer__prototype-details" : ""}`}
                 state={libraryReturn ? { libraryReturn } : undefined}
                 to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
               >
-                {t("skillLibrary.drawer.fullDetails")}
+                {t(prototypeEnabled ? "skillLibrary.drawer.prototype.fullDetails" : "skillLibrary.drawer.fullDetails")}
               </Link>
             ) : <span />}
             <div className="sh-skill-drawer__toolbar-end">
@@ -1301,25 +1418,55 @@ export function SkillQuickDrawer({
               >
                 {t("skillLibrary.drawer.configure")}
               </Button>
-              <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
-                {(["standard", "wide", "near_full"] as const).map((preset) => (
-                  <Button
-                    aria-label={t(PRESET_LABEL_KEYS[preset])}
-                    aria-pressed={normalizedPreferences.preset === preset}
-                    className="sh-skill-drawer__preset-icon-button"
-                    key={preset}
-                    onClick={() => choosePreset(preset)}
-                    size="sm"
-                    title={t(PRESET_LABEL_KEYS[preset])}
-                    variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`sh-skill-drawer__preset-icon sh-skill-drawer__preset-icon--${preset}`}
-                    />
-                  </Button>
-                ))}
-              </div>
+              {prototypeEnabled ? (
+                <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets sh-skill-drawer__prototype-presets" role="group">
+                  {(() => {
+                    const presetOrder: DrawerPreset[] = ["standard", "wide", "near_full"];
+                    const currentIndex = presetOrder.indexOf(normalizedPreferences.preset);
+                    const nextPreset = presetOrder[(currentIndex + 1) % presetOrder.length];
+                    const label = t("skillLibrary.drawer.prototype.cycleWidth", {
+                      current: t(PRESET_LABEL_KEYS[normalizedPreferences.preset]),
+                      next: t(PRESET_LABEL_KEYS[nextPreset]),
+                    });
+                    return (
+                      <Button
+                        aria-label={label}
+                        className="sh-skill-drawer__preset-icon-button"
+                        data-tooltip={label}
+                        onClick={cyclePreset}
+                        size="sm"
+                        title={label}
+                        variant="ghost"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`sh-skill-drawer__preset-icon sh-skill-drawer__preset-icon--${normalizedPreferences.preset}`}
+                        />
+                      </Button>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets" role="group">
+                  {(["standard", "wide", "near_full"] as const).map((preset) => (
+                    <Button
+                      aria-label={t(PRESET_LABEL_KEYS[preset])}
+                      aria-pressed={normalizedPreferences.preset === preset}
+                      className="sh-skill-drawer__preset-icon-button"
+                      key={preset}
+                      onClick={() => choosePreset(preset)}
+                      size="sm"
+                      title={t(PRESET_LABEL_KEYS[preset])}
+                      variant={normalizedPreferences.preset === preset ? "secondary" : "ghost"}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`sh-skill-drawer__preset-icon sh-skill-drawer__preset-icon--${preset}`}
+                      />
+                    </Button>
+                  ))}
+                </div>
+              )}
               <Button
                 aria-label={t("actions.close")}
                 className="sh-skill-drawer__close-button"
@@ -1331,7 +1478,14 @@ export function SkillQuickDrawer({
               </Button>
             </div>
           </div>
-          {view ? <PinnedDrawerTitle name={view.name} /> : null}
+          {view ? (
+            <div className={prototypeEnabled ? "sh-skill-drawer__prototype-heading" : undefined}>
+              <PinnedDrawerTitle name={view.name} />
+              {prototypeEnabled ? (
+                <PrimaryActions drawerPrototype view={view} />
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -1375,6 +1529,7 @@ export function SkillQuickDrawer({
           ) : view ? (
             <div className="sh-skill-drawer__summary-stack">
               <IdentityRegion
+                drawerPrototype={prototypeEnabled}
                 editingField={editingField}
                 editingValue={editingValue}
                 onAddTags={() => setTagAction("add_tag")}
@@ -1393,13 +1548,15 @@ export function SkillQuickDrawer({
                 translationLoading={translationLoading}
                 view={view}
               />
-              <PrimaryActions
-                onDelete={onDelete}
-                onCheckUpdates={onCheckUpdates}
-                versionsHref={versionsHref}
-                versionsState={versionsState}
-                view={view}
-              />
+              {!prototypeEnabled ? (
+                <PrimaryActions
+                  onDelete={onDelete}
+                  onCheckUpdates={onCheckUpdates}
+                  versionsHref={versionsHref}
+                  versionsState={versionsState}
+                  view={view}
+                />
+              ) : null}
               <RiskSummary view={view} />
             </div>
           ) : null}
@@ -1420,23 +1577,31 @@ export function SkillQuickDrawer({
             />
           ) : null}
           {view ? (
-            <div className="sh-skill-drawer__modules">
-              {optionalOrder.map((moduleId) => {
-                if (!visibleModules.has(moduleId)) {
-                  return null;
-                }
-                const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
-                return (
-                  <ModuleRenderer
-                    key={moduleId}
-                    securityFacade={securityFacade}
-                    versionsHref={versionsHref}
-                    versionsState={versionsState}
-                    view={view}
-                  />
-                );
-              })}
-            </div>
+            prototypeEnabled ? (
+              <div className="sh-skill-drawer__modules sh-skill-drawer__prototype-modules">
+                <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
+                <RelationsModule drawerPrototype view={view} />
+                {visibleModules.has("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
+              </div>
+            ) : (
+              <div className="sh-skill-drawer__modules">
+                {optionalOrder.map((moduleId) => {
+                  if (!visibleModules.has(moduleId)) {
+                    return null;
+                  }
+                  const ModuleRenderer = OPTIONAL_MODULE_RENDERERS[moduleId];
+                  return (
+                    <ModuleRenderer
+                      key={moduleId}
+                      securityFacade={securityFacade}
+                      versionsHref={versionsHref}
+                      versionsState={versionsState}
+                      view={view}
+                    />
+                  );
+                })}
+              </div>
+            )
           ) : null}
         </div>
 
