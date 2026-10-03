@@ -201,6 +201,55 @@ test("merges Agent compatibility work into one shared-directory card with brand 
   await expectNoRootHorizontalOverflow(page);
 });
 
+test("aligns toolbar fields with the chip baseline and parks history at the batch row end", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openPending(page);
+
+  const chips = page.locator(".sh-pending__categories");
+  const toolbarSearch = page.locator(".sh-pending__toolbar").getByRole("searchbox");
+  const kindSelect = page.locator(".sh-pending__toolbar").getByRole("combobox", { name: "Specific item" });
+
+  // 1440：搜索框与具体事项下拉框底边与分类 chips 行底对齐（±4px 容差吸收亚像素取整）。
+  const chipsBox = await chips.boundingBox();
+  const searchBox = await toolbarSearch.boundingBox();
+  const kindBox = await kindSelect.boundingBox();
+  expect(chipsBox).not.toBeNull();
+  expect(searchBox).not.toBeNull();
+  expect(kindBox).not.toBeNull();
+  const chipsBottom = chipsBox!.y + chipsBox!.height;
+  expect(Math.abs(chipsBottom - (searchBox!.y + searchBox!.height))).toBeLessThanOrEqual(4);
+  expect(Math.abs(chipsBottom - (kindBox!.y + kindBox!.height))).toBeLessThanOrEqual(4);
+
+  // 历史入口归属钉顶批量操作组，并推到批量操作行行尾（与满宽说明文字右缘同线）。
+  const bar = page.locator(".sh-pending-batch--anchored");
+  const history = bar.getByRole("link", { name: /Handled history/ });
+  await expect(history).toBeVisible();
+  const historyBox = await history.boundingBox();
+  const noteBox = await bar.locator(".sh-pending-batch__note").boundingBox();
+  expect(historyBox).not.toBeNull();
+  expect(noteBox).not.toBeNull();
+  expect(Math.abs((historyBox!.x + historyBox!.width) - (noteBox!.x + noteBox!.width))).toBeLessThanOrEqual(4);
+  // 分类组不再承载历史入口。
+  await expect(page.getByRole("group", { name: "All" }).getByRole("link", { name: /Handled history/ })).toHaveCount(0);
+
+  await expectNoRootHorizontalOverflow(page);
+
+  // 800（chips 换行的窄宽度）：底对齐关系保持，链接仍在行尾且无横向溢出。
+  await page.setViewportSize({ width: 800, height: 900 });
+  const narrowChips = await chips.boundingBox();
+  const narrowSearch = await toolbarSearch.boundingBox();
+  expect(narrowChips).not.toBeNull();
+  expect(narrowSearch).not.toBeNull();
+  expect(Math.abs(narrowChips!.y + narrowChips!.height - (narrowSearch!.y + narrowSearch!.height))).toBeLessThanOrEqual(4);
+  const narrowHistory = await history.boundingBox();
+  const narrowNote = await bar.locator(".sh-pending-batch__note").boundingBox();
+  expect(narrowHistory).not.toBeNull();
+  expect(narrowNote).not.toBeNull();
+  expect(Math.abs((narrowHistory!.x + narrowHistory!.width) - (narrowNote!.x + narrowNote!.width))).toBeLessThanOrEqual(4);
+  await expect(history).toBeVisible();
+  await expectNoRootHorizontalOverflow(page);
+});
+
 test.describe("pending width matrix", () => {
   for (const width of WIDTHS) {
     test(`keeps the pending workbench free of root overflow at ${width}px`, async ({ page }) => {

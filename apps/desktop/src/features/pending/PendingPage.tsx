@@ -407,7 +407,6 @@ export function PendingPage({
             >
               {t(`pending.categories.${value}` as never)} <span>{projectedGroups.filter((group) => group.category === value).reduce((count, group) => count + group.count, 0)}</span>
             </Button>)}
-            <a className="sh-pending__history-link" href="#pending-history-heading">{t("pending.history.heading")} {handled ? `(${handled.length})` : ""}</a>
           </div>
           <Field label={t("pending.search.label")}>
             <Input onChange={(event) => setSearchText(event.target.value)} placeholder={String(t("pending.search.placeholder"))} type="search" value={searchText} />
@@ -438,6 +437,8 @@ export function PendingPage({
             variant="danger"
           />
           {batchProgress ? <span role="status">{t("pending.batch.progress", batchProgress)}</span> : null}
+          {/* 历史入口钉顶常驻，与批量结果/撤销同域；置于满宽说明之前以停留在操作行行尾。 */}
+          <a className="sh-pending__history-link" href="#pending-history-heading">{t("pending.history.heading")} {handled ? `(${handled.length})` : ""}</a>
           <small className="sh-pending-batch__note">{t("pending.batch.noBatchContract")}</small>
         </div>
         {visibleGroups.length ? <div className="sh-pending__sections">

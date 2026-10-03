@@ -10,7 +10,7 @@ use skillhub_core::import::{
 };
 use skillhub_core::relationship::{
     DeploymentRelationFact, FileRepresentation, OwnershipState, RelationshipType,
-    SourceRelationFact,
+    RelationHealthReason, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -675,6 +675,7 @@ impl<'a> ProvenanceRepository<'a> {
                             content_fingerprint: fingerprint.clone(),
                             origin,
                             match_state: ObservedMatchState::ContentVerified,
+                            health_reasons: Some(Vec::new()),
                             active: true,
                             observed_at,
                             released_at: None,
@@ -708,14 +709,60 @@ impl<'a> ProvenanceRepository<'a> {
                     .map_err(database_error)?;
                 let relationship_changed = transaction
                         .execute(
-                        "UPDATE deployment_relations SET skill_id=NULL, content_fingerprint=?1, match_state=?2, active=1, observed_at=?3, released_at=NULL WHERE agent_client_id=?4 AND path_key=?5 AND ownership<>'skillhub_managed'",
+                        "UPDATE deployment_relations SET skill_id=CASE WHEN ?1='name_only' THEN NULL ELSE skill_id END, content_fingerprint=?2, match_state=?1, observed_at=?3, health_reasons_json=?4 WHERE agent_client_id=?5 AND path_key=?6 AND active=1 AND ownership<>'skillhub_managed'",
                         params![
-                            fingerprint,
                             match_state_code(*match_state),
+                            fingerprint,
                             observed_at,
+                            serde_json::to_string(&vec![RelationHealthReason::ContentChanged])
+                                .map_err(|error| serialization_error(error.to_string()))?,
                             client_id,
                             observed_path_key(original_path),
                         ],
+                    )
+                    .map_err(database_error)?
+                    != 0;
+                if relationship_changed {
+                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+                }
+                transaction.commit().map_err(database_error)
+            }
+            ObservedRowAction::RecordHealth { reasons } => {
+                let path_key = observed_path_key(original_path);
+                let transaction = self
+                    .database
+                    .connection
+                    .unchecked_transaction()
+                    .map_err(database_error)?;
+                let previous: Option<Option<String>> = transaction
+                    .query_row(
+                        "SELECT health_reasons_json FROM deployment_relations WHERE agent_client_id=?1 AND path_key=?2 AND active=1 AND ownership<>'skillhub_managed'",
+                        params![client_id, path_key],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(database_error)?;
+                let Some(previous) = previous else {
+                    transaction.commit().map_err(database_error)?;
+                    return Ok(());
+                };
+                let mut merged: Vec<RelationHealthReason> = previous
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()
+                    .map_err(|error| serialization_error(error.to_string()))?
+                    .unwrap_or_default();
+                for reason in reasons {
+                    if !merged.contains(reason) {
+                        merged.push(*reason);
+                    }
+                }
+                let health_json = serde_json::to_string(&merged)
+                    .map_err(|error| serialization_error(error.to_string()))?;
+                let relationship_changed = transaction
+                    .execute(
+                        "UPDATE deployment_relations SET health_reasons_json=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1 AND ownership<>'skillhub_managed' AND health_reasons_json IS NOT ?1",
+                        params![health_json, client_id, path_key],
                     )
                     .map_err(database_error)?
                     != 0;
@@ -1242,4 +1289,8 @@ fn invalid_record() -> AppError {
 
 fn database_error(error: rusqlite::Error) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error).with_param("source", error.to_string())
+}
+
+fn serialization_error(source: String) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error).with_param("source", source)
 }

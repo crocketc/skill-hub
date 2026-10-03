@@ -102,6 +102,7 @@ impl RelationSpec {
             content_fingerprint: format!("sha256:{}", self.relation_id),
             origin: ObservedOrigin::Scan,
             match_state: self.match_state,
+            health_reasons: Some(Vec::new()),
             active: self.active,
             observed_at: 1_700_000_000,
             released_at: (!self.active).then_some(1_700_000_100),
@@ -248,7 +249,7 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     for (bucket, expected) in [
         (
             RelationGovernanceBucket::EligibleToCentralize,
-            vec!["relation:ready"],
+            vec!["relation:link", "relation:ready"],
         ),
         (
             RelationGovernanceBucket::NeedsValidation,
@@ -580,7 +581,8 @@ mod unified_ledger {
     use skillhub_core::relationship::{
         project_governable_relation, project_unified_governance_ledger, GovernableRelationFact,
         GovernableRelationStatus, RelationGovernanceAction, RelationGovernanceBucket,
-        RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceReadiness,
+        RelationGovernanceClassification, RelationGovernanceCounts, RelationGovernanceFilters,
+        RelationGovernanceReadiness, RelationGovernanceReason, RelationManagementStatus,
         SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact,
     };
 
@@ -604,13 +606,17 @@ mod unified_ledger {
     }
 
     fn source_copy(relation_id: &str, health: SourceCopyHealth) -> SourceCopyRelationFact {
+        let mut event = provenance_event();
+        event.source_class = ImportSourceClass::AgentLocal;
+        event.source_container_id = Some("directory:agent".to_owned());
         let mut fact = SourceCopyRelationFact::from_import_event(
             relation_id,
-            &provenance_event(),
+            &event,
             "c:/src/notes",
             "fs:dev-1-ino-2",
         )
         .expect("governable");
+        fact.directory_node_id = Some("directory:agent".to_owned());
         fact.health = health;
         fact
     }
@@ -749,13 +755,9 @@ mod unified_ledger {
             ..RelationGovernanceFilters::default()
         };
         let ledger = unified_of(facts.clone(), filters);
-        assert_eq!(
-            ledger
-                .rows
-                .iter()
-                .map(|row| row.relation_id().to_owned())
-                .collect::<Vec<_>>(),
-            vec!["rel-user-copy"]
+        assert!(
+            ledger.rows.is_empty(),
+            "UserLocal is source-only, not a usage target"
         );
 
         // project 过滤命中项目副本。
@@ -808,6 +810,83 @@ mod unified_ledger {
         assert!(
             ledger.rows.is_empty(),
             "no other-skill facts in this fixture"
+        );
+    }
+
+    #[test]
+    fn same_skill_and_registered_physical_entry_merge_copy_and_deployment_evidence() {
+        use skillhub_core::relationship::{
+            project_unified_governance_ledger_with_context, DirectoryNodeFact, DirectoryRole,
+            RelationGovernanceConfirmationFact, RelationManagementStatus,
+        };
+
+        let skill = skill_id(SKILL);
+        let mut copy = source_copy("rel-copy", SourceCopyHealth::Normal);
+        copy.skill_id = skill;
+        copy.source_path = "C:/agents/demo/skills/notes".into();
+        copy.source_path_key = "c:/agents/demo/skills/notes".into();
+        copy.directory_node_id = Some("directory:agent".into());
+        copy.source_container_id = Some("directory:agent".into());
+
+        let mut deployment =
+            RelationSpec::managed_link("rel-deployment", "C:/agents/demo/skills/notes").build();
+        deployment.skill_id = Some(skill);
+        deployment.directory_node_id = Some("directory:agent".into());
+        deployment.path_key = "c:/agents/demo/skills/notes".into();
+
+        let directory = DirectoryNodeFact {
+            node_id: "directory:agent".into(),
+            path: "C:/agents/demo/skills".into(),
+            path_key: "c:/agents/demo/skills".into(),
+            role: DirectoryRole::AgentNative,
+            profile_id: None,
+            agent_client_id: Some(AGENT.into()),
+            exists: true,
+            observed_at: 1,
+            scan_source: Some("test".into()),
+        };
+        let confirmation = RelationGovernanceConfirmationFact {
+            relation_id: "rel-deployment".into(),
+            management_status: RelationManagementStatus::TakenOver,
+            decision: skillhub_core::relationship::RelationGovernanceDecision::Undecided,
+            confirmed_at: Some(7),
+        };
+        let ledger = project_unified_governance_ledger_with_context(
+            &RelationGovernanceFilters::default(),
+            &[
+                GovernableRelationFact::SourceCopy(copy),
+                GovernableRelationFact::Deployment(deployment),
+            ],
+            &supported_capabilities(),
+            &[directory],
+            &[confirmation],
+            &BTreeSet::new(),
+            &Vec::new(),
+            7,
+            None,
+        );
+
+        assert_eq!(
+            ledger.rows.len(),
+            1,
+            "one physical use has one governance row"
+        );
+        assert_eq!(ledger.rows[0].relation_id(), "rel-deployment");
+        assert_eq!(
+            ledger.rows[0].evidence_relation_ids,
+            ["rel-copy", "rel-deployment"]
+        );
+        assert_eq!(
+            ledger.rows[0].governance.management_status,
+            RelationManagementStatus::TakenOver
+        );
+        assert_eq!(
+            ledger.rows[0]
+                .target_identity
+                .as_ref()
+                .unwrap()
+                .directory_node_id,
+            "directory:agent"
         );
     }
 
@@ -896,6 +975,53 @@ mod unified_ledger {
             by_id(&deployments, "rel-managed-link"),
             RelationGovernanceAction::Undeploy
         );
+    }
+
+    #[test]
+    fn an_unmanaged_observed_link_stays_pending_and_exposes_supported_takeover() {
+        let mut link = RelationSpec::managed_link("rel-observed-link", "/agent/skills/link");
+        link.relationship = RelationshipType::ObservedLink;
+        link.ownership = OwnershipState::ObservedUnmanaged;
+        let ledger = unified_of(
+            vec![GovernableRelationFact::Deployment(link.build())],
+            RelationGovernanceFilters::default(),
+        );
+        let row = &ledger.rows[0];
+
+        assert_eq!(
+            row.readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Pending
+        );
+        assert_eq!(
+            row.governance.management_status,
+            RelationManagementStatus::NotTakenOver
+        );
+        assert!(row.governance.health_reasons.is_empty());
+        assert!(row.governance.action_conditions.iter().any(|condition| {
+            condition.action == RelationGovernanceAction::CentralizeManagement
+                && condition.available
+                && condition.reasons.is_empty()
+        }));
+
+        let mut stale_link = link.build();
+        stale_link.relation_id = "rel-stale-observed-link".into();
+        stale_link.match_state = ObservedMatchState::Diverged;
+        let stale = unified_of(
+            vec![GovernableRelationFact::Deployment(stale_link)],
+            RelationGovernanceFilters::default(),
+        );
+        let stale_action = &stale.rows[0].governance.action_conditions;
+        assert!(stale_action.iter().any(|condition| {
+            condition.action == RelationGovernanceAction::CentralizeManagement
+                && !condition.available
+                && condition
+                    .reasons
+                    .contains(&RelationGovernanceReason::ContentChanged)
+        }));
     }
 
     #[test]

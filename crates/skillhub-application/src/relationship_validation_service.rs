@@ -10,19 +10,15 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use serde_json::json;
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_core::api::{AppCommandResult, RunRelationshipCheck};
-use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::relationship::{
     evaluate_relationship_probe, update_is_meaningful, RelationshipCheckItem,
     RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
-    RelationshipCheckScope, RelationshipPathProbe, SourceCopyArchiveReason, SourceCopyRelationFact,
-    SourceCopyTransition,
+    RelationshipCheckScope, RelationshipPathProbe, SourceCopyRelationFact, SourceCopyTransition,
 };
 use skillhub_core::{AppError, AppResult, OperationId};
 use skillhub_storage::Database;
-use skillhub_storage::GovernanceHistoryEvent;
 
 use crate::ClassifiedImportSource;
 use crate::LocalApplicationFacade;
@@ -142,9 +138,6 @@ fn check_one_relation(
         .expect("relationship probe")
         .probe(Path::new(&relation.source_path));
     match probe {
-        RelationshipPathProbe::MissingWithAccessibleParent => {
-            archive_removed_relation(facade, database, &relation, now)
-        }
         // Light 只核可达：可达性声明本身不改写既有健康与指纹裁决（否则
         // 周期性补偿扫描会反复抹掉 Full 核验事实并造成事实抖动）；离线、
         // 权限受限与 Missing 仍照常落库。
@@ -177,8 +170,11 @@ fn check_one_relation(
                 fingerprint.as_deref(),
                 now,
             );
-            let SourceCopyTransition::Update(updated) = transition else {
-                return archived_item(&relation);
+            let updated = match transition {
+                SourceCopyTransition::Update(updated) => updated,
+                SourceCopyTransition::Archive { .. } => {
+                    unreachable!("relationship validation cannot end a relationship")
+                }
             };
             if !update_is_meaningful(&relation, &updated) {
                 return RelationshipCheckItem {
@@ -210,89 +206,6 @@ fn check_one_relation(
                 Err(error) => failed_item(&relation, &error),
             }
         }
-    }
-}
-
-/// MissingWithAccessibleParent 归档：同一事务里归档关系并追加
-/// ExternalRemoved 历史；重复检查不重复写历史（plan 5.5）。
-fn archive_removed_relation(
-    _facade: &LocalApplicationFacade,
-    database: &Database,
-    relation: &SourceCopyRelationFact,
-    now: i64,
-) -> RelationshipCheckItem {
-    let display_name = skill_display_name(database, relation);
-    let outcome = (|| -> AppResult<()> {
-        let transaction = database.begin_transaction()?;
-        let changed = skillhub_storage::RelationshipRepository::archive_source_copy_relation_tx(
-            &transaction,
-            &relation.relation_id,
-            SourceCopyArchiveReason::ExternalRemoved,
-            now,
-        )?;
-        if changed {
-            let already_recorded = database
-                .governance_history_repository()
-                .list_for_relation(&relation.relation_id)?
-                .into_iter()
-                .any(|event| {
-                    event.result == "archived"
-                        && event.reason.as_deref() == Some("external_removed")
-                });
-            if !already_recorded {
-                skillhub_storage::GovernanceHistoryRepository::append_tx(
-                    &transaction,
-                    &GovernanceHistoryEvent {
-                        event_id: format!("hist-{}", OperationId::new()),
-                        relation_id: relation.relation_id.clone(),
-                        skill_id: Some(relation.skill_id.to_string()),
-                        skill_display_name: display_name,
-                        agent_presentation: json!({
-                            "client_id": relation.agent_client_id,
-                        }),
-                        path: relation.source_path.clone(),
-                        scope: "source_copy".to_owned(),
-                        project_id: None,
-                        action: "validate".to_owned(),
-                        result: "archived".to_owned(),
-                        reason: Some("external_removed".to_owned()),
-                        operation_id: None,
-                        occurred_at: now,
-                    },
-                )?;
-            }
-        }
-        Database::commit_transaction(transaction)
-    })();
-    match outcome {
-        Ok(()) => RelationshipCheckItem {
-            relation_id: relation.relation_id.clone(),
-            skill_id: relation.skill_id,
-            status: RelationshipCheckItemStatus::Archived,
-            health: None,
-            reason: Some("external_removed".to_owned()),
-        },
-        Err(error) => failed_item(relation, &error),
-    }
-}
-
-fn skill_display_name(database: &Database, relation: &SourceCopyRelationFact) -> String {
-    database
-        .catalog_repository()
-        .and_then(|repository| repository.get_sync(relation.skill_id))
-        .ok()
-        .flatten()
-        .map(|skill| skill.runtime_name().to_owned())
-        .unwrap_or_else(|| "unknown-skill".to_owned())
-}
-
-fn archived_item(relation: &SourceCopyRelationFact) -> RelationshipCheckItem {
-    RelationshipCheckItem {
-        relation_id: relation.relation_id.clone(),
-        skill_id: relation.skill_id,
-        status: RelationshipCheckItemStatus::Archived,
-        health: None,
-        reason: Some("external_removed".to_owned()),
     }
 }
 

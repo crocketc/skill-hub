@@ -100,3 +100,91 @@ test("agent cards keep stable regions, wrapped shared logos, and two transparent
   expect(aligned).toBe(true);
   expect(firstCardBox.width).toBeGreaterThan(240);
 });
+
+test("path frames center readable text and keep the shared-directory chip border inside its row", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/__preview/agents");
+
+  const openAiCard = page.locator(
+    '.sh-agent-card:has(.sh-agent-presentation[aria-label^="OpenAI"])',
+  );
+  await expect(openAiCard).toBeVisible();
+  await expect(openAiCard.locator(".sh-agent-card__shared-chip")).toBeVisible();
+  await expect.soft(openAiCard.locator(".sh-agent-card__path")).toHaveAttribute(
+    "title",
+    "C:\\Users\\Developer\\AppData\\Local\\SkillHub\\agents\\codex\\skills",
+  );
+  const pendingPath = page.locator(".sh-agent-card__path--pending_creation");
+  await expect(pendingPath).toHaveAttribute("title", /.+/);
+  await expect(page.locator(".sh-agent-card .sh-agent-directory-role-badge--builtin").first()).toBeVisible();
+
+  const measure = () => openAiCard.evaluate((card) => {
+    const label = card.querySelector(".sh-agent-card__paths-label")!;
+    const chip = card.querySelector(".sh-agent-card__shared-chip")!;
+    const list = card.querySelector(".sh-agent-card__path-list")!;
+    const path = card.querySelector(".sh-agent-card__path")!;
+    const range = document.createRange();
+    range.selectNodeContents(path);
+    const labelRect = label.getBoundingClientRect();
+    const chipRect = chip.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    const pathRect = path.getBoundingClientRect();
+    const textRect = range.getBoundingClientRect();
+    return {
+      chipBottom: chipRect.bottom,
+      chipTop: chipRect.top,
+      labelBottom: labelRect.bottom,
+      labelTop: labelRect.top,
+      listBottom: listRect.bottom,
+      pathBottom: pathRect.bottom,
+      pathCenter: (pathRect.top + pathRect.bottom) / 2,
+      pathTop: pathRect.top,
+      textCenter: (textRect.top + textRect.bottom) / 2,
+    };
+  });
+
+  const wide = await measure();
+  expect.soft(wide.chipTop).toBeGreaterThanOrEqual(wide.labelTop);
+  expect.soft(wide.chipBottom).toBeLessThanOrEqual(wide.labelBottom);
+  expect.soft(wide.pathBottom).toBeLessThanOrEqual(wide.listBottom);
+  expect.soft(Math.abs(wide.textCenter - wide.pathCenter)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: test.info().outputPath("agent-paths-wide.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 560, height: 1000 });
+  const narrow = await measure();
+  expect.soft(narrow.chipTop).toBeGreaterThanOrEqual(narrow.labelTop);
+  expect.soft(narrow.chipBottom).toBeLessThanOrEqual(narrow.labelBottom);
+  expect.soft(narrow.pathBottom).toBeLessThanOrEqual(narrow.listBottom);
+  expect.soft(Math.abs(narrow.textCenter - narrow.pathCenter)).toBeLessThanOrEqual(1);
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )).toBeLessThanOrEqual(0);
+  const cursorPath = page.locator('.sh-agent-card:has(.sh-agent-presentation[aria-label^="Cursor"]) .sh-agent-card__path');
+  await expect(cursorPath).toHaveAttribute("title", /D:\\Very\\Long\\Windows/);
+  const longPathGeometry = await cursorPath.evaluate((element) => {
+    const text = element.querySelector(".sh-agent-card__path-text")!;
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    return { frameWidth: element.clientWidth, textWidth: range.getBoundingClientRect().width };
+  });
+  expect(longPathGeometry.textWidth).toBeGreaterThan(longPathGeometry.frameWidth);
+  const pendingGeometry = await pendingPath.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const frame = element.getBoundingClientRect();
+    const text = range.getBoundingClientRect();
+    return { frameCenter: (frame.top + frame.bottom) / 2, textCenter: (text.top + text.bottom) / 2 };
+  });
+  expect.soft(Math.abs(pendingGeometry.textCenter - pendingGeometry.frameCenter)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: test.info().outputPath("agent-paths-narrow.png"), fullPage: true });
+
+  await page.evaluate(() => window.localStorage.setItem("skillhub.appearance", "grok-night"));
+  await page.reload();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const dark = await measure();
+  expect.soft(dark.chipTop).toBeGreaterThanOrEqual(dark.labelTop);
+  expect.soft(dark.chipBottom).toBeLessThanOrEqual(dark.labelBottom);
+  expect.soft(dark.pathBottom).toBeLessThanOrEqual(dark.listBottom);
+  expect.soft(Math.abs(dark.textCenter - dark.pathCenter)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: test.info().outputPath("agent-paths-grok-night.png"), fullPage: true });
+});

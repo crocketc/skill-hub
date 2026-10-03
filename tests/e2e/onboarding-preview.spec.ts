@@ -146,6 +146,39 @@ test("Agent card content fills equal-width columns for short brands and long pat
   await page.screenshot({ path: test.info().outputPath("card-widths.png") });
 });
 
+test("keeps compatibility target path text vertically centered and exposes the normalized path title", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/__preview/onboarding/rescan");
+  await page.getByRole("checkbox", { name: "我确认只执行只读发现和扫描" }).click();
+  await page.getByRole("button", { name: "继续" }).click();
+  await page.getByRole("button", { name: "识别 Agent" }).click();
+
+  const card = page.locator(".sh-onboarding__target-card").filter({
+    has: page.getByText("C:\\Users\\Preview\\.codex\\skills", { exact: true }),
+  }).first();
+  const path = card.locator(".sh-onboarding__target-path");
+  await expect.soft(path).toHaveAttribute("title", "C:\\Users\\Preview\\.codex\\skills");
+  const measure = () => path.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const frame = element.getBoundingClientRect();
+    const text = range.getBoundingClientRect();
+    return { frameCenter: (frame.top + frame.bottom) / 2, textCenter: (text.top + text.bottom) / 2 };
+  });
+
+  const wide = await measure();
+  expect.soft(Math.abs(wide.textCenter - wide.frameCenter)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: test.info().outputPath("onboarding-agent-path-wide.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 800, height: 1000 });
+  const narrow = await measure();
+  expect.soft(Math.abs(narrow.textCenter - narrow.frameCenter)).toBeLessThanOrEqual(1);
+  await expect.poll(() => page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: test.info().outputPath("onboarding-agent-path-narrow.png"), fullPage: true });
+});
+
 test("groups rediscovery Agent cards by supported path and scrolls the list inside the wizard", async ({ page }) => {
   await page.setViewportSize({ width: 1087, height: 719 });
   await page.goto("/__preview/onboarding/rescan");

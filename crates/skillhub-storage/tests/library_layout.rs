@@ -70,6 +70,74 @@ fn open_existing_requires_and_validates_the_library_manifest() {
 }
 
 #[test]
+fn loading_a_legacy_portable_manifest_normalizes_archived_skills_and_preserves_other_facts() {
+    let root = tempfile::tempdir().unwrap();
+    let library = CentralLibrary::initialize(root.path()).unwrap();
+    let legacy = serde_json::json!({
+        "format_version": 1,
+        "skills": [
+            {
+                "id": "00000000-0000-0000-0000-0000000000a1",
+                "display_name": "Legacy archived",
+                "runtime_name": "legacy-archived",
+                "lifecycle": "Archived",
+                "trial_due": "2026-10-01",
+                "tags": ["kept"]
+            },
+            {
+                "id": "00000000-0000-0000-0000-0000000000a2",
+                "display_name": "Legacy deprecated",
+                "runtime_name": "legacy-deprecated",
+                "lifecycle": "Deprecated"
+            }
+        ]
+    });
+    std::fs::write(
+        &library.paths().manifest_path,
+        serde_json::to_vec_pretty(&legacy).unwrap(),
+    )
+    .unwrap();
+
+    let reopened = CentralLibrary::open_existing(root.path()).unwrap();
+    assert_eq!(reopened.load_manifest().unwrap().skills.len(), 2);
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&reopened.paths().manifest_path).unwrap()).unwrap();
+    assert_eq!(persisted["skills"][0]["lifecycle"], "Normal");
+    assert_eq!(persisted["skills"][0]["trial_due"], "2026-10-01");
+    assert_eq!(persisted["skills"][0]["tags"][0], "kept");
+    assert_eq!(persisted["skills"][1]["lifecycle"], "Deprecated");
+
+    // A later ordinary typed write must also retain this existing trial fact.
+    let manifest = reopened.load_manifest().unwrap();
+    reopened.write_manifest_atomic(&manifest).unwrap();
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&reopened.paths().manifest_path).unwrap()).unwrap();
+    assert_eq!(persisted["skills"][0]["trial_due"], "2026-10-01");
+    assert_eq!(persisted["skills"][1]["lifecycle"], "Deprecated");
+}
+
+#[test]
+fn failed_legacy_manifest_normalization_keeps_original_and_can_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let library = CentralLibrary::initialize(root.path()).unwrap();
+    let legacy = br#"{"format_version":1,"skills":[{"id":"00000000-0000-0000-0000-0000000000a1","display_name":"Legacy","runtime_name":"legacy","lifecycle":"Archived"}]}"#;
+    std::fs::write(&library.paths().manifest_path, legacy).unwrap();
+
+    let fault = Arc::new(|point: &str| point == "before_manifest_replace");
+    assert!(CentralLibrary::initialize_with_fault_handler(root.path(), fault).is_err());
+    assert_eq!(
+        std::fs::read(&library.paths().manifest_path).unwrap(),
+        legacy
+    );
+
+    let retried = CentralLibrary::open_existing(root.path()).unwrap();
+    assert_eq!(retried.load_manifest().unwrap().skills.len(), 1);
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&retried.paths().manifest_path).unwrap()).unwrap();
+    assert_eq!(persisted["skills"][0]["lifecycle"], "Normal");
+}
+
+#[test]
 fn both_modes_probe_writability_and_report_an_actionable_error() {
     let root = tempfile::tempdir().unwrap();
     let library = CentralLibrary::create(root.path()).expect("create library");
@@ -181,6 +249,19 @@ fn portable_manifest_preserves_invocation_policy() {
     library.save_portable_skill(&skill, None).unwrap();
     let (record, _) = library.load_portable_skill(skill.id()).unwrap().unwrap();
     assert_eq!(record.call_policy, CallPolicy::ModelOnly);
+}
+
+#[test]
+fn portable_skill_write_persists_trial_due() {
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let skill = Skill::new(SkillId::new(), "temporary-trial").with_trial_due(2026, 10, 1);
+
+    library.save_portable_skill(&skill, None).unwrap();
+
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&library.paths().manifest_path).unwrap()).unwrap();
+    assert_eq!(persisted["skills"][0]["trial_due"], "2026-10-01");
 }
 
 #[test]

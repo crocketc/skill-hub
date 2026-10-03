@@ -643,8 +643,9 @@ it("keeps very long directory paths wrapped and reachable through a title hint (
 
   // DEV-5：展示层统一斜杠风格（Windows 形态路径渲染为反斜杠）。
   const displayLongPath = longPath.replaceAll("/", "\\");
-  const pathCode = await screen.findByText(displayLongPath);
+  const pathCode = await screen.findByTitle(displayLongPath);
   expect(pathCode).toHaveClass("sh-discovery-workbench__agent-path");
+  expect(pathCode).toHaveTextContent(displayLongPath);
   // 完整值经原生 title 提示可达（与忽略项规则值同一策略）。
   expect(pathCode).toHaveAttribute("title", displayLongPath);
   // 固定卡片高度下以单行截断展示，完整值仍可通过 title 读取。

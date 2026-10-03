@@ -159,7 +159,11 @@ impl CentralLibrary {
         record.description = skill.original_description().to_owned();
         record.note = skill.note().map(str::to_owned);
         record.user_purpose = skill.user_purpose().map(str::to_owned);
+        record.lifecycle = skill.lifecycle();
         record.tags = skill.tags().iter().cloned().collect();
+        record.trial_due = skill
+            .trial_due()
+            .map(|(year, month, day)| format!("{year:04}-{month:02}-{day:02}"));
         record.author = skill.author().map(str::to_owned);
         record.license = skill.license().map(str::to_owned);
         record.call_policy = skill.call_policy();

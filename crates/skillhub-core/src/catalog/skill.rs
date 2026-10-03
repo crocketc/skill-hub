@@ -7,7 +7,6 @@ use std::collections::BTreeSet;
 pub enum SkillLifecycle {
     Normal,
     Deprecated,
-    Archived,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

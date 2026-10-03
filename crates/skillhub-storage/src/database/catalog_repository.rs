@@ -181,9 +181,6 @@ impl<'a> CatalogRepositorySqlite<'a> {
                         "(s.lifecycle='normal' AND m.trial_due IS NULL)"
                     }
                     SkillLifecycleFilter::Trial => "m.trial_due IS NOT NULL",
-                    SkillLifecycleFilter::Archived => {
-                        "(s.lifecycle<>'normal' AND m.trial_due IS NULL)"
-                    }
                 })
                 .collect();
             conditions.push(format!("({})", buckets.join(" OR ")));
@@ -805,7 +802,6 @@ fn lifecycle_code(v: SkillLifecycle) -> &'static str {
     match v {
         SkillLifecycle::Normal => "normal",
         SkillLifecycle::Deprecated => "deprecated",
-        SkillLifecycle::Archived => "archived",
     }
 }
 fn parse_policy(v: &str) -> AppResult<CallPolicy> {
@@ -824,7 +820,6 @@ fn parse_lifecycle(v: &str) -> AppResult<SkillLifecycle> {
     match v {
         "normal" => Ok(SkillLifecycle::Normal),
         "deprecated" => Ok(SkillLifecycle::Deprecated),
-        "archived" => Ok(SkillLifecycle::Archived),
         _ => Err(AppError::new(
             ErrorCode::CatalogInvalidMetadata,
             Severity::Error,

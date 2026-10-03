@@ -23,8 +23,18 @@ impl PortableManifestStore {
 
     pub fn load(&self) -> AppResult<LibraryManifest> {
         let bytes = fs::read(&self.path).map_err(io_error)?;
-        let manifest: LibraryManifest = serde_json::from_slice(&bytes).map_err(json_error)?;
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(json_error)?;
+        let normalized = normalize_archived_lifecycle(&mut value);
+        let manifest: LibraryManifest =
+            serde_json::from_value(value.clone()).map_err(json_error)?;
         validate_manifest_version(&manifest)?;
+        if normalized {
+            let normalized_bytes = serde_json::to_vec_pretty(&value).map_err(json_error)?;
+            let verified: LibraryManifest =
+                serde_json::from_slice(&normalized_bytes).map_err(json_error)?;
+            validate_manifest_version(&verified)?;
+            self.replace_atomic(&normalized_bytes)?;
+        }
         Ok(manifest)
     }
 
@@ -35,6 +45,10 @@ impl PortableManifestStore {
         let bytes = serde_json::to_vec_pretty(manifest).map_err(json_error)?;
         let parsed: LibraryManifest = serde_json::from_slice(&bytes).map_err(json_error)?;
         validate_manifest_version(&parsed)?;
+        self.replace_atomic(&bytes)
+    }
+
+    fn replace_atomic(&self, bytes: &[u8]) -> AppResult<()> {
         let parent = self.path.parent().ok_or_else(|| {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_action(RecoveryAction::Retry)
@@ -62,6 +76,30 @@ impl PortableManifestStore {
         }
         result
     }
+}
+
+fn normalize_archived_lifecycle(value: &mut serde_json::Value) -> bool {
+    let Some(skills) = value
+        .as_object_mut()
+        .and_then(|manifest| manifest.get_mut("skills"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return false;
+    };
+    let mut changed = false;
+    for skill in skills {
+        let Some(lifecycle) = skill
+            .as_object_mut()
+            .and_then(|record| record.get_mut("lifecycle"))
+        else {
+            continue;
+        };
+        if matches!(lifecycle.as_str(), Some("Archived" | "archived")) {
+            *lifecycle = serde_json::Value::String("Normal".to_owned());
+            changed = true;
+        }
+    }
+    changed
 }
 
 fn validate_manifest_version(manifest: &LibraryManifest) -> AppResult<()> {

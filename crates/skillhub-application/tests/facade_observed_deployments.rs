@@ -3,7 +3,7 @@
 //! 通过公开 Facade 驱动，全部使用临时目录，绝不触碰真实用户文件。覆盖：
 //! - 导入即存证（来源/Agent 形态/原始路径/导入时间/指纹/所有权）与自动建档；
 //! - 来源不明标注不猜（无 Agent 目录归属 → client_id 缺省、不建档）；
-//! - 扫描识别 → 分叉标注 → 收回 → 重新激活的已观察关系生命周期；
+//! - 扫描识别 → 分叉标注 → 目标异常保留与恢复的已观察关系；
 //! - 原始文件迁移的确认门槛（未确认拒绝且不触碰用户文件）、失败中止
 //!   （冲突/无存证）与备份回滚；
 //! - 重复导入幂等或明确冲突，重复扫描不重复建档。
@@ -16,9 +16,11 @@ use skillhub_core::{
     },
     api::{
         CommitImport, CommitOriginalMigration, CreateSkill, GetSkillProvenance, PrepareImport,
-        PrepareOriginalMigration, RollbackOriginalMigration, RunInitializationScan,
+        ListRelationGovernance, PrepareOriginalMigration, RollbackOriginalMigration,
+        RunInitializationScan,
     },
     import::{CandidateOwnership, ImportAction, ImportCandidate, ImportDecision},
+    relationship::{RelationGovernanceFilters, RelationGovernanceReason},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, ApplicationFacade, ObservedMatchState,
     ObservedOrigin, ObservedStatus, OriginalMigrationConflictReason, OriginalMigrationState,
@@ -315,7 +317,7 @@ async fn import_outside_known_agent_directories_stays_unattributed_and_builds_no
 }
 
 #[tokio::test]
-async fn scan_establishes_maintains_releases_and_reactivates_observed_relations() {
+async fn scan_establishes_maintains_and_preserves_missing_observed_relations() {
     let workspace = tempfile::tempdir().expect("workspace");
     let agent_root = workspace.path().join("agents/trae/skills");
     let library_source = workspace.path().join("seed/notes");
@@ -356,18 +358,54 @@ async fn scan_establishes_maintains_releases_and_reactivates_observed_relations(
     );
     assert_eq!(view.observed_deployments[0].status, ObservedStatus::Active);
 
-    // 路径不再被观察到（部署收回/目录移除）→ 关系收回。
+    // 路径不再被观察到不能冒充用户结束关系；保留目标和最近确认身份。
     std::fs::remove_dir_all(&deployed).expect("remove deployed dir");
     scan(&facade).await;
     let view = provenance_of(&facade, skill_id).await;
     assert_eq!(view.observed_deployments.len(), 1);
-    assert_eq!(
-        view.observed_deployments[0].status,
-        ObservedStatus::Released
-    );
-    assert!(view.observed_deployments[0].released_at.is_some());
+    assert_eq!(view.observed_deployments[0].status, ObservedStatus::Active);
+    assert_eq!(view.observed_deployments[0].released_at, None);
+    assert_eq!(view.observed_deployments[0].skill_id, skill_id);
 
-    // 重新观察到一致内容 → 关系重新激活。
+    let result = facade
+        .query(AppQuery::ListRelationGovernance(ListRelationGovernance {
+            filters: RelationGovernanceFilters::default(),
+        }))
+        .await
+        .expect("governance after missing target");
+    let AppQueryResult::RelationGovernanceLedger(ledger) = result else {
+        panic!("expected governance ledger");
+    };
+    let relation = ledger
+        .rows
+        .iter()
+        .find(|row| row.path().replace('\\', "/").ends_with("/agents/trae/skills/notes"))
+        .expect("missing target remains in governance");
+    assert_eq!(relation.skill_id(), Some(skill_id));
+    assert!(relation
+        .governance
+        .health_reasons
+        .contains(&RelationGovernanceReason::LinkTargetUnavailable));
+    assert!(relation
+        .governance
+        .health_reasons
+        .contains(&RelationGovernanceReason::ContentChanged));
+    let missing_revision = ledger.relationship_revision.clone();
+
+    // 重复确认同一缺失事实不推进关系修订。
+    scan(&facade).await;
+    let repeated = facade
+        .query(AppQuery::ListRelationGovernance(ListRelationGovernance {
+            filters: RelationGovernanceFilters::default(),
+        }))
+        .await
+        .expect("governance after repeated missing scan");
+    let AppQueryResult::RelationGovernanceLedger(repeated_ledger) = repeated else {
+        panic!("expected governance ledger");
+    };
+    assert_eq!(repeated_ledger.relationship_revision, missing_revision);
+
+    // 目标恢复且内容再次验证一致 → 同一关系清除健康异常。
     write_skill(&deployed, BODY_V1);
     scan(&facade).await;
     let view = provenance_of(&facade, skill_id).await;
@@ -378,6 +416,23 @@ async fn scan_establishes_maintains_releases_and_reactivates_observed_relations(
     );
     assert_eq!(view.observed_deployments[0].status, ObservedStatus::Active);
     assert_eq!(view.observed_deployments[0].released_at, None);
+
+    let result = facade
+        .query(AppQuery::ListRelationGovernance(ListRelationGovernance {
+            filters: RelationGovernanceFilters::default(),
+        }))
+        .await
+        .expect("governance after target restoration");
+    let AppQueryResult::RelationGovernanceLedger(ledger) = result else {
+        panic!("expected governance ledger");
+    };
+    let relation = ledger
+        .rows
+        .iter()
+        .find(|row| row.path().replace('\\', "/").ends_with("/agents/trae/skills/notes"))
+        .expect("restored target remains in governance");
+    assert_eq!(relation.skill_id(), Some(skill_id));
+    assert!(relation.governance.health_reasons.is_empty());
 
     // 重复扫描不重复建档（幂等）。
     scan(&facade).await;

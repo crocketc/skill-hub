@@ -1,11 +1,14 @@
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::relationship::{
-    project_skill_relationship_graph, AgentDirectoryCapabilityFact, ConflictCaseFact,
+    project_skill_relationship_graph, project_skill_relationship_graph_with_governance,
+    project_unified_governance_ledger_with_context, AgentDirectoryCapabilityFact, ConflictCaseFact,
     ConflictClassification, ConflictEvidence, ConflictKind, DeploymentRelationFact,
     DirectoryNodeFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationshipGraphEdgeKind, RelationshipGraphFilters, RelationshipGraphNodeKind,
-    RelationshipGraphStatus, RelationshipType, SourceRelationFact,
+    GovernableRelationFact, RelationGovernanceConfirmationFact, RelationGovernanceDecision,
+    RelationGovernanceFilters, RelationManagementStatus, RelationshipGraphEdgeKind,
+    RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus, RelationshipType,
+    SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::SkillId;
@@ -33,6 +36,7 @@ fn deployment(
         content_fingerprint: format!("sha256:{relation_id}"),
         origin: ObservedOrigin::Scan,
         match_state: ObservedMatchState::ContentVerified,
+        health_reasons: Some(Vec::new()),
         active: true,
         observed_at: 10,
         released_at: None,
@@ -167,6 +171,184 @@ fn only_unconfirmed_conflicts_are_projected_and_filters_only_hide_edges() {
     assert!(graph.has_node(&center.to_string()));
     assert_eq!(graph.edges.len(), 0);
     assert_eq!(graph.fact_counts.deployment_relations, 1);
+}
+
+#[test]
+fn shared_directory_use_has_one_governance_edge_and_structural_agent_links() {
+    let skill_id = SkillId::new();
+    let mut shared_use = deployment(
+        "shared-use",
+        Some(skill_id),
+        "agent.alpha",
+        "C:/shared/notes",
+        RelationshipType::ManagedCopy,
+    );
+    shared_use.directory_node_id = Some("directory:shared".into());
+    shared_use.path_key = "c:/shared/notes".into();
+    let directory_nodes = vec![directory(
+        "directory:shared",
+        DirectoryRole::SharedDirectory,
+    )];
+    let capabilities = ["agent.alpha", "agent.beta"].map(|agent| AgentDirectoryCapabilityFact {
+        agent_client_id: agent.into(),
+        directory_node_id: "directory:shared".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: skillhub_core::DirectoryPrecedence::Preferred,
+        evidence_reference: None,
+        researched_at: None,
+        applicable_platforms: vec![],
+    });
+    let confirmation = RelationGovernanceConfirmationFact {
+        relation_id: "shared-use".into(),
+        management_status: RelationManagementStatus::NotTakenOver,
+        decision: RelationGovernanceDecision::Undecided,
+        confirmed_at: None,
+    };
+    let governance = project_unified_governance_ledger_with_context(
+        &RelationGovernanceFilters::default(),
+        &[GovernableRelationFact::Deployment(shared_use.clone())],
+        &capabilities,
+        &directory_nodes,
+        &[confirmation],
+        &Default::default(),
+        &Default::default(),
+        1,
+        None,
+    );
+    assert_eq!(governance.rows.len(), 1);
+    assert_eq!(governance.rows[0].evidence_relation_ids, ["shared-use"]);
+
+    let graph = project_skill_relationship_graph_with_governance(
+        skill_id,
+        &[shared_use],
+        &[],
+        &governance.rows,
+        &directory_nodes,
+        &capabilities,
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+
+    assert_eq!(graph.fact_counts.usage_relations, 1);
+    let governed_edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.governance.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(governed_edges.len(), 1);
+    assert_eq!(governed_edges[0].kind, RelationshipGraphEdgeKind::Shared);
+    assert_eq!(
+        governed_edges[0].governance,
+        Some(governance.rows[0].governance.clone())
+    );
+    let capability_edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.edge_id.starts_with("directory-capability:"))
+        .collect::<Vec<_>>();
+    assert_eq!(capability_edges.len(), 2);
+    assert!(capability_edges
+        .iter()
+        .all(|edge| edge.governance.is_none()));
+    assert!(capability_edges
+        .iter()
+        .any(|edge| edge.from_node_id == "directory:directory:shared"
+            && edge.to_node_id == "agent:agent.alpha"));
+    assert!(capability_edges
+        .iter()
+        .any(|edge| edge.from_node_id == "directory:directory:shared"
+            && edge.to_node_id == "agent:agent.beta"));
+    assert!(!graph.edges.iter().any(|edge| {
+        edge.from_node_id == skill_id.to_string()
+            && edge.to_node_id.starts_with("agent:")
+            && edge.governance.is_some()
+    }));
+}
+
+#[test]
+fn shared_aliases_from_multiple_agents_merge_at_the_shared_physical_target() {
+    let skill_id = SkillId::new();
+    let mut alpha = deployment(
+        "alias:alpha",
+        Some(skill_id),
+        "agent.alpha",
+        "C:/alpha/skills/notes",
+        RelationshipType::SharedDirectoryReference,
+    );
+    alpha.file_representation = FileRepresentation::SymbolicLink;
+    alpha.directory_node_id = Some("directory:alpha".into());
+    alpha.link_target_path = Some("C:/shared/notes".into());
+    alpha.link_target_path_key = Some("c:/shared/notes".into());
+    alpha.link_target_directory_id = Some("directory:shared".into());
+
+    let mut beta = alpha.clone();
+    beta.relation_id = "alias:beta".into();
+    beta.agent_client_id = "agent.beta".into();
+    beta.path = "C:/beta/skills/notes".into();
+    beta.path_key = "c:/beta/skills/notes".into();
+    beta.directory_node_id = Some("directory:beta".into());
+
+    let mut alpha_directory = directory("directory:alpha", DirectoryRole::AgentNative);
+    alpha_directory.agent_client_id = Some("agent.alpha".into());
+    let mut beta_directory = directory("directory:beta", DirectoryRole::AgentNative);
+    beta_directory.agent_client_id = Some("agent.beta".into());
+    let directory_nodes = vec![
+        alpha_directory,
+        beta_directory,
+        directory("directory:shared", DirectoryRole::SharedDirectory),
+    ];
+    let relations = [alpha.clone(), beta.clone()];
+    let facts = relations
+        .iter()
+        .cloned()
+        .map(GovernableRelationFact::Deployment)
+        .collect::<Vec<_>>();
+    let governance = project_unified_governance_ledger_with_context(
+        &RelationGovernanceFilters::default(),
+        &facts,
+        &[],
+        &directory_nodes,
+        &[],
+        &Default::default(),
+        &Default::default(),
+        1,
+        None,
+    );
+
+    assert_eq!(governance.rows.len(), 1);
+    assert_eq!(
+        governance.rows[0].evidence_relation_ids,
+        ["alias:alpha", "alias:beta"]
+    );
+    assert_eq!(
+        governance.rows[0]
+            .target_identity
+            .as_ref()
+            .map(|identity| identity.directory_node_id.as_str()),
+        Some("directory:shared")
+    );
+
+    let graph = project_skill_relationship_graph_with_governance(
+        skill_id,
+        &relations,
+        &[],
+        &governance.rows,
+        &directory_nodes,
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+    );
+    assert_eq!(graph.fact_counts.usage_relations, 1);
+    let shared_usage_edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == RelationshipGraphEdgeKind::Shared && edge.governance.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(shared_usage_edges.len(), 1);
+    assert_eq!(
+        shared_usage_edges[0].evidence_relation_ids,
+        ["alias:alpha", "alias:beta"]
+    );
 }
 
 #[test]
@@ -687,7 +869,10 @@ fn shared_directory_deployments_expand_through_supported_agent_capabilities() {
         center,
         &[relation],
         &[],
-        &[directory("directory:shared", DirectoryRole::SharedDirectory)],
+        &[directory(
+            "directory:shared",
+            DirectoryRole::SharedDirectory,
+        )],
         &[
             AgentDirectoryCapabilityFact {
                 agent_client_id: "agent.codex".into(),
@@ -731,7 +916,8 @@ fn shared_directory_deployments_expand_through_supported_agent_capabilities() {
             && edge.kind == RelationshipGraphEdgeKind::Shared
     }));
     assert!(!graph.edges.iter().any(|edge| {
-        edge.from_node_id == center.to_string() && edge.kind == RelationshipGraphEdgeKind::Deployment
+        edge.from_node_id == center.to_string()
+            && edge.kind == RelationshipGraphEdgeKind::Deployment
     }));
 }
 

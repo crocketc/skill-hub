@@ -26,6 +26,7 @@ use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
 use skillhub_adapters::deployment::{AppliedTarget, DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::llm::HttpLlmTaskRunner;
+use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
 use skillhub_adapters::source::{
@@ -58,9 +59,9 @@ use skillhub_core::catalog::CallPolicy;
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
 use skillhub_core::deployment::{
-    observed_path_key, path_lives_under, plan_target_preview, reconcile_observed_row,
-    DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
-    DeploymentRecord, DeploymentState, ExistingDeployment, ExistingOwnership,
+    observed_path_key, path_lives_under, plan_target_preview, reconcile_missing_observed_row,
+    reconcile_observed_row, DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest,
+    DeploymentPlanner, DeploymentRecord, DeploymentState, ExistingDeployment, ExistingOwnership,
     RegisteredTargetIndex, RegisteredTargetResolver, TargetFact, TargetPlan, VerifiedTarget,
 };
 use skillhub_core::duplicate::{
@@ -5625,6 +5626,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_original_migration(request)
             }
             AppCommand::RetainSourceCopy(request) => return self.retain_source_copy(request),
+            AppCommand::RevokeRetention(request) => return self.revoke_retention(request),
+            AppCommand::EndRelationship(request) => return self.end_relationship(request),
             AppCommand::RelinkSourceCopy(request) => return self.relink_source_copy(request),
             AppCommand::CommitOriginalMigration(request) => {
                 return self.commit_original_migration(request)
@@ -9214,6 +9217,7 @@ impl LocalApplicationFacade {
             let hashes = Self::library_content_hashes(database)?;
             let repository = database.provenance_repository();
             let existing = repository.list_observed()?;
+            let relation_facts = database.relationship_repository().list_relations()?;
             let scanned_roots = scan
                 .roots
                 .iter()
@@ -9239,7 +9243,34 @@ impl LocalApplicationFacade {
                         .find(|(_, hash)| hash == &item.fingerprint)
                         .map(|(skill_id, _)| *skill_id)
                 });
-                let action = reconcile_observed_row(Some(row), observation, matched);
+                let mut action = match observation {
+                    Some(observation) => {
+                        reconcile_observed_row(Some(row), Some(observation), matched)
+                    }
+                    None => reconcile_missing_observed_row(
+                        Some(row),
+                        &FilesystemRelationshipProbe.probe(&row_path),
+                    ),
+                };
+                if matches!(action, skillhub_core::ObservedRowAction::Unchanged) {
+                    if let (Some(observation), Some(skill_id)) = (observation.as_ref(), matched) {
+                        let relation_needs_health_confirmation = relation_facts
+                            .iter()
+                            .find(|fact| {
+                                fact.agent_client_id == row.client_id
+                                    && fact.path_key == observed_path_key(&row_path)
+                            })
+                            .map_or(true, |fact| {
+                                !matches!(fact.health_reasons.as_deref(), Some(reasons) if reasons.is_empty())
+                            });
+                        if relation_needs_health_confirmation {
+                            action = skillhub_core::ObservedRowAction::EstablishVerified {
+                                skill_id,
+                                fingerprint: observation.fingerprint.clone(),
+                            };
+                        }
+                    }
+                }
                 // 既有行始终用它自己存储的路径寻址：upsert/状态迁移都按
                 // path_key 命中，改传观察路径可能错过历史行。
                 repository.apply_observed_row_action(

@@ -215,6 +215,11 @@ function TargetCard({
   const description = unavailable
     ? String(t("onboarding.unavailable"))
     : kindLabels.join(" · ");
+  const pathText = pendingCreation
+    ? String(t("agents.pathPending"))
+    : group.path
+      ? displayPath(group.path)
+      : String(t("onboarding.targetPathUnavailable"));
 
   return (
     <div className="sh-onboarding__target-card" data-selected={checked ? "true" : "false"} data-unavailable={unavailable ? "true" : "false"}>
@@ -245,12 +250,8 @@ function TargetCard({
                 <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
               ) : null}
             </span>
-            <code className="sh-onboarding__target-path">
-              {pendingCreation
-                ? t("agents.pathPending")
-                : group.path
-                  ? displayPath(group.path)
-                  : t("onboarding.targetPathUnavailable")}
+            <code className="sh-onboarding__target-path" title={pathText}>
+              <span className="sh-onboarding__target-path-text">{pathText}</span>
             </code>
             <DeploymentCapabilityIcons
               directory={group.directory}

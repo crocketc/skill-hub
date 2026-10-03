@@ -24,16 +24,20 @@ pub use classifier::{
 pub use governance::{
     legacy_bucket_statuses, project_governable_relation, project_relation_governance_ledger,
     project_relation_governance_ledger_with_names, project_unified_governance_ledger,
-    GovernableRelationFact, GovernableRelationProjection, GovernableRelationStatus,
-    RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
-    RelationGovernanceCounts, RelationGovernanceFilters, RelationGovernanceImpact,
+    project_unified_governance_ledger_with_context, GovernableRelationFact,
+    GovernableRelationProjection, GovernableRelationStatus, RelationGovernanceAction,
+    RelationGovernanceActionCondition, RelationGovernanceBlocker, RelationGovernanceBucket,
+    RelationGovernanceClassification, RelationGovernanceConfirmationFact, RelationGovernanceCounts,
+    RelationGovernanceDecision, RelationGovernanceFilters, RelationGovernanceImpact,
     RelationGovernanceLedger, RelationGovernanceNames, RelationGovernanceReadiness,
-    RelationGovernanceRow,
+    RelationGovernanceReason, RelationGovernanceRow, RelationGovernanceState,
+    RelationGovernanceTargetKind, RelationManagementStatus, RelationTargetIdentity,
 };
 pub use graph::{
-    project_skill_relationship_graph, RelationshipGraphEdgeKind, RelationshipGraphFactCounts,
-    RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus,
-    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode,
+    project_skill_relationship_graph, project_skill_relationship_graph_with_governance,
+    RelationshipGraphEdgeKind, RelationshipGraphFactCounts, RelationshipGraphFilters,
+    RelationshipGraphNodeKind, RelationshipGraphStatus, SkillRelationshipEdge,
+    SkillRelationshipGraph, SkillRelationshipNode,
 };
 pub use history::{
     GovernanceHistoryAgent, GovernanceHistoryEntry, GovernanceHistoryPage, ListGovernanceHistory,
@@ -226,6 +230,11 @@ pub struct DeploymentRelationFact {
     pub content_fingerprint: String,
     pub origin: ObservedOrigin,
     pub match_state: ObservedMatchState,
+    /// Explicit probe/file health evidence. `None` means an older or never
+    /// confirmed fact; `Some([])` means a check confirmed no current health
+    /// anomaly. This field never carries management decisions or status.
+    #[serde(default)]
+    pub health_reasons: Option<Vec<RelationHealthReason>>,
     pub active: bool,
     #[serde(with = "crate::i64_string")]
     #[specta(type = String)]
@@ -233,6 +242,23 @@ pub struct DeploymentRelationFact {
     #[serde(with = "crate::i64_option_string")]
     #[specta(type = Option<String>)]
     pub released_at: Option<i64>,
+}
+
+/// Persisted reasons describe observed target/subject health only.
+/// Management decisions and governance classification live in a separate
+/// authoritative projection.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationHealthReason {
+    TargetEntryMissing,
+    TargetEntryReplaced,
+    TargetLinkUnavailable,
+    PermissionLimited,
+    ContentChanged,
+    ManagedTargetOccupied,
+    OperationFailed,
+    SubjectUnavailable,
+    ProbeUnavailable,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

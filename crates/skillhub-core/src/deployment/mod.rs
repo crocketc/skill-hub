@@ -14,8 +14,9 @@ pub use model::{
     TargetFactSource, TargetPlan, VerifiedTarget,
 };
 pub use observed::{
-    observed_path_key, path_lives_under, reconcile_observed_row, ObservedDeployment,
-    ObservedMatchState, ObservedOrigin, ObservedPathObservation, ObservedRowAction, ObservedStatus,
+    observed_path_key, path_lives_under, reconcile_missing_observed_row, reconcile_observed_row,
+    ObservedDeployment, ObservedMatchState, ObservedOrigin, ObservedPathObservation,
+    ObservedRowAction, ObservedStatus,
 };
 pub use planner::{
     plan_relation_conversion, plan_target_preview, DeploymentBlockReason, DeploymentPairFacts,

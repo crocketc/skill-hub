@@ -1,6 +1,6 @@
 import { expect, test } from "./fixtures";
 import { expectUnifiedPageRhythm } from "./page-rhythm";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 const PREVIEW = "/__preview/discovery-cards";
 
@@ -30,6 +30,24 @@ async function rootHorizontalOverflow(page: Page): Promise<number> {
   return page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
+}
+
+async function cardGridGeometry(cards: Locator) {
+  const count = await cards.count();
+  const rowYs: number[] = [];
+  let firstRowY: number | undefined;
+  let firstRowCount = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const box = await cards.nth(index).boundingBox();
+    expect(box, `card ${index} has a browser layout box`).not.toBeNull();
+    if (!box) continue;
+    firstRowY ??= box.y;
+    if (Math.abs(box.y - firstRowY) < 4) firstRowCount += 1;
+    if (!rowYs.some((rowY) => Math.abs(box.y - rowY) < 4)) rowYs.push(box.y);
+  }
+
+  return { count, firstRowCount, rowCount: rowYs.length };
 }
 
 async function searchOnlineResults(page: Page) {
@@ -198,7 +216,7 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     const sharedCard = page.getByTestId("agent-card-phys-agents");
     await expect(sharedCard).toHaveCount(1);
     await expect(sharedCard.getByText("Shared directory")).toBeVisible();
-    await expect(sharedCard.getByText("Shared by 2 registered clients")).toBeVisible();
+    await expect(sharedCard.getByText("Shared by 3 registered clients")).toBeVisible();
     await expect(sharedCard.getByText("C:\\Users\\demo\\.agents\\skills")).toBeVisible();
     const sharedPresentation = sharedCard.locator(".sh-agent-presentation");
     await expect(sharedPresentation).toHaveCount(1);
@@ -210,6 +228,123 @@ test.describe("local discovery workbench agent groups (P1-06)", () => {
     await expect(page.getByText("Unavailable now")).toBeVisible();
     await expect(page.getByText("C:\\Users\\demo\\broken\\skills")).toBeVisible();
     await expect(page.getByTestId("agent-card-phys-broken").getByText("Unavailable")).toBeVisible();
+  });
+
+  test("flattens available and unavailable brands into responsive card grids", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(PREVIEW);
+
+    const inventory = page.getByTestId("agent-groups");
+    const inventoryScroll = inventory.locator(".sh-discovery-workbench__inventory-scroll");
+    const collapse = inventory.getByRole("button", { name: "Collapse" });
+    await expect(collapse).toHaveAttribute("aria-expanded", "true");
+    await collapse.click();
+    await expect(inventoryScroll).toBeHidden();
+    await inventory.getByRole("button", { name: "Expand" }).click();
+    await expect(inventoryScroll).toBeVisible();
+
+    const availableList = inventoryScroll.getByRole("list", { name: "Discovered agent directories" });
+    const availableCards = availableList.locator("li.sh-discovery-workbench__agent-card");
+    await expect(availableCards).toHaveCount(5);
+    await expect(availableList.locator(":scope > li.sh-discovery-workbench__agent-card")).toHaveCount(5);
+    expect(await availableCards.evaluateAll((cards) => cards.map((card) => card.getAttribute("data-testid")))
+    ).toEqual([
+      "agent-card-phys-agents",
+      "agent-card-phys-claude",
+      "agent-card-phys-codebuddy",
+      "agent-card-phys-cursor",
+      "agent-card-phys-openai",
+    ]);
+
+    const availableAtFullWidth = await cardGridGeometry(availableCards);
+    // Five cards at the full-width reference form three columns across brands, then wrap.
+    expect(availableAtFullWidth.firstRowCount).toBe(3);
+    expect(availableAtFullWidth.firstRowCount).toBeLessThan(availableAtFullWidth.count);
+    expect(availableAtFullWidth.rowCount).toBeGreaterThan(1);
+    const firstRowLabels = await Promise.all(
+      Array.from({ length: availableAtFullWidth.firstRowCount }, (_, index) =>
+        availableCards.nth(index).locator(".sh-agent-presentation").getAttribute("aria-label"),
+      ),
+    );
+    expect(new Set(firstRowLabels).size).toBe(3);
+    await inventory.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: "test-results/fb-002-agent-grid.png" });
+
+    const unavailableSection = inventoryScroll.locator(".sh-discovery-workbench__agent-unavailable");
+    const unavailableCards = unavailableSection.locator("li.sh-discovery-workbench__agent-card");
+    await expect(unavailableCards).toHaveCount(2);
+    await expect(unavailableSection.locator("ul.sh-discovery-workbench__agent-cards > li.sh-discovery-workbench__agent-card")).toHaveCount(2);
+    expect(await unavailableCards.evaluateAll((cards) => cards.map((card) => card.getAttribute("data-testid")))
+    ).toEqual(["agent-card-phys-broken", "agent-card-phys-windsurf"]);
+    expect((await cardGridGeometry(unavailableCards)).firstRowCount).toBe(2);
+    await inventoryScroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    await page.screenshot({ path: "test-results/fb-002-agent-grid-bottom.png" });
+    await inventoryScroll.evaluate((element) => { element.scrollTop = 0; });
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    expect((await cardGridGeometry(availableCards)).firstRowCount).toBe(2);
+
+    // The cross-brand shared directory remains a single generic card.
+    await expect(page.getByTestId("agent-card-phys-agents")).toHaveCount(1);
+
+    // A narrow container falls back to one column and long paths stay clipped inside the card.
+    await page.setViewportSize({ width: 560, height: 900 });
+    expect((await cardGridGeometry(availableCards)).firstRowCount).toBe(1);
+    const longPath = page.getByTestId("agent-card-phys-openai").locator(".sh-discovery-workbench__agent-path");
+    await expect(longPath).toHaveAttribute(
+      "title",
+      "C:\\Users\\demo\\.codex\\skills\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\skills",
+    );
+    const pathGeometry = await longPath.evaluate((element) => {
+      const text = element.querySelector(".sh-discovery-workbench__agent-path-text")!;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return { frameWidth: element.clientWidth, textWidth: range.getBoundingClientRect().width };
+    });
+    expect(pathGeometry.textWidth).toBeGreaterThan(pathGeometry.frameWidth);
+    await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  test("keeps the Agent path text centered in its visible frame at wide and narrow widths", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(PREVIEW);
+
+    const path = page.getByTestId("agent-card-phys-openai").locator(".sh-discovery-workbench__agent-path");
+    const sharedCard = page.getByTestId("agent-card-phys-codebuddy");
+    const chip = sharedCard.locator(".sh-discovery-workbench__agent-path-label .sh-agent-card__shared-chip");
+    await expect(chip).toBeVisible();
+    await expect(path).toHaveAttribute(
+      "title",
+      "C:\\Users\\demo\\.codex\\skills\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\long-segment\\skills",
+    );
+    const measure = () => path.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const frame = element.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      return { frameCenter: (frame.top + frame.bottom) / 2, textCenter: (text.top + text.bottom) / 2 };
+    });
+
+    const measureChip = () => sharedCard.evaluate((card) => {
+      const labelRect = card.querySelector(".sh-discovery-workbench__agent-path-label")!.getBoundingClientRect();
+      const chipRect = card.querySelector(".sh-agent-card__shared-chip")!.getBoundingClientRect();
+      return { labelBottom: labelRect.bottom, labelTop: labelRect.top, chipBottom: chipRect.bottom, chipTop: chipRect.top };
+    });
+    const wide = await measure();
+    const wideChip = await measureChip();
+    expect.soft(Math.abs(wide.textCenter - wide.frameCenter)).toBeLessThanOrEqual(1);
+    expect.soft(wideChip.chipTop).toBeGreaterThanOrEqual(wideChip.labelTop);
+    expect.soft(wideChip.chipBottom).toBeLessThanOrEqual(wideChip.labelBottom);
+    await page.screenshot({ path: test.info().outputPath("discovery-agent-path-wide.png"), fullPage: true });
+
+    await page.setViewportSize({ width: 560, height: 900 });
+    const narrow = await measure();
+    const narrowChip = await measureChip();
+    expect.soft(Math.abs(narrow.textCenter - narrow.frameCenter)).toBeLessThanOrEqual(1);
+    expect.soft(narrowChip.chipTop).toBeGreaterThanOrEqual(narrowChip.labelTop);
+    expect.soft(narrowChip.chipBottom).toBeLessThanOrEqual(narrowChip.labelBottom);
+    await expect.poll(() => rootHorizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath("discovery-agent-path-narrow.png"), fullPage: true });
   });
 
   test("exclusion runs after confirmation, removes only that card, and never deletes files", async ({ page }) => {
@@ -339,7 +474,7 @@ test.describe("discovery cards in Simplified Chinese", () => {
     const sharedCard = page.getByTestId("agent-card-phys-agents");
     await expect(sharedCard).toHaveCount(1);
     await expect(sharedCard.getByText("共享目录")).toBeVisible();
-    await expect(sharedCard.getByText("被 2 个已登记客户端共享")).toBeVisible();
+    await expect(sharedCard.getByText("被 3 个已登记客户端共享")).toBeVisible();
     await expect(page.getByText("暂不可用")).toBeVisible();
   });
 });

@@ -212,6 +212,7 @@ fn unknown_classification(path: &str, reason: &str) -> RelationClassification {
             content_fingerprint: String::new(),
             origin: crate::deployment::ObservedOrigin::Scan,
             match_state: crate::deployment::ObservedMatchState::NameOnly,
+            health_reasons: None,
             active: true,
             observed_at: 0,
             released_at: None,

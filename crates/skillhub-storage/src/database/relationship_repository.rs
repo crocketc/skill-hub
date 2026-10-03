@@ -11,8 +11,9 @@ use skillhub_core::duplicate::{
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryRecognition,
-    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType,
-    SourceCopyArchiveReason, SourceCopyRelationFact, SourceRelationFact,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState,
+    RelationGovernanceConfirmationFact, RelationGovernanceDecision, RelationManagementStatus,
+    RelationshipType, SourceCopyArchiveReason, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
@@ -33,6 +34,16 @@ pub struct RelationshipImpactSnapshot {
     pub directory_nodes: Vec<skillhub_core::relationship::DirectoryNodeFact>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationshipGovernanceMutationReceipt {
+    pub operation_id: String,
+    pub relation_id: String,
+    pub representative_relation_id: String,
+    pub action: String,
+    pub expected_revision: i64,
+    pub result_revision: i64,
+}
+
 impl<'a> RelationshipRepository<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
@@ -47,6 +58,84 @@ impl<'a> RelationshipRepository<'a> {
                 |row| row.get(0),
             )
             .map_err(database_error)
+    }
+
+    pub fn relationship_revision_tx(transaction: &Transaction<'_>) -> AppResult<i64> {
+        transaction
+            .query_row(
+                "SELECT revision FROM relationship_projection_state WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
+    }
+
+    pub fn governance_mutation_receipt_tx(
+        transaction: &Transaction<'_>,
+        operation_id: &str,
+    ) -> AppResult<Option<RelationshipGovernanceMutationReceipt>> {
+        transaction
+            .query_row(
+                "SELECT operation_id, relation_id, representative_relation_id, action,
+                        expected_revision, result_revision
+                 FROM relationship_governance_mutation_receipts WHERE operation_id=?1",
+                [operation_id],
+                |row| {
+                    Ok(RelationshipGovernanceMutationReceipt {
+                        operation_id: row.get(0)?,
+                        relation_id: row.get(1)?,
+                        representative_relation_id: row.get(2)?,
+                        action: row.get(3)?,
+                        expected_revision: row.get(4)?,
+                        result_revision: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(database_error)
+    }
+
+    pub fn record_governance_mutation_receipt_tx(
+        transaction: &Transaction<'_>,
+        receipt: &RelationshipGovernanceMutationReceipt,
+        occurred_at: i64,
+    ) -> AppResult<()> {
+        transaction
+            .execute(
+                "INSERT INTO relationship_governance_mutation_receipts
+                 (operation_id, relation_id, representative_relation_id, action,
+                  expected_revision, result_revision, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    receipt.operation_id,
+                    receipt.relation_id,
+                    receipt.representative_relation_id,
+                    receipt.action,
+                    receipt.expected_revision,
+                    receipt.result_revision,
+                    occurred_at,
+                ],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    pub fn revoke_source_copy_retention_tx(
+        transaction: &Transaction<'_>,
+        relation_id: &str,
+    ) -> AppResult<SourceCopyRelationFact> {
+        let mut fact = load_source_copy_fact(transaction, relation_id)?
+            .ok_or_else(|| missing_source_copy_relation(relation_id))?;
+        if fact.decision != skillhub_core::relationship::SourceCopyDecision::Retained {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("relation_id", relation_id.to_owned())
+                .with_param("reason", "retention_not_active")
+                .with_action(RecoveryAction::Retry));
+        }
+        fact.decision = skillhub_core::relationship::SourceCopyDecision::Pending;
+        write_source_copy_fact(transaction, &fact)?;
+        bump_relationship_revision_tx(transaction)?;
+        Ok(fact)
     }
 
     pub fn last_verified_at(&self) -> AppResult<Option<i64>> {
@@ -124,6 +213,41 @@ impl<'a> RelationshipRepository<'a> {
         rows.map(|row| {
             let row = row.map_err(database_error)?;
             decode_capability(row).ok_or_else(invalid_record)
+        })
+        .collect()
+    }
+
+    pub fn list_relation_governance_confirmations(
+        &self,
+    ) -> AppResult<Vec<RelationGovernanceConfirmationFact>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT relation_id, management_status, decision, confirmed_at
+                 FROM relation_governance_confirmations ORDER BY relation_id",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(database_error)?;
+        rows.map(|row| {
+            let (relation_id, management_status, decision, confirmed_at) =
+                row.map_err(database_error)?;
+            Ok(RelationGovernanceConfirmationFact {
+                relation_id,
+                management_status: parse_management_status(&management_status)
+                    .ok_or_else(invalid_record)?,
+                decision: parse_governance_decision(&decision).ok_or_else(invalid_record)?,
+                confirmed_at,
+            })
         })
         .collect()
     }
@@ -461,6 +585,7 @@ impl<'a> RelationshipRepository<'a> {
                 content_fingerprint: deployment.expected_hash.clone(),
                 origin: ObservedOrigin::Import,
                 match_state: ObservedMatchState::ContentVerified,
+                health_reasons: None,
                 active: matches!(deployment.state, DeploymentState::Deployed),
                 observed_at: now(),
                 released_at: None,
@@ -569,15 +694,15 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
         "excluded.ownership='skillhub_managed'
                 OR deployment_relations.ownership<>'skillhub_managed'"
     };
-    transaction
+    let changed = transaction
         .execute(
             &format!(
                 "INSERT INTO deployment_relations
              (relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
               relationship, file_representation, ownership, link_target_path,
               link_target_path_key, link_target_directory_id, content_fingerprint,
-              origin, match_state, active, observed_at, released_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+              origin, match_state, active, observed_at, released_at, health_reasons_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
              ON CONFLICT(agent_client_id, path_key) DO UPDATE SET
              relation_id=excluded.relation_id, skill_id=excluded.skill_id, path=excluded.path,
              directory_node_id=excluded.directory_node_id, relationship=excluded.relationship,
@@ -586,7 +711,8 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
              link_target_directory_id=excluded.link_target_directory_id,
              content_fingerprint=excluded.content_fingerprint, origin=excluded.origin,
              match_state=excluded.match_state, active=excluded.active,
-             observed_at=excluded.observed_at, released_at=excluded.released_at
+             observed_at=excluded.observed_at, released_at=excluded.released_at,
+             health_reasons_json=excluded.health_reasons_json
              WHERE ({ownership_guard}) AND (
                  deployment_relations.relation_id IS NOT excluded.relation_id
                  OR deployment_relations.skill_id IS NOT excluded.skill_id
@@ -604,6 +730,7 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                  OR deployment_relations.active IS NOT excluded.active
                  OR deployment_relations.observed_at IS NOT excluded.observed_at
                  OR deployment_relations.released_at IS NOT excluded.released_at
+                 OR deployment_relations.health_reasons_json IS NOT excluded.health_reasons_json
              )"
             ),
             params![
@@ -625,10 +752,16 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
                 i64::from(relation.active),
                 relation.observed_at,
                 relation.released_at,
+                relation.health_reasons
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|error| serialization_error(error.to_string()))?,
             ],
     )
-        .map(|changed| changed != 0)
-        .map_err(database_error)
+        .map_err(database_error)?;
+    let confirmation_changed = upsert_confirmation_for_deployment_tx(transaction, relation)?;
+    Ok(changed != 0 || confirmation_changed)
 }
 
 pub(crate) fn bump_relationship_revision_tx(transaction: &Transaction<'_>) -> AppResult<()> {
@@ -664,7 +797,7 @@ pub(crate) fn sync_reconciled_deployment_tx(
         Some(hash) => (hash, "content_verified"),
         None => (expected_hash, "content_verified"),
     };
-    transaction
+    let changed = transaction
         .execute(
             "UPDATE deployment_relations
              SET content_fingerprint=?1, match_state=?2, active=1,
@@ -682,6 +815,49 @@ pub(crate) fn sync_reconciled_deployment_tx(
                 observed_at,
                 format!("managed:{id}")
             ],
+        )
+        .map_err(database_error)?;
+    Ok(changed != 0)
+}
+
+fn upsert_confirmation_for_deployment_tx(
+    transaction: &Transaction<'_>,
+    relation: &DeploymentRelationFact,
+) -> AppResult<bool> {
+    let is_explicit_managed_link = matches!(relation.relationship, RelationshipType::ManagedLink)
+        && relation.ownership == OwnershipState::SkillhubManaged
+        && matches!(
+            relation.file_representation,
+            FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+        );
+    let (management_status, confirmed_at) = if is_explicit_managed_link {
+        ("taken_over", Some(relation.observed_at))
+    } else {
+        ("not_taken_over", None)
+    };
+    transaction
+        .execute(
+            "INSERT INTO relation_governance_confirmations
+             (relation_id, management_status, decision, confirmed_at)
+             VALUES (?1, ?2, 'undecided', ?3)
+             ON CONFLICT(relation_id) DO UPDATE SET
+               management_status = CASE
+                 WHEN excluded.management_status='taken_over' THEN 'taken_over'
+                 ELSE relation_governance_confirmations.management_status
+               END,
+               decision = CASE
+                 WHEN excluded.management_status='taken_over' THEN 'undecided'
+                 ELSE relation_governance_confirmations.decision
+               END,
+               confirmed_at = CASE
+                 WHEN excluded.management_status='taken_over' THEN excluded.confirmed_at
+                 ELSE relation_governance_confirmations.confirmed_at
+               END
+             WHERE (excluded.management_status='taken_over'
+                    AND (relation_governance_confirmations.management_status<>'taken_over'
+                         OR relation_governance_confirmations.decision<>'undecided'
+                         OR relation_governance_confirmations.confirmed_at IS NOT excluded.confirmed_at))",
+            params![relation.relation_id, management_status, confirmed_at],
         )
         .map(|changed| changed != 0)
         .map_err(database_error)
@@ -1359,8 +1535,17 @@ pub struct GovernanceTaskRepository<'a> {
 }
 
 impl<'a> GovernanceTaskRepository<'a> {
-    pub fn confirm_handled(&self, task_id: &str, record: &skillhub_core::pending::PendingConfirmation, now: i64) -> AppResult<()> {
-        let transaction = self.database.connection.unchecked_transaction().map_err(database_error)?;
+    pub fn confirm_handled(
+        &self,
+        task_id: &str,
+        record: &skillhub_core::pending::PendingConfirmation,
+        now: i64,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
         self.resolve(task_id, now)?;
         let json = serde_json::to_string(record).map_err(|_| invalid_record())?;
         transaction.execute(
@@ -1370,10 +1555,17 @@ impl<'a> GovernanceTaskRepository<'a> {
         transaction.commit().map_err(database_error)
     }
 
-    pub fn list_confirmations(&self) -> AppResult<Vec<skillhub_core::pending::PendingConfirmation>> {
+    pub fn list_confirmations(
+        &self,
+    ) -> AppResult<Vec<skillhub_core::pending::PendingConfirmation>> {
         let mut statement = self.database.connection.prepare("SELECT value_json FROM settings WHERE key LIKE 'pending.confirmed.%' ORDER BY updated_at DESC").map_err(database_error)?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0)).map_err(database_error)?;
-        rows.map(|row| serde_json::from_str(&row.map_err(database_error)?).map_err(|_| invalid_record())).collect()
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(database_error)?;
+        rows.map(|row| {
+            serde_json::from_str(&row.map_err(database_error)?).map_err(|_| invalid_record())
+        })
+        .collect()
     }
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
@@ -1447,7 +1639,8 @@ impl<'a> GovernanceTaskRepository<'a> {
 const DEPLOYMENT_SELECT: &str =
     "SELECT relation_id, skill_id, agent_client_id, path, path_key, directory_node_id,
      relationship, file_representation, ownership, link_target_path, link_target_path_key,
-     link_target_directory_id, content_fingerprint, origin, match_state, active, observed_at, released_at
+     link_target_directory_id, content_fingerprint, origin, match_state, active, observed_at, released_at,
+     health_reasons_json
      FROM deployment_relations";
 
 const SOURCE_SELECT: &str =
@@ -1485,6 +1678,7 @@ type StoredDeployment = (
     i64,
     i64,
     Option<i64>,
+    Option<String>,
 );
 
 type StoredSource = (
@@ -1544,6 +1738,7 @@ fn deployment_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredDeployment>
         row.get(15)?,
         row.get(16)?,
         row.get(17)?,
+        row.get(18)?,
     ))
 }
 
@@ -1596,6 +1791,12 @@ fn decode_deployment(row: StoredDeployment) -> Option<DeploymentRelationFact> {
         content_fingerprint: row.12,
         origin: parse_origin(&row.13)?,
         match_state: parse_match_state(&row.14)?,
+        health_reasons: row
+            .18
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .ok()?,
         active: row.15 != 0,
         observed_at: row.16,
         released_at: row.17,
@@ -1707,6 +1908,22 @@ fn relationship_code(value: RelationshipType) -> &'static str {
         RelationshipType::ObservedCopy => "observed_copy",
         RelationshipType::ObservedLink => "observed_link",
         RelationshipType::Unknown => "unknown",
+    }
+}
+
+fn parse_management_status(value: &str) -> Option<RelationManagementStatus> {
+    match value {
+        "not_taken_over" => Some(RelationManagementStatus::NotTakenOver),
+        "taken_over" => Some(RelationManagementStatus::TakenOver),
+        _ => None,
+    }
+}
+
+fn parse_governance_decision(value: &str) -> Option<RelationGovernanceDecision> {
+    match value {
+        "undecided" => Some(RelationGovernanceDecision::Undecided),
+        "retained_independent_copy" => Some(RelationGovernanceDecision::RetainedIndependentCopy),
+        _ => None,
     }
 }
 

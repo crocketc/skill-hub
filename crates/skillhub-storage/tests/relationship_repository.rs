@@ -11,8 +11,8 @@ use skillhub_core::import::{
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, DeploymentRelationFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationshipType, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
-    SourceCopyRelationFact, SourceRelationFact,
+    RelationHealthReason, RelationshipType, SourceCopyArchiveReason, SourceCopyDecision,
+    SourceCopyHealth, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -30,6 +30,75 @@ fn skill(db: &Database, skill_id: SkillId) {
             [skill_id.to_string()],
         )
         .expect("skill");
+}
+
+#[test]
+fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let path = workspace.path().join("migration.sqlite");
+    let db = Database::open(&path).expect("database");
+    let skill_id = SkillId::new();
+    skill(&db, skill_id);
+
+    let mut owned_link = deployment(skill_id);
+    owned_link.relation_id = "legacy:owned-link".into();
+    owned_link.relationship = RelationshipType::ManagedLink;
+    owned_link.file_representation = FileRepresentation::SymbolicLink;
+    owned_link.ownership = OwnershipState::SkillhubManaged;
+
+    let mut managed_copy = owned_link.clone();
+    managed_copy.relation_id = "legacy:managed-copy".into();
+    managed_copy.path = "C:/agent/managed-copy".into();
+    managed_copy.path_key = managed_copy.path.clone();
+    managed_copy.relationship = RelationshipType::ManagedCopy;
+    managed_copy.file_representation = FileRepresentation::Copy;
+
+    let mut observed_link = owned_link.clone();
+    observed_link.relation_id = "legacy:observed-link".into();
+    observed_link.path = "C:/agent/observed-link".into();
+    observed_link.path_key = observed_link.path.clone();
+    observed_link.ownership = OwnershipState::ObservedUnmanaged;
+
+    let mut released_link = owned_link.clone();
+    released_link.relation_id = "legacy:released-link".into();
+    released_link.path = "C:/agent/released-link".into();
+    released_link.path_key = released_link.path.clone();
+    released_link.active = false;
+    released_link.released_at = Some(43);
+
+    for relation in [&owned_link, &managed_copy, &observed_link, &released_link] {
+        db.relationship_repository()
+            .upsert_deployment_relation(relation)
+            .expect("seed legacy relation");
+    }
+    // Recreate a v21 database state while preserving the persisted relationship
+    // facts, then let the normal opener run migration 22 and later additive migrations.
+    db.connection_for_test()
+        .execute_batch(
+            "ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+             DROP TABLE relation_governance_confirmations;
+             DROP TABLE relationship_governance_mutation_receipts;
+             PRAGMA user_version=21;",
+        )
+        .expect("restore prior schema version");
+    drop(db);
+
+    let migrated = Database::open(&path).expect("migration");
+    let confirmations = migrated
+        .relationship_repository()
+        .list_relation_governance_confirmations()
+        .expect("confirmations");
+    assert_eq!(confirmations.len(), 1);
+    assert_eq!(confirmations[0].relation_id, "legacy:owned-link");
+    assert_eq!(
+        confirmations[0].management_status,
+        skillhub_core::relationship::RelationManagementStatus::TakenOver
+    );
+    assert_eq!(
+        confirmations[0].decision,
+        skillhub_core::relationship::RelationGovernanceDecision::Undecided
+    );
+    assert_eq!(confirmations[0].confirmed_at, Some(42));
 }
 
 fn capability() -> AgentDirectoryCapabilityFact {
@@ -61,6 +130,7 @@ fn deployment(skill_id: SkillId) -> DeploymentRelationFact {
         content_fingerprint: "sha256:notes".into(),
         origin: ObservedOrigin::Scan,
         match_state: ObservedMatchState::ContentVerified,
+        health_reasons: Some(Vec::new()),
         active: true,
         observed_at: 42,
         released_at: None,
@@ -553,6 +623,38 @@ fn observed_deployment_release_advances_the_relationship_revision() {
         released,
         "releasing an already released relation writes no new fact"
     );
+}
+
+#[test]
+fn deployment_health_reasons_preserve_legacy_unknown_and_checked_states() {
+    let db = Database::open_in_memory().expect("database");
+    let skill_id = SkillId::new();
+    skill(&db, skill_id);
+
+    let mut relation = deployment(skill_id);
+    relation.health_reasons = None;
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("legacy/unknown relation");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(loaded[0].health_reasons, None);
+
+    relation.health_reasons = Some(vec![RelationHealthReason::TargetEntryMissing]);
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("missing-target health");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(
+        loaded[0].health_reasons,
+        Some(vec![RelationHealthReason::TargetEntryMissing])
+    );
+
+    relation.health_reasons = Some(Vec::new());
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("confirmed no target health anomaly");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(loaded[0].health_reasons, Some(Vec::new()));
 }
 
 /// v19 governance fixture: a user-local import event with a filesystem-verified

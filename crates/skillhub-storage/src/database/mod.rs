@@ -72,7 +72,7 @@ pub use provenance_repository::{
 pub use recovery_point::RecoveryPoint;
 pub use relationship_repository::{
     ConflictAnalysisRepository, ConflictRepository, GovernanceTaskRepository,
-    RelationshipImpactSnapshot, RelationshipRepository,
+    RelationshipGovernanceMutationReceipt, RelationshipImpactSnapshot, RelationshipRepository,
 };
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;

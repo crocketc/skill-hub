@@ -176,19 +176,15 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
     [describeError, facade, t],
   );
 
-  const renderGroup = (group: AgentBrandGroup) => (
-    <li className="sh-discovery-workbench__agent-group" key={group.brand}>
-      <ul className="sh-discovery-workbench__agent-cards">
-        {group.cards.map((card) => (
-          <AgentCard
-            card={card}
-            brand={group.brand}
-            exclude={exclude}
-            key={`${group.brand}:${card.physicalId}`}
-          />
-        ))}
-      </ul>
-    </li>
+  const renderCards = (groups: AgentBrandGroup[]) => groups.flatMap((group) =>
+    group.cards.map((card) => (
+      <AgentCard
+        card={card}
+        brand={group.brand}
+        exclude={exclude}
+        key={`${group.brand}:${card.physicalId}`}
+      />
+    )),
   );
 
   // M-18：首屏工作区面板承载扫描/摘要/审查并导入；Agent 目录盘点降级为
@@ -274,14 +270,14 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
             hidden={!inventoryOpen}
             id="sh-discovery-agent-inventory"
           >
-            <ul aria-label={t("discovery.workbench.agentGroupsTitle")} className="sh-discovery-workbench__agent-groups">
-              {agentGroups.available.map(renderGroup)}
+            <ul aria-label={t("discovery.workbench.agentGroupsTitle")} className="sh-discovery-workbench__agent-cards">
+              {renderCards(agentGroups.available)}
             </ul>
             {agentGroups.unavailable.length > 0 ? (
               <div className="sh-discovery-workbench__agent-unavailable">
                 <p>{t("discovery.workbench.unavailableAgents")}</p>
-                <ul className="sh-discovery-workbench__agent-groups">
-                  {agentGroups.unavailable.map(renderGroup)}
+                <ul className="sh-discovery-workbench__agent-cards">
+                  {renderCards(agentGroups.unavailable)}
                 </ul>
               </div>
             ) : null}
@@ -344,7 +340,9 @@ function AgentCard({
           <span className="sh-agent-card__shared-chip">{t("agents.sharedDirectoryChip")}</span>
         ) : null}
       </div>
-      <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>{displayPath(card.path)}</code>
+      <code className="sh-discovery-workbench__agent-path" title={displayPath(card.path)}>
+        <span className="sh-discovery-workbench__agent-path-text">{displayPath(card.path)}</span>
+      </code>
       <div className="sh-discovery-workbench__agent-footer">
         <DeploymentCapabilityIcons
           directory={directory}

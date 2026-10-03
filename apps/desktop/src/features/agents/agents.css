@@ -31,10 +31,10 @@
 /* 实体卡片：10px 圆角，最多一级浅阴影。 */
 .sh-agent-card {
   display: grid;
-  grid-template-rows: 40px 20px 42px 22px;
+  grid-template-rows: 40px 20px 55px 22px;
   min-width: 0;
   height: 176px;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   gap: var(--space-1) var(--space-3);
   align-content: stretch;
   border: 1px solid var(--ui-border);
@@ -79,7 +79,7 @@
 .sh-agent-card__paths {
   display: grid;
   min-width: 0;
-  grid-template-rows: 14px 1fr;
+  grid-template-rows: 22px minmax(30px, 1fr);
   gap: 3px;
   overflow: hidden;
 }
@@ -105,19 +105,33 @@
   overflow: hidden;
 }
 
+.sh-agent-card__path-list > li {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .sh-agent-card__path {
-  display: block;
-  overflow-wrap: anywhere;
-  padding: var(--space-2) var(--space-3);
+  display: flex;
+  min-width: 0;
+  height: 30px;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 var(--space-3);
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--radius-sm);
   background: var(--ui-surface-subtle);
   color: var(--ui-ink);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  line-height: 1.5;
+  line-height: 1.25;
   text-align: left;
-  max-height: 30px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.sh-agent-card__path-text {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -179,6 +193,7 @@
   color: var(--color-info);
   font-size: var(--font-size-xs);
   font-weight: 650;
+  line-height: 1.25;
   white-space: nowrap;
 }
 

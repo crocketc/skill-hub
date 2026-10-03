@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::relationship::{RelationHealthReason, RelationshipPathProbe};
 use crate::SkillId;
 
 /// OPT-20260914-08：已观察部署关系。
@@ -39,7 +40,7 @@ impl ObservedDeployment {
     pub fn to_deployment_relation_fact(&self) -> crate::relationship::DeploymentRelationFact {
         crate::relationship::DeploymentRelationFact {
             relation_id: self.id.to_string(),
-            skill_id: (self.match_state == ObservedMatchState::ContentVerified)
+            skill_id: (self.match_state != ObservedMatchState::NameOnly)
                 .then_some(self.skill_id),
             agent_client_id: self.client_id.clone(),
             path: self.original_path.clone(),
@@ -54,6 +55,7 @@ impl ObservedDeployment {
             content_fingerprint: self.content_fingerprint.clone(),
             origin: self.origin,
             match_state: self.match_state,
+            health_reasons: None,
             active: self.status == ObservedStatus::Active,
             observed_at: self.observed_at,
             released_at: self.released_at,
@@ -102,7 +104,7 @@ pub struct ObservedPathObservation {
 pub enum ObservedRowAction {
     /// 不需要任何变更（观察与既有行完全一致）。
     Unchanged,
-    /// 建立或更新为指纹一致的活跃关系（可能重新指向另一个库内 Skill）。
+    /// 建立或更新为指纹一致的活跃关系。
     EstablishVerified {
         skill_id: SkillId,
         fingerprint: String,
@@ -112,13 +114,17 @@ pub enum ObservedRowAction {
         match_state: ObservedMatchState,
         fingerprint: String,
     },
-    /// 路径不再被观察到：关系收回（不删除任何文件）。
+    /// Persist a health fact for an existing target without ending or rebinding it.
+    RecordHealth {
+        reasons: Vec<RelationHealthReason>,
+    },
+    /// 保留旧版显式结束路径的兼容动作；扫描缺少观察不应产生此动作。
     Release,
 }
 
 /// 关系行判定的纯规则。
 ///
-/// - `observation` 为 None 表示"本次扫描未再看到该路径"。
+/// - `observation` 为 None 只表示本轮没有可用观察，不构成用户结束关系的证据。
 /// - `matched_library_skill` 仅在观察指纹与某库内 Skill 当前版本
 ///   content_hash 完全一致时为 `Some`——指纹不一致就是 None，不存在
 ///   "模糊匹配"。身份可靠匹配自动建立/维持关系；不可靠一律标注。
@@ -127,11 +133,11 @@ pub fn reconcile_observed_row(
     observation: Option<&ObservedPathObservation>,
     matched_library_skill: Option<SkillId>,
 ) -> ObservedRowAction {
+    if existing.is_some_and(|row| row.status == ObservedStatus::Released) {
+        return ObservedRowAction::Unchanged;
+    }
     let Some(observation) = observation else {
-        return match existing {
-            Some(row) if row.status == ObservedStatus::Active => ObservedRowAction::Release,
-            _ => ObservedRowAction::Unchanged,
-        };
+        return ObservedRowAction::Unchanged;
     };
     match (existing, matched_library_skill) {
         (None, Some(skill_id)) => ObservedRowAction::EstablishVerified {
@@ -140,6 +146,12 @@ pub fn reconcile_observed_row(
         },
         (None, None) => ObservedRowAction::Unchanged,
         (Some(row), Some(skill_id)) => {
+            if row.match_state != ObservedMatchState::NameOnly && row.skill_id != skill_id {
+                return ObservedRowAction::MarkUnreliable {
+                    match_state: ObservedMatchState::Diverged,
+                    fingerprint: observation.fingerprint.clone(),
+                };
+            }
             let unchanged = row.status == ObservedStatus::Active
                 && row.match_state == ObservedMatchState::ContentVerified
                 && row.skill_id == skill_id
@@ -175,6 +187,34 @@ pub fn reconcile_observed_row(
                 }
             }
         }
+    }
+}
+
+/// Record the explicit filesystem result for a previously known observation
+/// whose content could not be scanned. Absence alone is never an end command.
+pub fn reconcile_missing_observed_row(
+    existing: Option<&ObservedDeployment>,
+    probe: &RelationshipPathProbe,
+) -> ObservedRowAction {
+    let Some(row) = existing else {
+        return ObservedRowAction::Unchanged;
+    };
+    if row.status == ObservedStatus::Released {
+        return ObservedRowAction::Unchanged;
+    }
+    let reason = match probe {
+        RelationshipPathProbe::MissingWithAccessibleParent => {
+            RelationHealthReason::TargetEntryMissing
+        }
+        RelationshipPathProbe::WrongRepresentation => RelationHealthReason::TargetEntryReplaced,
+        RelationshipPathProbe::PermissionDenied => RelationHealthReason::PermissionLimited,
+        RelationshipPathProbe::Accessible { .. }
+        | RelationshipPathProbe::ParentMissing
+        | RelationshipPathProbe::DriveOrVolumeUnavailable
+        | RelationshipPathProbe::TimeoutOrUnknown => RelationHealthReason::ProbeUnavailable,
+    };
+    ObservedRowAction::RecordHealth {
+        reasons: vec![reason],
     }
 }
 
@@ -263,9 +303,9 @@ mod tests {
         assert_eq!(action, ObservedRowAction::Unchanged);
     }
 
-    // 生命周期：建立 → 收回（路径消失）→ 关系更新。
+    // 扫描缺少路径观察不是用户结束关系的证据。
     #[test]
-    fn active_row_is_released_when_observation_disappears() {
+    fn active_row_is_not_ended_when_observation_is_absent() {
         let skill = SkillId::new();
         let active = row(
             skill,
@@ -275,7 +315,7 @@ mod tests {
         );
         assert_eq!(
             reconcile_observed_row(Some(&active), None, None),
-            ObservedRowAction::Release
+            ObservedRowAction::Unchanged
         );
 
         let released = row(
@@ -289,17 +329,14 @@ mod tests {
             ObservedRowAction::Unchanged
         );
 
-        // 收回后重新观察到一致内容 → 重新激活为已验证关系。
+        // 已结束历史不会因扫描重新出现而复活。
         let observation = ObservedPathObservation {
             path: "/tmp/agents/trae-cn/skills/demo".into(),
             fingerprint: FP_A.into(),
         };
         assert_eq!(
             reconcile_observed_row(Some(&released), Some(&observation), Some(skill)),
-            ObservedRowAction::EstablishVerified {
-                skill_id: skill,
-                fingerprint: FP_A.into(),
-            }
+            ObservedRowAction::Unchanged
         );
     }
 
@@ -327,25 +364,92 @@ mod tests {
     }
 
     #[test]
-    fn normalized_fact_keeps_skill_id_only_for_content_verified_observations() {
+    fn normalized_fact_keeps_identity_after_a_verified_target_diverges() {
         let skill = SkillId::new();
-        for match_state in [ObservedMatchState::NameOnly, ObservedMatchState::Diverged] {
-            let observed = row(skill, FP_A, match_state, ObservedStatus::Active);
-            assert_eq!(observed.to_deployment_relation_fact().skill_id, None);
-        }
+        let name_only = row(
+            skill,
+            FP_A,
+            ObservedMatchState::NameOnly,
+            ObservedStatus::Active,
+        );
+        assert_eq!(name_only.to_deployment_relation_fact().skill_id, None);
 
-        let observed = row(
+        let verified = row(
             skill,
             FP_A,
             ObservedMatchState::ContentVerified,
             ObservedStatus::Active,
         );
-        assert_eq!(observed.to_deployment_relation_fact().skill_id, Some(skill));
+        assert_eq!(verified.to_deployment_relation_fact().skill_id, Some(skill));
+        let diverged = row(skill, FP_B, ObservedMatchState::Diverged, ObservedStatus::Active);
+        assert_eq!(diverged.to_deployment_relation_fact().skill_id, Some(skill));
     }
 
-    // 关系重新指向：路径内容现在与另一个库内 Skill 一致。
     #[test]
-    fn relation_repoints_when_content_now_matches_another_skill() {
+    fn missing_observation_records_probe_health_without_ending_relation() {
+        let active = row(
+            SkillId::new(),
+            FP_A,
+            ObservedMatchState::ContentVerified,
+            ObservedStatus::Active,
+        );
+        assert_eq!(
+            reconcile_missing_observed_row(
+                Some(&active),
+                &RelationshipPathProbe::MissingWithAccessibleParent,
+            ),
+            ObservedRowAction::RecordHealth {
+                reasons: vec![RelationHealthReason::TargetEntryMissing],
+            }
+        );
+    }
+
+    #[test]
+    fn ambiguous_probe_results_never_claim_the_target_is_missing() {
+        let active = row(
+            SkillId::new(),
+            FP_A,
+            ObservedMatchState::ContentVerified,
+            ObservedStatus::Active,
+        );
+        for probe in [
+            RelationshipPathProbe::ParentMissing,
+            RelationshipPathProbe::DriveOrVolumeUnavailable,
+            RelationshipPathProbe::TimeoutOrUnknown,
+            RelationshipPathProbe::Accessible {
+                physical_source_id: None,
+            },
+        ] {
+            assert_eq!(
+                reconcile_missing_observed_row(Some(&active), &probe),
+                ObservedRowAction::RecordHealth {
+                    reasons: vec![RelationHealthReason::ProbeUnavailable],
+                }
+            );
+        }
+        assert_eq!(
+            reconcile_missing_observed_row(
+                Some(&active),
+                &RelationshipPathProbe::PermissionDenied,
+            ),
+            ObservedRowAction::RecordHealth {
+                reasons: vec![RelationHealthReason::PermissionLimited],
+            }
+        );
+        assert_eq!(
+            reconcile_missing_observed_row(
+                Some(&active),
+                &RelationshipPathProbe::WrongRepresentation,
+            ),
+            ObservedRowAction::RecordHealth {
+                reasons: vec![RelationHealthReason::TargetEntryReplaced],
+            }
+        );
+    }
+
+    // 路径内容匹配到其他主体不能静默重绑既有关系。
+    #[test]
+    fn relation_identity_is_preserved_when_content_matches_another_skill() {
         let old_skill = SkillId::new();
         let new_skill = SkillId::new();
         let active = row(
@@ -360,8 +464,8 @@ mod tests {
         };
         assert_eq!(
             reconcile_observed_row(Some(&active), Some(&observation), Some(new_skill)),
-            ObservedRowAction::EstablishVerified {
-                skill_id: new_skill,
+            ObservedRowAction::MarkUnreliable {
+                match_state: ObservedMatchState::Diverged,
                 fingerprint: FP_B.into(),
             }
         );
