@@ -11,8 +11,8 @@ use skillhub_core::import::{
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, DeploymentRelationFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationshipType, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
-    RelationHealthReason, SourceCopyRelationFact, SourceRelationFact,
+    RelationHealthReason, RelationshipType, SourceCopyArchiveReason, SourceCopyDecision,
+    SourceCopyHealth, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -72,11 +72,12 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
             .expect("seed legacy relation");
     }
     // Recreate a v21 database state while preserving the persisted relationship
-    // facts, then let the normal opener run migration 22 and the later additive migrations.
+    // facts, then let the normal opener run migration 22 and later additive migrations.
     db.connection_for_test()
         .execute_batch(
             "ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
              DROP TABLE relation_governance_confirmations;
+             DROP TABLE relationship_governance_mutation_receipts;
              PRAGMA user_version=21;",
         )
         .expect("restore prior schema version");

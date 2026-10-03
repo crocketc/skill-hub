@@ -43,6 +43,8 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
                  INSERT INTO skill_tags(skill_id, tag_id) VALUES ('archived-skill', 'tag-1');
                  INSERT INTO check_runs(id, skill_id, version_id, kind, state, started_at)
                      VALUES ('check-1', 'archived-skill', 'sha256:archived-version', 'basic', 'passed', 4);
+                 ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+                 DROP TABLE relationship_governance_mutation_receipts;
                  PRAGMA user_version = 22;",
             )
             .unwrap();
@@ -50,7 +52,13 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
 
     let migrated = Database::open(file.path()).unwrap();
     assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
-    assert_eq!(migrated.migration_report().applied_versions, vec![23]);
+    assert_eq!(
+        migrated.migration_report().applied_versions,
+        vec![23, 24, 25]
+    );
+    assert!(migrated
+        .has_table("relationship_governance_mutation_receipts")
+        .unwrap());
     let connection = migrated.connection_for_test();
     let archived_lifecycle: String = connection
         .query_row(

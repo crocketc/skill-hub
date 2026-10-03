@@ -34,6 +34,16 @@ pub struct RelationshipImpactSnapshot {
     pub directory_nodes: Vec<skillhub_core::relationship::DirectoryNodeFact>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationshipGovernanceMutationReceipt {
+    pub operation_id: String,
+    pub relation_id: String,
+    pub representative_relation_id: String,
+    pub action: String,
+    pub expected_revision: i64,
+    pub result_revision: i64,
+}
+
 impl<'a> RelationshipRepository<'a> {
     pub(crate) fn new(database: &'a Database) -> Self {
         Self { database }
@@ -48,6 +58,84 @@ impl<'a> RelationshipRepository<'a> {
                 |row| row.get(0),
             )
             .map_err(database_error)
+    }
+
+    pub fn relationship_revision_tx(transaction: &Transaction<'_>) -> AppResult<i64> {
+        transaction
+            .query_row(
+                "SELECT revision FROM relationship_projection_state WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
+    }
+
+    pub fn governance_mutation_receipt_tx(
+        transaction: &Transaction<'_>,
+        operation_id: &str,
+    ) -> AppResult<Option<RelationshipGovernanceMutationReceipt>> {
+        transaction
+            .query_row(
+                "SELECT operation_id, relation_id, representative_relation_id, action,
+                        expected_revision, result_revision
+                 FROM relationship_governance_mutation_receipts WHERE operation_id=?1",
+                [operation_id],
+                |row| {
+                    Ok(RelationshipGovernanceMutationReceipt {
+                        operation_id: row.get(0)?,
+                        relation_id: row.get(1)?,
+                        representative_relation_id: row.get(2)?,
+                        action: row.get(3)?,
+                        expected_revision: row.get(4)?,
+                        result_revision: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(database_error)
+    }
+
+    pub fn record_governance_mutation_receipt_tx(
+        transaction: &Transaction<'_>,
+        receipt: &RelationshipGovernanceMutationReceipt,
+        occurred_at: i64,
+    ) -> AppResult<()> {
+        transaction
+            .execute(
+                "INSERT INTO relationship_governance_mutation_receipts
+                 (operation_id, relation_id, representative_relation_id, action,
+                  expected_revision, result_revision, occurred_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    receipt.operation_id,
+                    receipt.relation_id,
+                    receipt.representative_relation_id,
+                    receipt.action,
+                    receipt.expected_revision,
+                    receipt.result_revision,
+                    occurred_at,
+                ],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    pub fn revoke_source_copy_retention_tx(
+        transaction: &Transaction<'_>,
+        relation_id: &str,
+    ) -> AppResult<SourceCopyRelationFact> {
+        let mut fact = load_source_copy_fact(transaction, relation_id)?
+            .ok_or_else(|| missing_source_copy_relation(relation_id))?;
+        if fact.decision != skillhub_core::relationship::SourceCopyDecision::Retained {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("relation_id", relation_id.to_owned())
+                .with_param("reason", "retention_not_active")
+                .with_action(RecoveryAction::Retry));
+        }
+        fact.decision = skillhub_core::relationship::SourceCopyDecision::Pending;
+        write_source_copy_fact(transaction, &fact)?;
+        bump_relationship_revision_tx(transaction)?;
+        Ok(fact)
     }
 
     pub fn last_verified_at(&self) -> AppResult<Option<i64>> {

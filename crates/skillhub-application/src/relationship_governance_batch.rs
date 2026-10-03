@@ -26,10 +26,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitOriginalMigration, CommitRelationGovernanceBatch,
-    CommitRelationMigration, ListRelationGovernance, PrepareOriginalMigration,
+    CommitRelationMigration, EndRelationship, ListRelationGovernance, PrepareOriginalMigration,
     PrepareRelationGovernanceBatch, PrepareRelationMigration, RelationGovernanceBatchAction,
     RelationGovernanceBatchItem, RelationGovernanceBatchItemState, RelationGovernanceBatchOutcome,
-    RelationGovernanceBatchState, RelationshipMigrationBackupPolicy, RetainSourceCopy,
+    RelationGovernanceBatchState, RelationshipGovernanceMutationResult,
+    RelationshipMigrationBackupPolicy, RetainSourceCopy, RevokeRetention,
     RollbackOriginalMigration, RollbackRelationGovernanceBatch, RollbackRelationMigration,
 };
 use skillhub_core::relationship::{
@@ -40,11 +41,16 @@ use skillhub_core::{
     AppError, AppResult, ErrorCode, OperationId, OperationPhase, OriginalMigrationState,
     RelationMigrationState, RelationMigrationTargetMode, Severity,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{
+    Database, GovernanceHistoryEvent, GovernanceHistoryRepository,
+    RelationshipGovernanceMutationReceipt, RelationshipRepository,
+};
 
 use crate::LocalApplicationFacade;
 
 const BATCH_KIND: &str = "relation_governance_batch";
+const REVOKE_RETENTION_ACTION: &str = "revoke_retention";
+const END_RELATIONSHIP_ACTION: &str = "end_relationship";
 
 /// A prepared child edge of a batch.  This is the durable link between the
 /// parent operation and the single-relation operation it orchestrates.
@@ -106,6 +112,233 @@ impl LocalApplicationFacade {
             ))
         })?;
         Ok(AppQueryResult::RelationGovernanceLedger(ledger))
+    }
+
+    pub(crate) fn revoke_retention(&self, request: RevokeRetention) -> AppResult<AppCommandResult> {
+        let expected_revision =
+            parse_expected_relationship_revision(&request.expected_relationship_revision)?;
+        let operation_id = request.operation_id.to_string();
+        if request.relation_id.trim().is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "relation_id")
+                .with_action(skillhub_core::RecoveryAction::Retry));
+        }
+
+        // Resolve the representative/evidence ID against the same authoritative
+        // projection used by governance. The revision is checked again inside
+        // the write transaction before any fact is changed.
+        let ledger = match self.list_relation_governance(ListRelationGovernance::default())? {
+            AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
+            _ => unreachable!("list_relation_governance returns its ledger"),
+        };
+        let row = ledger.rows.into_iter().find(|row| {
+            row.relation_id() == request.relation_id
+                || row.evidence_relation_ids.contains(&request.relation_id)
+        });
+        let retained_source_copy_ids = self.with_database(
+            "execute.revoke_retention.resolve_source_evidence",
+            |database| {
+                let evidence_ids = row
+                    .as_ref()
+                    .map(|row| {
+                        row.evidence_relation_ids
+                            .iter()
+                            .cloned()
+                            .collect::<BTreeSet<_>>()
+                    })
+                    .unwrap_or_default();
+                Ok(database
+                    .relationship_repository()
+                    .list_source_copy_relations(true)?
+                    .into_iter()
+                    .filter(|copy| {
+                        evidence_ids.contains(&copy.relation_id)
+                            && copy.decision == SourceCopyDecision::Retained
+                    })
+                    .map(|copy| copy.relation_id)
+                    .collect::<Vec<_>>())
+            },
+        )?;
+
+        let result = self.with_database("execute.revoke_retention", |database| {
+            let transaction = database.begin_transaction()?;
+            if let Some(receipt) =
+                RelationshipRepository::governance_mutation_receipt_tx(&transaction, &operation_id)?
+            {
+                if receipt.action == REVOKE_RETENTION_ACTION
+                    && receipt.relation_id == request.relation_id
+                    && receipt.expected_revision == expected_revision
+                {
+                    return Ok(RelationshipGovernanceMutationResult {
+                        relation_id: receipt.representative_relation_id,
+                        relationship_revision: receipt.result_revision.to_string(),
+                        replayed: true,
+                    });
+                }
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "operation_id_reused")
+                    .with_action(skillhub_core::RecoveryAction::Retry));
+            }
+
+            let actual_revision = RelationshipRepository::relationship_revision_tx(&transaction)?;
+            if actual_revision != expected_revision {
+                return Err(
+                    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                        .with_param("reason", "relationship_revision_changed")
+                        .with_param("expected_revision", expected_revision)
+                        .with_param("actual_revision", actual_revision)
+                        .with_action(skillhub_core::RecoveryAction::Retry),
+                );
+            }
+            let row = row.as_ref().ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("relation_id", request.relation_id.clone())
+                    .with_action(skillhub_core::RecoveryAction::ChooseAnotherName)
+            })?;
+            if retained_source_copy_ids.is_empty() {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("relation_id", request.relation_id.clone())
+                    .with_param("reason", "retention_not_active")
+                    .with_action(skillhub_core::RecoveryAction::Retry));
+            }
+
+            for relation_id in &retained_source_copy_ids {
+                RelationshipRepository::revoke_source_copy_retention_tx(&transaction, relation_id)?;
+            }
+            GovernanceHistoryRepository::append_tx(
+                &transaction,
+                &relationship_history_event(
+                    row,
+                    "revoke_retention",
+                    "retention_revoked",
+                    Some(operation_id.clone()),
+                ),
+            )?;
+            let result_revision = RelationshipRepository::relationship_revision_tx(&transaction)?;
+            RelationshipRepository::record_governance_mutation_receipt_tx(
+                &transaction,
+                &RelationshipGovernanceMutationReceipt {
+                    operation_id: operation_id.clone(),
+                    relation_id: request.relation_id.clone(),
+                    representative_relation_id: row.relation_id().to_owned(),
+                    action: REVOKE_RETENTION_ACTION.to_owned(),
+                    expected_revision,
+                    result_revision,
+                },
+                now_epoch_seconds(),
+            )?;
+            Database::commit_transaction(transaction)?;
+            Ok(RelationshipGovernanceMutationResult {
+                relation_id: row.relation_id().to_owned(),
+                relationship_revision: result_revision.to_string(),
+                replayed: false,
+            })
+        })?;
+        Ok(AppCommandResult::RelationshipGovernanceMutation(result))
+    }
+
+    pub(crate) fn end_relationship(&self, request: EndRelationship) -> AppResult<AppCommandResult> {
+        let expected_revision =
+            parse_expected_relationship_revision(&request.expected_relationship_revision)?;
+        let operation_id = request.operation_id.to_string();
+        if request.relation_id.trim().is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "relation_id")
+                .with_action(skillhub_core::RecoveryAction::Retry));
+        }
+
+        let ledger = match self.list_relation_governance(ListRelationGovernance::default())? {
+            AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
+            _ => unreachable!("list_relation_governance returns its ledger"),
+        };
+        let row = ledger.rows.into_iter().find(|row| {
+            row.relation_id() == request.relation_id
+                || row.evidence_relation_ids.contains(&request.relation_id)
+        });
+
+        let result = self.with_database("execute.end_relationship", |database| {
+            let transaction = database.begin_transaction()?;
+            if let Some(receipt) =
+                RelationshipRepository::governance_mutation_receipt_tx(&transaction, &operation_id)?
+            {
+                if receipt.action == END_RELATIONSHIP_ACTION
+                    && receipt.relation_id == request.relation_id
+                    && receipt.expected_revision == expected_revision
+                {
+                    return Ok(RelationshipGovernanceMutationResult {
+                        relation_id: receipt.representative_relation_id,
+                        relationship_revision: receipt.result_revision.to_string(),
+                        replayed: true,
+                    });
+                }
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "operation_id_reused")
+                    .with_action(skillhub_core::RecoveryAction::Retry));
+            }
+
+            let actual_revision = RelationshipRepository::relationship_revision_tx(&transaction)?;
+            if actual_revision != expected_revision {
+                return Err(
+                    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                        .with_param("reason", "relationship_revision_changed")
+                        .with_param("expected_revision", expected_revision)
+                        .with_param("actual_revision", actual_revision)
+                        .with_action(skillhub_core::RecoveryAction::Retry),
+                );
+            }
+            let row = row.as_ref().ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("relation_id", request.relation_id.clone())
+                    .with_action(skillhub_core::RecoveryAction::ChooseAnotherName)
+            })?;
+            if row.deployment().is_some() {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("relation_id", request.relation_id.clone())
+                    .with_param("reason", "managed_entry_requires_verified_removal")
+                    .with_action(skillhub_core::RecoveryAction::InspectTarget));
+            }
+            let Some(source_copy) = row.source_copy() else {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("relation_id", request.relation_id.clone())
+                    .with_param("reason", "relationship_cannot_be_ended_non_destructively")
+                    .with_action(skillhub_core::RecoveryAction::Retry));
+            };
+            RelationshipRepository::archive_source_copy_relation_tx(
+                &transaction,
+                &source_copy.relation_id,
+                skillhub_core::relationship::SourceCopyArchiveReason::UserEnded,
+                now_epoch_seconds(),
+            )?;
+            GovernanceHistoryRepository::append_tx(
+                &transaction,
+                &relationship_history_event(
+                    row,
+                    END_RELATIONSHIP_ACTION,
+                    "ended",
+                    Some(operation_id.clone()),
+                ),
+            )?;
+            let result_revision = RelationshipRepository::relationship_revision_tx(&transaction)?;
+            RelationshipRepository::record_governance_mutation_receipt_tx(
+                &transaction,
+                &RelationshipGovernanceMutationReceipt {
+                    operation_id: operation_id.clone(),
+                    relation_id: request.relation_id.clone(),
+                    representative_relation_id: row.relation_id().to_owned(),
+                    action: END_RELATIONSHIP_ACTION.to_owned(),
+                    expected_revision,
+                    result_revision,
+                },
+                now_epoch_seconds(),
+            )?;
+            Database::commit_transaction(transaction)?;
+            Ok(RelationshipGovernanceMutationResult {
+                relation_id: row.relation_id().to_owned(),
+                relationship_revision: result_revision.to_string(),
+                replayed: false,
+            })
+        })?;
+        Ok(AppCommandResult::RelationshipGovernanceMutation(result))
     }
 
     /// 独立治理历史查询（plan 7.10）：只读写入时固化的显示快照，分页、
@@ -1005,6 +1238,62 @@ fn relationship_names(database: &Database) -> AppResult<RelationGovernanceNames>
         }
     }
     Ok(names)
+}
+
+fn relationship_history_event(
+    row: &RelationGovernanceRow,
+    action: &str,
+    result: &str,
+    operation_id: Option<String>,
+) -> GovernanceHistoryEvent {
+    let (scope, project_id) = match &row.relation {
+        GovernableRelationFact::SourceCopy(copy) => {
+            ("source_copy", copy.source_container_id.clone())
+        }
+        GovernableRelationFact::Deployment(deployment) => {
+            ("deployment", deployment.directory_node_id.clone())
+        }
+    };
+    GovernanceHistoryEvent {
+        event_id: format!("hist-{}", OperationId::new()),
+        relation_id: row.relation_id().to_owned(),
+        skill_id: row.skill_id().map(|skill_id| skill_id.to_string()),
+        skill_display_name: row
+            .skill_display_name
+            .clone()
+            .unwrap_or_else(|| "unknown-skill".to_owned()),
+        agent_presentation: json!({
+            "client_id": row.agent_client_id(),
+        }),
+        path: row.path().to_owned(),
+        scope: scope.to_owned(),
+        project_id,
+        action: action.to_owned(),
+        result: result.to_owned(),
+        reason: None,
+        operation_id,
+        occurred_at: now_epoch_seconds(),
+    }
+}
+
+fn parse_expected_relationship_revision(value: &str) -> AppResult<i64> {
+    value
+        .parse::<i64>()
+        .ok()
+        .filter(|revision| *revision >= 0)
+        .filter(|revision| revision.to_string() == value)
+        .ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "expected_relationship_revision")
+                .with_action(skillhub_core::RecoveryAction::Retry)
+        })
+}
+
+fn now_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 fn count(items: &[RelationGovernanceBatchItem], state: RelationGovernanceBatchItemState) -> u32 {

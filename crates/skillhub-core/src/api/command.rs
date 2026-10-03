@@ -291,6 +291,30 @@ pub struct RetainSourceCopy {
     pub source_relation_id: String,
 }
 
+/// Revoke an earlier retained-independent-copy decision. The relationship
+/// health evidence remains unchanged; callers submit the revision they read
+/// so a stale decision cannot overwrite newer relationship facts.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RevokeRetention {
+    pub operation_id: OperationId,
+    /// Representative relation ID or any evidence relation ID in its row.
+    pub relation_id: String,
+    pub expected_relationship_revision: String,
+}
+
+/// End a relationship through its governance representative. The application
+/// permits only non-destructive source-copy endings until a managed target has
+/// verified ownership evidence for safe link removal.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct EndRelationship {
+    pub operation_id: OperationId,
+    /// Representative relation ID or any evidence relation ID in its row.
+    pub relation_id: String,
+    pub expected_relationship_revision: String,
+}
+
 /// 重新关联来源副本（计划 8.8/8.15）：把已因外部删除归档的来源关系指向
 /// 用户重新选择的目录。身份与内容由后端完整校验——新目录的 SKILL.md 声明
 /// 名必须与集中库 runtime_name 一致，绝不按目录名猜测；新物理身份必须可
@@ -1173,6 +1197,10 @@ pub enum AppCommand {
     PrepareOriginalMigration(PrepareOriginalMigration),
     #[serde(rename = "retain_source_copy")]
     RetainSourceCopy(RetainSourceCopy),
+    #[serde(rename = "revoke_retention")]
+    RevokeRetention(RevokeRetention),
+    #[serde(rename = "end_relationship")]
+    EndRelationship(EndRelationship),
     #[serde(rename = "relink_source_copy")]
     RelinkSourceCopy(RelinkSourceCopy),
     #[serde(rename = "commit_original_migration")]
@@ -1350,6 +1378,13 @@ pub enum AppCommand {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct RelationshipGovernanceMutationResult {
+    pub relation_id: String,
+    pub relationship_revision: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "type", content = "payload")]
 pub enum AppCommandResult {
     #[serde(rename = "desktop_preferences")]
@@ -1402,6 +1437,8 @@ pub enum AppCommandResult {
     OriginalMigrationPlan(crate::import::OriginalMigrationPlan),
     #[serde(rename = "source_copy_relation_updated")]
     SourceCopyRelationUpdated(crate::relationship::SourceCopyRelationFact),
+    #[serde(rename = "relationship_governance_mutation")]
+    RelationshipGovernanceMutation(RelationshipGovernanceMutationResult),
     #[serde(rename = "original_migration_result")]
     OriginalMigrationResult(crate::import::OriginalMigrationResult),
     #[serde(rename = "prepared_relation_migration")]

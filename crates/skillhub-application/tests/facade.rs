@@ -47,6 +47,7 @@ struct SymlinkUndeployFixture {
     _library_root: tempfile::TempDir,
     _original_body: tempfile::TempDir,
     facade: LocalApplicationFacade,
+    skill_id: SkillId,
     deployment_id: skillhub_core::DeploymentId,
     destination: std::path::PathBuf,
 }
@@ -187,6 +188,7 @@ async fn symlink_undeploy_fixture() -> Option<SymlinkUndeployFixture> {
         _library_root: library_root,
         _original_body: original_body,
         facade,
+        skill_id: skill.id(),
         deployment_id,
         destination,
     })
@@ -5272,6 +5274,107 @@ async fn undeploy_fails_closed_when_managed_link_is_replaced_by_a_different_link
             .expect("replacement target data remains"),
         "keep me"
     );
+}
+
+#[tokio::test]
+async fn end_relationship_cannot_bypass_cleanup_for_an_unknown_managed_link() {
+    let Some(fixture) = symlink_undeploy_fixture().await else {
+        return;
+    };
+    let entry_path = fixture.destination.to_string_lossy().into_owned();
+    let link_target_path = fixture._original_body.path().to_string_lossy().into_owned();
+    let deployment_relation = skillhub_core::relationship::DeploymentRelationFact {
+        relation_id: format!("managed:{}", fixture.deployment_id),
+        skill_id: Some(fixture.skill_id),
+        agent_client_id: "agent-codex".to_owned(),
+        path_key: skillhub_core::deployment::observed_path_key(&entry_path),
+        path: entry_path,
+        directory_node_id: None,
+        relationship: skillhub_core::relationship::RelationshipType::ManagedLink,
+        file_representation: match test_directory_link_mode() {
+            DeploymentMode::SymbolicLink => {
+                skillhub_core::relationship::FileRepresentation::SymbolicLink
+            }
+            DeploymentMode::DirectoryJunction => {
+                skillhub_core::relationship::FileRepresentation::DirectoryJunction
+            }
+            DeploymentMode::ManagedCopy => unreachable!("fixture creates directory links"),
+        },
+        ownership: skillhub_core::relationship::OwnershipState::SkillhubManaged,
+        link_target_path: Some(link_target_path.clone()),
+        link_target_path_key: Some(skillhub_core::deployment::observed_path_key(
+            &link_target_path,
+        )),
+        link_target_directory_id: None,
+        content_fingerprint: "sha256:expected".to_owned(),
+        origin: skillhub_core::deployment::ObservedOrigin::Import,
+        match_state: skillhub_core::deployment::ObservedMatchState::ContentVerified,
+        health_reasons: None,
+        active: true,
+        observed_at: 1,
+        released_at: None,
+    };
+    {
+        let database = fixture.facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&deployment_relation)
+            .expect("seed legacy managed relationship fact without ownership snapshot");
+    }
+    let revision = match fixture
+        .facade
+        .query(RootAppQuery::ListRelationGovernance(
+            skillhub_core::api::ListRelationGovernance::default(),
+        ))
+        .await
+        .expect("relationship governance ledger")
+    {
+        AppQueryResult::RelationGovernanceLedger(ledger) => ledger.relationship_revision,
+        other => panic!("expected relationship governance ledger, got {other:?}"),
+    };
+    let error = fixture
+        .facade
+        .execute(AppCommand::EndRelationship(
+            skillhub_core::api::EndRelationship {
+                operation_id: skillhub_core::OperationId::new(),
+                relation_id: format!("managed:{}", fixture.deployment_id),
+                expected_relationship_revision: revision,
+            },
+        ))
+        .await
+        .expect_err("ending must not bypass unverified managed-link cleanup");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert!(is_test_directory_link(&fixture.destination));
+    let removal_impact = fixture
+        .facade
+        .query(RootAppQuery::GetRemovalImpact(GetRemovalImpact {
+            skill_id: fixture.skill_id,
+        }))
+        .await
+        .expect("skill removal impact remains available");
+    let AppQueryResult::RemovalImpact(removal_impact) = removal_impact else {
+        panic!("expected skill removal impact");
+    };
+    assert!(removal_impact
+        .deployments
+        .iter()
+        .any(|deployment| deployment.id == fixture.deployment_id));
+    let ledger = match fixture
+        .facade
+        .query(RootAppQuery::ListRelationGovernance(
+            skillhub_core::api::ListRelationGovernance::default(),
+        ))
+        .await
+        .expect("relationship remains in governance")
+    {
+        AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
+        other => panic!("expected relationship governance ledger, got {other:?}"),
+    };
+    assert!(ledger.rows.iter().any(|row| {
+        row.evidence_relation_ids
+            .contains(&format!("managed:{}", fixture.deployment_id))
+    }));
 }
 
 #[tokio::test]

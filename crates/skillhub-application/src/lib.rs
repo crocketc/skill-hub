@@ -5626,6 +5626,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_original_migration(request)
             }
             AppCommand::RetainSourceCopy(request) => return self.retain_source_copy(request),
+            AppCommand::RevokeRetention(request) => return self.revoke_retention(request),
+            AppCommand::EndRelationship(request) => return self.end_relationship(request),
             AppCommand::RelinkSourceCopy(request) => return self.relink_source_copy(request),
             AppCommand::CommitOriginalMigration(request) => {
                 return self.commit_original_migration(request)

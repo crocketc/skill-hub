@@ -29,6 +29,7 @@ pub enum SourceCopyArchiveReason {
     ExternalRemoved,
     Replaced,
     Cleaned,
+    UserEnded,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
