@@ -281,6 +281,8 @@ function createFacade(
     revalidate: vi.fn().mockResolvedValue(undefined),
     listHistory: vi.fn().mockResolvedValue(undefined),
     retainSourceCopy: vi.fn().mockResolvedValue(undefined),
+    revokeRetention: vi.fn().mockResolvedValue({ relation_id: "source-1", relationship_revision: "rev-2", replayed: false }),
+    endRelationship: vi.fn().mockResolvedValue({ relation_id: "source-1", relationship_revision: "rev-2", replayed: false }),
     relinkSourceCopy: vi.fn().mockResolvedValue(undefined),
     getRelationshipRemovalImpact: vi.fn().mockResolvedValue(removalImpactFact()),
     prepareGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome()),
@@ -1509,6 +1511,125 @@ describe("RelationshipGovernancePage 来源副本动作（任务 11.7-11.9）", 
     expect(facade.getRelationshipRemovalImpact).not.toHaveBeenCalled();
     expect(tracker.getSnapshot().find((operation) => operation.kind === "retain_source_copy")?.status)
       .toBe("failed");
+  });
+});
+
+describe("RelationshipGovernancePage 关系结束与撤销保留", () => {
+  const retentionActions = [
+    { action: "revoke_retention" as const, available: true, reasons: [] },
+    { action: "end_relationship" as const, available: true, reasons: [] },
+  ];
+
+  it("uses action conditions instead of legacy readiness and explains verified-removal blockers", async () => {
+    const retained = makeSourceRow({
+      relationId: "src-retained-actions",
+      decision: "retained",
+      health: "normal",
+      status: "retained",
+      readiness: "already_centralized",
+      primaryAction: "none",
+      governance: {
+        governance_status: "completed",
+        management_status: "not_taken_over",
+        decision: "retained_independent_copy",
+        management_confirmed_at: null,
+        health_reasons: [],
+        action_conditions: retentionActions,
+      },
+    });
+    const managed = makeRow({
+      relationId: "managed:requires-verified-removal",
+      readiness: "already_centralized",
+      primaryAction: "none",
+      relationship: "managed_link",
+      governance: {
+        governance_status: "completed",
+        management_status: "taken_over",
+        decision: "undecided",
+        management_confirmed_at: null,
+        health_reasons: [],
+        action_conditions: [{
+          action: "end_relationship",
+          available: false,
+          reasons: ["managed_entry_requires_verified_removal"],
+        }],
+      },
+    });
+    await renderGovernanceApp({ facade: createFacade(sourceLedger([retained, managed])) });
+
+    await screen.findByTestId("governance-action-src-retained-actions");
+    const revokeButton = screen.getByTestId("governance-action-src-retained-actions");
+    expect(revokeButton).toHaveTextContent("撤销保留决定");
+    const retainedRow = screen.getAllByTestId("governance-row").find((row) =>
+      row.querySelector('[data-action="end_relationship"]'),
+    );
+    expect(retainedRow).toBeDefined();
+    expect(within(retainedRow!).getByRole("button", { name: "结束关系" })).toBeVisible();
+
+    expect(screen.queryByTestId("governance-action-end_relationship-managed:requires-verified-removal"))
+      .not.toBeInTheDocument();
+    expect(screen.getByTestId("governance-reasons-managed:requires-verified-removal"))
+      .toHaveTextContent("此目标由集中库管理；必须先验证可安全移除目标入口。结束关系不会绕过这项检查。");
+  });
+
+  it("confirms one relationship mutation with the displayed ledger revision and keeps backend failures visible", async () => {
+    const retained = makeSourceRow({
+      relationId: "src-retained-mutate",
+      decision: "retained",
+      health: "normal",
+      status: "retained",
+      readiness: "already_centralized",
+      primaryAction: "none",
+      governance: {
+        governance_status: "completed",
+        management_status: "not_taken_over",
+        decision: "retained_independent_copy",
+        management_confirmed_at: null,
+        health_reasons: [],
+        action_conditions: retentionActions,
+      },
+    });
+    const facade = createFacade(sourceLedger([retained]), {
+      revokeRetention: vi.fn().mockResolvedValue({
+        relation_id: "src-retained-mutate",
+        relationship_revision: "rev-2",
+        replayed: false,
+      }),
+      endRelationship: vi.fn().mockRejectedValue(new Error("The relationship facts changed; reload and review before ending it.")),
+    });
+    await renderGovernanceApp({ facade });
+
+    await screen.findByTestId("governance-action-src-retained-mutate");
+    fireEvent.click(screen.getByTestId("governance-action-src-retained-mutate"));
+    const revokeDialog = await screen.findByRole("dialog", { name: "撤销保留决定" });
+    expect(within(revokeDialog).getByText(/不修改来源文件、目标入口或集中库 Skill 主体/)).toBeVisible();
+    fireEvent.click(within(revokeDialog).getByRole("button", { name: "确认撤销保留决定" }));
+
+    await waitFor(() => expect(facade.revokeRetention).toHaveBeenCalledWith({
+      operationId: expect.any(String),
+      relationId: "src-retained-mutate",
+      expectedRelationshipRevision: "rev-1",
+    }));
+    expect(await screen.findByRole("status")).toHaveTextContent("保留决定已撤销。当前关系状态已根据原有健康事实重新评估。");
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    const row = screen.getByTestId("governance-row");
+    fireEvent.click(within(row).getByRole("button", { name: "结束关系" }));
+    const endDialog = await screen.findByRole("dialog", { name: "结束关系" });
+    expect(within(endDialog).getByText(/保留来源目录中的文件和集中库 Skill 主体/)).toBeVisible();
+    fireEvent.click(within(endDialog).getByRole("button", { name: "确认结束关系" }));
+
+    await waitFor(() => expect(facade.endRelationship).toHaveBeenCalledWith({
+      operationId: expect.any(String),
+      relationId: "src-retained-mutate",
+      expectedRelationshipRevision: "rev-1",
+    }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The relationship facts changed; reload and review before ending it.",
+    );
+    expect(screen.getByTestId("governance-row")).toBeVisible();
+    expect(screen.queryByText("关系已结束；来源文件和 Skill 主体均已保留。"))
+      .not.toBeInTheDocument();
   });
 });
 

@@ -24,6 +24,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
+import { AgentPresentation } from "../../ui/AgentPresentation";
+import { buildSkillRelationshipViews } from "../relationshipGovernance/relationshipGovernance";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import { skillDetailKeys } from "../skill-detail/api";
 import type { SkillDetailFacade } from "../skill-detail/api";
@@ -62,6 +64,7 @@ export interface SkillQuickDrawerProps {
   /** Refresh the bootstrap projection after metadata changes. */
   refreshSnapshot?: () => Promise<void>;
   securityFacade: SecurityFacade;
+  relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
   trialFacade?: Pick<SkillDetailFacade, "setTrial">;
   returnFocusRef: RefObject<HTMLElement | null>;
   skillId?: string;
@@ -71,6 +74,8 @@ type OptionalDrawerModule = (typeof OPTIONAL_DRAWER_MODULES)[number];
 
 interface ModuleProps {
   libraryReturn?: SkillLibraryReturnState;
+  relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
+  open?: boolean;
   view: SkillQuickView;
   versionsHref?: string;
   versionsState?: { libraryReturn: SkillLibraryReturnState };
@@ -248,92 +253,229 @@ function DrawerBoundedPopover({
   );
 }
 
-function RelationsModule({ libraryReturn, view }: ModuleProps) {
+function RelationsModule({ libraryReturn, open = false, relationshipFacade, view }: ModuleProps) {
   const { t } = useTranslation();
-  const agentDeployments = view.agentDeployments ?? [];
-  const projects = view.projectDeployments ?? [];
-  const hasUnresolvedTargets = (view.unresolvedDeploymentCount ?? 0) > 0;
+  const relationshipQuery = useQuery({
+    enabled: open && Boolean(relationshipFacade),
+    queryFn: () => {
+      if (!relationshipFacade) throw new Error("Relationship facts are unavailable.");
+      return relationshipFacade.getRelationshipOverview(view.id);
+    },
+    queryKey: skillDetailKeys.relationship(view.id),
+    retry: false,
+  });
+  const provenanceQuery = useQuery({
+    enabled: open && Boolean(relationshipFacade),
+    queryFn: () => {
+      if (!relationshipFacade) throw new Error("Import provenance is unavailable.");
+      return relationshipFacade.getProvenance(view.id);
+    },
+    queryKey: skillDetailKeys.provenance(view.id),
+    retry: false,
+  });
+  const hasAuthoritativeFacade = Boolean(relationshipFacade);
+  const authoritativeLoaded = hasAuthoritativeFacade && relationshipQuery.isSuccess && Boolean(relationshipQuery.data);
+  const relationshipViews = authoritativeLoaded && relationshipQuery.data
+    ? buildSkillRelationshipViews(relationshipQuery.data)
+    : undefined;
+  const nodeById = authoritativeLoaded && relationshipQuery.data
+    ? new Map(relationshipQuery.data.directory_nodes.map((node) => [node.node_id, node]))
+    : new Map();
+  const agentTargets = [] as NonNullable<typeof relationshipViews>["deployments"];
+  const projectTargets = [] as NonNullable<typeof relationshipViews>["deployments"];
+  const unresolvedTargets = [] as NonNullable<typeof relationshipViews>["deployments"];
+  for (const relation of relationshipViews?.deployments ?? []) {
+    if (!relation.active) continue;
+    const directory = relation.directoryNodeId ? nodeById.get(relation.directoryNodeId) : undefined;
+    if (directory?.role === "project") {
+      projectTargets.push(relation);
+    } else if (
+      directory
+      && (directory.role === "agent_native" || directory.role === "shared_directory")
+      && relation.targetAgentClientId.trim()
+    ) {
+      agentTargets.push(relation);
+    } else {
+      unresolvedTargets.push(relation);
+    }
+  }
+  const legacyAgentDeployments = view.agentDeployments ?? [];
+  const legacyProjects = view.projectDeployments ?? [];
+  const unresolvedCount = hasAuthoritativeFacade
+    ? authoritativeLoaded ? unresolvedTargets.length : 0
+    : (view.unresolvedDeploymentCount ?? 0);
+  const hasUnresolvedTargets = unresolvedCount > 0;
   const governanceHref = `/relationships/governance?from=library&skillId=${encodeURIComponent(view.id)}`;
+  const relationHref = (relationId: string) =>
+    `${governanceHref}&relationId=${encodeURIComponent(relationId)}`;
+  const returnState = libraryReturn ? { libraryReturn } : undefined;
+  const agentCount = authoritativeLoaded ? agentTargets.length : view.agentDeploymentCount;
+  const projectCount = authoritativeLoaded ? projectTargets.length : view.projectDeploymentCount;
+  const agentRegionLabel = t("skillLibrary.table.agentDeploymentSummary", { count: agentCount });
+  const projectRegionLabel = t("skillLibrary.table.projectDeploymentSummary", { count: projectCount });
+
+  const relationList = (
+    relations: NonNullable<typeof relationshipViews>["deployments"],
+    kind: "agent" | "project",
+  ) => (
+    <ul className="sh-skill-drawer__destination-list">
+      {relations.map((relation) => {
+        const directory = relation.directoryNodeId ? nodeById.get(relation.directoryNodeId) : undefined;
+        const path = displayPath(relation.path);
+        return (
+          <li key={relation.relationId}>
+            <div className="sh-skill-drawer__destination-identity">
+              {kind === "agent" ? (
+                <AgentPresentation
+                  agentId={relation.targetAgentClientId}
+                  detailTo={`/agents/${encodeURIComponent(relation.targetAgentClientId)}`}
+                  sharedDirectory={directory?.role === "shared_directory"}
+                  density="compact"
+                />
+              ) : (
+                <strong>{t("skillLibrary.drawer.values.projectDirectory")}</strong>
+              )}
+              <code title={path}>{path || <EmptyValue />}</code>
+            </div>
+            <Link
+              aria-label={t(`skillLibrary.drawer.review${kind === "agent" ? "Agent" : "Project"}Relationship`)}
+              className="sh-button sh-button--ghost sh-button--sm"
+              state={returnState}
+              to={relationHref(relation.relationId)}
+            >
+              {t(`skillLibrary.drawer.review${kind === "agent" ? "Agent" : "Project"}Relationship`)}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const groupContent = (
+    kind: "agent" | "project",
+    regionLabel: string,
+  ) => {
+    if (hasAuthoritativeFacade && relationshipQuery.isPending) {
+      return <span role="status">{t("skillLibrary.drawer.relationships.loading")}</span>;
+    }
+    if (hasAuthoritativeFacade && relationshipQuery.isError) {
+      return <span>{t("skillLibrary.drawer.relationships.unavailableGroup")}</span>;
+    }
+    if (hasAuthoritativeFacade) {
+      const targets = kind === "agent" ? agentTargets : projectTargets;
+      return targets.length > 0
+        ? <div aria-label={regionLabel} className="sh-skill-drawer__relation-scroll" role="region" tabIndex={0}>{relationList(targets, kind)}</div>
+        : hasUnresolvedTargets
+          ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
+          : <span>{t(kind === "agent" ? "skillLibrary.drawer.values.noLinkedAgents" : "skillLibrary.drawer.values.noLinkedProjects")}</span>;
+    }
+    if (kind === "agent" && legacyAgentDeployments.length > 0) {
+      return (
+        <div aria-label={regionLabel} className="sh-skill-drawer__relation-scroll" role="region" tabIndex={0}>
+          <AgentDeploymentIcons agents={legacyAgentDeployments} ariaLabel={regionLabel} />
+        </div>
+      );
+    }
+    if (kind === "project" && legacyProjects.length > 0) {
+      return (
+        <div aria-label={regionLabel} className="sh-skill-drawer__relation-scroll" role="region" tabIndex={0}>
+          <ul className="sh-skill-drawer__project-list">
+            {legacyProjects.map((project) => (
+              <li key={project.id}>
+                <strong title={project.name}>{project.name}</strong>
+                <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+    return hasUnresolvedTargets
+      ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
+      : <EmptyValue />;
+  };
 
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.relations)}>
       <div className="sh-skill-drawer__relations-grid">
-        <div className="sh-skill-drawer__relation-group">
-          <div className="sh-skill-drawer__relation-heading">
-            <strong>{t("skillLibrary.drawer.values.agents")}</strong>
-            <span className="sh-skill-drawer__relation-count">
-              {hasUnresolvedTargets
-                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.agentDeploymentCount })
-                : view.agentDeploymentCount}
-            </span>
-          </div>
-          {agentDeployments.length > 0 ? (
-            <div
-              aria-label={t("skillLibrary.table.agentDeploymentSummary", {
-                count: view.agentDeploymentCount,
-              })}
-              className="sh-skill-drawer__relation-scroll"
-              role="region"
-              tabIndex={0}
-            >
-              <AgentDeploymentIcons
-                agents={agentDeployments}
-                ariaLabel={t("skillLibrary.table.agentDeploymentSummary", {
-                  count: view.agentDeploymentCount,
-                })}
-              />
+        {(["agent", "project"] as const).map((kind) => {
+          const count = kind === "agent" ? agentCount : projectCount;
+          const regionLabel = kind === "agent" ? agentRegionLabel : projectRegionLabel;
+          return (
+            <div className="sh-skill-drawer__relation-group" key={kind}>
+              <div className="sh-skill-drawer__relation-heading">
+                <strong>{t(kind === "agent" ? "skillLibrary.drawer.values.agents" : "skillLibrary.drawer.values.projects")}</strong>
+                {(!hasAuthoritativeFacade || authoritativeLoaded) && !(hasAuthoritativeFacade && relationshipQuery.isError) ? (
+                  <span className="sh-skill-drawer__relation-count">
+                    {hasUnresolvedTargets
+                      ? t("skillLibrary.drawer.values.knownDestinationCount", { count })
+                      : count}
+                  </span>
+                ) : null}
+              </div>
+              {groupContent(kind, regionLabel)}
             </div>
-          ) : (
-            hasUnresolvedTargets
-              ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
-              : <EmptyValue />
-          )}
-        </div>
-        <div className="sh-skill-drawer__relation-group">
-          <div className="sh-skill-drawer__relation-heading">
-            <strong>{t("skillLibrary.drawer.values.projects")}</strong>
-            <span className="sh-skill-drawer__relation-count">
-              {hasUnresolvedTargets
-                ? t("skillLibrary.drawer.values.knownDestinationCount", { count: view.projectDeploymentCount })
-                : view.projectDeploymentCount}
-            </span>
-          </div>
-          {projects.length > 0 ? (
-            <div
-              aria-label={t("skillLibrary.table.projectDeploymentSummary", {
-                count: view.projectDeploymentCount,
-              })}
-              className="sh-skill-drawer__relation-scroll"
-              role="region"
-              tabIndex={0}
-            >
-              <ul className="sh-skill-drawer__project-list">
-                {projects.map((project) => (
-                  <li key={project.id}>
-                    <strong title={project.name}>{project.name}</strong>
-                    <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            hasUnresolvedTargets
-              ? <span>{t("skillLibrary.drawer.values.unresolvedDestinationGroup")}</span>
-              : <EmptyValue />
-          )}
-        </div>
+          );
+        })}
       </div>
+
+      {hasAuthoritativeFacade && relationshipQuery.isError ? (
+        <div className="sh-skill-drawer__query-error" role="alert">
+          <p>{t("skillLibrary.drawer.relationships.loadFailed")}</p>
+          <Button onClick={() => void relationshipQuery.refetch()} size="sm" variant="ghost">{t("actions.retry")}</Button>
+          <Link className="sh-button sh-button--secondary sh-button--sm" state={returnState} to={governanceHref}>
+            {t("skillLibrary.drawer.reviewRelationships")}
+          </Link>
+        </div>
+      ) : null}
+
       {hasUnresolvedTargets ? (
         <div className="sh-skill-drawer__unresolved" role="status">
           <Icon aria-hidden="true" name="info" size={16} />
-          <p>{t("skillLibrary.drawer.unresolvedTargets", { count: view.unresolvedDeploymentCount })}</p>
-          <Link
-            className="sh-button sh-button--ghost sh-button--sm"
-            state={libraryReturn ? { libraryReturn } : undefined}
-            to={governanceHref}
-          >
+          <p>{t("skillLibrary.drawer.unresolvedTargets", { count: unresolvedCount })}</p>
+          {authoritativeLoaded ? (
+            <ul className="sh-skill-drawer__unresolved-list">
+              {unresolvedTargets.map((relation) => (
+                <li key={relation.relationId}>
+                  <code title={displayPath(relation.path)}>{displayPath(relation.path) || t("skillLibrary.drawer.values.unknownTarget")}</code>
+                  <Link
+                    aria-label={t("skillLibrary.drawer.reviewUnresolvedRelationship")}
+                    className="sh-button sh-button--ghost sh-button--sm"
+                    state={returnState}
+                    to={relationHref(relation.relationId)}
+                  >
+                    {t("skillLibrary.drawer.reviewUnresolvedRelationship")}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Link className="sh-button sh-button--ghost sh-button--sm" state={returnState} to={governanceHref}>
             {t("skillLibrary.drawer.reviewRelationships")}
           </Link>
+        </div>
+      ) : null}
+
+      {hasAuthoritativeFacade ? (
+        <div className="sh-skill-drawer__provenance">
+          <strong>{t("skillLibrary.drawer.provenance.label")}</strong>
+          {provenanceQuery.isPending ? (
+            <span role="status">{t("skillLibrary.drawer.relationships.loading")}</span>
+          ) : provenanceQuery.isError ? (
+            <div className="sh-skill-drawer__query-error" role="alert">
+              <p>{t("skillLibrary.drawer.provenance.loadFailed")}</p>
+              <Button onClick={() => void provenanceQuery.refetch()} size="sm" variant="ghost">{t("actions.retry")}</Button>
+            </div>
+          ) : provenanceQuery.data?.provenance ? (
+            <div className="sh-skill-drawer__provenance-fact">
+              <span>{t(`skillDetail.provenance.sourceKinds.${provenanceQuery.data.provenance.sourceKind}`, { defaultValue: t("skillLibrary.drawer.provenance.otherSource") })}</span>
+              <code title={displayPath(provenanceQuery.data.provenance.sourceLocator)}>
+                {displayPath(provenanceQuery.data.provenance.sourceLocator)}
+              </code>
+            </div>
+          ) : (
+            <span>{t("skillLibrary.drawer.provenance.none")}</span>
+          )}
         </div>
       ) : null}
     </ModuleCard>
@@ -1354,6 +1496,7 @@ export function SkillQuickDrawer({
   preferenceSaveFailed,
   preferences,
   refreshSnapshot,
+  relationshipFacade,
   securityFacade,
   trialFacade,
   returnFocusRef,
@@ -1865,6 +2008,8 @@ export function SkillQuickDrawer({
                     key={moduleId}
                     securityFacade={securityFacade}
                     libraryReturn={libraryReturn}
+                    open={open}
+                    relationshipFacade={relationshipFacade}
                     versionsHref={versionsHref}
                     versionsState={versionsState}
                     view={view}

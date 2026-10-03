@@ -1,5 +1,6 @@
 import type {
   GovernanceHistoryPage,
+  OperationId,
   RelationGovernanceAction,
   RelationGovernanceBatchAction,
   RelationGovernanceBatchItem,
@@ -8,6 +9,7 @@ import type {
   RelationGovernanceLedger,
   RelationGovernanceReason,
   RelationGovernanceRow,
+  RelationshipGovernanceMutationResult,
   RelationManagementStatus,
   RelationshipCheckLevel,
   RelationshipCheckReport,
@@ -67,6 +69,13 @@ export interface RelationUndeployPreparation {
   relationId: string;
   deploymentId: string;
   operationId: string;
+}
+
+/** Revision-guarded single relationship decision mutation. */
+export interface RelationshipGovernanceMutationRequest {
+  operationId: OperationId;
+  relationId: string;
+  expectedRelationshipRevision: string;
 }
 
 /**
@@ -141,6 +150,10 @@ export interface RelationGovernanceFacade {
   listHistory(params: GovernanceHistoryParams): Promise<GovernanceHistoryPage>;
   /** 计划 8.15：保留来源副本——只改决策并记历史，绝不触碰来源目录。 */
   retainSourceCopy(relationId: string): Promise<SourceCopyRelationFact>;
+  /** Revoke only the retained-independent-copy decision; no files are changed. */
+  revokeRetention(request: RelationshipGovernanceMutationRequest): Promise<RelationshipGovernanceMutationResult>;
+  /** End a relationship only when the backend action condition permits it. */
+  endRelationship(request: RelationshipGovernanceMutationRequest): Promise<RelationshipGovernanceMutationResult>;
   /**
    * 计划 8.8/8.15：重关联——ExternalRemoved 关系指向用户经目录 picker
    * 授权的新目录；身份/内容校验与槽位冲突判定都在后端。

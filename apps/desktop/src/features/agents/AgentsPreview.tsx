@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { AgentDirectoryMemberFact } from "../../api/bindings";
+import type { AgentDirectoryMemberFact, RecordAgentCompatibility } from "../../api/bindings";
 import { type AgentFacade, type AgentView } from "./api";
 import { AgentDetailPage } from "./AgentDetailPage";
 import { AgentListPage } from "./AgentListPage";
@@ -369,9 +369,11 @@ export function AgentDetailPreview() {
         ...createPreviewAgentFacade(false),
         get: async () => compatibilityScenario ? { ...previewDetailAgent, directoryMembers: [member] } : previewDetailAgent,
         ...(compatibilityScenario ? {
-          recordCompatibility: async () => {
+          recordCompatibility: async (request: RecordAgentCompatibility) => {
             if (failCompatibilityWrite) throw new Error("library.locked: preview write failure");
-            window.sessionStorage.setItem("preview-agent-compatibility-verified", "1");
+            if (request.status !== "unverified") {
+              window.sessionStorage.setItem("preview-agent-compatibility-verified", "1");
+            }
           },
         } : {}),
       };

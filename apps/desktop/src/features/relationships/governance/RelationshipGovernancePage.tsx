@@ -27,6 +27,7 @@ import { useRelationshipContextCheck } from "./useRelationshipContextCheck";
 import {
   GOVERNANCE_CLASSIFICATIONS,
   GOVERNANCE_MANAGEMENT_FILTERS,
+  actionConditionOf,
   isGovernanceActionAvailable,
   mergeBatchItemOutcome,
   parseGovernanceSearchParams,
@@ -44,7 +45,9 @@ import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { governanceSkillDisplayName } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
+import { GovernanceDecisionPreview, type GovernanceDecisionAction } from "./GovernanceDecisionPreview";
 import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { governanceReasonLabelKey } from "./governancePresenter";
 import "./governance.css";
 
 export type { RelationGovernanceFacade } from "./api";
@@ -59,8 +62,9 @@ export interface RelationshipGovernancePageProps {
 }
 
 interface SingleFlowState {
-  kind: "centralize" | "undeploy";
+  kind: "centralize" | "undeploy" | GovernanceDecisionAction;
   row: RelationGovernanceRow;
+  relationshipRevision: string;
   busy: boolean;
   error: string | null;
   /** committed 终态的成功文案；其余终态为 null（改由逐项结果面板呈现）。 */
@@ -316,9 +320,10 @@ export function RelationshipGovernancePage({
       outcome: null,
       resultText: null,
       row,
+      relationshipRevision: ledgerQuery.data?.relationship_revision ?? "",
       sharedImpactConfirmed: false,
     });
-  }, []);
+  }, [ledgerQuery.data?.relationship_revision]);
 
   // —— 批量流程 ——
   const selectedRows = useMemo(
@@ -678,6 +683,96 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, facade, notifications, queryClient, t, tracker]);
 
+  const confirmSingleDecision = useCallback((action: GovernanceDecisionAction, flow: SingleFlowState) => {
+    const relationId = relationIdOf(flow.row.relation);
+    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
+
+    void (async () => {
+      try {
+        const refreshed = await ledgerQuery.refetch();
+        const currentRow = refreshed.data?.rows.find((row) => relationIdOf(row.relation) === relationId);
+        if (refreshed.isError || !refreshed.data || !currentRow) {
+          setSingle((current) => current ? {
+            ...current,
+            busy: false,
+            error: t(currentRow ? "relationships.governance.mutation.refreshFailed" : "relationships.governance.mutation.relationshipUnavailable"),
+            ...(currentRow ? { row: currentRow } : {}),
+          } : current);
+          return;
+        }
+
+        if (refreshed.data.relationship_revision !== flow.relationshipRevision) {
+          setSingle((current) => current ? {
+            ...current,
+            busy: false,
+            error: t("relationships.governance.mutation.changedReviewAgain"),
+            relationshipRevision: refreshed.data.relationship_revision,
+            row: currentRow,
+          } : current);
+          return;
+        }
+
+        const condition = actionConditionOf(currentRow, action);
+        if (!condition?.available) {
+          const reason = condition?.reasons.map((item) => String(t(governanceReasonLabelKey(item) as never))).join(" ");
+          setSingle((current) => current ? {
+            ...current,
+            busy: false,
+            error: reason || t("relationships.governance.mutation.actionUnavailable"),
+            row: currentRow,
+          } : current);
+          return;
+        }
+
+        const operationId = createGovernanceOperationId();
+        const actionLabel = String(t(`relationships.governance.actions.${action}` as never));
+        void runTrackedOperation({
+          targetHref: governanceDestination([relationId]),
+          canCancel: false,
+          describeError,
+          invalidateQueryKeys: [[relationshipsKeys.root]],
+          kind: "relationship_governance_mutation",
+          label: actionLabel,
+          mode: "instant",
+          notifications,
+          operationId,
+          queryClient,
+          run: () => facade[action === "revoke_retention" ? "revokeRetention" : "endRelationship"]({
+            operationId,
+            relationId,
+            expectedRelationshipRevision: refreshed.data.relationship_revision,
+          }),
+          successNotice: () => ({
+            title: t(`relationships.governance.mutation.${action}Done` as never),
+            tone: "success" as const,
+          }),
+          summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
+          total: 1,
+          tracker,
+          translate: (key, options) => String(t(key as never, options as never)),
+        }).then((result) => {
+          if (result.relation_id !== relationId) {
+            setSingle((current) => current ? {
+              ...current,
+              busy: false,
+              error: t("relationships.governance.mutation.unexpectedRelation"),
+            } : current);
+            return;
+          }
+          setSingle((current) => current ? {
+            ...current,
+            busy: false,
+            resultText: String(t(`relationships.governance.mutation.${action}Done` as never)),
+          } : current);
+        }).catch((reason: unknown) => {
+          setSingle((current) => current ? { ...current, busy: false, error: describeError(reason) } : current);
+        });
+      } catch (reason: unknown) {
+        setSingle((current) => current ? { ...current, busy: false, error: describeError(reason) } : current);
+      }
+    })();
+  }, [describeError, facade, ledgerQuery, notifications, queryClient, t, tracker]);
+
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
     const selection = summarizeBatchSelection(selectedRows);
@@ -766,6 +861,8 @@ export function RelationshipGovernancePage({
     if (!row) return;
     if (rowIsBatchExecutable(row)) openSingle("centralize", row);
     else if (isGovernanceActionAvailable(row, "undeploy")) openSingle("undeploy", row);
+    else if (isGovernanceActionAvailable(row, "revoke_retention")) openSingle("revoke_retention", row);
+    else if (isGovernanceActionAvailable(row, "end_relationship")) openSingle("end_relationship", row);
   }, [ledgerQuery.isSuccess, openSingle, visibleRows]);
 
   const closeSingle = useCallback(() => setSingle(null), []);
@@ -1031,6 +1128,8 @@ export function RelationshipGovernancePage({
                 busyRelationIds={busyRelationIds}
                 listRef={listRef}
                 onCentralize={(row) => openSingle("centralize", row)}
+                onEndRelationship={(row) => openSingle("end_relationship", row)}
+                onRevokeRetention={(row) => openSingle("revoke_retention", row)}
                 onListScroll={onListScroll}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
                 onRetain={(row) => retainSourceCopyRow(row)}
@@ -1044,6 +1143,8 @@ export function RelationshipGovernancePage({
               <GovernanceBoard
                 busyRelationIds={busyRelationIds}
                 onCentralize={(row) => openSingle("centralize", row)}
+                onEndRelationship={(row) => openSingle("end_relationship", row)}
+                onRevokeRetention={(row) => openSingle("revoke_retention", row)}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
                 onRetain={(row) => retainSourceCopyRow(row)}
                 scrollResetKey={boardScrollResetKey}
@@ -1106,21 +1207,36 @@ export function RelationshipGovernancePage({
             </div>
           </div>
         ) : (
-          <GovernanceImpactPreview
-            busy={single.busy}
-            error={single.error}
-            loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
-            mode={single.kind}
-            onCancel={closeSingle}
-            onConfirm={() => (single.kind === "centralize"
-              ? confirmSingleCentralize(single)
-              : confirmSingleUndeploy(single))}
-            onSharedImpactConfirmChange={(checked) => setSingle((current) => current
-              ? { ...current, sharedImpactConfirmed: checked }
-              : current)}
-            row={single.row}
-            sharedImpactConfirmed={single.sharedImpactConfirmed}
-          />
+          single.kind === "revoke_retention" || single.kind === "end_relationship" ? (
+            <GovernanceDecisionPreview
+              action={single.kind}
+              busy={single.busy}
+              error={single.error}
+              onCancel={closeSingle}
+              onConfirm={() => {
+                if (single.kind === "revoke_retention" || single.kind === "end_relationship") {
+                  confirmSingleDecision(single.kind, single);
+                }
+              }}
+              row={single.row}
+            />
+          ) : (
+            <GovernanceImpactPreview
+              busy={single.busy}
+              error={single.error}
+              loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
+              mode={single.kind}
+              onCancel={closeSingle}
+              onConfirm={() => (single.kind === "centralize"
+                ? confirmSingleCentralize(single)
+                : confirmSingleUndeploy(single))}
+              onSharedImpactConfirmChange={(checked) => setSingle((current) => current
+                ? { ...current, sharedImpactConfirmed: checked }
+                : current)}
+              row={single.row}
+              sharedImpactConfirmed={single.sharedImpactConfirmed}
+            />
+          )
         )
       ) : null}
 
@@ -1154,6 +1270,11 @@ export function RelationshipGovernancePage({
       </div>
     </RelationshipsLayout>
   );
+}
+
+function createGovernanceOperationId(): string {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  return randomId ?? `relationship-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function GovernanceViewIcon({ view }: { view: "board" | "table" }) {

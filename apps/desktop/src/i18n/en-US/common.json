@@ -1369,7 +1369,22 @@
         "useAsPurpose": "Use as my purpose"
       },
       "reviewRelationships": "Review relationship governance",
-      "unresolvedTargets": "{{count}} relationship targets could not be identified. Retry the lookup or review the relationships.",
+      "unresolvedTargets_one": "{{count}} relationship target could not be identified. Review its relationship.",
+      "unresolvedTargets_other": "{{count}} relationship targets could not be identified. Review their relationships.",
+      "relationships": {
+        "loading": "Loading relationship facts…",
+        "loadFailed": "Could not load destination relationships. Retry or open governance to review them.",
+        "unavailableGroup": "Destination facts are unavailable."
+      },
+      "provenance": {
+        "label": "Import provenance",
+        "loadFailed": "Could not load import provenance.",
+        "none": "No import provenance is recorded for this Skill.",
+        "otherSource": "Other source"
+      },
+      "reviewAgentRelationship": "Review Agent relationship",
+      "reviewProjectRelationship": "Review project relationship",
+      "reviewUnresolvedRelationship": "Review unresolved relationship",
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
@@ -1388,7 +1403,11 @@
         "ownership": "Ownership",
         "purpose": "My purpose",
         "projectDestinations": "Project destinations",
+        "projectDirectory": "Project directory",
         "projects": "Projects",
+        "noLinkedAgents": "No linked Agents",
+        "noLinkedProjects": "No linked project directories",
+        "unknownTarget": "Target path unavailable",
         "unresolvedDestinationGroup": "Some destinations could not be identified yet.",
         "source": "Source",
         "tags": "Tags",
@@ -2843,6 +2862,7 @@
         "target_identity_unconfirmed": "The target identity has not been confirmed. Re-check the target.",
         "relationship_not_convertible": "This relationship type cannot currently be brought under central library management.",
         "shared_impact_confirmation_required": "Other Agents also use this shared directory. Review and confirm the impact first.",
+        "managed_entry_requires_verified_removal": "This target is managed by the central library. Verify that its entry can be safely removed before ending the relationship; this action cannot bypass that check.",
         "link_target_unavailable": "The link target cannot currently be reached. Check its location and re-check the relationship.",
         "link_replaced": "The original link target was replaced. Review the current target content.",
         "subject_unavailable": "The relationship subject is unavailable. Restore access before checking again."
@@ -2909,6 +2929,8 @@
         "undeploy": "Remove from Agent/Project",
         "revalidate": "Re-check",
         "keep_independent_copy": "Keep as an independent copy",
+        "revoke_retention": "Revoke keep decision",
+        "end_relationship": "End relationship",
         "none": "Blocked"
       },
       "history": {
@@ -2998,12 +3020,28 @@
       "preview": {
         "centralizeTitle": "Central library management preview",
         "undeployTitle": "Remove from Agent/Project preview",
+        "revoke_retentionTitle": "Revoke keep decision",
+        "revoke_retentionImpact": "Only the keep decision for this relationship will be revoked. Source files, target entries, and the central library Skill will remain unchanged. The relationship status will be re-evaluated from current health facts.",
+        "revoke_retentionConfirm": "Confirm revoking keep decision",
+        "end_relationshipTitle": "End relationship",
+        "end_relationshipImpact": "End this source relationship record. Files in the source directory and the central library Skill will remain. This action will not try to remove a managed target entry.",
+        "end_relationshipConfirm": "Confirm ending relationship",
+        "skillLabel": "Skill",
         "targetLabel": "Target path",
         "relationLabel": "Relationship type",
         "verificationLabel": "Verification state",
         "confirm": "Confirm",
         "sharedImpactConfirm": "I confirm the shared directory impact",
         "rejectedNote": "The backend rejected this request; the preview stays unchanged and no success state was applied."
+      },
+      "mutation": {
+        "revoke_retentionDone": "The keep decision was revoked. The current relationship status was re-evaluated from its existing health facts.",
+        "end_relationshipDone": "The relationship ended; the source files and Skill subject were preserved.",
+        "refreshFailed": "The relationship could not be rechecked. Retry; no change was made.",
+        "relationshipUnavailable": "This relationship is no longer in the current ledger. No change was made.",
+        "changedReviewAgain": "The relationship has changed. Review the latest facts and confirm again.",
+        "actionUnavailable": "Current relationship conditions do not allow this action. No change was made.",
+        "unexpectedRelation": "The result does not match the selected relationship. Reload the ledger to confirm its state."
       },
       "batch": {
         "title": "Bring the selection under central library management",

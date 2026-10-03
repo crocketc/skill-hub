@@ -44,8 +44,10 @@ export interface GovernanceBoardProps extends Omit<GovernanceRelationTableProps,
 export function GovernanceBoard({
   busyRelationIds,
   onCentralize,
+  onEndRelationship,
   onRevalidate,
   onRetain,
+  onRevokeRetention,
   onToggleAll,
   onToggleRow,
   onUndeploy,
@@ -87,8 +89,10 @@ export function GovernanceBoard({
               key={key}
               labelKey={labelKey}
               onCentralize={onCentralize}
+              onEndRelationship={onEndRelationship}
               onRevalidate={onRevalidate}
               onRetain={onRetain}
+              onRevokeRetention={onRevokeRetention}
               onToggleRow={onToggleRow}
               onUndeploy={onUndeploy}
               rows={projection[key]}
@@ -107,8 +111,10 @@ function GovernanceBoardColumnView({
   column,
   labelKey,
   onCentralize,
+  onEndRelationship,
   onRevalidate,
   onRetain,
+  onRevokeRetention,
   onToggleRow,
   onUndeploy,
   rows,
@@ -120,8 +126,10 @@ function GovernanceBoardColumnView({
   column: GovernanceBoardColumn;
   labelKey: string;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
+  onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
   rows: readonly RelationGovernanceRow[];
@@ -213,8 +221,10 @@ function GovernanceBoardColumnView({
                 busy={busyRelationIds.has(relationIdOf(row.relation))}
                 key={relationIdOf(row.relation)}
                 onCentralize={onCentralize}
+                onEndRelationship={onEndRelationship}
                 onRevalidate={onRevalidate}
                 onRetain={onRetain}
+                onRevokeRetention={onRevokeRetention}
                 onToggleRow={onToggleRow}
                 onUndeploy={onUndeploy}
                 row={row}
@@ -242,8 +252,10 @@ function RocketUpIcon() {
 function GovernanceBoardCard({
   busy,
   onCentralize,
+  onEndRelationship,
   onRevalidate,
   onRetain,
+  onRevokeRetention,
   onToggleRow,
   onUndeploy,
   row,
@@ -251,8 +263,10 @@ function GovernanceBoardCard({
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
+  onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
   row: RelationGovernanceRow;
@@ -309,8 +323,10 @@ function GovernanceBoardCard({
           <GovernanceRelationActions
             busy={busy}
             onCentralize={onCentralize}
+            onEndRelationship={onEndRelationship}
             onRevalidate={onRevalidate}
             onRetain={onRetain}
+            onRevokeRetention={onRevokeRetention}
             onUndeploy={onUndeploy}
             row={row}
           />

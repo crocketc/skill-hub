@@ -105,6 +105,7 @@ export interface SkillLibraryPageProps {
   /** Refresh the bootstrap projection after library metadata changes. */
   refreshSnapshot?: () => Promise<void>;
   securityFacade: SecurityFacade;
+  relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
   trialFacade?: Pick<SkillDetailFacade, "setTrial">;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
@@ -420,6 +421,7 @@ export function SkillLibraryPage({
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
   refreshSnapshot,
+  relationshipFacade,
   securityFacade,
   trialFacade,
   tracker = operationTracker,
@@ -1621,6 +1623,7 @@ export function SkillLibraryPage({
       <SkillQuickDrawer
         detailSearch={detailSearchFromLibrary(location.search)}
         facade={drawerFacade}
+        relationshipFacade={relationshipFacade}
         trialFacade={trialFacade}
         libraryReturn={
           skillId

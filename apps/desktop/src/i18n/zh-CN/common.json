@@ -1369,7 +1369,22 @@
         "useAsPurpose": "写入我的用途"
       },
       "reviewRelationships": "查看关系治理",
-      "unresolvedTargets": "{{count}} 条关系的目标身份暂时无法读取。请重试查询或查看关系。",
+      "unresolvedTargets_one": "有 {{count}} 条关系的目标身份暂时无法确认，请查看此关系。",
+      "unresolvedTargets_other": "有 {{count}} 条关系的目标身份暂时无法确认，请查看这些关系。",
+      "relationships": {
+        "loading": "正在读取关系事实…",
+        "loadFailed": "无法读取目标关系。请重试，或前往治理页查看。",
+        "unavailableGroup": "当前无法读取目标事实。"
+      },
+      "provenance": {
+        "label": "导入存证",
+        "loadFailed": "无法读取导入存证。",
+        "none": "此 Skill 没有导入存证记录。",
+        "otherSource": "其他来源"
+      },
+      "reviewAgentRelationship": "查看 Agent 关系",
+      "reviewProjectRelationship": "查看项目关系",
+      "reviewUnresolvedRelationship": "查看未识别关系",
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
@@ -1388,7 +1403,11 @@
         "ownership": "归属",
         "purpose": "我的用途",
         "projectDestinations": "项目去向",
+        "projectDirectory": "项目目录",
         "projects": "项目",
+        "noLinkedAgents": "没有关联的 Agent",
+        "noLinkedProjects": "没有关联的项目目录",
+        "unknownTarget": "目标路径不可用",
         "unresolvedDestinationGroup": "部分去向暂时无法识别。",
         "source": "来源",
         "tags": "标签",
@@ -2843,6 +2862,7 @@
         "target_identity_unconfirmed": "尚未确认目标身份，请重新检查目标。",
         "relationship_not_convertible": "此关系类型暂不支持纳入集中库管理。",
         "shared_impact_confirmation_required": "其他 Agent 也在使用此共享目录，需要先查看并确认影响。",
+        "managed_entry_requires_verified_removal": "此目标由集中库管理；必须先验证可安全移除目标入口。结束关系不会绕过这项检查。",
         "link_target_unavailable": "链接目标当前无法访问，请确认目标位置后重新检查。",
         "link_replaced": "原链接目标已被替换，请检查当前目标内容。",
         "subject_unavailable": "关系主体当前不可用，请先恢复可访问状态再检查。"
@@ -2909,6 +2929,8 @@
         "undeploy": "从 Agent/项目移除",
         "revalidate": "重新检查",
         "keep_independent_copy": "保留为独立副本",
+        "revoke_retention": "撤销保留决定",
+        "end_relationship": "结束关系",
         "none": "受阻"
       },
       "history": {
@@ -2998,12 +3020,28 @@
       "preview": {
         "centralizeTitle": "纳入集中库管理预览",
         "undeployTitle": "从 Agent/项目移除预览",
+        "revoke_retentionTitle": "撤销保留决定",
+        "revoke_retentionImpact": "只撤销这条关系上的保留决定，不修改来源文件、目标入口或集中库 Skill 主体。关系状态会按当前健康事实重新评估。",
+        "revoke_retentionConfirm": "确认撤销保留决定",
+        "end_relationshipTitle": "结束关系",
+        "end_relationshipImpact": "结束这条来源关系记录。保留来源目录中的文件和集中库 Skill 主体；不会尝试移除受管理的目标入口。",
+        "end_relationshipConfirm": "确认结束关系",
+        "skillLabel": "技能",
         "targetLabel": "目标路径",
         "relationLabel": "关系类型",
         "verificationLabel": "校验状态",
         "confirm": "确认执行",
         "sharedImpactConfirm": "我已确认共享目录影响",
         "rejectedNote": "后端拒绝了这次请求，预览保持不变，未更新任何成功状态。"
+      },
+      "mutation": {
+        "revoke_retentionDone": "保留决定已撤销。当前关系状态已根据原有健康事实重新评估。",
+        "end_relationshipDone": "关系已结束；来源文件和 Skill 主体均已保留。",
+        "refreshFailed": "无法重新核对关系状态。请重试；没有执行更改。",
+        "relationshipUnavailable": "这条关系已不在当前清单中。没有执行更改。",
+        "changedReviewAgain": "关系信息已更新。请核对最新事实后再次确认。",
+        "actionUnavailable": "当前关系条件不允许此操作。没有执行更改。",
+        "unexpectedRelation": "返回结果与当前关系不匹配。请重新加载清单确认状态。"
       },
       "batch": {
         "title": "批量纳入集中库管理",

@@ -5,6 +5,7 @@ import {
   type GovernanceHistoryPage,
   type ListGovernanceHistory,
   type RelationGovernanceBatchOutcome,
+  type RelationshipGovernanceMutationResult,
   type RelationshipCheckLevel,
   type RelationshipCheckReport,
   type RemovalImpactFact,
@@ -17,6 +18,7 @@ import type {
   GovernanceHistoryParams,
   RelationGovernanceBatchRequest,
   RelationGovernanceFacade,
+  RelationshipGovernanceMutationRequest,
   RelationUndeployPreparation,
 } from "./api";
 
@@ -111,6 +113,36 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     });
     if (result.type !== "source_copy_relation_updated") {
       return unexpectedResult("retain_source_copy");
+    }
+    return result.payload;
+  },
+
+  async revokeRetention(request: RelationshipGovernanceMutationRequest): Promise<RelationshipGovernanceMutationResult> {
+    const result = await executeCommand({
+      type: "revoke_retention",
+      payload: {
+        operation_id: request.operationId,
+        relation_id: request.relationId,
+        expected_relationship_revision: request.expectedRelationshipRevision,
+      },
+    });
+    if (result.type !== "relationship_governance_mutation") {
+      return unexpectedResult("revoke_retention");
+    }
+    return result.payload;
+  },
+
+  async endRelationship(request: RelationshipGovernanceMutationRequest): Promise<RelationshipGovernanceMutationResult> {
+    const result = await executeCommand({
+      type: "end_relationship",
+      payload: {
+        operation_id: request.operationId,
+        relation_id: request.relationId,
+        expected_relationship_revision: request.expectedRelationshipRevision,
+      },
+    });
+    if (result.type !== "relationship_governance_mutation") {
+      return unexpectedResult("end_relationship");
     }
     return result.payload;
   },

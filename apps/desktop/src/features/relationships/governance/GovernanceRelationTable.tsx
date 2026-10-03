@@ -37,6 +37,8 @@ export interface GovernanceRelationTableProps {
   onToggleAll: (checked: boolean) => void;
   onCentralize: (row: RelationGovernanceRow) => void;
   onUndeploy: (row: RelationGovernanceRow) => void;
+  onRevokeRetention: (row: RelationGovernanceRow) => void;
+  onEndRelationship: (row: RelationGovernanceRow) => void;
   onRevalidate: (row: RelationGovernanceRow) => void;
   /** 来源副本保留：账本写入，绝不触碰来源目录。 */
   onRetain: (row: RelationGovernanceRow) => void;
@@ -51,9 +53,11 @@ export function GovernanceRelationTable({
   busyRelationIds,
   listRef,
   onCentralize,
+  onEndRelationship,
   onListScroll,
   onRevalidate,
   onRetain,
+  onRevokeRetention,
   onToggleAll,
   onToggleRow,
   onUndeploy,
@@ -129,8 +133,10 @@ export function GovernanceRelationTable({
                   <GovernanceRelationActions
                     busy={busy}
                     onCentralize={onCentralize}
+                    onEndRelationship={onEndRelationship}
                     onRevalidate={onRevalidate}
                     onRetain={onRetain}
+                    onRevokeRetention={onRevokeRetention}
                     onUndeploy={onUndeploy}
                     row={row}
                   />
@@ -319,15 +325,19 @@ export function GovernanceRelationBlockers({ row }: { row: RelationGovernanceRow
 export function GovernanceRelationActions({
   busy,
   onCentralize,
+  onEndRelationship,
   onRevalidate,
   onRetain,
+  onRevokeRetention,
   onUndeploy,
   row,
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
+  onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
   row: RelationGovernanceRow;
 }) {
@@ -357,6 +367,18 @@ export function GovernanceRelationActions({
       action: "undeploy" as const,
       available: isGovernanceActionAvailable(row, "undeploy"),
       onClick: () => onUndeploy(row),
+      variant: "secondary" as const,
+    },
+    {
+      action: "revoke_retention" as const,
+      available: isGovernanceActionAvailable(row, "revoke_retention"),
+      onClick: () => onRevokeRetention(row),
+      variant: "secondary" as const,
+    },
+    {
+      action: "end_relationship" as const,
+      available: isGovernanceActionAvailable(row, "end_relationship"),
+      onClick: () => onEndRelationship(row),
       variant: "secondary" as const,
     },
   ].filter((item) => item.available);
