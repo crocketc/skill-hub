@@ -1352,7 +1352,7 @@
         "sampleManagedReason": "The sample relation has a central library body and a verified target entry.",
         "sampleOnly": "Sample preview path; not a real local folder",
         "samplePathCopied": "Sample path copied",
-        "samplePathCopyUnavailable": "The browser did not allow copying the sample path",
+        "samplePathCopyUnavailable": "Could not copy the sample path. Allow clipboard access and retry.",
         "samplePending": "Preview sample · Central management pending",
         "samplePendingReason": "The sample target still has an independent copy; it needs verification and central management.",
         "saveCollections": "Save collection preview",

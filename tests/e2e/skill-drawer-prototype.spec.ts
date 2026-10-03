@@ -265,6 +265,11 @@ test("review drawer shows local safety results and translation shortcuts without
   await expect(securityIcons).toHaveCount(2);
   await expect(securityIcons.first()).toHaveAttribute("aria-label", /basic check found 1 risks|基础检查发现/i);
   await expect(securityIcons.first()).toHaveAttribute("title", /current version|当前版本/i);
+  const riskShield = drawer.locator(".sh-skill-drawer__prototype-security-icon--risk").first();
+  await expect(riskShield.locator("svg path").first()).toHaveAttribute("fill", "var(--ui-warning-background)");
+  await expect(riskShield.locator("svg path").first()).toHaveAttribute("stroke", "var(--ui-warning-foreground)");
+  await expect(riskShield.locator("svg path").nth(1)).toHaveAttribute("stroke", "var(--ui-danger-foreground)");
+  await expect(riskShield.locator("svg circle")).toHaveAttribute("fill", "var(--ui-danger-foreground)");
   await expect(securityIcons.nth(1)).toHaveAttribute("aria-label", /AI check failed|AI 检查失败/i);
   await expect(drawer.getByText(/local preview data only|仅使用本地预览数据/i)).toBeVisible();
 
@@ -279,13 +284,17 @@ test("review drawer shows local safety results and translation shortcuts without
   await expect(riskSummary).toContainText(/1 high risk|1 个高风险项/i);
   await expect(riskSummary).toContainText(/1 pending|1 项待处理/i);
   expect(dataRequests).toEqual([]);
-  await page.screenshot({ path: "test-results/drawer-prototype/prototype-v2-security-390x719.png" });
+  await page.setViewportSize({ width: 750, height: 719 });
+  await page.screenshot({ path: "test-results/drawer-prototype/prototype-v3-security-750x719.png" });
+  await page.setViewportSize({ width: 390, height: 719 });
+  await page.screenshot({ path: "test-results/drawer-prototype/prototype-v3-security-390x719.png" });
 });
 
 test("main drawer sample exposes lifecycle, collections, relationship routes, location, and cancelable actions", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:5175" });
   await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+  const origin = new URL(page.url()).origin;
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin });
   const drawer = page.getByTestId("drawer-panel");
 
   await expect(drawer.getByText(/trial|试用/i, { exact: true })).toBeVisible();
@@ -344,7 +353,11 @@ test("main drawer sample exposes lifecycle, collections, relationship routes, lo
   await expect(locationPreview).toContainText(/no local folder will open|不会打开本机目录/i);
   await locationPreview.getByRole("button", { name: /close location preview|关闭位置预览/i }).click();
   await drawer.getByRole("button", { name: /copy sample path|复制样例路径/i }).click();
-  await expect(drawer.locator(".sh-skill-drawer__prototype-location [role='status']")).toContainText(/sample path copied|样例路径已复制/i);
+  const copyStatus = drawer.locator(".sh-skill-drawer__prototype-location [role='status']");
+  await expect(copyStatus).toBeVisible();
+  await expect(copyStatus).toHaveCSS("position", "static");
+  await expect(copyStatus).toContainText(/sample path copied|样例路径已复制/i);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("C:\\preview\\SkillHub\\skills\\pdf-reader");
 
   await drawer.getByRole("button", { name: /dispatch|派发/i }).click();
   await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toBeVisible();
@@ -352,4 +365,26 @@ test("main drawer sample exposes lifecycle, collections, relationship routes, lo
   await page.getByRole("button", { name: /cancel preview|取消预览/i }).click();
   await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toHaveCount(0);
   await page.screenshot({ path: "test-results/drawer-prototype/prototype-v2-full-750x719.png" });
+});
+
+test("sample path copy reports denied clipboard access visibly and allows retry", async ({ page }) => {
+  await page.setViewportSize({ width: 750, height: 719 });
+  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+  const origin = new URL(page.url()).origin;
+  await page.context().grantPermissions([], { origin });
+  const drawer = page.getByTestId("drawer-panel");
+  const copyButton = drawer.getByRole("button", { name: /copy sample path|复制样例路径/i });
+  await copyButton.click();
+  const copyStatus = drawer.locator(".sh-skill-drawer__prototype-location [role='status']");
+  await expect(copyStatus).toBeVisible();
+  await expect(copyStatus).toHaveCSS("position", "static");
+  await expect(copyStatus).toContainText(/allow clipboard access and retry|允许剪贴板访问后重试/i);
+  expect(await page.evaluate(() => navigator.clipboard.readText().catch(() => ""))).toBe("");
+  await copyStatus.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/drawer-prototype/prototype-v3-copy-denied-750x719.png" });
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+  await copyButton.click();
+  await expect(copyStatus).toContainText(/sample path copied|样例路径已复制/i);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("C:\\preview\\SkillHub\\skills\\pdf-reader");
 });

@@ -1352,7 +1352,7 @@
         "sampleManagedReason": "样例关系已有集中库主体，并已验证目标入口。",
         "sampleOnly": "预览样例路径，不代表真实本机目录",
         "samplePathCopied": "样例路径已复制",
-        "samplePathCopyUnavailable": "浏览器未允许复制样例路径",
+        "samplePathCopyUnavailable": "无法复制样例路径。请允许剪贴板访问后重试。",
         "samplePending": "预览样例 · 待集中管理",
         "samplePendingReason": "样例目标仍保留独立副本，需后续核验与集中管理。",
         "saveCollections": "保存组合预览",

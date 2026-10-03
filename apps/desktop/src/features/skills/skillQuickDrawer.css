@@ -1494,6 +1494,19 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   font-size: var(--font-size-xs);
 }
 
+.sh-skill-drawer--prototype .sh-skill-drawer__prototype-copy-status {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--ui-success-foreground);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.sh-skill-drawer--prototype .sh-skill-drawer__prototype-copy-status.is-error {
+  color: var(--ui-danger-foreground);
+}
+
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-location > div {
   display: flex;
   grid-column: 2;

@@ -425,7 +425,7 @@ const PROTOTYPE_SKILL_PATH = "C:\\preview\\SkillHub\\skills\\pdf-reader";
 function PrototypeSubjectLocationModule() {
   const { t } = useTranslation();
   const locationPopover = useBoundedPrototypePopover();
-  const [copyStatus, setCopyStatus] = useState("");
+  const [copyStatus, setCopyStatus] = useState<"copied" | "unavailable" | "">("");
   const openLocationPreview = (event: ReactMouseEvent<HTMLButtonElement>) => {
     locationPopover.triggerRef.current = event.currentTarget;
     locationPopover.setOpen(true);
@@ -433,9 +433,9 @@ function PrototypeSubjectLocationModule() {
   const copySamplePath = async () => {
     try {
       await navigator.clipboard.writeText(PROTOTYPE_SKILL_PATH);
-      setCopyStatus(t("skillLibrary.drawer.prototype.samplePathCopied"));
+      setCopyStatus("copied");
     } catch {
-      setCopyStatus(t("skillLibrary.drawer.prototype.samplePathCopyUnavailable"));
+      setCopyStatus("unavailable");
     }
   };
   return (
@@ -451,7 +451,17 @@ function PrototypeSubjectLocationModule() {
             <PrototypeCopyIcon />
           </Button>
         </div>
-        {copyStatus ? <span aria-live="polite" className="sh-visually-hidden" role="status">{copyStatus}</span> : null}
+        {copyStatus ? (
+          <span
+            aria-live="polite"
+            className={`sh-skill-drawer__prototype-copy-status${copyStatus === "unavailable" ? " is-error" : ""}`}
+            role="status"
+          >
+            {t(copyStatus === "copied"
+              ? "skillLibrary.drawer.prototype.samplePathCopied"
+              : "skillLibrary.drawer.prototype.samplePathCopyUnavailable")}
+          </span>
+        ) : null}
       </div>
       {locationPopover.open ? (
         <PrototypePopover
@@ -745,9 +755,9 @@ function PrototypeSecurityRiskIcon({ description, label, title }: { description:
   return (
     <span aria-description={description} aria-label={label} className="sh-skill-drawer__prototype-security-icon sh-skill-drawer__prototype-security-icon--risk" role="img" tabIndex={0} title={title}>
       <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-        <path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="currentColor" />
-        <path d="M12 7.3v6.1" stroke="var(--ui-danger-foreground)" strokeLinecap="round" strokeWidth="2.1" />
-        <circle cx="12" cy="16.7" r="1.15" fill="var(--ui-danger-foreground)" />
+        <path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="var(--ui-warning-background)" stroke="var(--ui-warning-foreground)" strokeLinejoin="round" strokeWidth="1.2" />
+        <path d="M12 7.3v6.1" stroke="var(--ui-danger-foreground)" strokeLinecap="round" strokeWidth="2.5" />
+        <circle cx="12" cy="16.7" r="1.3" fill="var(--ui-danger-foreground)" />
       </svg>
     </span>
   );
