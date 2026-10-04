@@ -30,7 +30,12 @@ const enabled = true;
 <img src="x" onclick="window.skillHubCompromised = true">
 `;
 
-async function renderMarkdown(markdown: string, locale = "en-US", facade = createMockMarkdownFacade()) {
+async function renderMarkdown(
+  markdown: string,
+  locale = "en-US",
+  facade = createMockMarkdownFacade(),
+  versionId?: string,
+) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -44,6 +49,7 @@ async function renderMarkdown(markdown: string, locale = "en-US", facade = creat
             filePath="SKILL.md"
             markdown={markdown}
             skillId="pdf-reader"
+            versionId={versionId}
           />
         </I18nextProvider>
       </QueryClientProvider>
@@ -167,6 +173,75 @@ describe("MarkdownRenderer", () => {
 
     expect(screen.getByText("unsafe")).not.toHaveAttribute("href");
     expect(screen.getByText("Blocked resource: ../outside.png")).toBeVisible();
+  });
+
+  it("never sends escaped or scheme-blocked targets to the asset resolver", async () => {
+    const facade = await renderMarkdown(
+      "[unsafe](javascript:alert(1)) ![escape](../outside.png) ![legit](images/ok.png)",
+    );
+
+    expect(screen.getByText("unsafe")).not.toHaveAttribute("href");
+    expect(screen.getByText("Blocked resource: ../outside.png")).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByRole("img", { name: "legit" })).toBeInTheDocument();
+    });
+    // 越界与危险 scheme 在分类层被拒，绝不抵达受控解析入口。
+    expect(facade.calls.resolvedAssets).toEqual([
+      { assetPath: "images/ok.png", markdownPath: "SKILL.md", skillId: "pdf-reader" },
+    ]);
+  });
+
+  it("resolves local assets against the exact version the markdown came from", async () => {
+    const facade = createMockMarkdownFacade();
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { rerender } = render(
+      <ThemeProvider>
+        <QueryClientProvider client={client}>
+          <I18nextProvider i18n={i18n}>
+            <MarkdownRenderer
+              facade={facade}
+              filePath="SKILL.md"
+              markdown="![Diagram](images/diagram.png)"
+              skillId="pdf-reader"
+              versionId="v1"
+            />
+          </I18nextProvider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(facade.calls.resolvedAssets).toEqual([
+        { assetPath: "images/diagram.png", markdownPath: "SKILL.md", skillId: "pdf-reader", versionId: "v1" },
+      ]);
+    });
+
+    // 版本切换后同一资源路径必须按新版本重新解析，不得沿用旧版本缓存。
+    rerender(
+      <ThemeProvider>
+        <QueryClientProvider client={client}>
+          <I18nextProvider i18n={i18n}>
+            <MarkdownRenderer
+              facade={facade}
+              filePath="SKILL.md"
+              markdown="# New version body\n\n![Diagram](images/diagram.png)"
+              skillId="pdf-reader"
+              versionId="v2"
+            />
+          </I18nextProvider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(facade.calls.resolvedAssets).toEqual([
+        { assetPath: "images/diagram.png", markdownPath: "SKILL.md", skillId: "pdf-reader", versionId: "v1" },
+        { assetPath: "images/diagram.png", markdownPath: "SKILL.md", skillId: "pdf-reader", versionId: "v2" },
+      ]);
+    });
   });
 
   it("offers diagram and source views only for Mermaid code fences", async () => {

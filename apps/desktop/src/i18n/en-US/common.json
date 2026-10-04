@@ -139,6 +139,8 @@
       "fileStructure": "File structure",
       "primaryFile": "Primary",
       "openDefault": "Open in default app",
+      "openFailed": "Could not open: {{detail}}",
+      "openFailedDetail": "The open action did not complete ({{code}}). The file may have been moved, deleted, or blocked by permissions; retry, or open the Skill folder instead.",
       "openFolder": "Open Skill folder",
       "readOnly": {
         "builtin": "This file is read-only because it is built into an Agent.",

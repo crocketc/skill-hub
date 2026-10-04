@@ -88,6 +88,22 @@ export interface ValidateMarkdownCommand {
   };
 }
 
+/*
+ * K9 待对齐（接线点）：本地资源解析查询。bindings.ts 尚无 resolve_local_asset；
+ * 形状按契约语义先行声明——version_id 缺省传 null（后端解析当前版本），
+ * 历史读取显式指定。Markdown 与图片必须来自同一版本。A 侧生成后按同名形状
+ * 对齐，nativeApi 透传处零改动替换。
+ */
+export interface ResolveLocalAssetQuery {
+  type: "resolve_local_asset";
+  payload: {
+    asset_path: string;
+    markdown_path: string;
+    skill_id: string;
+    version_id: string | null;
+  };
+}
+
 /** ReadMarkdownFile 结果中的草稿摘要（含草稿基准元数据）。 */
 export interface MarkdownDraftSummaryPayload {
   base_content_identity: string;
@@ -104,11 +120,17 @@ export interface MarkdownFacade {
   openExternalUrl(target: string): Promise<void>;
   openSkillFolder(skillId: string): Promise<void>;
   readMarkdownFile(skillId: string, path: string): Promise<MarkdownFileContent>;
-  requestTakeover(skillId: string): Promise<void>;
+  /**
+   * K9：解析 Markdown 内的本地资源为可展示 URL。versionId 缺省时由后端
+   * 解析当前版本；历史读取必须显式指定——Markdown 与图片必须来自同一版本。
+   * （待对齐接线点：bindings.ts 尚无 resolve_local_asset 查询，形状见
+   * ResolveLocalAssetQuery。）
+   */
   resolveLocalAsset(
     skillId: string,
     markdownPath: string,
     assetPath: string,
+    versionId?: string,
   ): Promise<string>;
   saveDraft(
     skillId: string,
@@ -164,7 +186,6 @@ export const unavailableMarkdownFacade: MarkdownFacade = {
   openExternalUrl: unavailable,
   openSkillFolder: unavailable,
   readMarkdownFile: unavailable,
-  requestTakeover: unavailable,
   resolveLocalAsset: unavailable,
   saveDraft: unavailable,
   saveMarkdownAsCopy: unavailable,
@@ -175,6 +196,11 @@ export const unavailableMarkdownFacade: MarkdownFacade = {
 const markdownKey = (skillId: string) => ["skill-markdown", skillId] as const;
 
 export const markdownKeys = {
+  /** 单个本地资源查询键：携版本身份，缺省记为 current（后端解析当前版本）。 */
+  asset: (skillId: string, filePath: string, assetPath: string, versionId?: string) =>
+    [...markdownKey(skillId), "asset", filePath, assetPath, versionId ?? "current"] as const,
+  /** 技能下全部资源查询的前缀键：版本变化后按前缀失效，旧版本缓存不再沿用。 */
+  assets: (skillId: string) => [...markdownKey(skillId), "asset"] as const,
   files: (skillId: string) => [...markdownKey(skillId), "files"] as const,
   file: (skillId: string, path: string) =>
     [...markdownKey(skillId), "file", path] as const,

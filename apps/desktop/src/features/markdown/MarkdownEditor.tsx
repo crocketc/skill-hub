@@ -254,6 +254,9 @@ export function MarkdownEditor({
       setDraftState("idle");
       if (reviewSaveFlow) setReviewSaveResult("内容已保存为新版本；网络更新来源继续保留。");
       await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, file.path) });
+      // K9：保存产生新版本，按前缀失效该技能的资源缓存——旧版本的图片
+      // 不得在切换/保存后被当作当前内容沿用。
+      await queryClient.invalidateQueries({ queryKey: markdownKeys.assets(skillId) });
       onSaved(result.newVersionId);
     } catch (error) {
       if (error instanceof MarkdownContentConflictError) {

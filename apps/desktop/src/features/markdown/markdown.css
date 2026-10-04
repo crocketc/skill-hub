@@ -51,6 +51,7 @@
 
 .sh-markdown-workspace__draft,
 .sh-markdown-workspace__read-only,
+.sh-markdown-workspace__open-error,
 .sh-markdown-frontmatter,
 .sh-markdown-remote-image,
 .sh-markdown-blocked-resource,
@@ -112,6 +113,15 @@
   color: var(--ui-warning-foreground);
 }
 
+/* K9：打开类动作失败的局部告警，留在原页面可处理；沿用状态行模式。 */
+.sh-markdown-workspace__open-error {
+  margin: 0;
+  border-color: var(--ui-danger-border);
+  background: var(--ui-danger-background);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-markdown-workspace__open-error p,
 .sh-markdown-workspace__read-only p,
 .sh-markdown-frontmatter h3,
 .sh-markdown-frontmatter pre,

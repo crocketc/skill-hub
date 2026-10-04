@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
+import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -47,8 +49,11 @@ export function MarkdownWorkspace({
 }: MarkdownWorkspaceProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selectedOverride, setSelectedOverride] = useState<string>();
   const [mode, setMode] = useState<MarkdownMode>("read");
+  // K9：打开默认/所选应用与目录的失败必须留在原页面可处理，不得静默吞掉。
+  const [openActionError, setOpenActionError] = useState<string>();
   // 编辑器注册的「切换前持久化草稿」回调；离开编辑模式时置回 null。
   const editorPersistRef = useRef<(() => Promise<void>) | null>(null);
   const registerEditorPersist = useCallback(
@@ -101,6 +106,26 @@ export function MarkdownWorkspace({
     mode === "edit" && !file?.editable
       ? "read"
       : mode;
+  // K9：打开类动作共用同一条受控路径；失败与权限拒绝以可读说明留在原页
+  // （生产适配器在 nativeApi 接线前会得到不可用说明，而不是无响应）。
+  const runOpenAction = (action: () => Promise<void>) => {
+    setOpenActionError(undefined);
+    void action().catch((reason: unknown) => {
+      const detail = reason instanceof MarkdownUnavailableError
+        ? t("markdown.workspace.unavailable")
+        : describeNativeError(
+          reason,
+          (key, options) => String(t(key as never, options as never)),
+          "markdown.workspace.openFailedDetail",
+        );
+      setOpenActionError(t("markdown.workspace.openFailed", { detail }));
+    });
+  };
+  // K9：接管不产生任何后端写入，也不以本地 mock 状态宣称已接管；跳转既有
+  // 身份/共享/权限预览流程（本地发现的导入预览流），由该流程核实真实能力。
+  const requestTakeover = () => {
+    navigate("/discovery/local", { state: { takeoverSkillId: skillId } });
+  };
   // K4-B：切走前先把防抖窗口内的最新输入落成草稿；失败则留在编辑器，
   // 由编辑器的草稿错误状态 + 重试入口承接，绝不静默丢弃输入。
   const leaveEditor = async (apply: () => void) => {
@@ -149,11 +174,11 @@ export function MarkdownWorkspace({
             <IconButton
               icon="openExternal"
               label={t("markdown.workspace.openDefault")}
-              onClick={() => void facade.openDefaultApplication(skillId, selectedPath)}
+              onClick={() => runOpenAction(() => facade.openDefaultApplication(skillId, selectedPath))}
             />
           ) : (
             <Button
-              onClick={() => void facade.openDefaultApplication(skillId, selectedPath)}
+              onClick={() => runOpenAction(() => facade.openDefaultApplication(skillId, selectedPath))}
               size="sm"
               variant="ghost"
             >
@@ -161,14 +186,14 @@ export function MarkdownWorkspace({
             </Button>
           )}
           <Button
-            onClick={() => void facade.chooseExternalApplication(skillId, selectedPath)}
+            onClick={() => runOpenAction(() => facade.chooseExternalApplication(skillId, selectedPath))}
             size="sm"
             variant="ghost"
           >
             {t("markdown.workspace.chooseApp")}
           </Button>
           <Button
-            onClick={() => void facade.openSkillFolder(skillId)}
+            onClick={() => runOpenAction(() => facade.openSkillFolder(skillId))}
             size="sm"
             variant="ghost"
           >
@@ -176,6 +201,14 @@ export function MarkdownWorkspace({
           </Button>
         </div>
       </header>
+      {openActionError ? (
+        <div className="sh-markdown-workspace__open-error" role="alert">
+          <p className="sh-markdown-status">
+            <Icon className="sh-markdown-status__icon" name="warning" size={16} />
+            <span>{openActionError}</span>
+          </p>
+        </div>
+      ) : null}
       {fileQuery.isPending ? (
         <DataState message={t("markdown.workspace.loadingFile")} state="loading" />
       ) : fileQuery.isError || !file ? (
@@ -224,7 +257,7 @@ export function MarkdownWorkspace({
                   <Icon className="sh-markdown-status__icon" name="warning" size={16} />
                   <span>{t(readOnlyMessageKey[file.readOnlyReason])}</span>
                 </p>
-                <Button onClick={() => void facade.requestTakeover(skillId)} variant="secondary">
+                <Button onClick={requestTakeover} variant="secondary">
                   {t("markdown.workspace.takeover")}
                 </Button>
               </div>
@@ -262,6 +295,7 @@ export function MarkdownWorkspace({
                     filePath={file.path}
                     markdown={file.markdown}
                     skillId={skillId}
+                    versionId={file.versionId}
                   />
                 </div>
               ) : (
@@ -270,6 +304,7 @@ export function MarkdownWorkspace({
                   filePath={file.path}
                   markdown={file.markdown}
                   skillId={skillId}
+                  versionId={file.versionId}
                 />
               )
             ) : null}

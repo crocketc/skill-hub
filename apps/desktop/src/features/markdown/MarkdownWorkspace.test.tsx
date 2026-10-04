@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
@@ -11,6 +12,14 @@ import {
   type MockMarkdownFacade,
   type MockMarkdownOptions,
 } from "./testFixtures";
+import type { Location } from "react-router-dom";
+
+let lastLocation: Location | null = null;
+
+function LocationProbe() {
+  lastLocation = useLocation();
+  return null;
+}
 
 async function renderWorkspace(
   options: MockMarkdownOptions = {},
@@ -22,11 +31,24 @@ async function renderWorkspace(
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
+  lastLocation = null;
   render(
     <ThemeProvider>
       <QueryClientProvider client={client}>
         <I18nextProvider i18n={i18n}>
-          <MarkdownWorkspace facade={facade} skillId="pdf-reader" />
+          <MemoryRouter initialEntries={["/library/pdf-reader"]}>
+            <Routes>
+              <Route
+                path="*"
+                element={
+                  <>
+                    <MarkdownWorkspace facade={facade} skillId="pdf-reader" />
+                    <LocationProbe />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>
         </I18nextProvider>
       </QueryClientProvider>
     </ThemeProvider>,
@@ -125,7 +147,7 @@ describe("MarkdownWorkspace", () => {
   });
 
   it("never offers in-place edit for a read-only external Skill", async () => {
-    const facade = await renderWorkspace({ editable: false, readOnlyReason: "external" });
+    await renderWorkspace({ editable: false, readOnlyReason: "external" });
 
     expect(
       await screen.findByText("This file is read-only because it is managed externally."),
@@ -133,7 +155,28 @@ describe("MarkdownWorkspace", () => {
     expect(screen.queryByRole("tab", { name: "Edit" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
-    expect(facade.calls.takeovers).toEqual(["pdf-reader"]);
+
+    // K9：接管跳既有身份/共享/权限预览流程（本地发现的导入预览流），
+    // 不以 mock 状态宣称已接管。
+    expect(lastLocation?.pathname).toBe("/discovery/local");
+    expect(lastLocation?.state).toEqual({ takeoverSkillId: "pdf-reader" });
+  });
+
+  it("keeps the page processable with a readable alert when opening the default app fails", async () => {
+    await renderWorkspace({}, async (fixture) => {
+      fixture.openDefaultApplication = async () => {
+        throw new Error("Fixture open denied");
+      };
+    });
+    await screen.findByRole("heading", { name: "Markdown workspace" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open in default app" }));
+
+    // 失败留在原页面：可读说明出现，工作区与重试入口保持可用。
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not open: Fixture open denied");
+    expect(screen.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open in default app" })).toBeVisible();
   });
 
   it("pairs the restored draft status with a decorative icon", async () => {

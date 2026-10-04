@@ -4,7 +4,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
-import type { MarkdownFacade } from "./api";
+import { markdownKeys, type MarkdownFacade } from "./api";
 import { CodeBlock } from "./CodeBlock";
 import { ExternalLink } from "./ExternalLink";
 import { MarkdownImage } from "./MarkdownImage";
@@ -17,6 +17,8 @@ interface MarkdownRendererProps {
   filePath: string;
   markdown: string;
   skillId: string;
+  /** 这份 Markdown 所属的版本身份；资源解析与缓存键都必须与它绑定。 */
+  versionId?: string;
 }
 
 interface LocalImageProps {
@@ -26,12 +28,23 @@ interface LocalImageProps {
   filePath: string;
   errorMessage: string;
   skillId: string;
+  versionId?: string;
 }
 
-function LocalImage({ alt, assetPath, facade, filePath, errorMessage, skillId }: LocalImageProps) {
+function LocalImage({
+  alt,
+  assetPath,
+  facade,
+  filePath,
+  errorMessage,
+  skillId,
+  versionId,
+}: LocalImageProps) {
+  // K9：查询与缓存键携实际版本身份（缺省由后端解析当前版本），Markdown 与
+  // 图片来自同一版本；版本切换/保存后键不同，旧版本缓存不会被沿用。
   const assetQuery = useQuery({
-    queryFn: () => facade.resolveLocalAsset(skillId, filePath, assetPath),
-    queryKey: ["skill-markdown", skillId, "asset", filePath, assetPath],
+    queryFn: () => facade.resolveLocalAsset(skillId, filePath, assetPath, versionId),
+    queryKey: markdownKeys.asset(skillId, filePath, assetPath, versionId),
     retry: false,
   });
 
@@ -77,7 +90,13 @@ function Heading({ children, level }: { children?: ReactNode; level: number }) {
   return <Tag>{children}</Tag>;
 }
 
-export function MarkdownRenderer({ facade, filePath, markdown, skillId }: MarkdownRendererProps) {
+export function MarkdownRenderer({
+  facade,
+  filePath,
+  markdown,
+  skillId,
+  versionId,
+}: MarkdownRendererProps) {
   const { t } = useTranslation();
   const { body, frontmatter } = splitFrontmatter(markdown);
 
@@ -161,6 +180,7 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
             filePath={filePath}
             errorMessage={t("markdown.resource.localImageError")}
             skillId={skillId}
+            versionId={versionId}
           />
         );
       }
@@ -192,7 +212,7 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
     pre({ children }) {
       return <>{children}</>;
     },
-  }), [facade, filePath, skillId, t]);
+  }), [facade, filePath, skillId, t, versionId]);
 
   return (
     <article className="sh-markdown-renderer">

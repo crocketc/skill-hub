@@ -139,6 +139,8 @@
       "fileStructure": "文件结构",
       "primaryFile": "主文件",
       "openDefault": "使用默认应用打开",
+      "openFailed": "未能打开：{{detail}}",
+      "openFailedDetail": "打开操作未完成（{{code}}）。文件可能已被移动、删除或权限受限，可重试或改为在文件夹中打开。",
       "openFolder": "打开 Skill 文件夹",
       "readOnly": {
         "builtin": "此文件内置于 Agent，因此为只读。",

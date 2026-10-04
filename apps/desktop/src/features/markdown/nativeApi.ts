@@ -2,6 +2,7 @@ import {
   executeCommand,
   queryApplication,
   type AppCommand,
+  type AppQuery,
   type MarkdownReadOnlyReason,
   type AppQueryResult,
 } from "../../api/bindings";
@@ -10,6 +11,7 @@ import {
   unavailableMarkdownFacade,
   type DiscardMarkdownDraftCommand,
   type MarkdownFacade,
+  type ResolveLocalAssetQuery,
   type SaveMarkdownDraftCommand,
   type ValidateMarkdownCommand,
 } from "./api";
@@ -37,6 +39,19 @@ type PendedCommandResult =
 
 const executePendedCommand = (command: PendedMarkdownCommand): Promise<PendedCommandResult> =>
   executeCommand(command as unknown as AppCommand) as Promise<PendedCommandResult>;
+
+/*
+ * K9 待对齐（接线点）：resolve_local_asset 查询与 local_asset 结果类型同样
+ * 待生成；先按 api.ts 的本地契约形状透传。后端未实现该查询时会在这里失败，
+ * 统一折叠为不可用错误（与生成绑定落地后的行为一致）；落地后删除本桥接并
+ * 改用生成的类型直接调用，形状与键名零改动。
+ */
+type PendedMarkdownQuery = ResolveLocalAssetQuery;
+
+type PendedQueryResult = { payload: unknown; type: "local_asset" };
+
+const queryPended = (query: PendedMarkdownQuery): Promise<PendedQueryResult> =>
+  queryApplication(query as unknown as AppQuery) as Promise<unknown> as Promise<PendedQueryResult>;
 
 // K4 待对齐（接线点）：生成物 MarkdownFileContent 尚无 draft / version_id 字段，
 // ReadMarkdownFile 结果扩展后删除本类型并直接使用生成类型。
@@ -186,6 +201,30 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       if (result.type !== "operation_summary") throw unavailableResult();
     } catch (error) {
       throw error instanceof Error ? error : unavailableResult();
+    }
+  },
+  async resolveLocalAsset(skillId, markdownPath, assetPath, versionId) {
+    try {
+      const result = await queryPended({
+        payload: {
+          asset_path: assetPath,
+          markdown_path: markdownPath,
+          skill_id: skillId,
+          // 缺省（含调用方未知版本身份）交给后端解析当前版本；历史读取显式传入。
+          version_id: versionId ?? null,
+        },
+        type: "resolve_local_asset",
+      });
+      if (result.type !== "local_asset") throw unavailableResult();
+      const payload = result.payload as { url?: unknown } | null;
+      if (!payload || typeof payload.url !== "string" || !payload.url) {
+        throw unavailableResult();
+      }
+      return payload.url;
+    } catch {
+      // 后端查询未落地或解析失败（缺失/越界/权限）时如实不可用，
+      // 由渲染层以可读说明收尾，不伪造本地路径。
+      throw unavailableResult();
     }
   },
 };

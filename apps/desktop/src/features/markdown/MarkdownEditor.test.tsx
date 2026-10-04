@@ -5,7 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
-import { MarkdownContentConflictError } from "./api";
+import { MarkdownContentConflictError, markdownKeys } from "./api";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { SYNC_SCROLL_STORAGE_KEY } from "./syncScroll";
 import {
@@ -75,6 +75,40 @@ function defineScrollable(
 }
 
 describe("MarkdownEditor", () => {
+  // K9：保存产生新版本后，同一路径的旧版本资源缓存不得继续沿用。
+  it("invalidates version-scoped asset caches when a save creates a new version", async () => {
+    const facade = createMockMarkdownFacade();
+    const file = await facade.readMarkdownFile("pdf-reader", "SKILL.md");
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    client.setQueryData(
+      markdownKeys.asset("pdf-reader", "SKILL.md", "images/diagram.png", "v1"),
+      "asset://stale-v1",
+    );
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={client}>
+          <I18nextProvider i18n={i18n}>
+            <MarkdownEditor facade={facade} file={file} onSaved={() => undefined} skillId="pdf-reader" />
+          </I18nextProvider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+
+    await replaceEditorText("# Saved body creates v2");
+    fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Replace and save" }));
+    await waitFor(() => expect(facade.calls.savedVersions).toHaveLength(1));
+
+    const assetQueries = client.getQueryCache().findAll({
+      queryKey: markdownKeys.assets("pdf-reader"),
+    });
+    expect(assetQueries).not.toHaveLength(0);
+    expect(assetQueries.every((query) => query.state.isInvalidated)).toBe(true);
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
   });

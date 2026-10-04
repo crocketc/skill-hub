@@ -32,7 +32,13 @@ export interface MockMarkdownCalls {
     path: string;
     skillId: string;
   }>;
-  takeovers: string[];
+  /** K9：资源解析调用必须可观测——版本身份是否随调用传递就看这里。 */
+  resolvedAssets: Array<{
+    assetPath: string;
+    markdownPath: string;
+    skillId: string;
+    versionId?: string | null;
+  }>;
 }
 
 export interface MockMarkdownFacade extends MarkdownFacade {
@@ -195,7 +201,7 @@ export function createMockMarkdownFacade(
     savedDrafts: [],
     copiedVersions: [],
     savedVersions: [],
-    takeovers: [],
+    resolvedAssets: [],
   };
 
   const requireFile = (path: string): MarkdownFileContent => {
@@ -246,10 +252,8 @@ export function createMockMarkdownFacade(
       }
       return { ...file, draft: file.draft ? { ...file.draft } : undefined };
     },
-    async requestTakeover(skillId) {
-      calls.takeovers.push(skillId);
-    },
-    async resolveLocalAsset(skillId, markdownPath, assetPath) {
+    async resolveLocalAsset(skillId, markdownPath, assetPath, versionId) {
+      calls.resolvedAssets.push({ assetPath, markdownPath, skillId, versionId });
       return `asset://skill/${encodeURIComponent(skillId)}/${encodeURIComponent(markdownPath)}/${encodeURIComponent(assetPath)}`;
     },
     async saveDraft(skillId, path, markdown, base?) {
