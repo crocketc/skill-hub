@@ -286,6 +286,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
             </Button>
           )
         ) : null}
+        {reviewSaveFlow ? <div className="sh-markdown-editor__sync-toggle">{syncControl}</div> : null}
         <div aria-live="polite" className="sh-markdown-editor__save-status" role="status">
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
           {draftState === "saved" ? t("markdown.editor.draftSaved") : null}
@@ -294,7 +295,6 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
           {savedVersion ? t("markdown.editor.versionCreated", { version: savedVersion }) : null}
           {reviewSaveResult ? <span>{reviewSaveResult}</span> : null}
         </div>
-        {reviewSaveFlow ? <div className="sh-markdown-editor__sync-toggle">{syncControl}</div> : null}
         <div className="sh-markdown-editor__save-cluster">
           <span className="sh-markdown-editor__save-hint">
             {reviewSaveFlow ? "受管链接跟随当前版本；独立副本不会自动更新。" : t("markdown.editor.saveHint")}
@@ -319,7 +319,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
               setReviewSaveResult(undefined);
               setReviewSaveOpen(true);
             } else void validateAndSave();
-          }}>
+          }} size="sm">
             {reviewSaveFlow ? "保存…" : t("markdown.editor.save")}
           </Button>
         </div>
