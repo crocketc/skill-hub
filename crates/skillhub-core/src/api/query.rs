@@ -263,6 +263,18 @@ pub struct MarkdownFileEntry {
     pub path: String,
     pub primary: bool,
 }
+/// K4：草稿摘要——工作台一次拉取的恢复事实。`base_content_identity`
+/// 用于判定草稿是否仍基于当前内容；`base_version_id` 记录草稿基准
+/// 版本（None=读取时未指定版本）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownDraftSummary {
+    pub base_content_identity: String,
+    pub base_version_id: Option<String>,
+    pub markdown: String,
+    /// RFC 3339（UTC）。
+    pub updated_at: String,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct MarkdownFileContent {
     pub content_identity: String,
@@ -273,6 +285,16 @@ pub struct MarkdownFileContent {
     /// 托管副本为 None（可显式保存原文形成新版本）。
     #[serde(default)]
     pub read_only_reason: Option<crate::catalog::MarkdownReadOnlyReason>,
+    /// K4：该文件的未保存草稿摘要；None=无草稿。
+    #[serde(default)]
+    pub draft: Option<MarkdownDraftSummary>,
+}
+/// K4：草稿查询。无草稿时结果载荷为 `None`。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetMarkdownDraft {
+    pub skill_id: SkillId,
+    pub path: String,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct DiffVersions {
@@ -971,6 +993,8 @@ pub enum AppQuery {
     ListMarkdownFiles(ListMarkdownFiles),
     #[serde(rename = "read_markdown_file")]
     ReadMarkdownFile(ReadMarkdownFile),
+    #[serde(rename = "get_markdown_draft")]
+    GetMarkdownDraft(GetMarkdownDraft),
     #[serde(rename = "diff_versions")]
     DiffVersions(DiffVersions),
     #[serde(rename = "list_combinations")]
@@ -1094,6 +1118,8 @@ pub enum AppQueryResult {
     MarkdownFiles(Vec<MarkdownFileEntry>),
     #[serde(rename = "markdown_file")]
     MarkdownFile(MarkdownFileContent),
+    #[serde(rename = "markdown_draft")]
+    MarkdownDraft(Option<MarkdownDraftSummary>),
     #[serde(rename = "version_diff")]
     VersionDiff(VersionDiffResult),
     #[serde(rename = "combinations")]

@@ -43,6 +43,65 @@ pub struct SaveMarkdownContent {
     pub markdown: String,
     pub expected_identity: String,
 }
+/// K4：Markdown 草稿保存。草稿驻留库内 `drafts/<skill_id>/`（文件名含
+/// `path` 的安全哈希），不进入版本库、不参与导出/部署/集中树物化；
+/// `base_version_id`/`base_content_identity` 记录草稿基准，供陈旧判定。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveMarkdownDraft {
+    pub skill_id: SkillId,
+    pub path: String,
+    pub markdown: String,
+    pub base_version_id: Option<VersionId>,
+    pub base_content_identity: String,
+}
+/// K4：丢弃草稿。幂等——草稿不存在时同样成功。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DiscardMarkdownDraft {
+    pub skill_id: SkillId,
+    pub path: String,
+}
+/// K4：确定性 Markdown 校验（路径合法、大小上限 1 MiB、非空），无 LLM。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ValidateMarkdown {
+    pub path: String,
+    pub markdown: String,
+}
+/// K4：单条校验问题。`code` 是稳定机器码
+/// （`invalid_markdown_path`/`markdown_too_large`/`markdown_empty`），
+/// `field` 指向违规输入，`params` 提供确定性上下文（如字节上限）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownValidationIssue {
+    pub code: String,
+    pub field: String,
+    pub params: std::collections::BTreeMap<String, String>,
+}
+/// K4：校验结果——总是成功返回，问题以列表呈现，不用错误通道表达。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownValidationResult {
+    pub valid: bool,
+    pub issues: Vec<MarkdownValidationIssue>,
+}
+/// K4：草稿已保存的事实回执；基准字段由调用方已知，只回新事实。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownDraftSaved {
+    pub skill_id: SkillId,
+    pub path: String,
+    /// RFC 3339（UTC）。
+    pub updated_at: String,
+}
+/// K4：草稿已丢弃的事实回执（幂等成功同形）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownDraftDiscarded {
+    pub skill_id: SkillId,
+    pub path: String,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SaveMarkdownAsCopy {
     pub skill_id: SkillId,
@@ -1151,6 +1210,12 @@ pub enum AppCommand {
     SaveSkillContent(SaveSkillContent),
     #[serde(rename = "save_markdown_content")]
     SaveMarkdownContent(SaveMarkdownContent),
+    #[serde(rename = "save_markdown_draft")]
+    SaveMarkdownDraft(SaveMarkdownDraft),
+    #[serde(rename = "discard_markdown_draft")]
+    DiscardMarkdownDraft(DiscardMarkdownDraft),
+    #[serde(rename = "validate_markdown")]
+    ValidateMarkdown(ValidateMarkdown),
     #[serde(rename = "save_markdown_as_copy")]
     SaveMarkdownAsCopy(SaveMarkdownAsCopy),
     #[serde(rename = "rename_skill")]
@@ -1425,6 +1490,12 @@ pub enum AppCommandResult {
     DiscoverySnapshot(crate::DiscoverySnapshot),
     #[serde(rename = "saved_skill_content")]
     SavedSkillContent(SavedSkillContent),
+    #[serde(rename = "markdown_draft_saved")]
+    MarkdownDraftSaved(MarkdownDraftSaved),
+    #[serde(rename = "markdown_draft_discarded")]
+    MarkdownDraftDiscarded(MarkdownDraftDiscarded),
+    #[serde(rename = "markdown_validation_result")]
+    MarkdownValidationResult(MarkdownValidationResult),
     #[serde(rename = "custom_agent")]
     CustomAgent(CustomAgent),
     #[serde(rename = "custom_agent_override")]

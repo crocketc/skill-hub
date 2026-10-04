@@ -658,3 +658,189 @@ fn export_preview_and_sensitive_items_have_stable_wire_shapes() {
         serde_json::to_value(skillhub_core::AppCommandResult::ExportPreview(preview)).unwrap();
     assert_eq!(tagged["type"], "export_preview");
 }
+
+#[test]
+fn markdown_draft_commands_and_query_have_stable_wire_shapes() {
+    // K4：草稿命令/查询的 wire 字段严格 snake_case，与前端本地声明一一对应。
+    let skill_id = skillhub_core::SkillId::new();
+    let commands = [
+        AppCommand::SaveMarkdownDraft(skillhub_core::SaveMarkdownDraft {
+            skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft".into(),
+            base_version_id: None,
+            base_content_identity: "object-1".into(),
+        }),
+        AppCommand::DiscardMarkdownDraft(skillhub_core::DiscardMarkdownDraft {
+            skill_id,
+            path: "SKILL.md".into(),
+        }),
+        AppCommand::ValidateMarkdown(skillhub_core::ValidateMarkdown {
+            path: "SKILL.md".into(),
+            markdown: "# Draft".into(),
+        }),
+    ];
+    let expected_types = [
+        "save_markdown_draft",
+        "discard_markdown_draft",
+        "validate_markdown",
+    ];
+    for (command, expected) in commands.into_iter().zip(expected_types) {
+        let value = serde_json::to_value(&command).unwrap();
+        assert_eq!(value["type"], expected);
+        let payload_keys: Vec<String> = value["payload"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert!(
+            payload_keys
+                .iter()
+                .all(|key| key.chars().all(|c| c.is_ascii_lowercase() || c == '_')),
+            "{expected} payload keys must be snake_case: {payload_keys:?}"
+        );
+    }
+    let save = serde_json::to_value(AppCommand::SaveMarkdownDraft(
+        skillhub_core::SaveMarkdownDraft {
+            skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft".into(),
+            base_version_id: None,
+            base_content_identity: "object-1".into(),
+        },
+    ))
+    .unwrap();
+    let save_keys: std::collections::BTreeSet<&str> = save["payload"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        save_keys,
+        [
+            "base_content_identity",
+            "base_version_id",
+            "markdown",
+            "path",
+            "skill_id",
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    let query = serde_json::to_value(AppQuery::GetMarkdownDraft(
+        skillhub_core::GetMarkdownDraft {
+            skill_id,
+            path: "SKILL.md".into(),
+        },
+    ))
+    .unwrap();
+    assert_eq!(query["type"], "get_markdown_draft");
+    let query_keys: std::collections::BTreeSet<&str> = query["payload"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(query_keys, ["path", "skill_id"].into_iter().collect());
+}
+
+#[test]
+fn markdown_draft_summary_and_validation_results_have_stable_wire_shapes() {
+    // K4：草稿摘要形状由契约固定——工作台一次拉取的恢复事实。
+    let summary = skillhub_core::MarkdownDraftSummary {
+        base_content_identity: "object-1".into(),
+        base_version_id: Some("sha256:".to_owned() + &"a".repeat(64)),
+        markdown: "# Draft".into(),
+        updated_at: "2026-10-04T00:00:00Z".into(),
+    };
+    let value = serde_json::to_value(&summary).unwrap();
+    let keys: std::collections::BTreeSet<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "base_content_identity",
+            "base_version_id",
+            "markdown",
+            "updated_at",
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    let draft_query =
+        serde_json::to_value(skillhub_core::AppQueryResult::MarkdownDraft(Some(summary))).unwrap();
+    assert_eq!(draft_query["type"], "markdown_draft");
+    assert_eq!(draft_query["payload"]["markdown"], "# Draft");
+
+    let validation = skillhub_core::MarkdownValidationResult {
+        valid: false,
+        issues: vec![skillhub_core::MarkdownValidationIssue {
+            code: "markdown_too_large".into(),
+            field: "markdown".into(),
+            params: [("size_limit".to_owned(), "1048576".to_owned())]
+                .into_iter()
+                .collect(),
+        }],
+    };
+    let value = serde_json::to_value(&validation).unwrap();
+    let keys: std::collections::BTreeSet<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["issues", "valid"].into_iter().collect());
+    let issue_keys: std::collections::BTreeSet<&str> = value["issues"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        issue_keys,
+        ["code", "field", "params"].into_iter().collect()
+    );
+
+    let tagged = serde_json::to_value(skillhub_core::AppCommandResult::MarkdownValidationResult(
+        validation,
+    ))
+    .unwrap();
+    assert_eq!(tagged["type"], "markdown_validation_result");
+
+    let saved = serde_json::to_value(skillhub_core::AppCommandResult::MarkdownDraftSaved(
+        skillhub_core::MarkdownDraftSaved {
+            skill_id: skillhub_core::SkillId::new(),
+            path: "SKILL.md".into(),
+            updated_at: "2026-10-04T00:00:00Z".into(),
+        },
+    ))
+    .unwrap();
+    assert_eq!(saved["type"], "markdown_draft_saved");
+    let saved_keys: std::collections::BTreeSet<&str> = saved["payload"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        saved_keys,
+        ["path", "skill_id", "updated_at"].into_iter().collect()
+    );
+
+    let discarded = serde_json::to_value(skillhub_core::AppCommandResult::MarkdownDraftDiscarded(
+        skillhub_core::MarkdownDraftDiscarded {
+            skill_id: skillhub_core::SkillId::new(),
+            path: "SKILL.md".into(),
+        },
+    ))
+    .unwrap();
+    assert_eq!(discarded["type"], "markdown_draft_discarded");
+}

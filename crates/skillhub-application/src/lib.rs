@@ -7113,6 +7113,24 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
+            AppCommand::SaveMarkdownDraft(request) => {
+                // RED 存根：K4 草稿持久化未落地，保存一律拒绝。
+                let _ = request;
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("reason", "markdown_draft_not_implemented"));
+            }
+            AppCommand::DiscardMarkdownDraft(request) => {
+                // RED 存根：K4 草稿丢弃未落地。
+                let _ = request;
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("reason", "markdown_draft_not_implemented"));
+            }
+            AppCommand::ValidateMarkdown(request) => {
+                // RED 存根：K4 确定性校验未落地。
+                let _ = request;
+                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("reason", "markdown_validation_not_implemented"));
+            }
             AppCommand::SaveMarkdownAsCopy(request) => return self.save_markdown_as_copy(request),
             AppCommand::PrepareBackup(request) => {
                 let input = self.build_backup_input(request.scope)?;
@@ -7744,6 +7762,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.list_findings(request.skill_id, request.version_id, request.kind)
             }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
+            AppQuery::GetMarkdownDraft(request) => {
+                // RED 存根：K4 草稿查询未落地，恒返回无草稿。
+                let _ = request;
+                Ok(AppQueryResult::MarkdownDraft(None))
+            }
             AppQuery::ReadMarkdownFile(request) => self.read_markdown_file(
                 request.skill_id,
                 request.version_id.as_ref(),
@@ -12613,6 +12636,8 @@ impl LocalApplicationFacade {
                 markdown,
                 path: path.to_owned(),
                 read_only_reason,
+                // RED 存根：K4 草稿摘要未接入。
+                draft: None,
             },
         ))
     }

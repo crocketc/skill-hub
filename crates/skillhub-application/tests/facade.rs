@@ -11,15 +11,16 @@ use skillhub_core::{
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
-        CommitUndeploy, CreateBackup, CreateSkill, DiffVersions, DiscoverImportCandidates,
-        GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan,
-        GetRemovalImpact, GetRollbackImpact, GetSkill, KeepIndependentCopy, ListDeployments,
-        ListFindings, ListMarkdownFiles, ListProjects, ListSkills, ListVersions,
-        PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRestore, PrepareUndeploy,
-        PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision,
-        RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownAsCopy,
-        SaveMarkdownContent, SaveSkillContent, SetCurrentVersion, SetFindingDisposition,
-        SetLifecycle, SetMetadata, SetTrial, SetVersionLabel, VerifyBackup,
+        CommitUndeploy, CreateBackup, CreateSkill, DiffVersions, DiscardMarkdownDraft,
+        DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations,
+        GetMarkdownDraft, GetReconcilePlan, GetRemovalImpact, GetRollbackImpact, GetSkill,
+        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListProjects,
+        ListSkills, ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
+        PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
+        RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
+        SaveMarkdownAsCopy, SaveMarkdownContent, SaveMarkdownDraft, SaveSkillContent,
+        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+        SetVersionLabel, ValidateMarkdown, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -7687,4 +7688,501 @@ async fn git_acquisition_classifies_online_with_temporary_cache() {
         .expect("classification recorded for acquired source");
     assert_eq!(classification.source_class, ImportSourceClass::Online);
     assert_eq!(classification.physical_source_id, None);
+}
+
+// ---------------------------------------------------------------------------
+// K4：Markdown 草稿/校验（契约 §K4，决策 D1 落点）。草稿驻留库内
+// drafts/<skill_id>/，不进版本库、不参与导出/部署/集中树物化。
+// ---------------------------------------------------------------------------
+
+/// K4 公共夹具：文件库（供重启模拟复用）+ 库内当前版本。
+struct MarkdownDraftFixture {
+    _database_workspace: tempfile::TempDir,
+    library_root: tempfile::TempDir,
+    database_path: std::path::PathBuf,
+    skill_id: SkillId,
+    version_id: String,
+    content_identity: String,
+}
+
+async fn markdown_draft_fixture(display_name: &str) -> MarkdownDraftFixture {
+    let workspace = tempfile::tempdir().expect("database workspace");
+    let database_path = workspace.path().join("app.sqlite");
+    let library_root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(library_root.path()).expect("central library");
+    let skill = Skill::new(skillhub_core::SkillId::new(), display_name);
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Initial\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let (content_identity, _) = store
+        .read_file(&version.id, "SKILL.md", 1024)
+        .expect("read identity");
+    let database = skillhub_storage::Database::open(&database_path).expect("database");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    MarkdownDraftFixture {
+        _database_workspace: workspace,
+        library_root,
+        database_path,
+        skill_id: skill.id(),
+        version_id: version.id.to_string(),
+        content_identity,
+    }
+}
+
+/// 通过文件库新建 facade 实例，模拟应用重启（不共享任何内存状态）。
+fn restarted_facade(fixture: &MarkdownDraftFixture) -> LocalApplicationFacade {
+    let database =
+        skillhub_storage::Database::open(&fixture.database_path).expect("reopen database");
+    LocalApplicationFacade::new_with_library(database, fixture.library_root.path())
+}
+
+async fn get_draft(
+    facade: &LocalApplicationFacade,
+    skill_id: SkillId,
+    path: &str,
+) -> Option<skillhub_core::MarkdownDraftSummary> {
+    let result = facade
+        .query(RootAppQuery::GetMarkdownDraft(GetMarkdownDraft {
+            skill_id,
+            path: path.into(),
+        }))
+        .await
+        .expect("get markdown draft");
+    let AppQueryResult::MarkdownDraft(draft) = result else {
+        panic!("expected markdown draft result");
+    };
+    draft
+}
+
+#[tokio::test]
+async fn markdown_draft_survives_a_facade_restart_with_base_metadata() {
+    let fixture = markdown_draft_fixture("Draft restart").await;
+    let facade = restarted_facade(&fixture);
+    let saved = facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft content\n".into(),
+            base_version_id: Some(
+                skillhub_core::VersionId::parse(&fixture.version_id).expect("version id"),
+            ),
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+    let AppCommandResult::MarkdownDraftSaved(saved) = saved else {
+        panic!("expected markdown draft saved");
+    };
+    assert_eq!(saved.skill_id, fixture.skill_id);
+    assert_eq!(saved.path, "SKILL.md");
+    assert!(!saved.updated_at.is_empty());
+
+    // 草稿物理驻留 drafts/<skill_id>/，文件名为 path 的安全哈希。
+    let draft_dir = fixture
+        .library_root
+        .path()
+        .join("drafts")
+        .join(fixture.skill_id.to_string());
+    let entries: Vec<String> = std::fs::read_dir(&draft_dir)
+        .expect("draft directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(entries.len(), 1, "exactly one draft file: {entries:?}");
+    let name = &entries[0];
+    let stem = name.strip_suffix(".json").unwrap_or(name);
+    assert!(
+        stem.len() == 64 && stem.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "draft file name must be a safe hash: {name}"
+    );
+
+    drop(facade);
+    // 重启后草稿与元数据完整可读。
+    let draft = get_draft(&restarted_facade(&fixture), fixture.skill_id, "SKILL.md")
+        .await
+        .expect("draft must survive restart");
+    assert_eq!(draft.markdown, "# Draft content\n");
+    assert_eq!(draft.base_content_identity, fixture.content_identity);
+    assert_eq!(
+        draft.base_version_id.as_deref(),
+        Some(fixture.version_id.as_str())
+    );
+    assert!(!draft.updated_at.is_empty());
+}
+
+#[tokio::test]
+async fn markdown_draft_discard_is_idempotent_and_reads_none_afterwards() {
+    let fixture = markdown_draft_fixture("Draft discard").await;
+    let facade = restarted_facade(&fixture);
+    facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft\n".into(),
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+    assert!(get_draft(&facade, fixture.skill_id, "SKILL.md")
+        .await
+        .is_some());
+
+    let discarded = facade
+        .execute(AppCommand::DiscardMarkdownDraft(DiscardMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+        }))
+        .await
+        .expect("discard draft");
+    let AppCommandResult::MarkdownDraftDiscarded(discarded) = discarded else {
+        panic!("expected markdown draft discarded");
+    };
+    assert_eq!(discarded.skill_id, fixture.skill_id);
+    assert_eq!(discarded.path, "SKILL.md");
+    assert!(get_draft(&facade, fixture.skill_id, "SKILL.md")
+        .await
+        .is_none());
+
+    // 幂等：再次丢弃同样成功。
+    facade
+        .execute(AppCommand::DiscardMarkdownDraft(DiscardMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+        }))
+        .await
+        .expect("discard is idempotent");
+    assert!(get_draft(&facade, fixture.skill_id, "SKILL.md")
+        .await
+        .is_none());
+}
+
+#[tokio::test]
+async fn save_markdown_content_clears_the_matching_draft_on_success() {
+    let fixture = markdown_draft_fixture("Draft clear on save").await;
+    let facade = restarted_facade(&fixture);
+    facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft\n".into(),
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+
+    facade
+        .execute(AppCommand::SaveMarkdownContent(SaveMarkdownContent {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Edited\n".into(),
+            expected_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save markdown content");
+    assert!(
+        get_draft(&facade, fixture.skill_id, "SKILL.md")
+            .await
+            .is_none(),
+        "successful overwrite save must clear the draft"
+    );
+}
+
+#[tokio::test]
+async fn failed_markdown_save_keeps_the_draft_for_retry() {
+    let fixture = markdown_draft_fixture("Draft kept on failure").await;
+    let facade = restarted_facade(&fixture);
+    facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft\n".into(),
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+
+    // 身份过期 → 保存失败；草稿必须保留，用户输入不丢。
+    let error = facade
+        .execute(AppCommand::SaveMarkdownContent(SaveMarkdownContent {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Stale\n".into(),
+            expected_identity: "sha256:stale".into(),
+        }))
+        .await
+        .expect_err("stale identity must fail the save");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+
+    let draft = get_draft(&facade, fixture.skill_id, "SKILL.md")
+        .await
+        .expect("draft must survive a failed save");
+    assert_eq!(draft.markdown, "# Draft\n");
+    assert_eq!(draft.base_content_identity, fixture.content_identity);
+}
+
+#[tokio::test]
+async fn markdown_draft_save_rejects_invalid_path_oversize_and_unknown_skill() {
+    let fixture = markdown_draft_fixture("Draft boundaries").await;
+    let facade = restarted_facade(&fixture);
+
+    for invalid_path in [
+        "../escape.md",
+        "C:\\evil.md",
+        "docs/../SKILL.md",
+        "",
+        "notes.txt",
+    ] {
+        let error = facade
+            .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+                skill_id: fixture.skill_id,
+                path: invalid_path.into(),
+                markdown: "# Draft\n".into(),
+                base_version_id: None,
+                base_content_identity: fixture.content_identity.clone(),
+            }))
+            .await
+            .expect_err("invalid path must be rejected");
+        assert_eq!(error.code, ErrorCode::InvalidInput, "path: {invalid_path}");
+    }
+
+    let oversize = "x".repeat(1_048_577);
+    let error = facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: oversize,
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect_err("oversize draft must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+
+    let error = facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: skillhub_core::SkillId::new(),
+            path: "SKILL.md".into(),
+            markdown: "# Draft\n".into(),
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect_err("unknown skill must be rejected");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+
+    // 查询与丢弃同样执行路径与 skill 存在性校验。
+    let error = facade
+        .query(RootAppQuery::GetMarkdownDraft(GetMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "../escape.md".into(),
+        }))
+        .await
+        .expect_err("invalid path query must be rejected");
+    assert_eq!(error.code, ErrorCode::InvalidInput);
+    let error = facade
+        .execute(AppCommand::DiscardMarkdownDraft(DiscardMarkdownDraft {
+            skill_id: skillhub_core::SkillId::new(),
+            path: "SKILL.md".into(),
+        }))
+        .await
+        .expect_err("unknown skill discard must be rejected");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+}
+
+#[tokio::test]
+async fn markdown_validation_reports_deterministic_issue_codes() {
+    let fixture = markdown_draft_fixture("Draft validation").await;
+    let facade = restarted_facade(&fixture);
+
+    // 合法内容：无问题。
+    let valid = facade
+        .execute(AppCommand::ValidateMarkdown(ValidateMarkdown {
+            path: "docs/notes.md".into(),
+            markdown: "# Notes\n".into(),
+        }))
+        .await
+        .expect("validation runs");
+    let AppCommandResult::MarkdownValidationResult(valid) = valid else {
+        panic!("expected validation result");
+    };
+    assert!(valid.valid);
+    assert!(valid.issues.is_empty());
+
+    // 超限 + 非法路径：一次列出全部确定性问题。
+    let combined = facade
+        .execute(AppCommand::ValidateMarkdown(ValidateMarkdown {
+            path: "../evil.md".into(),
+            markdown: "x".repeat(1_048_577),
+        }))
+        .await
+        .expect("validation runs");
+    let AppCommandResult::MarkdownValidationResult(combined) = combined else {
+        panic!("expected validation result");
+    };
+    assert!(!combined.valid);
+    let mut codes: Vec<&str> = combined
+        .issues
+        .iter()
+        .map(|issue| issue.code.as_str())
+        .collect();
+    codes.sort_unstable();
+    assert_eq!(codes, ["invalid_markdown_path", "markdown_too_large"]);
+    let too_large = combined
+        .issues
+        .iter()
+        .find(|issue| issue.code == "markdown_too_large")
+        .expect("size issue");
+    assert_eq!(too_large.field, "markdown");
+    assert_eq!(
+        too_large.params.get("size_limit").map(String::as_str),
+        Some("1048576")
+    );
+
+    // 空内容。
+    let empty = facade
+        .execute(AppCommand::ValidateMarkdown(ValidateMarkdown {
+            path: "SKILL.md".into(),
+            markdown: "   \n\t".into(),
+        }))
+        .await
+        .expect("validation runs");
+    let AppCommandResult::MarkdownValidationResult(empty) = empty else {
+        panic!("expected validation result");
+    };
+    assert!(!empty.valid);
+    assert_eq!(empty.issues.len(), 1);
+    assert_eq!(empty.issues[0].code, "markdown_empty");
+    assert_eq!(empty.issues[0].field, "markdown");
+}
+
+#[tokio::test]
+async fn read_markdown_file_carries_the_draft_summary_when_one_exists() {
+    let fixture = markdown_draft_fixture("Draft summary").await;
+    let facade = restarted_facade(&fixture);
+
+    let read = facade
+        .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            version_id: None,
+        }))
+        .await
+        .expect("read markdown file");
+    let AppQueryResult::MarkdownFile(content) = read else {
+        panic!("expected markdown file");
+    };
+    assert!(content.draft.is_none(), "no draft state must read as None");
+
+    facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# Draft content\n".into(),
+            base_version_id: Some(
+                skillhub_core::VersionId::parse(&fixture.version_id).expect("version id"),
+            ),
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+
+    let read = facade
+        .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            version_id: None,
+        }))
+        .await
+        .expect("read markdown file");
+    let AppQueryResult::MarkdownFile(content) = read else {
+        panic!("expected markdown file");
+    };
+    let draft = content.draft.expect("draft summary must ride along");
+    assert_eq!(draft.markdown, "# Draft content\n");
+    assert_eq!(draft.base_content_identity, fixture.content_identity);
+    assert_eq!(
+        draft.base_version_id.as_deref(),
+        Some(fixture.version_id.as_str())
+    );
+    assert!(!draft.updated_at.is_empty());
+}
+
+#[tokio::test]
+async fn markdown_drafts_never_enter_the_standard_export_package() {
+    let fixture = markdown_draft_fixture("Draft export isolation").await;
+    let facade = restarted_facade(&fixture);
+    facade
+        .execute(AppCommand::SaveMarkdownDraft(SaveMarkdownDraft {
+            skill_id: fixture.skill_id,
+            path: "SKILL.md".into(),
+            markdown: "# DRAFT-ONLY-MARKER-7f3a\n".into(),
+            base_version_id: None,
+            base_content_identity: fixture.content_identity.clone(),
+        }))
+        .await
+        .expect("save draft");
+
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![fixture.skill_id]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+    let exported = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("create export");
+    let AppCommandResult::ExportResult(exported) = exported else {
+        panic!("expected export result");
+    };
+
+    // 物化导出物中既无 drafts 目录，也无草稿内容字节。
+    let file = std::fs::File::open(&exported.path).expect("open export archive");
+    let mut archive = zip::ZipArchive::new(file).expect("read archive");
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("archive entry");
+        let name = entry.name().to_owned();
+        assert!(
+            !name.contains("drafts/"),
+            "export package must not carry drafts: {name}"
+        );
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).expect("read entry");
+        assert!(
+            !bytes
+                .windows(24)
+                .any(|window| window == b"DRAFT-ONLY-MARKER-7f3a"),
+            "draft content leaked into export entry {name}"
+        );
+    }
 }
