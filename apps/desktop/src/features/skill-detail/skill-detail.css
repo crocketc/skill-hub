@@ -855,6 +855,22 @@
 .sh-skill-detail--review .sh-version-timeline__heading {
   flex: none;
   gap: var(--space-1);
+  /* “当前版本”徽标只在当前行出现：为徽标预留槽位宽，
+     时间列及后续槽位的起点跨行一致。 */
+  min-width: 7.5rem;
+}
+
+/* 时间·来源槽位：各行来源词长短不一，预留统一宽度保持变化列对齐。 */
+.sh-skill-detail--review .sh-version-timeline article > p:first-of-type {
+  flex: none;
+  min-width: 13rem;
+}
+
+/* 槽位占位（当前版本无恢复动作）：视觉隐藏、等宽接住恢复槽位。 */
+.sh-version-timeline__slot-placeholder {
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
 }
 
 .sh-skill-detail--review .sh-version-timeline article > p {

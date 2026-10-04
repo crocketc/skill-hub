@@ -222,6 +222,12 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
                 <Button onClick={() => prepareRollback(version.id)} size="sm" variant="ghost">
                   {reviewPresentation ? `恢复到 ${version.label}` : t("skillDetail.versions.rollbackTo", { version: version.label })}
                 </Button>
+              ) : reviewPresentation ? (
+                // 原型紧凑行的槽位预留：当前版本没有恢复动作，用等宽占位
+                // 接住槽位，各行命名/比较/恢复按钮起点保持一致。
+                <span aria-hidden="true" className="sh-button sh-button--ghost sh-button--sm sh-version-timeline__slot-placeholder">
+                  {`恢复到 ${version.label}`}
+                </span>
               ) : null}
             </article>
           </li>

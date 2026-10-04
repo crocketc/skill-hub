@@ -341,8 +341,33 @@ test("review source replacement and adoption show distinct impacts and retain fi
   await expect(page.getByText("更新来源已更换；当前内容和导入记录未改变。", { exact: true })).toBeVisible();
 });
 
-test("review versions compare, rename and restore with current relationship impact", async ({ page }) => {
+test("review version rows keep shared info and action slots across rows", async ({ page }) => {
   await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "版本历史" }).click();
+
+  const rows = page.locator("#review-versions .sh-version-timeline ol > li > article");
+  await expect(rows).toHaveCount(3);
+
+  // 同类行共用布局槽位：时间列、命名按钮、比较勾选、恢复槽位的起点跨行一致，
+  // 不因“当前版本”徽标只有一行有、恢复按钮只有历史行有而错位。
+  const lefts = (locator) =>
+    locator.evaluateAll((elements) => elements.map((el) => Math.round(el.getBoundingClientRect().left)));
+  const expectSameLeft = async (locator) => {
+    const values = await lefts(locator);
+    expect(new Set(values).size).toBe(1);
+  };
+
+  await expectSameLeft(rows.locator("> p:nth-of-type(1)"));
+  await expectSameLeft(rows.getByRole("button", { name: /命名版本/ }));
+  await expectSameLeft(rows.locator("> label"));
+  // 恢复槽位：历史行是真实按钮，当前行是无障碍隐藏的等宽占位。
+  const restoreSlots = rows.locator("> *:last-child");
+  await expect(restoreSlots).toHaveCount(3);
+  await expect(restoreSlots.filter({ hasText: /恢复到/ })).toHaveCount(3);
+  await expectSameLeft(restoreSlots);
+});
+
+test("review versions compare, rename and restore with current relationship impact", async ({ page }) => {  await page.goto(reviewUrl);
   await page.getByRole("link", { name: "版本历史" }).click();
 
   await page.getByRole("checkbox", { name: "选择 v2.4.1 进行比较" }).check();
