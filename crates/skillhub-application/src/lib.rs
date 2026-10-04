@@ -3,6 +3,7 @@
 mod agent_compatibility;
 mod external_link;
 pub mod library_runtime;
+mod local_open;
 mod pending_workspace;
 mod relationship_governance_batch;
 mod relationship_governance_service;
@@ -20,6 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
+pub use local_open::{LocalOpenService, LocalPathOpener, SystemLocalPathOpener};
 use sha2::{Digest, Sha256};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
@@ -170,6 +172,7 @@ pub struct LocalApplicationFacade {
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
     assembly_plans: Mutex<HashMap<OperationId, skillhub_core::AssemblyPlan>>,
     external_link_service: ExternalLinkService,
+    local_open_service: LocalOpenService,
     llm_runs: Mutex<HashMap<(String, String), RunningLlmCheck>>,
     upstream_origins: Mutex<HashMap<String, skillhub_core::UpstreamOrigin>>,
     /// Keeps remote acquisition workspaces alive from discovery through import
@@ -2103,6 +2106,7 @@ impl LocalApplicationFacade {
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
+            local_open_service: LocalOpenService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
@@ -2198,6 +2202,7 @@ impl LocalApplicationFacade {
             path_grants: Mutex::new(HashMap::new()),
             assembly_plans: Mutex::new(HashMap::new()),
             external_link_service: ExternalLinkService::new(),
+            local_open_service: LocalOpenService::new(),
             llm_runs: Mutex::new(HashMap::new()),
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
@@ -2356,6 +2361,13 @@ impl LocalApplicationFacade {
 
     pub fn set_external_url_opener(&self, opener: Arc<dyn ExternalUrlOpener>) {
         self.external_link_service.set_opener(opener);
+    }
+
+    /// Registers the platform opener for local library resources. Production
+    /// injects the desktop shell's opener; without one, the open commands
+    /// refuse instead of pretending a path was opened.
+    pub fn set_local_path_opener(&self, opener: Arc<dyn LocalPathOpener>) {
+        self.local_open_service.set_opener(opener);
     }
 
     /// Registers a directory grant issued by the native file picker. The
@@ -6811,6 +6823,15 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
             AppCommand::OpenExternalUrl(request) => return self.open_external_url(request),
+            AppCommand::OpenDefaultApplication(_) => {
+                return Err(not_yet_implemented("open_default_application"));
+            }
+            AppCommand::OpenSkillFolder(_) => {
+                return Err(not_yet_implemented("open_skill_folder"));
+            }
+            AppCommand::ChooseExternalApplication(_) => {
+                return Err(not_yet_implemented("choose_external_application"));
+            }
             AppCommand::SetApplicationUpdatePolicy(request) => {
                 return self.set_application_update_policy(request)
             }
@@ -7518,6 +7539,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                         current_version,
                         agent_deployment_count: skill.agent_deployment_count,
                         project_deployment_count: skill.project_deployment_count,
+                        // K9：RED 种子——真实物化根路径在 GREEN 提交中接线。
+                        root_path: None,
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,
@@ -7763,6 +7786,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 request.version_id.as_ref(),
                 &request.path,
             ),
+            AppQuery::ResolveLocalAsset(_) => Err(not_yet_implemented("resolve_local_asset")),
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
             }
@@ -13950,6 +13974,15 @@ fn journal_record(
 fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
+        .with_action(RecoveryAction::Retry)
+}
+
+/// RED-seed helper for contract variants whose behaviour lands in a later
+/// commit of the same batch; every call site is replaced before delivery.
+fn not_yet_implemented(operation: &'static str) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_param("reason", "not_yet_implemented")
         .with_action(RecoveryAction::Retry)
 }
 

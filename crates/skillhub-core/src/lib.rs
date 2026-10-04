@@ -18,6 +18,7 @@ mod ids;
 pub mod ignore;
 pub mod import;
 pub mod llm;
+pub mod local_open;
 mod operation;
 mod path_policy;
 pub mod pending;
@@ -147,6 +148,7 @@ pub use export::{
 pub use external_link::{
     external_url_host, validate_external_url, OpenExternalUrl, EXTERNAL_URL_ALLOWED_HOSTS,
 };
+pub use local_open::{ChooseExternalApplication, OpenDefaultApplication, OpenSkillFolder};
 pub use operation::{
     InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationPhase,
     OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,

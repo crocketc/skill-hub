@@ -257,6 +257,31 @@ pub struct ReadMarkdownFile {
     #[serde(default)]
     pub version_id: Option<VersionId>,
 }
+/// K9：本地资产解析请求。Markdown 与资产必须来自同一版本——`version_id`
+/// 给定时两者都只读该版本的清单；缺省（null）时用当前版本。跨版本混读
+/// 不是"尽力解析"，而是明确拒绝；资产路径与 Markdown 路径同样只接受
+/// 该版本树内的相对路径。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveLocalAsset {
+    pub skill_id: SkillId,
+    pub markdown_path: String,
+    pub asset_path: String,
+    #[serde(default)]
+    pub version_id: Option<VersionId>,
+}
+/// K9：解析结果。内容以 data URL 返回——webview 拿不到任何文件系统
+/// 路径，只能拿到已通过版本树边界校验的字节与白名单媒体类型。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct LocalAssetResolution {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub markdown_path: String,
+    pub asset_path: String,
+    pub media_type: String,
+    pub data_url: String,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct MarkdownFileEntry {
     pub label: String,
@@ -324,6 +349,11 @@ pub struct SkillResult {
     /// Current deployed registered project targets, matching the catalog list read model.
     #[serde(default)]
     pub project_deployment_count: u32,
+    /// K9：Skill 在集中库中的真实物化根目录（用户可见树的绝对路径）；
+    /// 树未物化时为 None。供"采纳本地来源"等预填场景取真实路径，
+    /// 不派生自截断文本或显示别名。
+    #[serde(default)]
+    pub root_path: Option<String>,
     /// QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；
     /// 内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
     #[serde(default)]
@@ -993,6 +1023,8 @@ pub enum AppQuery {
     ListMarkdownFiles(ListMarkdownFiles),
     #[serde(rename = "read_markdown_file")]
     ReadMarkdownFile(ReadMarkdownFile),
+    #[serde(rename = "resolve_local_asset")]
+    ResolveLocalAsset(ResolveLocalAsset),
     #[serde(rename = "get_markdown_draft")]
     GetMarkdownDraft(GetMarkdownDraft),
     #[serde(rename = "diff_versions")]
@@ -1120,6 +1152,8 @@ pub enum AppQueryResult {
     MarkdownFile(MarkdownFileContent),
     #[serde(rename = "markdown_draft")]
     MarkdownDraft(Option<MarkdownDraftSummary>),
+    #[serde(rename = "local_asset")]
+    LocalAsset(LocalAssetResolution),
     #[serde(rename = "version_diff")]
     VersionDiff(VersionDiffResult),
     #[serde(rename = "combinations")]

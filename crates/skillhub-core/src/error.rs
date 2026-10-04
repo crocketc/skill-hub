@@ -121,6 +121,10 @@ pub enum ErrorCode {
     ApplicationUpdateDownloadCancelled,
     #[serde(rename = "external_link.opener_unavailable")]
     ExternalLinkOpenerUnavailable,
+    #[serde(rename = "local_open.opener_unavailable")]
+    LocalPathOpenerUnavailable,
+    #[serde(rename = "local_open.unsupported")]
+    LocalPathOpenUnsupported,
 }
 
 #[allow(non_upper_case_globals)]
@@ -193,6 +197,8 @@ impl ErrorCode {
             Self::ApplicationUpdateInvalidArtifactUrl => "application_update.invalid_artifact_url",
             Self::ApplicationUpdateDownloadCancelled => "application_update.download_cancelled",
             Self::ExternalLinkOpenerUnavailable => "external_link.opener_unavailable",
+            Self::LocalPathOpenerUnavailable => "local_open.opener_unavailable",
+            Self::LocalPathOpenUnsupported => "local_open.unsupported",
         }
     }
 }

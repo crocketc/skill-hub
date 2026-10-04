@@ -16,6 +16,7 @@ pub use crate::external_link::OpenExternalUrl;
 use crate::import::{ImportCandidate, ImportDecision};
 use crate::llm::search_query::SearchQuerySuggestion;
 use crate::llm::translation::TranslationResult;
+pub use crate::local_open::{ChooseExternalApplication, OpenDefaultApplication, OpenSkillFolder};
 use crate::project::{AssemblyPlan, Project, SavedProjectView, SharedProjectConfig};
 use crate::scan::ScanResult;
 use crate::source::{SourceDescriptor, UpdateDecision};
@@ -1194,6 +1195,12 @@ pub enum AppCommand {
     OpenOfficialRelease(OpenOfficialRelease),
     #[serde(rename = "open_external_url")]
     OpenExternalUrl(OpenExternalUrl),
+    #[serde(rename = "open_default_application")]
+    OpenDefaultApplication(OpenDefaultApplication),
+    #[serde(rename = "open_skill_folder")]
+    OpenSkillFolder(OpenSkillFolder),
+    #[serde(rename = "choose_external_application")]
+    ChooseExternalApplication(ChooseExternalApplication),
     #[serde(rename = "set_application_update_policy")]
     SetApplicationUpdatePolicy(SetApplicationUpdatePolicy),
     #[serde(rename = "prepare_application_update")]
