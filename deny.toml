@@ -35,6 +35,15 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# notify's primary crate declares CC0-1.0 upstream. Its public-domain
+# dedication permits redistribution without copyleft or attribution duties;
+# this exception is limited to the directly used filesystem watcher release
+# and must be re-reviewed when notify is upgraded.
+[[licenses.exceptions]]
+allow = ["CC0-1.0"]
+name = "notify"
+version = "=8.2.0"
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

@@ -35,12 +35,12 @@ console.log(`项目目录：${projectRoot}\n`);
 
 // Windows 上并行 rustc 会间歇性命中 target\debug\deps 下随机文件的写入拒绝
 // （`os error 5`）或 link.exe LNK1104（文件句柄被安全软件/文件监视器瞬时占用）。
-// 该抖动与代码无关且换一次进程即消失，因此仅当失败输出命中该特征时自动重试，
-// 真实失败（断言、编译错误等）不重试、直接失败，避免掩盖问题。
+// 该抖动与代码无关且换一次进程即消失，因此首次失败输出必须命中该特征才重试；
+// 真实失败（断言、编译错误等）直接失败，避免掩盖问题。
 const windowsFileLockPattern = /os error 5|LNK1104|拒绝访问/;
 const maxRetries = 3;
 
-function runStep(step, { capture = false, serial = false } = {}) {
+function runStep(step, { serial = false } = {}) {
   return spawnSync(step.command, step.args, {
     cwd: projectRoot,
     env: {
@@ -50,7 +50,10 @@ function runStep(step, { capture = false, serial = false } = {}) {
       // 以后的重试，首次与首次重试仍按默认并行度执行，不掩盖正常表现。
       ...(serial && step.command === "cargo" ? { CARGO_BUILD_JOBS: "1" } : {}),
     },
-    stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+    // Retain the first failing output so a genuine test/compiler error is never
+    // retried merely because a later attempt happens to pass.
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
     // Windows exposes pnpm through a .cmd shim, which Node cannot launch
     // with shell=false. Every command and argument here is repository-owned;
     // enabling the platform shell only fixes shim resolution and does not
@@ -59,22 +62,33 @@ function runStep(step, { capture = false, serial = false } = {}) {
   });
 }
 
+function outputFor(result) {
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+}
+
+function forwardOutput(result) {
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+}
+
 for (const [index, step] of steps.entries()) {
   const startedAt = Date.now();
   console.log(`[${index + 1}/${steps.length}] ${step.name}`);
   let result = runStep(step);
+  const firstOutput = outputFor(result);
+  forwardOutput(result);
 
-  if (!result.error && result.status !== 0) {
+  if (!result.error && result.status !== 0 && windowsFileLockPattern.test(firstOutput)) {
     for (let retry = 1; retry <= maxRetries; retry++) {
-      const retryResult = runStep(step, { capture: true, serial: retry >= 2 });
-      const output = `${retryResult.stdout ?? ""}${retryResult.stderr ?? ""}`;
-      if (output.trim()) process.stderr.write(output);
+      const retryResult = runStep(step, { serial: retry >= 2 });
+      const output = outputFor(retryResult);
+      forwardOutput(retryResult);
       if (retryResult.error) {
         console.error(`\n${step.name} 无法启动：${retryResult.error.message}`);
         process.exit(1);
       }
       if (retryResult.status === 0) {
-        console.log(`第 ${retry + 1} 次尝试通过（此前失败命中 Windows 文件锁抖动，已自动重试）。`);
+        console.log(`第 ${retry + 1} 次尝试通过（此前失败输出命中 Windows 文件锁抖动，已自动重试）。`);
         result = retryResult;
         break;
       }
