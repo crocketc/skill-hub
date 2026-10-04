@@ -536,6 +536,8 @@ export type CommitRestore = {
 export type CommitUndeploy = {
 	prepared_undeploy_id: OperationId,
 	decision: RemovalDecision,
+	/**  K2/G-09：回收共享物理目标必须显式确认；缺省 false，绝不默认回收。 */
+	confirm_shared_target_removal?: boolean,
 };
 
 export type CompatibilityStatus = "supported" | "unverified" | "unsupported";
@@ -1097,6 +1099,10 @@ export type DeploymentRemovalResult = {
 	target_removed: boolean,
 	relation_removed: boolean,
 	management_detached: boolean,
+	/**  K2：逐项执行状态；旧载荷缺省按已执行读取。 */
+	status?: RemovalItemStatus,
+	/**  `failed` 项携带的稳定错误码。 */
+	error_code?: ErrorCode | null,
 };
 
 export type DeploymentState = "planned" | "deployed" | "removed" | "needs_recovery";
@@ -3298,6 +3304,8 @@ export type RelinkSourceCopy = {
 export type RemovalChoice = {
 	deployment_id: DeploymentId,
 	decision: RemovalDecision,
+	/**  K2/G-09：回收共享物理目标必须显式确认；缺省 false，绝不默认回收。 */
+	confirm_shared_target_removal?: boolean,
 };
 
 export type RemovalDecision = "remove_owned_target" | "keep_shared_deployment" | "remove_relation_only" | "detach_management" | "cancel";
@@ -3333,12 +3341,29 @@ export type RemovalImpactFact = {
 	permission_limited: boolean,
 };
 
+/**  单项目执行结果；`pending` 表示尚未执行（排在失败组之后或属于失败组）。 */
+export type RemovalItemStatus = "applied" | "failed" | "pending";
+
 export type RemovalResult = {
 	operation_id: OperationId,
 	skill_id: SkillId,
 	decisions: DeploymentRemovalResult[],
 	central_skill_deleted: boolean,
+	/**  K2：批次执行状态；旧调用方读取的载荷缺省为 `committed`。 */
+	state?: RemovalResultState,
+	/**  部分失败时指向恢复候选（同 prepared 操作 id），供前端跳转恢复入口。 */
+	recovery_operation_id?: OperationId | null,
+	/**  中央 Skill 删除失败时的稳定错误码（恢复候选同步记录该不一致）。 */
+	central_delete_error?: ErrorCode | null,
 };
+
+/**
+ *  批次执行状态沿用既有完成/部分完成/失败语义（对齐关系治理批次），
+ *  不是新的关系状态。
+ */
+export type RemovalResultState = "committed" |
+/**  至少一个目标决定失败：成功项保留，失败项与剩余项进入恢复候选。 */
+"partially_committed" | "failed";
 
 export type RemoveCustomAgent = {
 	id: string,

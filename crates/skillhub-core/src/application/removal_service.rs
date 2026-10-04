@@ -1,10 +1,11 @@
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::deployment::removal::{
-    DeploymentRemovalResult, PreparedRemovalRecord, RemovalChoice, RemovalDecision, RemovalImpact,
-    RemovalItemStatus, RemovalResult, RemovalResultState,
+    DeploymentRemovalResult, PreparedRemovalKind, PreparedRemovalRecord, PreparedRemovalState,
+    RemovalChoice, RemovalDecision, RemovalImpact, RemovalItemStatus, RemovalResult,
+    RemovalResultState,
 };
 use crate::{
     AppError, AppResult, DeploymentId, DeploymentRecord, ErrorCode, OperationId, RecoveryAction,
@@ -36,7 +37,6 @@ pub trait RemovalBackend: Send + Sync {
 
 pub struct RemovalService<B> {
     backend: Arc<B>,
-    prepared: tokio::sync::Mutex<HashMap<OperationId, RemovalImpact>>,
 }
 
 impl<B> RemovalService<B>
@@ -44,27 +44,38 @@ where
     B: RemovalBackend + 'static,
 {
     pub fn new(backend: Arc<B>) -> Self {
-        Self {
-            backend,
-            prepared: tokio::sync::Mutex::new(HashMap::new()),
-        }
+        Self { backend }
     }
 
     pub async fn prepare_delete(&self, skill_id: SkillId) -> AppResult<RemovalImpact> {
         let impact = self.backend.inspect_delete(skill_id).await?;
-        self.prepared
-            .lock()
-            .await
-            .insert(impact.operation_id, impact.clone());
+        self.backend
+            .save_prepared_removal(&PreparedRemovalRecord {
+                kind: PreparedRemovalKind::DeleteSkill,
+                impact: impact.clone(),
+                decisions: Vec::new(),
+                applied_deployment_ids: Vec::new(),
+                remaining_deployment_ids: Vec::new(),
+                state: PreparedRemovalState::Prepared,
+                last_error_code: None,
+            })
+            .await?;
         Ok(impact)
     }
 
     pub async fn prepare_undeploy(&self, deployment_id: DeploymentId) -> AppResult<RemovalImpact> {
         let impact = self.backend.inspect_undeploy(deployment_id).await?;
-        self.prepared
-            .lock()
-            .await
-            .insert(impact.operation_id, impact.clone());
+        self.backend
+            .save_prepared_removal(&PreparedRemovalRecord {
+                kind: PreparedRemovalKind::UndeploySkill,
+                impact: impact.clone(),
+                decisions: Vec::new(),
+                applied_deployment_ids: Vec::new(),
+                remaining_deployment_ids: Vec::new(),
+                state: PreparedRemovalState::Prepared,
+                last_error_code: None,
+            })
+            .await?;
         Ok(impact)
     }
 
@@ -72,84 +83,37 @@ where
         &self,
         operation_id: OperationId,
         decision: RemovalDecision,
-        // K2 RED scaffolding: confirmation accepted but not yet enforced.
         confirm_shared_target_removal: bool,
     ) -> AppResult<RemovalResult> {
-        let _ = confirm_shared_target_removal;
-        let impact = self.get_prepared(operation_id).await?;
-        let deployment_id = impact
+        let record = self.commitable_prepared(operation_id).await?;
+        let deployment = record
+            .impact
             .deployments
             .first()
-            .map(|record| record.id)
-            .ok_or_else(|| conflict("undeploy target relation is missing"))?;
-        let deployment = impact
-            .deployments
-            .iter()
-            .find(|record| record.id == deployment_id)
             .cloned()
             .ok_or_else(|| conflict("undeploy target relation is missing"))?;
-        self.commit_undeploy_with_target(impact, deployment, decision)
-            .await
-    }
-
-    pub async fn undeploy(
-        &self,
-        deployment_id: DeploymentId,
-        decision: RemovalDecision,
-        confirm_shared_target_removal: bool,
-    ) -> AppResult<RemovalResult> {
-        let _ = confirm_shared_target_removal;
-        let impact = self.prepare_undeploy(deployment_id).await?;
-        let deployment = impact
-            .deployments
-            .iter()
-            .find(|record| record.id == deployment_id)
-            .cloned()
-            .ok_or_else(|| conflict("undeploy target relation is missing"))?;
-        self.commit_undeploy_with_target(impact, deployment, decision)
-            .await
-    }
-
-    pub async fn commit_delete(
-        &self,
-        operation_id: OperationId,
-        decisions: Vec<RemovalChoice>,
-    ) -> AppResult<RemovalResult> {
-        let impact = self.get_prepared(operation_id).await?;
-        validate_decisions(&impact, &decisions)?;
-        let mut results = Vec::with_capacity(decisions.len());
-        for choice in decisions {
-            let deployment = impact
-                .deployments
-                .iter()
-                .find(|record| record.id == choice.deployment_id)
-                .ok_or_else(|| conflict("deployment relation changed during removal"))?;
-            results.push(self.apply_decision(deployment, choice.decision).await?);
+        // 提交端重新核对：预览之后关系漂移必须作废本次确认。
+        let fresh = self.backend.inspect_undeploy(deployment.id).await?;
+        let current = fresh.deployments.first();
+        let unchanged = match current {
+            Some(record) => record.id == deployment.id,
+            None => false,
+        };
+        if !unchanged {
+            return Err(conflict("deployment relation changed since the preview"));
         }
-        self.backend.delete_skill(impact.skill_id).await?;
-        self.prepared.lock().await.remove(&operation_id);
+        let current = current.expect("checked above");
+        if fresh.requires_shared_target_choice
+            && decision == RemovalDecision::RemoveOwnedTarget
+            && !confirm_shared_target_removal
+        {
+            return Err(shared_confirmation_conflict());
+        }
+        let result = self.apply_decision(current, decision).await?;
+        self.backend.settle_prepared_removal(operation_id).await?;
         Ok(RemovalResult {
             operation_id,
-            skill_id: impact.skill_id,
-            decisions: results,
-            central_skill_deleted: true,
-            state: RemovalResultState::Committed,
-            recovery_operation_id: None,
-            central_delete_error: None,
-        })
-    }
-
-    async fn commit_undeploy_with_target(
-        &self,
-        impact: RemovalImpact,
-        deployment: DeploymentRecord,
-        decision: RemovalDecision,
-    ) -> AppResult<RemovalResult> {
-        let result = self.apply_decision(&deployment, decision).await?;
-        self.prepared.lock().await.remove(&impact.operation_id);
-        Ok(RemovalResult {
-            operation_id: impact.operation_id,
-            skill_id: impact.skill_id,
+            skill_id: fresh.skill_id,
             decisions: vec![result],
             central_skill_deleted: false,
             state: RemovalResultState::Committed,
@@ -158,12 +122,164 @@ where
         })
     }
 
-    async fn get_prepared(&self, operation_id: OperationId) -> AppResult<RemovalImpact> {
-        self.prepared
-            .lock()
+    pub async fn undeploy(
+        &self,
+        deployment_id: DeploymentId,
+        decision: RemovalDecision,
+        confirm_shared_target_removal: bool,
+    ) -> AppResult<RemovalResult> {
+        let impact = self.prepare_undeploy(deployment_id).await?;
+        self.commit_undeploy(impact.operation_id, decision, confirm_shared_target_removal)
             .await
-            .get(&operation_id)
-            .cloned()
+    }
+
+    pub async fn commit_delete(
+        &self,
+        operation_id: OperationId,
+        decisions: Vec<RemovalChoice>,
+    ) -> AppResult<RemovalResult> {
+        let record = self.commitable_prepared(operation_id).await?;
+        // 重新核对消费者快照：预览之后出现或消失的关系都会作废本次提交，
+        // 必须重新 prepare（不允许对过期快照盲重放）。
+        let fresh = self.backend.inspect_delete(record.impact.skill_id).await?;
+        ensure_same_consumers(&record.impact, &fresh)?;
+        validate_decisions(&fresh, &decisions)?;
+        ensure_shared_confirmations(&fresh, &decisions)?;
+
+        let mut results: Vec<DeploymentRemovalResult> = Vec::new();
+        let mut applied: Vec<DeploymentId> = Vec::new();
+        let mut remaining: Vec<DeploymentId> = Vec::new();
+        let mut first_failure: Option<ErrorCode> = None;
+        let mut removed_physical_targets: HashSet<String> = HashSet::new();
+        let mut abandoned_groups: HashSet<String> = HashSet::new();
+
+        for choice in &decisions {
+            let deployment = fresh
+                .deployments
+                .iter()
+                .find(|record| record.id == choice.deployment_id)
+                .expect("validated decisions always target a live deployment");
+            if abandoned_groups.contains(&deployment.target_id) {
+                // 同组物理目标拆除失败后，其余记录不再尝试，等待恢复续作。
+                remaining.push(choice.deployment_id);
+                results.push(item_result(
+                    deployment,
+                    choice.decision,
+                    RemovalItemStatus::Pending,
+                ));
+                continue;
+            }
+            let outcome = match choice.decision {
+                RemovalDecision::RemoveOwnedTarget => {
+                    if removed_physical_targets.contains(&deployment.target_id) {
+                        // 共享物理目标已由同组记录回收一次；本记录只关闭自身
+                        // 关系，不再触碰文件系统。
+                        self.backend.remove_relation(deployment).await.map(|()| {
+                            let mut item = item_result(
+                                deployment,
+                                choice.decision,
+                                RemovalItemStatus::Applied,
+                            );
+                            item.target_removed = true;
+                            item
+                        })
+                    } else {
+                        self.backend
+                            .remove_owned_target(deployment)
+                            .await
+                            .map(|()| {
+                                removed_physical_targets.insert(deployment.target_id.clone());
+                                let mut item = item_result(
+                                    deployment,
+                                    choice.decision,
+                                    RemovalItemStatus::Applied,
+                                );
+                                item.target_removed = true;
+                                item
+                            })
+                    }
+                }
+                RemovalDecision::KeepSharedDeployment | RemovalDecision::RemoveRelationOnly => {
+                    self.backend.remove_relation(deployment).await.map(|()| {
+                        item_result(deployment, choice.decision, RemovalItemStatus::Applied)
+                    })
+                }
+                // validate_decisions 拒绝之后两种决定不会到达这里。
+                RemovalDecision::DetachManagement | RemovalDecision::Cancel => {
+                    Err(conflict("every deployment requires one explicit decision"))
+                }
+            };
+            match outcome {
+                Ok(mut item) => {
+                    item.relation_removed = true;
+                    applied.push(choice.deployment_id);
+                    results.push(item);
+                }
+                Err(error) => {
+                    let shared_group = fresh
+                        .deployments
+                        .iter()
+                        .filter(|record| record.target_id == deployment.target_id)
+                        .count()
+                        > 1;
+                    if shared_group && choice.decision == RemovalDecision::RemoveOwnedTarget {
+                        abandoned_groups.insert(deployment.target_id.clone());
+                    }
+                    first_failure.get_or_insert(error.code);
+                    remaining.push(choice.deployment_id);
+                    let mut item =
+                        item_result(deployment, choice.decision, RemovalItemStatus::Failed);
+                    item.error_code = Some(error.code);
+                    results.push(item);
+                }
+            }
+        }
+
+        if !remaining.is_empty() {
+            // 部分失败：成功项保留，失败/剩余项与用户决定持久化，登记恢复
+            // 候选；中央 Skill 不删，续作必须重新 prepare 核对身份。
+            self.backend
+                .save_prepared_removal(&PreparedRemovalRecord {
+                    kind: PreparedRemovalKind::DeleteSkill,
+                    impact: record.impact.clone(),
+                    decisions,
+                    applied_deployment_ids: applied,
+                    remaining_deployment_ids: remaining,
+                    state: PreparedRemovalState::PartiallyCommitted,
+                    last_error_code: first_failure,
+                })
+                .await?;
+            return Ok(RemovalResult {
+                operation_id,
+                skill_id: record.impact.skill_id,
+                decisions: results,
+                central_skill_deleted: false,
+                state: RemovalResultState::PartiallyCommitted,
+                recovery_operation_id: Some(operation_id),
+                central_delete_error: None,
+            });
+        }
+
+        self.backend.delete_skill(record.impact.skill_id).await?;
+        self.backend.settle_prepared_removal(operation_id).await?;
+        Ok(RemovalResult {
+            operation_id,
+            skill_id: record.impact.skill_id,
+            decisions: results,
+            central_skill_deleted: true,
+            state: RemovalResultState::Committed,
+            recovery_operation_id: None,
+            central_delete_error: None,
+        })
+    }
+
+    async fn commitable_prepared(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<PreparedRemovalRecord> {
+        self.backend
+            .load_prepared_removal(operation_id)
+            .await?
             .ok_or_else(|| not_found("prepared_removal"))
     }
 
@@ -172,15 +288,7 @@ where
         deployment: &DeploymentRecord,
         decision: RemovalDecision,
     ) -> AppResult<DeploymentRemovalResult> {
-        let mut result = DeploymentRemovalResult {
-            deployment_id: deployment.id,
-            decision,
-            target_removed: false,
-            relation_removed: false,
-            management_detached: false,
-            status: RemovalItemStatus::Applied,
-            error_code: None,
-        };
+        let mut result = item_result(deployment, decision, RemovalItemStatus::Applied);
         match decision {
             RemovalDecision::RemoveOwnedTarget => {
                 self.backend.remove_owned_target(deployment).await?;
@@ -201,10 +309,41 @@ where
     }
 }
 
-fn validate_decisions(impact: &RemovalImpact, decisions: &[RemovalChoice]) -> AppResult<()> {
-    if impact.deployments.is_empty() {
-        return Ok(());
+fn item_result(
+    deployment: &DeploymentRecord,
+    decision: RemovalDecision,
+    status: RemovalItemStatus,
+) -> DeploymentRemovalResult {
+    DeploymentRemovalResult {
+        deployment_id: deployment.id,
+        decision,
+        target_removed: false,
+        relation_removed: false,
+        management_detached: false,
+        status,
+        error_code: None,
     }
+}
+
+/// K2：预览与提交之间的消费者快照漂移（新增或消失的关系）作废提交。
+fn ensure_same_consumers(prepared: &RemovalImpact, fresh: &RemovalImpact) -> AppResult<()> {
+    let mut expected: Vec<_> = prepared
+        .deployments
+        .iter()
+        .map(|record| record.id)
+        .collect();
+    expected.sort_by_key(|id| id.to_string());
+    let mut actual: Vec<_> = fresh.deployments.iter().map(|record| record.id).collect();
+    actual.sort_by_key(|id| id.to_string());
+    if expected != actual {
+        return Err(conflict(
+            "deployment relations changed since the preview; prepare again",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_decisions(impact: &RemovalImpact, decisions: &[RemovalChoice]) -> AppResult<()> {
     let mut expected: Vec<_> = impact.deployments.iter().map(|record| record.id).collect();
     expected.sort_by_key(|id| id.to_string());
     let mut actual: Vec<_> = decisions
@@ -228,6 +367,42 @@ fn validate_decisions(impact: &RemovalImpact, decisions: &[RemovalChoice]) -> Ap
         ));
     }
     Ok(())
+}
+
+/// K2/G-09：回收共享物理目标必须逐条显式确认；缺省 false，绝不默认回收。
+fn ensure_shared_confirmations(
+    impact: &RemovalImpact,
+    decisions: &[RemovalChoice],
+) -> AppResult<()> {
+    for choice in decisions {
+        if choice.decision != RemovalDecision::RemoveOwnedTarget
+            || choice.confirm_shared_target_removal
+        {
+            continue;
+        }
+        let group_size = impact
+            .deployments
+            .iter()
+            .filter(|record| record.id == choice.deployment_id)
+            .map(|record| record.target_id.clone())
+            .next()
+            .map(|target_id| {
+                impact
+                    .deployments
+                    .iter()
+                    .filter(|other| other.target_id == target_id)
+                    .count()
+            })
+            .unwrap_or(0);
+        if group_size > 1 {
+            return Err(shared_confirmation_conflict());
+        }
+    }
+    Ok(())
+}
+
+fn shared_confirmation_conflict() -> AppError {
+    conflict("shared target removal requires explicit confirmation")
 }
 
 fn conflict(detail: &str) -> AppError {

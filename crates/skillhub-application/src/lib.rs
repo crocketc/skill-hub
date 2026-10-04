@@ -2588,6 +2588,34 @@ impl LocalApplicationFacade {
         self.journal_write(journal_record(operation_id, kind, phase, error_code));
     }
 
+    /// K2：结算已有 journal 行但保留其 `recovery_data` 载荷（拒绝提交、
+    /// 过期预览的审计追溯需要原影响快照）。行不存在时行为同
+    /// [`Self::journal_advance`]。best-effort：锁失败或写失败不掩盖原错误。
+    fn journal_advance_keeping_payload(
+        &self,
+        operation_id: OperationId,
+        kind: &str,
+        phase: skillhub_core::OperationPhase,
+        error_code: Option<ErrorCode>,
+    ) {
+        let Ok(database) = self.database.lock() else {
+            return;
+        };
+        let repository = database.operation_repository();
+        let payload = match repository.get_sync(operation_id) {
+            Ok(Some(existing)) => existing.recovery_data,
+            _ => serde_json::Value::Object(serde_json::Map::new()),
+        };
+        let mut journal = journal_record(operation_id, kind, phase, error_code);
+        journal.recovery_data = payload;
+        let result = repository.update_sync(&journal);
+        if let Err(update_error) = result {
+            if update_error.code == ErrorCode::ObjectNotFound {
+                let _ = repository.insert_sync(&journal);
+            }
+        }
+    }
+
     /// Settles an import-flow record and carries the candidate runtime name
     /// as the user-readable object (`result.object_name`). The bootstrap
     /// snapshot projects it into `RecentOperationSummary::object_name` so an
@@ -11891,14 +11919,15 @@ impl LocalApplicationFacade {
         deployment_id: skillhub_core::DeploymentId,
     ) -> AppResult<AppCommandResult> {
         let result = self.removal_service.prepare_undeploy(deployment_id).await;
-        match result.as_ref() {
-            Ok(impact) => self.journal_prepared(impact.operation_id, "undeploy_skill"),
-            Err(error) => self.journal_advance(
+        // 成功路径由 RemovalService 通过 backend 持久化 prepared 记录
+        // （含影响载荷）；这里只补记验证失败的终态行。
+        if let Err(error) = result.as_ref() {
+            self.journal_advance(
                 OperationId::new(),
                 "undeploy_skill",
                 skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
-            ),
+            );
         }
         result.map(AppCommandResult::RemovalImpact)
     }
@@ -11908,14 +11937,15 @@ impl LocalApplicationFacade {
         skill_id: skillhub_core::SkillId,
     ) -> AppResult<AppCommandResult> {
         let result = self.removal_service.prepare_delete(skill_id).await;
-        match result.as_ref() {
-            Ok(impact) => self.journal_prepared(impact.operation_id, "delete_skill"),
-            Err(error) => self.journal_advance(
+        // 成功路径由 RemovalService 通过 backend 持久化 prepared 记录
+        // （含影响载荷）；这里只补记验证失败的终态行。
+        if let Err(error) = result.as_ref() {
+            self.journal_advance(
                 OperationId::new(),
                 "delete_skill",
                 skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
-            ),
+            );
         }
         result.map(AppCommandResult::RemovalImpact)
     }
@@ -11930,7 +11960,11 @@ impl LocalApplicationFacade {
             .removal_service
             .commit_undeploy(operation_id, decision, confirm_shared_target_removal)
             .await;
-        self.journal_removal_outcome(operation_id, "undeploy_skill", result.as_ref().err());
+        // 成功（含部分失败的结构化结果）由 service 结算 journal；只有
+        // Err 路径仍走 K1c 的 removal 结算语义。
+        if let Err(error) = result.as_ref() {
+            self.journal_removal_outcome(operation_id, "undeploy_skill", Some(error));
+        }
         result.map(AppCommandResult::RemovalResult)
     }
 
@@ -11943,7 +11977,11 @@ impl LocalApplicationFacade {
             .removal_service
             .commit_delete(operation_id, decisions)
             .await;
-        self.journal_removal_outcome(operation_id, "delete_skill", result.as_ref().err());
+        // 成功（含部分失败的结构化结果）由 service 结算 journal；只有
+        // Err 路径仍走 K1c 的 removal 结算语义。
+        if let Err(error) = result.as_ref() {
+            self.journal_removal_outcome(operation_id, "delete_skill", Some(error));
+        }
         result.map(AppCommandResult::RemovalResult)
     }
 
@@ -12072,12 +12110,16 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::Committed,
                 None,
             ),
-            Some(error) if error.code == ErrorCode::ObjectNotFound => self.journal_advance(
-                operation_id,
-                kind,
-                skillhub_core::OperationPhase::RolledBack,
-                Some(error.code),
-            ),
+            // K2：重启后对过期 prepared 的拒绝提交保留原行的影响载荷
+            // （已确认的决定与快照不得因重启丢失），只把相位结算为
+            // `rolled_back`。
+            Some(error) if error.code == ErrorCode::ObjectNotFound => self
+                .journal_advance_keeping_payload(
+                    operation_id,
+                    kind,
+                    skillhub_core::OperationPhase::RolledBack,
+                    Some(error.code),
+                ),
             // 补偿完整（四个消费面都回到删除前事实）的失败不留残局，
             // 不能像真实残留那样拦截下一次启动。
             Some(error)
