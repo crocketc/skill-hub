@@ -73,6 +73,23 @@ export function SkillDetailReviewExperience({
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
   // §关系治理：转为集中管理是演示状态；确认后头部入口隐藏、使用去向卡片联动为已集中管理。
   const [centralized, setCentralized] = useState(false);
+  // §分区折叠：默认全部展开；折叠用 hidden 隐藏 body，不卸载组件（保留编辑草稿等状态）。
+  const [openSections, setOpenSections] = useState<Record<ReviewSectionId, boolean>>({
+    "review-overview": true,
+    "review-content": true,
+    "review-safety": true,
+    "review-usage": true,
+    "review-sources": true,
+    "review-versions": true,
+  });
+  const toggleSection = (id: ReviewSectionId) => {
+    setOpenSections((current) => ({ ...current, [id]: !current[id] }));
+  };
+  // 侧栏导航联动：目标分区已收起时先展开，锚点滚动落在展开后的分区上。
+  const navigateToSection = (id: ReviewSectionId) => {
+    setActiveSection(id);
+    setOpenSections((current) => (current[id] ? current : { ...current, [id]: true }));
+  };
   const reviewSecurityFacade = useMemo<SecurityFacade>(() => ({
     ...securityFacade,
     getPreferences: async () => ({ llmProvider: "", dataScope: "" }),
@@ -122,7 +139,7 @@ export function SkillDetailReviewExperience({
                 className={activeSection === id ? "is-active" : undefined}
                 href={`#${id}`}
                 key={id}
-                onClick={() => setActiveSection(id)}
+                onClick={() => navigateToSection(id)}
               >
                 {label}
               </a>
@@ -136,59 +153,159 @@ export function SkillDetailReviewExperience({
           </p>
 
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-overview">
-            <h2>概览</h2>
-            <div className="sh-skill-detail-review__overview">
-              {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} skillId={skillId} reviewPresentation /> : (
-                <p role="status">正在读取技能画像…</p>
-              )}
-              <div className="sh-skill-detail-review__facts">
-                <ReviewOverviewStatus summary={summary} />
-                <ReviewSubjectLocation />
-                <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
+            <h2>
+              <ReviewSectionToggle label="概览" onToggle={() => toggleSection("review-overview")} open={openSections["review-overview"]} sectionId="review-overview" />
+            </h2>
+            <div hidden={!openSections["review-overview"]} id="review-overview-body">
+              <div className="sh-skill-detail-review__overview">
+                {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} skillId={skillId} reviewPresentation /> : (
+                  <p role="status">正在读取技能画像…</p>
+                )}
+                <div className="sh-skill-detail-review__facts">
+                  <ReviewOverviewStatus summary={summary} />
+                  <ReviewSubjectLocation />
+                  <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
+                </div>
               </div>
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-content">
-            <h2>内容与文件</h2>
-            {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} /> : <p role="status">正在读取技能文件…</p>}
+            <h2>
+              <ReviewSectionToggle label="内容与文件" onToggle={() => toggleSection("review-content")} open={openSections["review-content"]} sectionId="review-content" />
+            </h2>
+            <div hidden={!openSections["review-content"]} id="review-content-body">
+              {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} /> : <p role="status">正在读取技能文件…</p>}
+            </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-safety">
-            <h2>安全检查</h2>
-            <SecurityResults facade={reviewSecurityFacade} skillId={skillId} versionId="current" variant="embedded" presentationMode="risk-aware" />
+            <h2>
+              <ReviewSectionToggle label="安全检查" onToggle={() => toggleSection("review-safety")} open={openSections["review-safety"]} sectionId="review-safety" />
+            </h2>
+            <div hidden={!openSections["review-safety"]} id="review-safety-body">
+              <SecurityResults facade={reviewSecurityFacade} skillId={skillId} versionId="current" variant="embedded" presentationMode="risk-aware" />
+            </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-usage">
             <div className="sh-skill-detail-review__section-heading">
-              <h2>使用去向</h2>
+              <h2>
+                <ReviewSectionToggle label="使用去向" onToggle={() => toggleSection("review-usage")} open={openSections["review-usage"]} sectionId="review-usage" />
+              </h2>
               <ReviewGraphEntry />
             </div>
-            <ReviewUsageDestinations centralized={centralized} />
-            {insights ? <details className="sh-skill-detail-review__supplemental"><summary>依赖、重复候选与使用证据</summary><h3>依赖</h3><ul>{insights.dependencies.map((value) => <li key={value}>{value}</li>)}</ul><h3>可能重复的技能</h3><p>PDF Text Extractor · 内容比对候选，尚未确认重复。</p><p>AI 相似性分析未配置，当前保留确定性比对证据。</p><h3>使用证据</h3><p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p></details> : null}
+            <div hidden={!openSections["review-usage"]} id="review-usage-body">
+              <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
+              <ReviewUsageDestinations centralized={centralized} />
+              {insights ? <ReviewUsageInsights insights={insights} /> : null}
+            </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-sources">
-            <h2>来源更新</h2>
-          <div className="sh-skill-detail-review__import-record">
-            <h3>导入记录</h3>
-            {provenance ? <ReviewImportRecord provenance={provenance} /> : <p>没有可用的导入记录。</p>}
-            {metadata ? (
-              <dl className="sh-skill-detail-review__record sh-skill-detail-review__publisher-facts">
-                <div><dt>导入来源</dt><dd>{safeMetadata.source}</dd></div>
-                <div><dt>作者</dt><dd>{metadata.author || "未提供"}</dd></div>
-                <div><dt>许可证</dt><dd>{metadata.license || "未提供"}</dd></div>
-                <div><dt>版权</dt><dd>{metadata.copyright || "未提供"}</dd></div>
-                <div><dt>当前归属</dt><dd>技能库中的独立主体</dd></div>
-              </dl>
-            ) : null}
-          </div>
-            <ReviewSourceUpdates markdownFacade={markdownFacade} />
+            <h2>
+              <ReviewSectionToggle label="来源更新" onToggle={() => toggleSection("review-sources")} open={openSections["review-sources"]} sectionId="review-sources" />
+            </h2>
+            <div hidden={!openSections["review-sources"]} id="review-sources-body">
+              <div className="sh-skill-detail-review__import-record">
+                <h3>导入记录</h3>
+                {provenance ? <ReviewImportRecord provenance={provenance} /> : <p>没有可用的导入记录。</p>}
+                {metadata ? (
+                  <dl className="sh-skill-detail-review__record sh-skill-detail-review__publisher-facts">
+                    <div><dt>导入来源</dt><dd>{safeMetadata.source}</dd></div>
+                    <div><dt>作者</dt><dd>{metadata.author || "未提供"}</dd></div>
+                    <div><dt>许可证</dt><dd>{metadata.license || "未提供"}</dd></div>
+                    <div><dt>版权</dt><dd>{metadata.copyright || "未提供"}</dd></div>
+                    <div><dt>当前归属</dt><dd>技能库中的独立主体</dd></div>
+                  </dl>
+                ) : null}
+              </div>
+              <ReviewSourceUpdates markdownFacade={markdownFacade} />
+            </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-versions">
-            <h2>版本历史</h2>
-            <VersionTimeline facade={facade} skillId={skillId} summary={summary} userFacingDates reviewPresentation />
-            {insights ? <details className="sh-skill-detail-review__supplemental"><summary>外部变更与操作记录</summary><ul><li>2026年10月2日：SKILL.md 在 SkillHub 外发生修改</li><li>2026年9月14日：从本机目录导入</li></ul><p>仅为样例证据；未知时间或未覆盖范围不会推断为无变化。</p></details> : null}
+            <h2>
+              <ReviewSectionToggle label="版本历史" onToggle={() => toggleSection("review-versions")} open={openSections["review-versions"]} sectionId="review-versions" />
+            </h2>
+            <div hidden={!openSections["review-versions"]} id="review-versions-body">
+              <VersionTimeline facade={facade} skillId={skillId} summary={summary} userFacingDates reviewPresentation />
+              {insights ? <details className="sh-skill-detail-review__supplemental" open><summary>外部变更与操作记录</summary><ul><li>2026年10月2日：SKILL.md 在 SkillHub 外发生修改</li><li>2026年9月14日：从本机目录导入</li></ul><p>仅为样例证据；未知时间或未覆盖范围不会推断为无变化。</p></details> : null}
+            </div>
           </section>
         </main>
       </div>
     </section>
+  );
+}
+
+/** 分区折叠开关：标题整行可点，chevron 指示状态；按钮内不放其他交互元素。 */
+function ReviewSectionToggle({ label, onToggle, open, sectionId }: {
+  label: string;
+  onToggle: () => void;
+  open: boolean;
+  sectionId: ReviewSectionId;
+}) {
+  return (
+    <button
+      aria-controls={`${sectionId}-body`}
+      aria-expanded={open}
+      className="sh-skill-detail-review__section-toggle"
+      onClick={onToggle}
+      type="button"
+    >
+      {label}
+      <Icon aria-hidden="true" className="sh-skill-detail-review__section-chevron" name="chevronDown" size={16} />
+    </button>
+  );
+}
+
+/**
+ * 依赖、重复候选与使用证据：依赖与使用证据是随页面数据加载的确定性只读事实，
+ * 不提供刷新入口；AI 相似性分析是独立可选入口，默认未配置，只读演示不发送内容。
+ */
+function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiResult, setAiResult] = useState(false);
+  const runAnalysis = () => {
+    if (!aiConfigured || aiRunning) return;
+    setAiRunning(true);
+    window.setTimeout(() => {
+      setAiRunning(false);
+      setAiResult(true);
+    }, 300);
+  };
+  return (
+    <details className="sh-skill-detail-review__supplemental" open>
+      <summary>依赖、重复候选与使用证据</summary>
+      <h3>依赖</h3>
+      <ul>{insights.dependencies.map((value) => <li key={value}>{value}</li>)}</ul>
+      <div className="sh-skill-detail-review__section-heading">
+        <h3>可能重复的技能</h3>
+        <Button disabled={!aiConfigured} loading={aiRunning} onClick={runAnalysis} size="sm" variant="secondary">AI 相似性分析</Button>
+      </div>
+      <p>PDF Text Extractor · 内容比对候选，尚未确认重复。</p>
+      {!aiConfigured ? (
+        <>
+          <p>AI 相似性分析未配置，当前保留确定性比对证据。</p>
+          <p>可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。</p>
+        </>
+      ) : null}
+      {aiResult ? (
+        <div role="status">
+          <p>AI 相似性分析完成：PDF Text Extractor 相似度最高，建议人工确认；未发现其他高相似候选。</p>
+          <p>AI 结果只是辅助证据，不替代确定性比对。</p>
+        </div>
+      ) : null}
+      <h3>使用证据</h3>
+      <p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p>
+      <div className="sh-skill-detail-review__source-actions">
+        <span className="sh-skill-detail-review__inline-status">DEV 演示：只影响本区</span>
+        <Button
+          onClick={() => { setAiConfigured((current) => !current); setAiRunning(false); setAiResult(false); }}
+          size="sm"
+          variant="ghost"
+        >
+          {aiConfigured ? "恢复未配置" : "模拟 AI 已配置"}
+        </Button>
+      </div>
+    </details>
   );
 }
 

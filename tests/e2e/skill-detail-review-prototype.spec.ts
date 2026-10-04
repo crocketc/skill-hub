@@ -563,6 +563,9 @@ test("review header offers centralized management with basis choice and hides it
     elements.map((element) => element.textContent?.trim()),
   );
   expect(actionOrder).toEqual(["转为集中管理", "派发", "导出", "删除"]);
+  // 追加裁决：转为集中管理与“待集中管理”徽标同色（warning），不与绿色强调入口混用。
+  await expect(actionArea.locator(".sh-skill-detail-review__warning-action")).toHaveText("转为集中管理");
+  await expect(actionArea.locator(".sh-skill-detail-review__accent-action")).toHaveCount(0);
 
   await actionArea.getByRole("button", { name: "转为集中管理" }).click();
   const centralizeDialog = page.getByRole("dialog", { name: "转为集中管理" });
@@ -594,4 +597,86 @@ test("review governance dialog explains identity-carrying context into relations
   const targetDialog = page.getByRole("dialog", { name: "Codex 终端 · 使用关系" });
   await expect(targetDialog).toContainText("已精确选中此目标上下文。返回技能详情不会改变使用状态。");
   await expect(targetDialog).toContainText("正式实现将携带此技能与该使用关系、物理目标的身份进入关系治理，并保留返回技能详情的入口。");
+});
+
+test("review usage section explains section-level governance once above the cards", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "使用去向" }).click();
+
+  const usageSection = page.locator("#review-usage");
+  await expect(usageSection.getByText("此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。", { exact: true })).toBeVisible();
+  await expect(usageSection.locator(".sh-skill-detail-review__destination")).toHaveCount(3);
+});
+
+test("review duplicate candidates gate AI similarity analysis behind provider configuration", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "使用去向" }).click();
+
+  const supplemental = page.locator("#review-usage .sh-skill-detail-review__supplemental");
+  await expect(supplemental.getByRole("heading", { name: "可能重复的技能" })).toBeVisible();
+  await expect(supplemental.getByText("PDF Text Extractor · 内容比对候选，尚未确认重复。", { exact: true })).toBeVisible();
+
+  const aiButton = supplemental.getByRole("button", { name: "AI 相似性分析" });
+  await expect(aiButton).toBeDisabled();
+  await expect(supplemental.getByText("可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。", { exact: true })).toBeVisible();
+
+  await supplemental.getByRole("button", { name: "模拟 AI 已配置" }).click();
+  await expect(aiButton).toBeEnabled();
+  await aiButton.click();
+  await expect(supplemental.getByText("AI 相似性分析完成：PDF Text Extractor 相似度最高，建议人工确认；未发现其他高相似候选。", { exact: true })).toBeVisible();
+  await expect(supplemental.getByText("AI 结果只是辅助证据，不替代确定性比对。", { exact: true })).toBeVisible();
+  await expect(supplemental.getByText("PDF Text Extractor · 内容比对候选，尚未确认重复。", { exact: true })).toBeVisible();
+
+  await supplemental.getByRole("button", { name: "恢复未配置" }).click();
+  await expect(aiButton).toBeDisabled();
+  await expect(supplemental.getByText("AI 相似性分析完成：PDF Text Extractor 相似度最高，建议人工确认；未发现其他高相似候选。")).toHaveCount(0);
+});
+
+test("review supplemental evidence expands by default while DEV scenarios stay collapsed", async ({ page }) => {
+  await page.goto(reviewUrl);
+
+  await expect(page.getByRole("heading", { name: "依赖", exact: true })).toBeVisible();
+  await expect(page.getByText("2026年10月2日：SKILL.md 在 SkillHub 外发生修改", { exact: true })).toBeVisible();
+  await expect(page.locator("#review-usage .sh-skill-detail-review__supplemental")).toHaveAttribute("open", "");
+  await expect(page.locator("#review-versions .sh-skill-detail-review__supplemental")).toHaveAttribute("open", "");
+
+  await expect(page.getByRole("button", { name: "模拟未关联" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "切换复用修改追溯" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "切换到试用复核场景" })).toBeHidden();
+});
+
+test("review sections collapse in place and the side nav re-expands a collapsed section", async ({ page }) => {
+  await page.goto(reviewUrl);
+
+  // 默认六区全部展开；抽验三区，图标纯装饰。
+  for (const id of ["review-overview", "review-sources", "review-versions"]) {
+    await expect(page.locator(`#${id} .sh-skill-detail-review__section-toggle`)).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(`#${id}-body`)).toBeVisible();
+  }
+  await expect(page.locator("#review-overview .sh-skill-detail-review__section-toggle svg")).toHaveAttribute("aria-hidden", "true");
+
+  // 点击“概览”标题收起：body 隐藏、其他分区不受影响。
+  await page.getByRole("button", { name: "概览" }).click();
+  await expect(page.locator("#review-overview .sh-skill-detail-review__section-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#review-overview-body")).toBeHidden();
+  await expect(page.locator("#review-versions-body")).toBeVisible();
+
+  // 折叠不卸载：收起-展开后 Markdown 草稿仍在。
+  await page.getByRole("button", { name: "内容与文件" }).click();
+  await expect(page.locator("#review-content-body")).toBeHidden();
+  await page.getByRole("button", { name: "内容与文件" }).click();
+  await page.getByRole("tab", { name: "编辑" }).click();
+  await page.locator(".cm-content").fill("# 折叠保草稿\n\n收起再展开后草稿仍在。\n");
+  await page.getByRole("button", { name: "内容与文件" }).click();
+  await expect(page.locator("#review-content-body")).toBeHidden();
+  await page.getByRole("button", { name: "内容与文件" }).click();
+  await expect(page.locator(".cm-content")).toContainText("收起再展开后草稿仍在。");
+
+  // 收起“来源更新”后从侧栏导航进入：分区自动展开并滚动可见。
+  await page.getByRole("button", { name: "来源更新" }).click();
+  await expect(page.locator("#review-sources .sh-skill-detail-review__section-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("link", { name: "来源更新" }).click();
+  await expect(page.locator("#review-sources .sh-skill-detail-review__section-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("#review-sources-body")).toBeVisible();
+  await expect(page.locator("#review-sources")).toBeInViewport();
 });

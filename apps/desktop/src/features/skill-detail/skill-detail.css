@@ -743,6 +743,43 @@
 
 .sh-skill-detail-review__section-heading > div { min-width: 0; }
 
+/* —— 分区折叠：标题整行可点（左对齐），chevron 展开朝下、收起旋转；
+   hover/focus 克制，仅变色与既定 focus 描边。 —— */
+.sh-skill-detail-review__section-toggle {
+  align-items: center;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--space-2);
+  justify-content: flex-start;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.sh-skill-detail-review__section-toggle:hover { color: var(--ui-accent); }
+
+.sh-skill-detail-review__section-toggle:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.sh-skill-detail-review__section-chevron { transition: transform var(--motion-fast) var(--ease-standard); }
+
+.sh-skill-detail-review__section-toggle[aria-expanded="false"] .sh-skill-detail-review__section-chevron {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-skill-detail-review__section-chevron { transition: none; }
+}
+
+/* 折叠不卸载：hidden 隐藏分区 body 时不得被任何作者 display 规则盖过。 */
+.sh-skill-detail-review__section > [hidden] { display: none !important; }
+
 /* —— 使用去向：真实目标实体才用卡片，网格自适应 —— */
 .sh-skill-detail-review__destinations {
   display: grid;
@@ -884,6 +921,18 @@
 .sh-skill-detail-review__accent-action:hover {
   background: color-mix(in srgb, var(--ui-accent) 82%, black);
   border-color: color-mix(in srgb, var(--ui-accent) 82%, black);
+}
+
+/* 待集中管理同色动作：与使用去向卡片的 warning 徽标同源，和绿色强调入口区分。 */
+.sh-skill-detail-review__warning-action {
+  background: var(--ui-warning-background);
+  border: 1px solid var(--ui-warning-border);
+  color: var(--ui-warning-foreground);
+}
+
+.sh-skill-detail-review__warning-action:hover {
+  background: color-mix(in srgb, var(--ui-warning-background) 82%, var(--ui-warning-foreground));
+  border-color: color-mix(in srgb, var(--ui-warning-foreground) 45%, transparent);
 }
 
 .sh-skill-detail--review .sh-version-timeline article > p {

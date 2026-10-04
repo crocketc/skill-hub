@@ -124,7 +124,7 @@ export function ReviewHeaderActions({ centralized, currentVersion, onCentralize 
   return (
     <>
       {centralized ? null : (
-        <Button className="sh-skill-detail-review__accent-action" onClick={() => { setCentralizeBasis("library"); setCentralizeOpen(true); }} size="sm" variant="ghost">转为集中管理</Button>
+        <Button className="sh-skill-detail-review__warning-action" onClick={() => { setCentralizeBasis("library"); setCentralizeOpen(true); }} size="sm" variant="ghost">转为集中管理</Button>
       )}
       <Button onClick={() => open("dispatch")} size="sm">派发</Button>
       <Button onClick={() => open("export")} size="sm" variant="secondary">导出</Button>

@@ -77,6 +77,8 @@ const registry: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  // 分区折叠指示：展开朝下，收起由样式旋转；含义由标题按钮文字承载。
+  chevronDown: <path d="m6 9.5 6 6 6-6" />,
   // —— 壳层工具条（返回/前进/通知中心）——
   arrowLeft: (
     <>
