@@ -39,11 +39,11 @@
 | acorn | 8.18.0 | prepare | 上游构建准备脚本；仅作为锁定解析器依赖，安装阶段禁用脚本。 |
 | aria-hidden | 1.2.6 | prepare | 上游构建准备脚本；仅作为锁定 UI 依赖，安装阶段禁用脚本。 |
 | balanced-match | 4.0.4 | prepare | 上游构建准备脚本；仅作为锁定构建依赖，安装阶段禁用脚本。 |
-| brace-expansion | 5.0.9 | prepare | 上游构建准备脚本；仅作为锁定构建依赖，安装阶段禁用脚本。 |
+| brace-expansion | 5.0.12 | prepare | 上游 package.json 的 prepare 调用 tshy，负责从源码生成发布用产物；锁定 registry 包已带预构建 dist，不需要在 SkillHub 安装时重建，且安装统一使用 --ignore-scripts。 |
 | codemirror | 6.0.2 | prepare | 上游构建准备脚本；仅作为锁定编辑器依赖，安装阶段禁用脚本。 |
 | cookie | 1.1.1 | prepare | 上游构建准备脚本；仅作为锁定 UI 依赖，安装阶段禁用脚本。 |
 | crelt | 1.0.7 | prepare | 上游构建准备脚本；仅作为锁定编辑器依赖，安装阶段禁用脚本。 |
-| dompurify | 3.4.14 | prepare | 上游构建准备脚本；仅作为锁定安全渲染依赖，安装阶段禁用脚本。 |
+| dompurify | 3.4.16 | prepare | 上游 package.json 的 prepare 调用 husky，为维护者 checkout 配置 Git hooks；它是上游 devDependency，本项目消费 registry 包且安装统一使用 --ignore-scripts，不执行该维护脚本。 |
 | echarts | 6.1.0 | prepare | 上游构建准备脚本；仅作为锁定图表依赖，安装阶段禁用脚本。 |
 | esbuild | 0.25.12 | postinstall | 上游平台二进制准备脚本；安装阶段禁用脚本，构建环境使用锁定包。 |
 | eslint-visitor-keys | 3.4.3 | prepare | 上游构建准备脚本；仅作为锁定 ESLint 依赖，安装阶段禁用脚本。 |
