@@ -240,6 +240,9 @@ test("review source unlink and derived upstream preserve content and return cont
   await page.getByRole("button", { name: "解除来源关联" }).click();
   await page.getByRole("dialog", { name: "解除网络来源关联" }).getByRole("button", { name: "确认解除" }).click();
   await expect(page.getByText("尚未关联更新来源", { exact: true })).toBeVisible();
+  // 复用修改追溯默认可见；DEV 切换后先进入“无复用修改依据”态，再切回。
+  await page.getByRole("button", { name: "切换复用修改追溯" }).click();
+  await expect(page.getByText("无复用修改依据。此技能不是从其他 Skill 复用修改创建的。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "切换复用修改追溯" }).click();
   await page.getByRole("button", { name: "查看原技能", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "PDF Reader 基础版 · 原技能" })).toContainText("原技能后续修改不会自动覆盖当前主体");
@@ -532,4 +535,63 @@ test("review rail hosts the fixed identity actions and adjacent skill navigation
   await page.getByRole("navigation", { name: "Skill 导航" }).getByRole("link", { name: "下一个 Skill" }).click();
   await expect(page).toHaveURL(/skill-detail\/skill-pdf/);
   await expect(page.getByRole("heading", { level: 1, name: "PDF Reader" })).toBeVisible();
+});
+
+test("review sources show the derived upstream block by default and the DEV toggle explains its absence", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "来源更新" }).click();
+
+  await expect(page.getByRole("heading", { name: "复用修改的原技能" })).toBeVisible();
+  await expect(page.getByText("从 PDF Reader 基础版 v2.3.2 创建，两个主体独立维护。此追溯不会自动建立网络更新来源。", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看原技能", exact: true })).toBeVisible();
+
+  await page.locator("#review-sources .sh-skill-detail-review__dev-scenarios summary").click();
+  await page.getByRole("button", { name: "切换复用修改追溯" }).click();
+  await expect(page.getByText("无复用修改依据。此技能不是从其他 Skill 复用修改创建的。", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看原技能", exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "切换复用修改追溯" }).click();
+  await expect(page.getByRole("heading", { name: "复用修改的原技能" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看原技能", exact: true })).toBeVisible();
+});
+
+test("review header offers centralized management with basis choice and hides it after confirmation", async ({ page }) => {
+  await page.goto(reviewUrl);
+
+  const actionArea = page.locator('[aria-label="技能操作"]');
+  const actionOrder = await actionArea.locator(".sh-button").evaluateAll((elements) =>
+    elements.map((element) => element.textContent?.trim()),
+  );
+  expect(actionOrder).toEqual(["转为集中管理", "派发", "导出", "删除"]);
+
+  await actionArea.getByRole("button", { name: "转为集中管理" }).click();
+  const centralizeDialog = page.getByRole("dialog", { name: "转为集中管理" });
+  await expect(centralizeDialog).toContainText("~/Agents/Codex/skills/pdf-reader");
+  await expect(centralizeDialog).toContainText("当前为独立副本，原位置内容尚未接管");
+  await expect(centralizeDialog.getByLabel("以集中库当前内容为准（推荐）")).toBeChecked();
+  await expect(centralizeDialog.getByLabel("以原位置现有内容为准（先保存为集中库历史版本再接管）")).not.toBeChecked();
+  await expect(centralizeDialog).toContainText("该位置入口改为受管链接，跟随集中库当前版本");
+  await expect(centralizeDialog).toContainText("原独立副本文件保留，可回退");
+  await expect(centralizeDialog).toContainText("不删除任何文件");
+  await expect(centralizeDialog).toContainText("其他使用关系不受影响");
+
+  await centralizeDialog.getByRole("button", { name: "确认转为集中管理" }).click();
+  await expect(centralizeDialog).toHaveCount(0);
+  await expect(actionArea.getByRole("button", { name: "转为集中管理" })).toHaveCount(0);
+  await expect(page.getByText("已转为集中管理（演示）：原位置已按受管链接跟随当前版本。", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "使用去向" }).click();
+  const codexCard = page.locator(".sh-skill-detail-review__destination").filter({ hasText: "~/Agents/Codex/skills/pdf-reader" });
+  await expect(codexCard).toContainText("已集中管理");
+  await expect(codexCard).toContainText("原位置已由集中库受管链接接管，跟随当前版本；原独立副本内容保留。");
+});
+
+test("review governance dialog explains identity-carrying context into relationship governance", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "使用去向" }).click();
+  await page.getByRole("button", { name: "查看治理详情" }).first().click();
+
+  const targetDialog = page.getByRole("dialog", { name: "Codex 终端 · 使用关系" });
+  await expect(targetDialog).toContainText("已精确选中此目标上下文。返回技能详情不会改变使用状态。");
+  await expect(targetDialog).toContainText("正式实现将携带此技能与该使用关系、物理目标的身份进入关系治理，并保留返回技能详情的入口。");
 });

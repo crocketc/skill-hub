@@ -71,6 +71,8 @@ export function SkillDetailReviewExperience({
   summary,
 }: SkillDetailReviewExperienceProps) {
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
+  // §关系治理：转为集中管理是演示状态；确认后头部入口隐藏、使用去向卡片联动为已集中管理。
+  const [centralized, setCentralized] = useState(false);
   const reviewSecurityFacade = useMemo<SecurityFacade>(() => ({
     ...securityFacade,
     getPreferences: async () => ({ llmProvider: "", dataScope: "" }),
@@ -109,8 +111,9 @@ export function SkillDetailReviewExperience({
               <p>当前版本 · {summary.currentVersion}</p>
             </div>
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
-              <ReviewHeaderActions currentVersion={summary.currentVersion} />
+              <ReviewHeaderActions centralized={centralized} currentVersion={summary.currentVersion} onCentralize={() => setCentralized(true)} />
             </div>
+            {centralized ? <p className="sh-skill-detail-review__inline-status" role="status">已转为集中管理（演示）：原位置已按受管链接跟随当前版本。</p> : null}
           </div>
           <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
             {sections.map(([id, label]) => (
@@ -158,7 +161,7 @@ export function SkillDetailReviewExperience({
               <h2>使用去向</h2>
               <ReviewGraphEntry />
             </div>
-            <ReviewUsageDestinations />
+            <ReviewUsageDestinations centralized={centralized} />
             {insights ? <details className="sh-skill-detail-review__supplemental"><summary>依赖、重复候选与使用证据</summary><h3>依赖</h3><ul>{insights.dependencies.map((value) => <li key={value}>{value}</li>)}</ul><h3>可能重复的技能</h3><p>PDF Text Extractor · 内容比对候选，尚未确认重复。</p><p>AI 相似性分析未配置，当前保留确定性比对证据。</p><h3>使用证据</h3><p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p></details> : null}
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-sources">
@@ -256,7 +259,7 @@ function ReviewGraphEntry() {
   );
 }
 
-function ReviewUsageDestinations() {
+function ReviewUsageDestinations({ centralized }: { centralized: boolean }) {
   const [selectedTarget, setSelectedTarget] = useState<string>();
   const [targetView, setTargetView] = useState<"target" | "governance">("governance");
   const targets = [
@@ -266,8 +269,8 @@ function ReviewUsageDestinations() {
       kind: "agent" as const,
       agentId: "openai.codex-cli",
       path: "~/Agents/Codex/skills/pdf-reader",
-      status: "待集中管理",
-      detail: "原位置仍是独立副本，当前内容尚未接管。",
+      status: centralized ? "已集中管理" : "待集中管理",
+      detail: centralized ? "原位置已由集中库受管链接接管，跟随当前版本；原独立副本内容保留。" : "原位置仍是独立副本，当前内容尚未接管。",
     },
     {
       id: "shared-directory",
@@ -327,7 +330,7 @@ function ReviewUsageDestinations() {
             <Dialog.Description>{target.detail}</Dialog.Description>
             <dl className="sh-skill-detail-review__record"><div><dt>使用位置</dt><dd><code>{target.path}</code></dd></div><div><dt>当前管理方式</dt><dd>{target.status}</dd></div></dl>
             {targetView === "target" ? <p>此目标正在使用 PDF Reader。{target.kind === "shared" ? "这是一个物理共享目录；Codex 与 CodeBuddy 是其消费者，不重复计算目标。" : target.kind === "project" ? "当前项目：文档协作项目。" : "当前 Agent：Codex 终端。"}</p> : <p>{target.status === "已集中管理" ? "入口健康：链接可用，当前没有治理待办。" : "治理待处理：原入口是独立副本，等待选择是否集中管理。"}接管、保留/撤销、修复、回收、结束由统一关系治理流程承接。</p>}
-            <p>已精确选中此目标上下文。返回技能详情不会改变使用状态。</p>
+            <p>已精确选中此目标上下文。返回技能详情不会改变使用状态。正式实现将携带此技能与该使用关系、物理目标的身份进入关系治理，并保留返回技能详情的入口。</p>
             <div className="sh-dialog__actions"><Button onClick={() => setTargetView((current) => current === "target" ? "governance" : "target")} size="sm" variant="secondary">{targetView === "target" ? "查看治理详情" : "查看目标详情"}</Button><Button onClick={() => setSelectedTarget(undefined)} size="sm">返回技能详情</Button></div>
           </Dialog.Content></Dialog.Portal>
         </Dialog.Root>
@@ -349,7 +352,8 @@ function ReviewSourceUpdates({ markdownFacade }: { markdownFacade?: MarkdownFaca
   const [localChanges, setLocalChanges] = useState(false);
   const [actionResult, setActionResult] = useState<string>();
   const [sourceInput, setSourceInput] = useState("https://example.org/pdf-reader");
-  const [derived, setDerived] = useState(false);
+  // §来源追溯：复用修改依据默认可见；DEV 场景按钮可在两态间切换演示。
+  const [derived, setDerived] = useState(true);
   const [upstreamOpen, setUpstreamOpen] = useState(false);
   const confirmTitle = confirmIntent === "adopt"
     ? adoptCombined ? "关联并采用更新影响预览" : "采用网络更新影响预览"
@@ -482,7 +486,7 @@ function ReviewSourceUpdates({ markdownFacade }: { markdownFacade?: MarkdownFaca
           <div className="sh-dialog__actions"><Button onClick={() => setUnlinkOpen(false)} size="sm" variant="ghost">取消</Button><Button onClick={() => { setSourceState("missing"); setLocalChanges(false); setLookup("idle"); setUnlinkOpen(false); }} size="sm">确认解除</Button></div>
         </Dialog.Content></Dialog.Portal>
       </Dialog.Root>
-      {derived ? <div className="sh-skill-detail-review__action-impact"><h3>复用修改的原技能</h3><p>从 PDF Reader 基础版 v2.3.2 创建，两个主体独立维护。此追溯不会自动建立网络更新来源。</p><Button onClick={() => setUpstreamOpen(true)} size="sm" variant="ghost">查看原技能</Button></div> : null}
+      {derived ? <div className="sh-skill-detail-review__action-impact"><h3>复用修改的原技能</h3><p>从 PDF Reader 基础版 v2.3.2 创建，两个主体独立维护。此追溯不会自动建立网络更新来源。</p><Button onClick={() => setUpstreamOpen(true)} size="sm" variant="ghost">查看原技能</Button></div> : <p>无复用修改依据。此技能不是从其他 Skill 复用修改创建的。</p>}
       <Dialog.Root open={upstreamOpen} onOpenChange={setUpstreamOpen}><Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog"><Dialog.Title>PDF Reader 基础版 · 原技能</Dialog.Title><Dialog.Description>起始版本 v2.3.2；复用修改关系只用于来源追溯，原技能后续修改不会自动覆盖当前主体。</Dialog.Description><Button onClick={() => setUpstreamOpen(false)} size="sm">返回当前技能</Button></Dialog.Content></Dialog.Portal></Dialog.Root>
       <details className="sh-skill-detail-review__dev-scenarios"><summary>DEV 场景演示</summary>
         <div>
