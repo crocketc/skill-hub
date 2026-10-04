@@ -574,6 +574,602 @@ async fn adoption_rejects_a_shared_relation_link_replaced_with_another_directory
     );
 }
 
+// ============================================================================
+// K1b：内容采用调用方的统一"四消费面一致 + 日志四相 + 失败补偿"采用流。
+//
+// CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy /
+// ApplySourceUpdate 与版本采用（SetCurrentVersion）共享同一批消费面：
+// ①版本库指针 ②可见树 ③portable manifest ④DB current_pointers。
+// 物理变更前必须先持久化恢复快照（Applying 检查点）；补偿全部成功 →
+// RolledBack，任何补偿面失败 → NeedsRecovery 并保留恢复事实。
+// ============================================================================
+
+type ContentFaultHandler = skillhub_storage::ManifestFaultHandler;
+
+/// "armed + fired" 故障注入：构造期默认不触发（initialize 的 manifest 写入
+/// 不消耗），测试显式武装后只在被测命令路径上命中 `before_manifest_replace`。
+/// one-shot 消费一次即失效；persistent 持续命中（补偿也会失败）。
+struct ContentFault {
+    armed: Arc<AtomicBool>,
+    handler: ContentFaultHandler,
+}
+
+impl ContentFault {
+    fn one_shot() -> Self {
+        Self::build(false)
+    }
+
+    fn persistent() -> Self {
+        Self::build(true)
+    }
+
+    fn build(persistent: bool) -> Self {
+        let armed = Arc::new(AtomicBool::new(false));
+        let handler = {
+            let armed = Arc::clone(&armed);
+            let fired = Arc::new(AtomicBool::new(false));
+            Arc::new(move |point: &str| {
+                point == "before_manifest_replace"
+                    && armed.load(Ordering::SeqCst)
+                    && (persistent || !fired.swap(true, Ordering::SeqCst))
+            }) as ContentFaultHandler
+        };
+        Self { armed, handler }
+    }
+
+    fn arm(&self) {
+        self.armed.store(true, Ordering::SeqCst);
+    }
+}
+
+struct ContentFixture {
+    _root: TempDir,
+    database_path: PathBuf,
+    library_root: PathBuf,
+    facade: LocalApplicationFacade,
+    skill: Skill,
+    first_version: skillhub_core::VersionRecord,
+}
+
+/// 已存在的单版本 Skill：store 指针、DB 指针、portable、可见树四个消费面
+/// 都指向 SKILL.md = "# First\n" 的首个版本；facade 带故障注入构造。
+async fn content_fixture(fault: ContentFault) -> ContentFixture {
+    let root = tempfile::tempdir().expect("isolated fixture root");
+    let database_path = root.path().join("skillhub.sqlite");
+    let library_root = root.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Content adoption");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let facade = LocalApplicationFacade::new_with_library_and_faults(
+        database,
+        &library_root,
+        Arc::clone(&fault.handler),
+    );
+    let active = facade.library_runtime().snapshot().expect("active library");
+    let store = VersionStore::from_library(&active.central);
+    let first_source = tempfile::tempdir().expect("first version source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("first content");
+    let first = store
+        .capture(skill.id(), first_source.path())
+        .expect("capture first version");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set initial file-store pointer");
+    facade
+        .database_for_tests()
+        .lock()
+        .unwrap()
+        .record_current_version(skill.id(), &first)
+        .expect("seed initial database pointer");
+    active
+        .central
+        .materialize_current_skill(&skill, &first.id)
+        .expect("materialize initial version");
+    active
+        .central
+        .save_portable_skill(&skill, Some(&first.id))
+        .expect("seed portable metadata");
+    fault.arm();
+
+    ContentFixture {
+        _root: root,
+        database_path,
+        library_root,
+        facade,
+        skill,
+        first_version: first,
+    }
+}
+
+fn visible_skill_tree(library_root: &Path, skill_id: skillhub_core::SkillId) -> PathBuf {
+    let entry = std::fs::read_dir(library_root.join("skills"))
+        .expect("skills directory")
+        .flatten()
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains(skill_id.to_string().as_str())
+        })
+        .expect("visible skill directory");
+    entry.path()
+}
+
+fn portable_current_version(
+    library_root: &Path,
+    skill_id: skillhub_core::SkillId,
+) -> Option<skillhub_core::VersionId> {
+    let manifest = skillhub_storage::PortableManifestStore::new(
+        library_root.join(".skillhub").join("library.json"),
+        Arc::new(|_| false),
+    )
+    .load()
+    .expect("read portable manifest");
+    manifest
+        .skills
+        .into_iter()
+        .find(|record| record.id == skill_id)
+        .and_then(|record| record.current_version)
+}
+
+fn journal_phase(database_path: &Path, kind: &str) -> String {
+    let database = Database::open(database_path).expect("reopen database");
+    database
+        .connection_for_test()
+        .query_row(
+            "SELECT phase FROM operations WHERE kind=?1",
+            [kind],
+            |row| row.get(0),
+        )
+        .expect("journal row for kind")
+}
+
+/// K1b-1：SaveMarkdownContent 在 portable 写入处失败（one-shot）。
+/// 统一流要求四个消费面全部回到采用前事实，且日志终相 RolledBack。
+#[tokio::test]
+async fn k1b_save_markdown_portable_failure_restores_all_content_consumers() {
+    let fixture = content_fixture(ContentFault::one_shot()).await;
+    let read = fixture
+        .facade
+        .query(AppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id: fixture.skill.id(),
+                path: "SKILL.md".into(),
+                version_id: None,
+            },
+        ))
+        .await
+        .expect("read current markdown");
+    let AppQueryResult::MarkdownFile(content) = read else {
+        panic!("expected markdown content");
+    };
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::SaveMarkdownContent(
+            skillhub_core::api::SaveMarkdownContent {
+                skill_id: fixture.skill.id(),
+                path: "SKILL.md".into(),
+                markdown: "# Second".into(),
+                expected_identity: content.content_identity,
+            },
+        ))
+        .await
+        .expect_err("a failed portable write must abort the markdown save");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    drop(fixture.facade);
+
+    // 可见树断言在 drop 之后用裸 fs 读；不得重新 initialize（会掩盖补偿缺口）。
+    assert_eq!(
+        std::fs::read_to_string(
+            visible_skill_tree(&fixture.library_root, fixture.skill.id()).join("SKILL.md")
+        )
+        .expect("visible SKILL.md"),
+        "# First\n",
+        "可见树必须仍停留在一个失败保存之前的版本"
+    );
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let pointer: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT version_id FROM current_pointers WHERE skill_id=?1",
+            [fixture.skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("database current pointer");
+    assert_eq!(pointer, fixture.first_version.id.to_string());
+    assert_eq!(
+        portable_current_version(&fixture.library_root, fixture.skill.id()),
+        Some(fixture.first_version.id.clone()),
+        "portable current_version 必须仍指向首个版本"
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_markdown_content"),
+        "rolled_back",
+        "补偿全部成功的失败保存必须以 RolledBack 终结"
+    );
+}
+
+/// K1b-2：同场景但持久故障——补偿本身也会失败。
+/// 统一流必须以 NeedsRecovery 终结，并在 tmp 目录保留
+/// `visible-backup-<skill_id>-*` 备份条目作为恢复事实。
+#[tokio::test]
+async fn k1b_persistent_portable_failure_during_save_markdown_retains_recovery_facts() {
+    let fixture = content_fixture(ContentFault::persistent()).await;
+    let read = fixture
+        .facade
+        .query(AppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id: fixture.skill.id(),
+                path: "SKILL.md".into(),
+                version_id: None,
+            },
+        ))
+        .await
+        .expect("read current markdown");
+    let AppQueryResult::MarkdownFile(content) = read else {
+        panic!("expected markdown content");
+    };
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::SaveMarkdownContent(
+            skillhub_core::api::SaveMarkdownContent {
+                skill_id: fixture.skill.id(),
+                path: "SKILL.md".into(),
+                markdown: "# Second".into(),
+                expected_identity: content.content_identity,
+            },
+        ))
+        .await
+        .expect_err("a persistent portable failure must abort the markdown save");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    drop(fixture.facade);
+
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_markdown_content"),
+        "needs_recovery",
+        "补偿失败的内容采用必须进入 NeedsRecovery"
+    );
+    let backup_prefix = format!("visible-backup-{}-", fixture.skill.id());
+    let backups = std::fs::read_dir(fixture.library_root.join(".skillhub").join("tmp"))
+        .expect("library tmp directory")
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(backup_prefix.as_str())
+        })
+        .count();
+    assert!(
+        backups >= 1,
+        "补偿失败时必须保留 visible-backup-<skill_id>-* 恢复事实"
+    );
+}
+
+/// K1b-3：SaveSkillContent（源目录内容改为 "# Second"）在 portable 写入处
+/// 失败（one-shot）：与 K1b-1 相同的四消费面矩阵 + RolledBack 终相。
+#[tokio::test]
+async fn k1b_save_skill_content_portable_failure_restores_all_content_consumers() {
+    let fixture = content_fixture(ContentFault::one_shot()).await;
+    let authoring = tempfile::tempdir().expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Second\n").expect("updated content");
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::SaveSkillContent(
+            skillhub_core::api::SaveSkillContent {
+                skill_id: fixture.skill.id(),
+                source_path: authoring.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("a failed portable write must abort the content save");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    drop(fixture.facade);
+
+    assert_eq!(
+        std::fs::read_to_string(
+            visible_skill_tree(&fixture.library_root, fixture.skill.id()).join("SKILL.md")
+        )
+        .expect("visible SKILL.md"),
+        "# First\n",
+        "可见树必须仍停留在一个失败保存之前的版本"
+    );
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let pointer: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT version_id FROM current_pointers WHERE skill_id=?1",
+            [fixture.skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("database current pointer");
+    assert_eq!(pointer, fixture.first_version.id.to_string());
+    assert_eq!(
+        portable_current_version(&fixture.library_root, fixture.skill.id()),
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_skill_content"),
+        "rolled_back"
+    );
+}
+
+/// K1b-4：CreateSkill 在 save_portable_skill 处失败（one-shot）。
+/// 新建主体的补偿必须把四个消费面的"新增物"全部移除：catalog 无行、
+/// store 指针为空、portable 无记录、可见树目录不存在、versions 无残留。
+#[tokio::test]
+async fn k1b_create_skill_portable_failure_removes_the_new_visible_tree() {
+    let fixture_root = tempfile::tempdir().expect("isolated fixture root");
+    let database_path = fixture_root.path().join("skillhub.sqlite");
+    let library_root = fixture_root.path().join("library");
+    let fault = ContentFault::one_shot();
+    let database = Database::open(&database_path).expect("database");
+    let facade = LocalApplicationFacade::new_with_library_and_faults(
+        database,
+        &library_root,
+        Arc::clone(&fault.handler),
+    );
+    fault.arm();
+    let authoring = tempfile::tempdir_in(fixture_root.path()).expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Fresh\n").expect("fresh content");
+
+    let error = facade
+        .execute(AppCommand::CreateSkill(skillhub_core::api::CreateSkill {
+            name: "Fresh skill".into(),
+            source_path: authoring.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("a failed portable write must abort the skill creation");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    drop(facade);
+
+    assert_eq!(
+        journal_phase(&database_path, "create_skill"),
+        "rolled_back",
+        "新建主体补偿成功必须以 RolledBack 终结"
+    );
+    let database = Database::open(&database_path).expect("reopen database");
+    let catalog_rows: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM skills", [], |row| row.get(0))
+        .expect("catalog count");
+    assert_eq!(catalog_rows, 0, "失败的创建不得留下 catalog 行");
+    let pointer_rows: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM current_pointers", [], |row| {
+            row.get(0)
+        })
+        .expect("pointer count");
+    assert_eq!(pointer_rows, 0, "失败的创建不得留下版本库当前指针");
+    let version_rows: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM versions", [], |row| row.get(0))
+        .expect("version count");
+    assert_eq!(version_rows, 0, "失败的创建不得留下 versions 残留");
+    assert_eq!(
+        portable_current_version(&library_root, skillhub_core::SkillId::new()),
+        None,
+        "portable manifest 不得有失败创建的记录"
+    );
+    let manifest = skillhub_storage::PortableManifestStore::new(
+        library_root.join(".skillhub").join("library.json"),
+        Arc::new(|_| false),
+    )
+    .load()
+    .expect("read portable manifest");
+    assert!(
+        manifest.skills.is_empty(),
+        "失败创建不得在 portable manifest 留下任何 skill 记录"
+    );
+    let visible_entries = std::fs::read_dir(library_root.join("skills"))
+        .expect("skills directory")
+        .flatten()
+        .count();
+    assert_eq!(
+        visible_entries, 0,
+        "失败创建必须移除已物化的可见树（当前实现遗留该目录）"
+    );
+}
+
+// ---- K1b-5：TakeUpstream 成功路径复用 upstream fixture ----
+
+fn archive_server(route: &'static str, body: Vec<u8>) -> String {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+    let address = listener.local_addr().expect("address");
+    let body = Arc::new(body);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            let body = Arc::clone(&body);
+            std::thread::spawn(move || {
+                let mut request = [0_u8; 4096];
+                if stream.read(&mut request).is_err() {
+                    return;
+                }
+                let head = String::from_utf8_lossy(&request);
+                let path = head.split_whitespace().nth(1).unwrap_or("/");
+                let (status, payload) = if path.starts_with(route) {
+                    (200, body.as_slice())
+                } else {
+                    (404, b"not found".as_slice())
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} Test\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(payload);
+            });
+        }
+    });
+    format!("http://{address}")
+}
+
+fn repo_zip(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
+    use std::io::Write as _;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = ZipWriter::new(&mut cursor);
+        for (name, body) in entries {
+            zip.start_file(name, SimpleFileOptions::default())
+                .expect("zip entry");
+            zip.write_all(&body).expect("zip body");
+        }
+        zip.finish().expect("zip finish");
+    }
+    cursor.into_inner()
+}
+
+fn upstream_origin() -> skillhub_core::UpstreamOrigin {
+    skillhub_core::UpstreamOrigin {
+        url: "https://github.com/anthropics/skills".into(),
+        branch: "main".into(),
+        directory: "pdf".into(),
+    }
+}
+
+async fn import_skill_with_upstream(
+    facade: &LocalApplicationFacade,
+    content: &str,
+) -> skillhub_core::SkillId {
+    let source = tempfile::tempdir().expect("source");
+    std::fs::create_dir_all(source.path()).expect("create source dir");
+    std::fs::write(source.path().join("SKILL.md"), content).expect("write skill");
+    let candidate = skillhub_core::ImportCandidate::detected(
+        skillhub_core::SourceDescriptor::new(
+            skillhub_core::SourceKind::Local,
+            skillhub_core::SourceLocator::local_path(source.path()),
+        ),
+        source.path().to_string_lossy(),
+        ".",
+        "SKILL.md",
+        "Notes",
+    )
+    .with_upstream(upstream_origin());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareImport(skillhub_core::PrepareImport {
+            candidate,
+            tree_hash: None,
+        }))
+        .await
+        .expect("prepared import");
+    let AppCommandResult::PreparedImport(prepared) = prepared else {
+        panic!("expected prepared import");
+    };
+    let committed = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: skillhub_core::ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+        }))
+        .await
+        .expect("committed import");
+    let AppCommandResult::ImportSummary(summary) = committed else {
+        panic!("expected import summary");
+    };
+    summary.items[0].skill_id.expect("imported skill id")
+}
+
+/// K1b-5：TakeUpstream 成功后四个消费面必须一致指向新版本；当前实现
+/// 从不写 DB current_pointers（导入写入的旧指针被遗留），RED。
+#[tokio::test]
+async fn k1b_take_upstream_success_points_every_consumer_at_the_new_version() {
+    let base = archive_server(
+        "/anthropics/skills/archive/refs/heads/main.zip",
+        repo_zip(vec![(
+            "skills-main/pdf/SKILL.md".into(),
+            b"# Changed upstream\n".to_vec(),
+        )]),
+    );
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    facade.set_repo_discovery_provider_for_tests(Arc::new(
+        skillhub_adapters::source::RepoDiscoveryProvider::with_archive_base_for_tests(&base),
+    ));
+    let skill_id = import_skill_with_upstream(&facade, "# Portable\n").await;
+
+    let applied = facade
+        .execute(AppCommand::ApplySourceUpdate(
+            skillhub_core::ApplySourceUpdate {
+                skill_id,
+                decision: skillhub_core::UpdateDecision::TakeUpstream,
+            },
+        ))
+        .await
+        .expect("take upstream must apply for a git source");
+    let AppCommandResult::AppliedSourceUpdate(applied) = applied else {
+        panic!("expected applied source update");
+    };
+    let new_version = applied.new_version.clone().expect("采用上游必须创建新版本");
+    drop(facade);
+
+    let database = Database::open(&database_path).expect("reopen database");
+    let pointer: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT version_id FROM current_pointers WHERE skill_id=?1",
+            [skill_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("database current pointer");
+    assert_eq!(
+        pointer,
+        new_version.to_string(),
+        "DB current_pointers 必须指向采用后的新版本"
+    );
+    let library = CentralLibrary::open_existing(&library_root).expect("reopen library");
+    assert_eq!(
+        VersionStore::from_library(&library)
+            .current(skill_id)
+            .expect("read store pointer"),
+        Some(new_version.clone()),
+        "版本库指针必须指向新版本"
+    );
+    assert_eq!(
+        std::fs::read_to_string(visible_skill_tree(&library_root, skill_id).join("SKILL.md"))
+            .expect("visible SKILL.md"),
+        "# Changed upstream\n",
+        "可见树内容必须来自上游"
+    );
+    assert_eq!(
+        portable_current_version(&library_root, skill_id),
+        Some(new_version.clone()),
+        "portable current_version 必须指向新版本"
+    );
+    assert_eq!(
+        journal_phase(&database_path, "apply_source_update"),
+        "committed",
+        "成功的来源采用必须留下 Committed 日志行"
+    );
+}
+
 fn create_directory_link(target: &Path, link: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {

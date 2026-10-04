@@ -2001,10 +2001,21 @@ impl LocalApplicationFacade {
 
     /// Creates a facade with read-only access to a central library root.
     pub fn new_with_library(database: Database, library_root: impl AsRef<Path>) -> Self {
+        Self::new_with_library_and_faults(database, library_root, Arc::new(|_| false))
+    }
+
+    /// Facade variant whose portable manifest store reports the supplied
+    /// injected faults; used by recovery tests to fail real writes at the
+    /// storage boundary.
+    pub fn new_with_library_and_faults(
+        database: Database,
+        library_root: impl AsRef<Path>,
+        fault_handler: skillhub_storage::ManifestFaultHandler,
+    ) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
         Self::sweep_stale_journal(&database);
-        let central = CentralLibrary::initialize(&library_root)
+        let central = CentralLibrary::initialize_with_fault_handler(&library_root, fault_handler)
             .expect("new_with_library requires a valid central library");
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
             library_runtime::LibraryContext::from_library(central),
@@ -4521,90 +4532,114 @@ impl LocalApplicationFacade {
     fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "create_skill");
-        let result = self.create_skill_flow(request, operation_id);
-        self.journal_settle(operation_id, "create_skill", result.as_ref().err());
-        result
+        self.create_skill_flow(request, operation_id)
     }
 
+    /// 新建主体：与版本采用共享"快照 → Applying 检查点 → 四消费面 → 终相"
+    /// 的统一采用流。快照四项全 None；失败补偿额外删除 catalog 行并丢弃
+    /// 已捕获的版本对象。
     fn create_skill_flow(
         &self,
         request: CreateSkill,
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
+        const KIND: &str = "create_skill";
         let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
-        validate_skill_source(source)?;
-        let skill = Skill::new(skillhub_core::SkillId::new(), request.name);
-        skill.validate()?;
-        let captured = library.capture_with_status(skill.id(), source)?;
+        let skill = match validate_skill_source(source).and_then(|()| {
+            let skill = Skill::new(skillhub_core::SkillId::new(), request.name);
+            skill.validate()?;
+            Ok(skill)
+        }) {
+            Ok(skill) => skill,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        let captured = match library.capture_with_status(skill.id(), source) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         let version = captured.record;
-        let central = &library.central;
-        let result = self.with_database("execute.create_skill", |database| {
-            if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
-                return Err(cleanup_import_error(
-                    error,
-                    if captured.created {
-                        library.discard_sync(&version)
-                    } else {
-                        Ok(())
-                    },
-                ));
-            }
-            if let Err(error) = library.set_current(skill.id(), &version.id) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
-                ));
-            }
-            if let Err(error) = central.materialize_current_skill(&skill, &version.id) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
-                ));
-            }
-            if let Err(error) = central.save_portable_skill(&skill, Some(&version.id)) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
-                ));
-            }
+        if let Err(error) = self.with_database("execute.create_skill", |database| {
+            database.catalog_repository()?.insert_sync(&skill)
+        }) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                None,
+                Some((&version, captured.created)),
+                true,
+                error,
+            ));
+        }
+        let replacement =
+            match self.adopt_captured_version(&library, &skill, &snapshot, &version, true) {
+                Ok(replacement) => replacement,
+                Err((error, replacement)) => {
+                    return Err(self.settle_content_adoption_failure(
+                        &library,
+                        &skill,
+                        operation_id,
+                        KIND,
+                        &snapshot,
+                        replacement.as_ref(),
+                        Some((&version, captured.created)),
+                        true,
+                        error,
+                    ));
+                }
+            };
+        if let Err(error) = self.with_database("execute.create_skill.source", |database| {
             let source_descriptor = SourceDescriptor::new(
                 skillhub_core::SourceKind::Local,
                 SourceLocator::local_path(source),
             );
-            if let Err(error) = database
-                .source_repository()
-                .relink(skill.id(), source_descriptor)
-            {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
-                ));
-            }
             database
                 .source_repository()
-                .set_revision(skill.id(), Some(&version.manifest.tree_hash))?;
-            if let Err(error) = database.record_current_version(skill.id(), &version) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, &library.store, skill.id(), &version),
-                ));
-            }
-            Ok(AppCommandResult::OperationSummary(
-                skillhub_core::OperationSummary {
-                    operation_id,
-                    phase: skillhub_core::OperationPhase::Committed,
-                    message_code: "catalog.skill_created".to_owned(),
-                    error_code: None,
-                },
-            ))
-        });
-        if result.is_err() && captured.created {
-            // The normal error paths above clean up while the database mutex is held.
-            // This guard only handles failure before entering the closure.
-            let _ = library.discard_sync(&version);
+                .relink(skill.id(), source_descriptor)?;
+            database
+                .source_repository()
+                .set_revision(skill.id(), Some(&version.manifest.tree_hash))
+        }) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                Some(&replacement),
+                Some((&version, captured.created)),
+                true,
+                error,
+            ));
         }
-        result
+        self.journal_settle(operation_id, KIND, None);
+        let _ = library
+            .central
+            .finalize_visible_tree_replacement(replacement);
+        Ok(AppCommandResult::OperationSummary(
+            skillhub_core::OperationSummary {
+                operation_id,
+                phase: skillhub_core::OperationPhase::Committed,
+                message_code: "catalog.skill_created".to_owned(),
+                error_code: None,
+            },
+        ))
     }
 
     fn create_combination(&self, request: CreateCombination) -> AppResult<AppCommandResult> {
@@ -5015,19 +5050,11 @@ impl LocalApplicationFacade {
         };
         let capture_source = capture_source.as_ref();
         validate_skill_source(capture_source)?;
-        let captured = library.capture_with_status(request.skill_id, capture_source)?;
-        let version = captured.record;
-        if let Err(error) = library.set_current(request.skill_id, &version.id) {
-            return Err(cleanup_import_error(
-                error,
-                if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
-                },
-            ));
-        }
-        let skill = self.with_database("execute.apply_source_update.skill", |database| {
+        // ---- 统一内容采用流：从这里开始可能出现库内物理变更 ----
+        const KIND: &str = "apply_source_update";
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, KIND);
+        let skill = match self.with_database("execute.apply_source_update.skill", |database| {
             database
                 .catalog_repository()?
                 .get_sync(request.skill_id)?
@@ -5036,35 +5063,69 @@ impl LocalApplicationFacade {
                         .with_param("skill_id", request.skill_id.to_string())
                         .with_action(RecoveryAction::ChooseAnotherName)
                 })
-        })?;
-        if let Err(error) = library
-            .central
-            .materialize_current_skill(&skill, &version.id)
-        {
-            let _ = restore_version_pointer(&library.store, request.skill_id, check.local_version);
-            if captured.created {
-                let _ = library.discard_sync(&version);
+        }) {
+            Ok(skill) => skill,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
-            return Err(error);
-        }
-        if let Err(error) = library
-            .central
-            .save_portable_skill(&skill, Some(&version.id))
-        {
-            let _ = restore_version_pointer(&library.store, request.skill_id, check.local_version);
-            if captured.created {
-                let _ = library.discard_sync(&version);
+        };
+        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
-            return Err(error);
+        };
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        self.with_database("execute.apply_source_update.persist", |database| {
+        let captured = match library.capture_with_status(request.skill_id, capture_source) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let version = captured.record;
+        let replacement =
+            match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
+                Ok(replacement) => replacement,
+                Err((error, replacement)) => {
+                    return Err(self.settle_content_adoption_failure(
+                        &library,
+                        &skill,
+                        operation_id,
+                        KIND,
+                        &snapshot,
+                        replacement.as_ref(),
+                        Some((&version, captured.created)),
+                        false,
+                        error,
+                    ));
+                }
+            };
+        if let Err(error) = self.with_database("execute.apply_source_update.persist", |database| {
             let source_repository = database.source_repository();
             source_repository.set_revision(request.skill_id, Some(&version.manifest.tree_hash))?;
             source_repository.record_update_check(
                 &skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::UpToDate)
                     .with_versions(Some(version.id.clone()), Some(version.id.clone())),
             )
-        })?;
+        }) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                Some(&replacement),
+                Some((&version, captured.created)),
+                false,
+                error,
+            ));
+        }
+        self.journal_settle(operation_id, KIND, None);
+        let _ = library
+            .central
+            .finalize_visible_tree_replacement(replacement);
         Ok(AppCommandResult::AppliedSourceUpdate(
             skillhub_core::AppliedSourceUpdate {
                 skill_id: request.skill_id,
@@ -5807,24 +5868,266 @@ impl LocalApplicationFacade {
         failures
     }
 
+    /// Settles a content-adoption failure that happened before any physical
+    /// mutation: nothing to compensate, the journal row simply rolls back.
+    fn settle_content_adoption_rejected(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        error: AppError,
+    ) -> AppError {
+        self.journal_settle(operation_id, kind, Some(&error));
+        error
+    }
+
+    /// Captures the pre-adoption facts of all four version consumers. Read
+    /// before the first physical mutation and persisted with the Applying
+    /// checkpoint, these facts are the only allowed rollback target.
+    fn content_adoption_snapshot(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        operation_id: OperationId,
+    ) -> AppResult<ContentAdoptionSnapshot> {
+        let previous_version_id = context.store.current(skill.id())?;
+        let visible_tree_fingerprint = context.central.visible_tree_fingerprint(skill)?;
+        let (database_previous_version_id, portable_previous_record) =
+            self.with_database("content_adoption.read_facts", |database| {
+                Ok((
+                    database.current_version(skill.id())?,
+                    context
+                        .central
+                        .load_portable_skill(skill.id())?
+                        .map(|(record, _)| record),
+                ))
+            })?;
+        Ok(ContentAdoptionSnapshot {
+            skill_id: skill.id(),
+            previous_version_id,
+            database_previous_version_id,
+            portable_previous_record,
+            visible_backup_path: Some(context.central.paths().tmp_dir.join(format!(
+                "visible-backup-{}-{}",
+                skill.id(),
+                operation_id
+            ))),
+            visible_tree_fingerprint,
+        })
+    }
+
+    /// Persists the durable Applying checkpoint that carries the recovery
+    /// snapshot. A failed checkpoint must stop the flow before the first
+    /// physical change so no consumer is ever mutated without recovery facts.
+    fn content_adoption_checkpoint(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        snapshot: &ContentAdoptionSnapshot,
+    ) -> AppResult<()> {
+        let mut record = journal_record(
+            operation_id,
+            kind,
+            skillhub_core::OperationPhase::Applying,
+            None,
+        );
+        record.recovery_data = serde_json::to_value(snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.persist_version_adoption_record(&record)
+    }
+
+    /// Applies one captured version across the four version consumers: the
+    /// visible tree is replaced with a retained backup, then the version-store
+    /// pointer, the portable manifest and the database projection follow. On
+    /// failure the caller receives the error plus the replacement handle that
+    /// compensation needs.
+    fn adopt_captured_version(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        snapshot: &ContentAdoptionSnapshot,
+        version: &skillhub_core::VersionRecord,
+        new_skill: bool,
+    ) -> Result<
+        skillhub_storage::VisibleTreeReplacement,
+        (AppError, Option<skillhub_storage::VisibleTreeReplacement>),
+    > {
+        let backup_path = match snapshot.visible_backup_path.clone() {
+            Some(backup_path) => backup_path,
+            None => return Err((internal("content_adoption.backup_path"), None)),
+        };
+        let replacement = match context
+            .central
+            .prepare_visible_tree_replacement_with_backup(
+                skill,
+                &version.id,
+                &backup_path,
+                snapshot.visible_tree_fingerprint.as_deref(),
+            ) {
+            Ok(replacement) => replacement,
+            Err(error) => return Err((error, None)),
+        };
+        if let Err(error) = context.store.set_current(skill.id(), &version.id) {
+            return Err((error, Some(replacement)));
+        }
+        // 已有 portable 记录的主体只改 current_version 保留用户元数据；
+        // 新建主体与尚未纳入 portable 清单的存量主体都还没有记录，需要
+        // 完整写入；补偿按快照把"无记录"作为回滚目标幂等还原。
+        let portable_result = if new_skill || snapshot.portable_previous_record.is_none() {
+            context
+                .central
+                .save_portable_skill(skill, Some(&version.id))
+        } else {
+            context
+                .central
+                .set_portable_current_version(skill.id(), Some(&version.id))
+        };
+        if let Err(error) = portable_result {
+            return Err((error, Some(replacement)));
+        }
+        if let Err(error) = self.with_database("content_adoption.persist_catalog", |database| {
+            database.record_current_version(skill.id(), version)
+        }) {
+            return Err((error, Some(replacement)));
+        }
+        Ok(replacement)
+    }
+
+    /// Restores every content-adoption consumer to its pre-adoption fact.
+    /// Pointer and metadata faces are restored first; the retained visible-tree
+    /// backup is only consumed when every other face restored cleanly. A
+    /// partial compensation keeps the new tree, the backup and the captured
+    /// version object as durable recovery facts instead of destroying the only
+    /// rollback material while another consumer is still unverified.
+    #[allow(clippy::too_many_arguments)]
+    fn compensate_content_adoption(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        snapshot: &ContentAdoptionSnapshot,
+        replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
+        captured: Option<&skillhub_core::VersionRecord>,
+        captured_created: bool,
+        new_skill: bool,
+    ) -> Vec<(&'static str, ErrorCode)> {
+        let mut failures = Vec::new();
+        if new_skill {
+            // remove_sync 是幂等 DELETE：行尚未插入时同样视为已清理。
+            let catalog_result = self
+                .with_database("content_adoption.compensate_catalog", |database| {
+                    database.catalog_repository()?.remove_sync(skill.id())
+                });
+            if let Err(error) = catalog_result {
+                failures.push(("catalog_record", error.code));
+            }
+        }
+        let pointer_result = match snapshot.previous_version_id.as_ref() {
+            Some(version_id) => context.store.set_current(skill.id(), version_id),
+            None => context.store.clear_current(skill.id()),
+        };
+        if let Err(error) = pointer_result {
+            failures.push(("version_store_pointer", error.code));
+        }
+        if let Err(error) = context
+            .central
+            .restore_portable_skill_record(skill.id(), snapshot.portable_previous_record.clone())
+        {
+            failures.push(("portable_manifest", error.code));
+        }
+        let database_result = self.with_database("content_adoption.restore_catalog", |database| {
+            database.restore_current_version_pointer(
+                skill.id(),
+                snapshot.database_previous_version_id.as_ref(),
+            )
+        });
+        if let Err(error) = database_result {
+            failures.push(("database_current_pointer", error.code));
+        }
+        if failures.is_empty() {
+            if let Some(replacement) = replacement {
+                if let Err(error) = context
+                    .central
+                    .rollback_visible_tree_replacement(replacement)
+                {
+                    failures.push(("visible_tree", error.code));
+                }
+            }
+            if captured_created {
+                if let Some(version) = captured {
+                    if let Err(error) = context.store.discard_sync(version) {
+                        failures.push(("version_object", error.code));
+                    }
+                }
+            }
+        }
+        failures
+    }
+
+    /// Settles a failed content adoption: compensates every consumer, journals
+    /// `RolledBack` when the compensation is complete or `NeedsRecovery` with
+    /// the failed faces as object results otherwise, and returns the original
+    /// error so caller-visible error codes stay unchanged.
+    #[allow(clippy::too_many_arguments)]
+    fn settle_content_adoption_failure(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        operation_id: OperationId,
+        kind: &'static str,
+        snapshot: &ContentAdoptionSnapshot,
+        replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
+        captured: Option<(&skillhub_core::VersionRecord, bool)>,
+        new_skill: bool,
+        error: AppError,
+    ) -> AppError {
+        let failures = self.compensate_content_adoption(
+            context,
+            skill,
+            snapshot,
+            replacement,
+            captured.map(|(version, _)| version),
+            captured.is_some_and(|(_, created)| created),
+            new_skill,
+        );
+        if failures.is_empty() {
+            self.journal_settle(operation_id, kind, Some(&error));
+        } else {
+            let mut record = journal_record(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::NeedsRecovery,
+                Some(error.code),
+            );
+            record.object_results = recovery_object_results(&failures);
+            record.recovery_data =
+                serde_json::to_value(snapshot).unwrap_or_else(|_| serde_json::Value::Null);
+            self.journal_write(record);
+        }
+        error
+    }
+
     fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_skill_content");
-        let result = self.save_skill_content_flow(request, operation_id);
-        self.journal_settle(operation_id, "save_skill_content", result.as_ref().err());
-        result
+        self.save_skill_content_flow(request, operation_id)
     }
 
+    /// 已有主体内容更新：统一采用流（快照 → Applying 检查点 → 四消费面 →
+    /// 终相 + finalize）。失败补偿覆盖可见树、store 指针、portable 与 DB 指针。
     fn save_skill_content_flow(
         &self,
         request: SaveSkillContent,
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
+        const KIND: &str = "save_skill_content";
         let library = self.library_runtime.snapshot()?;
         let source = Path::new(&request.source_path);
-        validate_skill_source(source)?;
-        let previous = library.current(request.skill_id)?;
-        let skill = self.with_database("execute.save_skill_content", |database| {
+        if let Err(error) = validate_skill_source(source) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        let skill = match self.with_database("execute.save_skill_content", |database| {
             database
                 .catalog_repository()?
                 .get_sync(request.skill_id)?
@@ -5833,60 +6136,49 @@ impl LocalApplicationFacade {
                         .with_param("skill_id", request.skill_id.to_string())
                         .with_action(RecoveryAction::Retry)
                 })
-        })?;
-        let captured = library.capture_with_status(request.skill_id, source)?;
-        let version = captured.record;
-        if let Err(error) = library.set_current(request.skill_id, &version.id) {
-            let cleanup = if captured.created {
-                library.discard_sync(&version)
-            } else {
-                Ok(())
-            };
-            return Err(cleanup_import_error(error, cleanup));
-        }
-        if let Err(error) = library
-            .central
-            .materialize_current_skill(&skill, &version.id)
-        {
-            let rollback =
-                restore_version_pointer(&library.store, request.skill_id, previous.clone());
-            let cleanup = rollback.and_then(|()| {
-                if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
-                }
-            });
-            return Err(cleanup_import_error(error, cleanup));
-        }
-        if let Err(error) = library
-            .central
-            .save_portable_skill(&skill, Some(&version.id))
-        {
-            let rollback = restore_version_pointer(&library.store, request.skill_id, previous);
-            let cleanup = rollback.and_then(|()| {
-                if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
-                }
-            });
-            return Err(cleanup_import_error(error, cleanup));
-        }
-        if let Err(error) = self.with_database("execute.save_skill_content.persist", |database| {
-            database.record_current_version(request.skill_id, &version)
         }) {
-            let rollback =
-                restore_version_pointer(&library.store, request.skill_id, previous.clone());
-            let cleanup = rollback.and_then(|()| {
-                if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
-                }
-            });
-            return Err(cleanup_import_error(error, cleanup));
+            Ok(skill) => skill,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
+        let captured = match library.capture_with_status(request.skill_id, source) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let version = captured.record;
+        let replacement =
+            match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
+                Ok(replacement) => replacement,
+                Err((error, replacement)) => {
+                    return Err(self.settle_content_adoption_failure(
+                        &library,
+                        &skill,
+                        operation_id,
+                        KIND,
+                        &snapshot,
+                        replacement.as_ref(),
+                        Some((&version, captured.created)),
+                        false,
+                        error,
+                    ));
+                }
+            };
+        self.journal_settle(operation_id, KIND, None);
+        let _ = library
+            .central
+            .finalize_visible_tree_replacement(replacement);
         Ok(AppCommandResult::OperationSummary(
             skillhub_core::OperationSummary {
                 operation_id,
@@ -5900,32 +6192,54 @@ impl LocalApplicationFacade {
     fn save_markdown_content(&self, request: SaveMarkdownContent) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_markdown_content");
-        let result = self.save_markdown_content_flow(request);
-        self.journal_settle(operation_id, "save_markdown_content", result.as_ref().err());
-        result
+        self.save_markdown_content_flow(request, operation_id)
     }
 
+    /// Markdown 编辑保存：统一采用流。staging 目录是库外临时区，不属于
+    /// 消费面；首个库内物理变更（capture）之前必须先持久化恢复快照。
     fn save_markdown_content_flow(
         &self,
         request: SaveMarkdownContent,
+        operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
+        const KIND: &str = "save_markdown_content";
         let library = self.library_runtime.snapshot()?;
-        let relative = validate_markdown_path(&request.path)?;
+        let relative = match validate_markdown_path(&request.path) {
+            Ok(relative) => relative,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         if request.markdown.len() > 1_048_576 {
-            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "markdown_size")
-                .with_action(RecoveryAction::ChooseAnotherName));
+                .with_action(RecoveryAction::ChooseAnotherName);
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        let current = library
-            .current(request.skill_id)?
-            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
-        let (identity, _) = library.read_file(&current, &request.path, 1_048_576)?;
-        if identity != request.expected_identity {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param("path", request.path.clone())
-                .with_action(RecoveryAction::Retry));
+        let current = match library.current(request.skill_id) {
+            Ok(Some(current)) => current,
+            Ok(None) => {
+                let error = AppError::new(ErrorCode::ObjectNotFound, Severity::Error);
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = library
+            .read_file(&current, &request.path, 1_048_576)
+            .and_then(|(identity, _)| {
+                if identity != request.expected_identity {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("path", request.path.clone())
+                        .with_action(RecoveryAction::Retry));
+                }
+                Ok(())
+            })
+        {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        let skill = self.with_database("execute.save_markdown_content", |database| {
+        let skill = match self.with_database("execute.save_markdown_content", |database| {
             database
                 .catalog_repository()?
                 .get_sync(request.skill_id)?
@@ -5934,10 +6248,24 @@ impl LocalApplicationFacade {
                         .with_param("skill_id", request.skill_id.to_string())
                         .with_action(RecoveryAction::Retry)
                 })
-        })?;
+        }) {
+            Ok(skill) => skill,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
         let staging =
             std::env::temp_dir().join(format!("skillhub-markdown-{}", OperationId::new()));
-        let result = (|| {
+        let result = (|| -> AppResult<AppCommandResult> {
             library.materialize(&current, &staging)?;
             let target = staging.join(&relative);
             std::fs::write(&target, request.markdown.as_bytes()).map_err(|error| {
@@ -5945,71 +6273,34 @@ impl LocalApplicationFacade {
                     .with_param("source", error.to_string())
                     .with_action(RecoveryAction::Retry)
             })?;
-            let captured = library.capture_with_status(request.skill_id, &staging)?;
+            let captured = match library.capture_with_status(request.skill_id, &staging) {
+                Ok(captured) => captured,
+                Err(error) => {
+                    return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                }
+            };
             let version = captured.record;
-            if let Err(error) = library.set_current(request.skill_id, &version.id) {
-                let cleanup = if captured.created {
-                    library.discard_sync(&version)
-                } else {
-                    Ok(())
+            let replacement =
+                match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
+                    Ok(replacement) => replacement,
+                    Err((error, replacement)) => {
+                        return Err(self.settle_content_adoption_failure(
+                            &library,
+                            &skill,
+                            operation_id,
+                            KIND,
+                            &snapshot,
+                            replacement.as_ref(),
+                            Some((&version, captured.created)),
+                            false,
+                            error,
+                        ));
+                    }
                 };
-                return Err(cleanup_import_error(error, cleanup));
-            }
-            if let Err(error) = library
+            self.journal_settle(operation_id, KIND, None);
+            let _ = library
                 .central
-                .materialize_current_skill(&skill, &version.id)
-            {
-                let rollback = restore_version_pointer(
-                    &library.store,
-                    request.skill_id,
-                    Some(current.clone()),
-                );
-                let cleanup = rollback.and_then(|()| {
-                    if captured.created {
-                        library.discard_sync(&version)
-                    } else {
-                        Ok(())
-                    }
-                });
-                return Err(cleanup_import_error(error, cleanup));
-            }
-            if let Err(error) = library
-                .central
-                .save_portable_skill(&skill, Some(&version.id))
-            {
-                let rollback = restore_version_pointer(
-                    &library.store,
-                    request.skill_id,
-                    Some(current.clone()),
-                );
-                let cleanup = rollback.and_then(|()| {
-                    if captured.created {
-                        library.discard_sync(&version)
-                    } else {
-                        Ok(())
-                    }
-                });
-                return Err(cleanup_import_error(error, cleanup));
-            }
-            if let Err(error) = self
-                .with_database("execute.save_markdown_content.persist", |database| {
-                    database.record_current_version(request.skill_id, &version)
-                })
-            {
-                let rollback = restore_version_pointer(
-                    &library.store,
-                    request.skill_id,
-                    Some(current.clone()),
-                );
-                let cleanup = rollback.and_then(|()| {
-                    if captured.created {
-                        library.discard_sync(&version)
-                    } else {
-                        Ok(())
-                    }
-                });
-                return Err(cleanup_import_error(error, cleanup));
-            }
+                .finalize_visible_tree_replacement(replacement);
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
             Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
                 skill_id: request.skill_id,
@@ -6025,32 +6316,54 @@ impl LocalApplicationFacade {
     fn save_markdown_as_copy(&self, request: SaveMarkdownAsCopy) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_markdown_as_copy");
-        let result = self.save_markdown_as_copy_flow(request);
-        self.journal_settle(operation_id, "save_markdown_as_copy", result.as_ref().err());
-        result
+        self.save_markdown_as_copy_flow(request, operation_id)
     }
 
+    /// 另存为副本：新建主体的统一采用流（与 create_skill 同形，无来源
+    /// 登记）。失败补偿删除副本 catalog 行、丢弃版本对象并移除新可见树。
     fn save_markdown_as_copy_flow(
         &self,
         request: SaveMarkdownAsCopy,
+        operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
+        const KIND: &str = "save_markdown_as_copy";
         let library = self.library_runtime.snapshot()?;
-        let relative = validate_markdown_path(&request.path)?;
+        let relative = match validate_markdown_path(&request.path) {
+            Ok(relative) => relative,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         if request.markdown.len() > 1_048_576 {
-            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "markdown_size")
-                .with_action(RecoveryAction::ChooseAnotherName));
+                .with_action(RecoveryAction::ChooseAnotherName);
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        let current = library
-            .current(request.skill_id)?
-            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
-        let (identity, _) = library.read_file(&current, &request.path, 1_048_576)?;
-        if identity != request.expected_identity {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param("path", request.path.clone())
-                .with_action(RecoveryAction::Retry));
+        let current = match library.current(request.skill_id) {
+            Ok(Some(current)) => current,
+            Ok(None) => {
+                let error = AppError::new(ErrorCode::ObjectNotFound, Severity::Error);
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = library
+            .read_file(&current, &request.path, 1_048_576)
+            .and_then(|(identity, _)| {
+                if identity != request.expected_identity {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("path", request.path.clone())
+                        .with_action(RecoveryAction::Retry));
+                }
+                Ok(())
+            })
+        {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        let skill = self.with_database("execute.save_markdown_as_copy", |database| {
+        let skill = match self.with_database("execute.save_markdown_as_copy", |database| {
             database
                 .catalog_repository()?
                 .get_sync(request.skill_id)?
@@ -6059,8 +6372,13 @@ impl LocalApplicationFacade {
                         .with_param("skill_id", request.skill_id.to_string())
                         .with_action(RecoveryAction::Retry)
                 })
-        })?;
-        let copy = Skill::from_parts(
+        }) {
+            Ok(skill) => skill,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let copy = match Skill::from_parts(
             skillhub_core::SkillId::new(),
             format!("{} (copy)", skill.display_name()),
             format!("{}-copy", skill.runtime_name()),
@@ -6075,10 +6393,24 @@ impl LocalApplicationFacade {
             skill.lifecycle(),
             skill.requirements().to_vec(),
             skill.trial_due(),
-        )?;
+        ) {
+            Ok(copy) => copy,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let snapshot = match self.content_adoption_snapshot(&library, &copy, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
         let staging =
             std::env::temp_dir().join(format!("skillhub-markdown-copy-{}", OperationId::new()));
-        let result = (|| {
+        let result = (|| -> AppResult<AppCommandResult> {
             library.materialize(&current, &staging)?;
             let target = staging.join(&relative);
             std::fs::write(&target, request.markdown.as_bytes()).map_err(|error| {
@@ -6086,82 +6418,58 @@ impl LocalApplicationFacade {
                     .with_param("source", error.to_string())
                     .with_action(RecoveryAction::Retry)
             })?;
-            let captured = library.capture_with_status(copy.id(), &staging)?;
+            let captured = match library.capture_with_status(copy.id(), &staging) {
+                Ok(captured) => captured,
+                Err(error) => {
+                    return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                }
+            };
             let version = captured.record;
-            self.with_database("execute.save_markdown_as_copy.commit", |database| {
-                if let Err(error) = database.catalog_repository()?.insert_sync(&copy) {
-                    return Err(cleanup_import_error(
-                        error,
-                        if captured.created {
-                            library.discard_sync(&version)
-                        } else {
-                            Ok(())
-                        },
-                    ));
-                }
-                if let Err(error) = library.set_current(copy.id(), &version.id) {
-                    return Err(cleanup_import_error(
-                        error,
-                        cleanup_import_state(
-                            database,
-                            &library.central,
-                            &library.store,
-                            copy.id(),
-                            &version,
-                        ),
-                    ));
-                }
-                if let Err(error) = library
-                    .central
-                    .materialize_current_skill(&copy, &version.id)
-                {
-                    return Err(cleanup_import_error(
-                        error,
-                        cleanup_import_state(
-                            database,
-                            &library.central,
-                            &library.store,
-                            copy.id(),
-                            &version,
-                        ),
-                    ));
-                }
-                if let Err(error) = library
-                    .central
-                    .save_portable_skill(&copy, Some(&version.id))
-                {
-                    return Err(cleanup_import_error(
-                        error,
-                        cleanup_import_state(
-                            database,
-                            &library.central,
-                            &library.store,
-                            copy.id(),
-                            &version,
-                        ),
-                    ));
-                }
-                if let Err(error) = database.record_current_version(copy.id(), &version) {
-                    return Err(cleanup_import_error(
-                        error,
-                        cleanup_import_state(
-                            database,
-                            &library.central,
-                            &library.store,
-                            copy.id(),
-                            &version,
-                        ),
-                    ));
-                }
-                let (content_identity, _) =
-                    library.read_file(&version.id, &request.path, 1_048_576)?;
-                Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
-                    skill_id: copy.id(),
-                    path: request.path.clone(),
-                    version_id: version.id,
-                    content_identity,
-                }))
-            })
+            if let Err(error) = self
+                .with_database("execute.save_markdown_as_copy.commit", |database| {
+                    database.catalog_repository()?.insert_sync(&copy)
+                })
+            {
+                return Err(self.settle_content_adoption_failure(
+                    &library,
+                    &copy,
+                    operation_id,
+                    KIND,
+                    &snapshot,
+                    None,
+                    Some((&version, captured.created)),
+                    true,
+                    error,
+                ));
+            }
+            let replacement =
+                match self.adopt_captured_version(&library, &copy, &snapshot, &version, true) {
+                    Ok(replacement) => replacement,
+                    Err((error, replacement)) => {
+                        return Err(self.settle_content_adoption_failure(
+                            &library,
+                            &copy,
+                            operation_id,
+                            KIND,
+                            &snapshot,
+                            replacement.as_ref(),
+                            Some((&version, captured.created)),
+                            true,
+                            error,
+                        ));
+                    }
+                };
+            self.journal_settle(operation_id, KIND, None);
+            let _ = library
+                .central
+                .finalize_visible_tree_replacement(replacement);
+            let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
+            Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
+                skill_id: copy.id(),
+                path: request.path.clone(),
+                version_id: version.id,
+                content_identity,
+            }))
         })();
         let _ = std::fs::remove_dir_all(&staging);
         result
@@ -12168,17 +12476,6 @@ fn cleanup_import_error(original: AppError, cleanup: AppResult<()>) -> AppError 
     }
 }
 
-fn restore_version_pointer(
-    library: &VersionStore,
-    skill_id: skillhub_core::SkillId,
-    previous: Option<skillhub_core::VersionId>,
-) -> AppResult<()> {
-    match previous {
-        Some(previous) => library.set_current(skill_id, &previous),
-        None => library.clear_current(skill_id),
-    }
-}
-
 /// A mode must satisfy the host and Agent compatibility declaration/local
 /// verification. Unknown clients fail closed until explicitly verified.
 fn effective_target_capabilities(
@@ -12890,6 +13187,21 @@ struct VersionAdoptionSnapshot {
     target_tree_hash: String,
     target_basic_check_required: bool,
     relations: Vec<skillhub_core::api::VersionAdoptionRelationImpact>,
+}
+
+/// Pre-adoption facts of the four version consumers for one content adoption
+/// (CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy
+/// / ApplySourceUpdate). Persisted in the operation journal's Applying
+/// checkpoint before the first physical mutation; a failed adopt may only
+/// roll back to exactly these facts.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct ContentAdoptionSnapshot {
+    skill_id: skillhub_core::SkillId,
+    previous_version_id: Option<skillhub_core::VersionId>,
+    database_previous_version_id: Option<skillhub_core::VersionId>,
+    portable_previous_record: Option<skillhub_core::PortableSkillRecord>,
+    visible_backup_path: Option<PathBuf>,
+    visible_tree_fingerprint: Option<String>,
 }
 
 #[derive(serde::Serialize)]
