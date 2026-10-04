@@ -24,16 +24,24 @@ interface LocalImageProps {
   assetPath: string;
   facade: MarkdownFacade;
   filePath: string;
+  errorMessage: string;
   skillId: string;
 }
 
-function LocalImage({ alt, assetPath, facade, filePath, skillId }: LocalImageProps) {
+function LocalImage({ alt, assetPath, facade, filePath, errorMessage, skillId }: LocalImageProps) {
   const assetQuery = useQuery({
     queryFn: () => facade.resolveLocalAsset(skillId, filePath, assetPath),
     queryKey: ["skill-markdown", skillId, "asset", filePath, assetPath],
     retry: false,
   });
 
+  if (assetQuery.isError) {
+    return (
+      <span className="sh-markdown-blocked-resource" role="alert">
+        {errorMessage}
+      </span>
+    );
+  }
   if (!assetQuery.data) {
     return (
       <span aria-busy="true" className="sh-markdown-image">
@@ -151,6 +159,7 @@ export function MarkdownRenderer({ facade, filePath, markdown, skillId }: Markdo
             assetPath={target.path}
             facade={facade}
             filePath={filePath}
+            errorMessage={t("markdown.resource.localImageError")}
             skillId={skillId}
           />
         );

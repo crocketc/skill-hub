@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -30,9 +30,8 @@ const enabled = true;
 <img src="x" onclick="window.skillHubCompromised = true">
 `;
 
-async function renderMarkdown(markdown: string) {
-  const facade = createMockMarkdownFacade();
-  const i18n = await createSkillHubI18n(["en-US"]);
+async function renderMarkdown(markdown: string, locale = "en-US", facade = createMockMarkdownFacade()) {
+  const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -144,6 +143,23 @@ describe("MarkdownRenderer", () => {
     fireEvent.load(image);
 
     expect(image.closest("[aria-busy='true']")).toBeNull();
+  });
+
+  it.each([
+    ["en-US", "Could not display this local image"],
+    ["zh-CN", "无法显示此本地图片"],
+  ])("ends the local image busy state and explains resolution failures in %s", async (locale, message) => {
+    const facade = createMockMarkdownFacade();
+    const resolveLocalAsset = vi
+      .spyOn(facade, "resolveLocalAsset")
+      .mockRejectedValue(new Error("Fixture filesystem error"));
+
+    await renderMarkdown("![Diagram](images/diagram.png)", locale, facade);
+
+    await waitFor(() => expect(resolveLocalAsset).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(document.querySelector(".sh-markdown-image[aria-busy='true']")).toBeNull();
+    expect(screen.queryByRole("img", { name: "Diagram" })).not.toBeInTheDocument();
   });
 
   it("shows blocked references as text without a navigable target", async () => {

@@ -107,7 +107,8 @@
       "load": "Load this image"
     },
     "resource": {
-      "blocked": "Blocked resource: {{target}}"
+      "blocked": "Blocked resource: {{target}}",
+      "localImageError": "Could not display this local image. Check that the file is available and try again."
     },
     "workspace": {
       "chooseApp": "Choose another app",

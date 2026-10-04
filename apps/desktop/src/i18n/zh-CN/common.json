@@ -107,7 +107,8 @@
       "load": "加载此图片"
     },
     "resource": {
-      "blocked": "已阻止资源：{{target}}"
+      "blocked": "已阻止资源：{{target}}",
+      "localImageError": "无法显示此本地图片，请检查文件是否可用后重试。"
     },
     "workspace": {
       "chooseApp": "选择其他应用",
