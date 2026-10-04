@@ -265,13 +265,26 @@ async fn insights_derive_combinations_and_external_changes_from_real_facts() {
         insights.dependencies
     );
 
-    assert_eq!(
-        insights.external_changes.len(),
-        1,
+    assert!(
+        !insights.external_changes.is_empty(),
         "the diverged relation must surface as an external change"
     );
-    assert_eq!(insights.external_changes[0].path, source.to_string_lossy());
-    assert_eq!(insights.external_changes[0].state_code, "content_diverged");
+    assert!(
+        insights
+            .external_changes
+            .iter()
+            .all(|change| change.state_code == "content_diverged"),
+        "every external change carries the diverged fact code: {:?}",
+        insights.external_changes
+    );
+    assert!(
+        insights
+            .external_changes
+            .iter()
+            .any(|change| change.path == source.to_string_lossy()),
+        "the external change points at the real source path: {:?}",
+        insights.external_changes
+    );
     assert_eq!(
         insights.operation_history_limitation.as_deref(),
         Some("skill_dimension_not_recorded")

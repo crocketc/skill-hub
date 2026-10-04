@@ -7552,6 +7552,49 @@ impl ApplicationFacade for LocalApplicationFacade {
                             .is_dir()
                             .then(|| visible_root.to_string_lossy().into_owned())
                     });
+                    // G-16：托管链接/独立副本计数沿用 K1 影响语义——链接指
+                    // 向当前物化树才算托管；树外活动副本算独立副本。与列表
+                    // 共用同一份部署事实，不存在第二套分类。
+                    let visible_root_canonical = root_path
+                        .as_ref()
+                        .and_then(|path| std::fs::canonicalize(path).ok());
+                    let mut managed_link_count: u32 = 0;
+                    let mut independent_copy_count: u32 = 0;
+                    for relation in database.relationship_repository().list_relations()? {
+                        if relation.skill_id != Some(skill_id) || !relation.active {
+                            continue;
+                        }
+                        let path_is_symlink = std::fs::symlink_metadata(&relation.path)
+                            .ok()
+                            .is_some_and(|metadata| metadata.file_type().is_symlink());
+                        let path_is_link = path_is_symlink
+                            || skillhub_adapters::deployment::is_reparse_point(Path::new(
+                                &relation.path,
+                            ));
+                        let follows_current = path_is_link
+                            && visible_root_canonical
+                                .as_ref()
+                                .zip(std::fs::canonicalize(&relation.path).ok().as_ref())
+                                .is_some_and(|(expected, actual)| expected == actual);
+                        if follows_current
+                            && relation.relationship
+                                == skillhub_core::relationship::RelationshipType::ManagedLink
+                            && relation.ownership
+                                == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                        {
+                            managed_link_count += 1;
+                        }
+                        if !follows_current
+                            && matches!(
+                                relation.relationship,
+                                skillhub_core::relationship::RelationshipType::ImportCopy
+                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
+                                    | skillhub_core::relationship::RelationshipType::ObservedCopy
+                            )
+                        {
+                            independent_copy_count += 1;
+                        }
+                    }
                     Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
                         skill_id: skill.skill_id,
                         display_name: skill.display_name,
@@ -7569,9 +7612,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                         agent_deployment_count: skill.agent_deployment_count,
                         project_deployment_count: skill.project_deployment_count,
                         root_path,
-                        // G-16：RED 种子——真实部署计数在 GREEN 提交中接线。
-                        managed_link_count: 0,
-                        independent_copy_count: 0,
+                        managed_link_count,
+                        independent_copy_count,
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,
@@ -7818,22 +7860,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 &request.path,
             ),
             AppQuery::ResolveLocalAsset(request) => self.resolve_local_asset(request),
-            AppQuery::GetSkillInsights(request) => {
-                // K7/G-18：RED 种子——结构完整但全空；GREEN 提交接线真实
-                // 关系事实与操作日志。
-                Ok(AppQueryResult::SkillInsights(
-                    skillhub_core::api::SkillInsightsResult {
-                        skill_id: request.skill_id,
-                        combinations: Vec::new(),
-                        dependencies: Vec::new(),
-                        external_changes: Vec::new(),
-                        operation_history: Vec::new(),
-                        operation_history_limitation: Some(
-                            "skill_dimension_not_recorded".to_owned(),
-                        ),
-                    },
-                ))
-            }
+            AppQuery::GetSkillInsights(request) => self.skill_insights(request),
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
             }
@@ -12410,6 +12437,139 @@ impl LocalApplicationFacade {
         ))
     }
 
+    /// K7/G-18：Skill 洞察——组合、依赖、外部变化来自真实关系事实，
+    /// 操作历史来自真实日志行并映射为用户事实文案码；不构造占位数据。
+    fn skill_insights(
+        &self,
+        request: skillhub_core::api::GetSkillInsights,
+    ) -> AppResult<AppQueryResult> {
+        let skill_id = request.skill_id;
+        self.with_database("query.get_skill_insights", move |database| {
+            database
+                .catalog_repository()?
+                .get_detail(skill_id)?
+                .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+
+            // 组合：真实组合成员关系，其他成员给出用户可读名。
+            let mut combinations = Vec::new();
+            for combination in database.combination_repository().list()? {
+                if !combination.members.contains(&skill_id) {
+                    continue;
+                }
+                let other_member_labels = combination
+                    .members
+                    .iter()
+                    .filter(|member| **member != skill_id)
+                    .filter_map(|member| {
+                        database
+                            .catalog_repository()
+                            .ok()?
+                            .get_detail(*member)
+                            .ok()
+                            .flatten()
+                            .map(|detail| detail.display_name)
+                    })
+                    .collect();
+                combinations.push(skillhub_core::api::SkillInsightCombination {
+                    name: combination.name,
+                    other_member_labels,
+                });
+            }
+
+            // 依赖与外部变化：真实部署关系事实与导入源关系（仅活动、仅
+            // 本 Skill）。扫描观察到的部署关系按事实保留 `unknown` 形状，
+            // 不凭猜测补分类。
+            let mut dependencies = Vec::new();
+            let mut external_changes = Vec::new();
+            for relation in database.relationship_repository().list_relations()? {
+                if relation.skill_id != Some(skill_id) || !relation.active {
+                    continue;
+                }
+                dependencies.push(skillhub_core::api::SkillInsightDependency {
+                    relation_id: relation.relation_id.clone(),
+                    path: relation.path.clone(),
+                    agent_client_id: (!relation.agent_client_id.is_empty())
+                        .then(|| relation.agent_client_id.clone()),
+                    shape_code: skill_insights_shape_code(relation.relationship).to_owned(),
+                });
+                if relation.match_state
+                    == skillhub_core::deployment::ObservedMatchState::Diverged
+                {
+                    external_changes.push(skillhub_core::api::SkillInsightExternalChange {
+                        relation_id: relation.relation_id,
+                        path: relation.path,
+                        state_code: "content_diverged".to_owned(),
+                    });
+                }
+            }
+            for relation in database
+                .relationship_repository()
+                .list_source_copy_relations(true)?
+            {
+                if relation.skill_id != skill_id {
+                    continue;
+                }
+                dependencies.push(skillhub_core::api::SkillInsightDependency {
+                    relation_id: relation.relation_id.clone(),
+                    path: relation.source_path.clone(),
+                    agent_client_id: relation.agent_client_id.clone(),
+                    shape_code: "import_copy".to_owned(),
+                });
+                if relation.health == skillhub_core::relationship::SourceCopyHealth::ContentChanged
+                {
+                    external_changes.push(skillhub_core::api::SkillInsightExternalChange {
+                        relation_id: relation.relation_id,
+                        path: relation.source_path,
+                        state_code: "content_diverged".to_owned(),
+                    });
+                }
+            }
+
+            // 操作历史：全局日志尚无 Skill 维度，返回真实日志行并附显式
+            // 局限标记，而不是假装已经过滤。
+            let mut statement = database
+                .connection_for_test()
+                .prepare(
+                    "SELECT operation_id,kind,phase,error_code,created_at FROM operations ORDER BY created_at,operation_id",
+                )
+                .map_err(|error| {
+                    database_error("query.get_skill_insights", error.to_string())
+                })?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                })
+                .map_err(|error| database_error("query.get_skill_insights", error.to_string()))?;
+            let mut operation_history = Vec::new();
+            for row in rows {
+                let (operation_id, kind, phase, error_code, created_at) = row.map_err(|error| {
+                    database_error("query.get_skill_insights", error.to_string())
+                })?;
+                operation_history.push(skillhub_core::api::SkillInsightOperationEntry {
+                    operation_id,
+                    message_code: skill_insights_operation_code(&kind, &phase, error_code),
+                    at_epoch: Some(created_at.to_string()),
+                });
+            }
+            Ok(AppQueryResult::SkillInsights(
+                skillhub_core::api::SkillInsightsResult {
+                    skill_id,
+                    combinations,
+                    dependencies,
+                    external_changes,
+                    operation_history,
+                    operation_history_limitation: Some("skill_dimension_not_recorded".to_owned()),
+                },
+            ))
+        })
+    }
+
     /// AR-021：为版本设置用户可读名称。名称去首尾空白、非空且不超过
     /// 64 字符；内容哈希（version_id）不变。
     async fn set_version_label(
@@ -14205,6 +14365,59 @@ fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+/// K7/G-18：关系形状的展示码——snake_case 关系类型，不向调用方裸露内部枚举。
+fn skill_insights_shape_code(
+    relationship: skillhub_core::relationship::RelationshipType,
+) -> &'static str {
+    use skillhub_core::relationship::RelationshipType::*;
+    match relationship {
+        ImportCopy => "import_copy",
+        SharedDirectoryRead => "shared_directory_read",
+        SharedDirectoryReference => "shared_directory_reference",
+        ManagedCopy => "managed_copy",
+        ManagedLink => "managed_link",
+        ObservedCopy => "observed_copy",
+        ObservedLink => "observed_link",
+        Unknown => "unknown",
+    }
+}
+
+/// K7/G-18：操作历史文案码——`insights.operation.<类别>.<结果>`，由真实
+/// 日志 kind/phase/error_code 推导；调用方拿不到裸 kind/phase 枚举。
+fn skill_insights_operation_code(kind: &str, phase: &str, error_code: Option<String>) -> String {
+    let category = match kind {
+        "create_skill" => "skill_added",
+        "uninstall_skill" => "skill_removed",
+        "save_skill_content"
+        | "save_markdown_content"
+        | "save_markdown_as_copy"
+        | "apply_source_update" => "content_saved",
+        "relink_source_copy" | "detach_management" => "source_changed",
+        "create_combination" | "update_combination" | "rename_combination"
+        | "delete_combination" => "combination_changed",
+        "reconcile_collect_changes"
+        | "reconcile_ignore_external_change"
+        | "reconcile_keep_independent"
+        | "reconcile_restore_deployment" => "deployment_reconciled",
+        "confirm_search_candidate"
+        | "dismiss_search_candidate"
+        | "save_search_candidates"
+        | "remove_ignore_rule" => "preference_changed",
+        _ => "skill_operation",
+    };
+    let outcome = if error_code.is_some() {
+        "failed"
+    } else {
+        match phase {
+            "committed" => "succeeded",
+            "rolled_back" => "rolled_back",
+            "needs_recovery" => "needs_recovery",
+            _ => "in_progress",
+        }
+    };
+    format!("insights.operation.{category}.{outcome}")
 }
 
 /// AR-021：以清单文件修改时间推导捕获顺序；时间不可得的版本没有序号。
