@@ -87,7 +87,33 @@ describe("Skill detail evidence panels", () => {
     expect(
       screen.getByText("操作日志暂未记录 Skill 维度，以下为全局日志记录。"),
     ).toBeVisible();
-    expect(screen.getByText("Imported")).toBeVisible();
+    expect(
+      screen.getByText(/Imported · 2026-08-25T10:24:00Z/),
+    ).toBeVisible();
+  });
+
+  it("renders combination members and dependency facts from structured insights", async () => {
+    // G-18：组合与依赖来自结构化事实——成员标签、关系形态、代理可读名与
+    // 路径都要可见，不再是没有来源的字符串列表。
+    await renderEvidence();
+
+    const connections = (await screen.findByRole("heading", { name: "依赖与组合" }))
+      .parentElement as HTMLElement;
+    expect(connections.textContent).toContain("Document toolkit");
+    expect(connections.textContent).toContain("Spreadsheet Reader");
+    expect(connections.textContent).toContain("Managed link");
+    expect(connections.textContent).toContain("OpenAI");
+    expect(connections.textContent).toContain("C:/Users/demo/.agents/skills/pdf-reader");
+  });
+
+  it("renders external changes with path and readable state", async () => {
+    await renderEvidence();
+
+    const external = await screen.findByRole("heading", { name: "外部变更" });
+    expect(external.parentElement?.textContent).toContain("SKILL.md");
+    expect(external.parentElement?.textContent).toContain(
+      "Content diverged from the central library",
+    );
   });
 
   it("renders deterministic duplicate candidates as their own always-available section", async () => {

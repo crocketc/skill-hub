@@ -383,6 +383,11 @@ export function MarkdownWorkspace({
                       void queryClient.invalidateQueries({
                         queryKey: ["skill-detail", skillId, "versions"],
                       });
+                      // G-18：保存会写入操作历史并可能改变外部变化事实，保存后
+                      // 洞察缓存一并失效，避免面板停留在旧读模型。
+                      void queryClient.invalidateQueries({
+                        queryKey: ["skill-detail", skillId, "insights"],
+                      });
                     }}
                     skillId={skillId}
                   />

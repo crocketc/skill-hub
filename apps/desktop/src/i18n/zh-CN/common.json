@@ -1831,27 +1831,39 @@
       "none": "暂无已确认的关联",
       "operationHistoryEmpty": "暂无操作日志记录。",
       "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
-      "historyLabels": {
-        "errors": {
-          "conflict": "检测到冲突，操作未能完成。",
-          "unknown": "详情不可用"
-        },
-        "kinds": {
-          "create": "创建 Skill",
-          "deploy": "部署 Skill",
-          "editContent": "编辑 Skill 内容",
-          "remove": "移除 Skill",
+      "dependencyShapes": {
+        "importCopy": "导入副本",
+        "managedCopy": "托管副本",
+        "managedLink": "托管链接",
+        "observedCopy": "观察副本",
+        "observedLink": "观察链接",
+        "sharedDirectoryRead": "共享目录读取",
+        "sharedDirectoryReference": "共享目录引用",
+        "unknown": "形态未知"
+      },
+      "externalChangeStates": {
+        "contentDiverged": "内容已与集中库分叉",
+        "unknown": "状态未知"
+      },
+      "historyMessages": {
+        "categories": {
+          "combinationChanged": "组合调整",
+          "contentSaved": "保存内容",
+          "deploymentReconciled": "核对部署",
+          "preferenceChanged": "偏好调整",
+          "skillAdded": "添加 Skill",
+          "skillOperation": "Skill 操作",
+          "skillRemoved": "移除 Skill",
+          "sourceChanged": "来源更新",
           "unknown": "Skill 操作"
         },
-        "phases": {
-          "applying": "执行中",
-          "committed": "已完成",
+        "outcomes": {
+          "failed": "失败",
+          "inProgress": "进行中",
           "needsRecovery": "需要处理",
-          "planned": "等待开始",
-          "prepared": "已准备",
           "rolledBack": "已撤销",
-          "unknown": "状态不可用",
-          "verifying": "正在核验"
+          "succeeded": "已完成",
+          "unknown": "状态不可用"
         }
       },
       "usageEvidence": "使用证据"
@@ -2005,6 +2017,12 @@
       "deploymentsUnavailable": "部署关系数量暂不可用",
       "deployments_one": "{{count}} 条",
       "deployments_other": "{{count}} 条",
+      "relationLabel": "关系构成",
+      "relationsIndependent_one": "{{count}} 个独立副本",
+      "relationsIndependent_other": "{{count}} 个独立副本",
+      "relationsManaged_one": "{{count}} 条托管链接",
+      "relationsManaged_other": "{{count}} 条托管链接",
+      "relationsUnavailable": "关系构成未知",
       "label": "Skill 状态",
       "versionLabel": "当前版本"
     },

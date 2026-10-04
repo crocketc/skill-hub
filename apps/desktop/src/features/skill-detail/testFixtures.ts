@@ -138,11 +138,27 @@ export function detailFixture(
       total: 80,
     },
     insights: {
-      combinations: ["Document toolkit"],
-      dependencies: ["table-normalizer"],
+      // G-18：组合/依赖/外部变化都是结构化事实（成员标签、形态、状态、路径）。
+      combinations: [
+        { name: "Document toolkit", otherMemberLabels: ["Spreadsheet Reader"] },
+      ],
+      dependencies: [
+        {
+          agentClientId: "openai.codex-cli",
+          id: "relation-codex",
+          path: "C:/Users/demo/.agents/skills/pdf-reader",
+          shapeLabel: "Managed link",
+        },
+      ],
       // P1-12：确定性候选常显——夹具给出一条，验证独立小节不混入合并列表。
       deterministicDuplicates: ["PDF Reader（副本）"],
-      externalChanges: ["SKILL.md changed outside SkillHub"],
+      externalChanges: [
+        {
+          id: "relation-project",
+          path: "SKILL.md",
+          stateLabel: "Content diverged from the central library",
+        },
+      ],
       operationHistory: [
         { at: "2026-08-25T10:24:00Z", id: "operation-import", label: "Imported" },
       ],

@@ -1012,6 +1012,37 @@ describe("Task 7: governed relationship sections", () => {
     expect(within(rail).getByText("2")).toBeVisible();
   });
 
+  it("shows the relationship mix from real summary counts", async () => {
+    // G-16：托管链接/独立副本计数来自 get_skill 真实读模型，不为零占位。
+    await renderDetail({
+      facade: createMockSkillDetailFacade({
+        summary: { independentCopyCount: 1, managedLinkCount: 2 },
+      }),
+    });
+
+    const rail = await screen.findByRole("group", { name: "Skill status" });
+    expect(within(rail).getByText("Relationships")).toBeVisible();
+    expect(within(rail).getByText("2 managed links · 1 independent copy")).toBeVisible();
+  });
+
+  it("shows a zero relationship mix as zero instead of hiding the facts", async () => {
+    await renderDetail({
+      facade: createMockSkillDetailFacade({
+        summary: { independentCopyCount: 0, managedLinkCount: 0 },
+      }),
+    });
+
+    const rail = await screen.findByRole("group", { name: "Skill status" });
+    expect(within(rail).getByText("0 managed links · 0 independent copies")).toBeVisible();
+  });
+
+  it("states the relationship mix is unknown when the summary carries no counts", async () => {
+    await renderDetail();
+
+    const rail = await screen.findByRole("group", { name: "Skill status" });
+    expect(within(rail).getByText("Relationship mix unavailable")).toBeVisible();
+  });
+
   it("renders multi-source provenance and governed deployment relations on the page", async () => {
     await renderDetail({
       facade: createMockSkillDetailFacade({ relationshipOverview: overview }),

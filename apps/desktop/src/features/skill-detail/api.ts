@@ -22,6 +22,10 @@ export interface SkillDetailSummary {
   name: string;
   pendingCount?: number;
   projectDeploymentCount?: number;
+  /** G-16：跟随当前版本的托管链接数（活动关系，后端读模型直传）；未知时缺省。 */
+  managedLinkCount?: number;
+  /** G-16：独立副本数（活动且未跟随当前版本的副本型关系）；未知时缺省。 */
+  independentCopyCount?: number;
   /** P1-12：概览块是全页唯一的用途陈述（头部不再重复）。口径见 nativeApi.summaryOf：
    * 用户用途优先，回退译文、原文。 */
   purpose: string;
@@ -123,11 +127,32 @@ export interface SkillRequirementFact {
   verification: "declared_only" | "unavailable";
 }
 
+/** G-18：组合事实——组合名与其他成员的展示标签（读模型直传，不裸露 SkillId 之外的标识）。 */
+export interface SkillInsightCombinationFact {
+  name: string;
+  otherMemberLabels: string[];
+}
+
+/** G-18：依赖事实——活动关系的稳定形态与路径；id 仅用于列表 key，不进入文案。 */
+export interface SkillInsightDependencyFact {
+  agentClientId: string | null;
+  id: string;
+  path: string;
+  shapeLabel: string;
+}
+
+/** G-18：外部变化事实——关系内容与集中库分叉等状态的可读标签。 */
+export interface SkillInsightExternalChangeFact {
+  id: string;
+  path: string;
+  stateLabel: string;
+}
+
 export interface SkillDetailInsights {
-  combinations: string[];
-  dependencies: string[];
+  combinations: SkillInsightCombinationFact[];
+  dependencies: SkillInsightDependencyFact[];
   deterministicDuplicates: string[];
-  externalChanges: string[];
+  externalChanges: SkillInsightExternalChangeFact[];
   operationHistory: Array<{ at?: string; id: string; label: string }>;
   /** Stable code explaining why the history is not skill-scoped, if any. */
   operationHistoryLimitation?: string;

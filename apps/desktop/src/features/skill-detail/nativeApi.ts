@@ -34,44 +34,77 @@ import {
   type SkillVersionEntry,
 } from "./api";
 
-const HISTORY_KIND_KEYS: Record<string, string> = {
-  create_skill: "create",
-  deploy_skill: "deploy",
-  delete_skill: "remove",
-  remove_skill: "remove",
-  undeploy_skill: "remove",
-  save_markdown_content: "editContent",
-  save_skill_content: "editContent",
+// G-18：操作历史的 message_code 形如 `insights.operation.<类别>.<结果>`；
+// 类别/结果先收敛为 i18n 键，未登记的新码回退通用词，不把机器码裸露给用户。
+const INSIGHTS_OPERATION_CATEGORIES: Record<string, string> = {
+  combination_changed: "combinationChanged",
+  content_saved: "contentSaved",
+  deployment_reconciled: "deploymentReconciled",
+  preference_changed: "preferenceChanged",
+  skill_added: "skillAdded",
+  skill_operation: "skillOperation",
+  skill_removed: "skillRemoved",
+  source_changed: "sourceChanged",
 };
-const HISTORY_PHASE_KEYS: Record<string, string> = {
-  planned: "planned",
-  prepared: "prepared",
-  applying: "applying",
-  verifying: "verifying",
-  committed: "committed",
+const INSIGHTS_OPERATION_OUTCOMES: Record<string, string> = {
+  failed: "failed",
+  in_progress: "inProgress",
   needs_recovery: "needsRecovery",
   rolled_back: "rolledBack",
+  succeeded: "succeeded",
 };
-const HISTORY_ERROR_KEYS: Record<string, string> = {
-  "operation.conflict": "conflict",
+// G-18：关系形态码（后端稳定枚举）；`unknown` 是真实的"形态未知"事实。
+const INSIGHTS_DEPENDENCY_SHAPES: Record<string, string> = {
+  import_copy: "importCopy",
+  managed_copy: "managedCopy",
+  managed_link: "managedLink",
+  observed_copy: "observedCopy",
+  observed_link: "observedLink",
+  shared_directory_read: "sharedDirectoryRead",
+  shared_directory_reference: "sharedDirectoryReference",
+  unknown: "unknown",
+};
+// G-18：外部变化状态码；`content_diverged` 是当前唯一登记状态。
+const INSIGHTS_EXTERNAL_STATES: Record<string, string> = {
+  content_diverged: "contentDiverged",
+  unknown: "unknown",
 };
 
 function historyTranslation(key: string): string {
   return skillHubI18n.t(key as never) as string;
 }
 
-function operationHistoryLabel(entry: { kind: string; phase: string; error_code: string | null }): string {
-  const kindKey = HISTORY_KIND_KEYS[entry.kind] ?? "unknown";
-  const phaseKey = HISTORY_PHASE_KEYS[entry.phase] ?? "unknown";
-  const parts = [
-    historyTranslation("skillDetail.insights.historyLabels.kinds." + kindKey),
-    historyTranslation("skillDetail.insights.historyLabels.phases." + phaseKey),
-  ];
-  if (entry.error_code) {
-    const errorKey = HISTORY_ERROR_KEYS[entry.error_code] ?? "unknown";
-    parts.push(historyTranslation("skillDetail.insights.historyLabels.errors." + errorKey));
-  }
-  return parts.join(" · ");
+function insightsOperationLabel(messageCode: string): string {
+  const prefix = "insights.operation.";
+  const [rawCategory = "", rawOutcome = ""] = messageCode.startsWith(prefix)
+    ? messageCode.slice(prefix.length).split(".")
+    : [];
+  const categoryKey = INSIGHTS_OPERATION_CATEGORIES[rawCategory];
+  const outcomeKey = INSIGHTS_OPERATION_OUTCOMES[rawOutcome];
+  const category = historyTranslation(
+    "skillDetail.insights.historyMessages.categories."
+      + (categoryKey ?? "unknown"),
+  );
+  const outcome = historyTranslation(
+    "skillDetail.insights.historyMessages.outcomes."
+      + (outcomeKey ?? "unknown"),
+  );
+  return `${category} · ${outcome}`;
+}
+
+function dependencyShapeLabel(shapeCode: string): string {
+  const key = INSIGHTS_DEPENDENCY_SHAPES[shapeCode];
+  // 未登记的新形态诚实回退原始码本身（是事实，不编造类型词）。
+  return key
+    ? historyTranslation(`skillDetail.insights.dependencyShapes.${key}`)
+    : shapeCode;
+}
+
+function externalStateLabel(stateCode: string): string {
+  const key = INSIGHTS_EXTERNAL_STATES[stateCode];
+  return key
+    ? historyTranslation(`skillDetail.insights.externalChangeStates.${key}`)
+    : stateCode;
 }
 
 function unavailableResult(): SkillDetailUnavailableError {
@@ -114,6 +147,10 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     highRiskCount: skill.high_risk_count,
     id: skill.skill_id,
     lifecycle: lifecycleOf(skill),
+    // G-16：关系构成的真实计数（托管链接/独立副本）；后端未提供时保持缺省，
+    // 界面显示"未知"而不是伪造 0。
+    managedLinkCount: skill.managed_link_count,
+    independentCopyCount: skill.independent_copy_count,
     name: skill.display_name,
     pendingCount: skill.pending_count,
     projectDeploymentCount: skill.project_deployment_count,
@@ -530,28 +567,49 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
     return result.payload;
   },
   async getInsights(skillId): Promise<SkillDetailInsights> {
-    const result = await queryApplication({
-      type: "list_skill_operations",
-      payload: { skill_id: skillId },
-    });
-    if (result.type !== "skill_operations") throw unavailableResult();
-    const duplicates = await queryApplication({
-      type: "list_deterministic_duplicates",
-      payload: { skill_id: skillId },
-    });
-    if (duplicates.type !== "deterministic_duplicates") throw unavailableResult();
+    // G-18：组合/依赖/外部变化/操作历史来自 get_skill_insights 读模型；
+    // 确定性重复候选仍来自既有 list_deterministic_duplicates 查询。
+    const [insightsResult, duplicatesResult] = await Promise.all([
+      queryApplication({
+        type: "get_skill_insights",
+        payload: { skill_id: skillId },
+      }),
+      queryApplication({
+        type: "list_deterministic_duplicates",
+        payload: { skill_id: skillId },
+      }),
+    ]);
+    if (insightsResult.type !== "skill_insights") throw unavailableResult();
+    if (duplicatesResult.type !== "deterministic_duplicates") throw unavailableResult();
+    const payload = insightsResult.payload;
     const insights: SkillDetailInsights = {
-      combinations: [],
-      dependencies: [],
-      deterministicDuplicates: duplicates.payload.map((entry) => entry.label),
-      externalChanges: [],
-      operationHistory: result.payload.entries.map((entry) => ({
+      combinations: payload.combinations.map((combination) => ({
+        name: combination.name,
+        otherMemberLabels: [...combination.other_member_labels],
+      })),
+      dependencies: payload.dependencies.map((dependency) => ({
+        agentClientId: dependency.agent_client_id,
+        id: dependency.relation_id,
+        path: dependency.path,
+        shapeLabel: dependencyShapeLabel(dependency.shape_code),
+      })),
+      deterministicDuplicates: duplicatesResult.payload.map((entry) => entry.label),
+      externalChanges: payload.external_changes.map((change) => ({
+        id: change.relation_id,
+        path: change.path,
+        stateLabel: externalStateLabel(change.state_code),
+      })),
+      // Unix 秒（十进制字符串）在前端本地化；不可得时诚实缺省时间。
+      operationHistory: payload.operation_history.map((entry) => ({
+        at: entry.at_epoch
+          ? new Date(Number(entry.at_epoch) * 1000).toLocaleString()
+          : undefined,
         id: entry.operation_id,
-        label: operationHistoryLabel(entry),
+        label: insightsOperationLabel(entry.message_code),
       })),
     };
-    if (result.payload.limitation) {
-      insights.operationHistoryLimitation = result.payload.limitation;
+    if (payload.operation_history_limitation) {
+      insights.operationHistoryLimitation = payload.operation_history_limitation;
     }
     return insights;
   },

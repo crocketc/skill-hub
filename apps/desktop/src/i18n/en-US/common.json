@@ -1831,27 +1831,39 @@
       "none": "No established relationships",
       "operationHistoryEmpty": "No operation journal entries yet.",
       "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
-      "historyLabels": {
-        "errors": {
-          "conflict": "A conflicting change prevented this operation.",
-          "unknown": "Details unavailable"
-        },
-        "kinds": {
-          "create": "Skill creation",
-          "deploy": "Skill deployment",
-          "editContent": "Skill content edit",
-          "remove": "Skill removal",
+      "dependencyShapes": {
+        "importCopy": "Import copy",
+        "managedCopy": "Managed copy",
+        "managedLink": "Managed link",
+        "observedCopy": "Observed copy",
+        "observedLink": "Observed link",
+        "sharedDirectoryRead": "Shared directory read",
+        "sharedDirectoryReference": "Shared directory reference",
+        "unknown": "Shape unknown"
+      },
+      "externalChangeStates": {
+        "contentDiverged": "Content diverged from the central library",
+        "unknown": "State unknown"
+      },
+      "historyMessages": {
+        "categories": {
+          "combinationChanged": "Combination change",
+          "contentSaved": "Save content",
+          "deploymentReconciled": "Deployment reconciled",
+          "preferenceChanged": "Preference change",
+          "skillAdded": "Add Skill",
+          "skillOperation": "Skill operation",
+          "skillRemoved": "Remove Skill",
+          "sourceChanged": "Source update",
           "unknown": "Skill operation"
         },
-        "phases": {
-          "applying": "In progress",
-          "committed": "Completed",
+        "outcomes": {
+          "failed": "Failed",
+          "inProgress": "In progress",
           "needsRecovery": "Needs attention",
-          "planned": "Planned",
-          "prepared": "Prepared",
           "rolledBack": "Rolled back",
-          "unknown": "Status unavailable",
-          "verifying": "Verifying"
+          "succeeded": "Completed",
+          "unknown": "Status unavailable"
         }
       },
       "usageEvidence": "Usage evidence"
@@ -2005,6 +2017,12 @@
       "deploymentsUnavailable": "Deployment count unavailable",
       "deployments_one": "{{count}}",
       "deployments_other": "{{count}}",
+      "relationLabel": "Relationships",
+      "relationsIndependent_one": "{{count}} independent copy",
+      "relationsIndependent_other": "{{count}} independent copies",
+      "relationsManaged_one": "{{count}} managed link",
+      "relationsManaged_other": "{{count}} managed links",
+      "relationsUnavailable": "Relationship mix unavailable",
       "label": "Skill status",
       "versionLabel": "Current version"
     },

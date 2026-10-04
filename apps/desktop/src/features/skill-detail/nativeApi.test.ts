@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   executeCommand,
   queryApplication,
@@ -17,6 +17,13 @@ vi.mock("../../api/bindings", () => ({
 }));
 
 describe("native skill detail facade", () => {
+  // mockReset 清掉 mockResolvedValueOnce 队列：排队的"下一次结果"如果残留，
+  // 会让后续测试读到上一个测试的 payload（表现为无关的 unavailable 错误）。
+  beforeEach(() => {
+    vi.mocked(queryApplication).mockReset();
+    vi.mocked(executeCommand).mockReset();
+  });
+
   it("maps the native skill projection to summary and metadata", async () => {
     const skillPayload = {
       type: "skill" as const,
@@ -130,6 +137,9 @@ describe("native skill detail facade", () => {
         pending_count: 4,
         high_risk_count: 1,
         upstream_state: "update_available",
+        // G-16：托管链接与独立副本计数与列表同源；概要必须透传真实值。
+        managed_link_count: 2,
+        independent_copy_count: 5,
         // K9：可见树根来自真实物化事实；接管预填与打开命令都取这个绝对路径。
         root_path: "C:/SkillHub/library/pdf-reader",
       },
@@ -141,6 +151,8 @@ describe("native skill detail facade", () => {
       pendingCount: 4,
       projectDeploymentCount: 2,
       upgradeAvailable: true,
+      managedLinkCount: 2,
+      independentCopyCount: 5,
       rootPath: "C:/SkillHub/library/pdf-reader",
     });
   });
@@ -529,122 +541,198 @@ describe("native skill detail facade", () => {
     }]);
   });
 
-  it("maps the persisted journal into the operation history with an honest limitation", async () => {
+  it("queries the real skill insights projection and maps it to readable facts", async () => {
     const previousLanguage = skillHubI18n.language;
-    await skillHubI18n.changeLanguage("zh-CN");
-    vi.clearAllMocks();
-    vi.mocked(queryApplication)
-      .mockResolvedValueOnce({
-        type: "skill_operations",
-        payload: {
-          skill_id: "skill-1",
-          entries: [
-            { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
+    try {
+      await skillHubI18n.changeLanguage("zh-CN");
+      // G-18：组合/依赖/外部变化/操作历史全部来自 get_skill_insights 真实读模型；
+      // 确定性重复候选仍来自既有 list_deterministic_duplicates 查询。
+      vi.mocked(queryApplication)
+        .mockResolvedValueOnce({
+          type: "skill_insights",
+          payload: {
+            skill_id: "skill-1",
+            combinations: [
+              { name: "Document toolkit", other_member_labels: ["Spreadsheet Reader", "表格读取"] },
+            ],
+            dependencies: [
+              {
+                relation_id: "relation-1",
+                path: "C:/Users/demo/.codex/skills/pdf-reader",
+                agent_client_id: "openai.codex-cli",
+                shape_code: "managed_link",
+              },
+              {
+                relation_id: "relation-2",
+                path: "C:/Projects/demo/skills-copy",
+                agent_client_id: null,
+                shape_code: "import_copy",
+              },
+            ],
+            external_changes: [
+              { relation_id: "relation-1", path: "SKILL.md", state_code: "content_diverged" },
+            ],
+            operation_history: [
+              {
+                operation_id: "op-1",
+                message_code: "insights.operation.skill_added.succeeded",
+                at_epoch: "1757808000",
+              },
+              {
+                operation_id: "op-2",
+                message_code: "insights.operation.content_saved.failed",
+                at_epoch: null,
+              },
+            ],
+            operation_history_limitation: "skill_dimension_not_recorded",
+          },
+        } as never)
+        .mockResolvedValueOnce({
+          type: "deterministic_duplicates",
+          payload: [
             {
-              operation_id: "op-2",
-              kind: "remove_skill",
-              phase: "rolled_back",
-              error_code: "operation.conflict",
+              skill_id: "skill-1-copy",
+              label: "PDF Reader（副本）",
+              content_hash: "sha256:aa",
             },
           ],
-          filtered: false,
-          limitation: "skill_dimension_not_recorded",
-        },
-      })
-      .mockResolvedValueOnce({
-        type: "deterministic_duplicates",
-        payload: [
+        } as never);
+
+      const insights = await nativeSkillDetailFacade.getInsights("skill-1");
+      expect(insights).toEqual({
+        combinations: [
+          { name: "Document toolkit", otherMemberLabels: ["Spreadsheet Reader", "表格读取"] },
+        ],
+        dependencies: [
           {
-            skill_id: "skill-1-copy",
-            label: "PDF Reader（副本）",
-            content_hash: "sha256:aa",
+            agentClientId: "openai.codex-cli",
+            id: "relation-1",
+            path: "C:/Users/demo/.codex/skills/pdf-reader",
+            shapeLabel: "托管链接",
+          },
+          {
+            agentClientId: null,
+            id: "relation-2",
+            path: "C:/Projects/demo/skills-copy",
+            shapeLabel: "导入副本",
           },
         ],
+        deterministicDuplicates: ["PDF Reader（副本）"],
+        externalChanges: [
+          { id: "relation-1", path: "SKILL.md", stateLabel: "内容已与集中库分叉" },
+        ],
+        operationHistory: [
+          { id: "op-1", label: "添加 Skill · 已完成", at: new Date(1757808000 * 1000).toLocaleString() },
+          { id: "op-2", label: "保存内容 · 失败" },
+        ],
+        operationHistoryLimitation: "skill_dimension_not_recorded",
       });
-
-    await expect(nativeSkillDetailFacade.getInsights("skill-1")).resolves.toEqual({
-      combinations: [],
-      dependencies: [],
-      deterministicDuplicates: ["PDF Reader（副本）"],
-      externalChanges: [],
-      operationHistory: [
-        { id: "op-1", label: "部署 Skill · 已完成" },
-        { id: "op-2", label: "移除 Skill · 已撤销 · 检测到冲突，操作未能完成。" },
-      ],
-      operationHistoryLimitation: "skill_dimension_not_recorded",
-    });
-    expect(queryApplication).toHaveBeenCalledWith({
-      type: "list_skill_operations",
-      payload: { skill_id: "skill-1" },
-    });
-    await skillHubI18n.changeLanguage(previousLanguage);
+      expect(queryApplication).toHaveBeenCalledWith({
+        type: "get_skill_insights",
+        payload: { skill_id: "skill-1" },
+      });
+    } finally {
+      await skillHubI18n.changeLanguage(previousLanguage);
+    }
   });
 
-  it("keeps internal operation kinds, phases, and error codes out of insight labels", async () => {
-    vi.clearAllMocks();
-    vi.mocked(queryApplication)
-      .mockResolvedValueOnce({
-        type: "skill_operations",
-        payload: {
-          skill_id: "skill-1",
-          entries: [
-            { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
-          ],
-          filtered: false,
-          limitation: null,
-        },
-      } as never)
-      .mockResolvedValueOnce({
-        type: "deterministic_duplicates",
-        payload: [],
-      });
-
-    const insights = await nativeSkillDetailFacade.getInsights("skill-1");
-    const operationLabel = insights.operationHistory[0]?.label ?? "";
-
-    expect(operationLabel).not.toContain("deploy_skill");
-    expect(operationLabel).not.toContain("committed");
-    expect(operationLabel).not.toContain("operation.");
-  });
-
-  it("localizes known history facts and safely summarizes unknown future values in both locales", async () => {
+  it("answers unknown insight codes with honest fallbacks instead of raw internals", async () => {
     const previousLanguage = skillHubI18n.language;
-    const entries = [
-      { operation_id: "known-deploy", kind: "deploy_skill", phase: "committed", error_code: null },
-      { operation_id: "known-remove", kind: "remove_skill", phase: "rolled_back", error_code: "operation.conflict" },
-      { operation_id: "unknown", kind: "vendor_task", phase: "future_phase", error_code: "vendor.secret_error" },
-    ];
-    const loadHistory = async () => {
+    try {
+      await skillHubI18n.changeLanguage("zh-CN");
       vi.clearAllMocks();
       vi.mocked(queryApplication)
         .mockResolvedValueOnce({
-          type: "skill_operations",
-          payload: { skill_id: "skill-1", entries, filtered: false, limitation: null },
+          type: "skill_insights",
+          payload: {
+            skill_id: "skill-1",
+            combinations: [],
+            dependencies: [
+              {
+                relation_id: "relation-x",
+                path: "C:/mirrored",
+                agent_client_id: null,
+                shape_code: "vendor_future_shape",
+              },
+            ],
+            external_changes: [
+              { relation_id: "relation-x", path: "notes.md", state_code: "vendor_future_state" },
+            ],
+            operation_history: [
+              {
+                operation_id: "op-x",
+                message_code: "insights.operation.vendor_task.future_result",
+                at_epoch: null,
+              },
+            ],
+            operation_history_limitation: null,
+          },
         } as never)
+        .mockResolvedValueOnce({ type: "deterministic_duplicates", payload: [] } as never);
+
+      const insights = await nativeSkillDetailFacade.getInsights("skill-1");
+      // 未映射的新枚举回退到通用类别词，不把机器码裸露给用户，也不编造类型。
+      expect(insights.dependencies[0]?.shapeLabel).toBe("vendor_future_shape");
+      expect(insights.externalChanges[0]?.stateLabel).toBe("vendor_future_state");
+      const label = insights.operationHistory[0]?.label ?? "";
+      expect(label).toBe("Skill 操作 · 状态不可用");
+      expect(label).not.toContain("vendor_task");
+      expect(label).not.toContain("future_result");
+      // limitation 为 null 时不得渲染限制说明。
+      expect(insights.operationHistoryLimitation).toBeUndefined();
+    } finally {
+      await skillHubI18n.changeLanguage(previousLanguage);
+    }
+  });
+
+  it("localizes known insight facts consistently in both locales", async () => {
+    const previousLanguage = skillHubI18n.language;
+    const insightsPayload = {
+      type: "skill_insights" as const,
+      payload: {
+        skill_id: "skill-1",
+        combinations: [],
+        dependencies: [
+          {
+            relation_id: "r-1",
+            path: "C:/link",
+            agent_client_id: null,
+            shape_code: "managed_link",
+          },
+        ],
+        external_changes: [
+          { relation_id: "r-1", path: "SKILL.md", state_code: "content_diverged" },
+        ],
+        operation_history: [
+          {
+            operation_id: "op-known",
+            message_code: "insights.operation.deployment_reconciled.rolled_back",
+            at_epoch: null,
+          },
+        ],
+        operation_history_limitation: null as string | null,
+      },
+    };
+    const loadInsights = async () => {
+      vi.clearAllMocks();
+      vi.mocked(queryApplication)
+        .mockResolvedValueOnce(insightsPayload as never)
         .mockResolvedValueOnce({ type: "deterministic_duplicates", payload: [] } as never);
       return nativeSkillDetailFacade.getInsights("skill-1");
     };
 
     try {
       await skillHubI18n.changeLanguage("zh-CN");
-      const chinese = await loadHistory();
-      expect(chinese.operationHistory.map((entry) => entry.label)).toEqual([
-        "部署 Skill · 已完成",
-        "移除 Skill · 已撤销 · 检测到冲突，操作未能完成。",
-        "Skill 操作 · 状态不可用 · 详情不可用",
-      ]);
+      const chinese = await loadInsights();
+      expect(chinese.dependencies[0]?.shapeLabel).toBe("托管链接");
+      expect(chinese.externalChanges[0]?.stateLabel).toBe("内容已与集中库分叉");
+      expect(chinese.operationHistory[0]?.label).toBe("核对部署 · 已撤销");
 
       await skillHubI18n.changeLanguage("en-US");
-      const english = await loadHistory();
-      expect(english.operationHistory.map((entry) => entry.label)).toEqual([
-        "Skill deployment · Completed",
-        "Skill removal · Rolled back · A conflicting change prevented this operation.",
-        "Skill operation · Status unavailable · Details unavailable",
-      ]);
-      const unknownLabel = english.operationHistory[2]?.label ?? "";
-      expect(unknownLabel).not.toContain("vendor_task");
-      expect(unknownLabel).not.toContain("future_phase");
-      expect(unknownLabel).not.toContain("vendor.secret_error");
+      const english = await loadInsights();
+      expect(english.dependencies[0]?.shapeLabel).toBe("Managed link");
+      expect(english.externalChanges[0]?.stateLabel).toBe("Content diverged from the central library");
+      expect(english.operationHistory[0]?.label).toBe("Deployment reconciled · Rolled back");
     } finally {
       await skillHubI18n.changeLanguage(previousLanguage);
     }

@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { AgentPresentation } from "../../ui/AgentPresentation";
+import { AgentPresentation, readableAgentIdName } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -290,7 +290,15 @@ function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
     <details className="sh-skill-detail-review__supplemental" open>
       <summary>依赖、重复候选与使用证据</summary>
       <h3>依赖</h3>
-      <ul>{insights.dependencies.map((value) => <li key={value}>{value}</li>)}</ul>
+      {/* G-18：依赖是结构化事实——形态、路径与代理可读名。 */}
+      <ul>
+        {insights.dependencies.map((dependency) => (
+          <li key={dependency.id}>
+            {`${dependency.shapeLabel} · ${dependency.path}`}
+            {dependency.agentClientId ? ` · ${readableAgentIdName(dependency.agentClientId)}` : ""}
+          </li>
+        ))}
+      </ul>
       <div className="sh-skill-detail-review__section-heading">
         <h3>可能重复的技能</h3>
         <Button disabled={!aiConfigured} loading={aiRunning} onClick={runAnalysis} size="sm" variant="secondary">AI 相似性分析</Button>

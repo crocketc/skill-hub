@@ -141,6 +141,8 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
           queryClient.invalidateQueries({ queryKey: skillDetailKeys.versions(skillId) }),
           queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }),
           queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(skillId) }),
+          // 回滚会触发部署核对并改变洞察事实（操作历史/外部变化）。
+          queryClient.invalidateQueries({ queryKey: skillDetailKeys.insights(skillId) }),
           queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
         ]);
         setRollbackTarget(undefined);

@@ -19,6 +19,15 @@ export function DetailStatusRail({ deployments: deploymentsOverride, facade, ski
     ?? (summary.agentDeploymentCount !== undefined && summary.projectDeploymentCount !== undefined
       ? summary.agentDeploymentCount + summary.projectDeploymentCount
       : undefined);
+  // G-16：关系构成来自 get_skill 真实计数；两个计数独立缺省，各自有值才
+  // 进入文案——0 如实显示 0，全部未知时诚实声明未知，不伪造空事实。
+  const relationParts: string[] = [];
+  if (summary.managedLinkCount !== undefined) {
+    relationParts.push(t("skillDetail.statusRail.relationsManaged", { count: summary.managedLinkCount }));
+  }
+  if (summary.independentCopyCount !== undefined) {
+    relationParts.push(t("skillDetail.statusRail.relationsIndependent", { count: summary.independentCopyCount }));
+  }
   return (
     <div
       aria-label={t("skillDetail.statusRail.label")}
@@ -41,6 +50,12 @@ export function DetailStatusRail({ deployments: deploymentsOverride, facade, ski
           <dd>{deployments === undefined
             ? t("skillDetail.statusRail.deploymentsUnavailable")
             : t("skillDetail.statusRail.deployments", { count: deployments })}</dd>
+        </div>
+        <div>
+          <dt>{t("skillDetail.statusRail.relationLabel")}</dt>
+          <dd>{relationParts.length > 0
+            ? relationParts.join(" · ")
+            : t("skillDetail.statusRail.relationsUnavailable")}</dd>
         </div>
       </dl>
       <TrialActions facade={facade} skillId={skillId} summary={summary} />
