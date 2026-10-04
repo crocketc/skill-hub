@@ -413,7 +413,7 @@ async function installNativePreview(page: Page) {
           case "prepare_uninstall": return ok("uninstall_impact", { deployments, actions: ["backup", "undeploy_all", "retain_central_library"], preserves_central_library: true });
           case "apply_uninstall_decision": return ok("operation_summary", operationSummary);
           case "update_project": return ok("project", project);
-          default: return ok("operation_summary", operationSummary);
+          default: throw new Error(`Unhandled preview command: ${action.type}`);
         }
       }
       return null;
@@ -465,7 +465,7 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
   await expect(page.getByRole("img", { name: "Configuration relation count by project" })).toBeVisible();
 });
 
-test("native preview fixtures return typed discovery results and fail loudly for unknown queries", async ({ page }) => {
+test("native preview fixtures return typed results and fail loudly for unknown IPC actions", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/");
 
@@ -503,7 +503,15 @@ test("native preview fixtures return typed discovery results and fail loudly for
     } catch (error) {
       unknownQueryError = error instanceof Error ? error.message : String(error);
     }
-    return { projection, scan, unknownQueryError };
+    let unknownCommandError = "";
+    try {
+      await internals.invoke("execute_command", {
+        command: { type: "fixture_contract_probe", payload: {} },
+      });
+    } catch (error) {
+      unknownCommandError = error instanceof Error ? error.message : String(error);
+    }
+    return { projection, scan, unknownQueryError, unknownCommandError };
   });
 
   expect(contract.projection).toMatchObject({
@@ -529,6 +537,7 @@ test("native preview fixtures return typed discovery results and fail loudly for
   });
   expect(contract.scan.payload.discovered).toHaveLength(2);
   expect(contract.unknownQueryError).toContain("Unhandled preview query: fixture_contract_probe");
+  expect(contract.unknownCommandError).toContain("Unhandled preview command: fixture_contract_probe");
 });
 
 test("discovery home and local workbench expose separate navigation and scan facts", async ({ page }) => {
