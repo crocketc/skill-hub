@@ -274,20 +274,16 @@
 }
 
 .sh-skill-detail-review__rail {
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 @container workspace (min-width: 44rem) {
+  /* 生产壳把 rail 钉为整列高（应用内容区内部滚动），原型侧栏沿用；
+     这里只收敛滚动条：去掉常驻槽位，矮窗口确需滚动时用细而低调的条。 */
   .sh-skill-detail-review__rail {
-    align-self: start;
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100dvh - var(--space-4));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    position: sticky;
+    scrollbar-gutter: auto;
     scrollbar-width: thin;
-    top: var(--space-2);
+    scrollbar-color: var(--ui-border) transparent;
   }
 
   .sh-skill-detail__adjacent {
@@ -303,7 +299,7 @@
 .sh-skill-detail-review__nav a {
   border-left: 2px solid var(--ui-border);
   color: var(--ui-ink-muted);
-  padding: 0.45rem var(--space-2);
+  padding: 0.4rem var(--space-2);
   text-decoration: none;
 }
 
@@ -319,14 +315,15 @@
   grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
 }
 
-/* 技能身份区：固定高度（名称两行截断），切换技能时导航不上下跳动。 */
+/* 技能身份区：固定高度（名称两行截断），切换技能时导航不上下跳动；
+   高度收紧让侧栏在矮窗口也不出内部滚动条。 */
 .sh-skill-detail-review__identity {
   border-bottom: 1px solid var(--ui-border-subtle);
   display: grid;
-  gap: var(--space-2);
-  min-height: 11rem;
+  gap: var(--space-1);
+  min-height: 9.5rem;
   align-content: start;
-  padding-block: var(--space-2) var(--space-3);
+  padding-block: var(--space-1) var(--space-2);
 }
 
 .sh-skill-detail-review__identity-name {

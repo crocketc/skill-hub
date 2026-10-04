@@ -207,6 +207,54 @@ a {
   cursor: not-allowed;
 }
 
+/* 全局勾选框皮肤：appearance:none 统一绘制勾选/半选状态，替代各平台
+   原生外观。:where() 保持零特异性，组件级尺寸类（.sh-checkbox-field__input、
+   .sh-control-checkbox）仍按各自布局覆盖；开关输入（.sh-switch__input）
+   由 switch 皮肤隐藏，不在此列。 */
+:where(input[type="checkbox"]:not(.sh-switch__input)) {
+  appearance: none;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  display: inline-block;
+  vertical-align: middle;
+  flex: 0 0 auto;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 0.25rem;
+  background: var(--ui-control-background) center / 72% no-repeat;
+  color: var(--ui-icon-on-accent);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+:where(input[type="checkbox"]:not(.sh-switch__input)):hover {
+  border-color: var(--ui-control-border-hover);
+}
+
+:where(input[type="checkbox"]:not(.sh-switch__input)):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+:where(input[type="checkbox"]:not(.sh-switch__input)):checked {
+  border-color: var(--ui-accent);
+  background-color: var(--ui-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.6l3 3 6-7.2' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+:where(input[type="checkbox"]:not(.sh-switch__input)):indeterminate {
+  border-color: var(--ui-accent);
+  background-color: var(--ui-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.2 8h7.6' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+:where(input[type="checkbox"]:not(.sh-switch__input)):disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .sh-checkbox-field {
   display: flex;
   align-items: flex-start;

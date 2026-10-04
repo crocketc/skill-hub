@@ -17,6 +17,7 @@ import {
 } from "./api";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ReplaceSaveDialog } from "./ReplaceSaveDialog";
+import { Switch } from "../../ui/Switch";
 import {
   type ScrollSyncEcho,
   applyScrollSync,
@@ -346,15 +347,13 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
         </p>
       ) : null}
       <div className="sh-markdown-editor__split-header">
-        <label className="sh-markdown-editor__sync-toggle">
-          <input
-            aria-label={t("markdown.editor.syncScrollToggle")}
+        <div className="sh-markdown-editor__sync-toggle">
+          <Switch
             checked={syncScroll}
+            label={t("markdown.editor.syncScrollToggle")}
             onChange={(event) => toggleSyncScroll(event.target.checked)}
-            type="checkbox"
           />
-          <span>{t("markdown.editor.syncScrollToggle")}</span>
-        </label>
+        </div>
       </div>
       <div className="sh-markdown-editor__split">
         <div

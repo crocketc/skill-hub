@@ -381,6 +381,14 @@
   overflow-y: auto;
 }
 
+/* 编辑分屏的实时预览不做二级滚动：分屏面板（31.5rem 上限）是唯一
+   滚动容器，同步滚动按面板 scrollTop 计算联动比例；上面的 QA-012
+   后代规则会把渲染块变成内部滚动容器，面板永远不溢出，联动失效。 */
+.sh-markdown-editor__pane--preview .sh-markdown-renderer {
+  max-height: none;
+  overflow: visible;
+}
+
 /* —— 详情原型（fileRail）：文件结构侧栏 —— */
 /* 内容舞台：阅读/源码/对照/编辑共用同一高度（随窗口 62dvh 缩放，
    上下限保证极小/极大窗口可用），内容超出在舞台内部滚动，
