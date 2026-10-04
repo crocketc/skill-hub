@@ -38,8 +38,8 @@ use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    PinProjectSkillVersion, RelinkSource, RenameCombination, RenameSkill, SaveLlmProvider,
-    SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination, RenameSkill,
+    SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
     TranslateDescriptionsBatch, UpdateCombination,
@@ -5092,6 +5092,15 @@ impl LocalApplicationFacade {
         )
     }
 
+    fn patch_skill_metadata(&self, request: PatchSkillMetadata) -> AppResult<AppCommandResult> {
+        self.update_catalog_skill(
+            request.skill_id,
+            "execute.patch_skill_metadata",
+            "catalog.metadata_patched",
+            move |skill| skill.patch_metadata(request.patch),
+        )
+    }
+
     fn set_lifecycle(&self, request: SetLifecycle) -> AppResult<AppCommandResult> {
         self.update_catalog_skill(
             request.skill_id,
@@ -5887,6 +5896,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CheckSourceUpdate(request) => return self.check_source_update(request),
             AppCommand::ApplySourceUpdate(request) => return self.apply_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
+            AppCommand::PatchSkillMetadata(request) => {
+                return self.patch_skill_metadata(request);
+            }
             AppCommand::SetLifecycle(request) => return self.set_lifecycle(request),
             AppCommand::SetTrial(request) => return self.set_trial(request),
             AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),

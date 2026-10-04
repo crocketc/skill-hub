@@ -611,6 +611,34 @@ fn generate_bindings() {
 }
 
 #[test]
+fn metadata_patch_binding_matches_optional_nullable_wire_fields() {
+    let generated = generated_bindings_source().expect("generate Rust contracts");
+    let start = generated
+        .find("export type SkillMetadataPatch = {")
+        .expect("metadata patch type is exported");
+    let end = generated[start..]
+        .find("};")
+        .map(|offset| start + offset + 2)
+        .expect("metadata patch type closes");
+    let patch_type = &generated[start..end];
+
+    for field in [
+        "display_name?: string | null",
+        "note?: string | null",
+        "tags?: string[] | null",
+        "author?: string | null",
+        "license?: string | null",
+        "user_purpose?: string | null",
+    ] {
+        assert!(
+            patch_type.contains(field),
+            "missing TypeScript contract: {field}"
+        );
+    }
+    assert!(!patch_type.contains("PatchField"));
+}
+
+#[test]
 fn command_bridge_forwards_typed_envelopes_to_injected_facade() {
     use std::sync::Mutex;
 

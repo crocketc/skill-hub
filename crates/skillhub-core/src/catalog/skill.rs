@@ -1,4 +1,5 @@
 use super::metadata::{CallPolicy, DeclaredRequirement, InvocationPolicySource, TranslationState};
+use super::metadata_patch::{PatchField, SkillMetadataPatch};
 use crate::{AppError, ErrorCode, Severity, SkillId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -155,6 +156,29 @@ impl Skill {
             TrialState::Active
         }
     }
+    pub fn patch_metadata(&mut self, patch: SkillMetadataPatch) -> Result<(), AppError> {
+        let mut updated = self.clone();
+
+        match patch.display_name {
+            PatchField::Unchanged => {}
+            PatchField::Clear => updated.display_name = updated.runtime_name.clone(),
+            PatchField::Set(value) => updated.display_name = value,
+        }
+        patch_optional(&mut updated.user_note, patch.note);
+        match patch.tags {
+            PatchField::Unchanged => {}
+            PatchField::Clear => updated.tags.clear(),
+            PatchField::Set(tags) => updated.tags = tags.into_iter().collect(),
+        }
+        patch_optional(&mut updated.author, patch.author);
+        patch_optional(&mut updated.license, patch.license);
+        patch_optional(&mut updated.user_purpose, patch.user_purpose);
+
+        updated.validate()?;
+        *self = updated;
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn set_persisted_fields(
         &mut self,
@@ -293,5 +317,13 @@ impl Skill {
         skill.invocation_field = None;
         skill.validate()?;
         Ok(skill)
+    }
+}
+
+fn patch_optional<T>(field: &mut Option<T>, patch: PatchField<T>) {
+    match patch {
+        PatchField::Unchanged => {}
+        PatchField::Clear => *field = None,
+        PatchField::Set(value) => *field = Some(value),
     }
 }

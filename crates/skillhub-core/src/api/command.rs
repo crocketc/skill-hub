@@ -9,7 +9,7 @@ use crate::backup::{
     BackupCreated, BackupManifest, BackupPlan, BackupRetentionPolicy, BackupRetentionResult,
     BackupScope, RestoreConflictDecision, RestorePlan, RestoreResult, SensitiveContentDecision,
 };
-use crate::catalog::SkillLifecycle;
+use crate::catalog::{SkillLifecycle, SkillMetadataPatch};
 use crate::check::{CheckKind, FindingDisposition};
 use crate::export::{
     ExportDecision, ExportInput, ExportPlan, ExportResult, UninstallAction, UninstallImpact,
@@ -71,6 +71,11 @@ pub struct SetMetadata {
     pub author: Option<String>,
     pub license: Option<String>,
     pub user_purpose: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct PatchSkillMetadata {
+    pub skill_id: SkillId,
+    pub patch: SkillMetadataPatch,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetTrial {
@@ -1149,6 +1154,8 @@ pub enum AppCommand {
     SetLifecycle(SetLifecycle),
     #[serde(rename = "set_metadata")]
     SetMetadata(SetMetadata),
+    #[serde(rename = "patch_skill_metadata")]
+    PatchSkillMetadata(PatchSkillMetadata),
     #[serde(rename = "set_trial")]
     SetTrial(SetTrial),
     #[serde(rename = "create_combination")]

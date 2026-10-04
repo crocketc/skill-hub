@@ -158,7 +158,9 @@ pub use path_policy::{
 pub use settings::DesktopPreferences;
 
 pub use call_policy::{CallPolicyCapability, CallPolicyPlan, CallPolicyResult};
-pub use catalog::{LibraryManifest, LibraryPaths, PortableSkillRecord};
+pub use catalog::{
+    LibraryManifest, LibraryPaths, PatchField, PortableSkillRecord, SkillMetadataPatch,
+};
 pub use deployment::reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
 };
