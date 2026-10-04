@@ -252,27 +252,39 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
     else void validateAndSave(true);
   };
 
+  // 原型保存流把同步开关并入工具行（压缩头部高度）；常规布局保留在
+  // 分屏之间的独立行。
+  const syncControl = (
+    <Switch
+      checked={syncScroll}
+      label={t("markdown.editor.syncScrollToggle")}
+      onChange={(event) => toggleSyncScroll(event.target.checked)}
+    />
+  );
+
   return (
     <section className="sh-markdown-editor">
       <div className="sh-markdown-editor__toolbar">
-        {onExit && dirty ? (
-          <ConfirmDialog
-            cancelLabel={t("actions.cancel")}
-            confirmLabel={t("markdown.editor.exitConfirmConfirm")}
-            description={t("markdown.editor.exitConfirmDescription")}
-            onConfirm={() => void discardAndExit()}
-            title={t("markdown.editor.exitConfirmTitle")}
-            trigger={
-              <Button size="sm" variant="ghost">
-                {t("markdown.editor.exitWithoutSaving")}
-              </Button>
-            }
-            variant="danger"
-          />
-        ) : onExit ? (
-          <Button onClick={onExit} size="sm" variant="ghost">
-            {t("markdown.editor.exit")}
-          </Button>
+        {onExit && !reviewSaveFlow ? (
+          dirty ? (
+            <ConfirmDialog
+              cancelLabel={t("actions.cancel")}
+              confirmLabel={t("markdown.editor.exitConfirmConfirm")}
+              description={t("markdown.editor.exitConfirmDescription")}
+              onConfirm={() => void discardAndExit()}
+              title={t("markdown.editor.exitConfirmTitle")}
+              trigger={
+                <Button size="sm" variant="ghost">
+                  {t("markdown.editor.exitWithoutSaving")}
+                </Button>
+              }
+              variant="danger"
+            />
+          ) : (
+            <Button onClick={onExit} size="sm" variant="ghost">
+              {t("markdown.editor.exit")}
+            </Button>
+          )
         ) : null}
         <div aria-live="polite" className="sh-markdown-editor__save-status" role="status">
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
@@ -282,6 +294,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
           {savedVersion ? t("markdown.editor.versionCreated", { version: savedVersion }) : null}
           {reviewSaveResult ? <span>{reviewSaveResult}</span> : null}
         </div>
+        {reviewSaveFlow ? <div className="sh-markdown-editor__sync-toggle">{syncControl}</div> : null}
         <div className="sh-markdown-editor__save-cluster">
           <span className="sh-markdown-editor__save-hint">
             {reviewSaveFlow ? "受管链接跟随当前版本；独立副本不会自动更新。" : t("markdown.editor.saveHint")}
@@ -346,15 +359,11 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
           <span>{saveError}</span>
         </p>
       ) : null}
-      <div className="sh-markdown-editor__split-header">
-        <div className="sh-markdown-editor__sync-toggle">
-          <Switch
-            checked={syncScroll}
-            label={t("markdown.editor.syncScrollToggle")}
-            onChange={(event) => toggleSyncScroll(event.target.checked)}
-          />
+      {!reviewSaveFlow ? (
+        <div className="sh-markdown-editor__split-header">
+          <div className="sh-markdown-editor__sync-toggle">{syncControl}</div>
         </div>
-      </div>
+      ) : null}
       <div className="sh-markdown-editor__split">
         <div
           className="sh-markdown-editor__pane sh-markdown-editor__pane--source"

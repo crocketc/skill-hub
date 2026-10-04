@@ -235,7 +235,7 @@ function ReviewGraphEntry() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button onClick={() => setOpen(true)} size="sm" variant="ghost">
+      <Button className="sh-skill-detail-review__accent-action" onClick={() => setOpen(true)} size="sm" variant="ghost">
         <Icon aria-hidden="true" name="relationships" size={16} />
         在图谱中查看
       </Button>
@@ -372,7 +372,7 @@ function ReviewSourceUpdates({ markdownFacade }: { markdownFacade?: MarkdownFaca
             </p>
           ) : null}
         </div>
-        <Button onClick={() => { setLookup("idle"); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setChooserOpen(true); }} size="sm" variant="ghost">
+        <Button className="sh-skill-detail-review__accent-action" onClick={() => { setLookup("idle"); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setChooserOpen(true); }} size="sm" variant="ghost">
           {sourceState === "linked" ? "更换来源" : "查找更新来源"}
         </Button>
       </div>

@@ -378,7 +378,7 @@ test("review keeps the workspace region height across tabs and unifies safety ca
       () => Math.round(document.querySelector("#review-safety").getBoundingClientRect().top + window.scrollY),
     );
   const tops: number[] = [];
-  for (const mode of ["阅读", "源码", "对照", "编辑"]) {
+  for (const mode of ["阅读", "源码", "编辑"]) {
     await page.getByRole("tab", { name: mode }).click();
     await page.waitForTimeout(300);
     tops.push(await safetyTop());
@@ -426,7 +426,7 @@ test("review versions compare, rename and restore with current relationship impa
   await expect(page.getByTestId("review-version-result")).toContainText("独立副本保持原状");
 });
 
-test("review content explorer lists files, compares side by side and opens the system app", async ({ page }) => {
+test("review content explorer lists files and opens the system app", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(reviewUrl);
   await page.getByRole("link", { name: "内容与文件" }).click();
@@ -439,23 +439,9 @@ test("review content explorer lists files, compares side by side and opens the s
   await expect(rail.getByRole("button")).toHaveCount(optionCount);
   await expect(page.getByRole("button", { name: "使用默认应用打开" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "对照" }).click();
-  const compare = page.locator(".sh-markdown-workspace__compare");
-  await expect(compare).toBeVisible();
-  await expect(compare.locator(".sh-markdown-workspace__pane .sh-markdown-renderer")).toBeVisible();
-  await expect(compare.locator(".sh-markdown-workspace__pane .sh-markdown-workspace__source")).toBeVisible();
-  await compare.locator(".sh-markdown-workspace__pane").first().evaluate((element) => {
-    (element as HTMLElement).scrollTop = (element as HTMLElement).scrollHeight / 2;
-  });
-  await expect(async () => {
-    const ratios = await compare.locator(".sh-markdown-workspace__pane").evaluateAll((elements) =>
-      elements.map((element) => {
-        const pane = element as HTMLElement;
-        return pane.scrollTop / Math.max(1, pane.scrollHeight - pane.clientHeight);
-      }),
-    );
-    expect(Math.abs(ratios[0] - ratios[1])).toBeLessThan(0.05);
-  }).toPass();
+  // 对照页签已按用户裁决移除（与编辑页签重复），页签只剩阅读/源码/编辑。
+  await expect(page.getByRole("tab", { name: "对照" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "编辑" })).toBeVisible();
 
   await page.setViewportSize({ width: 750, height: 719 });
   await expect(rail).toBeHidden();

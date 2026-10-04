@@ -505,68 +505,38 @@
   }
 }
 
-/* —— 对照模式：阅读|源码双栏，滚动按比例联动；高度与舞台一致 —— */
-.sh-markdown-workspace__compare {
-  block-size: var(--sh-md-stage, 36rem);
-  display: grid;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-sm);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: hidden;
-}
-
-.sh-markdown-workspace__pane {
-  block-size: 100%;
-  min-width: 0;
-  overflow-y: auto;
-}
-
-.sh-markdown-workspace__pane + .sh-markdown-workspace__pane {
-  border-inline-start: 1px solid var(--ui-border);
-}
-
-.sh-markdown-workspace__pane .sh-markdown-renderer {
-  max-height: none;
-  overflow: visible;
-  padding: var(--space-4);
-}
-
-.sh-markdown-workspace__pane .sh-markdown-workspace__source {
-  border: 0;
-  border-radius: 0;
-  block-size: 100%;
-  margin: 0;
-  max-height: none;
-  overflow: visible;
-}
-
-/* 提示行常驻预留：对照说明只在该模式出现，但四个视图都保留同一行高，
-   切换页签时工作区整体高度与下方分区位置不变。 */
-.sh-markdown-workspace__mode-note {
-  min-height: 1.125rem;
-}
-
-.sh-markdown-workspace__compare-hint {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-  margin: 0;
-}
-
-/* 编辑模式同样约束在舞台高度内：分屏面板预留工具栏/提示行后取剩余高度。 */
+/* 编辑模式同样约束在舞台高度内：分屏面板预留工具行后取剩余高度；
+   原型把同步开关并入工具行，头部只剩一行，预留量随之收紧。 */
 .sh-markdown-workspace__stage--editor .sh-markdown-editor__split > div {
-  max-height: calc(var(--sh-md-stage, 36rem) - 5rem);
+  max-height: calc(var(--sh-md-stage, 36rem) - 3.5rem);
 }
 
-@media (max-width: 40rem) {
-  .sh-markdown-workspace__compare {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-  }
+/* 原型编辑头部压缩：工具行单行不换行，状态与保存说明超长省略。 */
+.sh-markdown-workspace--rail .sh-markdown-editor__toolbar {
+  flex-wrap: nowrap;
+}
 
-  .sh-markdown-workspace__pane + .sh-markdown-workspace__pane {
-    border-inline-start: 0;
-    border-top: 1px solid var(--ui-border);
-  }
+.sh-markdown-workspace--rail .sh-markdown-editor__save-status,
+.sh-markdown-workspace--rail .sh-markdown-editor__save-cluster,
+.sh-markdown-workspace--rail .sh-markdown-editor__save-hint {
+  min-width: 0;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-status {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-cluster {
+  flex: 0 1 auto;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sh-markdown-editor .cm-editor {

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -30,7 +30,7 @@ interface MarkdownWorkspaceProps {
   skillId: string;
 }
 
-type MarkdownMode = "compare" | "edit" | "read" | "source";
+type MarkdownMode = "edit" | "read" | "source";
 
 const readOnlyMessageKey = {
   builtin: "markdown.workspace.readOnly.builtin",
@@ -49,20 +49,6 @@ export function MarkdownWorkspace({
   const queryClient = useQueryClient();
   const [selectedOverride, setSelectedOverride] = useState<string>();
   const [mode, setMode] = useState<MarkdownMode>("read");
-  // 对照模式两侧按滚动比例联动；锁避免“滚动 A → 同步 B → B 又触发同步”。
-  const compareSourceRef = useRef<HTMLDivElement>(null);
-  const compareTargetRef = useRef<HTMLDivElement>(null);
-  const syncLockRef = useRef(false);
-  const syncScrollFrom = (source: HTMLDivElement, target: HTMLDivElement | null) => {
-    if (!target || syncLockRef.current) return;
-    syncLockRef.current = true;
-    const sourceRange = source.scrollHeight - source.clientHeight;
-    const targetRange = target.scrollHeight - target.clientHeight;
-    target.scrollTop = sourceRange > 0 ? (source.scrollTop / sourceRange) * Math.max(0, targetRange) : 0;
-    window.requestAnimationFrame(() => {
-      syncLockRef.current = false;
-    });
-  };
   const filesQuery = useQuery({
     queryFn: () => facade.listMarkdownFiles(skillId),
     queryKey: markdownKeys.files(skillId),
@@ -104,11 +90,9 @@ export function MarkdownWorkspace({
 
   const file = fileQuery.data;
   const effectiveMode =
-    mode === "compare" && !fileRail
+    mode === "edit" && !file?.editable
       ? "read"
-      : mode === "edit" && !file?.editable
-        ? "read"
-        : mode;
+      : mode;
   const selectFile = (path: string) => {
     setSelectedOverride(path);
     setMode("read");
@@ -118,9 +102,8 @@ export function MarkdownWorkspace({
     await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, selectedPath) });
   };
 
-  const modes: MarkdownMode[] = fileRail ? ["read", "source", "compare"] : ["read", "source"];
-  const modeLabel = (nextMode: MarkdownMode) =>
-    nextMode === "compare" ? t("markdown.workspace.mode.compare") : t(`markdown.workspace.mode.${nextMode}`);
+  const modes: MarkdownMode[] = ["read", "source"];
+  const modeLabel = (nextMode: MarkdownMode) => t(`markdown.workspace.mode.${nextMode}`);
 
   return (
     <section className={fileRail ? "sh-markdown-workspace sh-markdown-workspace--rail" : "sh-markdown-workspace"}>
@@ -248,13 +231,6 @@ export function MarkdownWorkspace({
                 </Button>
               ) : null}
             </div>
-            {/* 提示行在四个视图常驻预留：对照说明只在该模式出现，
-                但行高恒定，切换页签不再推移下方分区。 */}
-            <div className="sh-markdown-workspace__mode-note">
-              {effectiveMode === "compare" ? (
-                <p className="sh-markdown-workspace__compare-hint">{t("markdown.workspace.compareHint")}</p>
-              ) : null}
-            </div>
             {effectiveMode === "read" ? (
               fileRail ? (
                 <div className="sh-markdown-workspace__stage">
@@ -282,29 +258,6 @@ export function MarkdownWorkspace({
               ) : (
                 <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
               )
-            ) : null}
-            {effectiveMode === "compare" ? (
-              <div className="sh-markdown-workspace__compare">
-                <div
-                  className="sh-markdown-workspace__pane"
-                  onScroll={(event) => syncScrollFrom(event.currentTarget, compareTargetRef.current)}
-                  ref={compareSourceRef}
-                >
-                  <MarkdownRenderer
-                    facade={facade}
-                    filePath={file.path}
-                    markdown={file.markdown}
-                    skillId={skillId}
-                  />
-                </div>
-                <div
-                  className="sh-markdown-workspace__pane"
-                  onScroll={(event) => syncScrollFrom(event.currentTarget, compareSourceRef.current)}
-                  ref={compareTargetRef}
-                >
-                  <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
-                </div>
-              </div>
             ) : null}
             {effectiveMode === "edit" ? (
               <Suspense

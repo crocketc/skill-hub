@@ -873,6 +873,19 @@
   user-select: none;
 }
 
+/* 差异色动作：跳图谱、查找/更换来源等“离开详情的能力入口”，
+   用主题强调色与普通次级操作区分。 */
+.sh-skill-detail-review__accent-action {
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 40%, transparent);
+  color: var(--ui-accent);
+}
+
+.sh-skill-detail-review__accent-action:hover,
+.sh-skill-detail-review__accent-action:focus-visible {
+  background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
+  border-color: var(--ui-accent);
+}
+
 .sh-skill-detail--review .sh-version-timeline article > p {
   color: var(--ui-ink-muted);
   flex: 1 1 auto;
