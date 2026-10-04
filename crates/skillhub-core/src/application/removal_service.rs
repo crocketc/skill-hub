@@ -260,7 +260,33 @@ where
             });
         }
 
-        self.backend.delete_skill(record.impact.skill_id).await?;
+        // 裁决1/K2：中央删除失败是结构化部分结果——目标决定已全部应用、
+        // 中央 Skill 未删除，持久化 PartiallyCommitted（journal Applying
+        // 相位＝恢复候选）并携带稳定错误码与恢复引用；裸 Err 会让补偿完整
+        // 的 RolledBack 行静默吸收"目标已回收、中央仍在"的真实不一致。
+        if let Err(error) = self.backend.delete_skill(record.impact.skill_id).await {
+            let code = error.code;
+            self.backend
+                .save_prepared_removal(&PreparedRemovalRecord {
+                    kind: PreparedRemovalKind::DeleteSkill,
+                    impact: record.impact.clone(),
+                    decisions,
+                    applied_deployment_ids: applied,
+                    remaining_deployment_ids: Vec::new(),
+                    state: PreparedRemovalState::PartiallyCommitted,
+                    last_error_code: Some(code),
+                })
+                .await?;
+            return Ok(RemovalResult {
+                operation_id,
+                skill_id: record.impact.skill_id,
+                decisions: results,
+                central_skill_deleted: false,
+                state: RemovalResultState::PartiallyCommitted,
+                recovery_operation_id: Some(operation_id),
+                central_delete_error: Some(code),
+            });
+        }
         self.backend.settle_prepared_removal(operation_id).await?;
         Ok(RemovalResult {
             operation_id,

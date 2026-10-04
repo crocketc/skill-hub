@@ -2505,9 +2505,10 @@ impl LocalApplicationFacade {
     // recovery entry; the in-process prepared maps only carry "fetch at
     // commit time" state. Legacy single-step journal helpers remain
     // best-effort, but relationship migrations use persist_relation_operation
-    // and treat a post-filesystem checkpoint failure as a recovery event. Rows
-    // only ever contain the stable kind, the phase and a whitelisted error
-    // code — never skill content, credentials or raw error payloads.
+    // and treat a post-filesystem checkpoint failure as a recovery event.
+    // 边界（K2 裁决3）：Skill 文件/版本内容、密钥与原始错误载荷永不入日志；
+    // 行只保存稳定 kind、相位、白名单错误码，以及恢复载荷（recovery_data）
+    // 中的运行元数据（如部署目标路径、影响快照与剩余项）。
     // ------------------------------------------------------------------
 
     /// DEV-101：`planned`/`prepared` 行的可提交状态只活在进程内存里，上一个

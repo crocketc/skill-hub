@@ -4721,7 +4721,9 @@ async fn a_failed_store_deletion_keeps_every_consumer_face_consistent() {
     let AppCommandResult::RemovalImpact(impact) = prepared else {
         panic!("expected removal impact");
     };
-    let error = facade
+    // 裁决1：中央删除失败是结构化部分结果，不是裸 Err——目标面已回收、
+    // 中央未删除，错误码与恢复引用直接可见。
+    let outcome = facade
         .execute(AppCommand::CommitDeleteSkill(
             skillhub_core::api::CommitDeleteSkill {
                 prepared_delete_id: impact.operation_id,
@@ -4729,8 +4731,17 @@ async fn a_failed_store_deletion_keeps_every_consumer_face_consistent() {
             },
         ))
         .await
-        .expect_err("blocked store deletion must fail");
-    assert_eq!(error.code, ErrorCode::InternalError);
+        .expect("blocked store deletion must be a structured outcome");
+    let AppCommandResult::RemovalResult(result) = outcome else {
+        panic!("expected removal result");
+    };
+    assert_eq!(
+        result.state,
+        skillhub_core::RemovalResultState::PartiallyCommitted
+    );
+    assert_eq!(result.recovery_operation_id, Some(impact.operation_id));
+    assert!(!result.central_skill_deleted);
+    assert_eq!(result.central_delete_error, Some(ErrorCode::InternalError));
 
     // 消费面 ①：目录行与数据库投影必须原样保留（直接查库，避免经
     // GetSkill 枚举被腐蚀的版本清单）。
@@ -4780,8 +4791,9 @@ async fn a_failed_store_deletion_keeps_every_consumer_face_consistent() {
         .expect("delete operation journal phase");
     drop(database);
     assert_eq!(
-        phase, "rolled_back",
-        "a fully compensated deletion must not gate the next launch"
+        phase, "applying",
+        "目标/关系已回收、中央仍在的真实不一致必须以恢复候选可见，\
+         不能被补偿完整的 rolled_back 结算静默吸收"
     );
 
     // 消费面 ②：可见树必须仍是删除前的当前版本内容。
@@ -4806,8 +4818,9 @@ async fn a_failed_store_deletion_keeps_every_consumer_face_consistent() {
     );
 }
 
-/// 补偿本身失败（可见树无法从备份还原）时必须如实 NeedsRecovery，
-/// 且备份作为恢复材料保留在 tmp 中，不允许静默半删除态。
+/// 补偿本身失败（可见树无法从备份还原）时必须如实以恢复候选可见
+/// （journal applying 相位），且备份作为恢复材料保留在 tmp 中，
+/// 不允许静默半删除态。
 #[tokio::test]
 async fn a_failed_visible_restore_keeps_recovery_material_and_flags_needs_recovery() {
     let restore_armed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -4884,7 +4897,9 @@ async fn a_failed_visible_restore_keeps_recovery_material_and_flags_needs_recove
     let AppCommandResult::RemovalImpact(impact) = prepared else {
         panic!("expected removal impact");
     };
-    let error = facade
+    // 裁决1：补偿失败同样返回结构化部分结果，恢复材料与不一致通过
+    // applying 相位的恢复候选保持可见。
+    let outcome = facade
         .execute(AppCommand::CommitDeleteSkill(
             skillhub_core::api::CommitDeleteSkill {
                 prepared_delete_id: impact.operation_id,
@@ -4892,8 +4907,16 @@ async fn a_failed_visible_restore_keeps_recovery_material_and_flags_needs_recove
             },
         ))
         .await
-        .expect_err("restore failure must surface");
-    assert_eq!(error.code, ErrorCode::InternalError);
+        .expect("restore failure must surface as a structured outcome");
+    let AppCommandResult::RemovalResult(result) = outcome else {
+        panic!("expected removal result");
+    };
+    assert_eq!(
+        result.state,
+        skillhub_core::RemovalResultState::PartiallyCommitted
+    );
+    assert_eq!(result.central_delete_error, Some(ErrorCode::InternalError));
+    assert!(!result.central_skill_deleted);
     assert!(
         restore_fired.load(std::sync::atomic::Ordering::SeqCst),
         "the compensation must attempt the visible-tree restore"
@@ -4918,7 +4941,10 @@ async fn a_failed_visible_restore_keeps_recovery_material_and_flags_needs_recove
         )
         .expect("count version rows");
     drop(database);
-    assert_eq!(phase, "needs_recovery");
+    assert_eq!(
+        phase, "applying",
+        "半删除态必须以恢复候选可见，不允许静默吸收"
+    );
     assert_eq!(version_rows, 2, "database projection must stay intact");
     assert_eq!(
         library

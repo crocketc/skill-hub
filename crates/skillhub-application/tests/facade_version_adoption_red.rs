@@ -5,7 +5,6 @@ use skillhub_core::api::{
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::{ApplicationFacade, ErrorCode, OperationPhase};
-use skillhub_storage::DeploymentRepositorySqlite as _;
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

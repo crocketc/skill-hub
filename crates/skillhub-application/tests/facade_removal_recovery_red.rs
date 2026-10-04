@@ -384,3 +384,111 @@ async fn retry_after_partial_failure_reprepares_and_skips_applied_items() {
     assert!(result.central_skill_deleted);
     assert!(active_deployments(&restarted, skill.id()).await.is_empty());
 }
+
+/// 裁决1：中央 Skill 删除失败是结构化部分结果（目标决定已应用、中央未删除、
+/// central_delete_error 与恢复引用可见），journal 行转 applying＝恢复候选，
+/// 不被 K1c 的补偿完整结算静默吸收；直接重提交被拒，移除故障后续作必须
+/// 重新 prepare（关系已空，只剩主体删除）。
+#[tokio::test]
+async fn a_failed_central_deletion_is_a_structured_outcome_and_recovers_via_reprepare() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Central failure").await;
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    // 完整中央夹具：中央删除会走到版本清单枚举。
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Central\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable metadata");
+    // 故障注入（K1c 同款）：版本清单位置放置目录，枚举必然失败；
+    // 清单文件先备份，续作前恢复，保证重试面对与首次成功夹具一致。
+    let digest = version
+        .id
+        .as_str()
+        .strip_prefix("sha256:")
+        .unwrap_or(version.id.as_str());
+    let manifest = library
+        .paths()
+        .versions_dir
+        .join(skill.id().to_string())
+        .join(format!("{digest}.json"));
+    let manifest_backup = manifest.with_extension("json.obstruction-backup");
+    std::fs::copy(&manifest, &manifest_backup).expect("back up manifest");
+    std::fs::remove_file(&manifest).expect("remove manifest file");
+    std::fs::create_dir_all(&manifest).expect("plant manifest obstruction");
+
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let result = commit_delete(&facade, impact.operation_id, Vec::new())
+        .await
+        .expect("a failed central deletion must be a structured outcome, not a bare error");
+    let AppCommandResult::RemovalResult(result) = result else {
+        panic!("expected removal result");
+    };
+    assert_eq!(result.state, RemovalResultState::PartiallyCommitted);
+    assert_eq!(result.recovery_operation_id, Some(impact.operation_id));
+    assert!(!result.central_skill_deleted);
+    assert_eq!(result.central_delete_error, Some(ErrorCode::InternalError));
+
+    // journal 行转 applying：真实不一致（目标面已回收、中央仍在）通过
+    // 恢复候选可见，启动恢复闸门不会静默吸收它。
+    let audit_database = open_database(&ws.database_path);
+    let record = journal_record(&audit_database, impact.operation_id);
+    assert_eq!(record.phase, skillhub_core::OperationPhase::Applying);
+    let stored = prepared_payload(&audit_database, impact.operation_id);
+    assert_eq!(stored.state, PreparedRemovalState::PartiallyCommitted);
+    assert_eq!(stored.last_error_code, Some(ErrorCode::InternalError));
+    assert!(stored.remaining_deployment_ids.is_empty());
+    assert!(recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+
+    // 直接重提交被拒：applying 相位不可提交，续作必须重新 prepare。
+    let error = commit_delete(&facade, impact.operation_id, Vec::new())
+        .await
+        .expect_err("an applying row cannot be recommitted blindly");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+
+    // 移除故障后续作：重新 prepare 只剩主体删除，然后 Committed。
+    std::fs::remove_dir_all(&manifest).expect("clear obstruction");
+    std::fs::copy(&manifest_backup, &manifest).expect("restore manifest");
+    std::fs::remove_file(&manifest_backup).expect("drop backup");
+    let fresh = prepare_delete(&facade, skill.id()).await;
+    assert!(
+        fresh.deployments.is_empty(),
+        "no relations were ever registered; only the central body is left"
+    );
+    let retry = commit_delete(&facade, fresh.operation_id, Vec::new())
+        .await
+        .expect("retry commit must succeed");
+    let AppCommandResult::RemovalResult(retry) = retry else {
+        panic!("expected removal result");
+    };
+    assert_eq!(retry.state, RemovalResultState::Committed);
+    assert!(retry.central_skill_deleted);
+    assert!(retry.central_delete_error.is_none());
+    assert!(
+        !recovery_candidate_ids(&facade)
+            .await
+            .contains(&fresh.operation_id),
+        "the completed retry must not stay a recovery candidate"
+    );
+    let audit_database = open_database(&ws.database_path);
+    let catalog_rows: i64 = audit_database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM skills WHERE id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count catalog rows");
+    assert_eq!(catalog_rows, 0, "the catalog record must be gone");
+}

@@ -29,6 +29,8 @@ struct FakeRemovalBackend {
     attempted_targets: Arc<Mutex<Vec<DeploymentId>>>,
     attempted_physical_targets: Arc<Mutex<Vec<String>>>,
     failing_target: Arc<Mutex<Option<DeploymentId>>>,
+    /// 裁决1 注入：中央 Skill 删除本身的确定性失败。
+    failing_delete: Arc<Mutex<bool>>,
     /// K2：prepared 持久化载体（生产实现写操作日志，测试用内存映射）。
     prepared_store: Arc<Mutex<HashMap<OperationId, PreparedRemovalRecord>>>,
     settled_prepared: Arc<Mutex<Vec<OperationId>>>,
@@ -85,6 +87,12 @@ impl RemovalBackend for FakeRemovalBackend {
     }
 
     async fn delete_skill(&self, skill_id: SkillId) -> AppResult<()> {
+        if *self.failing_delete.lock().unwrap() {
+            return Err(AppError::new(
+                ErrorCode::InternalError,
+                skillhub_core::Severity::Error,
+            ));
+        }
         self.deleted_skills.lock().unwrap().push(skill_id);
         Ok(())
     }
@@ -180,6 +188,7 @@ fn fixture_with_undeploy_shared_choice(
         attempted_targets: Arc::new(Mutex::new(Vec::new())),
         attempted_physical_targets: Arc::new(Mutex::new(Vec::new())),
         failing_target: Arc::new(Mutex::new(None)),
+        failing_delete: Arc::new(Mutex::new(false)),
         prepared_store: Arc::new(Mutex::new(HashMap::new())),
         settled_prepared: Arc::new(Mutex::new(Vec::new())),
     };
@@ -542,6 +551,69 @@ fn a_partially_failed_delete_keeps_decisions_and_remaining_items_recoverable() {
         );
         assert_eq!(stored.applied_deployment_ids.len(), 2);
         assert_eq!(stored.last_error_code, Some(ErrorCode::InternalError));
+    });
+}
+
+/// 裁决1：中央 Skill 删除失败必须返回结构化部分结果——目标决定已全部
+/// 应用、中央未删除、携带稳定错误码与恢复引用；持久化记录转为
+/// PartiallyCommitted（journal Applying 相位＝恢复候选），不是裸 Err。
+#[test]
+fn a_failed_central_deletion_returns_a_structured_partial_result_with_a_recovery_reference() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decisions: Vec<RemovalChoice> = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: true,
+            })
+            .collect();
+        *backend.failing_delete.lock().unwrap() = true;
+
+        let result = service
+            .commit_delete(impact.operation_id, decisions.clone())
+            .await
+            .expect("a failed central deletion is a structured outcome, not a bare error");
+
+        assert_eq!(result.state, RemovalResultState::PartiallyCommitted);
+        assert_eq!(result.recovery_operation_id, Some(impact.operation_id));
+        assert!(!result.central_skill_deleted);
+        assert_eq!(result.central_delete_error, Some(ErrorCode::InternalError));
+        assert!(
+            result
+                .decisions
+                .iter()
+                .all(|item| item.status == skillhub_core::RemovalItemStatus::Applied),
+            "every target decision already applied before the central failure"
+        );
+        assert!(
+            backend.deleted_skills.lock().unwrap().is_empty(),
+            "the central skill must not be reported as deleted"
+        );
+
+        // 持久化记录转为 PartiallyCommitted：目标已回收、中央仍在的真实
+        // 不一致通过恢复候选可见，等待重新 prepare 后续作。
+        let stored = backend
+            .prepared_store
+            .lock()
+            .unwrap()
+            .get(&impact.operation_id)
+            .cloned()
+            .expect("the failed central deletion must persist its prepared record");
+        assert_eq!(
+            stored.state,
+            skillhub_core::PreparedRemovalState::PartiallyCommitted
+        );
+        assert_eq!(stored.last_error_code, Some(ErrorCode::InternalError));
+        assert!(
+            stored.remaining_deployment_ids.is_empty(),
+            "no relation work is left; only the central body remains"
+        );
+        assert_eq!(stored.applied_deployment_ids.len(), 2);
+        assert_eq!(stored.decisions, decisions);
     });
 }
 
