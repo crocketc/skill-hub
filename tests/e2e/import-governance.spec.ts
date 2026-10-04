@@ -23,9 +23,7 @@ test("lands the import on a summary with the governance task deep link and organ
   await page
     .getByRole("button", { name: "读取该来源的候选" })
     .click();
-  await page
-    .getByRole("button", { name: "继续选择候选" })
-    .click({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
   await page.getByRole("checkbox", { name: /PDF Reader/ }).click();
   await page.getByRole("checkbox", { name: /Browser Helper/ }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();

@@ -75,7 +75,6 @@ async function expectNotCovered(page: import("@playwright/test").Page, label: st
 async function parseSource(page: import("@playwright/test").Page, source = "C:/skills/preview") {
   await page.getByRole("textbox", { name: "来源" }).fill(source);
   await page.getByRole("button", { name: "读取该来源的候选" }).click();
-  await page.getByRole("button", { name: "继续选择候选" }).click();
   await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
 }
 
@@ -97,19 +96,10 @@ test("keeps the step rail, 44px primary actions and one stable footer across the
   await page.getByRole("textbox", { name: "来源" }).fill("C:/skills/preview");
   await parse.click();
 
-  // 门槛页仍是来源步骤（选择来源 → 审阅候选门槛）。
-  await expect(rail.getByRole("listitem").nth(0)).toHaveAttribute("aria-current", "step");
-  const gateContinue = page.getByRole("button", { name: "继续选择候选" });
-  expect((await gateContinue.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  const gateFooterBox = (await footerOf(page).boundingBox())!;
-  expect(Math.abs(gateFooterBox.x - footerBox.x)).toBeLessThanOrEqual(2);
-  expect(Math.abs(gateFooterBox.width - footerBox.width)).toBeLessThanOrEqual(2);
-  await gateContinue.click();
-
-  // 进入候选审阅：步骤 1 完成、步骤 2 当前，主操作仍在同一操作区。
+  // 读取完成后直接进入候选审阅：步骤 1 完成、步骤 2 当前。
+  await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
   await expect(rail.getByRole("listitem").nth(0)).toContainText("已完成");
   await expect(rail.getByRole("listitem").nth(1)).toHaveAttribute("aria-current", "step");
-  await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
   const candidatesFooterBox = (await footerOf(page).boundingBox())!;
   expect(Math.abs(candidatesFooterBox.x - footerBox.x)).toBeLessThanOrEqual(2);
   expect(Math.abs(candidatesFooterBox.width - footerBox.width)).toBeLessThanOrEqual(2);
@@ -191,12 +181,11 @@ test("wraps very long Windows paths without horizontal overflow at 800px", async
   await expectNoRootHorizontalOverflow(page, "long source path@800");
 
   await page.getByRole("button", { name: "读取该来源的候选" }).click();
-  await page.getByRole("button", { name: "继续选择候选" }).click();
   await expect(page.getByRole("checkbox", { name: /PDF/ }).first()).toBeVisible();
   await expectNoRootHorizontalOverflow(page, "long candidate paths@800");
 });
 
-test("keeps the onboarding variant on scanned sources with the footer action gated on previews", async ({ page }) => {
+test("onboarding previews advance to candidates and keep analysis gated on candidate selection", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto(`${PREVIEW}?scenario=onboarding`);
 
@@ -204,15 +193,15 @@ test("keeps the onboarding variant on scanned sources with the footer action gat
   //（不手动填写来源文本——编辑来源会重置预览状态，见报告中的产品问题记录）。
   await expect(page.getByRole("button", { name: "添加到已选来源" })).toHaveCount(0);
 
-  // 自动 preview 状态机（source_preview_started/finished + finalizeOnboardingPreviews）：
-  // 预览进行中 footer 主操作禁用（正在解析…）；全部来源出结果后自动进入
-  // 候选门槛——用 expect 内建轮询等待 previewing→ready 迁移，不引入固定延时。
-  const gateContinue = page.getByRole("button", { name: "继续选择候选" });
-  await expect(gateContinue).toBeEnabled({ timeout: 15_000 });
-  expect((await gateContinue.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-
-  await gateContinue.click();
-  await expect(page.getByRole("checkbox", { name: /PDF/ }).first()).toBeVisible();
+  // 当前流程在所有自动预览完成后直接进入候选审阅；分析按钮只在选择
+  // 至少一个候选后启用。由可见候选和禁用态等待异步预览自然完成。
+  const analyze = page.getByRole("button", { name: "分析冲突" });
+  await expect(analyze).toBeVisible({ timeout: 15_000 });
+  await expect(analyze).toBeDisabled();
+  const pdfCandidate = page.getByRole("checkbox", { name: /PDF/ }).first();
+  await expect(pdfCandidate).toBeVisible();
+  await pdfCandidate.check();
+  await expect(analyze).toBeEnabled();
 });
 
 test("surfaces per-source acquisition failures in the unified source list and recovers through the retry", async ({ page }) => {
@@ -236,13 +225,13 @@ test("surfaces per-source acquisition failures in the unified source list and re
   const retry = page.getByRole("button", { name: "重新扫描 C:/skills/preview" });
   await expect(retry).toBeVisible();
   await expect(retry).toBeEnabled();
-  await expect(page.getByRole("button", { name: "继续选择候选" })).toBeDisabled();
 
   // 恢复路径：重试扫描只重读该目录，失败原因消失并恢复为候选计数徽标。
   await retry.click();
   await expect(failedItem.getByText("2 个候选")).toBeVisible();
   await expect(page.getByText("导入步骤未能完成（preview.acquire_failed）。")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "继续选择候选" })).toBeEnabled();
+  await page.getByRole("button", { name: "读取该来源的候选" }).click();
+  await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
 });
 
 test("returns cancelled acquisitions to a reusable source step", async ({ page }) => {

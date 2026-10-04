@@ -297,8 +297,8 @@ test("quick drawer renders the confirmed fixed module order without a configurat
   const order = await page.locator(".sh-skill-drawer__module").evaluateAll((items) =>
     items.map((item) => item.querySelector("h3")?.textContent?.trim()),
   );
-  expect(order[order.length - 1]).toBe("Versions");
-  expect(order.indexOf("Versions")).toBeGreaterThan(order.indexOf("Relations"));
+  expect(order[order.length - 1]).toBe("Source and version");
+  expect(order.indexOf("Source and version")).toBeGreaterThan(order.indexOf("Relations"));
 });
 
 test("card surfaces follow the theme tokens in the default and dark themes", async ({ page }) => {
