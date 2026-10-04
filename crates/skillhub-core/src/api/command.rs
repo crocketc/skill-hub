@@ -11,9 +11,7 @@ use crate::backup::{
 };
 use crate::catalog::{SkillLifecycle, SkillMetadataPatch};
 use crate::check::{CheckKind, FindingDisposition};
-use crate::export::{
-    ExportDecision, ExportInput, ExportResult, UninstallAction, UninstallImpact,
-};
+use crate::export::{ExportDecision, ExportInput, ExportResult, UninstallAction, UninstallImpact};
 pub use crate::external_link::OpenExternalUrl;
 use crate::import::{ImportCandidate, ImportDecision};
 use crate::llm::search_query::SearchQuerySuggestion;

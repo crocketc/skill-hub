@@ -1038,12 +1038,10 @@ async fn export_preview_scans_all_version_assets_and_binds_the_three_piece_set()
         64,
         "fingerprint must be a sha256 hex digest"
     );
-    assert!(
-        preview
-            .confirmation_fingerprint
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
-    );
+    assert!(preview
+        .confirmation_fingerprint
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit()));
     assert!(
         preview.expires_at.ends_with('Z'),
         "expires_at must be RFC3339 UTC: {}",
@@ -1105,8 +1103,12 @@ async fn a_store_change_after_prepare_invalidates_the_export_preview() {
     std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
     let library = CentralLibrary::initialize(root.path()).expect("central library");
     let store = VersionStore::from_library(&library);
-    let first = store.capture(skill.id(), first_source.path()).expect("capture first");
-    store.set_current(skill.id(), &first.id).expect("set current");
+    let first = store
+        .capture(skill.id(), first_source.path())
+        .expect("capture first");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
 
     let prepared = facade
@@ -1133,7 +1135,9 @@ async fn a_store_change_after_prepare_invalidates_the_export_preview() {
     let second = store
         .capture(skill.id(), second_source.path())
         .expect("capture second");
-    store.set_current(skill.id(), &second.id).expect("switch current");
+    store
+        .set_current(skill.id(), &second.id)
+        .expect("switch current");
 
     let error = facade
         .execute(AppCommand::CreateStandardExport(
@@ -1313,8 +1317,11 @@ async fn export_sensitive_decisions_do_not_invalidate_the_preview() {
         .expect("insert skill");
     let root = tempfile::tempdir().expect("library root");
     let source = tempfile::tempdir().expect("source");
-    std::fs::write(source.path().join("SKILL.md"), "OPENAI_API_KEY=sk-live-secret\n")
-        .expect("write skill");
+    std::fs::write(
+        source.path().join("SKILL.md"),
+        "OPENAI_API_KEY=sk-live-secret\n",
+    )
+    .expect("write skill");
     let library = CentralLibrary::initialize(root.path()).expect("central library");
     let version = VersionStore::from_library(&library)
         .capture(skill.id(), source.path())

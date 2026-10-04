@@ -84,7 +84,10 @@ fn failed_staging_and_backup_restore_keeps_a_recoverable_backup() {
         .prepare_visible_tree_replacement(&fixture.skill, &fixture.target.id)
         .expect_err("both staging and compensation must fail");
     assert_eq!(
-        error.params.get("reason").and_then(serde_json::Value::as_str),
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
         Some("visible_backup_restore_failed")
     );
     let backup = PathBuf::from(
@@ -112,7 +115,6 @@ fn failed_staging_and_backup_restore_keeps_a_recoverable_backup() {
     );
     assert!(!backup.exists());
 }
-
 
 #[test]
 fn materialize_replaces_an_existing_tree_and_can_repeat() {
@@ -145,18 +147,27 @@ fn rollback_rejects_a_visible_output_whose_identity_changed() {
         .prepare_visible_tree_replacement(&fixture.skill, &fixture.target.id)
         .expect("prepare visible replacement");
     let backup = replacement.backup_path().unwrap().to_path_buf();
-    fs::write(fixture.output().join("SKILL.md"), "# Changed outside transaction\n")
-        .expect("change visible output");
+    fs::write(
+        fixture.output().join("SKILL.md"),
+        "# Changed outside transaction\n",
+    )
+    .expect("change visible output");
 
     let error = fixture
         .library
         .rollback_visible_tree_replacement(&replacement)
         .expect_err("do not overwrite an output changed after prepare");
     assert_eq!(
-        error.params.get("reason").and_then(serde_json::Value::as_str),
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
         Some("visible_output_identity_changed")
     );
-    assert!(backup.is_dir(), "the prior tree remains available for recovery");
+    assert!(
+        backup.is_dir(),
+        "the prior tree remains available for recovery"
+    );
     assert_eq!(
         fs::read_to_string(fixture.output().join("SKILL.md")).unwrap(),
         "# Changed outside transaction\n"
@@ -184,8 +195,14 @@ fn recovery_rejects_a_backup_replaced_by_a_directory_link() {
         .rollback_visible_tree_replacement(&replacement)
         .expect_err("a substituted directory link is not a recovery backup");
     assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
-    assert_eq!(fs::read_to_string(external.path().join("keep.txt")).unwrap(), "external data");
-    assert!(fs::symlink_metadata(&backup).is_ok(), "do not follow or delete the link");
+    assert_eq!(
+        fs::read_to_string(external.path().join("keep.txt")).unwrap(),
+        "external data"
+    );
+    assert!(
+        fs::symlink_metadata(&backup).is_ok(),
+        "do not follow or delete the link"
+    );
 }
 
 #[test]

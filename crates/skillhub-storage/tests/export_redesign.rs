@@ -203,7 +203,11 @@ fn excluded_skill_is_omitted_from_the_outer_package() {
             version_id: version(),
             content: "OPENAI_API_KEY=sk-live-secret".into(),
             display_name: "Sensitive".into(),
-            files: sample_files(),
+            // K3：扫描以版本物化树为准——密钥须落在 SKILL.md 文件字节里。
+            files: vec![ExportFile {
+                path: "SKILL.md".into(),
+                data_base64: STANDARD.encode("OPENAI_API_KEY=sk-live-secret"),
+            }],
         }],
         format: ExportFormat::Folder,
         output_dir: None,

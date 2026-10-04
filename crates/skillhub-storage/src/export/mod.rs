@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use skillhub_core::backup::SensitiveContentDecision;
 use skillhub_core::export::{
-    ExportFormat, ExportInput, ExportPlan, ExportSensitiveItem, ExportSkill, ExportSkillSummary,
+    ExportFormat, ExportInput, ExportPlan, ExportSensitiveItem, ExportSkillSummary,
     VersionSelection,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
@@ -35,22 +35,27 @@ impl ExportService {
     }
 
     pub fn prepare(&self, input: &ExportInput) -> AppResult<ExportPlan> {
-        // RED 存根：沿用旧的内容扫描范围（仅 SKILL.md 正文）；K3 GREEN 将
-        // 扩展为版本物化树全量文件扫描并产出 ExportSensitiveItem。
+        // K3：扫描所选版本物化树的全部文件（SKILL.md 正文 + 资产/脚本/
+        // 配置/.env 等），规则确定性、不引入 LLM。单文件无法解码/读取时
+        // 整体失败并列出全部失败文件，不静默跳过。
         let mut sensitive_items = Vec::new();
+        let mut failed_paths: Vec<String> = Vec::new();
         for skill in &input.skills {
-            let lower = skill.content.to_ascii_lowercase();
-            if lower.contains("api_key")
-                || lower.contains("token=")
-                || skill.content.contains("sk-")
-            {
-                sensitive_items.push(ExportSensitiveItem {
-                    skill_id: skill.skill_id,
-                    version_id: skill.version_id.clone(),
-                    path: "SKILL.md".into(),
-                    reason: "possible_plaintext_credential".into(),
-                });
+            for (path, bytes) in decode_version_files(skill, &mut failed_paths) {
+                if let Some(reason) = classify_sensitive_file(&path, &bytes) {
+                    sensitive_items.push(ExportSensitiveItem {
+                        skill_id: skill.skill_id,
+                        version_id: skill.version_id.clone(),
+                        path,
+                        reason: reason.to_owned(),
+                    });
+                }
             }
+        }
+        if !failed_paths.is_empty() {
+            failed_paths.sort();
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("failed_paths", serde_json::json!(failed_paths)));
         }
         Ok(ExportPlan {
             selection: input.selection.clone(),
@@ -74,6 +79,25 @@ impl ExportService {
         plan: &ExportPlan,
         decisions: &[(SkillId, SensitiveContentDecision)],
     ) -> AppResult<StandardExport> {
+        // K3 纵深防御：create 只接受与 prepare 时相同的选择与版本集合；
+        // 任何漂移在写盘之前拒绝（facade 层已按预览快照重验指纹）。
+        let plan_pairs: Vec<String> = plan
+            .skills
+            .iter()
+            .map(|skill| format!("{}\u{0}{}", skill.skill_id, skill.version_id))
+            .collect();
+        let input_pairs: Vec<String> = input
+            .skills
+            .iter()
+            .map(|skill| format!("{}\u{0}{}", skill.skill_id, skill.version_id))
+            .collect();
+        if input.selection != plan.selection
+            || input.versions != plan.versions
+            || sorted(plan_pairs) != sorted(input_pairs)
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "export_plan_drift"));
+        }
         let decisions: HashMap<SkillId, SensitiveContentDecision> =
             decisions.iter().copied().collect();
         for item in &plan.sensitive_items {
@@ -161,7 +185,24 @@ impl ExportService {
             timestamp()
         ));
         fs::create_dir_all(&self.destination).map_err(io_error)?;
-        let file = fs::File::create(&archive_path).map_err(io_error)?;
+        // 故障矩阵：落盘中途失败时清理半成品归档文件，不留下损坏文件。
+        let written =
+            self.write_archive_body(&archive_path, entries, manifest, wrap_individual_skill_zips);
+        if let Err(error) = written {
+            let _ = fs::remove_file(&archive_path);
+            return Err(error);
+        }
+        Ok(StandardExport { root: archive_path })
+    }
+
+    fn write_archive_body(
+        &self,
+        archive_path: &std::path::Path,
+        entries: &[ExportEntry],
+        manifest: &serde_json::Value,
+        wrap_individual_skill_zips: bool,
+    ) -> AppResult<()> {
+        let file = fs::File::create(archive_path).map_err(io_error)?;
         let mut writer = zip::ZipWriter::new(file);
         let options = zip::write::FileOptions::<()>::default()
             .compression_method(zip::CompressionMethod::Deflated);
@@ -214,7 +255,7 @@ impl ExportService {
             .write_all(&serde_json::to_vec_pretty(manifest).map_err(json_error)?)
             .map_err(io_error)?;
         writer.finish().map_err(zip_error)?;
-        Ok(StandardExport { root: archive_path })
+        Ok(())
     }
 }
 
@@ -239,6 +280,60 @@ fn version_files(skill: &skillhub_core::ExportSkill) -> AppResult<Vec<(String, V
             Ok((file.path.clone(), bytes))
         })
         .collect()
+}
+
+/// K3：prepare 用的解码——单个文件解码失败只记录路径并继续扫描其余文件，
+/// 由调用方在收集完成后整体失败并列出全部失败文件。
+fn decode_version_files(
+    skill: &skillhub_core::ExportSkill,
+    failed_paths: &mut Vec<String>,
+) -> Vec<(String, Vec<u8>)> {
+    if skill.files.is_empty() {
+        return vec![("SKILL.md".into(), skill.content.as_bytes().to_vec())];
+    }
+    use base64::Engine as _;
+    skill
+        .files
+        .iter()
+        .filter_map(|file| {
+            match base64::engine::general_purpose::STANDARD.decode(file.data_base64.as_bytes()) {
+                Ok(bytes) => Some((file.path.clone(), bytes)),
+                Err(_) => {
+                    failed_paths.push(file.path.clone());
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// K3：确定性敏感项识别（不引入 LLM）。文件名模式优先——basename 为
+/// `.env` 或包含 key / secret / token / credential / id_rsa（大小写不
+/// 敏感）即视为敏感文件名；否则按文本内容匹配既有明文凭据特征
+/// （api_key / token= / sk-）。每个文件最多产出一条敏感项。
+fn classify_sensitive_file(path: &str, bytes: &[u8]) -> Option<&'static str> {
+    let basename = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let name = basename.to_ascii_lowercase();
+    if name == ".env"
+        || name.contains("key")
+        || name.contains("secret")
+        || name.contains("token")
+        || name.contains("credential")
+        || name.contains("id_rsa")
+    {
+        return Some("sensitive_filename");
+    }
+    let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+    if text.contains("api_key") || text.contains("token=") || text.contains("sk-") {
+        return Some("possible_plaintext_credential");
+    }
+    None
+}
+
+/// 排序后的键列表，让版本集合比较不依赖载荷顺序。
+fn sorted(mut keys: Vec<String>) -> Vec<String> {
+    keys.sort();
+    keys
 }
 
 /// 显示名 → 安全目录名：保留字母数字与 -_.，其余折叠为 -；

@@ -576,9 +576,7 @@ fn export_and_uninstall_commands_have_stable_wire_shapes() {
         output_dir: None,
     };
     let commands = [
-        AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport {
-            input: empty,
-        }),
+        AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport { input: empty }),
         AppCommand::CreateStandardExport(skillhub_core::CreateStandardExport {
             preview_id: OperationId::new(),
             decisions: Vec::new(),

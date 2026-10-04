@@ -4047,81 +4047,81 @@ impl LocalApplicationFacade {
         mut input: skillhub_core::ExportInput,
     ) -> AppResult<skillhub_core::ExportInput> {
         let library = self.library_runtime.snapshot()?;
-        if input.skills.is_empty() {
-            let skill_ids = match &input.selection {
-                skillhub_core::ExportSelection::Skills(ids) => ids.clone(),
-                skillhub_core::ExportSelection::Combination(_) => {
-                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                        .with_param("field", "skills")
-                        .with_param("reason", "combination_members_required")
-                        .with_action(RecoveryAction::ChooseAnotherName));
+        // K3：内容一律从后端版本存储物化——线上载荷不再承担携带文件的信任，
+        // 前端传入的 skills 列表即使非空也不会被当作真实版本内容。
+        input.skills.clear();
+        let skill_ids = match &input.selection {
+            skillhub_core::ExportSelection::Skills(ids) => ids.clone(),
+            skillhub_core::ExportSelection::Combination(_) => {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "skills")
+                    .with_param("reason", "combination_members_required")
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+        };
+        for skill_id in skill_ids {
+            let version_ids = match &input.versions {
+                skillhub_core::VersionSelection::Current => {
+                    library.current(skill_id)?.into_iter().collect::<Vec<_>>()
                 }
+                skillhub_core::VersionSelection::History(ids) => ids.clone(),
             };
-            for skill_id in skill_ids {
-                let version_ids = match &input.versions {
-                    skillhub_core::VersionSelection::Current => {
-                        library.current(skill_id)?.into_iter().collect::<Vec<_>>()
-                    }
-                    skillhub_core::VersionSelection::History(ids) => ids.clone(),
-                };
-                for version_id in version_ids {
-                    let (_, bytes) = library.read_file(&version_id, "SKILL.md", 1_048_576)?;
-                    let content = String::from_utf8(bytes).map_err(|_| {
-                        AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                            .with_param("skill_id", skill_id.to_string())
-                            .with_param("reason", "skill_markdown_not_utf8")
-                            .with_action(RecoveryAction::InspectTarget)
+            for version_id in version_ids {
+                let (_, bytes) = library.read_file(&version_id, "SKILL.md", 1_048_576)?;
+                let content = String::from_utf8(bytes).map_err(|_| {
+                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_param("reason", "skill_markdown_not_utf8")
+                        .with_action(RecoveryAction::InspectTarget)
+                })?;
+                let display_name =
+                    self.with_database("execute.standard_export.catalog", |database| {
+                        database
+                            .catalog_repository()?
+                            .get_sync(skill_id)?
+                            .map(|skill| skill.display_name().to_owned())
+                            .ok_or_else(|| {
+                                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                                    .with_param("skill_id", skill_id.to_string())
+                                    .with_action(RecoveryAction::Retry)
+                            })
                     })?;
-                    let display_name =
-                        self.with_database("execute.standard_export.catalog", |database| {
-                            database
-                                .catalog_repository()?
-                                .get_sync(skill_id)?
-                                .map(|skill| skill.display_name().to_owned())
-                                .ok_or_else(|| {
-                                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                                        .with_param("skill_id", skill_id.to_string())
-                                        .with_action(RecoveryAction::Retry)
-                                })
-                        })?;
-                    // AR-025：导出完整目录内容——逐文件读出版本内容并 base64
-                    // 编码；单文件上限 16 MiB、单版本累计 64 MiB，超出时诚实
-                    // 报错而不是静默截断。
-                    use base64::Engine as _;
-                    let manifest = library.load_manifest(&version_id)?;
-                    let mut files = Vec::with_capacity(manifest.entries.len());
-                    let mut total_bytes: u64 = 0;
-                    for entry in &manifest.entries {
-                        const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
-                        const MAX_VERSION_BYTES: u64 = 64 * 1024 * 1024;
-                        if entry.size > MAX_FILE_BYTES {
-                            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                                .with_param("skill_id", skill_id.to_string())
-                                .with_param("path", entry.path.clone())
-                                .with_param("reason", "export_file_too_large"));
-                        }
-                        total_bytes += entry.size;
-                        if total_bytes > MAX_VERSION_BYTES {
-                            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                                .with_param("skill_id", skill_id.to_string())
-                                .with_param("reason", "export_version_too_large"));
-                        }
-                        let (_, file_bytes) =
-                            library.read_file(&version_id, &entry.path, MAX_FILE_BYTES)?;
-                        files.push(skillhub_core::ExportFile {
-                            path: entry.path.clone(),
-                            data_base64: base64::engine::general_purpose::STANDARD
-                                .encode(file_bytes),
-                        });
+                // AR-025：导出完整目录内容——逐文件读出版本内容并 base64
+                // 编码；单文件上限 16 MiB、单版本累计 64 MiB，超出时诚实
+                // 报错而不是静默截断。
+                use base64::Engine as _;
+                let manifest = library.load_manifest(&version_id)?;
+                let mut files = Vec::with_capacity(manifest.entries.len());
+                let mut total_bytes: u64 = 0;
+                for entry in &manifest.entries {
+                    const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+                    const MAX_VERSION_BYTES: u64 = 64 * 1024 * 1024;
+                    if entry.size > MAX_FILE_BYTES {
+                        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                            .with_param("skill_id", skill_id.to_string())
+                            .with_param("path", entry.path.clone())
+                            .with_param("reason", "export_file_too_large"));
                     }
-                    input.skills.push(skillhub_core::ExportSkill {
-                        skill_id,
-                        version_id,
-                        content,
-                        display_name,
-                        files,
+                    total_bytes += entry.size;
+                    if total_bytes > MAX_VERSION_BYTES {
+                        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                            .with_param("skill_id", skill_id.to_string())
+                            .with_param("reason", "export_version_too_large"));
+                    }
+                    let (_, file_bytes) =
+                        library.read_file(&version_id, &entry.path, MAX_FILE_BYTES)?;
+                    files.push(skillhub_core::ExportFile {
+                        path: entry.path.clone(),
+                        data_base64: base64::engine::general_purpose::STANDARD.encode(file_bytes),
                     });
                 }
+                input.skills.push(skillhub_core::ExportSkill {
+                    skill_id,
+                    version_id,
+                    content,
+                    display_name,
+                    files,
+                });
             }
         }
         Ok(input)
@@ -4168,6 +4168,110 @@ impl LocalApplicationFacade {
             .with_action(RecoveryAction::InspectTarget));
         }
         Ok(canonical)
+    }
+
+    /// K3：标准导出提交——只收 `preview_id` 与敏感决定；实际内容从版本
+    /// 存储重新物化并重验预览指纹。主体/版本/文件字节/格式/授权输出位置
+    /// 任一漂移或预览过期都拒绝（`field=prepared_export`）并要求重新预览。
+    /// 敏感决定是 Commit 阶段响应：缺失/不匹配在指纹核验通过后以
+    /// `BackupExportDecisionRequired` 拦截，不消耗预览（journal 行保持
+    /// prepared，同一预览可在补上决定后继续使用）。
+    fn commit_standard_export(
+        &self,
+        request: skillhub_core::CreateStandardExport,
+    ) -> AppResult<AppCommandResult> {
+        let preview_invalid = |reason: &'static str| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "prepared_export")
+                .with_param("reason", reason)
+                .with_action(RecoveryAction::Retry)
+        };
+        let settle =
+            |record: &skillhub_core::OperationRecord, message: &'static str| -> AppResult<()> {
+                let mut settled = record.clone();
+                settled.phase = skillhub_core::OperationPhase::RolledBack;
+                settled.progress.phase = settled.phase;
+                settled.progress.message_code = message.to_owned();
+                self.with_database("standard_export.settle_preview", |database| {
+                    database.operation_repository().update_sync(&settled)
+                })
+            };
+        let mut record = self
+            .with_database("standard_export.load_preview", |database| {
+                database.operation_repository().get_sync(request.preview_id)
+            })?
+            .ok_or_else(|| preview_invalid("export_preview_missing"))?;
+        if record.kind != "standard_export"
+            || record.phase != skillhub_core::OperationPhase::Prepared
+        {
+            return Err(preview_invalid("export_preview_not_prepared"));
+        }
+        let snapshot: ExportPreviewSnapshot = serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| preview_invalid("export_preview_invalid"))?;
+        if snapshot.expires_at <= now_seconds() {
+            settle(&record, "operation.standard_export.expired")?;
+            return Err(preview_invalid("export_preview_expired"));
+        }
+
+        // 从后端版本存储重新物化内容（快照不含文件字节），重算指纹核对漂移；
+        // 授权输出位置失效（目录消失/授权被撤销）同样使预览失效。
+        let output_dir = match snapshot.output_dir.as_deref() {
+            Some(raw) => match self.granted_export_destination(raw) {
+                Ok(path) => Some(path),
+                Err(_) => {
+                    settle(&record, "operation.standard_export.stale_preview")?;
+                    return Err(preview_invalid("export_output_not_granted"));
+                }
+            },
+            None => None,
+        };
+        let materialized = self.export_input(skillhub_core::ExportInput {
+            selection: snapshot.selection.clone(),
+            versions: snapshot.versions.clone(),
+            skills: Vec::new(),
+            format: snapshot.format,
+            output_dir: snapshot.output_dir.clone(),
+        })?;
+        let fingerprint = export_preview_fingerprint(&materialized, output_dir.as_deref())?;
+        if fingerprint != snapshot.confirmation_fingerprint {
+            settle(&record, "operation.standard_export.stale_preview")?;
+            return Err(preview_invalid("export_preview_drifted"));
+        }
+
+        let service = ExportService::new(match &output_dir {
+            Some(path) => path.clone(),
+            None => self.standard_export_destination()?,
+        });
+        let plan = service.prepare(&materialized)?;
+        // 决定校验发生在指纹核验之后：缺失/不匹配由存储层以
+        // BackupExportDecisionRequired 拒绝且不写盘、不消耗预览。
+        let decisions: Vec<(
+            skillhub_core::SkillId,
+            skillhub_core::backup::SensitiveContentDecision,
+        )> = request
+            .decisions
+            .iter()
+            .map(|decision| (decision.skill_id, decision.decision))
+            .collect();
+        let export = service.create(&materialized, &plan, &decisions)?;
+        record.phase = skillhub_core::OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = 1;
+        record.progress.message_code = "operation.standard_export.committed".to_owned();
+        self.with_database("standard_export.settle_committed", |database| {
+            database.operation_repository().update_sync(&record)
+        })?;
+        let excluded = request
+            .decisions
+            .iter()
+            .filter(|decision| decision.decision == SensitiveContentDecision::ExcludeSkill)
+            .count();
+        Ok(AppCommandResult::ExportResult(
+            skillhub_core::ExportResult {
+                path: export.root.to_string_lossy().into_owned(),
+                skills_exported: (materialized.skills.len() - excluded) as u32,
+            },
+        ))
     }
 
     fn uninstall_deployments(
@@ -7096,30 +7200,66 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return Ok(AppCommandResult::BackupRetentionResult(retention));
             }
             AppCommand::PrepareStandardExport(request) => {
+                // K3：内容一律从后端版本存储物化并做全量资产扫描；授权输出
+                // 位置在 prepare 阶段即校验。
                 let input = self.export_input(request.input)?;
-                let service = ExportService::new(self.standard_export_destination()?);
-                // RED 存根：三件套为占位（指纹空、不持久化）；K3 GREEN 落地
-                // 全量扫描、指纹与预览绑定。
+                let output_dir = match input.output_dir.as_deref() {
+                    Some(raw) => Some(self.granted_export_destination(raw)?),
+                    None => None,
+                };
+                let service = ExportService::new(match &output_dir {
+                    Some(path) => path.clone(),
+                    None => self.standard_export_destination()?,
+                });
                 let plan = service.prepare(&input)?;
+                let preview_id = OperationId::new();
+                let expires_at = now_seconds() + EXPORT_PREVIEW_TTL_SECONDS;
+                let confirmation_fingerprint =
+                    export_preview_fingerprint(&input, output_dir.as_deref())?;
+                let snapshot = ExportPreviewSnapshot {
+                    selection: input.selection.clone(),
+                    versions: input.versions.clone(),
+                    format: input.format,
+                    output_dir: output_dir
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    expires_at,
+                    confirmation_fingerprint: confirmation_fingerprint.clone(),
+                };
+                // 预览三件套落操作日志：kind=standard_export、phase=prepared，
+                // 快照只含运行元数据——Skill 文件/版本内容不入日志（K2 裁决 3），
+                // create 时从版本存储重新物化并重验指纹。
+                let mut record = skillhub_core::OperationRecord::planned(
+                    preview_id,
+                    "standard_export",
+                    confirmation_fingerprint.clone(),
+                );
+                record.phase = skillhub_core::OperationPhase::Prepared;
+                record.progress.phase = record.phase;
+                record.progress.message_code = "operation.standard_export.prepared".to_owned();
+                record.progress.total = 1;
+                record.recovery_data = serde_json::to_value(&snapshot).map_err(|error| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("source", error.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })?;
+                self.with_database("standard_export.insert_preview", |database| {
+                    database.operation_repository().insert_sync(&record)
+                })?;
                 return Ok(AppCommandResult::ExportPreview(
                     skillhub_core::ExportPreview {
                         selection: plan.selection,
                         versions: plan.versions,
                         skills: plan.skills,
                         sensitive_items: plan.sensitive_items,
-                        preview_id: OperationId::new(),
-                        expires_at: format_rfc3339_utc(
-                            now_seconds() + EXPORT_PREVIEW_TTL_SECONDS,
-                        ),
-                        confirmation_fingerprint: String::new(),
+                        preview_id,
+                        expires_at: format_rfc3339_utc(expires_at),
+                        confirmation_fingerprint,
                     },
                 ));
             }
             AppCommand::CreateStandardExport(request) => {
-                // RED 存根：预览绑定未落地，创建一律拒绝并要求重新预览。
-                let _ = request.decisions;
-                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                    .with_param("field", "prepared_export"));
+                return self.commit_standard_export(request);
             }
             AppCommand::PrepareUninstall(request) => {
                 let deployments = self.uninstall_deployments(&request.deployment_ids)?;
@@ -13386,6 +13526,94 @@ struct VersionAdoptionFingerprint<'a> {
     target_tree_hash: &'a str,
     target_basic_check_required: bool,
     relations: &'a [skillhub_core::api::VersionAdoptionRelationImpact],
+}
+
+/// K3：标准导出预览快照——只含运行元数据（选择/版本/格式/授权输出目录/
+/// 过期时刻/指纹）。Skill 文件与版本内容不入日志（K2 裁决 3）：create 时
+/// 从版本存储重新物化内容并重验指纹，存储即后端事实。
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExportPreviewSnapshot {
+    selection: skillhub_core::ExportSelection,
+    versions: skillhub_core::VersionSelection,
+    format: skillhub_core::ExportFormat,
+    output_dir: Option<String>,
+    /// 绝对过期时刻（epoch 秒）。
+    expires_at: i64,
+    confirmation_fingerprint: String,
+}
+
+/// K3 预览指纹的文件清单项：按 (skill_id, version_id, path) 排序后序列化，
+/// 保证同一内容集合得到同一指纹。
+#[derive(serde::Serialize)]
+struct ExportPreviewFingerprintFile {
+    skill_id: skillhub_core::SkillId,
+    version_id: skillhub_core::VersionId,
+    path: String,
+    sha256: String,
+}
+
+/// K3：预览指纹构成——覆盖选定主体/版本（selection/versions）、全部文件
+/// 字节（files 的 sha256 清单）、格式（format）与授权输出位置（output_dir
+/// 的规范化路径；None 表示库内默认导出目录）。不含用户敏感决定：决定是
+/// Commit 阶段随 preview_id 一并提交的响应，不参与预览失效判定。
+#[derive(serde::Serialize)]
+struct ExportPreviewFingerprint<'a> {
+    selection: &'a skillhub_core::ExportSelection,
+    versions: &'a skillhub_core::VersionSelection,
+    format: skillhub_core::ExportFormat,
+    output_dir: Option<String>,
+    files: Vec<ExportPreviewFingerprintFile>,
+}
+
+fn export_preview_fingerprint(
+    input: &skillhub_core::ExportInput,
+    output_dir: Option<&std::path::Path>,
+) -> AppResult<String> {
+    use base64::Engine as _;
+    let mut files = Vec::new();
+    for skill in &input.skills {
+        for file in &skill.files {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(file.data_base64.as_bytes())
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("path", file.path.clone())
+                        .with_param("reason", "export_file_not_base64")
+                })?;
+            files.push(ExportPreviewFingerprintFile {
+                skill_id: skill.skill_id,
+                version_id: skill.version_id.clone(),
+                path: file.path.clone(),
+                sha256: format!("{:x}", Sha256::digest(&bytes)),
+            });
+        }
+    }
+    files.sort_by(|left, right| {
+        (
+            left.skill_id.to_string(),
+            left.version_id.to_string(),
+            left.path.clone(),
+        )
+            .cmp(&(
+                right.skill_id.to_string(),
+                right.version_id.to_string(),
+                right.path.clone(),
+            ))
+    });
+    let value = ExportPreviewFingerprint {
+        selection: &input.selection,
+        versions: &input.versions,
+        format: input.format,
+        output_dir: output_dir.map(|path| path.to_string_lossy().into_owned()),
+        files,
+    };
+    let bytes = serde_json::to_vec(&value).map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
+    })?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 struct VersionAdoptionFacts {
