@@ -12,7 +12,7 @@ use crate::backup::{
 use crate::catalog::{SkillLifecycle, SkillMetadataPatch};
 use crate::check::{CheckKind, FindingDisposition};
 use crate::export::{
-    ExportDecision, ExportInput, ExportPlan, ExportResult, UninstallAction, UninstallImpact,
+    ExportDecision, ExportInput, ExportResult, UninstallAction, UninstallImpact,
 };
 pub use crate::external_link::OpenExternalUrl;
 use crate::import::{ImportCandidate, ImportDecision};
@@ -952,10 +952,12 @@ pub struct PrepareStandardExport {
     pub input: ExportInput,
 }
 
+/// K3：创建只收 `preview_id` 与用户敏感决定——实际输入取后端保存并扫描
+/// 的内容快照，不再接受可篡改的完整 `input`。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct CreateStandardExport {
-    pub input: ExportInput,
+    pub preview_id: OperationId,
     pub decisions: Vec<ExportDecision>,
 }
 
@@ -1517,8 +1519,8 @@ pub enum AppCommandResult {
     RestoreResult(RestoreResult),
     #[serde(rename = "backup_retention_result")]
     BackupRetentionResult(BackupRetentionResult),
-    #[serde(rename = "export_plan")]
-    ExportPlan(ExportPlan),
+    #[serde(rename = "export_preview")]
+    ExportPreview(crate::ExportPreview),
     #[serde(rename = "export_result")]
     ExportResult(ExportResult),
     #[serde(rename = "uninstall_impact")]

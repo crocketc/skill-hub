@@ -724,25 +724,20 @@ async fn standard_export_prepare_uses_the_real_facade_and_stays_read_only() {
                 input: skillhub_core::ExportInput {
                     selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
                     versions: skillhub_core::VersionSelection::Current,
-                    skills: vec![skillhub_core::ExportSkill {
-                        skill_id: skill.id(),
-                        version_id: version.id.clone(),
-                        content: "# Portable\n".into(),
-                        display_name: "Standard export".into(),
-                        files: Vec::new(),
-                    }],
+                    // K3：内容一律来自后端版本存储，线上载荷不再携带文件。
+                    skills: Vec::new(),
                     format: skillhub_core::ExportFormat::Folder,
                     output_dir: None,
                 },
             },
         ))
         .await
-        .expect("export plan");
-    let AppCommandResult::ExportPlan(plan) = result else {
-        panic!("expected export plan");
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = result else {
+        panic!("expected export preview");
     };
-    assert_eq!(plan.skills.len(), 1);
-    assert!(plan.sensitive_items.is_empty());
+    assert_eq!(preview.skills.len(), 1);
+    assert!(preview.sensitive_items.is_empty());
     assert!(!root.path().join(".skillhub/exports").exists());
 }
 
@@ -770,21 +765,24 @@ async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_
     let input = skillhub_core::ExportInput {
         selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
         versions: skillhub_core::VersionSelection::Current,
-        skills: vec![skillhub_core::ExportSkill {
-            skill_id: skill.id(),
-            version_id: version.id,
-            content: secret.into(),
-            display_name: "Sensitive export".into(),
-            files: Vec::new(),
-        }],
+        skills: Vec::new(),
         format: skillhub_core::ExportFormat::Folder,
         output_dir: None,
     };
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport { input },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
     let missing = facade
         .execute(AppCommand::CreateStandardExport(
             skillhub_core::CreateStandardExport {
-                input: input.clone(),
+                preview_id: preview.preview_id,
                 decisions: Vec::new(),
             },
         ))
@@ -795,7 +793,7 @@ async fn standard_export_create_requires_sensitive_decision_and_returns_neutral_
     let result = facade
         .execute(AppCommand::CreateStandardExport(
             skillhub_core::CreateStandardExport {
-                input,
+                preview_id: preview.preview_id,
                 decisions: vec![skillhub_core::ExportDecision {
                     skill_id: skill.id(),
                     decision: skillhub_core::backup::SensitiveContentDecision::IncludeAndMark,
@@ -846,9 +844,9 @@ async fn standard_export_exports_full_folder_content_using_display_name() {
         .expect("set current");
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
 
-    let result = facade
-        .execute(AppCommand::CreateStandardExport(
-            skillhub_core::CreateStandardExport {
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
                 input: skillhub_core::ExportInput {
                     selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
                     versions: skillhub_core::VersionSelection::Current,
@@ -856,6 +854,17 @@ async fn standard_export_exports_full_folder_content_using_display_name() {
                     format: skillhub_core::ExportFormat::Folder,
                     output_dir: None,
                 },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
                 decisions: Vec::new(),
             },
         ))
@@ -909,10 +918,11 @@ async fn standard_export_to_user_directory_requires_a_granted_path() {
     let canonical = std::fs::canonicalize(output.path()).expect("canonicalize output");
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
 
-    // 未签发 grant：拒绝写入用户选择的目录。
+    // K3：授权输出位置在预览阶段核验并纳入指纹；未签发 grant 的目录
+    // 在 prepare 即拒绝。
     let denied = facade
-        .execute(AppCommand::CreateStandardExport(
-            skillhub_core::CreateStandardExport {
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
                 input: skillhub_core::ExportInput {
                     selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
                     versions: skillhub_core::VersionSelection::Current,
@@ -920,7 +930,6 @@ async fn standard_export_to_user_directory_requires_a_granted_path() {
                     format: skillhub_core::ExportFormat::Folder,
                     output_dir: Some(output.path().to_string_lossy().into_owned()),
                 },
-                decisions: Vec::new(),
             },
         ))
         .await
@@ -935,9 +944,9 @@ async fn standard_export_to_user_directory_requires_a_granted_path() {
             operating_system: skillhub_core::agent::OperatingSystem::Windows,
         })
         .expect("register grant");
-    let result = facade
-        .execute(AppCommand::CreateStandardExport(
-            skillhub_core::CreateStandardExport {
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
                 input: skillhub_core::ExportInput {
                     selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
                     versions: skillhub_core::VersionSelection::Current,
@@ -945,6 +954,17 @@ async fn standard_export_to_user_directory_requires_a_granted_path() {
                     format: skillhub_core::ExportFormat::Folder,
                     output_dir: Some(output.path().to_string_lossy().into_owned()),
                 },
+            },
+        ))
+        .await
+        .expect("granted preview must succeed");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
                 decisions: Vec::new(),
             },
         ))
@@ -961,6 +981,403 @@ async fn standard_export_to_user_directory_requires_a_granted_path() {
         std::fs::canonicalize(output.path()).ok().as_deref(),
         "导出包必须落在用户选择的输出目录"
     );
+}
+
+/// K3 RED：扫描覆盖版本物化树全部资产（.env 文件名、脚本内容），预览
+/// 返回三件套；敏感决定只在 Commit 阶段要求。
+#[tokio::test]
+async fn export_preview_scans_all_version_assets_and_binds_the_three_piece_set() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Asset scan");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Assets\n").expect("write skill");
+    std::fs::write(source.path().join(".env"), "SERVICE_TOKEN=fixture-token\n").expect("write env");
+    std::fs::create_dir_all(source.path().join("scripts")).expect("create scripts dir");
+    std::fs::write(
+        source.path().join("scripts").join("publish.py"),
+        "client = Client('sk-fixture')\n",
+    )
+    .expect("write script");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+
+    // 三件套：64 位十六进制指纹 + RFC3339 绝对过期时刻。
+    assert_eq!(
+        preview.confirmation_fingerprint.len(),
+        64,
+        "fingerprint must be a sha256 hex digest"
+    );
+    assert!(
+        preview
+            .confirmation_fingerprint
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    );
+    assert!(
+        preview.expires_at.ends_with('Z'),
+        "expires_at must be RFC3339 UTC: {}",
+        preview.expires_at
+    );
+
+    // 扫描结果按「文件+原因」覆盖两个资产文件；SKILL.md 本体干净。
+    assert_eq!(
+        preview.sensitive_items.len(),
+        2,
+        "the .env and the script asset must both be flagged: {:?}",
+        preview.sensitive_items
+    );
+    let env_item = preview
+        .sensitive_items
+        .iter()
+        .find(|item| item.path == ".env")
+        .expect("the .env asset must be flagged");
+    assert_eq!(env_item.reason, "sensitive_filename");
+    assert_eq!(env_item.skill_id, skill.id());
+    assert_eq!(env_item.version_id, version.id);
+    let script_item = preview
+        .sensitive_items
+        .iter()
+        .find(|item| item.path == "scripts/publish.py")
+        .expect("the script asset must be flagged");
+    assert_eq!(script_item.reason, "possible_plaintext_credential");
+
+    // 敏感决定只在 Commit 阶段要求；给出决定即可用同一预览创建。
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: vec![skillhub_core::ExportDecision {
+                    skill_id: skill.id(),
+                    decision: skillhub_core::backup::SensitiveContentDecision::IncludeAndMark,
+                }],
+            },
+        ))
+        .await
+        .expect("create export");
+    assert!(matches!(result, AppCommandResult::ExportResult(_)));
+}
+
+/// K3 RED：预览后存储事实变化（当前版本切换）→ Create 拒绝并要求重新
+/// 预览；重新 prepare 后可用。
+#[tokio::test]
+async fn a_store_change_after_prepare_invalidates_the_export_preview() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Drifting export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let first_source = tempfile::tempdir().expect("first source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let first = store.capture(skill.id(), first_source.path()).expect("capture first");
+    store.set_current(skill.id(), &first.id).expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+
+    // 预览后变更版本选择：捕捉并切换到新版本。
+    let second_source = tempfile::tempdir().expect("second source");
+    std::fs::write(second_source.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let second = store
+        .capture(skill.id(), second_source.path())
+        .expect("capture second");
+    store.set_current(skill.id(), &second.id).expect("switch current");
+
+    let error = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("a stale preview must not reach disk");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+    assert_eq!(
+        error.params.get("field").and_then(|value| value.as_str()),
+        Some("prepared_export"),
+        "前端 keyedMessage 按 field=prepared_export 映射重新预览文案"
+    );
+
+    // 重新预览后创建成功。
+    let fresh = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("fresh export preview");
+    let AppCommandResult::ExportPreview(fresh) = fresh else {
+        panic!("expected export preview");
+    };
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: fresh.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("fresh preview must create");
+    assert!(matches!(result, AppCommandResult::ExportResult(_)));
+}
+
+/// K3 RED：过期预览拒绝创建，journal 行结算为 rolled_back；重新 prepare
+/// 后可用。
+#[tokio::test]
+async fn an_expired_export_preview_rejects_creation_until_reprepared() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Expiring export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Expiring\n").expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+
+    // 注入过期：把 journal 载荷中的绝对过期时刻改到过去（等价于时间流逝）。
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(preview.preview_id)
+            .expect("read preview journal row")
+            .expect("preview journal row must exist");
+        record.recovery_data["expires_at"] = serde_json::json!(1_000);
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("rewrite preview journal row");
+    }
+
+    let error = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("an expired preview must be refused");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+    assert_eq!(
+        error.params.get("field").and_then(|value| value.as_str()),
+        Some("prepared_export")
+    );
+
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let record = database
+            .operation_repository()
+            .get_sync(preview.preview_id)
+            .expect("read preview journal row")
+            .expect("preview journal row must exist");
+        assert_eq!(
+            record.phase,
+            skillhub_core::OperationPhase::RolledBack,
+            "an expired preview must be settled out of the prepared state"
+        );
+    }
+
+    // 重新预览后创建成功。
+    let fresh = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("fresh export preview");
+    let AppCommandResult::ExportPreview(fresh) = fresh else {
+        panic!("expected export preview");
+    };
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: fresh.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("fresh preview must create");
+    assert!(matches!(result, AppCommandResult::ExportResult(_)));
+}
+
+/// K3 RED：敏感决定是 Commit 阶段响应——缺失决定被拒后同一预览仍可用，
+/// 补上决定即可创建（决定不参与预览失效判定）。
+#[tokio::test]
+async fn export_sensitive_decisions_do_not_invalidate_the_preview() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Decision export");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "OPENAI_API_KEY=sk-live-secret\n")
+        .expect("write skill");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let version = VersionStore::from_library(&library)
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    VersionStore::from_library(&library)
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+
+    let prepared = facade
+        .execute(AppCommand::PrepareStandardExport(
+            skillhub_core::PrepareStandardExport {
+                input: skillhub_core::ExportInput {
+                    selection: skillhub_core::ExportSelection::Skills(vec![skill.id()]),
+                    versions: skillhub_core::VersionSelection::Current,
+                    skills: Vec::new(),
+                    format: skillhub_core::ExportFormat::Folder,
+                    output_dir: None,
+                },
+            },
+        ))
+        .await
+        .expect("export preview");
+    let AppCommandResult::ExportPreview(preview) = prepared else {
+        panic!("expected export preview");
+    };
+
+    let missing = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("an undecided sensitive item must block the commit");
+    assert_eq!(missing.code, ErrorCode::BackupExportDecisionRequired);
+
+    // 被拒的决定不消耗预览：journal 行仍是 prepared。
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let record = database
+            .operation_repository()
+            .get_sync(preview.preview_id)
+            .expect("read preview journal row")
+            .expect("preview journal row must exist");
+        assert_eq!(record.phase, skillhub_core::OperationPhase::Prepared);
+    }
+
+    let result = facade
+        .execute(AppCommand::CreateStandardExport(
+            skillhub_core::CreateStandardExport {
+                preview_id: preview.preview_id,
+                decisions: vec![skillhub_core::ExportDecision {
+                    skill_id: skill.id(),
+                    decision: skillhub_core::backup::SensitiveContentDecision::IncludeAndMark,
+                }],
+            },
+        ))
+        .await
+        .expect("the same preview stays usable after a rejected attempt");
+    assert!(matches!(result, AppCommandResult::ExportResult(_)));
 }
 
 #[tokio::test]

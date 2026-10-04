@@ -1,7 +1,8 @@
 use sha2::{Digest, Sha256};
 use skillhub_core::backup::SensitiveContentDecision;
 use skillhub_core::export::{
-    ExportFormat, ExportInput, ExportPlan, ExportSkillSummary, VersionSelection,
+    ExportFormat, ExportInput, ExportPlan, ExportSensitiveItem, ExportSkill, ExportSkillSummary,
+    VersionSelection,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
 use std::collections::{HashMap, HashSet};
@@ -34,6 +35,8 @@ impl ExportService {
     }
 
     pub fn prepare(&self, input: &ExportInput) -> AppResult<ExportPlan> {
+        // RED 存根：沿用旧的内容扫描范围（仅 SKILL.md 正文）；K3 GREEN 将
+        // 扩展为版本物化树全量文件扫描并产出 ExportSensitiveItem。
         let mut sensitive_items = Vec::new();
         for skill in &input.skills {
             let lower = skill.content.to_ascii_lowercase();
@@ -41,8 +44,10 @@ impl ExportService {
                 || lower.contains("token=")
                 || skill.content.contains("sk-")
             {
-                sensitive_items.push(skillhub_core::backup::SensitiveItem {
+                sensitive_items.push(ExportSensitiveItem {
                     skill_id: skill.skill_id,
+                    version_id: skill.version_id.clone(),
+                    path: "SKILL.md".into(),
                     reason: "possible_plaintext_credential".into(),
                 });
             }

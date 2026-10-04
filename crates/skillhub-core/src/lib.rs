@@ -138,9 +138,9 @@ pub use evidence::{
     UsageEvidence, UsageEvidenceAnalysis, UsageEvidenceAnalyzer,
 };
 pub use export::{
-    ExportDecision, ExportFile, ExportFormat, ExportInput, ExportPlan, ExportResult,
-    ExportSelection, ExportSkill, ExportSkillSummary, UninstallAction, UninstallImpact,
-    UninstallService, VersionSelection,
+    ExportDecision, ExportFile, ExportFormat, ExportInput, ExportPlan, ExportPreview,
+    ExportResult, ExportSelection, ExportSensitiveItem, ExportSkill, ExportSkillSummary,
+    UninstallAction, UninstallImpact, UninstallService, VersionSelection,
 };
 pub use external_link::{
     external_url_host, validate_external_url, OpenExternalUrl, EXTERNAL_URL_ALLOWED_HOSTS,

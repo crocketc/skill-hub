@@ -1,6 +1,6 @@
-use crate::backup::{SensitiveContentDecision, SensitiveItem};
+use crate::backup::SensitiveContentDecision;
 use crate::deployment::DeploymentRecord;
-use crate::{CombinationId, SkillId, VersionId};
+use crate::{CombinationId, OperationId, SkillId, VersionId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -69,7 +69,36 @@ pub struct ExportPlan {
     pub selection: ExportSelection,
     pub versions: VersionSelection,
     pub skills: Vec<ExportSkillSummary>,
-    pub sensitive_items: Vec<SensitiveItem>,
+    pub sensitive_items: Vec<ExportSensitiveItem>,
+}
+
+/// K3：导出专用敏感项（§K3 DTO 落点）。`path` 是经校验的版本内相对
+/// 路径；不复用备份共享的 `SensitiveItem`，避免把版本内文件事实塞进
+/// 备份模型。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ExportSensitiveItem {
+    pub skill_id: SkillId,
+    pub version_id: VersionId,
+    pub path: String,
+    pub reason: String,
+}
+
+/// K3 预览三件套（§2）：`preview_id` + `expires_at` +
+/// `confirmation_fingerprint` 绑定主体/版本/全部文件字节/格式/授权输出
+/// 位置。指纹不含用户敏感决定——决定是 Commit 阶段随 `preview_id`
+/// 一并提交的响应，不参与预览失效判定。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ExportPreview {
+    pub selection: ExportSelection,
+    pub versions: VersionSelection,
+    pub skills: Vec<ExportSkillSummary>,
+    pub sensitive_items: Vec<ExportSensitiveItem>,
+    pub preview_id: OperationId,
+    /// RFC 3339（UTC）绝对过期时刻。
+    pub expires_at: String,
+    pub confirmation_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

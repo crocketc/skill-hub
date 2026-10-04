@@ -234,3 +234,56 @@ fn excluded_skill_is_omitted_from_the_outer_package() {
         "被排除的 Skill 不得出现在外层包中: {names:?}"
     );
 }
+
+/// K3 RED：单个资产无法解码/读取时 prepare 必须整体失败并列出失败文件，
+/// 不得静默跳过。
+#[test]
+fn prepare_fails_overall_and_lists_the_file_when_an_asset_cannot_be_scanned() {
+    let root = tempdir().unwrap();
+    let skill_id = SkillId::new();
+    let input = ExportInput {
+        selection: ExportSelection::Skills(vec![skill_id]),
+        versions: VersionSelection::Current,
+        skills: vec![skillhub_core::ExportSkill {
+            skill_id,
+            version_id: version(),
+            content: "Safe content".into(),
+            display_name: "Broken asset".into(),
+            files: vec![
+                ExportFile {
+                    path: "SKILL.md".into(),
+                    data_base64: STANDARD.encode("# Safe"),
+                },
+                ExportFile {
+                    path: "assets/blob.bin".into(),
+                    data_base64: "!!!not-base64!!!".into(),
+                },
+            ],
+        }],
+        format: ExportFormat::Folder,
+        output_dir: None,
+    };
+    let service = ExportService::new(root.path().to_path_buf());
+
+    let error = service
+        .prepare(&input)
+        .expect_err("an unscannable asset must fail the whole prepare");
+
+    assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
+    let failed = error
+        .params
+        .get("failed_paths")
+        .and_then(|value| value.as_array())
+        .expect("the failure must list the unscannable files");
+    assert!(
+        failed
+            .iter()
+            .any(|value| value.as_str() == Some("assets/blob.bin")),
+        "the failing asset path must be listed: {failed:?}"
+    );
+    assert_eq!(
+        std::fs::read_dir(root.path()).unwrap().count(),
+        0,
+        "prepare 失败不得写入任何文件"
+    );
+}

@@ -262,6 +262,7 @@ fn removal_commands_and_query_have_stable_wire_shapes() {
         AppCommand::CommitUndeploy(skillhub_core::CommitUndeploy {
             prepared_undeploy_id: skillhub_core::OperationId::new(),
             decision: skillhub_core::RemovalDecision::KeepSharedDeployment,
+            confirm_shared_target_removal: false,
         }),
         AppCommand::PrepareDeleteSkill(skillhub_core::PrepareDeleteSkill { skill_id }),
         AppCommand::CommitDeleteSkill(skillhub_core::CommitDeleteSkill {
@@ -576,10 +577,10 @@ fn export_and_uninstall_commands_have_stable_wire_shapes() {
     };
     let commands = [
         AppCommand::PrepareStandardExport(skillhub_core::PrepareStandardExport {
-            input: empty.clone(),
+            input: empty,
         }),
         AppCommand::CreateStandardExport(skillhub_core::CreateStandardExport {
-            input: empty,
+            preview_id: OperationId::new(),
             decisions: Vec::new(),
         }),
         AppCommand::PrepareUninstall(skillhub_core::PrepareUninstall {
@@ -601,4 +602,61 @@ fn export_and_uninstall_commands_have_stable_wire_shapes() {
             expected_type
         );
     }
+}
+
+#[test]
+fn export_preview_and_sensitive_items_have_stable_wire_shapes() {
+    // K3：预览三件套 + 导出专用敏感项的 wire 字段严格 snake_case。
+    let preview = skillhub_core::ExportPreview {
+        selection: skillhub_core::ExportSelection::Skills(Vec::new()),
+        versions: skillhub_core::VersionSelection::Current,
+        skills: Vec::new(),
+        sensitive_items: vec![skillhub_core::ExportSensitiveItem {
+            skill_id: skillhub_core::SkillId::new(),
+            version_id: skillhub_core::VersionId::parse(&format!("sha256:{}", "a".repeat(64)))
+                .unwrap(),
+            path: ".env".into(),
+            reason: "sensitive_filename".into(),
+        }],
+        preview_id: OperationId::new(),
+        expires_at: "2026-10-04T00:00:00Z".into(),
+        confirmation_fingerprint: "0".repeat(64),
+    };
+    let value = serde_json::to_value(&preview).unwrap();
+    let keys: std::collections::BTreeSet<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "confirmation_fingerprint",
+            "expires_at",
+            "preview_id",
+            "sensitive_items",
+            "selection",
+            "skills",
+            "versions",
+        ]
+        .into_iter()
+        .collect()
+    );
+    let item = &value["sensitive_items"][0];
+    let item_keys: std::collections::BTreeSet<&str> = item
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        item_keys,
+        ["path", "reason", "skill_id", "version_id"]
+            .into_iter()
+            .collect()
+    );
+    let tagged =
+        serde_json::to_value(skillhub_core::AppCommandResult::ExportPreview(preview)).unwrap();
+    assert_eq!(tagged["type"], "export_preview");
 }

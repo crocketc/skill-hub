@@ -7098,43 +7098,28 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::PrepareStandardExport(request) => {
                 let input = self.export_input(request.input)?;
                 let service = ExportService::new(self.standard_export_destination()?);
-                return service.prepare(&input).map(AppCommandResult::ExportPlan);
-            }
-            AppCommand::CreateStandardExport(request) => {
-                // AR-025：用户可通过系统选择器指定输出目录（宿主在拾取时
-                // 已签发路径 grant）；未指定时仍写集中库导出目录。
-                let destination = match request.input.output_dir.as_deref() {
-                    Some(dir) if !dir.trim().is_empty() => self.granted_export_destination(dir)?,
-                    _ => self.standard_export_destination()?,
-                };
-                let input = self.export_input(request.input)?;
-                let service = ExportService::new(destination);
+                // RED 存根：三件套为占位（指纹空、不持久化）；K3 GREEN 落地
+                // 全量扫描、指纹与预览绑定。
                 let plan = service.prepare(&input)?;
-                let decisions = request
-                    .decisions
-                    .into_iter()
-                    .map(|decision| (decision.skill_id, decision.decision))
-                    .collect::<Vec<_>>();
-                let export = service.create(&input, &plan, &decisions)?;
-                let skills_exported = input
-                    .skills
-                    .iter()
-                    .filter(|skill| {
-                        decisions
-                            .iter()
-                            .find(|(skill_id, _)| *skill_id == skill.skill_id)
-                            .map(|(_, decision)| {
-                                *decision != SensitiveContentDecision::ExcludeSkill
-                            })
-                            .unwrap_or(true)
-                    })
-                    .count() as u32;
-                return Ok(AppCommandResult::ExportResult(
-                    skillhub_core::ExportResult {
-                        path: export.root.to_string_lossy().into_owned(),
-                        skills_exported,
+                return Ok(AppCommandResult::ExportPreview(
+                    skillhub_core::ExportPreview {
+                        selection: plan.selection,
+                        versions: plan.versions,
+                        skills: plan.skills,
+                        sensitive_items: plan.sensitive_items,
+                        preview_id: OperationId::new(),
+                        expires_at: format_rfc3339_utc(
+                            now_seconds() + EXPORT_PREVIEW_TTL_SECONDS,
+                        ),
+                        confirmation_fingerprint: String::new(),
                     },
                 ));
+            }
+            AppCommand::CreateStandardExport(request) => {
+                // RED 存根：预览绑定未落地，创建一律拒绝并要求重新预览。
+                let _ = request.decisions;
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "prepared_export"));
             }
             AppCommand::PrepareUninstall(request) => {
                 let deployments = self.uninstall_deployments(&request.deployment_ids)?;
@@ -13356,6 +13341,8 @@ fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
 /// a preview is a snapshot of facts, not a standing permission.
 const DEPLOYMENT_PREVIEW_TTL_SECONDS: i64 = 900;
 const VERSION_ADOPTION_PREVIEW_TTL_SECONDS: i64 = 900;
+/// K3：标准导出预览三件套的有效期（与部署/采纳预览一致）。
+const EXPORT_PREVIEW_TTL_SECONDS: i64 = 900;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct VersionAdoptionSnapshot {
