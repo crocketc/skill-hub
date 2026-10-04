@@ -269,7 +269,7 @@ fn custom_agent_identity_baseline_round_trips_with_the_entity() {
     let database = Database::open_in_memory().unwrap();
     let repository = database.custom_agent_repository();
 
-    let mut stored = agent_at("custom.acme", "C:/Users/me/.acme/skills");
+    let stored = agent_at("custom.acme", "C:/Users/me/.acme/skills");
     assert_eq!(stored.directory_physical_id, None);
     repository.create(stored.clone()).unwrap();
     repository.update({

@@ -1165,7 +1165,7 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
         existing
             .impact
             .other_consumer_agent_ids
-            .extend(row.impact.other_consumer_agent_ids.into_iter());
+            .extend(row.impact.other_consumer_agent_ids);
         existing.impact.other_consumer_agent_ids.sort();
         existing.impact.other_consumer_agent_ids.dedup();
         if replace_representative {

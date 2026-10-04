@@ -225,9 +225,7 @@ fn inferred_agent_root(path: &str) -> Option<String> {
     let normalized = path.replace('\\', "/");
     let trimmed = normalized.trim_end_matches('/');
     let without_builtin = trimmed.strip_suffix("/skills/.system").unwrap_or(trimmed);
-    let Some(root) = without_builtin.strip_suffix("/skills") else {
-        return None;
-    };
+    let root = without_builtin.strip_suffix("/skills")?;
     if root.is_empty()
         || root == "{user_home}"
         || root == "{project_root}"

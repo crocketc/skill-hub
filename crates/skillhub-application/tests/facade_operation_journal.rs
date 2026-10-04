@@ -11,7 +11,7 @@ use skillhub_core::agent::{
 };
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CreateIgnoreRule, CreateSkill,
-    PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveSkillContent,
+    ListDeployments, PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveSkillContent,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentPlan, TargetChange, TargetPlan};
@@ -33,17 +33,17 @@ fn seed_registered_target(database: &Database, path: &std::path::Path, logical_i
             generation: "1".into(),
             observed_at: "2026-09-24T00:00:00Z".into(),
             instances: vec![ClientInstance {
-                profile_id: "fixture".into(),
-                client_id: logical_id.into(),
+                profile_id: "openai".into(),
+                client_id: "openai.codex-cli".into(),
                 kind: ClientKind::Cli,
-                display_name: "Fixture".into(),
-                supported_os: vec![OperatingSystem::Windows],
+                display_name: "Codex CLI".into(),
+                supported_os: vec![OperatingSystem::Windows, OperatingSystem::Macos],
                 client_presence: ClientPresence::Unknown,
             }],
             logical_targets: vec![LogicalTarget {
                 id: logical_id.into(),
-                profile_id: "fixture".into(),
-                client_id: logical_id.into(),
+                profile_id: "openai".into(),
+                client_id: "openai.codex-cli".into(),
                 scope: TargetScope::Global,
                 path: path.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
@@ -446,6 +446,21 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
         panic!("expected deployment summary");
     };
     assert!(!failed.committed);
+    let failed_target = failed.targets.first().expect("selected target result");
+    assert_eq!(
+        failed_target.error_code.as_deref(),
+        Some(ErrorCode::TargetExists.as_str()),
+        "the first attempt must be rejected because the destination name is occupied"
+    );
+    assert_eq!(
+        failed_target
+            .error
+            .as_ref()
+            .and_then(|error| error.params.get("runtime_name"))
+            .map(String::as_str),
+        Some("retryable"),
+        "the conflict must identify the planned runtime name"
+    );
     let operations = recent_operations(&facade).await;
     let failed_record = operations
         .iter()
@@ -461,6 +476,24 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
         recovery_state(&facade).await,
         StartupRecoveryState::Clean,
         "a failure that left no residue must not gate the next launch"
+    );
+    let deployments = facade
+        .query(AppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("query deployments after failed commit");
+    let AppQueryResult::Deployments(deployments) = deployments else {
+        panic!("expected deployment records");
+    };
+    assert!(
+        deployments.is_empty(),
+        "an occupied unmanaged destination must not create a managed deployment relation"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("blocked destination remains intact"),
+        "occupied",
+        "the failed attempt must preserve the pre-existing destination"
     );
 
     std::fs::remove_file(&destination).expect("clear destination obstruction");
@@ -482,6 +515,20 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
     assert_eq!(retried_record.state, "completed");
     assert_eq!(retried_record.phase, OperationPhase::Committed);
     assert_eq!(recovery_state(&facade).await, StartupRecoveryState::Clean);
+    let deployments = facade
+        .query(AppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("query deployments after retry");
+    let AppQueryResult::Deployments(deployments) = deployments else {
+        panic!("expected deployment records");
+    };
+    assert_eq!(
+        deployments.len(),
+        1,
+        "retrying the prepared operation must create one managed deployment relation"
+    );
 }
 
 #[tokio::test]

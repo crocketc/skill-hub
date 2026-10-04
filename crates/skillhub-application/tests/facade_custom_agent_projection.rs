@@ -121,7 +121,7 @@ async fn facade_with_unverified_custom_agent(
         .deployment_repository()
         .insert(&DeploymentRecord {
             id: skillhub_core::DeploymentId::new(),
-            skill_id: skill.id().clone(),
+            skill_id: skill.id(),
             version_id: version_id.clone(),
             target_id: "custom-acme".into(),
             state: DeploymentState::Deployed,
@@ -153,7 +153,7 @@ async fn facade_with_unverified_custom_agent(
         }))
         .await
         .expect("create custom agent");
-    let skill_id = skill.id().clone();
+    let skill_id = skill.id();
     (
         facade,
         agent_root,

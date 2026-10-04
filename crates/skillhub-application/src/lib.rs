@@ -9260,7 +9260,7 @@ impl LocalApplicationFacade {
                                 fact.agent_client_id == row.client_id
                                     && fact.path_key == observed_path_key(&row_path)
                             })
-                            .map_or(true, |fact| {
+                            .is_none_or(|fact| {
                                 !matches!(fact.health_reasons.as_deref(), Some(reasons) if reasons.is_empty())
                             });
                         if relation_needs_health_confirmation {
@@ -12437,8 +12437,7 @@ mod tests {
     use skillhub_core::api::{AppCommand, AppQuery};
     use skillhub_core::catalog::{CallPolicy, Skill};
     use skillhub_core::{
-        ApplicationFacade, IgnoreSubject, OperationRecord, OperationRepository, RecoveryAction,
-        SkillId,
+        ApplicationFacade, IgnoreSubject, OperationRecord, RecoveryAction, SkillId,
     };
     use skillhub_storage::Database;
 
@@ -12644,12 +12643,11 @@ mod tests {
             .lock()
             .unwrap()
             .operation_repository()
-            .insert(&OperationRecord::planned(
+            .insert_sync(&OperationRecord::planned(
                 operation_id,
                 "test",
                 "fingerprint",
             ))
-            .await
             .unwrap();
 
         let candidates = facade
