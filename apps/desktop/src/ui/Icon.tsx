@@ -30,6 +30,7 @@ const registry: Record<string, ReactNode> = {
       <path d="M12 8v4.5l3 2" />
     </>
   ),
+  edit: <path d="m15.5 5.5 3 3M4 20l4.2-.9L19.1 8.2a2.1 2.1 0 0 0-3-3L5.2 16.1 4 20Z" />,
   restore: (
     <>
       <path d="M4 12a8 8 0 1 0 2.34-5.66" />
@@ -76,6 +77,8 @@ const registry: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  // 分区折叠指示：展开朝下，收起由样式旋转；含义由标题按钮文字承载。
+  chevronDown: <path d="m6 9.5 6 6 6-6" />,
   // —— 壳层工具条（返回/前进/通知中心）——
   arrowLeft: (
     <>
@@ -100,6 +103,15 @@ const registry: Record<string, ReactNode> = {
     <>
       <rect height="18" rx="2" width="18" x="3" y="3" />
       <path d="M9 3v18" />
+    </>
+  ),
+  // 外部打开：文件框加外向箭头，供“用系统默认程序打开”等出口动作使用；
+  // 含义由可见文字或 IconButton 标签承载。
+  openExternal: (
+    <>
+      <path d="M13.5 5H19v5.5" />
+      <path d="m19 5-8.5 8.5" />
+      <path d="M17 13.5V18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4.5" />
     </>
   ),
   // —— 导航映射（与 Sidebar 共用，保持单次朗读）——

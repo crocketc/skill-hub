@@ -1,9 +1,49 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
+import type { SkillDetailFacade, SkillMetadata, SkillMetadataPatch } from "./api";
+
+/** State is local to this opt-in preview; production and other fixtures keep their contracts. */
+function createReviewFacade(base: SkillDetailFacade): SkillDetailFacade {
+  const patches = new Map<string, SkillMetadataPatch>();
+  const labels = new Map<string, string>();
+  let restored = false;
+  return {
+    ...base,
+    async getMetadata(skillId) {
+      const metadata = await base.getMetadata(skillId);
+      const patch = patches.get(skillId);
+      if (!patch) return metadata;
+      const next: SkillMetadata = {
+        ...metadata,
+        alias: patch.alias === null ? undefined : patch.alias ?? metadata.alias,
+        purpose: patch.purpose ?? metadata.purpose,
+        note: patch.note === null ? undefined : patch.note ?? metadata.note,
+        tags: patch.tags ?? metadata.tags,
+      };
+      if (patch.translationText !== undefined) next.translation = patch.translationText === null ? undefined : { ...metadata.translation!, text: patch.translationText, userRevised: true };
+      return next;
+    },
+    async saveMetadata(skillId, patch) { patches.set(skillId, { ...patches.get(skillId), ...patch }); },
+    async setVersionLabel(_skillId, versionId, label) { labels.set(versionId, label); },
+    async getVersions(skillId) {
+      const versions = (await base.getVersions(skillId)).map((entry) => ({ ...entry, label: labels.get(entry.id) || entry.label, userLabel: labels.get(entry.id) }));
+      return restored ? [{ ...versions[0], id: "review-restored-version", label: "恢复版本", origin: "rollback", current: true, createdAt: "2026-10-03T04:00:00Z" }, ...versions.map((entry) => ({ ...entry, current: false }))] : versions;
+    },
+    async getRollbackImpact(_skillId, targetVersionId) {
+      return { rerunsBasicCheck: true, targetVersionId, deployments: [
+        { id: "review-shared", label: "共享目录 · 受管链接", affected: true, pinned: false, version: "当前版本" },
+        { id: "review-project", label: "文档协作项目 · 受管链接", affected: true, pinned: false, version: "当前版本" },
+        { id: "review-independent", label: "Codex 终端 · 独立副本", affected: false, pinned: true, version: "原有内容" },
+      ] };
+    },
+    async commitRollback() { restored = true; return { newVersionId: "review-restored-version" }; },
+  };
+}
 
 /** DEV-only 关系事实：共享目录节点 + 复制部署关系 + 一条治理待办。 */
 const previewRelationshipOverview = {
@@ -89,13 +129,22 @@ const previewRemovalImpact: RemovalImpactFact = {
 };
 
 export function SkillDetailPreview() {
+  const location = useLocation();
+  const reviewPrototype = new URLSearchParams(location.search).get("detailPrototype") === "review";
   const [facade] = useState(() =>
-    createMockSkillDetailFacade({
+    (reviewPrototype ? createReviewFacade : (value: SkillDetailFacade) => value)(createMockSkillDetailFacade({
       relationshipOverview: previewRelationshipOverview,
       removalImpactFact: previewRemovalImpact,
-    }),
+    })),
   );
   const [markdownFacade] = useState(() => createMockMarkdownFacade());
   const [securityFacade] = useState(() => createPreviewSecurityFacade());
-  return <SkillDetailPage facade={facade} markdownFacade={markdownFacade} securityFacade={securityFacade} />;
+  return (
+    <SkillDetailPage
+      facade={facade}
+      markdownFacade={markdownFacade}
+      reviewPrototype={reviewPrototype}
+      securityFacade={securityFacade}
+    />
+  );
 }

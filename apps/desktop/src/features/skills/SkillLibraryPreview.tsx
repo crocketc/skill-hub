@@ -4,6 +4,8 @@ import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { useAppNotifications } from "../../ui/notifications";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { DEFAULT_DRAWER_PREFERENCES } from "./api";
+import { drawerWidthForPreset } from "./drawerModules";
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import { createMockSkillLibraryFacade } from "./testFixtures";
 
@@ -25,14 +27,71 @@ const PREVIEW_BOOTSTRAP_SNAPSHOT: BootstrapSnapshot = {
 };
 
 export function SkillLibraryPreview() {
+  const search = new URLSearchParams(window.location.search);
+  const drawerSample = search.get("drawerSample");
   const [securityFacade] = useState(() => createPreviewSecurityFacade());
-  const [facade] = useState(() => createMockSkillLibraryFacade({ total: previewTotal() }));
+  const drawerPrototype = import.meta.env.DEV && search.get("drawerPrototype") === "review";
+  const [facade] = useState(() => {
+    const previewFacade = createMockSkillLibraryFacade({ total: previewTotal() });
+    if (drawerPrototype) previewFacade.listCombinations = async () => [];
+    if (drawerPrototype) {
+      previewFacade.loadDrawerPreferences = async () => ({
+        ...DEFAULT_DRAWER_PREFERENCES,
+        preset: "standard",
+        widthPx: drawerWidthForPreset("standard", window.innerWidth),
+      });
+      if (drawerSample === "overflow") {
+        const getQuickView = previewFacade.getSkillQuickView.bind(previewFacade);
+        previewFacade.getSkillQuickView = async (skillId) => {
+          const view = await getQuickView(skillId);
+          const knownAgents = view.agentDeployments ?? [];
+          const agents = Array.from({ length: 12 }, (_, index) => {
+            const base = knownAgents[index % knownAgents.length] ?? knownAgents[0];
+            return { ...base, id: `preview-agent-${index + 1}`, name: `${base?.name ?? "Preview Agent"} ${index + 1}` };
+          });
+          const projects = Array.from({ length: 12 }, (_, index) => ({
+            id: `preview-project-${index + 1}`,
+            name: `Preview project ${index + 1}`,
+            path: `C:\\workspace\\preview\\project-${index + 1}`,
+          }));
+          return {
+            ...view,
+            agentDeploymentCount: agents.length,
+            agentDeployments: agents,
+            projectDeploymentCount: projects.length,
+            projectDeployments: projects,
+            tags: [
+              "documents",
+              "pdf",
+              "multi-purpose-long-tag-for-overflow-review",
+              "format-conversion",
+              "local-processing",
+              "preview-only",
+              "metadata-extraction",
+              "multi-language-support",
+            ],
+          };
+        };
+      }
+      if (drawerSample !== "translation-unconfigured") {
+        previewFacade.translateDescription = async (skillId) => {
+          const view = await previewFacade.getSkillQuickView(skillId);
+          return { text: view.translatedDescription ?? view.originalDescription ?? "" };
+        };
+      }
+    }
+    return previewFacade;
+  });
   const showNotificationPreview = new URLSearchParams(window.location.search)
     .has("notificationActions");
   return (
     <>
       {showNotificationPreview ? <NotificationActionPreview /> : null}
-      <SkillLibraryPage facade={facade} securityFacade={securityFacade} />
+      <SkillLibraryPage
+        drawerPrototype={drawerPrototype}
+        facade={facade}
+        securityFacade={securityFacade}
+      />
     </>
   );
 }

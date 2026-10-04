@@ -125,6 +125,8 @@
         "source": "源码"
       },
       "modes": "Markdown 视图",
+      "fileStructure": "文件结构",
+      "primaryFile": "主文件",
       "openDefault": "使用默认应用打开",
       "openFolder": "打开 Skill 文件夹",
       "readOnly": {
@@ -823,20 +825,48 @@
     "compatibility": {
       "pendingError": "此导入方式的 Agent 兼容性尚未验证，请先在待处理中完成验证；这不代表系统无法创建链接。",
       "saved": "本机验证结果已保存；尚未确定的事项继续保留在待处理。",
-      "methods": { "managed_copy": "复制导入", "symbolic_link": "链接导入（符号链接）", "directory_junction": "链接导入（Windows 目录联接）" },
-      "title": "导入兼容性验证", "mode": "验证项目：{{mode}}",
+      "methods": {
+        "managed_copy": "复制导入",
+        "symbolic_link": "链接导入（符号链接）",
+        "directory_junction": "链接导入（Windows 目录联接）"
+      },
+      "title": "导入兼容性验证",
+      "mode": "验证项目：{{mode}}",
       "instructions": "使用无敏感内容的测试 Skill，先确认复制或链接入口可读取，再在 Agent 中确认发现和加载；完成后清理测试入口并保留原文件。创建失败时请选择暂未确定，不要据此判断 Agent 不支持。记录仅适用于本机当前目录及声明；Agent 升级后请重新验证。",
-      "version": "Agent 版本", "result": "验证结果", "evidence": "验证步骤与结果说明",
+      "version": "Agent 版本",
+      "result": "验证结果",
+      "evidence": "验证步骤与结果说明",
       "checked": "已在 Agent 中检查发现和加载结果；若判为不支持，已排除文件创建、权限和路径问题",
-      "supported": "确认支持", "unsupported": "确认不支持", "unverified": "暂未确定，保留待处理", "save": "保存本机验证结果"
+      "supported": "确认支持",
+      "unsupported": "确认不支持",
+      "unverified": "暂未确定，保留待处理",
+      "save": "保存本机验证结果"
     },
     "deploymentMethods": {
       "label": "派发方式",
-      "copy": { "supported": "支持复制导入", "unsupported": "不支持复制导入", "unverified": "复制导入兼容性待验证" },
-      "link": { "supported": "支持链接导入", "unsupported": "不支持链接导入", "unverified": "链接导入兼容性待验证" }, "readonly": "内置目录只读，不允许导入",
-      "managed_copy": { "supported": "支持复制派发", "unsupported": "不支持复制派发" },
-      "symbolic_link": { "supported": "支持符号链接派发", "unsupported": "不支持符号链接派发" },
-      "directory_junction": { "supported": "支持目录联接派发", "unsupported": "不支持目录联接派发" }
+      "copy": {
+        "supported": "支持复制导入",
+        "unsupported": "不支持复制导入",
+        "unverified": "复制导入兼容性待验证"
+      },
+      "link": {
+        "supported": "支持链接导入",
+        "unsupported": "不支持链接导入",
+        "unverified": "链接导入兼容性待验证"
+      },
+      "readonly": "内置目录只读，不允许导入",
+      "managed_copy": {
+        "supported": "支持复制派发",
+        "unsupported": "不支持复制派发"
+      },
+      "symbolic_link": {
+        "supported": "支持符号链接派发",
+        "unsupported": "不支持符号链接派发"
+      },
+      "directory_junction": {
+        "supported": "支持目录联接派发",
+        "unsupported": "不支持目录联接派发"
+      }
     }
   },
   "projects": {
@@ -1306,6 +1336,110 @@
       "moreTags_other": "其余 {{count}} 个标签",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "fullDetails": "查看完整详情",
+      "prototype": {
+        "cycleWidth": "当前：{{current}}；点击切换至{{next}}",
+        "actionImpacts": {
+          "dispatch": "示例范围：将 {{skill}} 关联到选定 Agent 或项目；执行前仍需核验目标与影响。",
+          "export": "示例范围：导出 {{skill}} 的 Skill 主体与所选元数据；保存位置尚未选择。",
+          "delete": "示例范围：删除 {{skill}} 主体及经核验的受管链接；此原型不会删除任何内容。"
+        },
+        "actionNoExecution": "仅用于评审入口与影响说明，不会真实派发、导出或删除。",
+        "actionTitles": {
+          "dispatch": "派发预览",
+          "export": "导出预览",
+          "delete": "删除预览"
+        },
+        "adjustReviewDate": "调整复核日期",
+        "allFindings": "查看全部发现（{{count}}）",
+        "backToRelationSummary": "返回关系摘要",
+        "cancelActionPreview": "取消预览",
+        "closeLocationPreview": "关闭位置预览",
+        "closeRelationPreview": "关闭关系预览",
+        "collectionsDialog": "编辑所属组合",
+        "collectionsHelp": "勾选组合以预览加入或移出",
+        "collectionsTitle": "所属组合",
+        "convertRegular": "转为常规",
+        "copySamplePath": "复制样例路径",
+        "derivedFromSample": "派生样例：基于 {{sourceSkill}} 复用修改；仅作只读呈现。",
+        "editCollections": "编辑所属组合",
+        "editTranslation": "修订译文",
+        "delete": "删除",
+        "dispatch": "派发",
+        "importReceipt": "导入存证",
+        "importReceiptSample": "从原位置复制进入集中库；原位置文件仍保留",
+        "networkUpdateSource": "网络更新来源",
+        "networkUpdateSourceSample": "GitHub · PDF Toolkit · v2.4.0（样例）",
+        "noFilesystemOpen": "不会打开本机目录；这是隔离的样例位置。",
+        "openGovernanceSample": "模拟打开关系治理",
+        "openRelationContext": "打开关系上下文：{{target}}",
+        "openSampleLocation": "打开样例位置",
+        "openTargetSample": "模拟打开{{type}}详情",
+        "previewNote": "预览样例 · 所有改动只保存在当前页面，不会写入 SkillHub。",
+        "popoverDescription": "仅展示预览操作；不会修改正式数据。",
+        "projectTargets": "项目关系目标，共 {{count}} 项",
+        "regular": "常规",
+        "relationContextTitle": "关系上下文：{{target}}",
+        "relationGovernanceSample": "关系治理样例",
+        "relationshipState": "关系状态",
+        "relationTargetSample": "目标详情样例",
+        "removeCollection": "从组合移出：{{name}}",
+        "reviewDate": "复核日期",
+        "reviewDateDialog": "设置复核日期",
+        "sampleImpactLabel": "示例影响",
+        "sampleManaged": "预览样例 · 已集中管理",
+        "sampleManagedReason": "样例关系已有集中库主体，并已验证目标入口。",
+        "sampleOnly": "预览样例路径，不代表真实本机目录",
+        "samplePathCopied": "样例路径已复制",
+        "samplePathCopyUnavailable": "无法复制样例路径。请允许剪贴板访问后重试。",
+        "samplePending": "预览样例 · 待集中管理",
+        "samplePendingReason": "样例目标仍保留独立副本，需后续核验与集中管理。",
+        "saveCollections": "保存组合预览",
+        "saveDatePreview": "保存日期预览",
+        "saveTranslationPreview": "保存译文预览",
+        "securityCompactFindings": "{{count}} 项风险 · {{actionable}} 项待处理",
+        "setTranslationAsPurpose": "设为用途",
+        "setTrial": "设为试用",
+        "subjectLocationDialog": "主体位置样例",
+        "subjectLocationTitle": "主体位置",
+        "targetContextSample": "此处将打开 {{name}} 的只读样例上下文；当前关联 Skill：{{skill}}。",
+        "governanceContextSample": "只读展示 {{skill}} 与 {{target}} 的这条关系及返回上下文；不提供关系操作。",
+        "trial": "试用",
+        "updateAvailable": "有可用更新",
+        "export": "导出",
+        "fullDetails": "查看完整详情",
+        "basicInformation": "基本信息",
+        "allTags": "全部标签",
+        "moreTags": "其余 {{count}} 个标签",
+        "aiTranslate": "AI 翻译",
+        "translationUnavailable": "未配置 AI 翻译能力",
+        "configureTranslation": "配置 AI 翻译",
+        "translationPreview": "仅演示翻译交互，不会发送描述内容。",
+        "useExistingTranslation": "使用已有译文作为我的用途",
+        "basicCheck": "基础检查",
+        "aiCheck": "AI 检查",
+        "recheck": "重新检查",
+        "securityLocalScope": "仅使用本地预览数据，不访问网络。",
+        "securityLoading": "正在读取检查结果",
+        "securityRunning": "检查中",
+        "securityFailed": "运行失败",
+        "securityFindings": "发现风险 {{count}} 项，{{actionable}} 项待处理",
+        "securityClean": "未发现风险",
+        "securityNotRun": "尚未检查",
+        "securityTimeUnavailable": "时间暂无记录",
+        "securityTooltip": "{{check}}：{{result}}；范围：当前版本 {{version}}；时间：{{time}}。",
+        "securityAccessibleFailed": "{{check}}运行失败；查看说明了解当前版本和时间。",
+        "securityAccessibleRisk": "{{check}}发现风险 {{count}} 项，其中 {{actionable}} 项待处理。",
+        "securityAccessibleClean": "{{check}}通过，当前版本未发现风险。",
+        "securityAccessibleUnknown": "{{check}}：{{result}}。",
+        "securityVersionTime": "当前版本 {{version}} · {{time}}",
+        "securityFindingsLabel": "检查发现",
+        "securityNeedsAttention": "仍需处理",
+        "securityDispositionRecorded": "已记录处理决定，原始发现仍保留",
+        "securityFailureDetail": "本次检查未能完成，请稍后重试。",
+        "previewOnly": "布局预览；操作按钮仅展示，不执行",
+        "requirements": "运行要求",
+        "sourceVersionTitle": "来源与版本"
+      },
       "modules": {
         "fullDetails": "完整详情",
         "identity": "名称与说明",
@@ -1316,7 +1450,10 @@
         "sourceVersion": "来源与版本",
         "sourceLicense": "来源与许可证",
         "usageEvidence": "使用证据",
-        "versions": "版本"
+        "versions": "版本",
+        "dependenciesDuplicates": "依赖与重复项",
+        "externalChanges": "外部变更",
+        "invocationRequirements": "调用方式与运行要求"
       },
       "moduleVisibility": "抽屉模块",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
@@ -1413,7 +1550,13 @@
         "tags": "标签",
         "translatedDescription": "描述译文",
         "upToDate": "已是最新版本",
-        "updateAvailable": "有可用更新"
+        "updateAvailable": "有可用更新",
+        "dependencies": "依赖",
+        "duplicates": "可能的重复项"
+      },
+      "relations": {
+        "showFewerProjects": "收起项目",
+        "showMoreProjects": "展开另外 {{count}} 个项目"
       }
     },
     "filters": {
@@ -1985,7 +2128,7 @@
       "fallbackMode": "回退方式"
     },
     "batch": {
-        "preselectUnavailable": "深链指向的目标当前不可选，请在下方手动选择目标。",
+      "preselectUnavailable": "深链指向的目标当前不可选，请在下方手动选择目标。",
       "heading": "添加 {{count}} 个 Skill",
       "description": "每个 Skill 都会先单独预览；只有全部预览成功后才可提交。",
       "planDescription": "以下按 Skill 展示将发生的目标变化；警告和冲突会在提交前保留。",
@@ -2085,6 +2228,7 @@
       "not_checked": "未检查",
       "running": "检查中",
       "passed": "通过",
+      "completedWithFindings": "检查已完成",
       "failed": "失败"
     },
     "basicHeading": "基础安全检查",
@@ -2099,6 +2243,7 @@
     "checkedAt": "最近检查：{{date}}",
     "findingSummaryLabel": "安全问题计数",
     "findingSummary": "高风险 {{highRisk}} · 待处理 {{pending}}",
+    "riskAwareSummary": "仍有高风险待处理 · {{highRisk}} 项高风险 · {{pending}} 项待处理；检查已完成",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
     "drawer": {
@@ -2279,7 +2424,8 @@
       "import_skills": "导入首个 Skill",
       "ai_setup": "配置 AI 模型（可选）",
       "backup_setup": "创建首次备份",
-      "agent_compatibility": "Agent 导入兼容性待验证", "source_update": "审阅来源更新",
+      "agent_compatibility": "Agent 导入兼容性待验证",
+      "source_update": "审阅来源更新",
       "governance_followup": "导入治理提醒"
     },
     "actions": {
@@ -2349,7 +2495,8 @@
       "import_skills": "初始化只进行了只读发现。前往本机发现，选择来源和候选项，再确认导入集中库。",
       "ai_setup": "配置可用模型后，可使用 AI 检查等可选能力；也可以跳过这条建议。",
       "backup_setup": "集中库已有内容，建议创建一份备份。成功创建并校验后，这条建议会自动关闭。",
-      "agent_compatibility": "请试用此导入方式并在 Agent 中检查发现和加载结果，然后记录本机兼容性结论。", "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
+      "agent_compatibility": "请试用此导入方式并在 Agent 中检查发现和加载结果，然后记录本机兼容性结论。",
+      "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
       "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。"
     },
     "count": "需处理 {{count}} 项",
@@ -3171,7 +3318,12 @@
       "appUpdate": "应用更新"
     },
     "sectionNavLabel": "设置分区",
-    "navGroups": { "preferences": "个人偏好", "data": "数据", "network": "网络与 AI", "maintenance": "检查与维护" },
+    "navGroups": {
+      "preferences": "个人偏好",
+      "data": "数据",
+      "network": "网络与 AI",
+      "maintenance": "检查与维护"
+    },
     "search": {
       "label": "搜索设置",
       "placeholder": "搜索设置…",
@@ -3213,7 +3365,11 @@
       "themeDescription": "选择主题后会立即应用，并保存到本机偏好。",
       "appearance": "外观",
       "appearanceDescription": "选择跟随系统，或固定使用浅色、深色外观。主题配色可以单独选择。",
-      "appearances": { "system": "跟随系统", "light": "浅色", "dark": "深色" },
+      "appearances": {
+        "system": "跟随系统",
+        "light": "浅色",
+        "dark": "深色"
+      },
       "themeSaveError": "主题未能保存，已恢复为原来的设置。",
       "themeSaved": "已保存主题设置",
       "reducedMotion": "始终减少动效",
@@ -3663,7 +3819,8 @@
         "import_skills": "{{count}} · 导入首个 Skill",
         "ai_setup": "{{count}} · 配置 AI 模型（可选）",
         "backup_setup": "{{count}} · 创建首次备份",
-        "agent_compatibility": "{{count}} · Agent 导入兼容性待验证", "source_update": "{{count}} · 审阅来源更新",
+        "agent_compatibility": "{{count}} · Agent 导入兼容性待验证",
+        "source_update": "{{count}} · 审阅来源更新",
         "governance_followup": "{{count}} · 导入治理提醒"
       },
       "none": "没有待处理事项",

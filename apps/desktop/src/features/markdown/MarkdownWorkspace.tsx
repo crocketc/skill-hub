@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
+import { IconButton } from "../../ui/IconButton";
 import { Select } from "../../ui/Select";
 import {
   type MarkdownFacade,
@@ -19,7 +20,13 @@ const MarkdownEditor = lazy(() =>
 );
 
 interface MarkdownWorkspaceProps {
+  /**
+   * 详情原型视图：文件结构侧栏、阅读/源码对照联动滚动与图标化外部打开。
+   * 生产详情在原型确认前保持既有单一视图。
+   */
+  fileRail?: boolean;
   facade: MarkdownFacade;
+  reviewSaveFlow?: boolean;
   skillId: string;
 }
 
@@ -32,7 +39,12 @@ const readOnlyMessageKey = {
   plugin: "markdown.workspace.readOnly.plugin",
 } as const satisfies Record<MarkdownReadOnlyReason, string>;
 
-export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
+export function MarkdownWorkspace({
+  facade,
+  fileRail = false,
+  reviewSaveFlow = false,
+  skillId,
+}: MarkdownWorkspaceProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedOverride, setSelectedOverride] = useState<string>();
@@ -77,24 +89,31 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
   }
 
   const file = fileQuery.data;
-  const effectiveMode = mode === "edit" && !file?.editable ? "read" : mode;
+  const effectiveMode =
+    mode === "edit" && !file?.editable
+      ? "read"
+      : mode;
+  const selectFile = (path: string) => {
+    setSelectedOverride(path);
+    setMode("read");
+  };
   const discardDraft = async () => {
     await facade.discardDraft(skillId, selectedPath);
     await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, selectedPath) });
   };
 
+  const modes: MarkdownMode[] = ["read", "source"];
+  const modeLabel = (nextMode: MarkdownMode) => t(`markdown.workspace.mode.${nextMode}`);
+
   return (
-    <section className="sh-markdown-workspace">
+    <section className={fileRail ? "sh-markdown-workspace sh-markdown-workspace--rail" : "sh-markdown-workspace"}>
       <header className="sh-markdown-workspace__header">
         <div>
           <h3>{t("markdown.workspace.title")}</h3>
           <label htmlFor="skillhub-markdown-file">{t("markdown.workspace.file")}</label>
           <Select
             id="skillhub-markdown-file"
-            onChange={(event) => {
-              setSelectedOverride(event.target.value);
-              setMode("read");
-            }}
+            onChange={(event) => selectFile(event.target.value)}
             value={selectedPath}
           >
             {filesQuery.data.map((entry) => (
@@ -103,13 +122,21 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
           </Select>
         </div>
         <div className="sh-markdown-workspace__external-actions">
-          <Button
-            onClick={() => void facade.openDefaultApplication(skillId, selectedPath)}
-            size="sm"
-            variant="ghost"
-          >
-            {t("markdown.workspace.openDefault")}
-          </Button>
+          {fileRail ? (
+            <IconButton
+              icon="openExternal"
+              label={t("markdown.workspace.openDefault")}
+              onClick={() => void facade.openDefaultApplication(skillId, selectedPath)}
+            />
+          ) : (
+            <Button
+              onClick={() => void facade.openDefaultApplication(skillId, selectedPath)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("markdown.workspace.openDefault")}
+            </Button>
+          )}
           <Button
             onClick={() => void facade.chooseExternalApplication(skillId, selectedPath)}
             size="sm"
@@ -136,90 +163,136 @@ export function MarkdownWorkspace({ facade, skillId }: MarkdownWorkspaceProps) {
           state="error"
         />
       ) : (
-        <>
-          <div aria-label={t("markdown.workspace.modes")} role="tablist">
-            {(["read", "source"] as const).map((nextMode) => (
-              <Button
-                aria-selected={effectiveMode === nextMode}
-                key={nextMode}
-                onClick={() => setMode(nextMode)}
-                role="tab"
-                size="sm"
-                variant={effectiveMode === nextMode ? "secondary" : "ghost"}
-              >
-                {t(`markdown.workspace.mode.${nextMode}`)}
-              </Button>
-            ))}
-            {file.editable ? (
-              <Button
-                aria-selected={effectiveMode === "edit"}
-                onClick={() => setMode("edit")}
-                role="tab"
-                size="sm"
-                variant={effectiveMode === "edit" ? "secondary" : "ghost"}
-              >
-                {t("markdown.workspace.mode.edit")}
-              </Button>
+        <PrototypeLayout className="sh-markdown-workspace__body" enabled={fileRail}>
+          {fileRail ? (
+            <nav aria-label={t("markdown.workspace.fileStructure")} className="sh-markdown-workspace__rail">
+              <ul>
+                {filesQuery.data.map((entry) => (
+                  <li key={entry.path}>
+                    <button
+                      aria-current={entry.path === selectedPath ? "true" : undefined}
+                      className={entry.path === selectedPath ? "is-active" : undefined}
+                      onClick={() => selectFile(entry.path)}
+                      type="button"
+                    >
+                      <span className="sh-markdown-workspace__rail-path" title={entry.path}>{entry.label}</span>
+                      {entry.primary ? <span className="sh-markdown-workspace__rail-badge">{t("markdown.workspace.primaryFile")}</span> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
+          <PrototypeLayout className="sh-markdown-workspace__viewer" enabled={fileRail}>
+            {file.draft ? (
+              <div className="sh-markdown-workspace__draft" role="status">
+                <span className="sh-markdown-status">
+                  <Icon className="sh-markdown-status__icon" name="info" size={16} />
+                  <span>{t("markdown.workspace.draftRestored")}</span>
+                </span>
+                <Button onClick={() => void discardDraft()} size="sm" variant="ghost">
+                  {t("markdown.workspace.discardDraft")}
+                </Button>
+              </div>
             ) : null}
-          </div>
-          {file.draft ? (
-            <div className="sh-markdown-workspace__draft" role="status">
-              <span className="sh-markdown-status">
-                <Icon className="sh-markdown-status__icon" name="info" size={16} />
-                <span>{t("markdown.workspace.draftRestored")}</span>
-              </span>
-              <Button onClick={() => void discardDraft()} size="sm" variant="ghost">
-                {t("markdown.workspace.discardDraft")}
-              </Button>
+            {!file.editable && file.readOnlyReason ? (
+              <div className="sh-markdown-workspace__read-only" role="status">
+                <p className="sh-markdown-status">
+                  <Icon className="sh-markdown-status__icon" name="warning" size={16} />
+                  <span>{t(readOnlyMessageKey[file.readOnlyReason])}</span>
+                </p>
+                <Button onClick={() => void facade.requestTakeover(skillId)} variant="secondary">
+                  {t("markdown.workspace.takeover")}
+                </Button>
+              </div>
+            ) : null}
+            <div aria-label={t("markdown.workspace.modes")} role="tablist">
+              {modes.map((nextMode) => (
+                <Button
+                  aria-selected={effectiveMode === nextMode}
+                  key={nextMode}
+                  onClick={() => setMode(nextMode)}
+                  role="tab"
+                  size="sm"
+                  variant={effectiveMode === nextMode ? "secondary" : "ghost"}
+                >
+                  {modeLabel(nextMode)}
+                </Button>
+              ))}
+              {file.editable ? (
+                <Button
+                  aria-selected={effectiveMode === "edit"}
+                  onClick={() => setMode("edit")}
+                  role="tab"
+                  size="sm"
+                  variant={effectiveMode === "edit" ? "secondary" : "ghost"}
+                >
+                  {t("markdown.workspace.mode.edit")}
+                </Button>
+              ) : null}
             </div>
-          ) : null}
-          {!file.editable && file.readOnlyReason ? (
-            <div className="sh-markdown-workspace__read-only" role="status">
-              <p className="sh-markdown-status">
-                <Icon className="sh-markdown-status__icon" name="warning" size={16} />
-                <span>{t(readOnlyMessageKey[file.readOnlyReason])}</span>
-              </p>
-              <Button onClick={() => void facade.requestTakeover(skillId)} variant="secondary">
-                {t("markdown.workspace.takeover")}
-              </Button>
-            </div>
-          ) : null}
-          {effectiveMode === "read" ? (
-            <MarkdownRenderer
-              facade={facade}
-              filePath={file.path}
-              markdown={file.markdown}
-              skillId={skillId}
-            />
-          ) : null}
-          {effectiveMode === "source" ? (
-            <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
-          ) : null}
-          {effectiveMode === "edit" ? (
-            <Suspense
-              fallback={
-                <DataState message={t("markdown.workspace.loadingFile")} state="loading" />
-              }
-            >
-            <MarkdownEditor
-              facade={facade}
-              file={file}
-              key={`${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
-              onExit={() => setMode("read")}
-              onSaved={() => {
-                void queryClient.invalidateQueries({
-                  queryKey: ["skill-detail", skillId, "summary"],
-                });
-                void queryClient.invalidateQueries({
-                  queryKey: ["skill-detail", skillId, "versions"],
-                });
-              }}
-              skillId={skillId}
-            />
-            </Suspense>
-          ) : null}
-        </>
+            {effectiveMode === "read" ? (
+              fileRail ? (
+                <div className="sh-markdown-workspace__stage">
+                  <MarkdownRenderer
+                    facade={facade}
+                    filePath={file.path}
+                    markdown={file.markdown}
+                    skillId={skillId}
+                  />
+                </div>
+              ) : (
+                <MarkdownRenderer
+                  facade={facade}
+                  filePath={file.path}
+                  markdown={file.markdown}
+                  skillId={skillId}
+                />
+              )
+            ) : null}
+            {effectiveMode === "source" ? (
+              fileRail ? (
+                <div className="sh-markdown-workspace__stage">
+                  <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
+                </div>
+              ) : (
+                <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
+              )
+            ) : null}
+            {effectiveMode === "edit" ? (
+              <Suspense
+                fallback={
+                  <DataState message={t("markdown.workspace.loadingFile")} state="loading" />
+                }
+              >
+                <div className={fileRail ? "sh-markdown-workspace__stage sh-markdown-workspace__stage--editor" : undefined}>
+                  <MarkdownEditor
+                    facade={facade}
+                    file={file}
+                    key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
+                    onExit={() => setMode("read")}
+                    reviewSaveFlow={reviewSaveFlow}
+                    onSaved={() => {
+                      void queryClient.invalidateQueries({
+                        queryKey: ["skill-detail", skillId, "summary"],
+                      });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["skill-detail", skillId, "versions"],
+                      });
+                    }}
+                    skillId={skillId}
+                  />
+                </div>
+              </Suspense>
+            ) : null}
+          </PrototypeLayout>
+        </PrototypeLayout>
       )}
     </section>
   );
+}
+
+/** Keep the production workspace structure; review-only rails need these containers. */
+function PrototypeLayout({ children, className, enabled }: { children: ReactNode; className: string; enabled: boolean }) {
+  return enabled ? <div className={className}>{children}</div> : <>{children}</>;
 }

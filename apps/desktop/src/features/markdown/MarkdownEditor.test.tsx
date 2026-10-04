@@ -401,7 +401,7 @@ describe("MarkdownEditor", () => {
     defineScrollable(source, 2000, 500);
     defineScrollable(preview, 1600, 400);
 
-    const toggle = screen.getByRole("checkbox", { name: "Sync scrolling" });
+    const toggle = screen.getByRole("switch", { name: "Sync scrolling" });
     expect(toggle).toBeChecked();
 
     await user.click(toggle);
@@ -415,13 +415,13 @@ describe("MarkdownEditor", () => {
   it("starts disabled when the stored preference says so", async () => {
     window.localStorage.setItem(SYNC_SCROLL_STORAGE_KEY, "false");
     await renderEditor();
-    expect(screen.getByRole("checkbox", { name: "Sync scrolling" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Sync scrolling" })).not.toBeChecked();
   });
 
   it("stores the toggle choice for the next session", async () => {
     const user = userEvent.setup();
     await renderEditor();
-    await user.click(screen.getByRole("checkbox", { name: "Sync scrolling" }));
+    await user.click(screen.getByRole("switch", { name: "Sync scrolling" }));
     expect(window.localStorage.getItem(SYNC_SCROLL_STORAGE_KEY)).toBe("false");
   });
 });

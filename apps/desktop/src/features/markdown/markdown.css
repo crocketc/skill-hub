@@ -372,11 +372,171 @@
 }
 
 /* QA-012：阅读与源码模式的直出内容同样收敛到桌面高度上限，
-   超长文档在工作区内部滚动，不再无限撑高页面。 */
-.sh-markdown-workspace > .sh-markdown-renderer,
-.sh-markdown-workspace > .sh-markdown-workspace__source {
+   超长文档在工作区内部滚动，不再无限撑高页面。
+   详情原型引入文件侧栏/对照视图后，阅读器与源码块可能嵌在
+   __body/__viewer 容器内，因此按后代选择器收敛。 */
+.sh-markdown-workspace .sh-markdown-renderer,
+.sh-markdown-workspace .sh-markdown-workspace__source {
   max-height: 36rem;
   overflow-y: auto;
+}
+
+/* 编辑分屏的实时预览不做二级滚动：分屏面板（31.5rem 上限）是唯一
+   滚动容器，同步滚动按面板 scrollTop 计算联动比例；上面的 QA-012
+   后代规则会把渲染块变成内部滚动容器，面板永远不溢出，联动失效。 */
+.sh-markdown-editor__pane--preview .sh-markdown-renderer {
+  max-height: none;
+  overflow: visible;
+}
+
+/* —— 详情原型（fileRail）：文件结构侧栏 —— */
+/* 内容舞台：阅读/源码/对照/编辑共用同一高度（随窗口 62dvh 缩放，
+   上下限保证极小/极大窗口可用），内容超出在舞台内部滚动，
+   切换页签不再引起整页高度跳动。 */
+.sh-markdown-workspace--rail {
+  --sh-md-stage: clamp(24rem, 62dvh, 50rem);
+}
+
+.sh-markdown-workspace__stage {
+  block-size: var(--sh-md-stage);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  overflow: auto;
+}
+
+.sh-markdown-workspace__stage .sh-markdown-renderer {
+  max-height: none;
+  overflow: visible;
+  padding: var(--space-4);
+}
+
+.sh-markdown-workspace__stage .sh-markdown-workspace__source {
+  block-size: 100%;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  max-height: none;
+}
+
+.sh-markdown-workspace__body {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.sh-markdown-workspace__rail {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  min-width: 0;
+}
+
+.sh-markdown-workspace__rail ul {
+  display: grid;
+  gap: 1px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-markdown-workspace__rail button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  color: var(--ui-ink-muted);
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  font: inherit;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  text-align: start;
+  width: 100%;
+}
+
+.sh-markdown-workspace__rail button:hover,
+.sh-markdown-workspace__rail button:focus-visible {
+  background: var(--ui-control-background);
+  color: var(--ui-ink);
+}
+
+.sh-markdown-workspace__rail button.is-active {
+  border-inline-start-color: var(--ui-accent);
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.sh-markdown-workspace__rail-path {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-markdown-workspace__rail-badge {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  color: var(--ui-ink-muted);
+  flex: none;
+  font-size: var(--font-size-xs);
+  padding-block: 0 0.05rem;
+  padding-inline: var(--space-1);
+}
+
+/* 侧栏与文件下拉按内容区宽度二选一：宽屏用侧栏，窄屏回落下拉。 */
+@container workspace (min-width: 44rem) {
+  .sh-markdown-workspace--rail .sh-markdown-workspace__body {
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  }
+
+  .sh-markdown-workspace--rail .sh-markdown-workspace__header > div:first-child label,
+  .sh-markdown-workspace--rail .sh-markdown-workspace__header > div:first-child .sh-select {
+    display: none;
+  }
+}
+
+@container workspace (max-width: 43.99rem) {
+  .sh-markdown-workspace--rail .sh-markdown-workspace__rail {
+    display: none;
+  }
+}
+
+/* 编辑模式同样约束在舞台高度内：分屏面板预留工具行后取剩余高度；
+   原型把同步开关并入工具行，头部只剩一行，预留量随之收紧。 */
+.sh-markdown-workspace__stage--editor .sh-markdown-editor__split > div {
+  max-height: calc(var(--sh-md-stage, 36rem) - 3.5rem);
+}
+
+/* 原型编辑头部压缩：工具行单行不换行，状态与保存说明超长省略。 */
+.sh-markdown-workspace--rail .sh-markdown-editor__toolbar {
+  flex-wrap: nowrap;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-status,
+.sh-markdown-workspace--rail .sh-markdown-editor__save-cluster,
+.sh-markdown-workspace--rail .sh-markdown-editor__save-hint {
+  min-width: 0;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-status {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-cluster {
+  flex: 0 1 auto;
+}
+
+.sh-markdown-workspace--rail .sh-markdown-editor__save-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sh-markdown-editor .cm-editor {

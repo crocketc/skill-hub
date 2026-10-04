@@ -58,6 +58,7 @@ import type {
 import { nativeRemovalFacade, unavailableRemovalFacade } from "../removal/nativeApi";
 import { UndeployDialog } from "../removal/UndeployDialog";
 import type { SkillRelation } from "./api";
+import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -68,6 +69,7 @@ interface SkillDetailPageProps {
   securityFacade: SecurityFacade;
   refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
+  reviewPrototype?: boolean;
 }
 
 /** 关系区唯一强化的视觉线索：来源 → 本地集中库 → 部署目标（图标仅装饰，含义由文字承载）。 */
@@ -118,6 +120,7 @@ export function SkillDetailPage({
   securityFacade,
   refreshSnapshot,
   tracker = operationTracker,
+  reviewPrototype = false,
 }: SkillDetailPageProps) {
   const { t } = useTranslation();
   const location = useLocation();
@@ -161,6 +164,7 @@ export function SkillDetailPage({
   });
   // 任务 12C：当前 Skill 的可管理关系台账 + 最近来源事件摘要（只读）。
   const governanceLedgerQuery = useQuery({
+    enabled: !reviewPrototype,
     queryFn: () => governanceFacade.listGovernance({ skill_id: skillId }),
     queryKey: relationshipsKeys.governance({ skill_id: skillId }),
   });
@@ -171,9 +175,10 @@ export function SkillDetailPage({
     facade: governanceFacade,
     scope: `skill:${skillId}`,
     relationIds: governedRelationIds,
-    enabled: governanceLedgerQuery.isSuccess && governedRelationIds.length > 0,
+    enabled: !reviewPrototype && governanceLedgerQuery.isSuccess && governedRelationIds.length > 0,
   });
   const sourceEventsQuery = useQuery({
+    enabled: !reviewPrototype,
     queryFn: () => governanceFacade.listHistory({ skillId, page: 1, pageSize: 5 }),
     queryKey: relationshipsKeys.governanceHistory({ page: 1, pageSize: 5, skillId }),
   });
@@ -312,6 +317,31 @@ export function SkillDetailPage({
         message={t("skillDetail.states.error")}
         onAction={() => void summaryQuery.refetch()}
         state="error"
+      />
+    );
+  }
+
+  if (reviewPrototype) {
+    const reviewReturnParams = new URLSearchParams(backSearch);
+    reviewReturnParams.delete("detailPrototype");
+    reviewReturnParams.set("drawerPrototype", "review");
+    reviewReturnParams.set("skill", skillId);
+    return (
+      <SkillDetailReviewExperience
+        adjacent={adjacentQuery.data}
+        backSearch={backSearch}
+        detailPathname={detailPathname}
+        facade={facade}
+        insights={insightsQuery.data}
+        markdownFacade={markdownFacade}
+        metadata={metadataQuery.data}
+        provenance={provenanceQuery.data}
+        requirements={requirementsQuery.data}
+        securityFacade={securityFacade}
+        skillId={skillId}
+        summary={summaryQuery.data}
+        libraryReturn={libraryReturn}
+        returnToLibrary={`${backPathname}?${reviewReturnParams.toString()}`}
       />
     );
   }

@@ -99,6 +99,8 @@ export interface SkillLibraryCapabilities {
 
 export interface SkillLibraryPageProps {
   capabilities?: SkillLibraryCapabilities;
+  /** DEV-only, opt-in visual prototype forwarded from /__preview/skill-library. */
+  drawerPrototype?: boolean;
   facade: SkillLibraryFacade;
   onOpenDiscovery?: () => void;
   removalFacade?: RemovalFacade;
@@ -417,6 +419,7 @@ function BatchBar({
 
 export function SkillLibraryPage({
   capabilities,
+  drawerPrototype = false,
   facade,
   onOpenDiscovery,
   removalFacade = nativeRemovalFacade,
@@ -1622,6 +1625,7 @@ export function SkillLibraryPage({
 
       <SkillQuickDrawer
         detailSearch={detailSearchFromLibrary(location.search)}
+        drawerPrototype={import.meta.env.DEV && drawerPrototype}
         facade={drawerFacade}
         relationshipFacade={relationshipFacade}
         trialFacade={trialFacade}

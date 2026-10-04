@@ -125,6 +125,8 @@
         "source": "Source"
       },
       "modes": "Markdown view",
+      "fileStructure": "File structure",
+      "primaryFile": "Primary",
       "openDefault": "Open in default app",
       "openFolder": "Open Skill folder",
       "readOnly": {
@@ -823,20 +825,48 @@
     "compatibility": {
       "pendingError": "Agent compatibility for this import method is unverified. Complete verification in Pending first; this does not mean the system cannot create links.",
       "saved": "Local verification saved. Unverified items remain pending.",
-      "methods": { "managed_copy": "Copy import", "symbolic_link": "Link import (symbolic link)", "directory_junction": "Link import (Windows directory junction)" },
-      "title": "Import compatibility verification", "mode": "Verify: {{mode}}",
+      "methods": {
+        "managed_copy": "Copy import",
+        "symbolic_link": "Link import (symbolic link)",
+        "directory_junction": "Link import (Windows directory junction)"
+      },
+      "title": "Import compatibility verification",
+      "mode": "Verify: {{mode}}",
       "instructions": "Use a harmless test Skill. Verify the copied or linked entry is readable, then check discovery and loading in the Agent. Remove the test entry while preserving the source. Creation failures do not prove incompatibility; choose unverified. This local record applies to the current directory and declaration. Recheck after Agent upgrades.",
-      "version": "Agent version", "result": "Verification result", "evidence": "Steps and observed result",
+      "version": "Agent version",
+      "result": "Verification result",
+      "evidence": "Steps and observed result",
       "checked": "Checked discovery and loading in the Agent; for an unsupported result, ruled out creation, permission and path failures",
-      "supported": "Confirmed supported", "unsupported": "Confirmed unsupported", "unverified": "Unverified; keep pending", "save": "Save local verification"
+      "supported": "Confirmed supported",
+      "unsupported": "Confirmed unsupported",
+      "unverified": "Unverified; keep pending",
+      "save": "Save local verification"
     },
     "deploymentMethods": {
       "label": "Deployment methods",
-      "readonly": "Built-in directory is read-only; importing is disabled", "copy": { "unverified": "Copy import compatibility is unverified", "supported": "Copy import supported", "unsupported": "Copy import unavailable" },
-      "link": { "unverified": "Link import compatibility is unverified", "supported": "Link import supported", "unsupported": "Link import unavailable" },
-      "managed_copy": { "supported": "Managed copy supported", "unsupported": "Managed copy unavailable" },
-      "symbolic_link": { "supported": "Symbolic link supported", "unsupported": "Symbolic link unavailable" },
-      "directory_junction": { "supported": "Directory junction supported", "unsupported": "Directory junction unavailable" }
+      "readonly": "Built-in directory is read-only; importing is disabled",
+      "copy": {
+        "unverified": "Copy import compatibility is unverified",
+        "supported": "Copy import supported",
+        "unsupported": "Copy import unavailable"
+      },
+      "link": {
+        "unverified": "Link import compatibility is unverified",
+        "supported": "Link import supported",
+        "unsupported": "Link import unavailable"
+      },
+      "managed_copy": {
+        "supported": "Managed copy supported",
+        "unsupported": "Managed copy unavailable"
+      },
+      "symbolic_link": {
+        "supported": "Symbolic link supported",
+        "unsupported": "Symbolic link unavailable"
+      },
+      "directory_junction": {
+        "supported": "Directory junction supported",
+        "unsupported": "Directory junction unavailable"
+      }
     }
   },
   "projects": {
@@ -1306,6 +1336,110 @@
       "moreTags_other": "{{count}} more tags",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
       "fullDetails": "View full details",
+      "prototype": {
+        "cycleWidth": "Current: {{current}}; click to switch to {{next}}",
+        "actionImpacts": {
+          "dispatch": "Example scope: link {{skill}} to a selected Agent or project; the target and impact still need verification before execution.",
+          "export": "Example scope: export the Skill body and selected metadata for {{skill}}; no destination has been selected.",
+          "delete": "Example scope: delete the {{skill}} body and verified managed links; this prototype will not delete anything."
+        },
+        "actionNoExecution": "For review of the entry point and impact only. Nothing is actually dispatched, exported, or deleted.",
+        "actionTitles": {
+          "dispatch": "Dispatch preview",
+          "export": "Export preview",
+          "delete": "Delete preview"
+        },
+        "adjustReviewDate": "Adjust review date",
+        "allFindings": "View all findings ({{count}})",
+        "backToRelationSummary": "Back to relation summary",
+        "cancelActionPreview": "Cancel preview",
+        "closeLocationPreview": "Close location preview",
+        "closeRelationPreview": "Close relation preview",
+        "collectionsDialog": "Edit collections",
+        "collectionsHelp": "Select collections to preview adding or removing",
+        "collectionsTitle": "Collections",
+        "convertRegular": "Convert to regular",
+        "copySamplePath": "Copy sample path",
+        "derivedFromSample": "Derived sample: reused and modified from {{sourceSkill}}; read-only display.",
+        "editCollections": "Edit collections",
+        "editTranslation": "Edit translation",
+        "delete": "Delete",
+        "dispatch": "Dispatch",
+        "importReceipt": "Import record",
+        "importReceiptSample": "Copied into the central library; the file remains at its original location",
+        "networkUpdateSource": "Network update source",
+        "networkUpdateSourceSample": "GitHub · PDF Toolkit · v2.4.0 (sample)",
+        "noFilesystemOpen": "No local folder will open; this is an isolated sample location.",
+        "openGovernanceSample": "Preview relationship governance",
+        "openRelationContext": "Open relation context: {{target}}",
+        "openSampleLocation": "Open sample location",
+        "openTargetSample": "Preview {{type}} details",
+        "previewNote": "Preview sample · Changes stay on this page and are not written to SkillHub.",
+        "popoverDescription": "Preview controls. No production data is changed.",
+        "projectTargets": "Project relation targets, {{count}} total",
+        "regular": "Regular",
+        "relationContextTitle": "Relation context: {{target}}",
+        "relationGovernanceSample": "Relationship governance sample",
+        "relationshipState": "Relationship status",
+        "relationTargetSample": "Target details sample",
+        "removeCollection": "Remove from collection: {{name}}",
+        "reviewDate": "Review date",
+        "reviewDateDialog": "Set review date",
+        "sampleImpactLabel": "Example impact",
+        "sampleManaged": "Preview sample · Centrally managed",
+        "sampleManagedReason": "The sample relation has a central library body and a verified target entry.",
+        "sampleOnly": "Sample preview path; not a real local folder",
+        "samplePathCopied": "Sample path copied",
+        "samplePathCopyUnavailable": "Could not copy the sample path. Allow clipboard access and retry.",
+        "samplePending": "Preview sample · Central management pending",
+        "samplePendingReason": "The sample target still has an independent copy; it needs verification and central management.",
+        "saveCollections": "Save collection preview",
+        "saveDatePreview": "Save date preview",
+        "saveTranslationPreview": "Save translation preview",
+        "securityCompactFindings": "{{count}} risks · {{actionable}} need attention",
+        "setTranslationAsPurpose": "Set as purpose",
+        "setTrial": "Set trial",
+        "subjectLocationDialog": "Skill body location sample",
+        "subjectLocationTitle": "Skill body location",
+        "targetContextSample": "This opens a read-only sample context for {{name}}; related Skill: {{skill}}.",
+        "governanceContextSample": "Read-only view of this relation between {{skill}} and {{target}}, with a return path. No relationship actions are available.",
+        "trial": "Trial",
+        "updateAvailable": "Update available",
+        "export": "Export",
+        "fullDetails": "View full details",
+        "basicInformation": "Basic information",
+        "allTags": "All tags",
+        "moreTags": "{{count}} more tags",
+        "aiTranslate": "AI translation",
+        "translationUnavailable": "AI translation is not configured",
+        "configureTranslation": "Configure AI translation",
+        "translationPreview": "Preview only; the description is not sent anywhere.",
+        "useExistingTranslation": "Use existing translation as my purpose",
+        "basicCheck": "Basic check",
+        "aiCheck": "AI check",
+        "recheck": "Recheck",
+        "securityLocalScope": "Local preview data only. No network request is made.",
+        "securityLoading": "Loading results",
+        "securityRunning": "Checking",
+        "securityFailed": "Check failed",
+        "securityFindings": "{{count}} risks found; {{actionable}} need attention",
+        "securityClean": "No risks found",
+        "securityNotRun": "Not checked",
+        "securityTimeUnavailable": "No time recorded",
+        "securityTooltip": "{{check}}: {{result}}; scope: current version {{version}}; time: {{time}}.",
+        "securityAccessibleFailed": "{{check}} failed. Focus for the current version and time.",
+        "securityAccessibleRisk": "{{check}} found {{count}} risks; {{actionable}} need attention.",
+        "securityAccessibleClean": "{{check}} passed with no risks in the current version.",
+        "securityAccessibleUnknown": "{{check}}: {{result}}.",
+        "securityVersionTime": "Current version {{version}} · {{time}}",
+        "securityFindingsLabel": "Check findings",
+        "securityNeedsAttention": "Needs attention",
+        "securityDispositionRecorded": "A handling decision is recorded; the original finding remains",
+        "securityFailureDetail": "This check could not finish. Try again later.",
+        "previewOnly": "Layout preview; action buttons are display-only",
+        "requirements": "Requirements",
+        "sourceVersionTitle": "Source and version"
+      },
       "modules": {
         "fullDetails": "Full details",
         "identity": "Identity",
@@ -1316,7 +1450,10 @@
         "sourceVersion": "Source and version",
         "sourceLicense": "Source and license",
         "usageEvidence": "Usage evidence",
-        "versions": "Versions"
+        "versions": "Versions",
+        "dependenciesDuplicates": "Dependencies and duplicates",
+        "externalChanges": "External changes",
+        "invocationRequirements": "Invocation and requirements"
       },
       "moduleVisibility": "Drawer modules",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
@@ -1413,7 +1550,13 @@
         "tags": "Tags",
         "translatedDescription": "Translation",
         "upToDate": "Up to date",
-        "updateAvailable": "Update available"
+        "updateAvailable": "Update available",
+        "dependencies": "Dependencies",
+        "duplicates": "Possible duplicates"
+      },
+      "relations": {
+        "showFewerProjects": "Show fewer projects",
+        "showMoreProjects": "Show {{count}} more projects"
       }
     },
     "filters": {
@@ -1985,7 +2128,7 @@
       "fallbackMode": "Fallback mode"
     },
     "batch": {
-        "preselectUnavailable": "The linked target is not selectable right now; choose a target below.",
+      "preselectUnavailable": "The linked target is not selectable right now; choose a target below.",
       "heading": "Add {{count}} Skills",
       "description": "Each Skill is previewed independently; committing is enabled only when every preview succeeds.",
       "planDescription": "Review the target changes per Skill; warnings and conflicts remain visible before commit.",
@@ -2085,6 +2228,7 @@
       "not_checked": "Not checked",
       "running": "Running",
       "passed": "Passed",
+      "completedWithFindings": "Check completed",
       "failed": "Failed"
     },
     "basicHeading": "Basic security check",
@@ -2099,6 +2243,7 @@
     "checkedAt": "Last checked: {{date}}",
     "findingSummaryLabel": "Security finding counts",
     "findingSummary": "High risk {{highRisk}} · Pending {{pending}}",
+    "riskAwareSummary": "High-risk findings remain · {{highRisk}} high risk · {{pending}} pending; check completed",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
     "drawer": {
@@ -2279,7 +2424,8 @@
       "import_skills": "Import your first Skill",
       "ai_setup": "Configure AI (optional)",
       "backup_setup": "Create your first backup",
-      "agent_compatibility": "Agent import compatibility verification", "source_update": "Review source update",
+      "agent_compatibility": "Agent import compatibility verification",
+      "source_update": "Review source update",
       "governance_followup": "Import governance follow-up"
     },
     "actions": {
@@ -2349,7 +2495,8 @@
       "import_skills": "Initialization only discovered files. Open local discovery, choose sources and candidates, then confirm import into the library.",
       "ai_setup": "Configure an available model to use optional AI checks. You can also skip this suggestion.",
       "backup_setup": "Your library has content. Create a backup; this suggestion closes after successful creation and verification.",
-      "agent_compatibility": "Agent import compatibility verification", "source_update": "A newer source version is available. Review the changes before updating.",
+      "agent_compatibility": "Agent import compatibility verification",
+      "source_update": "A newer source version is available. Review the changes before updating.",
       "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate."
     },
     "count": "{{count}} items need action",
@@ -3171,7 +3318,12 @@
       "appUpdate": "App update"
     },
     "sectionNavLabel": "Settings sections",
-    "navGroups": { "preferences": "Preferences", "data": "Data", "network": "Network & AI", "maintenance": "Review & maintenance" },
+    "navGroups": {
+      "preferences": "Preferences",
+      "data": "Data",
+      "network": "Network & AI",
+      "maintenance": "Review & maintenance"
+    },
     "search": {
       "label": "Search settings",
       "placeholder": "Search settings…",
@@ -3213,7 +3365,11 @@
       "themeDescription": "Your choice applies immediately and is saved to local preferences.",
       "appearance": "Appearance",
       "appearanceDescription": "Follow the system, or keep a light or dark appearance. Theme colors can be chosen separately.",
-      "appearances": { "system": "Follow system", "light": "Light", "dark": "Dark" },
+      "appearances": {
+        "system": "Follow system",
+        "light": "Light",
+        "dark": "Dark"
+      },
       "themeSaveError": "The theme could not be saved, so the previous setting was restored.",
       "themeSaved": "Theme setting saved",
       "reducedMotion": "Always reduce motion",
@@ -3663,7 +3819,8 @@
         "import_skills": "{{count}} · Import your first Skill",
         "ai_setup": "{{count}} · Configure AI (optional)",
         "backup_setup": "{{count}} · Create your first backup",
-        "agent_compatibility": "Agent import compatibility verification", "source_update": "{{count}} · Review source update",
+        "agent_compatibility": "Agent import compatibility verification",
+        "source_update": "{{count}} · Review source update",
         "governance_followup": "{{count}} · Import governance follow-up"
       },
       "none": "No pending items",

@@ -89,7 +89,7 @@ test.describe("markdown edit split layout", () => {
     await page.getByRole("tab", { name: "Edit" }).click();
     await expect(page.getByRole("textbox", { name: "Markdown source" })).toBeVisible();
 
-    const toggle = page.getByRole("checkbox", { name: "Sync scrolling" });
+    const toggle = page.getByRole("switch", { name: "Sync scrolling" });
     await expect(toggle).toBeHidden();
 
     await page.setViewportSize({ width: 900, height: 900 });
@@ -110,7 +110,7 @@ test.describe("markdown edit split layout", () => {
     // 预览实时渲染源码：追加长内容让两侧都有足够的纵向滚动空间。
     await page.keyboard.insertText(`\n\n${"sync-probe line\n".repeat(80)}`);
 
-    const toggle = page.getByRole("checkbox", { name: "Sync scrolling" });
+    const toggle = page.getByRole("switch", { name: "Sync scrolling" });
     await expect(toggle).toBeChecked();
 
     await page.evaluate(() => {
