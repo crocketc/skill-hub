@@ -28,8 +28,27 @@ export type RemovalImpact = {
   unknownExternalReferences: string[];
 };
 
+/** K2：多目标删除逐项执行状态（生成绑定 RemovalItemStatus）。 */
+export type RemovalItemStatus = "applied" | "failed" | "pending";
+/** K2：删除整体执行状态（生成绑定 RemovalResultState）。 */
+export type RemovalResultState = "committed" | "partially_committed" | "failed";
+/** 单个部署关系的删除执行结果（生成绑定 DeploymentRemovalResult 的桌面映射）。 */
+export type RemovalItemOutcome = {
+  deploymentId: string;
+  status: RemovalItemStatus;
+  errorCode?: string | null;
+};
+
 export type RemovalResult = {
   centralSkillDeleted: boolean;
+  /** 绑定注释：旧载荷缺省按已提交（committed）读取。 */
+  state?: RemovalResultState;
+  /** delete_skill 失败时登记的恢复候选操作 id，指向恢复中心。 */
+  recoveryOperationId?: string | null;
+  /** 中央 Skill 删除失败的错误码；非空即「目标已回收，中央 Skill 未删除」。 */
+  centralDeleteError?: string | null;
+  /** 逐项执行结果；旧载荷缺省视为无逐项数据（不冒充成功）。 */
+  items?: RemovalItemOutcome[];
 };
 
 export type UndeployDecision = "remove_owned_target" | "keep_shared_deployment" | "remove_relation_only";

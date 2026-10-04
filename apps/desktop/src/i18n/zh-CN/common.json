@@ -2393,12 +2393,26 @@
       "applied": "{{count}} 个目标已删除。",
       "partial": "已删除 {{applied}} 个目标，{{failed}} 个未删除；集中库 Skill 尚未删除。",
       "failed": "目标删除未完成；集中库 Skill 未删除。",
+      "centralDeleteFailed": "目标已回收，中央 Skill 未删除。",
       "appliedGroup": "已删除的目标",
       "failedGroup": "未删除的目标",
+      "pendingGroup": "未尝试的目标",
+      "pendingReason": "尚未尝试：前方目标删除失败，该项未执行。",
       "reasonDetail": "原因：{{detail}}",
       "reasonUnknown": "删除失败，可继续处理或稍后重试。",
+      "openRecovery": "打开恢复中心",
       "continue": "继续处理（重新确认）",
-      "continuing": "正在重新核对…"
+      "continuing": "正在重新核对…",
+      "errorCodes": {
+        "deployment_ownership_mismatch": "删除失败：目标当前内容与部署关系不匹配。",
+        "deployment_target_changed": "删除失败：目标内容在删除前已变化。",
+        "deployment_security_check_blocked": "删除失败：安全检查未通过，已阻止删除。",
+        "target_ownership_unknown": "删除失败：无法确认目标归属，已阻止删除。",
+        "path_outside_allowed_root": "删除失败：目标路径超出允许范围。",
+        "object_not_found": "删除失败：目标不存在，可能已被删除。",
+        "operation_conflict": "删除失败：操作冲突，请重新确认后重试。",
+        "internal_error": "删除失败：内部错误，可从恢复中心继续。"
+      }
     }
   },
   "undeploy": {

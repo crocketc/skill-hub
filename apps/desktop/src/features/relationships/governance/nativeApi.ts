@@ -230,9 +230,9 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     decision: RelationUndeployDecision,
   ): Promise<RemovalResult> {
     // K2/G-07：共享目标显式确认随提交载荷透传（缺省 false，后端必须拒绝
-    // 缺确认的共享回收）。生成绑定暂无该字段，先以本地类型扩展承载；
-    // 待 A 绑定后对齐，绝不手改 bindings.ts。
-    const payload: CommitUndeploy & { confirm_shared_target_removal: boolean } = {
+    // 缺确认的共享回收）。生成绑定 CommitUndeploy 已含可选
+    // confirm_shared_target_removal 字段，直接使用生成类型，不再本地扩展。
+    const payload: CommitUndeploy = {
       prepared_undeploy_id: operationId,
       decision: "remove_owned_target",
       confirm_shared_target_removal: decision.confirmSharedTargetRemoval,

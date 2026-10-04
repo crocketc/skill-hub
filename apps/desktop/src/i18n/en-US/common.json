@@ -2393,12 +2393,26 @@
       "applied": "{{count}} targets deleted.",
       "partial": "{{applied}} targets deleted, {{failed}} not deleted; the library Skill was not deleted.",
       "failed": "Target deletion did not complete; the library Skill was not deleted.",
+      "centralDeleteFailed": "Targets were removed, but the library Skill was not deleted.",
       "appliedGroup": "Deleted targets",
       "failedGroup": "Not deleted",
+      "pendingGroup": "Not attempted",
+      "pendingReason": "Not attempted: an earlier target failed to delete, so this item never ran.",
       "reasonDetail": "Reason: {{detail}}",
       "reasonUnknown": "Deletion failed. Continue later or try again.",
+      "openRecovery": "Open recovery center",
       "continue": "Continue (re-confirm)",
-      "continuing": "Re-checking…"
+      "continuing": "Re-checking…",
+      "errorCodes": {
+        "deployment_ownership_mismatch": "Deletion failed: the target content no longer matches the deployment relation.",
+        "deployment_target_changed": "Deletion failed: the target changed before it could be deleted.",
+        "deployment_security_check_blocked": "Deletion failed: a security check did not pass, so deletion was blocked.",
+        "target_ownership_unknown": "Deletion failed: target ownership could not be confirmed, so deletion was blocked.",
+        "path_outside_allowed_root": "Deletion failed: the target path is outside the allowed root.",
+        "object_not_found": "Deletion failed: the target does not exist; it may already be gone.",
+        "operation_conflict": "Deletion failed: the operation conflicts with another; re-confirm and retry.",
+        "internal_error": "Deletion failed: an internal error occurred; continue from the recovery center."
+      }
     }
   },
   "undeploy": {

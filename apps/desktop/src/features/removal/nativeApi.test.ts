@@ -394,8 +394,13 @@ it("prepares and commits central Skill deletion with explicit mapped choices", a
     payload: [{ id: "target-1", physical_id: "target-1", label: "Codex", path: "C:\\Users\\demo\\.agents\\skills", physical_identity_verified: true }],
   } as never);
 
+  // K2：commitDelete 归一化后返回稳定全形状；旧载荷按已提交/已执行读取。
   await expect(nativeRemovalFacade.deleteSkill("skill-pdf", { "deployment-1": "convert_to_copy" })).resolves.toEqual({
     centralSkillDeleted: true,
+    state: "committed",
+    recoveryOperationId: null,
+    centralDeleteError: null,
+    items: [],
   });
   expect(executeCommand).toHaveBeenNthCalledWith(1, {
     type: "prepare_delete_skill",
@@ -408,4 +413,131 @@ it("prepares and commits central Skill deletion with explicit mapped choices", a
       decisions: [{ deployment_id: "deployment-1", decision: "remove_relation_only" }],
     },
   });
+});
+
+it("maps the full commit_delete result shape with per-item status and central failure facts", async () => {
+  // K2 绑定：RemovalResult.state/recovery_operation_id/central_delete_error
+  // 与 DeploymentRemovalResult.status/error_code 必须完整进入桌面契约，
+  // 不再只留 central_skill_deleted 单字段。
+  const result = {
+    operation_id: "op-delete-1",
+    skill_id: "skill-pdf",
+    decisions: [
+      {
+        deployment_id: "dep-1",
+        decision: "remove_owned_target",
+        target_removed: true,
+        relation_removed: true,
+        management_detached: false,
+        status: "applied",
+        error_code: null,
+      },
+      {
+        deployment_id: "dep-2",
+        decision: "remove_owned_target",
+        target_removed: false,
+        relation_removed: false,
+        management_detached: false,
+        status: "failed",
+        error_code: "deployment.ownership_mismatch",
+      },
+      {
+        deployment_id: "dep-3",
+        decision: "keep_shared_deployment",
+        target_removed: false,
+        relation_removed: false,
+        management_detached: false,
+        status: "pending",
+      },
+    ],
+    central_skill_deleted: false,
+    state: "partially_committed",
+    recovery_operation_id: "op-restore-1",
+    central_delete_error: "internal.error",
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_result", payload: result } as never);
+
+  await expect(nativeRemovalFacade.commitDelete("op-delete-1", {
+    "dep-1": "remove_deployment",
+    "dep-2": "remove_deployment",
+    "dep-3": "keep_deployed",
+  })).resolves.toEqual({
+    centralSkillDeleted: false,
+    state: "partially_committed",
+    recoveryOperationId: "op-restore-1",
+    centralDeleteError: "internal.error",
+    items: [
+      { deploymentId: "dep-1", status: "applied", errorCode: null },
+      { deploymentId: "dep-2", status: "failed", errorCode: "deployment.ownership_mismatch" },
+      { deploymentId: "dep-3", status: "pending", errorCode: null },
+    ],
+  });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "commit_delete_skill",
+    payload: {
+      prepared_delete_id: "op-delete-1",
+      decisions: [
+        { deployment_id: "dep-1", decision: "remove_owned_target" },
+        { deployment_id: "dep-2", decision: "remove_owned_target" },
+        { deployment_id: "dep-3", decision: "keep_shared_deployment" },
+      ],
+    },
+  });
+});
+
+it("normalizes a legacy delete result that predates per-item status as fully executed", async () => {
+  const result = {
+    operation_id: "op-delete",
+    skill_id: "skill-pdf",
+    decisions: [],
+    central_skill_deleted: true,
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_result", payload: result });
+
+  // 绑定注释：旧载荷缺省按已执行/已提交读取；桌面层归一，消费方拿稳定形状。
+  await expect(nativeRemovalFacade.commitDelete("op-delete", {})).resolves.toEqual({
+    centralSkillDeleted: true,
+    state: "committed",
+    recoveryOperationId: null,
+    centralDeleteError: null,
+    items: [],
+  });
+});
+
+it("stops the delete flow before commit when the deployment target query fails", async () => {
+  const impact = {
+    operation_id: "op-delete",
+    skill_id: "skill-pdf",
+    deployments: [
+      {
+        id: "deployment-1",
+        skill_id: "skill-pdf",
+        version_id: "v1",
+        target_id: "target-1",
+        state: "deployed" as const,
+        mode: "managed_copy" as const,
+        managed: true,
+        runtime_name: "pdf",
+        expected_hash: "sha256:tree",
+        observed_hash: "sha256:tree",
+      },
+    ],
+    requires_shared_target_choice: false,
+    dependencies: [],
+    project_configs: [],
+    pinned_versions: [],
+    combinations: [],
+    related_skills: [],
+    unknown_external_references: [],
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
+  vi.mocked(queryApplication).mockRejectedValue(new Error("deployment target query failed"));
+
+  // G-10/K2：影响查询失败必须可见失败并停止流程，绝不带脏数据进入提交。
+  await expect(nativeRemovalFacade.prepareDelete("skill-pdf", "PDF Reader")).rejects.toMatchObject({
+    code: "removal.deployment_target_unavailable",
+  });
+  expect(executeCommand).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: "commit_delete_skill" }),
+  );
 });

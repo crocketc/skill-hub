@@ -192,7 +192,20 @@ export const nativeRemovalFacade = {
       type: "commit_delete_skill",
       payload: { prepared_delete_id: operationId, decisions },
     }));
-    return { centralSkillDeleted: result.central_skill_deleted };
+    // K2：逐项执行状态与中央删除失败事实完整进入桌面契约，不再只留
+    // central_skill_deleted 单字段。绑定注释——state/status 旧载荷缺省按
+    // 已提交/已执行读取，此处归一，消费方拿稳定形状。
+    return {
+      centralSkillDeleted: result.central_skill_deleted,
+      state: result.state ?? "committed",
+      recoveryOperationId: result.recovery_operation_id ?? null,
+      centralDeleteError: result.central_delete_error ?? null,
+      items: result.decisions.map((decision) => ({
+        deploymentId: decision.deployment_id,
+        status: decision.status ?? "applied",
+        errorCode: decision.error_code ?? null,
+      })),
+    };
   },
 };
 
