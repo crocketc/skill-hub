@@ -105,6 +105,8 @@ pub struct RenameCombination {
 pub struct SetCurrentVersion {
     pub skill_id: SkillId,
     pub version_id: VersionId,
+    /// Backend-issued, single-use version-adoption preview binding.
+    pub preview_id: crate::OperationId,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct PinProjectSkillVersion {

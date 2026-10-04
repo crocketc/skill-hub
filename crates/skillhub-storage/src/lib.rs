@@ -18,6 +18,8 @@ pub use database::{
     RelationshipImpactSnapshot, RelationshipRepository, ScanRepository, SearchCandidateRepository,
     SearchRepository, TargetRepository, UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
 };
-pub use library::{CentralLibrary, ManifestFaultHandler, PortableManifestStore};
+pub use library::{
+    CentralLibrary, ManifestFaultHandler, PortableManifestStore, VisibleTreeReplacement,
+};
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;

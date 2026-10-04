@@ -18,6 +18,23 @@ pub struct CentralLibrary {
     store: PortableManifestStore,
 }
 
+/// A visible-tree replacement whose prior directory is retained until the
+/// caller commits all other consumers of the selected version.
+#[derive(Debug)]
+pub struct VisibleTreeReplacement {
+    skill_id: SkillId,
+    output: std::path::PathBuf,
+    backup: Option<std::path::PathBuf>,
+    expected_tree_hash: String,
+    expected_backup_tree_hash: Option<String>,
+}
+
+impl VisibleTreeReplacement {
+    pub fn backup_path(&self) -> Option<&Path> {
+        self.backup.as_deref()
+    }
+}
+
 impl std::fmt::Debug for CentralLibrary {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -182,6 +199,43 @@ impl CentralLibrary {
         self.write_manifest_atomic(&manifest)
     }
 
+    /// Updates only the portable manifest's current-version field, preserving
+    /// the user's other stored portable metadata exactly.
+    pub fn set_portable_current_version(
+        &self,
+        id: SkillId,
+        current: Option<&VersionId>,
+    ) -> AppResult<()> {
+        let mut manifest = self.load_manifest()?;
+        let record = manifest
+            .skills
+            .iter_mut()
+            .find(|record| record.id == id)
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        record.current_version = current.cloned();
+        self.write_manifest_atomic(&manifest)
+    }
+
+    /// Restores the exact prior portable record (or its absence) during
+    /// compensation and recovery.
+    pub fn restore_portable_skill_record(
+        &self,
+        id: SkillId,
+        previous: Option<PortableSkillRecord>,
+    ) -> AppResult<()> {
+        if previous.as_ref().is_some_and(|record| record.id != id) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "portable_skill_id")
+                .with_action(RecoveryAction::Retry));
+        }
+        let mut manifest = self.load_manifest()?;
+        manifest.skills.retain(|record| record.id != id);
+        if let Some(previous) = previous {
+            manifest.skills.push(previous);
+        }
+        self.write_manifest_atomic(&manifest)
+    }
+
     pub fn remove_portable_skill(&self, id: SkillId) -> AppResult<()> {
         let mut manifest = self.load_manifest()?;
         let removed = manifest
@@ -215,11 +269,489 @@ impl CentralLibrary {
         self.visible_skill_path_for(skill_id, runtime_name)
     }
 
+    /// Returns the fingerprint of a Skill's visible tree after verifying that
+    /// the path is still the managed directory inside this library. Missing
+    /// trees are represented as `None`; links, reparse points and unexpected
+    /// filesystem entries are rejected rather than followed.
+    pub fn visible_tree_fingerprint(&self, skill: &Skill) -> AppResult<Option<String>> {
+        let output = self.visible_skill_path(skill);
+        self.validate_visible_paths(skill.id(), &output)?;
+        if !path_entry_exists(&output)? {
+            return Ok(None);
+        }
+        if !is_real_directory(&output)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_param("path", output.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        VersionStore::from_library(self)
+            .hash_tree_read_only(&output)
+            .map(Some)
+    }
+
     /// Rebuilds the visible central-library tree for the supplied version.
     /// Immutable version objects remain the source of truth; this tree is the
     /// stable source used for human inspection and linked Agent deployments.
     pub fn materialize_current_skill(&self, skill: &Skill, version: &VersionId) -> AppResult<()> {
-        self.materialize_visible_tree(skill.id(), skill.runtime_name(), version, true)
+        let replacement = self.prepare_visible_tree_replacement(skill, version)?;
+        self.finalize_visible_tree_replacement(replacement)
+    }
+
+    /// Replaces the visible tree but keeps its previous directory available
+    /// for an application-level multi-consumer transaction.
+    pub fn prepare_visible_tree_replacement(
+        &self,
+        skill: &Skill,
+        version: &VersionId,
+    ) -> AppResult<VisibleTreeReplacement> {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let backup = self
+            .paths
+            .tmp_dir
+            .join(format!("visible-backup-{}-{nonce}", skill.id()));
+        let expected_previous_tree_hash = self.visible_tree_fingerprint(skill)?;
+        self.prepare_visible_tree_replacement_with_backup(
+            skill,
+            version,
+            &backup,
+            expected_previous_tree_hash.as_deref(),
+        )
+    }
+
+    /// Variant used by a journaled adoption. The backup name and the hash of
+    /// the old tree are persisted before this method can move the visible
+    /// directory, so an interrupted process leaves durable recovery facts.
+    pub fn prepare_visible_tree_replacement_with_backup(
+        &self,
+        skill: &Skill,
+        version: &VersionId,
+        backup: &Path,
+        expected_previous_tree_hash: Option<&str>,
+    ) -> AppResult<VisibleTreeReplacement> {
+        let output = self.visible_skill_path_for(skill.id(), skill.runtime_name());
+        self.validate_visible_paths(skill.id(), &output)?;
+        self.validate_visible_backup_entry(skill.id(), backup)?;
+        if path_entry_exists(backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_path_occupied")
+                .with_param("path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let had_output = path_entry_exists(&output)?;
+        if had_output && !is_real_directory(&output)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("path", output.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let expected_tree_hash = VersionStore::from_library(self)
+            .load_manifest(version)?
+            .tree_hash;
+        let expected_backup_tree_hash = if had_output {
+            Some(VersionStore::from_library(self).hash_tree_read_only(&output)?)
+        } else {
+            None
+        };
+        if expected_previous_tree_hash != expected_backup_tree_hash.as_deref() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let staging = self.paths.tmp_dir.join(format!("visible-{}-{nonce}", skill.id()));
+        if let Err(error) = VersionStore::from_library(self).materialize(version, &staging) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        if self.store.should_fail("before_visible_replace") {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(injected_fault("before_visible_replace"));
+        }
+        if had_output {
+            if let Err(error) = fs::rename(&output, &backup) {
+                let _ = fs::remove_dir_all(&staging);
+                return Err(io_error(error));
+            }
+        }
+        let install_result = if self.store.should_fail("before_visible_staging_rename") {
+            Err(std::io::Error::other("injected visible staging rename failure"))
+        } else {
+            fs::rename(&staging, &output)
+        };
+        if let Err(error) = install_result {
+            if had_output {
+                let restore = if self.store.should_fail("before_visible_backup_restore") {
+                    Err(std::io::Error::other("injected visible backup restore failure"))
+                } else {
+                    fs::rename(&backup, &output)
+                };
+                if let Err(restore_error) = restore {
+                    let _ = fs::remove_dir_all(&staging);
+                    return Err(io_error(error)
+                        .with_param("reason", "visible_backup_restore_failed")
+                        .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                        .with_param("recovery_restore_error", restore_error.to_string())
+                        .with_action(RecoveryAction::InspectTarget));
+                }
+            }
+            let _ = fs::remove_dir_all(&staging);
+            return Err(io_error(error));
+        }
+        Ok(VisibleTreeReplacement {
+            skill_id: skill.id(),
+            output,
+            backup: had_output.then_some(backup.to_path_buf()),
+            expected_tree_hash,
+            expected_backup_tree_hash,
+        })
+    }
+
+    /// Restores the old visible directory. A failed restore leaves the
+    /// retained backup in place for recovery.
+    pub fn rollback_visible_tree_replacement(
+        &self,
+        replacement: &VisibleTreeReplacement,
+    ) -> AppResult<()> {
+        self.validate_visible_paths(replacement.skill_id, &replacement.output)?;
+        if self.store.should_fail("before_visible_restore") {
+            return Err(injected_fault("before_visible_restore").with_param(
+                "recovery_backup_path",
+                replacement
+                    .backup
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            ));
+        }
+        if path_entry_exists(&replacement.output)? {
+            if !is_real_directory(&replacement.output)?
+                || VersionStore::from_library(self).hash_tree_read_only(&replacement.output)?
+                    != replacement.expected_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_output_identity_changed")
+                    .with_param("path", replacement.output.to_string_lossy().into_owned())
+                    .with_param(
+                        "recovery_backup_path",
+                        replacement
+                            .backup
+                            .as_ref()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    )
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+        }
+        let Some(backup) = replacement.backup.as_ref() else {
+            if path_entry_exists(&replacement.output)? {
+                fs::remove_dir_all(&replacement.output).map_err(io_error)?;
+            }
+            return Ok(());
+        };
+        self.validate_visible_backup_path(replacement.skill_id, &replacement.output, backup)?;
+        if !path_entry_exists(backup)? || !is_real_directory(backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_missing_or_invalid")
+                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let expected_backup_hash = replacement
+            .expected_backup_tree_hash
+            .as_deref()
+            .ok_or_else(|| AppError::new(ErrorCode::OperationConflict, Severity::Error))?;
+        if VersionStore::from_library(self).hash_tree_read_only(backup)? != expected_backup_hash {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_identity_changed")
+                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let displaced = self
+            .paths
+            .tmp_dir
+            .join(format!("visible-failed-restore-{nonce}"));
+        if path_entry_exists(&displaced)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_displaced_path_occupied")
+                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let had_output = path_entry_exists(&replacement.output)?;
+        if had_output {
+            fs::rename(&replacement.output, &displaced).map_err(io_error)?;
+        }
+        let restore_result = if self.store.should_fail("before_visible_backup_restore") {
+            Err(std::io::Error::other("injected visible backup restore failure"))
+        } else {
+            fs::rename(backup, &replacement.output)
+        };
+        if let Err(error) = restore_result {
+            let mut compensation_error = None;
+            if had_output {
+                if let Err(restore_displaced_error) = fs::rename(&displaced, &replacement.output) {
+                    compensation_error = Some(restore_displaced_error.to_string());
+                }
+            }
+            let mut app_error = io_error(error)
+                .with_param("reason", "visible_backup_restore_failed")
+                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget);
+            if path_entry_exists(&displaced).unwrap_or(false) {
+                app_error = app_error.with_param(
+                    "recovery_displaced_path",
+                    displaced.to_string_lossy().into_owned(),
+                );
+            }
+            if let Some(compensation_error) = compensation_error {
+                app_error = app_error.with_param(
+                    "recovery_displaced_restore_error",
+                    compensation_error,
+                );
+            }
+            return Err(app_error);
+        }
+        if !is_real_directory(&replacement.output)?
+            || VersionStore::from_library(self).hash_tree_read_only(&replacement.output)?
+                != expected_backup_hash
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_restored_tree_identity_changed")
+                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if had_output {
+            fs::remove_dir_all(displaced).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
+    /// Restores a retained backup after restarting an interrupted adoption.
+    /// The supplied path must be an internal backup produced for this Skill.
+    pub fn recover_visible_tree_backup(
+        &self,
+        skill: &Skill,
+        backup: &Path,
+        expected_version: &VersionId,
+        expected_backup_tree_hash: &str,
+    ) -> AppResult<()> {
+        let output = self.visible_skill_path_for(skill.id(), skill.runtime_name());
+        self.validate_visible_paths(skill.id(), &output)?;
+        self.validate_visible_backup_path(skill.id(), &output, backup)?;
+        if !path_entry_exists(backup)?
+            && path_entry_exists(&output)?
+            && is_real_directory(&output)?
+            && VersionStore::from_library(self).hash_tree_read_only(&output)?
+                == expected_backup_tree_hash
+        {
+            return Ok(());
+        }
+        let expected_tree_hash = VersionStore::from_library(self)
+            .load_manifest(expected_version)?
+            .tree_hash;
+        let replacement = VisibleTreeReplacement {
+            skill_id: skill.id(),
+            output,
+            backup: Some(backup.to_path_buf()),
+            expected_tree_hash,
+            expected_backup_tree_hash: Some(expected_backup_tree_hash.to_owned()),
+        };
+        self.rollback_visible_tree_replacement(&replacement)
+    }
+
+    /// Idempotently restores the visible-tree part of an interrupted version
+    /// adoption using only the durable backup path and the two tree hashes.
+    pub fn recover_visible_tree_adoption(
+        &self,
+        skill: &Skill,
+        expected_version: &VersionId,
+        backup: Option<&Path>,
+        expected_previous_tree_hash: Option<&str>,
+    ) -> AppResult<()> {
+        let output = self.visible_skill_path_for(skill.id(), skill.runtime_name());
+        self.validate_visible_paths(skill.id(), &output)?;
+        if let Some(backup) = backup {
+            self.validate_visible_backup_path(skill.id(), &output, backup)?;
+            if !path_entry_exists(backup)? {
+                if let Some(expected) = expected_previous_tree_hash {
+                    if path_entry_exists(&output)?
+                        && is_real_directory(&output)?
+                        && VersionStore::from_library(self).hash_tree_read_only(&output)? == expected
+                    {
+                        return Ok(());
+                    }
+                }
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_backup_missing_or_invalid")
+                    .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            let expected = expected_previous_tree_hash.ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_backup_identity_missing")
+                    .with_action(RecoveryAction::InspectTarget)
+            })?;
+            return self.recover_visible_tree_backup(skill, backup, expected_version, expected);
+        }
+
+        if !path_entry_exists(&output)? {
+            if expected_previous_tree_hash.is_none() {
+                return Ok(());
+            }
+        } else if let Some(expected) = expected_previous_tree_hash {
+            if is_real_directory(&output)?
+                && VersionStore::from_library(self).hash_tree_read_only(&output)? == expected
+            {
+                return Ok(());
+            }
+        }
+        let expected_tree_hash = VersionStore::from_library(self)
+            .load_manifest(expected_version)?
+            .tree_hash;
+        let replacement = VisibleTreeReplacement {
+            skill_id: skill.id(),
+            output,
+            backup: None,
+            expected_tree_hash,
+            expected_backup_tree_hash: None,
+        };
+        self.rollback_visible_tree_replacement(&replacement)
+    }
+
+    /// Removes an internal retained backup after a recovery action completes
+    /// the new version instead of rolling it back.
+    pub fn discard_visible_tree_backup(&self, skill_id: SkillId, backup: &Path) -> AppResult<()> {
+        self.validate_visible_backup_entry(skill_id, backup)?;
+        if path_entry_exists(backup)? {
+            if !is_real_directory(backup)? {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "visible_backup_path")
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            fs::remove_dir_all(backup).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
+    fn validate_visible_backup_path(
+        &self,
+        skill_id: SkillId,
+        output: &Path,
+        backup: &Path,
+    ) -> AppResult<()> {
+        self.validate_visible_paths(skill_id, output)?;
+        self.validate_visible_backup_entry(skill_id, backup)
+    }
+
+    fn validate_visible_backup_entry(&self, skill_id: SkillId, backup: &Path) -> AppResult<()> {
+        let filename = backup.file_name().and_then(|name| name.to_str());
+        let expected_prefix = format!("visible-backup-{skill_id}-");
+        let valid_name = filename.is_some_and(|name| {
+            name.strip_prefix(&expected_prefix)
+                .is_some_and(|nonce| {
+                    !nonce.is_empty()
+                        && nonce
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                })
+        });
+        if backup.parent() != Some(self.paths.tmp_dir.as_path()) || !valid_name {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_backup_path")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if path_entry_exists(backup)? && !is_real_directory(backup)? {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_backup_path")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        Ok(())
+    }
+
+    fn validate_visible_paths(&self, skill_id: SkillId, output: &Path) -> AppResult<()> {
+        let output_name = output.file_name();
+        let expected_output_parent = self.paths.skills_dir.as_path();
+        let valid_name = output_name
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| !name.is_empty());
+        if output.parent() != Some(expected_output_parent) || !valid_name {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_output_path")
+                .with_param("skill_id", skill_id.to_string())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        for directory in [
+            self.paths.management_dir.as_path(),
+            self.paths.skills_dir.as_path(),
+            self.paths.tmp_dir.as_path(),
+        ] {
+            if !is_real_directory(directory)? {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "library_internal_directory_changed")
+                    .with_param("path", directory.to_string_lossy().into_owned())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+        }
+        let root = self.paths.root.canonicalize().map_err(io_error)?;
+        for (directory, relative) in [
+            (self.paths.management_dir.as_path(), Path::new(".skillhub")),
+            (self.paths.skills_dir.as_path(), Path::new("skills")),
+            (self.paths.tmp_dir.as_path(), Path::new(".skillhub/tmp")),
+        ] {
+            let expected = root.join(relative);
+            if directory.canonicalize().map_err(io_error)? != expected {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "library_internal_directory_identity_changed")
+                    .with_param("path", directory.to_string_lossy().into_owned())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+        }
+        Ok(())
+    }
+
+    /// Deletes the retained old directory only after all version consumers
+    /// have committed successfully.
+    pub fn finalize_visible_tree_replacement(
+        &self,
+        replacement: VisibleTreeReplacement,
+    ) -> AppResult<()> {
+        if let Some(backup) = replacement.backup {
+            self.validate_visible_backup_path(replacement.skill_id, &replacement.output, &backup)?;
+            if !path_entry_exists(&replacement.output)?
+                || !is_real_directory(&replacement.output)?
+                || VersionStore::from_library(self).hash_tree_read_only(&replacement.output)?
+                    != replacement.expected_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_output_identity_changed")
+                    .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            if path_entry_exists(&backup)? {
+                if !is_real_directory(&backup)?
+                    || VersionStore::from_library(self).hash_tree_read_only(&backup)?
+                        != replacement
+                            .expected_backup_tree_hash
+                            .as_deref()
+                            .unwrap_or_default()
+                {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("reason", "visible_backup_identity_changed")
+                        .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                        .with_action(RecoveryAction::InspectTarget));
+                }
+                fs::remove_dir_all(backup).map_err(io_error)?;
+            }
+        }
+        Ok(())
     }
 
     fn materialize_missing_visible_skills(&self) -> AppResult<()> {
@@ -320,6 +852,12 @@ fn io_error(error: std::io::Error) -> AppError {
         .with_action(RecoveryAction::Retry)
 }
 
+fn injected_fault(point: &'static str) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("fault", point)
+        .with_action(RecoveryAction::Retry)
+}
+
 fn library_conflict(detail: &str) -> AppError {
     AppError::new(ErrorCode::OperationConflict, Severity::Error)
         .with_param("reason", "library_root_not_empty")
@@ -332,4 +870,36 @@ fn library_not_writable(detail: String) -> AppError {
         .with_param("reason", "library_not_writable")
         .with_param("detail", detail)
         .with_action(RecoveryAction::Retry)
+}
+
+fn path_entry_exists(path: &Path) -> AppResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(error)),
+    }
+}
+
+fn is_real_directory(path: &Path) -> AppResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(metadata.file_type().is_dir() && !is_link_or_reparse(&metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(error)),
+    }
+}
+
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }

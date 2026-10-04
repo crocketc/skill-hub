@@ -37,9 +37,9 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
-use rusqlite::{Connection, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 use skillhub_core::{
-    AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionRecord,
+    AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId, VersionRecord,
 };
 use tokio::sync::Mutex;
 
@@ -386,6 +386,99 @@ impl Database {
             )
             .map_err(database_error)?;
         transaction.commit().map_err(database_error)
+    }
+
+    /// Returns the persisted catalog projection of the current version.
+    pub fn current_version(&self, skill_id: SkillId) -> AppResult<Option<VersionId>> {
+        let value = self
+            .connection
+            .query_row(
+                "SELECT version_id FROM current_pointers WHERE skill_id = ?1",
+                [skill_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        value
+            .map(|value| {
+                VersionId::parse(&value).map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("field", "current_version_id")
+                        .with_action(RecoveryAction::Retry)
+                })
+            })
+            .transpose()
+    }
+
+    /// Clears the catalog projection when compensating an adoption that had
+    /// no previous current version.
+    pub fn clear_current_version(&self, skill_id: SkillId) -> AppResult<()> {
+        self.connection
+            .execute(
+                "DELETE FROM current_pointers WHERE skill_id = ?1",
+                [skill_id.to_string()],
+            )
+            .map_err(database_error)?;
+        Ok(())
+    }
+
+    /// Restores the exact previously projected current-version pointer during
+    /// compensation. The immutable version row already belongs to this Skill;
+    /// this method changes only the pointer and keeps the write atomic.
+    pub fn restore_current_version_pointer(
+        &self,
+        skill_id: SkillId,
+        version_id: Option<&VersionId>,
+    ) -> AppResult<()> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        if let Some(version_id) = version_id {
+            transaction
+                .execute(
+                    "INSERT INTO current_pointers (skill_id, version_id, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(skill_id) DO UPDATE SET version_id=excluded.version_id, updated_at=excluded.updated_at",
+                    rusqlite::params![skill_id.to_string(), version_id.to_string(), now_epoch_seconds()],
+                )
+                .map_err(database_error)?;
+        } else {
+            transaction
+                .execute(
+                    "DELETE FROM current_pointers WHERE skill_id = ?1",
+                    [skill_id.to_string()],
+                )
+                .map_err(database_error)?;
+        }
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Records an immutable version row without selecting it as the current
+    /// version. Deterministic checks may target any stored version and their
+    /// foreign key must not require changing the current pointer first.
+    pub fn record_version(&self, skill_id: SkillId, version: &VersionRecord) -> AppResult<()> {
+        if version.manifest.skill_id != skill_id {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "version_skill_id")
+                .with_action(RecoveryAction::Retry));
+        }
+        let manifest = serde_json::to_string(&version.manifest).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.connection
+            .execute(
+                "INSERT OR IGNORE INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    version.id.to_string(),
+                    skill_id.to_string(),
+                    version.manifest.tree_hash,
+                    manifest,
+                    now_epoch_seconds(),
+                ],
+            )
+            .map_err(database_error)?;
+        Ok(())
     }
 }
 

@@ -1,7 +1,7 @@
 mod layout;
 mod portable;
 
-pub use layout::CentralLibrary;
+pub use layout::{CentralLibrary, VisibleTreeReplacement};
 pub use portable::{ManifestFaultHandler, PortableManifestStore};
 
 use async_trait::async_trait;

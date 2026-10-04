@@ -38,6 +38,10 @@ impl PortableManifestStore {
         Ok(manifest)
     }
 
+    pub(crate) fn should_fail(&self, point: &str) -> bool {
+        (self.fault_handler)(point)
+    }
+
     pub fn write_atomic(&self, manifest: &LibraryManifest) -> AppResult<()> {
         validate_manifest_version(manifest)?;
         // Serialize and parse before touching the filesystem. This prevents a

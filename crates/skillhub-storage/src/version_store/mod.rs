@@ -474,7 +474,7 @@ impl VersionStore {
             let item = item.map_err(io_error)?;
             let path = item.path();
             let metadata = fs::symlink_metadata(&path).map_err(io_error)?;
-            if metadata.file_type().is_symlink() {
+            if is_link_or_reparse(&metadata) {
                 return Err(invalid("symlink"));
             }
             if metadata.is_dir() {
@@ -508,7 +508,7 @@ fn collect_hash_entries(
         let item = item.map_err(io_error)?;
         let path = item.path();
         let metadata = fs::symlink_metadata(&path).map_err(io_error)?;
-        if metadata.file_type().is_symlink() {
+        if is_link_or_reparse(&metadata) {
             return Err(invalid("symlink"));
         }
         if metadata.is_dir() {
@@ -529,6 +529,22 @@ fn collect_hash_entries(
         });
     }
     Ok(())
+}
+
+fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 #[cfg(not(windows))]

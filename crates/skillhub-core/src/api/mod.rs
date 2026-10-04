@@ -62,7 +62,7 @@ pub use query::{
     GetCallPolicy, GetConflictWorkspace, GetDeploymentBatchPreview, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetProjectAssemblyPlan,
     GetReconcilePlan, GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact,
-    GetSkill, GetSkillProvenance, GetSkillRelationshipGraph, GetUiPreference,
+    GetRollbackImpact, GetSkill, GetSkillProvenance, GetSkillRelationshipGraph, GetUiPreference,
     GetUiPreferenceResult, ListCombinations, ListCustomAgents, ListDeploymentTargets,
     ListDeployments, ListDeterministicDuplicates, ListFindings, ListMarkdownFiles,
     ListPendingItems, ListProjects, ListRelationGovernance, ListSavedProjectViews,
@@ -73,7 +73,8 @@ pub use query::{
     SearchOnlineSources, SearchOnlineSourcesAssisted, SkillDeploymentFilter, SkillLifecycleFilter,
     SkillListFilters, SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry,
     SkillOperationsResult, SkillProvenanceResult, SkillRelationshipCandidate,
-    SkillRelationshipGraphResult, SkillResult, SkillSortColumn, SkillSortDirection,
+    SkillRelationshipGraphResult, SkillResult, SkillSortColumn, SkillSortDirection, RollbackImpact,
+    VersionAdoptionRelationImpact,
     SkillVersionFilter, SourceUpdateCheckOutcome, VersionDiffResult, VersionResult,
 };
 

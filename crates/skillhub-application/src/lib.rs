@@ -19,6 +19,7 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
@@ -38,6 +39,7 @@ use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
+    GetRollbackImpact,
     PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination, RenameSkill,
     SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
@@ -158,6 +160,11 @@ pub struct LocalApplicationFacade {
     /// the filesystem phase of a relation migration.  This closes the
     /// in-process source_relations TOCTOU window.
     relation_migration_lock: Mutex<()>,
+    /// Serializes the preview validation and cross-store write sequence for a
+    /// current-version adoption.
+    version_adoption_lock: tokio::sync::Mutex<()>,
+    /// Serializes writes to facts captured by version-adoption previews.
+    version_adoption_facts_lock: tokio::sync::Mutex<()>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
     scan_service: Mutex<ScanService>,
     path_grants: Mutex<HashMap<String, ResolvedPathGrant>>,
@@ -1970,6 +1977,8 @@ impl LocalApplicationFacade {
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock: Mutex::new(()),
+            version_adoption_lock: tokio::sync::Mutex::new(()),
+            version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -2052,6 +2061,8 @@ impl LocalApplicationFacade {
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock: Mutex::new(()),
+            version_adoption_lock: tokio::sync::Mutex::new(()),
+            version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
             path_grants: Mutex::new(HashMap::new()),
@@ -5125,10 +5136,397 @@ impl LocalApplicationFacade {
         )
     }
 
-    fn set_current_version(&self, request: SetCurrentVersion) -> AppResult<AppCommandResult> {
+    async fn set_current_version(
+        &self,
+        request: SetCurrentVersion,
+    ) -> AppResult<AppCommandResult> {
+        self.commit_version_adoption(request).await
+    }
+
+    fn version_adoption_facts(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        target_version_id: &skillhub_core::VersionId,
+    ) -> AppResult<VersionAdoptionFacts> {
+        let context = self.library_runtime.snapshot()?;
+        let skill = self.with_database("version_adoption.load_skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let target_manifest = context.store.load_manifest(target_version_id)?;
+        if target_manifest.skill_id != skill_id {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "target_version_id")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+
+        let current_version_id = context.store.current(skill_id)?;
+        let visible_tree_fingerprint = context.central.visible_tree_fingerprint(&skill)?;
+        let (database_current_version_id, portable_record, target_basic_check_required, relations) =
+            self.with_database("version_adoption.read_facts", |database| {
+                let database_current_version_id = database.current_version(skill_id)?;
+                let portable_record = context
+                    .central
+                    .load_portable_skill(skill_id)?
+                    .map(|(record, _)| record);
+                let check = database.check_repository().current_for_version_sync(
+                    skill_id,
+                    target_version_id,
+                    CheckKind::Basic,
+                )?;
+                let target_basic_check_required = !check.is_some_and(|run| {
+                    run.phase == CheckRunPhase::Completed
+                        && run.ruleset_id.as_deref() == Some("basic-v1")
+                });
+                let visible_path = context
+                    .central
+                    .visible_skill_path(&skill)
+                    .to_string_lossy()
+                    .into_owned();
+                let visible_path_canonical = std::fs::canonicalize(&visible_path).ok();
+                let directory_nodes = database.directory_repository().list_nodes()?;
+                let mut relations = database
+                    .relationship_repository()
+                    .list_relations()?
+                    .into_iter()
+                    .filter(|relation| relation.skill_id == Some(skill_id))
+                    .map(|relation| {
+                        let relation_path_key_matches =
+                            skillhub_core::deployment::observed_path_key(&relation.path)
+                                == relation.path_key;
+                        let path_metadata = std::fs::symlink_metadata(&relation.path).ok();
+                        let canonical_path = std::fs::canonicalize(&relation.path).ok();
+                        let path_is_symlink = path_metadata
+                            .as_ref()
+                            .is_some_and(|metadata| metadata.file_type().is_symlink());
+                        let path_is_reparse_point =
+                            skillhub_adapters::deployment::is_reparse_point(Path::new(&relation.path));
+                        let path_is_link = path_is_symlink || path_is_reparse_point;
+                        let path_is_directory = std::fs::metadata(&relation.path)
+                            .is_ok_and(|metadata| metadata.is_dir());
+                        let representation_matches = match relation.file_representation {
+                            skillhub_core::relationship::FileRepresentation::SymbolicLink => {
+                                path_is_symlink
+                            }
+                            skillhub_core::relationship::FileRepresentation::DirectoryJunction => {
+                                path_is_reparse_point
+                            }
+                            skillhub_core::relationship::FileRepresentation::Directory
+                            | skillhub_core::relationship::FileRepresentation::Copy => {
+                                path_is_directory && !path_is_link
+                            }
+                            skillhub_core::relationship::FileRepresentation::Unknown => false,
+                        };
+                        let relationship_shape_matches = match relation.relationship {
+                            skillhub_core::relationship::RelationshipType::SharedDirectoryReference => {
+                                path_is_link
+                                    && matches!(
+                                        relation.ownership,
+                                        skillhub_core::relationship::OwnershipState::SharedReference
+                                            | skillhub_core::relationship::OwnershipState::ObservedUnmanaged
+                                    )
+                            }
+                            skillhub_core::relationship::RelationshipType::ManagedLink => {
+                                path_is_link
+                                    && relation.ownership
+                                        == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                            }
+                            skillhub_core::relationship::RelationshipType::ObservedLink => {
+                                path_is_link
+                                    && relation.ownership
+                                        == skillhub_core::relationship::OwnershipState::ObservedUnmanaged
+                            }
+                            skillhub_core::relationship::RelationshipType::ManagedCopy => {
+                                !path_is_link
+                                    && matches!(
+                                        relation.file_representation,
+                                        skillhub_core::relationship::FileRepresentation::Directory
+                                            | skillhub_core::relationship::FileRepresentation::Copy
+                                    )
+                                    && relation.ownership
+                                        == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                            }
+                            skillhub_core::relationship::RelationshipType::ImportCopy
+                            | skillhub_core::relationship::RelationshipType::ObservedCopy => {
+                                !path_is_link
+                                    && matches!(
+                                        relation.file_representation,
+                                        skillhub_core::relationship::FileRepresentation::Directory
+                                            | skillhub_core::relationship::FileRepresentation::Copy
+                                    )
+                                    && relation.ownership
+                                        == skillhub_core::relationship::OwnershipState::ObservedUnmanaged
+                            }
+                            skillhub_core::relationship::RelationshipType::SharedDirectoryRead => {
+                                relation.file_representation
+                                    == skillhub_core::relationship::FileRepresentation::Directory
+                                    && relation.ownership
+                                        == skillhub_core::relationship::OwnershipState::ObservedUnmanaged
+                            }
+                            skillhub_core::relationship::RelationshipType::Unknown => false,
+                        };
+                        let link_target_path_key_matches = match (
+                            relation.link_target_path.as_deref(),
+                            relation.link_target_path_key.as_deref(),
+                        ) {
+                            (Some(path), Some(key)) => {
+                                skillhub_core::deployment::observed_path_key(path) == key
+                            }
+                            (None, None) => true,
+                            _ => false,
+                        };
+                        let canonical_link_target = relation
+                            .link_target_path
+                            .as_deref()
+                            .and_then(|path| std::fs::canonicalize(path).ok());
+                        let actual_target = if path_is_link {
+                            canonical_path.as_ref()
+                        } else {
+                            None
+                        };
+                        let link_target_identity_matches = match (
+                            path_is_link,
+                            actual_target,
+                            canonical_link_target.as_ref(),
+                        ) {
+                            (true, Some(actual), Some(recorded)) => actual == recorded,
+                            (false, None, None) => true,
+                            _ => false,
+                        };
+                        let target_directory_identity_matches = relation
+                            .link_target_directory_id
+                            .as_deref()
+                            .is_none_or(|directory_id| {
+                                let Some(target) = canonical_link_target.as_ref() else {
+                                    return false;
+                                };
+                                directory_nodes
+                                    .iter()
+                                    .find(|node| node.node_id == directory_id)
+                                    .filter(|node| node.exists)
+                                    .and_then(|node| std::fs::canonicalize(&node.path).ok())
+                                    .is_some_and(|node_path| &node_path == target)
+                            });
+                        let follows_current = relation.active
+                            && path_is_link
+                            && visible_path_canonical
+                                .as_ref()
+                                .zip(actual_target)
+                                .is_some_and(|(expected, actual)| expected == actual);
+                        let identity_reliable = !relation.active
+                            || (relation_path_key_matches
+                                && link_target_path_key_matches
+                                && canonical_path.is_some()
+                                && path_is_directory
+                                && representation_matches
+                                && relationship_shape_matches
+                                && link_target_identity_matches
+                                && target_directory_identity_matches
+                                && relation.match_state
+                                    == skillhub_core::deployment::ObservedMatchState::ContentVerified);
+                        let independent_copy = relation.active
+                            && !follows_current
+                            && matches!(
+                                relation.relationship,
+                                skillhub_core::relationship::RelationshipType::ImportCopy
+                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
+                                    | skillhub_core::relationship::RelationshipType::ObservedCopy
+                            );
+                        skillhub_core::api::VersionAdoptionRelationImpact {
+                            relation_id: relation.relation_id,
+                            agent_client_id: relation.agent_client_id,
+                            path: relation.path,
+                            path_key: relation.path_key,
+                            directory_node_id: relation.directory_node_id,
+                            relationship: relation.relationship,
+                            file_representation: relation.file_representation,
+                            ownership: relation.ownership,
+                            link_target_path: relation.link_target_path,
+                            link_target_path_key: relation.link_target_path_key,
+                            link_target_directory_id: relation.link_target_directory_id,
+                            match_state: relation.match_state,
+                            health_reasons: relation.health_reasons,
+                            active: relation.active,
+                            follows_current,
+                            independent_copy,
+                            identity_reliable,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                relations.sort_by(|left, right| {
+                    left.relation_id
+                        .cmp(&right.relation_id)
+                        .then_with(|| left.path_key.cmp(&right.path_key))
+                });
+                Ok((
+                    database_current_version_id,
+                    portable_record,
+                    target_basic_check_required,
+                    relations,
+                ))
+            })?;
+        let mut facts = VersionAdoptionFacts {
+            current_version_id,
+            database_current_version_id,
+            portable_record,
+            visible_tree_fingerprint,
+            target_version_id: target_version_id.clone(),
+            target_tree_hash: target_manifest.tree_hash,
+            target_basic_check_required,
+            relations,
+            confirmation_fingerprint: String::new(),
+        };
+        facts.confirmation_fingerprint = version_adoption_fingerprint(skill_id, &facts)?;
+        Ok(facts)
+    }
+
+    fn get_rollback_impact(
+        &self,
+        request: GetRollbackImpact,
+    ) -> AppResult<AppQueryResult> {
+        let facts = self.version_adoption_facts(request.skill_id, &request.target_version_id)?;
+        if facts.portable_record.is_none() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "portable_skill_record_missing")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let operation_id = OperationId::new();
         let library = self.library_runtime.snapshot()?;
-        let previous = library.current(request.skill_id)?;
-        let skill = self.with_database("execute.set_current_version", |database| {
+        let snapshot = VersionAdoptionSnapshot {
+            skill_id: request.skill_id,
+            previous_version_id: facts.current_version_id.clone(),
+            database_previous_version_id: facts.database_current_version_id.clone(),
+            portable_previous_record: facts.portable_record.clone(),
+            target_version_id: request.target_version_id.clone(),
+            expires_at: now_seconds() + VERSION_ADOPTION_PREVIEW_TTL_SECONDS,
+            confirmation_fingerprint: facts.confirmation_fingerprint.clone(),
+            visible_backup_path: facts.visible_tree_fingerprint.as_ref().map(|_| {
+                library
+                    .central
+                    .paths()
+                    .tmp_dir
+                    .join(format!("visible-backup-{}-{operation_id}", request.skill_id))
+            }),
+            visible_tree_fingerprint: facts.visible_tree_fingerprint.clone(),
+            target_tree_hash: facts.target_tree_hash.clone(),
+            target_basic_check_required: facts.target_basic_check_required,
+            relations: facts.relations.clone(),
+        };
+        let mut record = skillhub_core::OperationRecord::planned(
+            operation_id,
+            "set_current_version",
+            facts.confirmation_fingerprint.clone(),
+        );
+        record.phase = skillhub_core::OperationPhase::Prepared;
+        record.progress.phase = record.phase;
+        record.progress.message_code = "operation.set_current_version.prepared".to_owned();
+        record.progress.total = 1;
+        record.recovery_data = serde_json::to_value(&snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.with_database("version_adoption.insert_preview", |database| {
+            database.operation_repository().insert_sync(&record)
+        })?;
+
+        Ok(AppQueryResult::RollbackImpact(
+            skillhub_core::api::RollbackImpact {
+                skill_id: request.skill_id,
+                current_version_id: facts.current_version_id,
+                database_current_version_id: facts.database_current_version_id,
+                portable_current_version_id: facts
+                    .portable_record
+                    .as_ref()
+                    .and_then(|record| record.current_version.clone()),
+                visible_tree_fingerprint: facts.visible_tree_fingerprint,
+                target_version_id: request.target_version_id,
+                preview_id: operation_id,
+                expires_at: format_rfc3339_utc(snapshot.expires_at),
+                confirmation_fingerprint: facts.confirmation_fingerprint,
+                target_basic_check_required: facts.target_basic_check_required,
+                relations: facts.relations,
+            },
+        ))
+    }
+
+    async fn commit_version_adoption(
+        &self,
+        request: SetCurrentVersion,
+    ) -> AppResult<AppCommandResult> {
+        let _guard = self.version_adoption_lock.lock().await;
+        let mut record = self
+            .with_database("version_adoption.load_preview", |database| {
+                database
+                    .operation_repository()
+                    .get_sync(request.preview_id)?
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                            .with_param("reason", "version_preview_missing")
+                            .with_action(RecoveryAction::Retry)
+                    })
+            })?;
+        if record.kind != "set_current_version"
+            || record.phase != skillhub_core::OperationPhase::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_preview_already_consumed")
+                .with_action(RecoveryAction::Retry));
+        }
+        let snapshot: VersionAdoptionSnapshot = serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "version_preview_invalid")
+                    .with_action(RecoveryAction::InspectTarget)
+            })?;
+        if snapshot.skill_id != request.skill_id
+            || snapshot.target_version_id != request.version_id
+            || snapshot.expires_at <= now_seconds()
+        {
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.message_code = "operation.set_current_version.expired".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_preview_expired_or_mismatched")
+                .with_action(RecoveryAction::Retry));
+        }
+
+        let facts = self.version_adoption_facts(request.skill_id, &request.version_id)?;
+        if facts.confirmation_fingerprint != snapshot.confirmation_fingerprint
+            || facts.current_version_id != snapshot.previous_version_id
+            || facts.database_current_version_id != snapshot.database_previous_version_id
+            || facts.portable_record != snapshot.portable_previous_record
+            || facts.visible_tree_fingerprint != snapshot.visible_tree_fingerprint
+            || facts.target_tree_hash != snapshot.target_tree_hash
+            || facts.relations != snapshot.relations
+        {
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.message_code = "operation.set_current_version.stale_preview".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_preview_facts_changed")
+                .with_action(RecoveryAction::Retry));
+        }
+        if facts
+            .relations
+            .iter()
+            .any(|relation| relation.active && !relation.identity_reliable)
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_adoption_relation_identity_unverified")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+
+        let context = self.library_runtime.snapshot()?;
+        let skill = self.with_database("version_adoption.load_skill", |database| {
             database
                 .catalog_repository()?
                 .get_sync(request.skill_id)?
@@ -5138,35 +5536,282 @@ impl LocalApplicationFacade {
                         .with_action(RecoveryAction::Retry)
                 })
         })?;
-        library.set_current(request.skill_id, &request.version_id)?;
-        if let Err(error) = library
-            .central
-            .materialize_current_skill(&skill, &request.version_id)
+        let target_manifest = context.store.load_manifest(&request.version_id)?;
+        if target_manifest.skill_id != request.skill_id
+            || target_manifest.tree_hash != snapshot.target_tree_hash
         {
-            let rollback = match previous.clone() {
-                Some(previous) => library.set_current(request.skill_id, &previous),
-                None => library.clear_current(request.skill_id),
-            };
-            return Err(cleanup_import_error(error, rollback));
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.message_code = "operation.set_current_version.target_changed".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "target_version_identity_changed")
+                .with_action(RecoveryAction::Retry));
         }
-        if let Err(error) = library
-            .central
-            .save_portable_skill(&skill, Some(&request.version_id))
+
+        // The snapshot, including the exact backup path and old-tree hash, is
+        // durable before the first filesystem mutation.
+        record.phase = skillhub_core::OperationPhase::Applying;
+        record.progress.phase = record.phase;
+        record.progress.total = 1;
+        record.progress.message_code = "operation.set_current_version.applying".to_owned();
+        self.persist_version_adoption_record(&record)?;
+
+        let version_record = skillhub_core::VersionRecord {
+            id: request.version_id.clone(),
+            manifest: target_manifest.clone(),
+        };
+        if let Err(error) = self.with_database("version_adoption.register_target", |database| {
+            database.record_version(request.skill_id, &version_record)
+        }) {
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.error_code = Some(error.code);
+            record.progress.message_code = "operation.set_current_version.failed".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(error);
+        }
+
+        if facts.target_basic_check_required {
+            let run = match self
+                .execute_basic_check(request.skill_id, request.version_id.clone())
+                .await
+            {
+                Ok(run) => run,
+                Err(error) => {
+                    record.phase = skillhub_core::OperationPhase::RolledBack;
+                    record.progress.phase = record.phase;
+                    record.error_code = Some(error.code);
+                    record.progress.message_code =
+                        "operation.set_current_version.check_failed".to_owned();
+                    self.persist_version_adoption_record(&record)?;
+                    return Err(error);
+                }
+            };
+            if run.phase != skillhub_core::check::CheckRunPhase::Completed
+                || run.ruleset_id.as_deref() != Some("basic-v1")
+            {
+                let failure = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "target_basic_check_incomplete")
+                    .with_action(RecoveryAction::Retry);
+                record.phase = skillhub_core::OperationPhase::RolledBack;
+                record.progress.phase = record.phase;
+                record.error_code = Some(failure.code);
+                record.progress.message_code = "operation.set_current_version.check_failed".to_owned();
+                self.persist_version_adoption_record(&record)?;
+                return Err(failure);
+            }
+        }
+
+        let _facts_write_guard = self.version_adoption_facts_lock.lock().await;
+        let mut revalidated = self.version_adoption_facts(request.skill_id, &request.version_id)?;
+        let check_is_complete = !revalidated.target_basic_check_required;
+        if !check_is_complete {
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.message_code = "operation.set_current_version.stale_preview".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_preview_check_state_changed")
+                .with_action(RecoveryAction::Retry));
+        }
+        revalidated.target_basic_check_required = snapshot.target_basic_check_required;
+        revalidated.confirmation_fingerprint =
+            version_adoption_fingerprint(request.skill_id, &revalidated)?;
+        if revalidated.confirmation_fingerprint != snapshot.confirmation_fingerprint
+            || revalidated.current_version_id != snapshot.previous_version_id
+            || revalidated.database_current_version_id != snapshot.database_previous_version_id
+            || revalidated.portable_record != snapshot.portable_previous_record
+            || revalidated.visible_tree_fingerprint != snapshot.visible_tree_fingerprint
+            || revalidated.target_tree_hash != snapshot.target_tree_hash
+            || revalidated.relations != snapshot.relations
         {
-            let rollback = match previous {
-                Some(previous) => library.set_current(request.skill_id, &previous),
-                None => library.clear_current(request.skill_id),
-            };
-            return Err(cleanup_import_error(error, rollback));
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.message_code = "operation.set_current_version.stale_preview".to_owned();
+            self.persist_version_adoption_record(&record)?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "version_preview_facts_changed_before_apply")
+                .with_action(RecoveryAction::Retry));
         }
+        let fallback_backup_path = context
+            .central
+            .paths()
+            .tmp_dir
+            .join(format!("visible-backup-{}-{}", request.skill_id, request.preview_id));
+        let backup_path = snapshot
+            .visible_backup_path
+            .as_deref()
+            .unwrap_or(&fallback_backup_path);
+        let replacement = context.central.prepare_visible_tree_replacement_with_backup(
+            &skill,
+            &request.version_id,
+            backup_path,
+            snapshot.visible_tree_fingerprint.as_deref(),
+        );
+        let replacement = match replacement {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                let compensation = self.compensate_version_adoption(&context, &skill, &snapshot, None);
+                record.phase = if compensation.is_empty() {
+                    skillhub_core::OperationPhase::RolledBack
+                } else {
+                    skillhub_core::OperationPhase::NeedsRecovery
+                };
+                record.progress.phase = record.phase;
+                record.error_code = Some(error.code);
+                record.object_results = recovery_object_results(&compensation);
+                record.progress.message_code = if compensation.is_empty() {
+                    "operation.set_current_version.rolled_back".to_owned()
+                } else {
+                    "operation.set_current_version.needs_recovery".to_owned()
+                };
+                self.persist_version_adoption_record(&record)?;
+                return Err(error);
+            }
+        };
+
+        let apply_result = (|| {
+            context.store.set_current(request.skill_id, &request.version_id)?;
+            context
+                .central
+                .set_portable_current_version(request.skill_id, Some(&request.version_id))?;
+            let version = skillhub_core::VersionRecord {
+                id: request.version_id.clone(),
+                manifest: target_manifest,
+            };
+            self.with_database("version_adoption.persist_catalog", |database| {
+                database.record_current_version(request.skill_id, &version)
+            })?;
+            Ok::<(), AppError>(())
+        })();
+
+        if let Err(error) = apply_result {
+            let compensation = self.compensate_version_adoption(
+                &context,
+                &skill,
+                &snapshot,
+                Some(&replacement),
+            );
+            record.phase = if compensation.is_empty() {
+                skillhub_core::OperationPhase::RolledBack
+            } else {
+                skillhub_core::OperationPhase::NeedsRecovery
+            };
+            record.progress.phase = record.phase;
+            record.error_code = Some(error.code);
+            record.object_results = recovery_object_results(&compensation);
+            record.progress.message_code = if compensation.is_empty() {
+                "operation.set_current_version.rolled_back".to_owned()
+            } else {
+                "operation.set_current_version.needs_recovery".to_owned()
+            };
+            self.persist_version_adoption_record(&record)?;
+            return Err(error);
+        }
+
+        record.phase = skillhub_core::OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = 1;
+        record.progress.message_code = "operation.set_current_version.committed".to_owned();
+        record.result = Some(serde_json::json!({ "skill_id": request.skill_id, "version_id": request.version_id }));
+        if let Err(error) = self.persist_version_adoption_record(&record) {
+            let compensation = self.compensate_version_adoption(
+                &context,
+                &skill,
+                &snapshot,
+                Some(&replacement),
+            );
+            record.phase = if compensation.is_empty() {
+                skillhub_core::OperationPhase::RolledBack
+            } else {
+                skillhub_core::OperationPhase::NeedsRecovery
+            };
+            record.progress.phase = record.phase;
+            record.error_code = Some(error.code);
+            record.object_results = recovery_object_results(&compensation);
+            record.progress.message_code = if compensation.is_empty() {
+                "operation.set_current_version.rolled_back".to_owned()
+            } else {
+                "operation.set_current_version.needs_recovery".to_owned()
+            };
+            // Keep the last durable Applying snapshot if this checkpoint also
+            // fails; it still contains every recovery input.
+            let _ = self.persist_version_adoption_record(&record);
+            return Err(error);
+        }
+
+        let cleanup_pending = context
+            .central
+            .finalize_visible_tree_replacement(replacement)
+            .is_err();
         Ok(AppCommandResult::OperationSummary(
             skillhub_core::OperationSummary {
-                operation_id: OperationId::new(),
+                operation_id: request.preview_id,
                 phase: skillhub_core::OperationPhase::Committed,
-                message_code: "catalog.current_version_changed".to_owned(),
+                message_code: if cleanup_pending {
+                    "version.adopted_backup_cleanup_pending".to_owned()
+                } else {
+                    "version.adopted".to_owned()
+                },
                 error_code: None,
             },
         ))
+    }
+
+    fn persist_version_adoption_record(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<()> {
+        self.with_database("version_adoption.persist_journal", |database| {
+            database.operation_repository().update_sync(record)
+        })
+    }
+
+    fn compensate_version_adoption(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        snapshot: &VersionAdoptionSnapshot,
+        replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
+    ) -> Vec<(&'static str, ErrorCode)> {
+        let mut failures = Vec::new();
+        let visible_result = if let Some(replacement) = replacement {
+            context.central.rollback_visible_tree_replacement(replacement)
+        } else {
+            context.central.recover_visible_tree_adoption(
+                skill,
+                &snapshot.target_version_id,
+                snapshot.visible_backup_path.as_deref(),
+                snapshot.visible_tree_fingerprint.as_deref(),
+            )
+        };
+        if let Err(error) = visible_result {
+            failures.push(("visible_tree", error.code));
+        }
+        let pointer_result = match snapshot.previous_version_id.as_ref() {
+            Some(version_id) => context.store.set_current(snapshot.skill_id, version_id),
+            None => context.store.clear_current(snapshot.skill_id),
+        };
+        if let Err(error) = pointer_result {
+            failures.push(("version_store_pointer", error.code));
+        }
+        if let Err(error) = context.central.restore_portable_skill_record(
+            snapshot.skill_id,
+            snapshot.portable_previous_record.clone(),
+        ) {
+            failures.push(("portable_manifest", error.code));
+        }
+        let database_result = self.with_database("version_adoption.restore_catalog", |database| {
+            database.restore_current_version_pointer(
+                snapshot.skill_id,
+                snapshot.database_previous_version_id.as_ref(),
+            )
+        });
+        if let Err(error) = database_result {
+            failures.push(("database_current_pointer", error.code));
+        }
+        failures
     }
 
     fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
@@ -5586,6 +6231,11 @@ impl LocalApplicationFacade {
 #[async_trait]
 impl ApplicationFacade for LocalApplicationFacade {
     async fn execute(&self, command: AppCommand) -> AppResult<AppCommandResult> {
+        let _version_facts_guard = if command_changes_version_adoption_facts(&command) {
+            Some(self.version_adoption_facts_lock.lock().await)
+        } else {
+            None
+        };
         let operation = match command {
             AppCommand::SetDesktopPreferences(preferences) => {
                 let result = self.with_database("execute.set_desktop_preferences", |database| {
@@ -5901,7 +6551,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::SetLifecycle(request) => return self.set_lifecycle(request),
             AppCommand::SetTrial(request) => return self.set_trial(request),
-            AppCommand::SetCurrentVersion(request) => return self.set_current_version(request),
+            AppCommand::SetCurrentVersion(request) => {
+                return self.set_current_version(request).await;
+            }
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
             AppCommand::SaveMarkdownAsCopy(request) => return self.save_markdown_as_copy(request),
@@ -6434,6 +7086,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 })
             }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
+            AppQuery::GetRollbackImpact(request) => self.get_rollback_impact(request),
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
             AppQuery::ListLlmProviders => self.list_llm_providers().await,
@@ -6514,7 +7167,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
             AppQuery::ReadMarkdownFile(request) => {
-                self.read_markdown_file(request.skill_id, &request.path)
+                self.read_markdown_file(request.skill_id, request.version_id.as_ref(), &request.path)
             }
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
@@ -11297,6 +11950,7 @@ impl LocalApplicationFacade {
     fn read_markdown_file(
         &self,
         skill_id: skillhub_core::SkillId,
+        requested_version_id: Option<&skillhub_core::VersionId>,
         path: &str,
     ) -> AppResult<AppQueryResult> {
         let library = self.library_runtime.snapshot()?;
@@ -11310,9 +11964,20 @@ impl LocalApplicationFacade {
                 .with_param("reason", "markdown_only")
                 .with_action(RecoveryAction::ChooseAnotherName));
         }
-        let version_id = library
-            .current(skill_id)?
-            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+        let version_id = match requested_version_id {
+            Some(version_id) => {
+                let manifest = library.store.load_manifest(version_id)?;
+                if manifest.skill_id != skill_id {
+                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "version_id")
+                        .with_action(RecoveryAction::Acknowledge));
+                }
+                version_id.clone()
+            }
+            None => library
+                .current(skill_id)?
+                .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?,
+        };
         const MAX_MARKDOWN_BYTES: u64 = 1_048_576;
         let (identity, bytes) = library.read_file(&version_id, path, MAX_MARKDOWN_BYTES)?;
         let markdown = String::from_utf8(bytes).map_err(|_| {
@@ -12161,9 +12826,141 @@ fn attach_target_occupancy_with(
     Ok(())
 }
 
+/// Commands that can change a fact bound by GetRollbackImpact hold the
+/// same gate from before mutation until completion. SetCurrentVersion is
+/// excluded because it acquires the gate only after its awaited basic check,
+/// then performs a fresh full-facts comparison while holding the gate.
+fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
+    matches!(
+        command,
+        AppCommand::CreateSkill(_)
+            | AppCommand::SaveSkillContent(_)
+            | AppCommand::SaveMarkdownContent(_)
+            | AppCommand::SaveMarkdownAsCopy(_)
+            | AppCommand::RenameSkill(_)
+            | AppCommand::SetLifecycle(_)
+            | AppCommand::SetMetadata(_)
+            | AppCommand::PatchSkillMetadata(_)
+            | AppCommand::SetTrial(_)
+            | AppCommand::CommitImport(_)
+            | AppCommand::EndRelationship(_)
+            | AppCommand::CommitRelationMigration(_)
+            | AppCommand::RollbackRelationMigration(_)
+            | AppCommand::CommitRelationGovernanceBatch(_)
+            | AppCommand::RollbackRelationGovernanceBatch(_)
+            | AppCommand::ApplySourceUpdate(_)
+            | AppCommand::CommitDeploymentPreview(_)
+            | AppCommand::CommitDeployment(_)
+            | AppCommand::CollectDeploymentChanges(_)
+            | AppCommand::RestoreDeployment(_)
+            | AppCommand::KeepIndependentCopy(_)
+            | AppCommand::IgnoreExternalChange(_)
+            | AppCommand::CommitUndeploy(_)
+            | AppCommand::CommitDeleteSkill(_)
+            | AppCommand::DetachManagement(_)
+            | AppCommand::CommitRepair(_)
+            | AppCommand::ResolveRecovery(_)
+            | AppCommand::CommitRestore(_)
+            | AppCommand::CommitInitialRestore(_)
+            | AppCommand::ApplyUninstallDecision(_)
+            | AppCommand::RunRelationshipCheck(_)
+            | AppCommand::RunInitializationScan(_)
+            | AppCommand::ScanTargets(_)
+            | AppCommand::RescanSkill(_)
+            | AppCommand::RunBasicCheck(_)
+            | AppCommand::RecheckBasic(_)
+            | AppCommand::ActivateLibraryRoot(_)
+    )
+}
+
 /// How long a stored deployment preview stays committable.  Short by design:
 /// a preview is a snapshot of facts, not a standing permission.
 const DEPLOYMENT_PREVIEW_TTL_SECONDS: i64 = 900;
+const VERSION_ADOPTION_PREVIEW_TTL_SECONDS: i64 = 900;
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct VersionAdoptionSnapshot {
+    skill_id: skillhub_core::SkillId,
+    previous_version_id: Option<skillhub_core::VersionId>,
+    database_previous_version_id: Option<skillhub_core::VersionId>,
+    portable_previous_record: Option<skillhub_core::PortableSkillRecord>,
+    target_version_id: skillhub_core::VersionId,
+    expires_at: i64,
+    confirmation_fingerprint: String,
+    visible_backup_path: Option<PathBuf>,
+    visible_tree_fingerprint: Option<String>,
+    target_tree_hash: String,
+    target_basic_check_required: bool,
+    relations: Vec<skillhub_core::api::VersionAdoptionRelationImpact>,
+}
+
+#[derive(serde::Serialize)]
+struct VersionAdoptionFingerprint<'a> {
+    skill_id: skillhub_core::SkillId,
+    current_version_id: Option<&'a skillhub_core::VersionId>,
+    database_current_version_id: Option<&'a skillhub_core::VersionId>,
+    portable_record: &'a Option<skillhub_core::PortableSkillRecord>,
+    visible_tree_fingerprint: &'a Option<String>,
+    target_version_id: &'a skillhub_core::VersionId,
+    target_tree_hash: &'a str,
+    target_basic_check_required: bool,
+    relations: &'a [skillhub_core::api::VersionAdoptionRelationImpact],
+}
+
+struct VersionAdoptionFacts {
+    current_version_id: Option<skillhub_core::VersionId>,
+    database_current_version_id: Option<skillhub_core::VersionId>,
+    portable_record: Option<skillhub_core::PortableSkillRecord>,
+    visible_tree_fingerprint: Option<String>,
+    target_version_id: skillhub_core::VersionId,
+    target_tree_hash: String,
+    target_basic_check_required: bool,
+    relations: Vec<skillhub_core::api::VersionAdoptionRelationImpact>,
+    confirmation_fingerprint: String,
+}
+
+fn version_adoption_fingerprint(
+    skill_id: skillhub_core::SkillId,
+    facts: &VersionAdoptionFacts,
+) -> AppResult<String> {
+    let value = VersionAdoptionFingerprint {
+        skill_id,
+        current_version_id: facts.current_version_id.as_ref(),
+        database_current_version_id: facts.database_current_version_id.as_ref(),
+        portable_record: &facts.portable_record,
+        visible_tree_fingerprint: &facts.visible_tree_fingerprint,
+        target_version_id: &facts.target_version_id,
+        target_tree_hash: &facts.target_tree_hash,
+        target_basic_check_required: facts.target_basic_check_required,
+        relations: &facts.relations,
+    };
+    let bytes = serde_json::to_vec(&value).map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
+    })?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn recovery_object_results(
+    failures: &[(&'static str, ErrorCode)],
+) -> Vec<skillhub_core::OperationObjectResult> {
+    if failures.is_empty() {
+        return vec![skillhub_core::OperationObjectResult::succeeded(
+            "version_adoption",
+            None,
+        )];
+    }
+    failures
+        .iter()
+        .map(|(object_id, error_code)| skillhub_core::OperationObjectResult {
+            object_id: (*object_id).to_owned(),
+            status: "recovery_required".to_owned(),
+            result: None,
+            error_code: Some(*error_code),
+        })
+        .collect()
+}
 
 /// Merged capabilities over one physical-target group; the planner applies
 /// the same all-targets rule when it selects a mode.

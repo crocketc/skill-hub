@@ -172,6 +172,47 @@ pub struct ListVersions {
     pub skill_id: SkillId,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct GetRollbackImpact {
+    pub skill_id: SkillId,
+    pub target_version_id: VersionId,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct VersionAdoptionRelationImpact {
+    pub relation_id: String,
+    pub agent_client_id: String,
+    pub path: String,
+    pub path_key: String,
+    pub directory_node_id: Option<String>,
+    pub relationship: crate::relationship::RelationshipType,
+    pub file_representation: crate::relationship::FileRepresentation,
+    pub ownership: crate::relationship::OwnershipState,
+    pub link_target_path: Option<String>,
+    pub link_target_path_key: Option<String>,
+    pub link_target_directory_id: Option<String>,
+    pub match_state: crate::deployment::ObservedMatchState,
+    pub health_reasons: Option<Vec<crate::relationship::RelationHealthReason>>,
+    pub active: bool,
+    pub follows_current: bool,
+    pub independent_copy: bool,
+    pub identity_reliable: bool,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RollbackImpact {
+    pub skill_id: SkillId,
+    pub current_version_id: Option<VersionId>,
+    pub database_current_version_id: Option<VersionId>,
+    pub portable_current_version_id: Option<VersionId>,
+    pub visible_tree_fingerprint: Option<String>,
+    pub target_version_id: VersionId,
+    pub preview_id: crate::OperationId,
+    pub expires_at: String,
+    pub confirmation_fingerprint: String,
+    pub target_basic_check_required: bool,
+    pub relations: Vec<VersionAdoptionRelationImpact>,
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListSkillOperations {
     pub skill_id: SkillId,
 }
@@ -213,6 +254,8 @@ pub struct ListMarkdownFiles {
 pub struct ReadMarkdownFile {
     pub skill_id: SkillId,
     pub path: String,
+    #[serde(default)]
+    pub version_id: Option<VersionId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct MarkdownFileEntry {
@@ -910,6 +953,8 @@ pub enum AppQuery {
     ListSkills(ListSkills),
     #[serde(rename = "list_versions")]
     ListVersions(ListVersions),
+    #[serde(rename = "get_rollback_impact")]
+    GetRollbackImpact(GetRollbackImpact),
     #[serde(rename = "list_skill_operations")]
     ListSkillOperations(ListSkillOperations),
     #[serde(rename = "list_running_llm_checks")]
@@ -1043,6 +1088,8 @@ pub enum AppQueryResult {
     SkillPage(SkillListPage),
     #[serde(rename = "versions")]
     Versions(Vec<VersionResult>),
+    #[serde(rename = "rollback_impact")]
+    RollbackImpact(RollbackImpact),
     #[serde(rename = "markdown_files")]
     MarkdownFiles(Vec<MarkdownFileEntry>),
     #[serde(rename = "markdown_file")]
