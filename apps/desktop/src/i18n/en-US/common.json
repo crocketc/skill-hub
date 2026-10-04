@@ -3816,7 +3816,11 @@
         "sensitive_filename": "This file name suggests it holds credentials (for example .env or a key file)."
       },
       "errors": {
-        "previewInvalidated": "The export preview has expired or is missing. Review the export again before creating it."
+        "previewInvalidated": "The export preview has expired or is missing. Review the export again before creating it.",
+        "previewExpired": "The export preview has expired. Review the export again before creating it.",
+        "previewDrifted": "The export content in the library has changed, so this preview no longer matches. Review the export again before creating it.",
+        "outputNotGranted": "The chosen output directory is unavailable or no longer authorized. Choose the output directory again and review the export.",
+        "decisionRequired": "Some scanned sensitive files still need a handling decision. Choose a handling for every scanned item, then create the export (the current preview is still valid)."
       }
     },
     "working": "Working, please wait…",

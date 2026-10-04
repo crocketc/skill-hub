@@ -5,7 +5,8 @@ import type {
   DeploymentRecord,
   ExportDecision,
   ExportInput,
-  ExportPlan,
+  ExportPreview,
+  ExportSensitiveItem,
   OperationSummary,
   RestoreConflict,
   RestoreDecision,
@@ -30,20 +31,6 @@ import "./dataProtection.css";
 
 type Decision = "overwrite" | "keep_both" | "skip";
 type SensitiveDecision = "resolve_first" | "exclude_skill" | "include_and_mark";
-
-/**
- * K3 契约钉死的导出敏感项（§K3 DTO 落点：ExportSensitiveItem，
- * `path` 为版本内相对路径）。K3-A 后端尚未落地：api/bindings.ts 的
- * SensitiveItem 目前只有 skill_id + reason，故 version_id/path 在此按契约
- * 局部声明为可选字段，运行时载荷一旦携带即直接呈现。待 A 绑定对齐后回填
- * 生成绑定，不手改 bindings。
- */
-type ExportSensitiveItem = {
-  skill_id: string;
-  version_id?: string;
-  path?: string;
-  reason: string;
-};
 
 /**
  * K3：扫描原因是内部枚举，映射为用户事实文案；映射未跟上的新枚举回退原文，
@@ -141,7 +128,7 @@ export function DataProtectionPage({
       setRollingBusy(false);
     }
   };
-  const [exportPlan, setExportPlan] = useState<ExportPlan>();
+  const [exportPreview, setExportPreview] = useState<ExportPreview>();
   const [exportDecisions, setExportDecisions] = useState<Record<string, SensitiveDecision>>({});
   // K3 预览冻结：预览成功时快照四项绑定输入；快照与当前输入不一致即视为
   // 旧预览失效（派生值，不在 effect 里回写状态）。
@@ -256,23 +243,28 @@ export function DataProtectionPage({
     setExportDecisions({});
     const skillIds = exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean);
     const input: ExportInput = { selection: { skills: skillIds }, versions: await buildVersions(skillIds), skills: [], format: exportFormat, output_dir: outputDir ?? null };
-    const plan = await facade.prepareExport(input);
-    setExportPlan(plan);
+    const preview = await facade.prepareExport(input);
+    setExportPreview(preview);
     // 快照记录的是预览实际据以计算的输入（闭包值）：请求在途时用户改输入，
     // 响应落地后派生 staleness 同样成立，旧预览不会冒充新选择的预览。
     setExportPreviewInputs(exportPreviewFingerprint(skillIds, exportFormat, exportVersionScope, outputDir ?? null));
   });
   const commitExport = () => run(async () => {
-    if (!exportPlan) return;
+    if (!exportPreview) return;
     const skillIds = exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean);
-    // K3 预览冻结兜底：入口在失效时已撤下，这里再拦一道，绝不拿旧预览落盘。
+    // K3 预览冻结兜底：入口在失效/过期时已撤下，这里再拦一道，绝不拿旧预览落盘。
     if (exportPreviewInputs !== exportPreviewFingerprint(skillIds, exportFormat, exportVersionScope, outputDir ?? null)) {
       setError(t("dataProtection.export.previewInvalidatedNotice"));
       return;
     }
-    const input: ExportInput = { selection: { skills: skillIds }, versions: await buildVersions(skillIds), skills: [], format: exportFormat, output_dir: outputDir ?? null };
-    const decisions: ExportDecision[] = exportPlan.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
-    const result = await facade.createExport(input, decisions);
+    if (exportPreviewExpired) {
+      setError(t("dataProtection.export.errors.previewExpired"));
+      return;
+    }
+    const decisions: ExportDecision[] = exportPreview.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
+    // K3：create 只带 preview_id + 决定；决定缺失被拒时预览未被消耗，
+    // 用户补齐决定后可用同一 preview_id 直接重试。
+    const result = await facade.createExport(exportPreview.preview_id, decisions);
     setExportPath(result.path);
   });
   const pickOutputDirectory = () => run(async () => {
@@ -302,17 +294,20 @@ export function DataProtectionPage({
   };
   const hasRestoreDecisions = Boolean(restorePlan) && restorePlan!.conflicts.every((conflict) => !conflict.skill_id || restoreDecisions[conflict.skill_id]);
   const hasInvalidConflict = restorePlan?.conflicts.some((conflict) => conflict.kind === "invalid_portable_data") ?? false;
-  const hasExportDecisions = Boolean(exportPlan) && exportPlan!.sensitive_items.every((item) => exportDecisions[item.skill_id]);
+  const hasExportDecisions = Boolean(exportPreview) && exportPreview!.sensitive_items.every((item) => exportDecisions[item.skill_id]);
   // K3 预览冻结（§K3-1）：任一绑定输入（主体/版本范围/格式/输出目录）在
   // 预览后发生改变，旧预览即失效——提示重新预览并撤下创建入口；敏感决定
   // 是 Commit 阶段随 preview_id 提交的响应，不参与失效判定。
-  const exportPreviewStale = Boolean(exportPlan) && exportPreviewInputs !== exportPreviewFingerprint(
+  const exportPreviewStale = Boolean(exportPreview) && exportPreviewInputs !== exportPreviewFingerprint(
     exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean),
     exportFormat,
     exportVersionScope,
     outputDir ?? null,
   );
-  const exportPreviewValid = Boolean(exportPlan) && !exportPreviewStale;
+  // K3 预览过期（§2）：expires_at 已过 → 撤下创建入口，唯一出路是重新预览，
+  // 不得静默重试提交（提交端同样会拒绝，但 UI 不应把注定失败的提交递出去）。
+  const exportPreviewExpired = Boolean(exportPreview) && Date.parse(exportPreview!.expires_at) <= Date.now();
+  const exportPreviewValid = Boolean(exportPreview) && !exportPreviewStale && !exportPreviewExpired;
 
   return (
     <main className="sh-page sh-workflow-page">
@@ -391,7 +386,13 @@ export function DataProtectionPage({
             {t("dataProtection.export.previewInvalidatedNotice")}
           </p>
         ) : null}
-        {exportPreviewValid ? <ExportReview plan={exportPlan!} decisions={exportDecisions} onDecision={(skillId, decision) => setExportDecisions((current) => ({ ...current, [skillId]: decision }))} /> : null}
+        {exportPreviewExpired ? (
+          <p className="sh-export-preview-invalidated" role="status">
+            <Icon name="warning" size={16} />
+            {t("dataProtection.export.errors.previewExpired")}
+          </p>
+        ) : null}
+        {exportPreviewValid ? <ExportReview plan={exportPreview!} decisions={exportDecisions} onDecision={(skillId, decision) => setExportDecisions((current) => ({ ...current, [skillId]: decision }))} /> : null}
         {exportPreviewValid ? <Button disabled={busy || !hasExportDecisions} onClick={() => void commitExport()}>{t("dataProtection.export.commit")}</Button> : null}
         {exportPath ? <p role="status">{t("dataProtection.export.result", { path: exportPath })}</p> : null}
       </section>
@@ -456,29 +457,35 @@ function RestoreReview({ plan, conflicts, decisions, onDecision }: { plan: Resto
   return <div><p>{t("dataProtection.restore.summary", plan)}</p>{conflicts.map((conflict, index) => <div key={`${conflict.skill_id ?? "invalid"}-${index}`}><p>{conflict.detail}</p>{conflict.skill_id ? <label>{t("dataProtection.restore.decision", { skillId: conflict.skill_id })}<select aria-label={t("dataProtection.restore.decision", { skillId: conflict.skill_id })} value={decisions[conflict.skill_id] ?? ""} onChange={(event) => onDecision(conflict.skill_id!, event.target.value as Decision)}><option value="">{t("dataProtection.restore.choose")}</option><option value="overwrite">{t("dataProtection.restore.overwrite")}</option><option value="keep_both">{t("dataProtection.restore.keepBoth")}</option><option value="skip">{t("dataProtection.restore.skip")}</option></select></label> : <strong>{t("dataProtection.restore.invalid")}</strong>}</div>)}</div>;
 }
 
-function ExportReview({ plan, decisions, onDecision }: { plan: ExportPlan; decisions: Record<string, SensitiveDecision>; onDecision: (skillId: string, decision: SensitiveDecision) => void }) {
+function ExportReview({ plan, decisions, onDecision }: { plan: ExportPreview; decisions: Record<string, SensitiveDecision>; onDecision: (skillId: string, decision: SensitiveDecision) => void }) {
   const { t } = useTranslation();
-  // K3-B 扫描结果：按「文件 + 可读原因」呈现。旧后端载荷暂无 path，缺省时
-  // 以 Skill 标识占位保持同一布局槽位；待 A 绑定对齐后 path 恒存在。
+  // K3-B 扫描结果：按「文件 + 可读原因」呈现。Skill 一律用预览载荷里的
+  // 显示名，不裸露 skill_id/version_id 内部标识（载荷缺显示名时才回退
+  // 原始标识，绝不编造）。
+  const displayNames = new Map(plan.skills.map((skill) => [skill.skill_id, skill.display_name]));
   const items = plan.sensitive_items as ExportSensitiveItem[];
   return (
     <div>
       <p>{t("dataProtection.export.summary", { count: plan.skills.length })}</p>
       {items.length > 0 ? <p>{t("dataProtection.export.scanHeading")}</p> : null}
       <ul className="sh-export-scan">
-        {items.map((item, index) => (
-          <li className="sh-export-scan__item" key={`${item.skill_id}:${item.path ?? ""}:${index}`}>
-            <p className="sh-export-scan__path">{item.path ?? item.skill_id}</p>
-            <p className="sh-export-scan__reason">
-              <Icon name="warning" size={14} />
-              {sensitiveReasonText(item.reason, (key) => t(key as never))}
-            </p>
-            <label>
-              {t("dataProtection.export.decision", { skillId: item.skill_id })}
-              <select aria-label={t("dataProtection.export.decision", { skillId: item.skill_id })} value={decisions[item.skill_id] ?? ""} onChange={(event) => onDecision(item.skill_id, event.target.value as SensitiveDecision)}><option value="">{t("dataProtection.export.choose")}</option><option value="resolve_first">{t("dataProtection.export.resolve")}</option><option value="exclude_skill">{t("dataProtection.export.exclude")}</option><option value="include_and_mark">{t("dataProtection.export.include")}</option></select>
-            </label>
-          </li>
-        ))}
+        {items.map((item, index) => {
+          const displayName = displayNames.get(item.skill_id)?.trim() || item.skill_id;
+          return (
+            <li className="sh-export-scan__item" key={`${item.skill_id}:${item.path}:${index}`}>
+              <p className="sh-export-scan__path">{item.path}</p>
+              <p className="sh-export-scan__skill">{displayName}</p>
+              <p className="sh-export-scan__reason">
+                <Icon name="warning" size={14} />
+                {sensitiveReasonText(item.reason, (key) => t(key as never))}
+              </p>
+              <label>
+                {t("dataProtection.export.decision", { skillId: displayName })}
+                <select aria-label={t("dataProtection.export.decision", { skillId: displayName })} value={decisions[item.skill_id] ?? ""} onChange={(event) => onDecision(item.skill_id, event.target.value as SensitiveDecision)}><option value="">{t("dataProtection.export.choose")}</option><option value="resolve_first">{t("dataProtection.export.resolve")}</option><option value="exclude_skill">{t("dataProtection.export.exclude")}</option><option value="include_and_mark">{t("dataProtection.export.include")}</option></select>
+              </label>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -6,9 +6,10 @@ import type {
   DeploymentId,
   DeploymentRecord,
   ExportDecision,
-  ExportPlan,
   ExportInput,
+  ExportPreview,
   ExportResult,
+  OperationId,
   OperationSummary,
   RestoreDecision,
   RestorePlan,
@@ -28,8 +29,16 @@ export interface BackupFacade {
   verifyBackup(path: string): Promise<void>;
   prepareRestore(path: string): Promise<RestorePlan>;
   commitRestore(path: string, decisions: RestoreDecision[]): Promise<RestoreResult>;
-  prepareExport(input: ExportInput): Promise<ExportPlan>;
-  createExport(input: ExportInput, decisions: ExportDecision[]): Promise<ExportResult>;
+  /**
+   * K3 预览绑定（§2 三件套）：prepare 返回 ExportPreview（preview_id +
+   * expires_at + confirmation_fingerprint + 扫描结果）。
+   */
+  prepareExport(input: ExportInput): Promise<ExportPreview>;
+  /**
+   * K3：create 只收预览 id 与用户敏感决定；实际输入由后端从预览快照
+   * 重新物化并重验指纹，不再接受可篡改的完整 input。
+   */
+  createExport(previewId: OperationId, decisions: ExportDecision[]): Promise<ExportResult>;
   /** All registered deployment relations; used by the uninstall preparation flow. */
   listDeployments(): Promise<DeploymentRecord[]>;
   /** Versions of one skill, used to report whether a carried-over skill is exportable. */

@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { skillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
-import type { DeploymentRecord, VersionResult } from "../../api/bindings";
+import type { DeploymentRecord, ExportPreview, VersionResult } from "../../api/bindings";
 import type { BackupFacade } from "./api";
 import { DataProtectionPage } from "./DataProtectionPage";
 
@@ -56,12 +56,31 @@ function createFacade(): BackupFacade {
       conflicts: [{ skill_id: "skill-1", kind: "existing_skill", detail: "Already exists" }],
     }),
     commitRestore: vi.fn().mockResolvedValue({ skills_restored: 1, skills_skipped: 1, deployments_requiring_rediscovery: 1 }),
-    prepareExport: vi.fn().mockResolvedValue({ selection: { combination: "combo-1" }, versions: "current", skills: [], sensitive_items: [{ skill_id: "skill-2", reason: "secret" }] }),
+    // K3 预览三件套：prepare 返回 ExportPreview 载荷；create 只收 preview_id。
+    prepareExport: vi.fn().mockResolvedValue(exportPreviewFixture()),
     createExport: vi.fn().mockResolvedValue({ path: "C:/export.skillhub", skills_exported: 2 }),
     listDeployments: vi.fn().mockResolvedValue([]),
     listVersions: vi.fn().mockResolvedValue([]),
     prepareUninstall: vi.fn(),
     applyUninstallDecision: vi.fn(),
+  };
+}
+
+function exportPreviewFixture(overrides: Partial<ExportPreview> = {}): ExportPreview {
+  return {
+    selection: { skills: ["skill-1", "skill-2"] },
+    versions: "current",
+    skills: [
+      { skill_id: "skill-1", version_id: "skill-1-v1", display_name: "PDF Reader" },
+      { skill_id: "skill-2", version_id: "skill-2-v2", display_name: "DOCX Writer" },
+    ],
+    sensitive_items: [
+      { skill_id: "skill-2", version_id: "skill-2-v2", path: "assets/.env", reason: "sensitive_filename" },
+    ],
+    preview_id: "op-export-preview-1",
+    expires_at: "2999-01-01T00:00:00Z",
+    confirmation_fingerprint: "fp-1",
+    ...overrides,
   };
 }
 
@@ -104,24 +123,25 @@ describe("DataProtectionPage", () => {
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1, skill-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
+    expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
     const create = screen.getByRole("button", { name: "Create export" });
     expect(create).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(create);
-    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", format: "folder", output_dir: null }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    // K3：create 只携带预览 id 与敏感决定，实际输入由后端从预览快照取。
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
   });
 
-  // K3-B 预览冻结（契约 §K3-1）：preview_id 三件套绑定主体/版本/格式/目录/
-  // 敏感决定，任一输入改变即作废旧预览——提示重新预览，且不得拿旧预览创建。
+  // K3-B 预览冻结（契约 §K3-1）：preview_id 三件套绑定主体/版本/格式/目录，
+  // 任一输入改变即作废旧预览——提示重新预览，且不得拿旧预览创建。
   it("invalidates the export preview when a bound choice changes after review", async () => {
     const facade = createFacade();
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     expect(screen.getByRole("button", { name: "Create export" })).toBeEnabled();
 
     // 修改任一绑定选择（此处为格式）：旧预览立即作废。
@@ -133,34 +153,94 @@ describe("DataProtectionPage", () => {
 
     // 重新预览后恢复常规流程：新预览有效，创建可用。
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
+    expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
     expect(screen.queryByText(/no longer valid/)).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledTimes(1));
   });
 
-  // K3-B 扫描结果呈现（契约 §K3-2）：敏感项 DTO 为
-  // ExportSensitiveItem { skill_id, version_id, path, reason }（path 为版本内
-  // 相对路径，待 K3-A 绑定对齐），按「文件 + 可读原因」呈现，内部枚举
-  // 映射为用户事实文案，不裸露枚举值。
+  // K3 预览过期（契约 §2）：expires_at 已过 → UI 撤下创建入口并要求重新
+  // 预览，不得静默重试提交。
+  it("withdraws the create entry and asks for a new preview once the preview expires", async () => {
+    const facade = createFacade();
+    facade.prepareExport = vi.fn()
+      .mockResolvedValueOnce(exportPreviewFixture({ expires_at: "2000-01-01T00:00:00Z" }))
+      .mockResolvedValueOnce(exportPreviewFixture());
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+
+    // 过期提示可见，审阅面板与创建入口一并撤下——唯一的路是重新预览。
+    expect(await screen.findByText(/has expired/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create export" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Export decision for DOCX Writer")).not.toBeInTheDocument();
+    expect(facade.createExport).not.toHaveBeenCalled();
+
+    // 重新预览得到未过期预览后流程恢复。
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
+    expect(screen.queryByText(/has expired/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+  });
+
+  // K3 决定缺失被拒（BackupExportDecisionRequired 不消耗预览）：补齐决定后
+  // 同一 preview_id 可直接重试，无需重新预览。
+  it("lets the user complete the missing decision and retry the same preview after a decision-required rejection", async () => {
+    const facade = createFacade();
+    facade.createExport = vi.fn()
+      .mockRejectedValueOnce({ code: "backup.export_decision_required", severity: "warning", params: {}, actions: [] })
+      .mockResolvedValueOnce({ path: "C:/export.skillhub", skills_exported: 2 });
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    await screen.findByLabelText("Export decision for DOCX Writer");
+    // 第一造只给 resolve_first（后端要求 exclude/include），提交被拒。
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "resolve_first" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/handling decision/i);
+    // 预览未被消耗：审阅面板与创建入口仍在，可补决定后重试。
+    expect(screen.getByRole("button", { name: "Create export" })).toBeEnabled();
+    expect(screen.queryByText(/no longer valid|has expired/i)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+    // 同一 preview_id 重试，不重新预览。
+    await waitFor(() => expect(facade.createExport).toHaveBeenNthCalledWith(2, "op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+    expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
+    expect(facade.prepareExport).toHaveBeenCalledTimes(1);
+  });
+
+  // K3-B 扫描结果呈现（契约 §K3 DTO 落点）：敏感项为
+  // ExportSensitiveItem { skill_id, version_id, path, reason }，按
+  // 「文件 + 可读原因」呈现；Skill 用预览载荷里的显示名，不裸露
+  // skill_id/version_id 内部标识；内部枚举映射为用户事实文案。
   it("renders scanned sensitive files with their paths and user-facing reasons", async () => {
     const facade = createFacade();
-    facade.prepareExport = vi.fn().mockResolvedValue({
+    facade.prepareExport = vi.fn().mockResolvedValue(exportPreviewFixture({
       selection: { skills: ["skill-1"] },
-      versions: "current",
-      skills: [],
+      skills: [{ skill_id: "skill-1", version_id: "skill-1-v2", display_name: "PDF Reader" }],
       sensitive_items: [
         { skill_id: "skill-1", version_id: "skill-1-v2", path: "assets/.env", reason: "sensitive_filename" },
         { skill_id: "skill-1", version_id: "skill-1-v2", path: "scripts/run.py", reason: "possible_plaintext_credential" },
       ],
-    });
+    }));
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
 
     expect(await screen.findByText("assets/.env")).toBeVisible();
     expect(screen.getByText("scripts/run.py")).toBeVisible();
+    // 显示名替代内部 skill_id：同一扫描项的处置下拉也用显示名命名。
+    // 两个扫描项同属一个 Skill，显示名成对出现。
+    expect(screen.getAllByText("PDF Reader")).toHaveLength(2);
+    // 决定下拉按显示名命名；同 Skill 多文件共享同一处理决定（决定按 Skill 提交）。
+    expect(screen.getAllByLabelText("Export decision for PDF Reader")).toHaveLength(2);
+    expect(screen.queryByText("skill-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("skill-1-v2")).not.toBeInTheDocument();
     // 内部枚举映射为用户事实文案：sensitive_filename 说文件名可疑，
     // possible_plaintext_credential 说内容可能含明文凭证；枚举原文不出现。
     expect(screen.getByText(/file name/i)).toBeVisible();
@@ -182,8 +262,8 @@ describe("DataProtectionPage", () => {
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await screen.findByLabelText("Export decision for skill-2");
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    await screen.findByLabelText("Export decision for DOCX Writer");
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/has expired or is missing/);
@@ -198,10 +278,10 @@ describe("DataProtectionPage", () => {
     fireEvent.change(screen.getByLabelText("Export format"), { target: { value: "zip" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
     await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1"] }, versions: "current", format: "zip", output_dir: null })));
-    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
-    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ format: "zip" }), expect.anything()));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", expect.anything()));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
   });
 
@@ -216,12 +296,18 @@ describe("DataProtectionPage", () => {
 
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await screen.findByLabelText("Export decision for skill-2");
-    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    await screen.findByLabelText("Export decision for DOCX Writer");
+    // K3：输出目录在 prepare 阶段进入预览绑定（create 载荷只有 preview_id）。
+    await waitFor(() =>
+      expect(facade.prepareExport).toHaveBeenCalledWith(
+        expect.objectContaining({ output_dir: "C:/chosen/exports" }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     await waitFor(() =>
       expect(facade.createExport).toHaveBeenCalledWith(
-        expect.objectContaining({ output_dir: "C:/chosen/exports" }),
+        "op-export-preview-1",
         expect.anything(),
       ),
     );
@@ -443,10 +529,10 @@ it("exports every historical version when the history scope is chosen", async ()
       }),
     ),
   );
-  // mock 计划固定含 skill-2 的敏感项：先设置决策再提交。
-  fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+  // mock 预览固定含 DOCX Writer 的敏感项：先设置决策再提交。
+  fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
   fireEvent.click(screen.getByRole("button", { name: "Create export" }));
-  await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ versions: { history: ["v1", "v2"] } }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
+  await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
 
 });
 

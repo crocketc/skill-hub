@@ -3816,7 +3816,11 @@
         "sensitive_filename": "文件名疑似存放凭证（如 .env 或密钥文件）。"
       },
       "errors": {
-        "previewInvalidated": "导出预览已过期或不存在，请重新检查导出内容后再创建。"
+        "previewInvalidated": "导出预览已过期或不存在，请重新检查导出内容后再创建。",
+        "previewExpired": "导出预览已过期，请重新检查导出内容后再创建。",
+        "previewDrifted": "库中的导出内容已变化，该预览不再匹配，请重新检查导出内容后再创建。",
+        "outputNotGranted": "所选输出目录不可用或授权已失效，请重新选择输出目录并重新检查导出。",
+        "decisionRequired": "还有扫描到的敏感文件未给出处理方式：请为每个扫描项选择处理，再创建导出（当前预览仍然有效）。"
       }
     },
     "working": "正在执行，请稍候…",

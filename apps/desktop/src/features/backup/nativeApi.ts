@@ -41,12 +41,15 @@ export const nativeBackupFacade: BackupFacade = {
     return result.payload;
   },
   async prepareExport(input) {
+    // K3 预览绑定：结果守卫 export_preview（三件套载荷），不再有 export_plan。
     const result = await executeCommand({ type: "prepare_standard_export", payload: { input } });
-    if (result.type !== "export_plan") throw new Error("export preflight returned an unexpected result");
+    if (result.type !== "export_preview") throw new Error("export preflight returned an unexpected result");
     return result.payload;
   },
-  async createExport(input, decisions) {
-    const result = await executeCommand({ type: "create_standard_export", payload: { input, decisions: decisions as never } });
+  async createExport(previewId, decisions) {
+    // K3：create 载荷只有 preview_id + decisions；实际输入由后端从预览快照
+    // 重新物化并重验指纹，前端没有缺预览的提交路径。
+    const result = await executeCommand({ type: "create_standard_export", payload: { preview_id: previewId, decisions } });
     if (result.type !== "export_result") throw new Error("export returned an unexpected result");
     return result.payload;
   },

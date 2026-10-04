@@ -111,9 +111,14 @@ export function keyedMessage(
     // K2 预览失效边界：prepared_removal 丢失/过期 → 拒绝提交并要求
     // 重新预览（故障矩阵裁决文案），不得落进「目标不存在」通用句。
     if (field === "prepared_removal") return "removal.errors.previewInvalidated";
-    // K3 预览失效边界：导出 prepared 快照丢失/过期 → 拒绝创建并要求
-    // 重新预览，与 K2 保持同一 field 感知模式（错误码以 K3-A 落地为准）。
-    if (field === "prepared_export") return "dataProtection.export.errors.previewInvalidated";
+    // K3 预览失效边界（field=prepared_export）：按 reason 细分为过期、漂移、
+    // 输出目录授权失效与丢失/未准备，指引一律是重新预览，绝不静默重试提交。
+    if (field === "prepared_export") {
+      if (reason === "export_preview_expired") return "dataProtection.export.errors.previewExpired";
+      if (reason === "export_preview_drifted") return "dataProtection.export.errors.previewDrifted";
+      if (reason === "export_output_not_granted") return "dataProtection.export.errors.outputNotGranted";
+      return "dataProtection.export.errors.previewInvalidated";
+    }
     return "errors.objectNotFound";
   }
   if (code === "import.skipped_by_user") return "importWorkflow.commitMessages.skipped";
@@ -123,6 +128,8 @@ export function keyedMessage(
   if (code === "import.unknown_failure") return "importWorkflow.errors.unknown";
   if (code === "operation.conflict") {
     if (reason === "takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
+    // K3 存储层漂移护栏：create 实际输入与预览计划不一致 → 与预览漂移同一文案。
+    if (reason === "export_plan_drift") return "dataProtection.export.errors.previewDrifted";
     if (reason === "no_upstream_source") return "errors.sourceUpdate.noUpstreamConflict";
     if (reason === "source_unavailable") return "errors.sourceUpdate.sourceUnavailable";
     if (reason === "library_not_ready") return "errors.onboarding.libraryNotReady";
@@ -130,6 +137,9 @@ export function keyedMessage(
     if (reason === "existing_library_manifest_missing") return "errors.onboarding.existingLibraryManifestMissing";
     if (reason === "library_not_writable") return "errors.onboarding.libraryNotWritable";
   }
+  // K3 决定缺失：敏感文件未给出处理（或给了需先处理的 resolve_first）→
+  // 后端不消耗预览地拒绝，指引补齐每个扫描项的处理方式后重试。
+  if (code === "backup.export_decision_required") return "dataProtection.export.errors.decisionRequired";
   if (code === "removal.deployment_target_unavailable") return "removal.errors.deploymentTargetUnavailable";
   if (code === "network.disabled") return "errors.networkDisabled";
   if (code === "llm.not_configured") return "settings.llm.notConfigured";
