@@ -176,7 +176,7 @@ export function SkillDetailReviewExperience({
               <ReviewSectionToggle label="内容与文件" onToggle={() => toggleSection("review-content")} open={openSections["review-content"]} sectionId="review-content" />
             </h2>
             <div hidden={!openSections["review-content"]} id="review-content-body">
-              {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} /> : <p role="status">正在读取技能文件…</p>}
+              {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} skillRootPath={summary.rootPath} /> : <p role="status">正在读取技能文件…</p>}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-safety">

@@ -25,6 +25,11 @@ export interface SkillDetailSummary {
   /** P1-12：概览块是全页唯一的用途陈述（头部不再重复）。口径见 nativeApi.summaryOf：
    * 用户用途优先，回退译文、原文。 */
   purpose: string;
+  /**
+   * K9：集中库可见树根的绝对路径（真实物化目录）；树未物化或未知时缺省。
+   * 供 Markdown 工作台打开命令与接管预填写实路径，不派生自显示别名。
+   */
+  rootPath?: string;
   trialDue?: string;
   /** Undefined means the upstream source has not been checked in this installation. */
   upgradeAvailable?: boolean;

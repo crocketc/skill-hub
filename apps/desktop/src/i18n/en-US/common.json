@@ -146,7 +146,10 @@
       "openDefault": "Open in default app",
       "openFailed": "Could not open: {{detail}}",
       "openFailedDetail": "The open action did not complete ({{code}}). The file may have been moved, deleted, or blocked by permissions; retry, or open the Skill folder instead.",
-      "openFolder": "Open Skill folder",
+       "openOpenerUnavailable": "The system opener is unavailable; nothing was opened.",
+      "openUnsupported": "This platform does not offer an application chooser ({{platform}}); nothing was opened.",
+      "rootUnknown": "The local folder location of this Skill is unknown, so nothing was opened.",
+     "openFolder": "Open Skill folder",
       "readOnly": {
         "builtin": "This file is read-only because it is built into an Agent.",
         "external": "This file is read-only because it is managed externally.",

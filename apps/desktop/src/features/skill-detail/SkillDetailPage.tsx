@@ -495,7 +495,11 @@ export function SkillDetailPage({
             <h2 id="zone-content-heading">{t("skillDetail.zones.content")}</h2>
             <div className="sh-skill-detail__block" id="description">
               <h3>{t("skillDetail.navigation.sections.description")}</h3>
-              <MarkdownWorkspace facade={markdownFacade} skillId={skillId} />
+              <MarkdownWorkspace
+                facade={markdownFacade}
+                skillId={skillId}
+                skillRootPath={summaryQuery.data.rootPath}
+              />
             </div>
           </section>
           <section aria-labelledby="zone-relations-heading" className="sh-skill-detail__zone" id="zone-relations">

@@ -329,4 +329,155 @@ describe("nativeMarkdownFacade", () => {
       nativeMarkdownFacade.openExternalUrl("https://example.com/readme"),
     ).rejects.toBeTruthy();
   });
+
+  // K9 契约：本地资源解析走真实生成查询绑定，内容以 data URL 承载，
+  // 缺省 version_id 传 null（由后端解析当前版本）。
+  it("resolves a local asset through the native query and returns the data URL", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "local_asset",
+      payload: {
+        skill_id: "skill-1",
+        version_id: "v7",
+        markdown_path: "SKILL.md",
+        asset_path: "assets/flow.png",
+        media_type: "image/png",
+        data_url: "data:image/png;base64,AAAA",
+      },
+    } as never);
+
+    await expect(
+      nativeMarkdownFacade.resolveLocalAsset("skill-1", "SKILL.md", "assets/flow.png", "v7"),
+    ).resolves.toBe("data:image/png;base64,AAAA");
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "resolve_local_asset",
+      payload: {
+        skill_id: "skill-1",
+        markdown_path: "SKILL.md",
+        asset_path: "assets/flow.png",
+        version_id: "v7",
+      },
+    });
+  });
+
+  it("resolves a current-version asset with a null version id", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "local_asset",
+      payload: {
+        skill_id: "skill-1",
+        version_id: "v7",
+        markdown_path: "SKILL.md",
+        asset_path: "assets/flow.png",
+        media_type: "image/png",
+        data_url: "data:image/png;base64,AAAA",
+      },
+    } as never);
+
+    await expect(
+      nativeMarkdownFacade.resolveLocalAsset("skill-1", "SKILL.md", "assets/flow.png"),
+    ).resolves.toBe("data:image/png;base64,AAAA");
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "resolve_local_asset",
+      payload: {
+        skill_id: "skill-1",
+        markdown_path: "SKILL.md",
+        asset_path: "assets/flow.png",
+        version_id: null,
+      },
+    });
+  });
+
+  it("keeps a malformed local-asset answer unavailable instead of faking a URL", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "local_asset",
+      payload: {
+        skill_id: "skill-1",
+        version_id: "v7",
+        markdown_path: "SKILL.md",
+        asset_path: "assets/flow.png",
+        media_type: "image/png",
+        data_url: "",
+      },
+    } as never);
+
+    await expect(
+      nativeMarkdownFacade.resolveLocalAsset("skill-1", "SKILL.md", "assets/flow.png", "v7"),
+    ).rejects.toBeInstanceOf(MarkdownUnavailableError);
+  });
+
+  // K9 契约：三个本地打开命令走真实生成命令绑定，回执是 operation_summary。
+  it("opens a file with the default application through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-open-1",
+        phase: "committed",
+        message_code: "local_open.opened",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.openDefaultApplication("skill-1", "C:/library/pdf-reader/SKILL.md"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "open_default_application",
+      payload: { skill_id: "skill-1", path: "C:/library/pdf-reader/SKILL.md" },
+    });
+  });
+
+  it("reveals the skill folder through the native command with its own path", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-open-2",
+        phase: "committed",
+        message_code: "local_open.opened",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.openSkillFolder("skill-1", "C:/library/pdf-reader"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "open_skill_folder",
+      payload: { skill_id: "skill-1", path: "C:/library/pdf-reader" },
+    });
+  });
+
+  it("offers the platform application chooser through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-open-3",
+        phase: "committed",
+        message_code: "local_open.opened",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.chooseExternalApplication("skill-1", "C:/library/pdf-reader/SKILL.md"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "choose_external_application",
+      payload: { skill_id: "skill-1", path: "C:/library/pdf-reader/SKILL.md" },
+    });
+  });
+
+  it("refuses an open answered by an unrelated result type", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "saved_skill_content",
+      payload: {
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        version_id: "v7",
+        content_identity: "sha256:abc",
+      },
+    } as never);
+
+    await expect(
+      nativeMarkdownFacade.openDefaultApplication("skill-1", "C:/library/pdf-reader/SKILL.md"),
+    ).rejects.toBeInstanceOf(MarkdownUnavailableError);
+  });
 });

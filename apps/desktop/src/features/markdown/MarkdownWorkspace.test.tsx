@@ -24,6 +24,7 @@ function LocationProbe() {
 async function renderWorkspace(
   options: MockMarkdownOptions = {},
   setup?: (facade: MockMarkdownFacade) => Promise<void>,
+  workspaceProps: { skillRootPath?: string | null } = {},
 ) {
   const facade = createMockMarkdownFacade(options);
   await setup?.(facade);
@@ -42,7 +43,11 @@ async function renderWorkspace(
                 path="*"
                 element={
                   <>
-                    <MarkdownWorkspace facade={facade} skillId="pdf-reader" />
+                    <MarkdownWorkspace
+                      facade={facade}
+                      skillId="pdf-reader"
+                      {...workspaceProps}
+                    />
                     <LocationProbe />
                   </>
                 }
@@ -147,7 +152,11 @@ describe("MarkdownWorkspace", () => {
   });
 
   it("never offers in-place edit for a read-only external Skill", async () => {
-    await renderWorkspace({ editable: false, readOnlyReason: "external" });
+    await renderWorkspace(
+      { editable: false, readOnlyReason: "external" },
+      undefined,
+      { skillRootPath: "C:/SkillHub/library/pdf-reader" },
+    );
 
     expect(
       await screen.findByText("This file is read-only because it is managed externally."),
@@ -157,9 +166,27 @@ describe("MarkdownWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
 
     // K9：接管跳既有身份/共享/权限预览流程（本地发现的导入预览流），
-    // 不以 mock 状态宣称已接管。
+    // 来源路径用真实可见树根预填，不以 mock 状态宣称已接管。
     expect(lastLocation?.pathname).toBe("/discovery/local");
-    expect(lastLocation?.state).toEqual({ takeoverSkillId: "pdf-reader" });
+    expect(lastLocation?.state).toEqual({
+      initialSources: ["C:/SkillHub/library/pdf-reader"],
+    });
+  });
+
+  it("navigates to local discovery without a prefilled source when the tree root is unknown", async () => {
+    await renderWorkspace(
+      { editable: false, readOnlyReason: "external" },
+      undefined,
+      { skillRootPath: null },
+    );
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
+
+    // root_path 缺失（可见树未物化）时诚实降级：仍可去本地发现手动选来源，
+    // 绝不编造一个路径。
+    expect(lastLocation?.pathname).toBe("/discovery/local");
+    expect(lastLocation?.state ?? null).toBeNull();
   });
 
   it("keeps the page processable with a readable alert when opening the default app fails", async () => {
@@ -167,7 +194,7 @@ describe("MarkdownWorkspace", () => {
       fixture.openDefaultApplication = async () => {
         throw new Error("Fixture open denied");
       };
-    });
+    }, { skillRootPath: "C:/SkillHub/library/pdf-reader" });
     await screen.findByRole("heading", { name: "Markdown workspace" });
 
     fireEvent.click(screen.getByRole("button", { name: "Open in default app" }));
@@ -225,20 +252,64 @@ describe("MarkdownWorkspace", () => {
     ]);
   });
 
-  it("routes external application and folder actions through the facade", async () => {
-    const facade = await renderWorkspace();
+  it("routes open actions through the facade with the absolute tree path", async () => {
+    const facade = await renderWorkspace({}, undefined, {
+      skillRootPath: "C:/SkillHub/library/pdf-reader",
+    });
     await screen.findByRole("heading", { name: "Extract PDF tables safely" });
 
     fireEvent.click(screen.getByRole("button", { name: "Open in default app" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose another app" }));
     fireEvent.click(screen.getByRole("button", { name: "Open Skill folder" }));
 
+    // K9：打开命令要求树内绝对路径；由真实可见树根与树内相对路径拼出。
     expect(facade.calls.openedDefaults).toEqual([
-      { path: "SKILL.md", skillId: "pdf-reader" },
+      { path: "C:/SkillHub/library/pdf-reader/SKILL.md", skillId: "pdf-reader" },
     ]);
     expect(facade.calls.chosenApplications).toEqual([
-      { path: "SKILL.md", skillId: "pdf-reader" },
+      { path: "C:/SkillHub/library/pdf-reader/SKILL.md", skillId: "pdf-reader" },
     ]);
-    expect(facade.calls.openedFolders).toEqual(["pdf-reader"]);
+    expect(facade.calls.openedFolders).toEqual(["C:/SkillHub/library/pdf-reader"]);
+  });
+
+  it("keeps open actions honest when the visible tree root is unknown", async () => {
+    const facade = await renderWorkspace({}, undefined, { skillRootPath: null });
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open in default app" }));
+
+    // root_path 缺失时无法给出树内绝对路径：按钮不伪装成功，给出可读
+    // 说明，且不发出注定失败的打开调用。
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/local folder location of this Skill is unknown/i);
+    expect(facade.calls.openedDefaults).toEqual([]);
+  });
+
+  it("maps the platform chooser refusal to a readable message without faking success", async () => {
+    const facade = await renderWorkspace({ editable: false, readOnlyReason: "external" }, undefined, {
+      skillRootPath: "C:/SkillHub/library/pdf-reader",
+    });
+    await setupFacadeFailure(facade);
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose another app" }));
+
+    // macOS 的 choose_external_application 返回 local_open.unsupported（带平台
+    // 参数）：错误映射为可读文案并留在原页，绝不伪装成已打开。
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/does not offer an application chooser/i);
+    expect(alert).toHaveTextContent("macos");
+    expect(screen.getByRole("button", { name: "Choose another app" })).toBeVisible();
   });
 });
+
+async function setupFacadeFailure(facade: MockMarkdownFacade) {
+  facade.chooseExternalApplication = async () => {
+    throw {
+      code: "local_open.unsupported",
+      severity: "warning",
+      params: { platform: "macos" },
+      actions: ["acknowledge"],
+    };
+  };
+}

@@ -130,6 +130,8 @@ describe("native skill detail facade", () => {
         pending_count: 4,
         high_risk_count: 1,
         upstream_state: "update_available",
+        // K9：可见树根来自真实物化事实；接管预填与打开命令都取这个绝对路径。
+        root_path: "C:/SkillHub/library/pdf-reader",
       },
     } as never);
 
@@ -139,7 +141,34 @@ describe("native skill detail facade", () => {
       pendingCount: 4,
       projectDeploymentCount: 2,
       upgradeAvailable: true,
+      rootPath: "C:/SkillHub/library/pdf-reader",
     });
+  });
+
+  it("keeps the summary tree root unknown when the backend reports no materialized tree", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+        root_path: null,
+      },
+    } as never);
+
+    const summary = await nativeSkillDetailFacade.getSummary("skill-1");
+    expect(summary.rootPath).toBeUndefined();
   });
 
   it("presents Deprecated without treating it as Skill archive", async () => {

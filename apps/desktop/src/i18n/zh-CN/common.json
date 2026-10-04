@@ -146,7 +146,10 @@
       "openDefault": "使用默认应用打开",
       "openFailed": "未能打开：{{detail}}",
       "openFailedDetail": "打开操作未完成（{{code}}）。文件可能已被移动、删除或权限受限，可重试或改为在文件夹中打开。",
-      "openFolder": "打开 Skill 文件夹",
+       "openOpenerUnavailable": "系统打开器不可用，未能打开本地路径。",
+      "openUnsupported": "当前平台（{{platform}}）不提供应用选择器，未打开文件。",
+      "rootUnknown": "此 Skill 的本地目录位置未知，无法打开本地文件。",
+     "openFolder": "打开 Skill 文件夹",
       "readOnly": {
         "builtin": "此文件内置于 Agent，因此为只读。",
         "external": "此文件由外部来源管理，因此为只读。",

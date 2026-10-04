@@ -1,17 +1,15 @@
 import {
   executeCommand,
   queryApplication,
-  type AppQuery,
+  type AppQueryResult,
   type MarkdownDraftSummary,
   type MarkdownFileContent,
-  type AppQueryResult,
 } from "../../api/bindings";
 import {
   MarkdownUnavailableError,
   unavailableMarkdownFacade,
   type MarkdownDraft,
   type MarkdownFacade,
-  type ResolveLocalAssetQuery,
 } from "./api";
 
 function unavailableResult(): MarkdownUnavailableError {
@@ -19,27 +17,15 @@ function unavailableResult(): MarkdownUnavailableError {
 }
 
 /*
- * K4 契约对齐：save/discard/validate 三条命令与 get_markdown_draft 查询已由
- * 生成绑定承载，直接走真实 executeCommand/queryApplication，结果守卫按真实
- * 回执类型（markdown_draft_saved / markdown_draft_discarded /
- * markdown_validation_result / markdown_draft）收口。
+ * K4/K9 契约对齐：save/discard/validate 三条命令、get_markdown_draft 与
+ * resolve_local_asset 查询以及三个本地打开命令均由生成绑定承载，直接走
+ * 真实 executeCommand/queryApplication，结果守卫按真实回执类型收口
+ * （markdown_draft_saved / markdown_draft_discarded / markdown_validation_result /
+ * markdown_draft / local_asset / operation_summary）。
  */
 
-/*
- * K9 待对齐（接线点）：resolve_local_asset 查询与 local_asset 结果类型同样
- * 待生成；先按 api.ts 的本地契约形状透传。后端未实现该查询时会在这里失败，
- * 统一折叠为不可用错误（与生成绑定落地后的行为一致）；落地后删除本桥接并
- * 改用生成的类型直接调用，形状与键名零改动。
- */
-type PendedMarkdownQuery = ResolveLocalAssetQuery;
-
-type PendedQueryResult = { payload: unknown; type: "local_asset" };
-
-const queryPended = (query: PendedMarkdownQuery): Promise<PendedQueryResult> =>
-  queryApplication(query as unknown as AppQuery) as Promise<unknown> as Promise<PendedQueryResult>;
-
-// K9 待对齐（接线点）：生成物 MarkdownFileContent 已含 K4 草稿摘要，尚缺
-// version_id 字段；本地仅扩展版本身份，其余直接消费生成类型。
+// K9：生成物 MarkdownFileContent 已含 K4 草稿摘要，尚缺 version_id 字段；
+// 本地仅扩展版本身份，其余直接消费生成类型。
 type NativeMarkdownFilePayload = MarkdownFileContent & {
   version_id?: string | null;
 };
@@ -184,26 +170,47 @@ export const nativeMarkdownFacade: MarkdownFacade = {
   },
   async resolveLocalAsset(skillId, markdownPath, assetPath, versionId) {
     try {
-      const result = await queryPended({
+      // K9：真实生成查询绑定；内容以 data URL 返回，webview 拿不到任何
+      // 文件系统路径。缺省（含调用方未知版本身份）传 null 由后端解析当前
+      // 版本；历史读取显式传入。
+      const result: AppQueryResult = await queryApplication({
         payload: {
           asset_path: assetPath,
           markdown_path: markdownPath,
           skill_id: skillId,
-          // 缺省（含调用方未知版本身份）交给后端解析当前版本；历史读取显式传入。
           version_id: versionId ?? null,
         },
         type: "resolve_local_asset",
       });
       if (result.type !== "local_asset") throw unavailableResult();
-      const payload = result.payload as { url?: unknown } | null;
-      if (!payload || typeof payload.url !== "string" || !payload.url) {
-        throw unavailableResult();
-      }
-      return payload.url;
+      if (!result.payload.data_url) throw unavailableResult();
+      return result.payload.data_url;
     } catch {
-      // 后端查询未落地或解析失败（缺失/越界/权限）时如实不可用，
-      // 由渲染层以可读说明收尾，不伪造本地路径。
+      // 解析失败（缺失/越界/权限）时如实不可用，由渲染层以可读说明收尾，
+      // 不伪造本地路径。
       throw unavailableResult();
     }
   },
+  async openDefaultApplication(skillId, path) {
+    await executeLocalOpen("open_default_application", skillId, path);
+  },
+  async openSkillFolder(skillId, path) {
+    await executeLocalOpen("open_skill_folder", skillId, path);
+  },
+  async chooseExternalApplication(skillId, path) {
+    await executeLocalOpen("choose_external_application", skillId, path);
+  },
 };
+
+/** K9：本地打开命令的统一真实绑定调用；回执是通用 operation_summary。 */
+async function executeLocalOpen(
+  type: "open_default_application" | "open_skill_folder" | "choose_external_application",
+  skillId: string,
+  path: string,
+): Promise<void> {
+  const result = await executeCommand({
+    type,
+    payload: { skill_id: skillId, path },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+}

@@ -51,19 +51,19 @@ export interface MarkdownSaveResult {
 }
 
 /*
- * K9 待对齐（接线点）：本地资源解析查询。bindings.ts 尚无 resolve_local_asset；
- * 形状按契约语义先行声明——version_id 缺省传 null（后端解析当前版本），
- * 历史读取显式指定。Markdown 与图片必须来自同一版本。A 侧生成后按同名形状
- * 对齐，nativeApi 透传处零改动替换。
+ * K9 契约对齐：本地资源解析查询与三个本地打开命令都由生成绑定承载
+ * （resolve_local_asset 查询 / open_default_application、open_skill_folder、
+ * choose_external_application 命令），nativeApi 直接调用真实绑定。
  */
-export interface ResolveLocalAssetQuery {
-  type: "resolve_local_asset";
-  payload: {
-    asset_path: string;
-    markdown_path: string;
-    skill_id: string;
-    version_id: string | null;
-  };
+
+/**
+ * 把可见树根（SkillResult.root_path）与树内相对路径拼成打开命令所需的
+ * 绝对路径；后端按规范身份校验路径确实落在该 Skill 的物化树内。
+ */
+export function joinSkillTreePath(rootPath: string, relativePath: string): string {
+  const root = rootPath.replace(/[\\/]+$/, "");
+  const relative = relativePath.replace(/^[\\/]+/, "");
+  return `${root}/${relative}`;
 }
 
 export interface MarkdownFacade {
@@ -74,13 +74,13 @@ export interface MarkdownFacade {
   listMarkdownFiles(skillId: string): Promise<MarkdownFileEntry[]>;
   openDefaultApplication(skillId: string, path: string): Promise<void>;
   openExternalUrl(target: string): Promise<void>;
-  openSkillFolder(skillId: string): Promise<void>;
+  /** 打开 Skill 可见树内的一个目录；路径必须是树内绝对路径。 */
+  openSkillFolder(skillId: string, path: string): Promise<void>;
   readMarkdownFile(skillId: string, path: string): Promise<MarkdownFileContent>;
   /**
-   * K9：解析 Markdown 内的本地资源为可展示 URL。versionId 缺省时由后端
-   * 解析当前版本；历史读取必须显式指定——Markdown 与图片必须来自同一版本。
-   * （待对齐接线点：bindings.ts 尚无 resolve_local_asset 查询，形状见
-   * ResolveLocalAssetQuery。）
+   * K9：解析 Markdown 内的本地资源为可展示 data URL。versionId 缺省时由
+   * 后端解析当前版本；历史读取必须显式指定——Markdown 与图片必须来自
+   * 同一版本。
    */
   resolveLocalAsset(
     skillId: string,

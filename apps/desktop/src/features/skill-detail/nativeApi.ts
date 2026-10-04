@@ -120,6 +120,8 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     // P1-12：概览是全页唯一的用途陈述（头部不再重复）。口径：用户用途优先
     // （QA-008），缺省回退持久化译文，再回退原文，绝不留空。
     purpose: skill.user_purpose ?? skill.translated_description ?? skill.original_description,
+    // K9：真实物化根目录（可见树）；树未物化时后端给 null，缺省即未知。
+    rootPath: skill.root_path ?? undefined,
     trialDue: skill.trial_due ?? undefined,
     upgradeAvailable: skill.upstream_state == null
       ? undefined

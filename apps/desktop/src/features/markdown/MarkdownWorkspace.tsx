@@ -2,13 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { describeNativeError } from "../../api/nativeErrors";
+import { describeNativeError, nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
 import { IconButton } from "../../ui/IconButton";
 import { Select } from "../../ui/Select";
 import {
+  joinSkillTreePath,
   type MarkdownFacade,
   type MarkdownReadOnlyReason,
   MarkdownUnavailableError,
@@ -29,6 +30,8 @@ interface MarkdownWorkspaceProps {
   fileRail?: boolean;
   facade: MarkdownFacade;
   reviewSaveFlow?: boolean;
+  /** K9：SkillResult.root_path——可见树根绝对路径；打开命令与接管预填都依赖它。 */
+  skillRootPath?: string | null;
   skillId: string;
 }
 
@@ -45,6 +48,7 @@ export function MarkdownWorkspace({
   facade,
   fileRail = false,
   reviewSaveFlow = false,
+  skillRootPath,
   skillId,
 }: MarkdownWorkspaceProps) {
   const { t } = useTranslation();
@@ -106,25 +110,66 @@ export function MarkdownWorkspace({
     mode === "edit" && !file?.editable
       ? "read"
       : mode;
-  // K9：打开类动作共用同一条受控路径；失败与权限拒绝以可读说明留在原页
-  // （生产适配器在 nativeApi 接线前会得到不可用说明，而不是无响应）。
+  // K9：打开类动作共用同一条受控路径；失败与权限拒绝以可读说明留在原页。
+  // 平台拒绝（如 macOS 无应用选择器 → local_open.unsupported）映射为专属
+  // 可读文案，绝不伪装成功。
+  const describeOpenFailure = (reason: unknown) => {
+    const code = nativeErrorCode(reason);
+    if (code === "local_open.unsupported") {
+      const params = nativeErrorParams(reason);
+      return t("markdown.workspace.openUnsupported", {
+        platform: typeof params.platform === "string" ? params.platform : "",
+      });
+    }
+    if (code === "local_open.opener_unavailable") {
+      return t("markdown.workspace.openOpenerUnavailable");
+    }
+    return describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "markdown.workspace.openFailedDetail",
+    );
+  };
   const runOpenAction = (action: () => Promise<void>) => {
     setOpenActionError(undefined);
     void action().catch((reason: unknown) => {
       const detail = reason instanceof MarkdownUnavailableError
         ? t("markdown.workspace.unavailable")
-        : describeNativeError(
-          reason,
-          (key, options) => String(t(key as never, options as never)),
-          "markdown.workspace.openFailedDetail",
-        );
+        : describeOpenFailure(reason);
       setOpenActionError(t("markdown.workspace.openFailed", { detail }));
     });
   };
+  // K9：打开命令要求树内绝对路径。可见树根未知（root_path 缺失）时无法给出
+  // 真实路径：如实说明且不发出注定失败的调用，绝不拿相对路径冒充。
+  const requireTreeRoot = () => {
+    if (skillRootPath) return skillRootPath;
+    setOpenActionError(t("markdown.workspace.openFailed", {
+      detail: t("markdown.workspace.rootUnknown"),
+    }));
+    return null;
+  };
+  const openSelectedPath = (command: "open_default_application" | "choose_external_application") => {
+    const root = requireTreeRoot();
+    if (!root) return;
+    const absolutePath = joinSkillTreePath(root, selectedPath);
+    runOpenAction(() =>
+      command === "open_default_application"
+        ? facade.openDefaultApplication(skillId, absolutePath)
+        : facade.chooseExternalApplication(skillId, absolutePath));
+  };
+  const openFolder = () => {
+    const root = requireTreeRoot();
+    if (!root) return;
+    runOpenAction(() => facade.openSkillFolder(skillId, root));
+  };
   // K9：接管不产生任何后端写入，也不以本地 mock 状态宣称已接管；跳转既有
-  // 身份/共享/权限预览流程（本地发现的导入预览流），由该流程核实真实能力。
+  // 身份/共享/权限预览流程（本地发现的导入预览流），来源路径用真实可见树根
+  // 预填；树根未知时诚实降级为不带预填，由用户在本地发现中自行选择来源。
   const requestTakeover = () => {
-    navigate("/discovery/local", { state: { takeoverSkillId: skillId } });
+    navigate(
+      "/discovery/local",
+      skillRootPath ? { state: { initialSources: [skillRootPath] } } : undefined,
+    );
   };
   // K4-B：切走前先把防抖窗口内的最新输入落成草稿；失败则留在编辑器，
   // 由编辑器的草稿错误状态 + 重试入口承接，绝不静默丢弃输入。
@@ -174,11 +219,11 @@ export function MarkdownWorkspace({
             <IconButton
               icon="openExternal"
               label={t("markdown.workspace.openDefault")}
-              onClick={() => runOpenAction(() => facade.openDefaultApplication(skillId, selectedPath))}
+              onClick={() => openSelectedPath("open_default_application")}
             />
           ) : (
             <Button
-              onClick={() => runOpenAction(() => facade.openDefaultApplication(skillId, selectedPath))}
+              onClick={() => openSelectedPath("open_default_application")}
               size="sm"
               variant="ghost"
             >
@@ -186,14 +231,14 @@ export function MarkdownWorkspace({
             </Button>
           )}
           <Button
-            onClick={() => runOpenAction(() => facade.chooseExternalApplication(skillId, selectedPath))}
+            onClick={() => openSelectedPath("choose_external_application")}
             size="sm"
             variant="ghost"
           >
             {t("markdown.workspace.chooseApp")}
           </Button>
           <Button
-            onClick={() => runOpenAction(() => facade.openSkillFolder(skillId))}
+            onClick={openFolder}
             size="sm"
             variant="ghost"
           >

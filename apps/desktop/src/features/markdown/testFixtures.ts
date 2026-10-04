@@ -12,6 +12,7 @@ export interface MockMarkdownCalls {
   chosenApplications: Array<{ path: string; skillId: string }>;
   discardedDrafts: Array<{ path: string; skillId: string }>;
   openedDefaults: Array<{ path: string; skillId: string }>;
+  /** K9：记录打开目录的树内绝对路径（mock 不校验树内包含关系）。 */
   openedFolders: string[];
   openedUrls: string[];
   savedDrafts: Array<{
@@ -240,8 +241,8 @@ export function createMockMarkdownFacade(
     async openExternalUrl(target) {
       calls.openedUrls.push(target);
     },
-    async openSkillFolder(skillId) {
-      calls.openedFolders.push(skillId);
+    async openSkillFolder(_skillId, path) {
+      calls.openedFolders.push(path);
     },
     async readMarkdownFile(skillId, path) {
       const file = requireFile(path);
