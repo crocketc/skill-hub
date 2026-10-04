@@ -78,6 +78,12 @@
       "draftRetry": "重试保存草稿",
       "draftSaved": "草稿已保存到本机",
       "draftSaving": "正在保存本机草稿",
+      "issue": {
+        "invalid_markdown_path": "文件路径不被技能库接受，无法保存到该位置。",
+        "markdown_too_large": "内容 {{size}} 字节，超过 {{size_limit}} 字节上限，请精简后再保存。",
+        "markdown_empty": "内容为空，空的技能文件无法保存。",
+        "unknown": "校验发现问题（{{code}}），请修正后再保存。"
+      },
       "issues": "保存问题",
       "preview": "实时预览",
       "save": "保存并创建版本",
@@ -92,7 +98,6 @@
       "exitConfirmDescription": "编辑内容只会保留为本机草稿；放弃后将回到当前版本的预览，不会创建新版本。",
       "exitConfirmConfirm": "放弃修改",
       "saveError": "无法保存，本机草稿仍然保留。",
-      "saveWarnings": "忽略警告并保存",
       "replaceConfirmTitle": "替换原 Skill 内容？",
       "replaceConfirmLead": "保存将替换 {{path}} 的当前内容，并生成一个新版本。",
       "replaceConfirmRecoverNote": "原内容会自动保留为历史版本，可在详情页的版本时间线中回滚恢复。",

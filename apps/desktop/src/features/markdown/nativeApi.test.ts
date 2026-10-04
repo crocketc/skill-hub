@@ -125,15 +125,14 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
-  // K4 契约（snake_case 线格式，键名与后端命令一一对应；A 侧绑定落地后零改动接线）。
+  // K4 契约：草稿保存走真实生成绑定，结果守卫是 markdown_draft_saved 回执。
   it("saves the local draft with base metadata through the native command", async () => {
     vi.mocked(executeCommand).mockResolvedValue({
-      type: "operation_summary",
+      type: "markdown_draft_saved",
       payload: {
-        operation_id: "op-draft-1",
-        phase: "committed",
-        message_code: "markdown_draft.saved",
-        error_code: null,
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        updated_at: "2026-10-04T08:00:00Z",
       },
     });
 
@@ -155,15 +154,30 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
-  it("discards the local draft through the native command", async () => {
+  it("rejects a draft save answered by an unrelated result type", async () => {
     vi.mocked(executeCommand).mockResolvedValue({
       type: "operation_summary",
       payload: {
-        operation_id: "op-draft-2",
+        operation_id: "op-draft-1",
         phase: "committed",
-        message_code: "markdown_draft.discarded",
+        message_code: "markdown_draft.saved",
         error_code: null,
       },
+    });
+
+    await expect(
+      nativeMarkdownFacade.saveDraft("skill-1", "SKILL.md", "# Draft", {
+        contentIdentity: "sha256:abc",
+        versionId: null,
+      }),
+    ).rejects.toBeInstanceOf(MarkdownUnavailableError);
+  });
+
+  // K4 契约：草稿丢弃的回执是 markdown_draft_discarded（幂等成功同形）。
+  it("discards the local draft through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "markdown_draft_discarded",
+      payload: { skill_id: "skill-1", path: "SKILL.md" },
     });
 
     await expect(
@@ -175,23 +189,72 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
+  // K4 契约：校验结果没有行号与严重性，只有稳定机器码 + 违规字段 + 确定性参数。
   it("validates Markdown through the deterministic native command", async () => {
     vi.mocked(executeCommand).mockResolvedValue({
-      type: "markdown_issues",
-      payload: [
-        { code: "frontmatter", line: 1, message: "Missing name", severity: "error" },
-      ],
-    } as never);
+      type: "markdown_validation_result",
+      payload: {
+        valid: false,
+        issues: [
+          {
+            code: "markdown_too_large",
+            field: "markdown",
+            params: { size: "2097152", size_limit: "1048576" },
+          },
+        ],
+      },
+    });
 
     await expect(
       nativeMarkdownFacade.validateMarkdown("SKILL.md", "# Draft"),
     ).resolves.toEqual([
-      { code: "frontmatter", line: 1, message: "Missing name", severity: "error" },
+      {
+        code: "markdown_too_large",
+        field: "markdown",
+        params: { size: "2097152", size_limit: "1048576" },
+      },
     ]);
     expect(executeCommand).toHaveBeenCalledWith({
       type: "validate_markdown",
       payload: { path: "SKILL.md", markdown: "# Draft" },
     });
+  });
+
+  // K4 契约：草稿查询走真实查询绑定；无草稿时载荷为 null。
+  it("queries the native draft summary and maps it onto the domain draft", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "markdown_draft",
+      payload: {
+        base_content_identity: "sha256:abc",
+        base_version_id: "v7",
+        markdown: "# Draft",
+        updated_at: "2026-10-04T08:00:00Z",
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.getDraft("skill-1", "SKILL.md"),
+    ).resolves.toEqual({
+      baseContentIdentity: "sha256:abc",
+      baseVersionId: "v7",
+      markdown: "# Draft",
+      savedAt: "2026-10-04T08:00:00Z",
+    });
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_markdown_draft",
+      payload: { skill_id: "skill-1", path: "SKILL.md" },
+    });
+  });
+
+  it("answers the draft query with null when no draft exists", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "markdown_draft",
+      payload: null,
+    });
+
+    await expect(
+      nativeMarkdownFacade.getDraft("skill-1", "SKILL.md"),
+    ).resolves.toBeNull();
   });
 
   it("maps the native draft summary and base metadata onto the file content", async () => {

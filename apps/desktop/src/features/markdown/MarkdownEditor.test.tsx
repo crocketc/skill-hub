@@ -146,10 +146,16 @@ describe("MarkdownEditor", () => {
     });
   });
 
+  // K4 契约：校验项没有行号与严重性，只有 code + field + params；文案由
+  // 机器码映射为用户事实（含确定性参数），并在确认对话框之前阻断保存。
   it("keeps the source and draft when blocking validation prevents save", async () => {
     const facade = await renderEditor({
       validationIssues: [
-        { code: "frontmatter", message: "Missing name", severity: "error" },
+        {
+          code: "markdown_too_large",
+          field: "markdown",
+          params: { size: "2097152", size_limit: "1048576" },
+        },
       ],
     });
     await replaceEditorText("Unsaved work");
@@ -158,8 +164,10 @@ describe("MarkdownEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
 
     const alert = await screen.findByRole("alert", { name: "Save issues" });
-    expect(alert).toHaveTextContent("Missing name");
-    // 状态 = 图标 + 文字，不能只靠颜色区分严重性。
+    expect(alert).toHaveTextContent(
+      "The content is 2097152 bytes, over the 1048576-byte limit. Trim it before saving.",
+    );
+    // 状态 = 图标 + 文字，不能只靠颜色传递阻断事实。
     expect(alert.querySelector("svg[aria-hidden='true']")).not.toBeNull();
     expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
       "Unsaved work",
@@ -189,20 +197,23 @@ describe("MarkdownEditor", () => {
     });
   });
 
-  it("requires an explicit continuation before saving validation warnings", async () => {
+  // 线上出现未知机器码（契约漂移）时不得渲染裸键名，也不得放行保存。
+  it("renders an unreadable validation code as an honest fallback and blocks the save", async () => {
     const facade = await renderEditor({
       validationIssues: [
-        { code: "reference", message: "Image is missing", severity: "warning" },
+        { code: "future_rule", field: "markdown", params: {} },
       ],
     });
+    await replaceEditorText("Unsaved work");
 
     fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
-    expect(await screen.findByText("Image is missing")).toBeVisible();
+
+    const alert = await screen.findByRole("alert", { name: "Save issues" });
+    expect(alert).toHaveTextContent(
+      "Validation found a problem (future_rule). Fix it before saving.",
+    );
     expect(facade.calls.savedVersions).toEqual([]);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Save despite warnings" }));
-    expect(await screen.findByText("Version v2 created")).toBeVisible();
   });
 
   it("retains the editor value when the formal save fails", async () => {

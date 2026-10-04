@@ -1,3 +1,12 @@
+/*
+ * K4 契约对齐：校验问题直接消费生成绑定里的线格式——只有稳定机器码、
+ * 违规字段与确定性参数，没有行号与严重性；用户事实文案由展示层按
+ * code+field+params 映射，这里不做二次形状。
+ */
+import type { MarkdownValidationIssue } from "../../api/bindings";
+
+export type { MarkdownValidationIssue };
+
 export interface MarkdownFileEntry {
   label: string;
   path: string;
@@ -36,56 +45,9 @@ export interface MarkdownFileContent {
   versionId?: string;
 }
 
-export interface MarkdownValidationIssue {
-  code: string;
-  line?: number;
-  message: string;
-  severity: "error" | "warning";
-}
-
 export interface MarkdownSaveResult {
   contentIdentity: string;
   newVersionId: string;
-}
-
-/*
- * K4 契约线格式（snake_case，键名与后端命令一一对应）。
- * api/bindings.ts 是生成物，尚未包含 K4 草稿/校验命令；这里先行声明本地
- * 类型，A 侧绑定生成后按同名形状对齐，nativeApi 透传处零改动替换。
- */
-export interface SaveMarkdownDraftCommand {
-  type: "save_markdown_draft";
-  payload: {
-    base_content_identity: string;
-    base_version_id: string | null;
-    markdown: string;
-    path: string;
-    skill_id: string;
-  };
-}
-
-export interface DiscardMarkdownDraftCommand {
-  type: "discard_markdown_draft";
-  payload: {
-    path: string;
-    skill_id: string;
-  };
-}
-
-export interface GetMarkdownDraftCommand {
-  type: "get_markdown_draft";
-  payload: {
-    path: string;
-    skill_id: string;
-  };
-}
-
-export interface ValidateMarkdownCommand {
-  type: "validate_markdown";
-  payload: {
-    markdown: string;
-    path: string;
-  };
 }
 
 /*
@@ -104,17 +66,11 @@ export interface ResolveLocalAssetQuery {
   };
 }
 
-/** ReadMarkdownFile 结果中的草稿摘要（含草稿基准元数据）。 */
-export interface MarkdownDraftSummaryPayload {
-  base_content_identity: string;
-  base_version_id: string | null;
-  markdown: string;
-  updated_at: string;
-}
-
 export interface MarkdownFacade {
   chooseExternalApplication(skillId: string, path: string): Promise<void>;
   discardDraft(skillId: string, path: string): Promise<void>;
+  /** K4：单文件草稿查询；无草稿时如实为 null，不伪造空草稿。 */
+  getDraft(skillId: string, path: string): Promise<MarkdownDraft | null>;
   listMarkdownFiles(skillId: string): Promise<MarkdownFileEntry[]>;
   openDefaultApplication(skillId: string, path: string): Promise<void>;
   openExternalUrl(target: string): Promise<void>;
@@ -181,6 +137,7 @@ const unavailable = (): Promise<never> =>
 export const unavailableMarkdownFacade: MarkdownFacade = {
   chooseExternalApplication: unavailable,
   discardDraft: unavailable,
+  getDraft: unavailable,
   listMarkdownFiles: unavailable,
   openDefaultApplication: unavailable,
   openExternalUrl: unavailable,

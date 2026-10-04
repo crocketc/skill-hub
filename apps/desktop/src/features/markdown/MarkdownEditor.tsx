@@ -299,14 +299,10 @@ export function MarkdownEditor({
       await persistCurrentDraft();
       const nextIssues = await facade.validateMarkdown(file.path, source);
       setIssues(nextIssues);
+      // K4：校验项没有严重性分级——每一条都是必须修正的阻断事实，
+      // 有问题即停在编辑器，不进入替换确认。
       if (nextIssues.length > 0) {
         queueMicrotask(() => issuesRef.current?.focus());
-      }
-      if (nextIssues.some((issue) => issue.severity === "error")) {
-        return;
-      }
-      if (nextIssues.some((issue) => issue.severity === "warning")) {
-        // 警告路径维持显式"仍要保存"按钮：那本身就是一次对替换的明确确认。
         return;
       }
       if (reviewSaveFlow && reviewSaveConfirmed) {
@@ -330,7 +326,18 @@ export function MarkdownEditor({
     }
   };
 
-  const hasWarnings = issues.some((issue) => issue.severity === "warning");
+  // K4：校验事实文案映射——稳定机器码 → i18n 键，确定性参数（如字节上限）
+  // 原样进入插值；未知机器码（契约漂移）回退为带原始 code 的诚实文案，
+  // 绝不渲染裸键名，也绝不把问题说成可忽略的警告。
+  const issueText = (issue: MarkdownValidationIssue): string => {
+    const key = `markdown.editor.issue.${issue.code}`;
+    const translated = String(t(key as never, { ...issue.params } as never));
+    if (translated !== key) {
+      return translated;
+    }
+    return t("markdown.editor.issue.unknown", { code: issue.code });
+  };
+
   const dirty = source !== file.markdown;
 
   // K4-B 离开保护武装条件：有未保存的修改且内容非空（保存成功后 savedVersion
@@ -461,23 +468,18 @@ export function MarkdownEditor({
           <h3 className="sh-markdown-editor__issues-title">
             <Icon
               className="sh-markdown-status__icon"
-              name={issues.some((issue) => issue.severity === "error") ? "failure" : "warning"}
+              name="failure"
               size={16}
             />
             <span>{t("markdown.editor.issues")}</span>
           </h3>
           <ul>
             {issues.map((issue) => (
-              <li key={`${issue.code}-${issue.line ?? 0}-${issue.message}`}>
-                {issue.message}
+              <li key={`${issue.code}-${issue.field}`}>
+                {issueText(issue)}
               </li>
             ))}
           </ul>
-          {hasWarnings && !issues.some((issue) => issue.severity === "error") ? (
-            <Button onClick={() => void commit()} variant="secondary">
-              {t("markdown.editor.saveWarnings")}
-            </Button>
-          ) : null}
         </section>
       ) : null}
       {saveError ? (

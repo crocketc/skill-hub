@@ -78,6 +78,12 @@
       "draftRetry": "Retry saving the draft",
       "draftSaved": "Draft saved locally",
       "draftSaving": "Saving local draft",
+      "issue": {
+        "invalid_markdown_path": "The file path is not accepted by the Skill library; the content cannot be saved there.",
+        "markdown_too_large": "The content is {{size}} bytes, over the {{size_limit}}-byte limit. Trim it before saving.",
+        "markdown_empty": "The content is empty; an empty skill file cannot be saved.",
+        "unknown": "Validation found a problem ({{code}}). Fix it before saving."
+      },
       "issues": "Save issues",
       "preview": "Live preview",
       "save": "Save and create version",
@@ -92,7 +98,6 @@
       "exitConfirmDescription": "Your edits are kept only as a local draft; discarding returns to the current version's preview without creating a version.",
       "exitConfirmConfirm": "Discard changes",
       "saveError": "Could not save; your local draft is still available.",
-      "saveWarnings": "Save despite warnings",
       "replaceConfirmTitle": "Replace the original Skill content?",
       "replaceConfirmLead": "Saving replaces the current content of {{path}} and creates a new version.",
       "replaceConfirmRecoverNote": "The previous content stays as a history version; you can roll back to it from the Versions timeline on the detail page.",

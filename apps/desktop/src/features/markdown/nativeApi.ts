@@ -1,19 +1,17 @@
 import {
   executeCommand,
   queryApplication,
-  type AppCommand,
   type AppQuery,
-  type MarkdownReadOnlyReason,
+  type MarkdownDraftSummary,
+  type MarkdownFileContent,
   type AppQueryResult,
 } from "../../api/bindings";
 import {
   MarkdownUnavailableError,
   unavailableMarkdownFacade,
-  type DiscardMarkdownDraftCommand,
+  type MarkdownDraft,
   type MarkdownFacade,
   type ResolveLocalAssetQuery,
-  type SaveMarkdownDraftCommand,
-  type ValidateMarkdownCommand,
 } from "./api";
 
 function unavailableResult(): MarkdownUnavailableError {
@@ -21,24 +19,11 @@ function unavailableResult(): MarkdownUnavailableError {
 }
 
 /*
- * K4 待对齐（接线点）：api/bindings.ts 是生成物，尚未包含
- * save_markdown_draft / discard_markdown_draft / validate_markdown 命令与
- * markdown_issues 结果类型。这里按 api.ts 的本地契约线格式（snake_case 与
- * 后端一致）先行透传；A 侧绑定生成后，删除本桥接并改用生成的类型直接调用，
- * 命令形状与键名零改动。
+ * K4 契约对齐：save/discard/validate 三条命令与 get_markdown_draft 查询已由
+ * 生成绑定承载，直接走真实 executeCommand/queryApplication，结果守卫按真实
+ * 回执类型（markdown_draft_saved / markdown_draft_discarded /
+ * markdown_validation_result / markdown_draft）收口。
  */
-type PendedMarkdownCommand =
-  | DiscardMarkdownDraftCommand
-  | SaveMarkdownDraftCommand
-  | ValidateMarkdownCommand;
-
-// K4 待对齐（接线点）：markdown_issues 结果类型同样待生成；先以本地形状收口。
-type PendedCommandResult =
-  | { payload: unknown; type: "markdown_issues" }
-  | { payload: unknown; type: "operation_summary" };
-
-const executePendedCommand = (command: PendedMarkdownCommand): Promise<PendedCommandResult> =>
-  executeCommand(command as unknown as AppCommand) as Promise<PendedCommandResult>;
 
 /*
  * K9 待对齐（接线点）：resolve_local_asset 查询与 local_asset 结果类型同样
@@ -53,22 +38,24 @@ type PendedQueryResult = { payload: unknown; type: "local_asset" };
 const queryPended = (query: PendedMarkdownQuery): Promise<PendedQueryResult> =>
   queryApplication(query as unknown as AppQuery) as Promise<unknown> as Promise<PendedQueryResult>;
 
-// K4 待对齐（接线点）：生成物 MarkdownFileContent 尚无 draft / version_id 字段，
-// ReadMarkdownFile 结果扩展后删除本类型并直接使用生成类型。
-interface NativeMarkdownFilePayload {
-  content_identity: string;
-  draft?: {
-    base_content_identity?: string;
-    base_version_id?: string | null;
-    markdown: string;
-    updated_at: string;
-  };
-  editable: boolean;
-  markdown: string;
-  path: string;
-  read_only_reason?: MarkdownReadOnlyReason | null;
+// K9 待对齐（接线点）：生成物 MarkdownFileContent 已含 K4 草稿摘要，尚缺
+// version_id 字段；本地仅扩展版本身份，其余直接消费生成类型。
+type NativeMarkdownFilePayload = MarkdownFileContent & {
   version_id?: string | null;
-}
+};
+
+/** 把线格式草稿摘要映射为领域视图；无草稿时如实为 null，不伪造空草稿。 */
+const toDomainDraft = (
+  summary: MarkdownDraftSummary | null | undefined,
+): MarkdownDraft | null =>
+  summary
+    ? {
+        baseContentIdentity: summary.base_content_identity,
+        baseVersionId: summary.base_version_id,
+        markdown: summary.markdown,
+        savedAt: summary.updated_at,
+      }
+    : null;
 
 export const nativeMarkdownFacade: MarkdownFacade = {
   ...unavailableMarkdownFacade,
@@ -98,14 +85,7 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       const payload = result.payload as unknown as NativeMarkdownFilePayload;
       return {
         contentIdentity: payload.content_identity,
-        draft: payload.draft
-          ? {
-              baseContentIdentity: payload.draft.base_content_identity,
-              baseVersionId: payload.draft.base_version_id,
-              markdown: payload.draft.markdown,
-              savedAt: payload.draft.updated_at,
-            }
-          : undefined,
+        draft: toDomainDraft(payload.draft) ?? undefined,
         editable: payload.editable,
         markdown: payload.markdown,
         path: payload.path,
@@ -146,7 +126,9 @@ export const nativeMarkdownFacade: MarkdownFacade = {
     if (result.type !== "saved_skill_content") throw unavailableResult();
   },
   async saveDraft(skillId, path, markdown, base) {
-    const result = await executePendedCommand({
+    // K4：结果守卫是草稿回执 markdown_draft_saved（载荷 skill_id/path/updated_at
+    // 由调用方已知，仅作类型收口），不再是通用 operation_summary。
+    const result = await executeCommand({
       payload: {
         base_content_identity: base.contentIdentity,
         base_version_id: base.versionId,
@@ -156,41 +138,38 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       },
       type: "save_markdown_draft",
     });
-    if (result.type !== "operation_summary") throw unavailableResult();
+    if (result.type !== "markdown_draft_saved") throw unavailableResult();
   },
   async discardDraft(skillId, path) {
-    const result = await executePendedCommand({
+    // K4：丢弃是幂等命令，成功同形回执 markdown_draft_discarded。
+    const result = await executeCommand({
       payload: { skill_id: skillId, path },
       type: "discard_markdown_draft",
     });
-    if (result.type !== "operation_summary") throw unavailableResult();
+    if (result.type !== "markdown_draft_discarded") throw unavailableResult();
+  },
+  async getDraft(skillId, path) {
+    try {
+      // K4：草稿查询走真实查询绑定；无草稿时载荷为 null，如实返回。
+      const result: AppQueryResult = await queryApplication({
+        payload: { skill_id: skillId, path },
+        type: "get_markdown_draft",
+      });
+      if (result.type !== "markdown_draft") throw unavailableResult();
+      return toDomainDraft(result.payload);
+    } catch {
+      throw unavailableResult();
+    }
   },
   async validateMarkdown(path, markdown) {
-    const result = await executePendedCommand({
+    // K4：确定性校验总是成功返回；问题只有 code+field+params（无行号、
+    // 无严重性），这里只做结果类型守卫，不补写后端没有给出的字段。
+    const result = await executeCommand({
       payload: { markdown, path },
       type: "validate_markdown",
     });
-    if (result.type !== "markdown_issues") throw unavailableResult();
-    const payload = result.payload;
-    if (!Array.isArray(payload)) throw unavailableResult();
-    // 确定性校验结果：只做形状收口，不做 LLM 兜底或结果伪造。
-    return payload.map((entry) => {
-      const issue = entry as {
-        code?: unknown;
-        line?: unknown;
-        message?: unknown;
-        severity?: unknown;
-      };
-      if (typeof issue.code !== "string" || typeof issue.message !== "string") {
-        throw unavailableResult();
-      }
-      return {
-        code: issue.code,
-        line: typeof issue.line === "number" ? issue.line : undefined,
-        message: issue.message,
-        severity: issue.severity === "warning" ? ("warning" as const) : ("error" as const),
-      };
-    });
+    if (result.type !== "markdown_validation_result") throw unavailableResult();
+    return result.payload.issues;
   },
   async openExternalUrl(target: string) {
     try {

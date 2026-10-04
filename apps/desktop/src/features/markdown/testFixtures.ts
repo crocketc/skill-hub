@@ -222,6 +222,11 @@ export function createMockMarkdownFacade(
       delete file.draft;
       calls.discardedDrafts.push({ path, skillId });
     },
+    // K4：草稿查询与读取结果共用同一份草稿事实；无草稿时如实为 null。
+    async getDraft(_skillId, path) {
+      const file = requireFile(path);
+      return file.draft ? { ...file.draft } : null;
+    },
     async listMarkdownFiles() {
       return [...files.values()].map((file) => ({
         label: file.path,
