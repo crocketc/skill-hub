@@ -282,6 +282,64 @@ pub struct LocalAssetResolution {
     pub media_type: String,
     pub data_url: String,
 }
+/// K7/G-18：Skill 洞察读模型请求。组合、依赖、外部变化全部来自真实
+/// 关系事实与操作日志；常量与硬编码空数组都不可接受。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetSkillInsights {
+    pub skill_id: SkillId,
+}
+/// K7/G-18：洞察结果。空 Section 是真实事实的诚实呈现（确实没有组合/
+/// 依赖/变化），不伪造占位数据；操作历史映射为用户事实文案码。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillInsightsResult {
+    pub skill_id: SkillId,
+    pub combinations: Vec<SkillInsightCombination>,
+    pub dependencies: Vec<SkillInsightDependency>,
+    pub external_changes: Vec<SkillInsightExternalChange>,
+    pub operation_history: Vec<SkillInsightOperationEntry>,
+    /// 与操作历史同源的局限标记（如 `skill_dimension_not_recorded`）；
+    /// 日志能真实回答时为 None。
+    pub operation_history_limitation: Option<String>,
+}
+/// K7：组合事实——组合名与其他成员的用户可见标签（不裸露 SkillId 之外
+/// 的内部标识，成员标签来自 catalog 展示名）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillInsightCombination {
+    pub name: String,
+    pub other_member_labels: Vec<String>,
+}
+/// K7：依赖事实——活动关系按稳定形态码呈现（`import_copy`、
+/// `managed_copy`、`managed_link`、`observed_copy`、`observed_link`、
+/// `shared_directory_read`、`shared_directory_reference`、`unknown`）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillInsightDependency {
+    pub relation_id: String,
+    pub path: String,
+    pub agent_client_id: Option<String>,
+    pub shape_code: String,
+}
+/// K7：外部变化事实——关系内容与集中库分叉（`content_diverged`）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillInsightExternalChange {
+    pub relation_id: String,
+    pub path: String,
+    pub state_code: String,
+}
+/// K7：操作历史条目——kind/phase/error_code 映射为用户事实文案码
+/// （`insights.operation.<类别>.<结果>`），不向调用方裸露枚举。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillInsightOperationEntry {
+    pub operation_id: String,
+    pub message_code: String,
+    /// Unix 秒的十进制字符串（Specta 不放行 64 位整数）；不可得时 None。
+    pub at_epoch: Option<String>,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct MarkdownFileEntry {
     pub label: String,
@@ -354,6 +412,15 @@ pub struct SkillResult {
     /// 不派生自截断文本或显示别名。
     #[serde(default)]
     pub root_path: Option<String>,
+    /// G-16：跟随当前版本的托管链接数——活动关系且路径是指向当前物化树
+    /// 的链接（K1 影响语义的 follows_current 计数）。
+    #[serde(default)]
+    pub managed_link_count: u32,
+    /// G-16：独立副本数——活动且未跟随当前版本的副本型关系
+    /// （ImportCopy/ManagedCopy/ObservedCopy，K1 影响语义的
+    /// independent_copy 计数）。
+    #[serde(default)]
+    pub independent_copy_count: u32,
     /// QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；
     /// 内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
     #[serde(default)]
@@ -1025,6 +1092,8 @@ pub enum AppQuery {
     ReadMarkdownFile(ReadMarkdownFile),
     #[serde(rename = "resolve_local_asset")]
     ResolveLocalAsset(ResolveLocalAsset),
+    #[serde(rename = "get_skill_insights")]
+    GetSkillInsights(GetSkillInsights),
     #[serde(rename = "get_markdown_draft")]
     GetMarkdownDraft(GetMarkdownDraft),
     #[serde(rename = "diff_versions")]
@@ -1154,6 +1223,8 @@ pub enum AppQueryResult {
     MarkdownDraft(Option<MarkdownDraftSummary>),
     #[serde(rename = "local_asset")]
     LocalAsset(LocalAssetResolution),
+    #[serde(rename = "skill_insights")]
+    SkillInsights(SkillInsightsResult),
     #[serde(rename = "version_diff")]
     VersionDiff(VersionDiffResult),
     #[serde(rename = "combinations")]

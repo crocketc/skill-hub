@@ -65,7 +65,7 @@ pub use query::{
     GetCallPolicy, GetConflictWorkspace, GetDeploymentBatchPreview, GetDeploymentPlan,
     GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetMarkdownDraft,
     GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,
-    GetRelationshipRemovalImpact, GetRemovalImpact, GetRollbackImpact, GetSkill,
+    GetRelationshipRemovalImpact, GetRemovalImpact, GetRollbackImpact, GetSkill, GetSkillInsights,
     GetSkillProvenance, GetSkillRelationshipGraph, GetUiPreference, GetUiPreferenceResult,
     ListCombinations, ListCustomAgents, ListDeploymentTargets, ListDeployments,
     ListDeterministicDuplicates, ListFindings, ListMarkdownFiles, ListPendingItems, ListProjects,
@@ -75,11 +75,13 @@ pub use query::{
     MarkdownFileContent, MarkdownFileEntry, PreviewProjectDirectory, ProjectDirectoryPreview,
     ReadMarkdownFile, RelationshipOverview, RelationshipOverviewScope, RelationshipScope,
     ResolveLocalAsset, RollbackImpact, SearchOnlineSources, SearchOnlineSourcesAssisted,
-    SkillDeploymentFilter, SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage,
-    SkillListSort, SkillOperationEntry, SkillOperationsResult, SkillProvenanceResult,
-    SkillRelationshipCandidate, SkillRelationshipGraphResult, SkillResult, SkillSortColumn,
-    SkillSortDirection, SkillVersionFilter, SourceUpdateCheckOutcome,
-    VersionAdoptionRelationImpact, VersionDiffResult, VersionResult,
+    SkillDeploymentFilter, SkillInsightCombination, SkillInsightDependency,
+    SkillInsightExternalChange, SkillInsightOperationEntry, SkillInsightsResult,
+    SkillLifecycleFilter, SkillListFilters, SkillListItem, SkillListPage, SkillListSort,
+    SkillOperationEntry, SkillOperationsResult, SkillProvenanceResult, SkillRelationshipCandidate,
+    SkillRelationshipGraphResult, SkillResult, SkillSortColumn, SkillSortDirection,
+    SkillVersionFilter, SourceUpdateCheckOutcome, VersionAdoptionRelationImpact, VersionDiffResult,
+    VersionResult,
 };
 
 use crate::AppResult;

@@ -7569,6 +7569,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                         agent_deployment_count: skill.agent_deployment_count,
                         project_deployment_count: skill.project_deployment_count,
                         root_path,
+                        // G-16：RED 种子——真实部署计数在 GREEN 提交中接线。
+                        managed_link_count: 0,
+                        independent_copy_count: 0,
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,
@@ -7815,6 +7818,22 @@ impl ApplicationFacade for LocalApplicationFacade {
                 &request.path,
             ),
             AppQuery::ResolveLocalAsset(request) => self.resolve_local_asset(request),
+            AppQuery::GetSkillInsights(request) => {
+                // K7/G-18：RED 种子——结构完整但全空；GREEN 提交接线真实
+                // 关系事实与操作日志。
+                Ok(AppQueryResult::SkillInsights(
+                    skillhub_core::api::SkillInsightsResult {
+                        skill_id: request.skill_id,
+                        combinations: Vec::new(),
+                        dependencies: Vec::new(),
+                        external_changes: Vec::new(),
+                        operation_history: Vec::new(),
+                        operation_history_limitation: Some(
+                            "skill_dimension_not_recorded".to_owned(),
+                        ),
+                    },
+                ))
+            }
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
             }
