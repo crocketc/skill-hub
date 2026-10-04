@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -13,10 +13,12 @@ async function renderMetadata({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
   refreshSnapshot,
+  skillId = "skill-pdf",
 }: {
   facade?: ReturnType<typeof createMockSkillDetailFacade>;
   metadata?: SkillMetadata;
   refreshSnapshot?: () => Promise<void>;
+  skillId?: string;
 } = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const client = new QueryClient({
@@ -29,7 +31,7 @@ async function renderMetadata({
           facade={facade}
           metadata={currentMetadata}
           refreshSnapshot={refreshSnapshot}
-          skillId="skill-pdf"
+          skillId={skillId}
         />
       </I18nextProvider>
     </QueryClientProvider>
@@ -38,7 +40,20 @@ async function renderMetadata({
   return {
     client,
     facade,
-    rerenderMetadata: (nextMetadata: SkillMetadata) => rendered.rerender(renderPanel(nextMetadata)),
+    rerenderMetadata: (nextMetadata: SkillMetadata, nextSkillId = skillId) => {
+      rendered.rerender(
+        <QueryClientProvider client={client}>
+          <I18nextProvider i18n={i18n}>
+            <MetadataPanel
+              facade={facade}
+              metadata={nextMetadata}
+              refreshSnapshot={refreshSnapshot}
+              skillId={nextSkillId}
+            />
+          </I18nextProvider>
+        </QueryClientProvider>,
+      );
+    },
   };
 }
 
@@ -172,6 +187,73 @@ describe("MetadataPanel", () => {
 
     expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("另一处保存后的最新用途");
     expect(facade.calls.metadataPatches).toEqual([]);
+  });
+
+  it("discards an active field draft when the rendered Skill identity changes", async () => {
+    const { facade, rerenderMetadata } = await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "编辑别名" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "别名" }), {
+      target: { value: "主体 A 的未保存别名" },
+    });
+
+    rerenderMetadata({ ...detailFixture().metadata, alias: "主体 B 当前别名" }, "skill-docx");
+
+    expect(screen.queryByRole("textbox", { name: "别名" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("别名")).toHaveTextContent("主体 B 当前别名");
+    expect(facade.calls.metadataPatches).toEqual([]);
+  });
+
+  it("does not let a pending save callback from one Skill overwrite the next Skill panel", async () => {
+    const facade = createMockSkillDetailFacade();
+    let resolveSave: (() => void) | undefined;
+    vi.spyOn(facade, "saveMetadata").mockImplementation(() => new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    }));
+    const { rerenderMetadata } = await renderMetadata({ facade });
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑别名" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "别名" }), {
+      target: { value: "主体 A 正在保存的别名" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存别名" }));
+
+    await waitFor(() => expect(resolveSave).toBeTypeOf("function"));
+    rerenderMetadata({ ...detailFixture().metadata, alias: "主体 B 当前别名" }, "skill-docx");
+    await act(async () => resolveSave?.());
+
+    expect(screen.getByLabelText("别名")).toHaveTextContent("主体 B 当前别名");
+    expect(screen.queryByText("主体 A 正在保存的别名")).not.toBeInTheDocument();
+  });
+
+  it("clears a translation overwrite confirmation when the Skill identity changes", async () => {
+    const { rerenderMetadata } = await renderMetadata({
+      metadata: detailFixture({ userRevisedTranslation: true }).metadata,
+    });
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    expect(screen.getByRole("alertdialog")).toBeVisible();
+
+    rerenderMetadata(detailFixture().metadata, "skill-docx");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("does not show a late translation result from one Skill in the next Skill panel", async () => {
+    const facade = createMockSkillDetailFacade();
+    let resolveIntent: ((value: { text: string } | void) => void) | undefined;
+    vi.spyOn(facade, "emitIntent").mockImplementation(() => new Promise((resolve) => {
+      resolveIntent = resolve;
+    }));
+    const { rerenderMetadata } = await renderMetadata({ facade });
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    await waitFor(() => expect(resolveIntent).toBeTypeOf("function"));
+
+    rerenderMetadata(detailFixture().metadata, "skill-docx");
+    await act(async () => resolveIntent?.({ text: "主体 A 的旧译文" }));
+
+    expect(screen.queryByText("主体 A 的旧译文")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("saves one section without rewriting the others", async () => {

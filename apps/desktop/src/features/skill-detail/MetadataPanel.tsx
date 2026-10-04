@@ -192,7 +192,11 @@ function EditableTextSection({
   );
 }
 
-export function MetadataPanel({
+export function MetadataPanel(props: MetadataPanelProps) {
+  return <MetadataPanelForSkill key={props.skillId} {...props} />;
+}
+
+function MetadataPanelForSkill({
   facade,
   metadata,
   refreshSnapshot,
