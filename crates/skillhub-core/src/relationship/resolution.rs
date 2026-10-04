@@ -255,11 +255,7 @@ pub fn build_conflict_workspace(
             recommended_decision: None,
         })
         .collect();
-    deterministic_history.sort_by(|left, right| {
-        left.case
-            .conflict_id
-            .cmp(&right.case.conflict_id)
-    });
+    deterministic_history.sort_by(|left, right| left.case.conflict_id.cmp(&right.case.conflict_id));
 
     Ok(ConflictWorkspace {
         cases: workspace_cases,

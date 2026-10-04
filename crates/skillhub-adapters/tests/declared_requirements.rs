@@ -198,8 +198,14 @@ fn deduplicates_identical_dependency_declarations() {
         .iter()
         .filter(|requirement| requirement.kind == RequirementKind::Ffmpeg)
         .count();
-    assert_eq!(python, 1, "identical python declaration must be deduplicated");
-    assert_eq!(ffmpeg, 1, "identical ffmpeg declaration must be deduplicated");
+    assert_eq!(
+        python, 1,
+        "identical python declaration must be deduplicated"
+    );
+    assert_eq!(
+        ffmpeg, 1,
+        "identical ffmpeg declaration must be deduplicated"
+    );
 }
 
 #[test]
@@ -220,7 +226,9 @@ fn extracts_version_constraints_from_dependency_lines() {
     let node = parsed
         .explicit
         .iter()
-        .find(|requirement| requirement.kind == RequirementKind::OtherTool && requirement.name == "node")
+        .find(|requirement| {
+            requirement.kind == RequirementKind::OtherTool && requirement.name == "node"
+        })
         .expect("node requirement present");
     assert_eq!(node.version.as_deref(), Some("18.0"));
 }
@@ -253,8 +261,10 @@ fn masks_environment_variable_values_and_records_only_names() {
             .explicit
             .iter()
             .chain(parsed.clues.iter())
-            .all(|requirement| !requirement.source_code.contains("sk-real-secret-123")
-                && !requirement.source_code.contains("also-secret")),
+            .all(
+                |requirement| !requirement.source_code.contains("sk-real-secret-123")
+                    && !requirement.source_code.contains("also-secret")
+            ),
         "masked values must not leak into source snippets"
     );
 }

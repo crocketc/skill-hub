@@ -6,8 +6,7 @@ use skillhub_core::import::ImportProvenanceEvent;
 use skillhub_core::relationship::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
     validate_source_copy_transition, RelationshipCheckLevel, RelationshipPathProbe,
-    SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact,
-    SourceCopyTransition,
+    SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
 };
 use skillhub_core::{ImportSourceClass, SkillId};
 use skillhub_core::{SourceDescriptor, SourceKind, SourceLocator};
@@ -256,7 +255,9 @@ fn missing_with_accessible_parent_stays_active_as_health_fact() {
     assert_eq!(fact.archived_at, None);
     assert_eq!(
         fact.health_reasons,
-        Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::TargetEntryMissing
+        ])
     );
     let ledger = skillhub_core::relationship::project_unified_governance_ledger(
         &skillhub_core::relationship::RelationGovernanceFilters::default(),

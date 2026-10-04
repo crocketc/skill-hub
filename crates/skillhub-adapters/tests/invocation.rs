@@ -137,10 +137,22 @@ fn same_skill_on_different_platforms_yields_different_facts() {
     let codex_fact = (codex.policy.clone(), codex.source);
     let opencode_fact = (opencode.policy.clone(), opencode.source);
     let generic_fact = (generic.policy.clone(), generic.source);
-    assert_ne!(claude_fact, codex_fact, "Claude and Codex facts must differ");
-    assert_ne!(claude_fact, opencode_fact, "Claude and OpenCode facts must differ");
-    assert_ne!(codex_fact, opencode_fact, "Codex and OpenCode facts must differ");
-    assert_eq!(claude_fact, generic_fact, "Claude and Generic share frontmatter convention");
+    assert_ne!(
+        claude_fact, codex_fact,
+        "Claude and Codex facts must differ"
+    );
+    assert_ne!(
+        claude_fact, opencode_fact,
+        "Claude and OpenCode facts must differ"
+    );
+    assert_ne!(
+        codex_fact, opencode_fact,
+        "Codex and OpenCode facts must differ"
+    );
+    assert_eq!(
+        claude_fact, generic_fact,
+        "Claude and Generic share frontmatter convention"
+    );
 }
 
 #[test]

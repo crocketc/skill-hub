@@ -61,7 +61,7 @@ impl PortableManifestStore {
                 .create_new(true)
                 .open(&temporary)
                 .map_err(io_error)?;
-            file.write_all(&bytes).map_err(io_error)?;
+            file.write_all(bytes).map_err(io_error)?;
             file.sync_all().map_err(io_error)?;
             drop(file);
             if (self.fault_handler)("before_manifest_replace") {

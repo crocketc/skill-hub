@@ -175,18 +175,28 @@ fn list_and_detail_project_invocation_and_declared_requirements_consistently() {
             sort: Default::default(),
         })
         .unwrap();
-    let listed = page.items.iter().find(|item| item.skill_id == skill.id()).unwrap();
+    let listed = page
+        .items
+        .iter()
+        .find(|item| item.skill_id == skill.id())
+        .unwrap();
     let detailed = repo.get_detail(skill.id()).unwrap().unwrap();
 
     for item in [listed, &detailed] {
         let policy = item.invocation_policy.as_ref().unwrap();
-        assert_eq!(policy.mode, skillhub_core::catalog::InvocationMode::UserOnly);
+        assert_eq!(
+            policy.mode,
+            skillhub_core::catalog::InvocationMode::UserOnly
+        );
         assert_eq!(policy.source, InvocationPolicySource::Explicit);
         assert_eq!(policy.field.as_deref(), Some("invocation"));
         assert_eq!(item.declared_requirements.len(), 1);
         assert_eq!(item.declared_requirements[0].name, "poppler");
         assert_eq!(item.declared_requirements[0].version.as_deref(), Some("24"));
-        assert_eq!(item.declared_requirements[0].source, "requires poppler >= 24");
+        assert_eq!(
+            item.declared_requirements[0].source,
+            "requires poppler >= 24"
+        );
     }
 }
 

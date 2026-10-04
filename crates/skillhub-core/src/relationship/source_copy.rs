@@ -172,9 +172,8 @@ pub fn validate_source_copy_transition(
                 } => {
                     updated.current_fingerprint = Some(content_fingerprint.clone());
                     if physical_source_id != updated.physical_source_id {
-                        updated.health_reasons = Some(vec![
-                            super::RelationHealthReason::TargetEntryReplaced,
-                        ]);
+                        updated.health_reasons =
+                            Some(vec![super::RelationHealthReason::TargetEntryReplaced]);
                         SourceCopyHealth::NeedsValidation
                     } else if content_fingerprint != updated.expected_fingerprint {
                         updated.health_reasons =

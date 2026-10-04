@@ -210,7 +210,11 @@ impl ProfileCatalog {
         client_id: &str,
     ) -> Option<&DeploymentCapability> {
         // Legacy persisted CLI identity resolves to the single active declaration.
-        let client_id = if client_id == "codex.cli" { "openai.codex-cli" } else { client_id };
+        let client_id = if client_id == "codex.cli" {
+            "openai.codex-cli"
+        } else {
+            client_id
+        };
         self.profiles
             .iter()
             .flat_map(|profile| profile.clients.iter())

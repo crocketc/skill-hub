@@ -70,17 +70,17 @@ impl DiscoverAgents {
                             .cloned()
                             .or_else(|| expand_pattern(&root_pattern, roots).into_iter().next())
                             .unwrap_or_else(|| path.clone());
-                        let root_observation =
-                            observe_directory(&root_path);
+                        let root_observation = observe_directory(&root_path);
                         let root_path_string = root_path.to_string_lossy().into_owned();
                         let root_id = format!(
                             "{profile_id}:{}:{}:root:{root_path_string}",
                             client.id,
                             scope_code(&candidate.scope)
                         );
-                        if !agent_roots.iter().any(|root: &AgentRootObservation| {
-                            root.id == root_id
-                        }) {
+                        if !agent_roots
+                            .iter()
+                            .any(|root: &AgentRootObservation| root.id == root_id)
+                        {
                             agent_roots.push(AgentRootObservation {
                                 id: root_id.clone(),
                                 profile_id: profile_id.clone(),
@@ -209,9 +209,7 @@ fn agent_root_pattern(
             .path_candidates
             .iter()
             .filter(|sibling| {
-                sibling.scope == candidate.scope
-                    && !sibling.shared_reference
-                    && !sibling.builtin
+                sibling.scope == candidate.scope && !sibling.shared_reference && !sibling.builtin
             })
             .find_map(|sibling| inferred_agent_root(&sibling.path))
         {
@@ -225,14 +223,8 @@ fn inferred_agent_root(path: &str) -> Option<String> {
     let normalized = path.replace('\\', "/");
     let trimmed = normalized.trim_end_matches('/');
     let without_builtin = trimmed.strip_suffix("/skills/.system").unwrap_or(trimmed);
-    let Some(root) = without_builtin.strip_suffix("/skills") else {
-        return None;
-    };
-    if root.is_empty()
-        || root == "{user_home}"
-        || root == "{project_root}"
-        || root.ends_with(":")
-    {
+    let root = without_builtin.strip_suffix("/skills")?;
+    if root.is_empty() || root == "{user_home}" || root == "{project_root}" || root.ends_with(":") {
         return None;
     }
     Some(root.to_owned())

@@ -1,7 +1,7 @@
 use skillhub_adapters::scanner::ScanService;
 use skillhub_core::agent::{
-    AgentRepository, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
-    TargetScope,
+    AgentRepository, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot,
+    LogicalTarget, PhysicalTarget, TargetScope,
 };
 use skillhub_core::api::{RescanSkill, RunInitializationScan, ScanTargets};
 use skillhub_core::project::{Project, ProjectRepository as ProjectRepositoryPort};

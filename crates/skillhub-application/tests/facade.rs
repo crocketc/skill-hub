@@ -1,12 +1,13 @@
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::check::CheckRepository;
 use skillhub_core::{
     agent::{
-        ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot,
-        LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
+        ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus,
+        DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem, PhysicalTarget,
+        TargetScope,
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
@@ -141,8 +142,8 @@ async fn symlink_undeploy_fixture() -> Option<SymlinkUndeployFixture> {
         return None;
     }
 
-    let target_id = skillhub_core::physical_id_for_path(target_root.path())
-        .expect("target physical identity");
+    let target_id =
+        skillhub_core::physical_id_for_path(target_root.path()).expect("target physical identity");
     let version_id = skillhub_core::VersionId::parse(
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
@@ -2394,12 +2395,10 @@ async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
     // 抽屉消费的单技能读模型不得比列表读模型更薄：来源、检查状态、
     // 待处理计数与上游观察必须与 list_skills 同源。
     assert_eq!(detail.source_kind.as_deref(), Some("local"));
-    assert!(
-        detail
-            .source_locator
-            .as_deref()
-            .is_some_and(|locator| !locator.is_empty())
-    );
+    assert!(detail
+        .source_locator
+        .as_deref()
+        .is_some_and(|locator| !locator.is_empty()));
     assert_eq!(detail.basic_check, CheckState::NotChecked);
     assert_eq!(detail.ai_check, CheckState::NotChecked);
     assert_eq!(detail.pending_count, 0);
@@ -4742,11 +4741,12 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     let snapshot = DiscoverySnapshot {
         generation: "1".into(),
         observed_at: "2026-08-30T00:00:00Z".into(),
-        instances: vec![ClientInstance {
+        instances: vec![
+            ClientInstance {
                 profile_id: "codex".into(),
                 client_id: "codex.cli".into(),
                 kind: ClientKind::Cli,
-            display_name: "Fixture".into(),
+                display_name: "Fixture".into(),
                 supported_os: vec![OperatingSystem::Windows],
                 client_presence: ClientPresence::Unknown,
             },
@@ -5513,7 +5513,9 @@ async fn old_physical_identity_cannot_authorize_removal_from_recreated_directory
     let library_root = tempfile::tempdir().expect("library root");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
     let prepared = facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy { deployment_id }))
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id,
+        }))
         .await
         .expect("prepare undeploy");
     let AppCommandResult::RemovalImpact(prepared) = prepared else {

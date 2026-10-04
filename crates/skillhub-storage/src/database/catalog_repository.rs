@@ -452,8 +452,10 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         .as_deref()
         .map(parse_invocation_source)
         .unwrap_or(InvocationPolicySource::Default);
-    let declared_requirements: Vec<DeclaredRequirement> = serde_json::from_str(&row.requirements_json)
-        .map_err(|_| AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error))?;
+    let declared_requirements: Vec<DeclaredRequirement> =
+        serde_json::from_str(&row.requirements_json).map_err(|_| {
+            AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
+        })?;
     Ok(SkillListItem {
         skill_id: id,
         display_name: row.display_name,
@@ -718,43 +720,46 @@ impl CatalogRepository for CatalogRepositorySqlite<'_> {
             )
             .optional()
             .map_err(error)?;
-        let (requirements, due, invocation_source, invocation_field) = if let Some((json, due, source, field)) = metadata {
-            (
-                serde_json::from_str::<Vec<DeclaredRequirement>>(&json).map_err(|_| {
-                    AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
-                })?,
-                due,
-                parse_invocation_source(&source),
-                field,
-            )
-        } else {
-            (Vec::new(), None, InvocationPolicySource::Default, None)
-        };
-        Ok(Some(Skill::from_parts(
-            id,
-            display,
-            runtime,
-            desc,
-            translated,
-            if note.is_empty() { None } else { Some(note) },
-            if user_purpose.is_empty() {
-                None
+        let (requirements, due, invocation_source, invocation_field) =
+            if let Some((json, due, source, field)) = metadata {
+                (
+                    serde_json::from_str::<Vec<DeclaredRequirement>>(&json).map_err(|_| {
+                        AppError::new(ErrorCode::RequirementsInvalidDeclaration, Severity::Error)
+                    })?,
+                    due,
+                    parse_invocation_source(&source),
+                    field,
+                )
             } else {
-                Some(user_purpose)
-            },
-            tags,
-            author,
-            license,
-            parse_policy(&policy)?,
-            parse_lifecycle(&lifecycle)?,
-            requirements,
-            due.and_then(parse_date),
-        )?
-        .with_invocation(
-            parse_policy(&policy)?,
-            invocation_source,
-            invocation_field,
-        )))
+                (Vec::new(), None, InvocationPolicySource::Default, None)
+            };
+        Ok(Some(
+            Skill::from_parts(
+                id,
+                display,
+                runtime,
+                desc,
+                translated,
+                if note.is_empty() { None } else { Some(note) },
+                if user_purpose.is_empty() {
+                    None
+                } else {
+                    Some(user_purpose)
+                },
+                tags,
+                author,
+                license,
+                parse_policy(&policy)?,
+                parse_lifecycle(&lifecycle)?,
+                requirements,
+                due.and_then(parse_date),
+            )?
+            .with_invocation(
+                parse_policy(&policy)?,
+                invocation_source,
+                invocation_field,
+            ),
+        ))
     }
 
     async fn get(&self, id: SkillId) -> AppResult<Option<Skill>> {

@@ -5,21 +5,16 @@ use crate::deployment::DeploymentMode;
 use crate::AppResult;
 use crate::DeploymentCapability;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DirectoryObservationStatus {
+    #[default]
     Existing,
     Missing,
     NonDirectory,
     Inaccessible,
     BrokenLink,
     IdentityChanged,
-}
-
-impl Default for DirectoryObservationStatus {
-    fn default() -> Self {
-        Self::Existing
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
