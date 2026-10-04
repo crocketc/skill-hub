@@ -462,10 +462,22 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     await executeCommand({ type: "delete_combination", payload: { name } });
   },
   async exportCombination(name) {
-    // 敏感内容组合导出会被后端以 decision-required 诚实拒绝，由面板展示错误。
+    // K3 预览绑定：prepare 对 Combination 选择返回 combination_members_required
+    // 拒绝——先查组合目录把成员展开为显式 Skills 选择，再走 prepare→create
+    // 两段流；create 只带 preview_id + decisions（敏感决定缺失由后端诚实拒绝，
+    // 面板展示错误）。组合无法解析时不发任何导出命令，不定义第二套流程。
+    const combos = await queryApplication({ type: "list_combinations", payload: null });
+    if (combos.type !== "combinations") throw unavailableResult();
+    const members = combos.payload.find((combination) => combination.name === name)?.members;
+    if (!members) throw unavailableResult();
+    const preview = await executeCommand({
+      type: "prepare_standard_export",
+      payload: { input: { selection: { skills: members }, versions: "current", skills: [] } },
+    });
+    if (preview.type !== "export_preview") throw unavailableResult();
     const export_ = await executeCommand({
       type: "create_standard_export",
-      payload: { input: { selection: { combination: name }, versions: "current", skills: [] }, decisions: [] },
+      payload: { preview_id: preview.payload.preview_id, decisions: [] },
     });
     if (export_.type !== "export_result") throw unavailableResult();
     return { path: export_.payload.path };

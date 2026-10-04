@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   executeCommand,
   queryApplication,
@@ -625,6 +625,86 @@ describe("native skill metadata save", () => {
         }),
       }),
     );
+  });
+});
+
+describe("native combination export wiring", () => {
+  beforeEach(() => {
+    vi.mocked(executeCommand).mockReset();
+    vi.mocked(queryApplication).mockReset();
+  });
+
+  // K3：prepare 对 Combination 选择返回 combination_members_required 拒绝，
+  // 前端先查组合目录把成员展开为显式 Skills 选择，再走 prepare→create
+  // 预览绑定两段流；create 载荷只有 preview_id + decisions。
+  it("expands combination members and runs the export through the preview-bound flow", async () => {
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "combinations",
+      payload: [
+        { name: "Writing stack", members: ["skill-1", "skill-2"] },
+        { name: "Reading stack", members: ["skill-3"] },
+      ],
+    } as unknown as AppQueryResult);
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "export_preview",
+        payload: {
+          selection: { skills: ["skill-1", "skill-2"] },
+          versions: "current",
+          skills: [],
+          sensitive_items: [],
+          preview_id: "op-combo-preview-1",
+          expires_at: "2999-01-01T00:00:00Z",
+          confirmation_fingerprint: "fp-combo",
+        },
+      } as unknown as AppCommandResult)
+      .mockResolvedValueOnce({
+        type: "export_result",
+        payload: { path: "C:/exports/combo.zip", skills_exported: 2 },
+      } as unknown as AppCommandResult);
+
+    await expect(
+      nativeSkillLibraryFacade.exportCombination!("Writing stack"),
+    ).resolves.toEqual({ path: "C:/exports/combo.zip" });
+
+    expect(queryApplication).toHaveBeenCalledWith({ type: "list_combinations", payload: null });
+    expect(executeCommand).toHaveBeenNthCalledWith(1, {
+      type: "prepare_standard_export",
+      payload: {
+        input: { selection: { skills: ["skill-1", "skill-2"] }, versions: "current", skills: [] },
+      },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+      type: "create_standard_export",
+      payload: { preview_id: "op-combo-preview-1", decisions: [] },
+    });
+  });
+
+  it("fails honestly without any export command when the combination cannot be resolved", async () => {
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "combinations",
+      payload: [{ name: "Reading stack", members: ["skill-3"] }],
+    } as unknown as AppQueryResult);
+
+    await expect(
+      nativeSkillLibraryFacade.exportCombination!("Missing stack"),
+    ).rejects.toBeInstanceOf(SkillLibraryUnavailableError);
+    expect(executeCommand).not.toHaveBeenCalled();
+  });
+
+  it("turns an unexpected export result shape into the standard unavailable error", async () => {
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "combinations",
+      payload: [{ name: "Writing stack", members: ["skill-1"] }],
+    } as unknown as AppQueryResult);
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "backup_plan",
+      payload: { scope: "full", sensitive_items: [] },
+    } as unknown as AppCommandResult);
+
+    await expect(
+      nativeSkillLibraryFacade.exportCombination!("Writing stack"),
+    ).rejects.toBeInstanceOf(SkillLibraryUnavailableError);
   });
 });
 
