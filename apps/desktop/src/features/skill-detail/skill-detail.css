@@ -279,7 +279,7 @@
 
 @container workspace (min-width: 44rem) {
   /* 生产壳把 rail 钉为整列高（应用内容区内部滚动），原型侧栏沿用；
-     这里只收敛滚动条：去掉常驻槽位，矮窗口确需滚动时用细而低调的条。 */
+     这里只收敛滚动条：去掉常驻槽位，确需滚动时用细而低调的条。 */
   .sh-skill-detail-review__rail {
     scrollbar-gutter: auto;
     scrollbar-width: thin;
@@ -288,6 +288,33 @@
 
   .sh-skill-detail__adjacent {
     margin-top: auto;
+  }
+}
+
+/* 矮视口：解除详情壳的整列高内部滚动，整页随应用内容区滚动。
+   侧栏内容与可用高度接近时，溢出会随文本换行、按压等微小变化在
+   0 与数像素间翻转，滚动条闪现并引起抖动；文档流下侧栏永不溢出，
+   “身份区始终可见”仅在高度足够的窗口保留。 */
+@media (max-height: 40rem) {
+  .sh-skill-detail--review {
+    height: auto;
+    overflow: visible;
+  }
+
+  .sh-skill-detail--review .sh-skill-detail-review__layout {
+    height: auto;
+  }
+
+  .sh-skill-detail--review .sh-skill-detail-review__rail {
+    align-self: start;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .sh-skill-detail--review .sh-skill-detail-review__main {
+    height: auto;
+    overflow: visible;
   }
 }
 
