@@ -19,8 +19,8 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use sha2::{Digest, Sha256};
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
+use sha2::{Digest, Sha256};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
 use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
@@ -39,12 +39,11 @@ use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    GetRollbackImpact,
-    PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination, RenameSkill,
-    SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
-    SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
-    SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
-    TranslateDescriptionsBatch, UpdateCombination,
+    GetRollbackImpact, PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination,
+    RenameSkill, SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent,
+    SavedSkillContent, SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition,
+    SetLifecycle, SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome,
+    TestLlmConnection, TranslateDescriptionsBatch, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -5136,10 +5135,7 @@ impl LocalApplicationFacade {
         )
     }
 
-    async fn set_current_version(
-        &self,
-        request: SetCurrentVersion,
-    ) -> AppResult<AppCommandResult> {
+    async fn set_current_version(&self, request: SetCurrentVersion) -> AppResult<AppCommandResult> {
         self.commit_version_adoption(request).await
     }
 
@@ -5386,10 +5382,7 @@ impl LocalApplicationFacade {
         Ok(facts)
     }
 
-    fn get_rollback_impact(
-        &self,
-        request: GetRollbackImpact,
-    ) -> AppResult<AppQueryResult> {
+    fn get_rollback_impact(&self, request: GetRollbackImpact) -> AppResult<AppQueryResult> {
         let facts = self.version_adoption_facts(request.skill_id, &request.target_version_id)?;
         if facts.portable_record.is_none() {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -5407,11 +5400,10 @@ impl LocalApplicationFacade {
             expires_at: now_seconds() + VERSION_ADOPTION_PREVIEW_TTL_SECONDS,
             confirmation_fingerprint: facts.confirmation_fingerprint.clone(),
             visible_backup_path: facts.visible_tree_fingerprint.as_ref().map(|_| {
-                library
-                    .central
-                    .paths()
-                    .tmp_dir
-                    .join(format!("visible-backup-{}-{operation_id}", request.skill_id))
+                library.central.paths().tmp_dir.join(format!(
+                    "visible-backup-{}-{operation_id}",
+                    request.skill_id
+                ))
             }),
             visible_tree_fingerprint: facts.visible_tree_fingerprint.clone(),
             target_tree_hash: facts.target_tree_hash.clone(),
@@ -5461,17 +5453,16 @@ impl LocalApplicationFacade {
         request: SetCurrentVersion,
     ) -> AppResult<AppCommandResult> {
         let _guard = self.version_adoption_lock.lock().await;
-        let mut record = self
-            .with_database("version_adoption.load_preview", |database| {
-                database
-                    .operation_repository()
-                    .get_sync(request.preview_id)?
-                    .ok_or_else(|| {
-                        AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                            .with_param("reason", "version_preview_missing")
-                            .with_action(RecoveryAction::Retry)
-                    })
-            })?;
+        let mut record = self.with_database("version_adoption.load_preview", |database| {
+            database
+                .operation_repository()
+                .get_sync(request.preview_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("reason", "version_preview_missing")
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
         if record.kind != "set_current_version"
             || record.phase != skillhub_core::OperationPhase::Prepared
         {
@@ -5479,8 +5470,8 @@ impl LocalApplicationFacade {
                 .with_param("reason", "version_preview_already_consumed")
                 .with_action(RecoveryAction::Retry));
         }
-        let snapshot: VersionAdoptionSnapshot = serde_json::from_value(record.recovery_data.clone())
-            .map_err(|_| {
+        let snapshot: VersionAdoptionSnapshot =
+            serde_json::from_value(record.recovery_data.clone()).map_err(|_| {
                 AppError::new(ErrorCode::OperationConflict, Severity::Error)
                     .with_param("reason", "version_preview_invalid")
                     .with_action(RecoveryAction::InspectTarget)
@@ -5542,7 +5533,8 @@ impl LocalApplicationFacade {
         {
             record.phase = skillhub_core::OperationPhase::RolledBack;
             record.progress.phase = record.phase;
-            record.progress.message_code = "operation.set_current_version.target_changed".to_owned();
+            record.progress.message_code =
+                "operation.set_current_version.target_changed".to_owned();
             self.persist_version_adoption_record(&record)?;
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "target_version_identity_changed")
@@ -5597,7 +5589,8 @@ impl LocalApplicationFacade {
                 record.phase = skillhub_core::OperationPhase::RolledBack;
                 record.progress.phase = record.phase;
                 record.error_code = Some(failure.code);
-                record.progress.message_code = "operation.set_current_version.check_failed".to_owned();
+                record.progress.message_code =
+                    "operation.set_current_version.check_failed".to_owned();
                 self.persist_version_adoption_record(&record)?;
                 return Err(failure);
             }
@@ -5634,25 +5627,27 @@ impl LocalApplicationFacade {
                 .with_param("reason", "version_preview_facts_changed_before_apply")
                 .with_action(RecoveryAction::Retry));
         }
-        let fallback_backup_path = context
-            .central
-            .paths()
-            .tmp_dir
-            .join(format!("visible-backup-{}-{}", request.skill_id, request.preview_id));
+        let fallback_backup_path = context.central.paths().tmp_dir.join(format!(
+            "visible-backup-{}-{}",
+            request.skill_id, request.preview_id
+        ));
         let backup_path = snapshot
             .visible_backup_path
             .as_deref()
             .unwrap_or(&fallback_backup_path);
-        let replacement = context.central.prepare_visible_tree_replacement_with_backup(
-            &skill,
-            &request.version_id,
-            backup_path,
-            snapshot.visible_tree_fingerprint.as_deref(),
-        );
+        let replacement = context
+            .central
+            .prepare_visible_tree_replacement_with_backup(
+                &skill,
+                &request.version_id,
+                backup_path,
+                snapshot.visible_tree_fingerprint.as_deref(),
+            );
         let replacement = match replacement {
             Ok(replacement) => replacement,
             Err(error) => {
-                let compensation = self.compensate_version_adoption(&context, &skill, &snapshot, None);
+                let compensation =
+                    self.compensate_version_adoption(&context, &skill, &snapshot, None);
                 record.phase = if compensation.is_empty() {
                     skillhub_core::OperationPhase::RolledBack
                 } else {
@@ -5672,7 +5667,9 @@ impl LocalApplicationFacade {
         };
 
         let apply_result = (|| {
-            context.store.set_current(request.skill_id, &request.version_id)?;
+            context
+                .store
+                .set_current(request.skill_id, &request.version_id)?;
             context
                 .central
                 .set_portable_current_version(request.skill_id, Some(&request.version_id))?;
@@ -5687,12 +5684,8 @@ impl LocalApplicationFacade {
         })();
 
         if let Err(error) = apply_result {
-            let compensation = self.compensate_version_adoption(
-                &context,
-                &skill,
-                &snapshot,
-                Some(&replacement),
-            );
+            let compensation =
+                self.compensate_version_adoption(&context, &skill, &snapshot, Some(&replacement));
             record.phase = if compensation.is_empty() {
                 skillhub_core::OperationPhase::RolledBack
             } else {
@@ -5714,14 +5707,12 @@ impl LocalApplicationFacade {
         record.progress.phase = record.phase;
         record.progress.completed = 1;
         record.progress.message_code = "operation.set_current_version.committed".to_owned();
-        record.result = Some(serde_json::json!({ "skill_id": request.skill_id, "version_id": request.version_id }));
+        record.result = Some(
+            serde_json::json!({ "skill_id": request.skill_id, "version_id": request.version_id }),
+        );
         if let Err(error) = self.persist_version_adoption_record(&record) {
-            let compensation = self.compensate_version_adoption(
-                &context,
-                &skill,
-                &snapshot,
-                Some(&replacement),
-            );
+            let compensation =
+                self.compensate_version_adoption(&context, &skill, &snapshot, Some(&replacement));
             record.phase = if compensation.is_empty() {
                 skillhub_core::OperationPhase::RolledBack
             } else {
@@ -5777,7 +5768,9 @@ impl LocalApplicationFacade {
     ) -> Vec<(&'static str, ErrorCode)> {
         let mut failures = Vec::new();
         let visible_result = if let Some(replacement) = replacement {
-            context.central.rollback_visible_tree_replacement(replacement)
+            context
+                .central
+                .rollback_visible_tree_replacement(replacement)
         } else {
             context.central.recover_visible_tree_adoption(
                 skill,
@@ -7166,9 +7159,11 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.list_findings(request.skill_id, request.version_id, request.kind)
             }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
-            AppQuery::ReadMarkdownFile(request) => {
-                self.read_markdown_file(request.skill_id, request.version_id.as_ref(), &request.path)
-            }
+            AppQuery::ReadMarkdownFile(request) => self.read_markdown_file(
+                request.skill_id,
+                request.version_id.as_ref(),
+                &request.path,
+            ),
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
             }
@@ -12848,6 +12843,9 @@ fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
             | AppCommand::RollbackRelationMigration(_)
             | AppCommand::CommitRelationGovernanceBatch(_)
             | AppCommand::RollbackRelationGovernanceBatch(_)
+            // 组合部署经 DeploymentRepository::insert_sync 同步
+            // deployment_relations——正是采用预览指纹读取的关系表。
+            | AppCommand::CommitProjectAssembly(_)
             | AppCommand::ApplySourceUpdate(_)
             | AppCommand::CommitDeploymentPreview(_)
             | AppCommand::CommitDeployment(_)
@@ -12953,12 +12951,14 @@ fn recovery_object_results(
     }
     failures
         .iter()
-        .map(|(object_id, error_code)| skillhub_core::OperationObjectResult {
-            object_id: (*object_id).to_owned(),
-            status: "recovery_required".to_owned(),
-            result: None,
-            error_code: Some(*error_code),
-        })
+        .map(
+            |(object_id, error_code)| skillhub_core::OperationObjectResult {
+                object_id: (*object_id).to_owned(),
+                status: "recovery_required".to_owned(),
+                result: None,
+                error_code: Some(*error_code),
+            },
+        )
         .collect()
 }
 
@@ -13299,13 +13299,35 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
-    use super::{civil_date_from_days, format_rfc3339_utc, LocalApplicationFacade};
+    use super::{
+        civil_date_from_days, command_changes_version_adoption_facts, format_rfc3339_utc,
+        LocalApplicationFacade,
+    };
     use skillhub_core::api::{AppCommand, AppQuery};
     use skillhub_core::catalog::{CallPolicy, Skill};
     use skillhub_core::{
-        ApplicationFacade, IgnoreSubject, OperationRecord, RecoveryAction, SkillId,
+        ApplicationFacade, IgnoreSubject, OperationRecord, ProjectId, RecoveryAction, SkillId,
     };
     use skillhub_storage::Database;
+
+    /// 契约（K0 §2/D2）：可能改变版本采用预览事实的命令必须全部被事实写锁
+    /// 门控。组合部署经 DeploymentRepository::insert_sync 内部同步
+    /// deployment_relations——正是采用预览指纹读取的关系表，因此必须在列。
+    /// 与本测试相邻的无门控裁决（原文留档，勿随手删除）：
+    /// - OriginalMigration/RetainSourceCopy/RelinkSourceCopy/RevokeRetention
+    ///   族只写 source_copy_relations 独立表与治理历史，不进入 facts；
+    /// - FinalizeImportBatch 只推进 provenance 批次状态；
+    /// - SetFindingDisposition 只改既有检查 run 的 findings，不触碰
+    ///   current_for_version_sync 读取的 phase/ruleset；
+    /// - CleanSourceCopy 不是 facade 可派发的 AppCommand 分支。
+    #[test]
+    fn version_adoption_gate_covers_project_assembly_commits() {
+        let command =
+            AppCommand::CommitProjectAssembly(skillhub_core::api::CommitProjectAssembly {
+                plan: skillhub_core::AssemblyPlan::new(ProjectId::new(), Vec::new()),
+            });
+        assert!(command_changes_version_adoption_facts(&command));
+    }
 
     #[test]
     fn converts_unix_epoch_to_utc_calendar_date() {

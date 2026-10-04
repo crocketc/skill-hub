@@ -1,11 +1,11 @@
 use skillhub_application::library_runtime::LibraryContext;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommand, AppCommandResult, AppQuery, AppQueryResult, GetRollbackImpact,
-    SetCurrentVersion,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, GetRollbackImpact, SetCurrentVersion,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::{ApplicationFacade, ErrorCode, OperationPhase};
+use skillhub_storage::DeploymentRepositorySqlite as _;
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +35,7 @@ struct VersionFixture {
     database_path: PathBuf,
     facade: LocalApplicationFacade,
     skill: Skill,
+    first_version: skillhub_core::VersionRecord,
     target_version: skillhub_core::VersionRecord,
 }
 
@@ -81,8 +82,74 @@ async fn version_fixture() -> VersionFixture {
         database_path,
         facade: LocalApplicationFacade::new_with_library(database, &library_root),
         skill,
+        first_version: first,
         target_version: target,
     }
+}
+
+#[tokio::test]
+async fn a_deployment_relation_created_after_the_preview_rejects_the_stale_adoption() {
+    let fixture = version_fixture().await;
+    let preview_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+
+    // 组合部署（CommitProjectAssembly）经 insert_sync 同步 deployment_relations。
+    // 在预览与提交之间出现新的 Skill 部署关系时，提交前重核必须识别事实漂移。
+    let database = Database::open(&fixture.database_path).expect("second connection");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES ('assembly-target', 'assembly.agent', 'global', 'C:/agents/assembly/skills', 0)",
+            [],
+        )
+        .expect("seed assembly target");
+    database
+        .record_version(fixture.skill.id(), &fixture.target_version)
+        .expect("register target version row");
+    database
+        .deployment_repository()
+        .insert_sync(&skillhub_core::DeploymentRecord {
+            id: skillhub_core::DeploymentId::new(),
+            skill_id: fixture.skill.id(),
+            version_id: fixture.target_version.id.clone(),
+            target_id: "assembly-target".to_owned(),
+            state: skillhub_core::DeploymentState::Deployed,
+            mode: skillhub_core::DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name: fixture.skill.runtime_name().to_owned(),
+            expected_hash: fixture.target_version.manifest.tree_hash.clone(),
+            observed_hash: None,
+        })
+        .expect("insert assembly deployment");
+    drop(database);
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
+            skill_id: fixture.skill.id(),
+            version_id: fixture.target_version.id.clone(),
+            preview_id,
+        }))
+        .await
+        .expect_err("stale preview must be rejected");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+
+    // 被拒绝的采用不得改变任何消费面。
+    drop(fixture.facade);
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let selected: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT version_id FROM current_pointers WHERE skill_id=?1",
+            [fixture.skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("database current pointer");
+    assert_eq!(selected, fixture.first_version.id.to_string());
 }
 
 #[tokio::test]
@@ -153,7 +220,6 @@ async fn adopting_a_version_records_a_committed_operation_journal_entry() {
     );
 }
 
-
 #[tokio::test]
 async fn applying_checkpoint_failure_keeps_all_version_consumers_untouched() {
     let fixture = version_fixture().await;
@@ -191,10 +257,18 @@ async fn applying_checkpoint_failure_keeps_all_version_consumers_untouched() {
     assert_eq!(error.code, ErrorCode::InternalError);
 
     let active = fixture.facade.library_runtime().snapshot().unwrap();
-    assert_eq!(active.current(fixture.skill.id()).unwrap(), Some(previous.clone()));
     assert_eq!(
-        std::fs::read_to_string(active.central.visible_skill_path(&fixture.skill).join("SKILL.md"))
-            .unwrap(),
+        active.current(fixture.skill.id()).unwrap(),
+        Some(previous.clone())
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
         "# First\n"
     );
     assert_eq!(
@@ -251,8 +325,12 @@ async fn restart_sweep_preserves_an_applying_version_adoption_for_recovery() {
     let target = store.capture(skill.id(), target_source.path()).unwrap();
     store.set_current(skill.id(), &first.id).unwrap();
     database.record_current_version(skill.id(), &first).unwrap();
-    library.materialize_current_skill(&skill, &first.id).unwrap();
-    library.save_portable_skill(&skill, Some(&first.id)).unwrap();
+    library
+        .materialize_current_skill(&skill, &first.id)
+        .unwrap();
+    library
+        .save_portable_skill(&skill, Some(&first.id))
+        .unwrap();
     let facade = LocalApplicationFacade::new_with_library(
         Database::open(&database_path).unwrap(),
         &library_root,
@@ -401,7 +479,6 @@ async fn portable_manifest_failure_restores_the_old_visible_version() {
     );
 }
 
-
 #[tokio::test]
 async fn adoption_rejects_a_shared_relation_link_replaced_with_another_directory() {
     let fixture = version_fixture().await;
@@ -431,31 +508,29 @@ async fn adoption_rejects_a_shared_relation_link_replaced_with_another_directory
         .lock()
         .expect("database lock")
         .relationship_repository()
-        .upsert_deployment_relation(
-            &skillhub_core::relationship::DeploymentRelationFact {
-                relation_id: "shared-link:agent:skill".to_owned(),
-                skill_id: Some(fixture.skill.id()),
-                agent_client_id: "agent.test".to_owned(),
-                path: relation_path_text.clone(),
-                path_key: skillhub_core::deployment::observed_path_key(&relation_path_text),
-                directory_node_id: None,
-                relationship: skillhub_core::relationship::RelationshipType::SharedDirectoryReference,
-                file_representation: representation,
-                ownership: skillhub_core::relationship::OwnershipState::SharedReference,
-                link_target_path: Some(central_target_text.clone()),
-                link_target_path_key: Some(
-                    skillhub_core::deployment::observed_path_key(&central_target_text),
-                ),
-                link_target_directory_id: None,
-                content_fingerprint: "sha256:shared".to_owned(),
-                origin: skillhub_core::deployment::ObservedOrigin::Import,
-                match_state: skillhub_core::deployment::ObservedMatchState::ContentVerified,
-                health_reasons: Some(Vec::new()),
-                active: true,
-                observed_at: 1,
-                released_at: None,
-            },
-        )
+        .upsert_deployment_relation(&skillhub_core::relationship::DeploymentRelationFact {
+            relation_id: "shared-link:agent:skill".to_owned(),
+            skill_id: Some(fixture.skill.id()),
+            agent_client_id: "agent.test".to_owned(),
+            path: relation_path_text.clone(),
+            path_key: skillhub_core::deployment::observed_path_key(&relation_path_text),
+            directory_node_id: None,
+            relationship: skillhub_core::relationship::RelationshipType::SharedDirectoryReference,
+            file_representation: representation,
+            ownership: skillhub_core::relationship::OwnershipState::SharedReference,
+            link_target_path: Some(central_target_text.clone()),
+            link_target_path_key: Some(skillhub_core::deployment::observed_path_key(
+                &central_target_text,
+            )),
+            link_target_directory_id: None,
+            content_fingerprint: "sha256:shared".to_owned(),
+            origin: skillhub_core::deployment::ObservedOrigin::Import,
+            match_state: skillhub_core::deployment::ObservedMatchState::ContentVerified,
+            health_reasons: Some(Vec::new()),
+            active: true,
+            observed_at: 1,
+            released_at: None,
+        })
         .expect("seed observed shared relationship");
 
     let preview_id = prepare_adoption(
@@ -476,13 +551,21 @@ async fn adoption_rejects_a_shared_relation_link_replaced_with_another_directory
 
     assert_eq!(error.code, ErrorCode::OperationConflict);
     assert_eq!(
-        error.params.get("reason").and_then(serde_json::Value::as_str),
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
         Some("version_adoption_relation_identity_unverified")
     );
     let active = fixture.facade.library_runtime().snapshot().unwrap();
     assert_eq!(
-        std::fs::read_to_string(active.central.visible_skill_path(&fixture.skill).join("SKILL.md"))
-            .unwrap(),
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
         "# First\n"
     );
     assert_eq!(
@@ -509,7 +592,6 @@ fn create_directory_link(target: &Path, link: &Path) -> std::io::Result<()> {
         ))
     }
 }
-
 
 #[tokio::test]
 async fn adoption_rechecks_database_pointer_drift_after_the_basic_check_await() {
@@ -558,7 +640,10 @@ async fn adoption_rechecks_database_pointer_drift_after_the_basic_check_await() 
 
     assert_eq!(error.code, ErrorCode::OperationConflict);
     assert_eq!(
-        error.params.get("reason").and_then(serde_json::Value::as_str),
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
         Some("version_preview_facts_changed_before_apply")
     );
     let active = fixture.facade.library_runtime().snapshot().unwrap();
@@ -567,8 +652,13 @@ async fn adoption_rechecks_database_pointer_drift_after_the_basic_check_await() 
         Some(initial_pointer.clone())
     );
     assert_eq!(
-        std::fs::read_to_string(active.central.visible_skill_path(&fixture.skill).join("SKILL.md"))
-            .unwrap(),
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
         "# First\n"
     );
     assert_eq!(
