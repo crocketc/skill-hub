@@ -244,6 +244,7 @@ async fn take_upstream_on_git_source_downloads_remote_content_into_new_version()
             skillhub_core::api::ReadMarkdownFile {
                 skill_id,
                 path: "SKILL.md".into(),
+                version_id: None,
             },
         ))
         .await

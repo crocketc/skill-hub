@@ -13,8 +13,8 @@ use skillhub_core::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
         CommitUndeploy, CreateBackup, CreateSkill, DiffVersions, DiscoverImportCandidates,
         GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetReconcilePlan,
-        GetRemovalImpact, GetSkill, KeepIndependentCopy, ListDeployments, ListFindings,
-        ListMarkdownFiles, ListProjects, ListSkills, ListVersions, PrepareDeleteSkill,
+        GetRemovalImpact, GetRollbackImpact, GetSkill, KeepIndependentCopy, ListDeployments,
+        ListFindings, ListMarkdownFiles, ListProjects, ListSkills, ListVersions, PrepareDeleteSkill,
         PrepareDeployment, PrepareImport, PrepareRestore, PrepareUndeploy, PreviewProjectDirectory,
         ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision, RunBasicCheck,
         RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownAsCopy, SaveMarkdownContent,
@@ -2745,6 +2745,7 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
         .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
             skill_id,
             path: "SKILL.md".to_string(),
+            version_id: None,
         }))
         .await
         .expect("markdown file");
@@ -3695,6 +3696,7 @@ async fn markdown_queries_read_the_current_version_as_read_only_content() {
         .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
             skill_id: skill.id(),
             path: "SKILL.md".into(),
+            version_id: None,
         }))
         .await
         .expect("markdown content");
@@ -4132,11 +4134,34 @@ async fn current_version_command_switches_only_to_a_version_of_the_same_skill() 
         .set_current(skill.id(), &first.id)
         .expect("set initial current");
 
+    // K0 契约：受管 Skill 的切换必须先经 GetRollbackImpact 预览再携 preview_id
+    // 提交。夹具按四消费面事实补齐 DB 指针、可见树与 portable 记录。
+    database
+        .record_current_version(skill.id(), &first)
+        .expect("seed database current pointer");
+    library
+        .materialize_current_skill(&skill, &first.id)
+        .expect("materialize initial version");
+    library
+        .save_portable_skill(&skill, Some(&first.id))
+        .expect("seed portable metadata");
+
     let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let preview = facade
+        .query(RootAppQuery::GetRollbackImpact(GetRollbackImpact {
+            skill_id: skill.id(),
+            target_version_id: second.id.clone(),
+        }))
+        .await
+        .expect("prepare version adoption preview");
+    let AppQueryResult::RollbackImpact(impact) = preview else {
+        panic!("expected rollback impact preview");
+    };
     let result = facade
         .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
             skill_id: skill.id(),
             version_id: second.id.clone(),
+            preview_id: impact.preview_id,
         }))
         .await
         .expect("switch current version");
@@ -4163,10 +4188,12 @@ async fn current_version_command_switches_only_to_a_version_of_the_same_skill() 
         Some(second.id.clone())
     );
 
+    // 跨 Skill 版本在 K0 契约下的第一个强制环节（预览）就必须被拒绝，
+    // 提交无从发生；不变量仍是"只能切换到同一 Skill 的版本"。
     let error = facade
-        .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
+        .query(RootAppQuery::GetRollbackImpact(GetRollbackImpact {
             skill_id: skill.id(),
-            version_id: other.id,
+            target_version_id: other.id,
         }))
         .await
         .expect_err("cross-skill version must be rejected");
@@ -4303,6 +4330,7 @@ async fn save_markdown_content_creates_a_version_and_rejects_stale_identity() {
         .query(RootAppQuery::ReadMarkdownFile(ReadMarkdownFile {
             skill_id: skill.id(),
             path: "SKILL.md".into(),
+            version_id: None,
         }))
         .await
         .expect("read saved markdown");
@@ -4385,6 +4413,7 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
             skillhub_core::api::ReadMarkdownFile {
                 skill_id: skill.id(),
                 path: "SKILL.md".into(),
+                version_id: None,
             },
         ))
         .await
@@ -4399,6 +4428,7 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
             skillhub_core::api::ReadMarkdownFile {
                 skill_id: saved.skill_id,
                 path: "SKILL.md".into(),
+                version_id: None,
             },
         ))
         .await
