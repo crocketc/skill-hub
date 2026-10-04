@@ -56,6 +56,60 @@ async function installNativePreview(page: Page) {
         { id: "claude-physical", path: "C:/Preview/.claude", exists: true, readable: true, writable: true, case_behavior: "volume_case_behavior_unknown_preserved_case_fallback", logical_target_ids: ["claude-target"] },
       ],
     };
+    const agentDirectoryProjection = {
+      directories: [
+        {
+          role: "agent_user",
+          identity: { kind: "verified_physical", value: "codex-physical" },
+          path: "C:/Preview/.agents",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [{
+            logical_target_id: "codex-target",
+            brand: "OpenAI",
+            client_id: "codex",
+            kind: "cli",
+            availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+            capabilities: {
+              deployment: { copy: true, symlink: true, junction: true },
+              modes: ["managed_copy", "symbolic_link", "directory_junction"],
+              preferred_mode: "symbolic_link",
+            },
+            deployment_status: "deployed",
+            managed_deployment_relation_count: 1,
+            managed_deployment_count: 1,
+          }],
+        },
+        {
+          role: "agent_user",
+          identity: { kind: "verified_physical", value: "claude-physical" },
+          path: "C:/Preview/.claude",
+          status: "existing",
+          exists: true,
+          readable: true,
+          writable: true,
+          available: true,
+          members: [{
+            logical_target_id: "claude-target",
+            brand: "Anthropic",
+            client_id: "claude",
+            kind: "cli",
+            availability: { status: "existing", exists: true, readable: true, writable: true, available: true },
+            capabilities: {
+              deployment: { copy: true, symlink: false, junction: false },
+              modes: ["managed_copy"],
+              preferred_mode: "managed_copy",
+            },
+            deployment_status: "not_deployed",
+            managed_deployment_relation_count: 0,
+            managed_deployment_count: 0,
+          }],
+        },
+      ],
+    };
     // D4（审查 M1 修复，2026-09-14）：list/add/remove_skill_repos 的载荷已
     // 换成 SkillRepoView[]（{ repo, scan }，scan 为该仓最近一次扫描状态或
     // null）。mock 必须与 bindings.ts 契约逐字段对齐，否则 /discovery/repo
@@ -129,6 +183,7 @@ async function installNativePreview(page: Page) {
         switch (query.type) {
           case "get_bootstrap_snapshot": return ok("bootstrap_snapshot", bootstrap);
           case "get_discovery_snapshot": return ok("discovery_snapshot", discovery);
+          case "get_agent_directory_projection": return ok("agent_directory_projection", agentDirectoryProjection);
           case "list_skill_repos": return ok("skill_repos", repos);
           case "search_online_sources": return ok("source_search_page", onlinePage);
           case "discover_repo_skills": return ok("repo_discovery_report", repoReport);
@@ -228,7 +283,7 @@ async function installNativePreview(page: Page) {
           case "list_findings": return ok("findings", query.payload.kind === "basic" ? [{ id: "finding-1", code: "secret-like-string", severity: "error", file: "SKILL.md", line_start: 18, line_end: 18, high_risk: true, disposition: "actionable" }] : []);
           case "list_running_llm_checks": return ok("running_llm_checks", []);
           case "list_combinations": return ok("combinations", combinationsState);
-          default: return ok("bootstrap_snapshot", bootstrap);
+          default: throw new Error(`Unhandled preview query: ${query.type}`);
         }
       }
       if (command === "execute_command") {
@@ -241,7 +296,43 @@ async function installNativePreview(page: Page) {
             conflictResolved = true;
             return ok("conflict_resolved", { conflict_id: action.payload.conflict_id, decision: action.payload.decision, decided_at: "2026-09-26T09:00:00Z", conclusion: "distinct_skill", governance: null, relationship_revision: "preview-rel-2" });
           }
-          case "scan_targets": return ok("scan_result", { discovered: [{ fingerprint: "same" }, { fingerprint: "same" }], errors: [{ path: "C:/Preview/missing", reason: "unreadable" }] });
+          case "scan_targets": return ok("scan_result", {
+            generation: { generation: 2, observed_at: 1789114968 },
+            roots: ["C:/Preview/SkillHub/skills"],
+            discovered: [
+              {
+                root: "C:/Preview/SkillHub/skills",
+                relative_path: "pdf-reader",
+                path: "C:/Preview/SkillHub/skills/pdf-reader",
+                marker: "SKILL.md",
+                marker_size: 1,
+                marker_modified_at: 1,
+                size: 1,
+                latest_modified_at: 1,
+                fingerprint: "same",
+                metadata_fingerprint: "pdf-reader-metadata",
+              },
+              {
+                root: "C:/Preview/SkillHub/skills",
+                relative_path: "release-notes",
+                path: "C:/Preview/SkillHub/skills/release-notes",
+                marker: "SKILL.md",
+                marker_size: 1,
+                marker_modified_at: 1,
+                size: 1,
+                latest_modified_at: 1,
+                fingerprint: "same",
+                metadata_fingerprint: "release-notes-metadata",
+              },
+            ],
+            visited_paths: [
+              "C:/Preview/SkillHub/skills/pdf-reader",
+              "C:/Preview/SkillHub/skills/release-notes",
+            ],
+            reparsed_count: 2,
+            unchanged_count: 0,
+            errors: [{ path: "C:/Preview/missing", code: "directory.unreadable" }],
+          });
           case "discover_agent_targets": return ok("discovery_snapshot", discovery);
           case "add_skill_repo":
           case "remove_skill_repo": return ok("skill_repos", repos);
@@ -346,6 +437,56 @@ test("overview metrics, chart dimensions, and tag drilldown remain navigable", a
   await expect(page.getByText("documents")).toBeVisible();
   await page.getByRole("radio", { name: "Projects" }).check();
   await expect(page.getByRole("img", { name: "Configuration relation count by project" })).toBeVisible();
+});
+
+test("native preview fixtures return typed discovery results and fail loudly for unknown queries", async ({ page }) => {
+  await installNativePreview(page);
+  await page.goto("/");
+
+  const contract = await page.evaluate(async () => {
+    const internals = (window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<any> };
+    }).__TAURI_INTERNALS__;
+    const projection = await internals.invoke("query_application", {
+      query: { type: "get_agent_directory_projection" },
+    });
+    const scan = await internals.invoke("execute_command", {
+      command: { type: "scan_targets", payload: { scope_ids: [] } },
+    });
+    let unknownQueryError = "";
+    try {
+      await internals.invoke("query_application", {
+        query: { type: "fixture_contract_probe" },
+      });
+    } catch (error) {
+      unknownQueryError = error instanceof Error ? error.message : String(error);
+    }
+    return { projection, scan, unknownQueryError };
+  });
+
+  expect(contract.projection).toMatchObject({
+    type: "agent_directory_projection",
+    payload: { directories: expect.any(Array) },
+  });
+  expect(contract.scan).toMatchObject({
+    type: "scan_result",
+    payload: {
+      generation: { generation: expect.any(Number), observed_at: expect.any(Number) },
+      roots: expect.any(Array),
+      discovered: expect.arrayContaining([expect.objectContaining({
+        root: expect.any(String),
+        relative_path: expect.any(String),
+        marker: "SKILL.md",
+        metadata_fingerprint: expect.any(String),
+      })]),
+      visited_paths: expect.any(Array),
+      reparsed_count: expect.any(Number),
+      unchanged_count: expect.any(Number),
+      errors: [expect.objectContaining({ path: expect.any(String), code: expect.any(String) })],
+    },
+  });
+  expect(contract.scan.payload.discovered).toHaveLength(2);
+  expect(contract.unknownQueryError).toContain("Unhandled preview query: fixture_contract_probe");
 });
 
 test("discovery home and local workbench expose separate navigation and scan facts", async ({ page }) => {
@@ -456,18 +597,29 @@ test("unified pending follows a conflict to resolution and updates overview tota
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "2 pending items" })).toBeVisible();
   await page.getByRole("link", { name: "1 skill conflicts", exact: true }).click();
-  await page.getByLabel("Item type").selectOption("all");
+  const specificItem = page.getByLabel("Specific item");
+  await expect(specificItem).toHaveValue("conflict");
+  await expect(page.getByRole("button", { name: "Relationships 1" })).toHaveAttribute("aria-pressed", "true");
+  await specificItem.selectOption("all");
   await page.screenshot({ path: testInfo.outputPath("unified-pending.png"), fullPage: true });
-  await page.getByLabel("Item type").selectOption("conflict");
+  await specificItem.selectOption("conflict");
   await expect(page.getByRole("button", { name: "Ignore", exact: true })).toHaveCount(0);
-  const go = page.getByRole("link", { name: "Open task" });
+  await page.getByRole("button", { name: "Show item details: Skill conflicts" }).click();
+  const conflictItem = page
+    .getByRole("region", { name: "Relationships" })
+    .getByRole("listitem")
+    .filter({ hasText: "PDF Reader / Release Notes" });
+  await expect(conflictItem.getByRole("group", { name: "Suggested actions for PDF Reader / Release Notes" })).toBeVisible();
+  const go = conflictItem
+    .getByRole("group", { name: "Suggested actions for PDF Reader / Release Notes" })
+    .getByRole("link", { name: "Open task" });
   await expect(go).toHaveAttribute("href", /relationships\/decisions\?conflictId=/);
   await go.click();
   await expect(page).toHaveURL(/relationships\/decisions\?conflictId=/);
   await page.getByRole("button", { name: "Keep as separate Skills", exact: true }).click();
   await expect(page.getByText("No conflicts are waiting for your review.")).toBeVisible();
   await page.getByRole("link", { name: "Pending", exact: true }).click();
-  await page.getByLabel("Item type").selectOption("conflict");
+  await page.getByLabel("Specific item").selectOption("conflict");
   await expect(page.getByText("No pending items match this filter")).toBeVisible();
   await page.getByRole("link", { name: "Overview", exact: true }).click();
   await expect(page.getByRole("heading", { name: "1 pending items" })).toBeVisible();
@@ -479,7 +631,7 @@ test("pending, recovery, and security routes expose state boundaries", async ({ 
   await expect(page.locator(".sh-pending__list").getByText("PDF Reader", { exact: true })).toBeVisible();
   await expect(page.getByText("pdf-reader", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/High risk/)).toBeVisible();
-  await page.getByLabel("Item type").selectOption("recovery");
+  await page.getByLabel("Specific item").selectOption("recovery");
   await expect(page.getByRole("status")).toContainText("No pending items match this filter");
 
   await page.goto("/recovery");
@@ -521,11 +673,17 @@ test("settings exposes ordered sections and application update boundary", async 
   const tabs = page
     .getByRole("tablist", { name: "Settings sections" })
     .getByRole("tab");
-  await expect(tabs).toHaveCount(6);
-  await expect(tabs.nth(0)).toHaveText("General");
-  await expect(tabs.nth(1)).toHaveText("Data protection");
-  await expect(tabs.nth(5)).toHaveText("App update");
-  await tabs.nth(5).click();
+  await expect(tabs).toHaveCount(7);
+  await expect(tabs).toHaveText([
+    "General",
+    "Interface & view",
+    "Data protection",
+    "Network & AI",
+    "Automation",
+    "Library maintenance",
+    "App update",
+  ]);
+  await tabs.nth(6).click();
   await expect(page.getByText("Shared storage is not connected yet")).toBeVisible();
 });
 
@@ -668,8 +826,8 @@ test("project detail shows access, agent associations, and assembly status", asy
   await installNativePreview(page);
   await page.goto("/projects/project-aurora");
   await expect(page.getByRole("heading", { name: "Aurora" })).toBeVisible();
-  // Agent 呈现约定后：勾选项可访问名是 client_id，可见文案是品牌+类型徽标。
-  await expect(page.getByRole("checkbox", { name: "codex" })).toBeChecked();
+  // Agent 呈现约定：勾选项统一用品牌与展示类型命名，不暴露 client_id。
+  await expect(page.getByRole("checkbox", { name: "OpenAI · Terminal" })).toBeChecked();
   await expect(page.getByText("OpenAI")).toBeVisible();
   await expect(page.getByText(/Already satisfied/)).toBeVisible();
   await expect(page.getByText(/Conflict needs a choice/)).toBeVisible();
