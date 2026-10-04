@@ -534,6 +534,73 @@ impl CentralLibrary {
         Ok(())
     }
 
+    /// Moves a Skill's visible tree into a retained tmp backup so a failed
+    /// skill deletion can restore the only user-visible copy. Returns `true`
+    /// when a tree was moved and `false` when the Skill had no visible tree.
+    pub fn prepare_visible_tree_removal(&self, skill: &Skill, backup: &Path) -> AppResult<bool> {
+        let output = self.visible_skill_path_for(skill.id(), skill.runtime_name());
+        self.validate_visible_paths(skill.id(), &output)?;
+        self.validate_visible_backup_entry(skill.id(), backup)?;
+        if path_entry_exists(backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_path_occupied")
+                .with_param("path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if !path_entry_exists(&output)? {
+            return Ok(false);
+        }
+        if !is_real_directory(&output)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_param("path", output.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if self.store.should_fail("before_visible_removal_rename") {
+            return Err(injected_fault("before_visible_removal_rename"));
+        }
+        fs::rename(&output, backup).map_err(io_error)?;
+        Ok(true)
+    }
+
+    /// Restores a retained deletion backup to its original visible path while
+    /// compensating a failed skill deletion.
+    pub fn restore_visible_tree_removal(&self, skill: &Skill, backup: &Path) -> AppResult<()> {
+        let output = self.visible_skill_path_for(skill.id(), skill.runtime_name());
+        self.validate_visible_paths(skill.id(), &output)?;
+        self.validate_visible_backup_entry(skill.id(), backup)?;
+        if !path_entry_exists(backup)? || !is_real_directory(backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_missing_or_invalid")
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if path_entry_exists(&output)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_path_occupied")
+                .with_param("path", output.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if self.store.should_fail("before_visible_removal_restore") {
+            return Err(injected_fault("before_visible_removal_restore"));
+        }
+        fs::rename(backup, &output).map_err(io_error)?;
+        Ok(())
+    }
+
+    /// Discards a consumed deletion backup after every consumer face confirmed
+    /// the deletion. A leftover backup is harmless tmp residue, so callers may
+    /// treat a failure here as best-effort cleanup.
+    pub fn discard_visible_tree_removal(&self, backup: &Path) -> AppResult<()> {
+        if path_entry_exists(backup)? {
+            fs::remove_dir_all(backup).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
     /// Restores a retained backup after restarting an interrupted adoption.
     /// The supplied path must be an internal backup produced for this Skill.
     pub fn recover_visible_tree_backup(

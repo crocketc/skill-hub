@@ -4562,6 +4562,393 @@ async fn delete_skill_commit_removes_catalog_portable_metadata_and_versions() {
         .is_none());
 }
 
+/// K1c-2a：删除带数据库版本投影的 Skill 时，`versions` 与 `current_pointers`
+/// 行必须随目录行一起级联清除，四个消费面同步归零。
+#[tokio::test]
+async fn delete_skill_commit_cascades_database_version_rows_and_current_pointers() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Cascade delete");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let first_source = tempfile::tempdir().expect("first source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
+    let second_source = tempfile::tempdir().expect("second source");
+    std::fs::write(second_source.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let first = store
+        .capture(skill.id(), first_source.path())
+        .expect("capture first");
+    let second = store
+        .capture(skill.id(), second_source.path())
+        .expect("capture second");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    database
+        .record_version(skill.id(), &first)
+        .expect("register first version row");
+    database
+        .record_version(skill.id(), &second)
+        .expect("register second version row");
+    database
+        .record_current_version(skill.id(), &first)
+        .expect("seed current pointer");
+    library
+        .save_portable_skill(&skill, Some(&first.id))
+        .expect("save portable metadata");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = prepared else {
+        panic!("expected removal impact");
+    };
+    facade
+        .execute(AppCommand::CommitDeleteSkill(
+            skillhub_core::api::CommitDeleteSkill {
+                prepared_delete_id: impact.operation_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("commit delete");
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let version_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM versions WHERE skill_id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count version rows");
+    assert_eq!(
+        version_rows, 0,
+        "version rows must cascade away with the catalog record"
+    );
+    let pointer_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM current_pointers WHERE skill_id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count pointer rows");
+    assert_eq!(
+        pointer_rows, 0,
+        "current pointer must cascade away with the catalog record"
+    );
+    drop(database);
+    assert!(store.list(skill.id()).expect("list versions").is_empty());
+    assert!(library
+        .load_portable_skill(skill.id())
+        .expect("portable metadata")
+        .is_none());
+    assert!(!library.visible_skill_path(&skill).exists());
+}
+
+/// 在版本清单位置放置目录，使 version store 枚举清单必然失败：删除必须在
+/// 丢弃任何版本对象之前中止，补偿后四个消费面必须全部保持删除前事实。
+#[tokio::test]
+async fn a_failed_store_deletion_keeps_every_consumer_face_consistent() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Blocked delete");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let first_source = tempfile::tempdir().expect("first source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
+    let second_source = tempfile::tempdir().expect("second source");
+    std::fs::write(second_source.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let first = store
+        .capture(skill.id(), first_source.path())
+        .expect("capture first");
+    let second = store
+        .capture(skill.id(), second_source.path())
+        .expect("capture second");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    database
+        .record_version(skill.id(), &first)
+        .expect("register first version row");
+    database
+        .record_version(skill.id(), &second)
+        .expect("register second version row");
+    database
+        .record_current_version(skill.id(), &first)
+        .expect("seed current pointer");
+    library
+        .save_portable_skill(&skill, Some(&first.id))
+        .expect("save portable metadata");
+    let second_digest = second
+        .id
+        .as_str()
+        .strip_prefix("sha256:")
+        .unwrap_or(second.id.as_str());
+    let second_manifest = library
+        .paths()
+        .versions_dir
+        .join(skill.id().to_string())
+        .join(format!("{second_digest}.json"));
+    std::fs::remove_file(&second_manifest).expect("remove manifest file");
+    std::fs::create_dir_all(&second_manifest).expect("plant manifest obstruction");
+
+    let facade = LocalApplicationFacade::new_with_library(database, root.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = prepared else {
+        panic!("expected removal impact");
+    };
+    let error = facade
+        .execute(AppCommand::CommitDeleteSkill(
+            skillhub_core::api::CommitDeleteSkill {
+                prepared_delete_id: impact.operation_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("blocked store deletion must fail");
+    assert_eq!(error.code, ErrorCode::InternalError);
+
+    // 消费面 ①：目录行与数据库投影必须原样保留（直接查库，避免经
+    // GetSkill 枚举被腐蚀的版本清单）。
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let catalog_rows: i64 = database
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM skills WHERE id = ?1",
+                [skill.id().to_string()],
+                |row| row.get(0),
+            )
+            .expect("count catalog rows");
+        assert_eq!(
+            catalog_rows, 1,
+            "the catalog record must survive the failed deletion"
+        );
+    }
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let version_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM versions WHERE skill_id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count version rows");
+    assert_eq!(version_rows, 2, "version rows must not be cascaded away");
+    let pointer: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT version_id FROM current_pointers WHERE skill_id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("current pointer");
+    assert_eq!(pointer, first.id.to_string());
+    let phase: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT phase FROM operations WHERE kind = 'delete_skill' ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("delete operation journal phase");
+    drop(database);
+    assert_eq!(
+        phase, "rolled_back",
+        "a fully compensated deletion must not gate the next launch"
+    );
+
+    // 消费面 ②：可见树必须仍是删除前的当前版本内容。
+    let visible = library.visible_skill_path(&skill).join("SKILL.md");
+    assert_eq!(
+        std::fs::read_to_string(&visible).expect("visible skill content"),
+        "# First\n",
+        "the visible tree must survive a failed deletion"
+    );
+    // 消费面 ③：portable 记录必须仍指向 first。
+    assert_eq!(
+        library
+            .load_portable_skill(skill.id())
+            .expect("portable metadata")
+            .and_then(|(_, current)| current),
+        Some(first.id.clone()),
+    );
+    // 消费面 ④：version store 指针必须仍指向 first。
+    assert_eq!(
+        store.current(skill.id()).expect("store pointer"),
+        Some(first.id.clone()),
+    );
+}
+
+/// 补偿本身失败（可见树无法从备份还原）时必须如实 NeedsRecovery，
+/// 且备份作为恢复材料保留在 tmp 中，不允许静默半删除态。
+#[tokio::test]
+async fn a_failed_visible_restore_keeps_recovery_material_and_flags_needs_recovery() {
+    let restore_armed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let restore_fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let handler = {
+        let armed = restore_armed.clone();
+        let fired = restore_fired.clone();
+        move |point: &str| {
+            point == "before_visible_removal_restore"
+                && armed.load(std::sync::atomic::Ordering::SeqCst)
+                && !fired.swap(true, std::sync::atomic::Ordering::SeqCst)
+        }
+    };
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Restore blocked delete");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let root = tempfile::tempdir().expect("library root");
+    let library = CentralLibrary::initialize(root.path()).expect("central library");
+    let store = VersionStore::from_library(&library);
+    let first_source = tempfile::tempdir().expect("first source");
+    std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("write first");
+    let second_source = tempfile::tempdir().expect("second source");
+    std::fs::write(second_source.path().join("SKILL.md"), "# Second\n").expect("write second");
+    let first = store
+        .capture(skill.id(), first_source.path())
+        .expect("capture first");
+    let second = store
+        .capture(skill.id(), second_source.path())
+        .expect("capture second");
+    store
+        .set_current(skill.id(), &first.id)
+        .expect("set current");
+    database
+        .record_version(skill.id(), &first)
+        .expect("register first version row");
+    database
+        .record_version(skill.id(), &second)
+        .expect("register second version row");
+    database
+        .record_current_version(skill.id(), &first)
+        .expect("seed current pointer");
+    library
+        .save_portable_skill(&skill, Some(&first.id))
+        .expect("save portable metadata");
+    let second_digest = second
+        .id
+        .as_str()
+        .strip_prefix("sha256:")
+        .unwrap_or(second.id.as_str());
+    let second_manifest = library
+        .paths()
+        .versions_dir
+        .join(skill.id().to_string())
+        .join(format!("{second_digest}.json"));
+    std::fs::remove_file(&second_manifest).expect("remove manifest file");
+    std::fs::create_dir_all(&second_manifest).expect("plant manifest obstruction");
+
+    let facade = LocalApplicationFacade::new_with_library_and_faults(
+        database,
+        root.path(),
+        std::sync::Arc::new(handler),
+    );
+    let prepared = facade
+        .execute(AppCommand::PrepareDeleteSkill(PrepareDeleteSkill {
+            skill_id: skill.id(),
+        }))
+        .await
+        .expect("prepare delete");
+    let AppCommandResult::RemovalImpact(impact) = prepared else {
+        panic!("expected removal impact");
+    };
+    let error = facade
+        .execute(AppCommand::CommitDeleteSkill(
+            skillhub_core::api::CommitDeleteSkill {
+                prepared_delete_id: impact.operation_id,
+                decisions: Vec::new(),
+            },
+        ))
+        .await
+        .expect_err("restore failure must surface");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    assert!(
+        restore_fired.load(std::sync::atomic::Ordering::SeqCst),
+        "the compensation must attempt the visible-tree restore"
+    );
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let phase: String = database
+        .connection_for_test()
+        .query_row(
+            "SELECT phase FROM operations WHERE kind = 'delete_skill' ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("delete operation journal phase");
+    let version_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM versions WHERE skill_id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count version rows");
+    drop(database);
+    assert_eq!(phase, "needs_recovery");
+    assert_eq!(version_rows, 2, "database projection must stay intact");
+    assert_eq!(
+        library
+            .load_portable_skill(skill.id())
+            .expect("portable metadata")
+            .and_then(|(_, current)| current),
+        Some(first.id.clone()),
+    );
+    assert_eq!(
+        store.current(skill.id()).expect("store pointer"),
+        Some(first.id.clone()),
+    );
+    // 恢复材料：备份必须留在 tmp 中，可见树本体允许暂缺。
+    assert!(!library.visible_skill_path(&skill).exists());
+    let backups = std::fs::read_dir(library.paths().tmp_dir.clone())
+        .expect("tmp directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(&format!("visible-backup-{}-", skill.id()))
+        })
+        .count();
+    assert!(
+        backups >= 1,
+        "the retained backup is the only recovery material for the visible tree"
+    );
+}
+
 #[tokio::test]
 async fn deployment_queries_return_only_relationships_for_the_requested_skill() {
     let database = Database::open_in_memory().expect("database");

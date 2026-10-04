@@ -891,7 +891,8 @@ impl RemovalBackend for LocalDeploymentBackend {
 
     async fn delete_skill(&self, skill_id: skillhub_core::SkillId) -> AppResult<()> {
         let library = self.library_runtime.snapshot()?;
-        let (skill, current) = {
+        // 指针读取同时充当守卫：store 不可读时在破坏之前中止。
+        let (skill, _current_pointer) = {
             let database = self
                 .database
                 .lock()
@@ -914,36 +915,88 @@ impl RemovalBackend for LocalDeploymentBackend {
                 .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
             (skill, library.current(skill_id)?)
         };
-        self.database
+        // 删除按可逆性排序：可见树先移入备份（可逆），不可逆的版本对象删除
+        // 最先执行；此时目录、portable 与数据库投影都未触碰，失败时还原可见
+        // 树即可回到删除前的四个消费面事实。
+        let backup = library.central.paths().tmp_dir.join(format!(
+            "visible-backup-{}-{}",
+            skill_id,
+            OperationId::new()
+        ));
+        let tree_backed_up = library
+            .central
+            .prepare_visible_tree_removal(&skill, &backup)?;
+        if let Err(error) = library.remove_skill_sync(skill_id) {
+            // remove_skill_sync 先枚举版本清单再逐个丢弃：枚举失败意味着
+            // 尚无任何版本对象被丢弃，其余消费面保持原样。
+            return Err(restore_visible_tree_after_failed_deletion(
+                &library.central,
+                &skill,
+                &backup,
+                tree_backed_up,
+                error,
+            ));
+        }
+        // 版本对象已不可逆删除；此后任何失败都无法完全补偿，只能保留恢复
+        // 材料并如实 NeedsRecovery，交由恢复中心处置。
+        if let Err(error) = library
+            .central
+            .restore_portable_skill_record(skill_id, None)
+        {
+            return Err(mark_irreversible_skill_deletion(&backup, error));
+        }
+        if let Err(error) = self
+            .database
             .lock()
             .map_err(|_| internal("execute.delete_skill.catalog"))?
             .catalog_repository()?
-            .remove_sync(skill_id)?;
-        if let Err(error) = library.central.remove_portable_skill(skill_id) {
-            let restore = self
-                .database
-                .lock()
-                .map_err(|_| internal("execute.delete_skill.rollback"))?
-                .catalog_repository()?
-                .insert_sync(&skill);
-            return Err(cleanup_import_error(error, restore));
+            .remove_sync(skill_id)
+        {
+            return Err(mark_irreversible_skill_deletion(&backup, error));
         }
-        if let Err(error) = library.remove_skill_sync(skill_id) {
-            let restore = self
-                .database
-                .lock()
-                .map_err(|_| internal("execute.delete_skill.rollback"))?
-                .catalog_repository()?
-                .insert_sync(&skill)
-                .and_then(|()| {
-                    library
-                        .central
-                        .save_portable_skill(&skill, current.as_ref())
-                });
-            return Err(cleanup_import_error(error, restore));
+        if tree_backed_up {
+            // 备份只在全部消费面确认删除后丢弃；残留失败是无害的 tmp 垃圾。
+            let _ = library.central.discard_visible_tree_removal(&backup);
         }
         Ok(())
     }
+}
+
+/// Compensates a deletion that failed before any version object was
+/// discarded: every other consumer face is untouched, so restoring the
+/// visible tree returns all four faces to their pre-deletion facts.
+fn restore_visible_tree_after_failed_deletion(
+    central: &CentralLibrary,
+    skill: &Skill,
+    backup: &Path,
+    tree_backed_up: bool,
+    error: AppError,
+) -> AppError {
+    if !tree_backed_up {
+        return error.with_param("delete_skill.compensation", "complete");
+    }
+    match central.restore_visible_tree_removal(skill, backup) {
+        Ok(()) => error.with_param("delete_skill.compensation", "complete"),
+        Err(restore_error) => error
+            .with_param("delete_skill.compensation", "incomplete")
+            .with_param(
+                "recovery_backup_path",
+                backup.to_string_lossy().into_owned(),
+            )
+            .with_param("recovery_restore_error", restore_error.to_string()),
+    }
+}
+
+/// Marks a deletion failure that happened after the version objects were
+/// irreversibly discarded: full compensation is impossible, so the retained
+/// backup path travels with the error for the recovery center.
+fn mark_irreversible_skill_deletion(backup: &Path, error: AppError) -> AppError {
+    error
+        .with_param("delete_skill.compensation", "irreversible")
+        .with_param(
+            "recovery_backup_path",
+            backup.to_string_lossy().into_owned(),
+        )
 }
 
 #[async_trait]
@@ -11953,6 +12006,22 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::RolledBack,
                 Some(error.code),
             ),
+            // 补偿完整（四个消费面都回到删除前事实）的失败不留残局，
+            // 不能像真实残留那样拦截下一次启动。
+            Some(error)
+                if error
+                    .params
+                    .get("delete_skill.compensation")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("complete") =>
+            {
+                self.journal_advance(
+                    operation_id,
+                    kind,
+                    skillhub_core::OperationPhase::RolledBack,
+                    Some(error.code),
+                )
+            }
             Some(error) => self.journal_advance(
                 operation_id,
                 kind,
