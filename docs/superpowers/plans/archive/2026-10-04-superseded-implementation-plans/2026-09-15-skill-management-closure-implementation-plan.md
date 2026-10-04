@@ -4,7 +4,7 @@
 
 **Goal:** 在不重写现有导入、部署和 Agent 适配能力的前提下，补齐 SkillHub 当前版本的关系识别、冲突治理、部署迁移、移除部署、回退和前端操作闭环。
 
-> 本计划是 Task 5—10 的历史实施计划。2026-09-16 确认的后续产品设计已单独记录在 [技能关系模块与统一执行体验设计](../specs/2026-09-16-skill-relationship-module-and-execution-experience-design.md)；本文件的已完成任务、测试和安全证据保留不改写。以下关于 v0.3.0 图谱、不支持图谱画布和旧待办/通知边界的表述，均不再作为后续产品入口。
+> 本计划是 Task 5—10 的历史实施计划。2026-09-16 确认的后续产品设计已单独记录在 [技能关系模块与统一执行体验设计](../../../specs/2026-09-16-skill-relationship-module-and-execution-experience-design.md)；本文件的已完成任务、测试和安全证据保留不改写。以下关于 v0.3.0 图谱、不支持图谱画布和旧待办/通知边界的表述，均不再作为后续产品入口。
 
 **Architecture:** 以统一的目录节点、Agent 目录识别能力、来源关系和部署关系作为事实层；扩展现有 `ImportProvenance`、`ObservedDeployment` 和 `DeploymentRecord`，通过应用层关系治理服务统一输出关系视图。导入、Agent 详情、Skill 详情和部署操作复用同一个关系治理 DTO 与 prepare/commit/rollback 事务，不新增第二套页面状态模型。
 
