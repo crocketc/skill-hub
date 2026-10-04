@@ -3810,7 +3810,6 @@
       "summary": "{{count}} skills are ready to export.",
       "decision": "Export decision for {{skillId}}",
       "choose": "Choose handling",
-      "resolve": "Resolve first",
       "exclude": "Exclude this Skill",
       "include": "Include and mark",
       "commit": "Create export",

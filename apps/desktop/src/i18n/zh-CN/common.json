@@ -3810,7 +3810,6 @@
       "summary": "已准备导出 {{count}} 个 Skill。",
       "decision": "{{skillId}} 的导出处理方式",
       "choose": "选择处理方式",
-      "resolve": "先处理",
       "exclude": "排除该 Skill",
       "include": "包含并标记",
       "commit": "创建导出",

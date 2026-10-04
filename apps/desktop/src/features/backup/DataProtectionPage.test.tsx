@@ -186,33 +186,49 @@ describe("DataProtectionPage", () => {
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
   });
 
-  // K3 决定缺失被拒（BackupExportDecisionRequired 不消耗预览）：补齐决定后
-  // 同一 preview_id 可直接重试，无需重新预览。
-  it("lets the user complete the missing decision and retry the same preview after a decision-required rejection", async () => {
+  // 裁决：导出敏感项决定只提供真实可执行的两个决定（exclude/include）。
+  // K3 存储层对 resolve_first 诚实拒绝（BackupExportDecisionRequired），
+  // 下拉里不得提供注定失败的决定；「先去解决冲突」入口属后续批次。
+  it("offers only the executable export decisions for scanned sensitive items", async () => {
+    const facade = createFacade();
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    const select = await screen.findByLabelText("Export decision for DOCX Writer");
+
+    const values = [...select.querySelectorAll("option")].map((option) => option.value);
+    expect(values).toEqual(["", "exclude_skill", "include_and_mark"]);
+    // 展示文案同样不得再把「先去解决冲突」渲染成可选项。
+    const labels = [...select.querySelectorAll("option")].map((option) => option.textContent);
+    expect(labels.join(" ")).not.toMatch(/resolve|resolve first/i);
+  });
+
+  // K3 重试语义：创建被拒不消耗预览——补齐/修正后同一 preview_id 可直接重试，
+  // 无需重新预览（prepare 只发生一次）。
+  it("keeps the preview usable so a rejected create can retry on the same preview id", async () => {
     const facade = createFacade();
     facade.createExport = vi.fn()
-      .mockRejectedValueOnce({ code: "backup.export_decision_required", severity: "warning", params: {}, actions: [] })
+      .mockRejectedValueOnce(new Error("export storage unavailable"))
       .mockResolvedValueOnce({ path: "C:/export.skillhub", skills_exported: 2 });
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
     await screen.findByLabelText("Export decision for DOCX Writer");
-    // 第一造只给 resolve_first（后端要求 exclude/include），提交被拒。
-    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "resolve_first" } });
+    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/handling decision/i);
-    // 预览未被消耗：审阅面板与创建入口仍在，可补决定后重试。
+    expect(await screen.findByRole("alert")).toHaveTextContent("export storage unavailable");
+    // 预览未被消耗：审阅面板与创建入口仍在，可直接重试。
     expect(screen.getByRole("button", { name: "Create export" })).toBeEnabled();
     expect(screen.queryByText(/no longer valid|has expired/i)).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Export decision for DOCX Writer"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     // 同一 preview_id 重试，不重新预览。
     await waitFor(() => expect(facade.createExport).toHaveBeenNthCalledWith(2, "op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
     expect(facade.prepareExport).toHaveBeenCalledTimes(1);
   });
+
 
   // K3-B 扫描结果呈现（契约 §K3 DTO 落点）：敏感项为
   // ExportSensitiveItem { skill_id, version_id, path, reason }，按

@@ -12,6 +12,7 @@ import type {
   RestoreDecision,
   RestorePlan,
   RestoreResult,
+  SensitiveContentDecision,
   UninstallAction,
   UninstallImpact,
 
@@ -30,7 +31,10 @@ import { displayPath } from "../../platform/displayPath";
 import "./dataProtection.css";
 
 type Decision = "overwrite" | "keep_both" | "skip";
-type SensitiveDecision = "resolve_first" | "exclude_skill" | "include_and_mark";
+// 裁决：导出决定只提供真实可执行的两个决定。K3 存储层对 resolve_first
+// 诚实拒绝（BackupExportDecisionRequired），下拉不得提供注定失败的选项；
+// 「先去解决冲突」如需入口属后续批次。
+type SensitiveDecision = Exclude<SensitiveContentDecision, "resolve_first">;
 
 /**
  * K3：扫描原因是内部枚举，映射为用户事实文案；映射未跟上的新枚举回退原文，
@@ -481,7 +485,7 @@ function ExportReview({ plan, decisions, onDecision }: { plan: ExportPreview; de
               </p>
               <label>
                 {t("dataProtection.export.decision", { skillId: displayName })}
-                <select aria-label={t("dataProtection.export.decision", { skillId: displayName })} value={decisions[item.skill_id] ?? ""} onChange={(event) => onDecision(item.skill_id, event.target.value as SensitiveDecision)}><option value="">{t("dataProtection.export.choose")}</option><option value="resolve_first">{t("dataProtection.export.resolve")}</option><option value="exclude_skill">{t("dataProtection.export.exclude")}</option><option value="include_and_mark">{t("dataProtection.export.include")}</option></select>
+                <select aria-label={t("dataProtection.export.decision", { skillId: displayName })} value={decisions[item.skill_id] ?? ""} onChange={(event) => onDecision(item.skill_id, event.target.value as SensitiveDecision)}><option value="">{t("dataProtection.export.choose")}</option><option value="exclude_skill">{t("dataProtection.export.exclude")}</option><option value="include_and_mark">{t("dataProtection.export.include")}</option></select>
               </label>
             </li>
           );
