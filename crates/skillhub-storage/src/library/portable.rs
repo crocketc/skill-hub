@@ -128,7 +128,9 @@ fn temporary_path(parent: &Path, destination: &Path) -> PathBuf {
     parent.join(format!(".{name}.{timestamp}.tmp"))
 }
 
-fn replace_file(temporary: &Path, destination: &Path) -> io::Result<()> {
+/// 原子替换既有文件：Unix 走 rename，Windows 走 MOVEFILE_REPLACE_EXISTING，
+/// 不留“先删后改名”的恢复窗口。K4 草稿存储复用同一原语。
+pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> io::Result<()> {
     // Rename is an atomic replacement on Unix. Windows requires the native
     // replace-existing move; deleting the destination first would create a
     // recovery window in which an interrupted write loses the old manifest.

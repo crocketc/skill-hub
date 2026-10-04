@@ -19,7 +19,8 @@ pub use database::{
     SearchRepository, TargetRepository, UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
 };
 pub use library::{
-    CentralLibrary, ManifestFaultHandler, PortableManifestStore, VisibleTreeReplacement,
+    CentralLibrary, ManifestFaultHandler, MarkdownDraftRecord, MarkdownDraftStore,
+    PortableManifestStore, VisibleTreeReplacement,
 };
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;

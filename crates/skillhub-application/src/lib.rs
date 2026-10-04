@@ -95,8 +95,8 @@ use skillhub_core::{
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
 use skillhub_storage::{
-    CentralLibrary, Database, GovernanceHistoryEvent, LibraryPaths, PersistedConnectionTest,
-    PersistedTranslation, UsageEvidenceRepository, VersionStore,
+    CentralLibrary, Database, GovernanceHistoryEvent, LibraryPaths, MarkdownDraftStore,
+    PersistedConnectionTest, PersistedTranslation, UsageEvidenceRepository, VersionStore,
 };
 pub use update_service::{
     ApplicationUpdateInstaller, RollbackResult, RollbackState, UpdateDownloadPlan, UpdateService,
@@ -6558,6 +6558,10 @@ impl LocalApplicationFacade {
             let _ = library
                 .central
                 .finalize_visible_tree_replacement(replacement);
+            // K4：覆盖保存成功后清除对应草稿。清除失败不否定已成功的
+            // 保存；残留草稿的基准身份已过时，由草稿摘要的陈旧判定兜底。
+            let _ = MarkdownDraftStore::from_library(&library.central)
+                .discard(request.skill_id, &request.path);
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
             Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
                 skill_id: request.skill_id,
@@ -7113,23 +7117,14 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
             AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
-            AppCommand::SaveMarkdownDraft(request) => {
-                // RED 存根：K4 草稿持久化未落地，保存一律拒绝。
-                let _ = request;
-                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("reason", "markdown_draft_not_implemented"));
-            }
+            AppCommand::SaveMarkdownDraft(request) => return self.save_markdown_draft(request),
             AppCommand::DiscardMarkdownDraft(request) => {
-                // RED 存根：K4 草稿丢弃未落地。
-                let _ = request;
-                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("reason", "markdown_draft_not_implemented"));
+                return self.discard_markdown_draft(request);
             }
             AppCommand::ValidateMarkdown(request) => {
-                // RED 存根：K4 确定性校验未落地。
-                let _ = request;
-                return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("reason", "markdown_validation_not_implemented"));
+                return Ok(AppCommandResult::MarkdownValidationResult(
+                    validate_markdown(request),
+                ));
             }
             AppCommand::SaveMarkdownAsCopy(request) => return self.save_markdown_as_copy(request),
             AppCommand::PrepareBackup(request) => {
@@ -7762,11 +7757,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 self.list_findings(request.skill_id, request.version_id, request.kind)
             }
             AppQuery::ListMarkdownFiles(request) => self.list_markdown_files(request.skill_id),
-            AppQuery::GetMarkdownDraft(request) => {
-                // RED 存根：K4 草稿查询未落地，恒返回无草稿。
-                let _ = request;
-                Ok(AppQueryResult::MarkdownDraft(None))
-            }
+            AppQuery::GetMarkdownDraft(request) => self.get_markdown_draft(request),
             AppQuery::ReadMarkdownFile(request) => self.read_markdown_file(
                 request.skill_id,
                 request.version_id.as_ref(),
@@ -12582,6 +12573,111 @@ impl LocalApplicationFacade {
         ))
     }
 
+    /// K4：保存 Markdown 草稿到库内驻留位置 `drafts/<skill_id>/`。
+    /// 草稿不进版本库、不参与导出/部署/集中树物化；写入失败命令报错，
+    /// 不产生部分状态。路径与内容边界与编辑保存一致。
+    fn save_markdown_draft(
+        &self,
+        request: skillhub_core::api::SaveMarkdownDraft,
+    ) -> AppResult<AppCommandResult> {
+        let library = self.library_runtime.snapshot()?;
+        validate_markdown_path(&request.path)?;
+        if request.markdown.len() > MARKDOWN_SIZE_LIMIT_BYTES {
+            return Err(markdown_size_error());
+        }
+        self.require_catalog_skill("execute.save_markdown_draft", request.skill_id)?;
+        let updated_at = now_seconds();
+        MarkdownDraftStore::from_library(&library.central)
+            .save(
+                request.skill_id,
+                &request.path,
+                &request.markdown,
+                request.base_version_id.as_ref(),
+                &request.base_content_identity,
+                updated_at,
+            )
+            .map_err(|error| error.with_param("operation", "save_markdown_draft"))?;
+        Ok(AppCommandResult::MarkdownDraftSaved(
+            skillhub_core::api::MarkdownDraftSaved {
+                skill_id: request.skill_id,
+                path: request.path,
+                updated_at: format_rfc3339_utc(updated_at),
+            },
+        ))
+    }
+
+    /// K4：丢弃 Markdown 草稿。幂等：草稿不存在同样成功。
+    fn discard_markdown_draft(
+        &self,
+        request: skillhub_core::api::DiscardMarkdownDraft,
+    ) -> AppResult<AppCommandResult> {
+        let library = self.library_runtime.snapshot()?;
+        validate_markdown_path(&request.path)?;
+        self.require_catalog_skill("execute.discard_markdown_draft", request.skill_id)?;
+        MarkdownDraftStore::from_library(&library.central)
+            .discard(request.skill_id, &request.path)
+            .map_err(|error| error.with_param("operation", "discard_markdown_draft"))?;
+        Ok(AppCommandResult::MarkdownDraftDiscarded(
+            skillhub_core::api::MarkdownDraftDiscarded {
+                skill_id: request.skill_id,
+                path: request.path,
+            },
+        ))
+    }
+
+    /// K4：查询 Markdown 草稿；无草稿时载荷为 None。
+    fn get_markdown_draft(
+        &self,
+        request: skillhub_core::api::GetMarkdownDraft,
+    ) -> AppResult<AppQueryResult> {
+        let library = self.library_runtime.snapshot()?;
+        validate_markdown_path(&request.path)?;
+        self.require_catalog_skill("query.get_markdown_draft", request.skill_id)?;
+        let draft = Self::load_draft_summary(&library, request.skill_id, &request.path)?;
+        Ok(AppQueryResult::MarkdownDraft(draft))
+    }
+
+    /// 草稿摘要读取的统一入口：path 形状校验失败视为无草稿（读取主流程
+    /// 对同一 path 有自己的校验与报错），存储故障如实上抛。
+    fn load_draft_summary(
+        library: &library_runtime::LibraryContext,
+        skill_id: skillhub_core::SkillId,
+        path: &str,
+    ) -> AppResult<Option<skillhub_core::api::MarkdownDraftSummary>> {
+        if validate_markdown_path(path).is_err() {
+            return Ok(None);
+        }
+        let record = MarkdownDraftStore::from_library(&library.central)
+            .load(skill_id, path)
+            .map_err(|error| error.with_param("operation", "read_markdown_draft"))?;
+        Ok(
+            record.map(|record| skillhub_core::api::MarkdownDraftSummary {
+                base_content_identity: record.base_content_identity,
+                base_version_id: record.base_version_id.map(|version| version.to_string()),
+                markdown: record.markdown,
+                updated_at: format_rfc3339_utc(record.updated_at_epoch_seconds),
+            }),
+        )
+    }
+
+    fn require_catalog_skill(
+        &self,
+        operation: &'static str,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<()> {
+        self.with_database(operation, |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .map(|_| ())
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })
+    }
+
     fn read_markdown_file(
         &self,
         skill_id: skillhub_core::SkillId,
@@ -12629,6 +12725,8 @@ impl LocalApplicationFacade {
             );
             (editability.editable, editability.read_only_reason)
         };
+        // K4：草稿摘要随读取一次拉取；无草稿为 None。
+        let draft = Self::load_draft_summary(&library, skill_id, path)?;
         Ok(AppQueryResult::MarkdownFile(
             skillhub_core::api::MarkdownFileContent {
                 content_identity: identity,
@@ -12636,8 +12734,7 @@ impl LocalApplicationFacade {
                 markdown,
                 path: path.to_owned(),
                 read_only_reason,
-                // RED 存根：K4 草稿摘要未接入。
-                draft: None,
+                draft,
             },
         ))
     }
@@ -12931,6 +13028,59 @@ fn validate_markdown_path(path: &str) -> AppResult<PathBuf> {
             .with_action(RecoveryAction::ChooseAnotherName));
     }
     Ok(relative.to_path_buf())
+}
+
+/// K4：Markdown 内容与草稿共用的 1 MiB 上限。
+const MARKDOWN_SIZE_LIMIT_BYTES: usize = 1_048_576;
+
+fn markdown_size_error() -> AppError {
+    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+        .with_param("field", "markdown_size")
+        .with_param("size_limit", MARKDOWN_SIZE_LIMIT_BYTES)
+        .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+/// K4：确定性 Markdown 校验（无 LLM）：路径合法、大小上限、非空。
+/// 问题全部一次性列出（`path` 问题在前，`markdown` 问题在后），结果
+/// 走正常返回而不是错误通道，便于工作台直接渲染。
+fn validate_markdown(
+    request: skillhub_core::api::ValidateMarkdown,
+) -> skillhub_core::api::MarkdownValidationResult {
+    use skillhub_core::api::{MarkdownValidationIssue, MarkdownValidationResult};
+
+    let mut issues = Vec::new();
+    if validate_markdown_path(&request.path).is_err() {
+        issues.push(MarkdownValidationIssue {
+            code: "invalid_markdown_path".into(),
+            field: "path".into(),
+            params: std::collections::BTreeMap::new(),
+        });
+    }
+    if request.markdown.len() > MARKDOWN_SIZE_LIMIT_BYTES {
+        issues.push(MarkdownValidationIssue {
+            code: "markdown_too_large".into(),
+            field: "markdown".into(),
+            params: [
+                ("size".to_owned(), request.markdown.len().to_string()),
+                (
+                    "size_limit".to_owned(),
+                    MARKDOWN_SIZE_LIMIT_BYTES.to_string(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        });
+    } else if request.markdown.trim().is_empty() {
+        issues.push(MarkdownValidationIssue {
+            code: "markdown_empty".into(),
+            field: "markdown".into(),
+            params: std::collections::BTreeMap::new(),
+        });
+    }
+    MarkdownValidationResult {
+        valid: issues.is_empty(),
+        issues,
+    }
 }
 
 struct LocalGrantResolver<'a> {

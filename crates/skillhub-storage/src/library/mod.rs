@@ -1,6 +1,8 @@
+mod drafts;
 mod layout;
 mod portable;
 
+pub use drafts::{MarkdownDraftRecord, MarkdownDraftStore};
 pub use layout::{CentralLibrary, VisibleTreeReplacement};
 pub use portable::{ManifestFaultHandler, PortableManifestStore};
 

@@ -99,6 +99,7 @@ impl CentralLibrary {
         let paths = LibraryPaths::from_root(root);
         for directory in [
             &paths.skills_dir,
+            &paths.drafts_dir,
             &paths.management_dir,
             &paths.metadata_dir,
             &paths.versions_dir,

@@ -10,6 +10,9 @@ use crate::{SkillId, VersionId};
 pub struct LibraryPaths {
     pub root: std::path::PathBuf,
     pub skills_dir: std::path::PathBuf,
+    /// K4：Markdown 草稿驻留目录（root/drafts）。草稿是用户内容但不进
+    /// 版本库、不参与导出/部署/集中树物化，只随库存留。
+    pub drafts_dir: std::path::PathBuf,
     pub management_dir: std::path::PathBuf,
     pub manifest_path: std::path::PathBuf,
     pub metadata_dir: std::path::PathBuf,
@@ -25,6 +28,7 @@ impl LibraryPaths {
         let management_dir = root.join(".skillhub");
         Self {
             skills_dir: root.join("skills"),
+            drafts_dir: root.join("drafts"),
             manifest_path: management_dir.join("library.json"),
             metadata_dir: management_dir.join("skills"),
             versions_dir: management_dir.join("versions"),
