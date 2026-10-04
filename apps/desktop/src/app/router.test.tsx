@@ -163,6 +163,10 @@ afterEach(() => {
 it("wires theme, language, data and motion providers at the production entry without duplicating the overview summary", async () => {
   mockBrowserPreferences();
   await skillHubI18n.changeLanguage("en-US");
+  // This test verifies provider wiring and overview data, not cold route-chunk
+  // latency. Resolve the same production import used by the lazy route first so
+  // the default async-query budget is not coupled to worker contention.
+  await routePreloaders["/"]();
   await appRouter.navigate("/");
 
   render(<AppRouter />);
