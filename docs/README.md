@@ -19,6 +19,8 @@
 
 - [技能功能缺口补全实施计划（2026-10-04）](superpowers/plans/2026-10-04-技能功能缺口补全实施计划.md)：下一轮实施入口，K0—K10 工作包、执行组织与完成标准。
 - [技能功能补全团队交接指令（2026-10-04）](superpowers/plans/2026-10-04-技能功能补全团队交接指令.md)：可直接交给下一轮主代理的执行交接。
+- [后续实施交接指令（2026-10-04）](superpowers/plans/2026-10-04-技能功能补全后续实施交接指令.md)：本轮接手进度与 A/B 首批 RED 分工。
+- [K0 契约与故障矩阵（2026-10-04）](superpowers/plans/2026-10-04-K0契约与故障矩阵.md)：真实生产缺口、预览／执行／恢复契约、实施裁决和故障覆盖依据。
 - [关系治理增量实施计划（2026-10-03）](superpowers/plans/2026-10-03-relationship-governance-incremental-implementation-plan.md)：仍有效的关系治理增量计划。
 - 被后续实施取代的旧计划归档于 [plans/archive/](superpowers/plans/archive/)，只用于追溯。
 
