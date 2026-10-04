@@ -5626,6 +5626,7 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: prepared.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect("commit undeploy");
@@ -5816,6 +5817,7 @@ async fn undeploy_preserves_modified_target_and_relation_for_review() {
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: prepared.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect_err("modified target must be protected");
@@ -5859,6 +5861,7 @@ async fn undeploy_fails_closed_when_managed_link_is_replaced_by_an_ordinary_dire
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: prepared.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect_err("an ordinary replacement must not be treated as the managed link");
@@ -5898,6 +5901,7 @@ async fn undeploy_fails_closed_when_managed_link_is_replaced_by_a_different_link
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: prepared.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect_err("a different link must not be treated as the managed link");
@@ -6080,6 +6084,7 @@ async fn old_physical_identity_cannot_authorize_removal_from_recreated_directory
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: prepared.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect_err("old physical identity must not authorize replacement removal");

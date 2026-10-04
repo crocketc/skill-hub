@@ -194,6 +194,7 @@ async fn undeploy(harness: &Harness, deployment_id: skillhub_core::DeploymentId)
         .execute(AppCommand::CommitUndeploy(CommitUndeploy {
             prepared_undeploy_id: impact.operation_id,
             decision: RemovalDecision::RemoveOwnedTarget,
+            confirm_shared_target_removal: false,
         }))
         .await
         .expect("commit undeploy");

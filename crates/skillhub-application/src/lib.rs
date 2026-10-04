@@ -59,6 +59,7 @@ use skillhub_core::call_policy::CallPolicyCapability;
 use skillhub_core::catalog::CallPolicy;
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::check::{CheckKind, CheckRun, CheckRunPhase, FindingDisposition};
+use skillhub_core::deployment::removal::{PreparedRemovalRecord, PreparedRemovalState};
 use skillhub_core::deployment::{
     observed_path_key, path_lives_under, plan_target_preview, reconcile_missing_observed_row,
     reconcile_observed_row, DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest,
@@ -959,6 +960,72 @@ impl RemovalBackend for LocalDeploymentBackend {
             let _ = library.central.discard_visible_tree_removal(&backup);
         }
         Ok(())
+    }
+
+    async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()> {
+        let phase = match record.state {
+            PreparedRemovalState::Prepared => skillhub_core::OperationPhase::Prepared,
+            PreparedRemovalState::PartiallyCommitted => skillhub_core::OperationPhase::Applying,
+        };
+        let mut journal = journal_record(
+            record.impact.operation_id,
+            record.kind.as_journal_kind(),
+            phase,
+            record.last_error_code,
+        );
+        journal.recovery_data = serde_json::to_value(record)
+            .map_err(|error| internal_with_detail("removal.save_prepared", error.to_string()))?;
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.save_prepared"))?;
+        match database.operation_repository().update_sync(&journal) {
+            Ok(()) => Ok(()),
+            Err(error) if error.code == ErrorCode::ObjectNotFound => {
+                database.operation_repository().insert_sync(&journal)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn load_prepared_removal(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<Option<PreparedRemovalRecord>> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.load_prepared"))?;
+        let Some(record) = database.operation_repository().get_sync(operation_id)? else {
+            return Ok(None);
+        };
+        // 只有 `prepared` 相位可提交：重启清扫把上一会话的预览行结算为
+        // `rolled_back`，部分失败行停留在 `applying`，二者都必须重新预览。
+        if record.phase != skillhub_core::OperationPhase::Prepared {
+            return Ok(None);
+        }
+        serde_json::from_value(record.recovery_data)
+            .map(Some)
+            .map_err(|error| internal_with_detail("removal.load_prepared", error.to_string()))
+    }
+
+    async fn settle_prepared_removal(&self, operation_id: OperationId) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.settle_prepared"))?;
+        let repository = database.operation_repository();
+        let Some(existing) = repository.get_sync(operation_id)? else {
+            // 已经被其他路径结算的行无需重复处理。
+            return Ok(());
+        };
+        let journal = journal_record(
+            operation_id,
+            &existing.kind,
+            skillhub_core::OperationPhase::Committed,
+            None,
+        );
+        repository.update_sync(&journal)
     }
 }
 
@@ -4201,10 +4268,13 @@ impl LocalApplicationFacade {
         }
         if actions.contains(&skillhub_core::UninstallAction::UndeployAll) {
             for deployment in deployments.iter().filter(|deployment| deployment.managed) {
+                // 卸载流不给共享目标回收授权：确认缺省 false，共享目标将被
+                // 拒绝并要求走显式确认路径（K2/G-09 保守语义）。
                 self.removal_service
                     .undeploy(
                         deployment.id,
                         skillhub_core::RemovalDecision::RemoveOwnedTarget,
+                        false,
                     )
                     .await?;
             }
@@ -4214,6 +4284,7 @@ impl LocalApplicationFacade {
                     .undeploy(
                         deployment.id,
                         skillhub_core::RemovalDecision::DetachManagement,
+                        false,
                     )
                     .await?;
             }
@@ -6678,18 +6749,17 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_delete_skill(request.skill_id).await;
             }
             AppCommand::CommitDeleteSkill(request) => {
-                let decisions = request
-                    .decisions
-                    .into_iter()
-                    .map(|choice| (choice.deployment_id, choice.decision))
-                    .collect();
                 return self
-                    .commit_delete_skill(request.prepared_delete_id, decisions)
+                    .commit_delete_skill(request.prepared_delete_id, request.decisions)
                     .await;
             }
             AppCommand::CommitUndeploy(request) => {
                 return self
-                    .commit_undeploy(request.prepared_undeploy_id, request.decision)
+                    .commit_undeploy(
+                        request.prepared_undeploy_id,
+                        request.decision,
+                        request.confirm_shared_target_removal,
+                    )
                     .await;
             }
             AppCommand::DetachManagement(request) => {
@@ -11854,10 +11924,11 @@ impl LocalApplicationFacade {
         &self,
         operation_id: OperationId,
         decision: skillhub_core::RemovalDecision,
+        confirm_shared_target_removal: bool,
     ) -> AppResult<AppCommandResult> {
         let result = self
             .removal_service
-            .commit_undeploy(operation_id, decision)
+            .commit_undeploy(operation_id, decision, confirm_shared_target_removal)
             .await;
         self.journal_removal_outcome(operation_id, "undeploy_skill", result.as_ref().err());
         result.map(AppCommandResult::RemovalResult)
@@ -11866,7 +11937,7 @@ impl LocalApplicationFacade {
     async fn commit_delete_skill(
         &self,
         operation_id: OperationId,
-        decisions: Vec<(skillhub_core::DeploymentId, skillhub_core::RemovalDecision)>,
+        decisions: Vec<skillhub_core::RemovalChoice>,
     ) -> AppResult<AppCommandResult> {
         let result = self
             .removal_service
@@ -11887,6 +11958,7 @@ impl LocalApplicationFacade {
             .undeploy(
                 deployment_id,
                 skillhub_core::RemovalDecision::DetachManagement,
+                false,
             )
             .await;
         self.journal_settle(operation_id, "detach_management", result.as_ref().err());
@@ -13491,6 +13563,10 @@ fn internal(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+fn internal_with_detail(operation: &'static str, detail: String) -> AppError {
+    internal(operation).with_param("detail", detail)
 }
 
 fn same_path(configured: &Path, selected: &Path) -> bool {

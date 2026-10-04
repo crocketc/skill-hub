@@ -10,28 +10,35 @@ use skillhub_core::relationship::{
     GovernanceTaskKind, RelationshipType,
 };
 use skillhub_core::{
-    AppError, AppResult, DeploymentId, ErrorCode, OperationId, RemovalDecision, RemovalImpact,
-    SkillId, VersionId,
+    AppError, AppResult, DeploymentId, ErrorCode, OperationId, PreparedRemovalRecord,
+    RemovalChoice, RemovalDecision, RemovalImpact, RemovalResultState, SkillId, VersionId,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 struct FakeRemovalBackend {
     skill_id: SkillId,
     deployment: DeploymentRecord,
-    delete_impact: RemovalImpact,
+    delete_impact: Arc<Mutex<RemovalImpact>>,
     undeploy_impact: RemovalImpact,
     removed_targets: Arc<Mutex<Vec<DeploymentId>>>,
     removed_relations: Arc<Mutex<Vec<DeploymentId>>>,
     detached: Arc<Mutex<Vec<DeploymentId>>>,
     deleted_skills: Arc<Mutex<Vec<SkillId>>>,
+    attempted_targets: Arc<Mutex<Vec<DeploymentId>>>,
+    attempted_physical_targets: Arc<Mutex<Vec<String>>>,
+    failing_target: Arc<Mutex<Option<DeploymentId>>>,
+    /// K2：prepared 持久化载体（生产实现写操作日志，测试用内存映射）。
+    prepared_store: Arc<Mutex<HashMap<OperationId, PreparedRemovalRecord>>>,
+    settled_prepared: Arc<Mutex<Vec<OperationId>>>,
 }
 
 #[async_trait]
 impl RemovalBackend for FakeRemovalBackend {
     async fn inspect_delete(&self, skill_id: SkillId) -> AppResult<RemovalImpact> {
         if skill_id == self.skill_id {
-            Ok(self.delete_impact.clone())
+            Ok(self.delete_impact.lock().unwrap().clone())
         } else {
             Err(AppError::new(
                 ErrorCode::ObjectNotFound,
@@ -52,6 +59,17 @@ impl RemovalBackend for FakeRemovalBackend {
     }
 
     async fn remove_owned_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        self.attempted_targets.lock().unwrap().push(deployment.id);
+        self.attempted_physical_targets
+            .lock()
+            .unwrap()
+            .push(deployment.target_id.clone());
+        if *self.failing_target.lock().unwrap() == Some(deployment.id) {
+            return Err(AppError::new(
+                ErrorCode::InternalError,
+                skillhub_core::Severity::Error,
+            ));
+        }
         self.removed_targets.lock().unwrap().push(deployment.id);
         Ok(())
     }
@@ -70,9 +88,41 @@ impl RemovalBackend for FakeRemovalBackend {
         self.deleted_skills.lock().unwrap().push(skill_id);
         Ok(())
     }
+
+    async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()> {
+        self.prepared_store
+            .lock()
+            .unwrap()
+            .insert(record.impact.operation_id, record.clone());
+        Ok(())
+    }
+
+    async fn load_prepared_removal(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<Option<PreparedRemovalRecord>> {
+        Ok(self
+            .prepared_store
+            .lock()
+            .unwrap()
+            .get(&operation_id)
+            .filter(|record| record.state == skillhub_core::PreparedRemovalState::Prepared)
+            .cloned())
+    }
+
+    async fn settle_prepared_removal(&self, operation_id: OperationId) -> AppResult<()> {
+        self.settled_prepared.lock().unwrap().push(operation_id);
+        Ok(())
+    }
 }
 
 fn fixture() -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {
+    fixture_with_undeploy_shared_choice(true)
+}
+
+fn fixture_with_undeploy_shared_choice(
+    requires_shared_target_choice: bool,
+) -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {
     let skill_id = SkillId::new();
     let deployment = DeploymentRecord {
         id: DeploymentId::new(),
@@ -110,12 +160,12 @@ fn fixture() -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {
     let backend = FakeRemovalBackend {
         skill_id,
         deployment: deployment.clone(),
-        delete_impact: impact.clone(),
+        delete_impact: Arc::new(Mutex::new(impact.clone())),
         undeploy_impact: RemovalImpact {
             operation_id: OperationId::new(),
             skill_id,
             deployments: vec![deployment.clone()],
-            requires_shared_target_choice: true,
+            requires_shared_target_choice,
             dependencies: vec![],
             project_configs: Vec::new(),
             pinned_versions: Vec::new(),
@@ -127,6 +177,11 @@ fn fixture() -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {
         removed_relations: Arc::new(Mutex::new(Vec::new())),
         detached: Arc::new(Mutex::new(Vec::new())),
         deleted_skills: Arc::new(Mutex::new(Vec::new())),
+        attempted_targets: Arc::new(Mutex::new(Vec::new())),
+        attempted_physical_targets: Arc::new(Mutex::new(Vec::new())),
+        failing_target: Arc::new(Mutex::new(None)),
+        prepared_store: Arc::new(Mutex::new(HashMap::new())),
+        settled_prepared: Arc::new(Mutex::new(Vec::new())),
     };
     (RemovalService::new(Arc::new(backend.clone())), backend)
 }
@@ -146,6 +201,38 @@ fn delete_with_deployments_requires_explicit_relationship_decisions() {
 }
 
 #[test]
+fn delete_rejects_a_changed_shared_consumer_snapshot_before_removing_targets() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decisions = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: false,
+            })
+            .collect();
+        let mut changed = backend.delete_impact.lock().unwrap().clone();
+        changed.deployments.push(DeploymentRecord {
+            id: DeploymentId::new(),
+            ..backend.deployment.clone()
+        });
+        *backend.delete_impact.lock().unwrap() = changed;
+
+        let error = service
+            .commit_delete(impact.operation_id, decisions)
+            .await
+            .expect_err("shared consumer drift must invalidate the destructive decision");
+
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(backend.removed_targets.lock().unwrap().is_empty());
+        assert!(backend.deleted_skills.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
 fn delete_rejects_detach_management_before_mutating_relationships() {
     block_on(async {
         let (service, backend) = fixture();
@@ -153,7 +240,11 @@ fn delete_rejects_detach_management_before_mutating_relationships() {
         let decisions = impact
             .deployments
             .iter()
-            .map(|deployment| (deployment.id, RemovalDecision::DetachManagement))
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::DetachManagement,
+                confirm_shared_target_removal: false,
+            })
             .collect();
 
         assert!(service
@@ -166,11 +257,132 @@ fn delete_rejects_detach_management_before_mutating_relationships() {
 }
 
 #[test]
-fn undeploy_removes_owned_target_and_preserves_central_skill() {
+fn delete_continues_after_a_target_failure_and_does_not_delete_the_central_skill() {
     block_on(async {
         let (service, backend) = fixture();
+        let mut distinct_targets = backend.delete_impact.lock().unwrap().clone();
+        distinct_targets.deployments[1].target_id = "independent-target-2".into();
+        let third = DeploymentRecord {
+            id: DeploymentId::new(),
+            target_id: "independent-target-3".into(),
+            ..backend.deployment.clone()
+        };
+        let mut impact = distinct_targets;
+        impact.requires_shared_target_choice = false;
+        impact.deployments.push(third.clone());
+        *backend.delete_impact.lock().unwrap() = impact;
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let failed_id = impact.deployments[1].id;
+        *backend.failing_target.lock().unwrap() = Some(failed_id);
+        let expected_ids = impact
+            .deployments
+            .iter()
+            .map(|deployment| deployment.id)
+            .collect::<Vec<_>>();
+        let decisions = expected_ids
+            .iter()
+            .map(|id| RemovalChoice {
+                deployment_id: *id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: false,
+            })
+            .collect();
+
+        let _ = service.commit_delete(impact.operation_id, decisions).await;
+
+        assert_eq!(
+            backend.attempted_targets.lock().unwrap().as_slice(),
+            expected_ids.as_slice(),
+            "a failed target must be reported without preventing later targets from being attempted"
+        );
+        assert_eq!(
+            backend
+                .attempted_physical_targets
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &[
+                "shared-target",
+                "independent-target-2",
+                "independent-target-3"
+            ],
+            "each record here represents a distinct physical target"
+        );
+        assert_eq!(
+            backend.removed_targets.lock().unwrap().as_slice(),
+            &[expected_ids[0], expected_ids[2]],
+            "successful target effects must remain individually attributable"
+        );
+        assert!(
+            backend.deleted_skills.lock().unwrap().is_empty(),
+            "the central Skill stays while any target decision failed"
+        );
+    });
+}
+
+#[test]
+fn delete_removes_a_shared_physical_target_only_once_for_all_consumers() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decisions = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: true,
+            })
+            .collect();
+
+        let _ = service.commit_delete(impact.operation_id, decisions).await;
+
+        assert_eq!(
+            backend
+                .attempted_physical_targets
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &["shared-target"],
+            "relationships sharing one physical target must trigger one filesystem removal"
+        );
+    });
+}
+
+#[test]
+fn undeploy_requires_explicit_confirmation_before_removing_a_shared_target() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service
+            .prepare_undeploy(backend.deployment.id)
+            .await
+            .unwrap();
+        assert!(impact.requires_shared_target_choice);
+
+        let error = service
+            .commit_undeploy(
+                impact.operation_id,
+                RemovalDecision::RemoveOwnedTarget,
+                false,
+            )
+            .await
+            .expect_err("missing explicit shared-target confirmation must be rejected");
+
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(backend.removed_targets.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn undeploy_removes_owned_target_and_preserves_central_skill() {
+    block_on(async {
+        let (service, backend) = fixture_with_undeploy_shared_choice(false);
         service
-            .undeploy(backend.deployment.id, RemovalDecision::RemoveOwnedTarget)
+            .undeploy(
+                backend.deployment.id,
+                RemovalDecision::RemoveOwnedTarget,
+                false,
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -186,7 +398,11 @@ fn removing_one_logical_relation_from_shared_target_keeps_shared_files() {
     block_on(async {
         let (service, backend) = fixture();
         service
-            .undeploy(backend.deployment.id, RemovalDecision::KeepSharedDeployment)
+            .undeploy(
+                backend.deployment.id,
+                RemovalDecision::KeepSharedDeployment,
+                false,
+            )
             .await
             .unwrap();
         assert!(backend.removed_targets.lock().unwrap().is_empty());
@@ -194,6 +410,138 @@ fn removing_one_logical_relation_from_shared_target_keeps_shared_files() {
             backend.removed_relations.lock().unwrap().as_slice(),
             &[backend.deployment.id]
         );
+    });
+}
+
+#[test]
+fn delete_requires_explicit_confirmation_to_recycle_a_shared_target() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decisions = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: false,
+            })
+            .collect();
+
+        let error = service
+            .commit_delete(impact.operation_id, decisions)
+            .await
+            .expect_err("missing explicit shared-target confirmation must be rejected");
+
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(
+            backend.attempted_targets.lock().unwrap().is_empty(),
+            "no target may be touched before every shared decision is confirmed"
+        );
+        assert!(backend.deleted_skills.lock().unwrap().is_empty());
+
+        // 同一 prepared 上补齐显式确认后按安全动作执行：共享物理目标只做一次
+        // 文件系统回收，两条关系记录一并关闭。
+        let confirmed = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: true,
+            })
+            .collect();
+        let result = service
+            .commit_delete(impact.operation_id, confirmed)
+            .await
+            .expect("confirmed shared removal must proceed");
+        assert_eq!(result.state, RemovalResultState::Committed);
+        assert_eq!(
+            backend
+                .attempted_physical_targets
+                .lock()
+                .unwrap()
+                .as_slice(),
+            &["shared-target"],
+            "confirmed or not, one physical target is removed exactly once"
+        );
+    });
+}
+
+#[test]
+fn a_partially_failed_delete_keeps_decisions_and_remaining_items_recoverable() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let mut distinct_targets = backend.delete_impact.lock().unwrap().clone();
+        distinct_targets.deployments[1].target_id = "independent-target-2".into();
+        let third = DeploymentRecord {
+            id: DeploymentId::new(),
+            target_id: "independent-target-3".into(),
+            ..backend.deployment.clone()
+        };
+        let mut impact = distinct_targets;
+        impact.requires_shared_target_choice = false;
+        impact.deployments.push(third.clone());
+        *backend.delete_impact.lock().unwrap() = impact;
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let failed_id = impact.deployments[1].id;
+        *backend.failing_target.lock().unwrap() = Some(failed_id);
+        let decisions: Vec<RemovalChoice> = impact
+            .deployments
+            .iter()
+            .map(|deployment| RemovalChoice {
+                deployment_id: deployment.id,
+                decision: RemovalDecision::RemoveOwnedTarget,
+                confirm_shared_target_removal: false,
+            })
+            .collect();
+
+        let result = service
+            .commit_delete(impact.operation_id, decisions.clone())
+            .await
+            .expect("a failed item must yield a per-item outcome, not an aborted batch");
+
+        assert_eq!(result.state, RemovalResultState::PartiallyCommitted);
+        assert_eq!(result.recovery_operation_id, Some(impact.operation_id));
+        assert!(!result.central_skill_deleted);
+        let statuses = result
+            .decisions
+            .iter()
+            .map(|item| (item.deployment_id, item.status, item.error_code))
+            .collect::<Vec<_>>();
+        assert_eq!(statuses.len(), 3);
+        assert!(
+            statuses
+                .iter()
+                .all(|(id, _, _)| impact.deployments.iter().any(|record| record.id == *id)),
+            "every requested decision keeps its own row in the result"
+        );
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|(_, status, _)| *status == skillhub_core::RemovalItemStatus::Failed)
+                .count(),
+            1,
+            "exactly the injected failure is reported as failed"
+        );
+        assert!(backend.deleted_skills.lock().unwrap().is_empty());
+
+        // 持久化 prepared 记录保留用户决定与剩余项，重启后可用于恢复续作。
+        let stored = backend
+            .prepared_store
+            .lock()
+            .unwrap()
+            .get(&impact.operation_id)
+            .cloned()
+            .expect("partially failed delete must persist its prepared record");
+        assert_eq!(stored.decisions, decisions);
+        assert_eq!(
+            stored.remaining_deployment_ids,
+            vec![failed_id],
+            "the failed item is the remaining work for a later retry"
+        );
+        assert_eq!(stored.applied_deployment_ids.len(), 2);
+        assert_eq!(stored.last_error_code, Some(ErrorCode::InternalError));
     });
 }
 

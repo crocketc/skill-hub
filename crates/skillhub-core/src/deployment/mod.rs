@@ -27,7 +27,9 @@ pub use reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
 };
 pub use removal::{
-    DeploymentRemovalResult, RemovalChoice, RemovalDecision, RemovalImpact, RemovalResult,
+    DeploymentRemovalResult, PreparedRemovalKind, PreparedRemovalRecord, PreparedRemovalState,
+    RemovalChoice, RemovalDecision, RemovalImpact, RemovalItemStatus, RemovalResult,
+    RemovalResultState,
 };
 pub use staging::deployment_tree_dir_name;
 

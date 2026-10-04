@@ -165,8 +165,9 @@ pub use deployment::reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,
 };
 pub use deployment::removal::{
-    DeploymentRemovalResult, ProjectVersionPin, RemovalChoice, RemovalDecision, RemovalImpact,
-    RemovalResult,
+    DeploymentRemovalResult, PreparedRemovalKind, PreparedRemovalRecord, PreparedRemovalState,
+    ProjectVersionPin, RemovalChoice, RemovalDecision, RemovalImpact, RemovalItemStatus,
+    RemovalResult, RemovalResultState,
 };
 pub use deployment::{
     path_lives_under, reconcile_observed_row, DeploymentCapabilities, DeploymentMode,

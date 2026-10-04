@@ -613,6 +613,9 @@ pub struct PrepareUndeploy {
 pub struct CommitUndeploy {
     pub prepared_undeploy_id: OperationId,
     pub decision: crate::RemovalDecision,
+    /// K2/G-09：回收共享物理目标必须显式确认；缺省 false，绝不默认回收。
+    #[serde(default)]
+    pub confirm_shared_target_removal: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
