@@ -103,12 +103,112 @@ pub struct MarkdownDraftDiscarded {
     pub skill_id: SkillId,
     pub path: String,
 }
+/// K5：另存副本的来源事实。存在时登记「来源 skill+version → 新 skill
+/// 首版本」血缘（MS-04）；新主体不继承来源的网络来源，原主体的来源、
+/// 版本与关系全部保留。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyOrigin {
+    pub source_skill_id: SkillId,
+    pub source_version_id: VersionId,
+}
+
+/// K5：一个替换继承目标决定。共享物理目标的接管必须逐项显式确认
+/// （复用 K2/G-09 的共享目标确认门语义）；缺省 false，绝不默认接管。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyReplacementChoice {
+    pub deployment_id: DeploymentId,
+    #[serde(default)]
+    pub confirm_shared_target_removal: bool,
+}
+
+/// K5：继承选择。`None` 表示不继承（原主体及其使用关系保持不变）；
+/// `ReplaceTargets` 表示按已持久化的替换预览接管明确选定的受管目标。
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub enum SaveAsCopyInheritance {
+    /// 不继承：原主体的关系与部署原样保留。
+    #[default]
+    None,
+    /// 替换继承：`preview_id` 必须指向后端签发、未消费且未过期的预览，
+    /// `targets` 与预览逐项一致；漂移或过期一律拒绝并要求重新预览。
+    ReplaceTargets {
+        preview_id: OperationId,
+        targets: Vec<SaveAsCopyReplacementChoice>,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SaveMarkdownAsCopy {
     pub skill_id: SkillId,
     pub path: String,
     pub markdown: String,
     pub expected_identity: String,
+    /// K5：来源事实；缺省 None 表示不登记血缘（保留旧行为）。
+    #[serde(default)]
+    pub origin: Option<SaveAsCopyOrigin>,
+    /// K5：继承选择；缺省不继承。
+    #[serde(default)]
+    pub inheritance: SaveAsCopyInheritance,
+    /// K5：仅展示名。不能改真实运行时名称，也不能规避具体目标的占用；
+    /// 集中库同名主体合法，无静默 `(copy)` 后缀。空白值回退来源展示名。
+    #[serde(default)]
+    pub target_display_name: Option<String>,
+}
+
+/// K5：单个替换目标的执行状态。`Failed` 携带稳定错误码；入口未被改动
+/// 时核验失败如实逐项呈现，不宣称全部继承或全部回退。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SaveAsCopyTargetStatus {
+    Applied,
+    Failed,
+}
+
+/// K5：单个替换目标的真实结果。`consumer_deployment_ids` 列出同一物理
+/// 入口的全部消费者；共享入口的物理操作只执行一次。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyTargetResult {
+    pub deployment_id: DeploymentId,
+    pub target_id: String,
+    pub path: String,
+    pub runtime_name: String,
+    pub consumer_deployment_ids: Vec<DeploymentId>,
+    pub status: SaveAsCopyTargetStatus,
+    pub error_code: Option<ErrorCode>,
+}
+
+/// K5：替换继承的批次结果。部分失败时成功项保留，`recovery_operation_id`
+/// 指向携带逐项恢复依据的 journal 行；仍在使用新主体的已成功目标
+/// 绝不因其他项失败而被回滚。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub enum SaveAsCopyInheritanceOutcome {
+    /// 未请求替换继承。
+    NotRequested,
+    /// 全部选定目标替换成功。
+    Replaced { items: Vec<SaveAsCopyTargetResult> },
+    /// 至少一个选定目标失败：成功项保留，失败项逐项可归属。
+    PartiallyReplaced { items: Vec<SaveAsCopyTargetResult> },
+}
+
+/// K5：另存副本的统一结果（取代本命令的 `SavedSkillContent`）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyOutcome {
+    pub skill_id: SkillId,
+    pub path: String,
+    pub version_id: VersionId,
+    pub content_identity: String,
+    /// 新主体展示名（`target_display_name` 或来源展示名；无 `(copy)`）。
+    pub display_name: String,
+    /// 「来源 skill+version → 新 skill 首版本」血缘是否已登记。
+    pub lineage_registered: bool,
+    pub inheritance: SaveAsCopyInheritanceOutcome,
+    /// 替换部分失败时的恢复依据（journal 操作 id）。
+    pub recovery_operation_id: Option<OperationId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct RenameSkill {
@@ -1497,6 +1597,8 @@ pub enum AppCommandResult {
     DiscoverySnapshot(crate::DiscoverySnapshot),
     #[serde(rename = "saved_skill_content")]
     SavedSkillContent(SavedSkillContent),
+    #[serde(rename = "saved_skill_copy")]
+    SavedSkillCopy(SaveAsCopyOutcome),
     #[serde(rename = "markdown_draft_saved")]
     MarkdownDraftSaved(MarkdownDraftSaved),
     #[serde(rename = "markdown_draft_discarded")]

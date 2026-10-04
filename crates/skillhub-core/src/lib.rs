@@ -217,7 +217,8 @@ pub use relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
     ConflictKind, ConflictMemberFact, DeploymentRelationFact, DirectoryNodeFact,
     DirectoryRecognition, DirectoryRole, FileRepresentation, GovernanceTaskFact,
-    GovernanceTaskKind, IdentityDirection, OwnershipState, RelationshipType, SourceRelationFact,
+    GovernanceTaskKind, IdentityDirection, OwnershipState, RelationshipType, SkillLineageFact,
+    SourceRelationFact,
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{

@@ -18,9 +18,9 @@ use skillhub_core::{
         ListSkills, ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
         PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
         RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
-        SaveMarkdownAsCopy, SaveMarkdownContent, SaveMarkdownDraft, SaveSkillContent,
-        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
-        SetVersionLabel, ValidateMarkdown, VerifyBackup,
+        SaveAsCopyInheritance, SaveMarkdownAsCopy, SaveMarkdownContent, SaveMarkdownDraft,
+        SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
+        SetTrial, SetVersionLabel, ValidateMarkdown, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -4809,11 +4809,14 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
             path: "SKILL.md".into(),
             markdown: "# Copied\n".into(),
             expected_identity: identity,
+            origin: None,
+            inheritance: SaveAsCopyInheritance::None,
+            target_display_name: None,
         }))
         .await
         .expect("save markdown as copy");
-    let AppCommandResult::SavedSkillContent(saved) = result else {
-        panic!("expected saved skill content");
+    let AppCommandResult::SavedSkillCopy(saved) = result else {
+        panic!("expected saved skill copy");
     };
     assert_ne!(saved.skill_id, skill.id());
 
@@ -4896,6 +4899,9 @@ async fn save_markdown_as_copy_rejects_invalid_path_without_touching_original() 
             path: "../outside.md".into(),
             markdown: "# Copied\n".into(),
             expected_identity: identity,
+            origin: None,
+            inheritance: SaveAsCopyInheritance::None,
+            target_display_name: None,
         }))
         .await
         .expect_err("path traversal must be rejected");

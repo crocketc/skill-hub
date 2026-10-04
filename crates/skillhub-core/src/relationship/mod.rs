@@ -53,6 +53,21 @@ pub use resolution::{
     ConflictResolutionRecord, ConflictWorkspace, ConflictWorkspaceCase, PlannedConflictResolution,
 };
 
+/// K5/MS-04：复用修改血缘——「来源 skill+version → 新 skill 首版本」的
+/// 有向事实。每主体至多一条（仅首版本的来源）；不承载也不继承网络来源。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillLineageFact {
+    pub skill_id: SkillId,
+    /// 登记血缘的新主体首版本。
+    pub version_id: VersionId,
+    pub origin_skill_id: SkillId,
+    pub origin_version_id: VersionId,
+    #[serde(with = "crate::i64_string")]
+    #[specta(type = String)]
+    pub created_at: i64,
+}
+
 use serde::{Deserialize, Serialize};
 
 use crate::agent::DirectoryPrecedence;

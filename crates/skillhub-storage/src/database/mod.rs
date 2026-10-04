@@ -13,6 +13,7 @@ pub mod evidence_repository;
 mod governance_history_repository;
 mod ignore_rule_repository;
 mod import_repository;
+mod lineage_repository;
 mod llm_connection_test_repository;
 mod llm_profile_repository;
 mod llm_provider_repository;
@@ -60,6 +61,7 @@ pub use governance_history_repository::{
 };
 pub use ignore_rule_repository::IgnoreRuleRepository;
 pub use import_repository::ImportRepository;
+pub use lineage_repository::LineageRepository;
 pub use llm_connection_test_repository::{LlmConnectionTestRepository, PersistedConnectionTest};
 pub use llm_profile_repository::LlmProfileRepository;
 pub use llm_provider_repository::LlmProviderRepository;
@@ -167,6 +169,10 @@ impl Database {
 
     pub fn ignore_rule_repository(&self) -> IgnoreRuleRepository<'_> {
         IgnoreRuleRepository::new(self)
+    }
+
+    pub fn lineage_repository(&self) -> LineageRepository<'_> {
+        LineageRepository::new(self)
     }
 
     pub fn source_repository(&self) -> SourceRepository<'_> {

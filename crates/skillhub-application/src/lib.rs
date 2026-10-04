@@ -42,10 +42,11 @@ use skillhub_core::api::{
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
     GetRollbackImpact, PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination,
-    RenameSkill, SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent,
-    SavedSkillContent, SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition,
-    SetLifecycle, SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome,
-    TestLlmConnection, TranslateDescriptionsBatch, UpdateCombination,
+    RenameSkill, SaveAsCopyInheritanceOutcome, SaveAsCopyOutcome, SaveLlmProvider,
+    SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
+    SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
+    TranslateDescriptionsBatch, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -6737,11 +6738,17 @@ impl LocalApplicationFacade {
                 .central
                 .finalize_visible_tree_replacement(replacement);
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
-            Ok(AppCommandResult::SavedSkillContent(SavedSkillContent {
+            Ok(AppCommandResult::SavedSkillCopy(SaveAsCopyOutcome {
                 skill_id: copy.id(),
                 path: request.path.clone(),
                 version_id: version.id,
                 content_identity,
+                // K5：RED 种子——display_name 暂沿用旧「(copy)」命名；GREEN
+                // 提交去除硬编码后缀并接线 target_display_name。
+                display_name: copy.display_name().to_owned(),
+                lineage_registered: false,
+                inheritance: SaveAsCopyInheritanceOutcome::NotRequested,
+                recovery_operation_id: None,
             }))
         })();
         let _ = std::fs::remove_dir_all(&staging);
@@ -7624,6 +7631,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                         pending_count: skill.pending_count,
                         high_risk_count: skill.high_risk_count,
                         upstream_state: skill.upstream_state,
+                        // K5/MS-04：RED 种子——真实上游谱系在 GREEN 提交中接线。
+                        upstream_lineage: None,
                     }))
                 })
             }
@@ -7774,6 +7783,22 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::GetRollbackImpact(request) => self.get_rollback_impact(request),
+            AppQuery::GetSaveAsCopyReplacementPreview(_) => {
+                // K5：RED 种子——替换继承预览未接线；GREEN 提交持久化预览。
+                Ok(AppQueryResult::SaveAsCopyReplacementPreview(
+                    skillhub_core::api::SaveAsCopyReplacementPreview {
+                        source_skill_id: skillhub_core::SkillId::new(),
+                        source_version_id: skillhub_core::VersionId::parse(
+                            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                        )
+                        .expect("seed version id"),
+                        preview_id: OperationId::new(),
+                        expires_at: String::new(),
+                        confirmation_fingerprint: String::new(),
+                        targets: Vec::new(),
+                    },
+                ))
+            }
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
             AppQuery::ListLlmProviders => self.list_llm_providers().await,

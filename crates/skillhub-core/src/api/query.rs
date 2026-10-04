@@ -384,6 +384,46 @@ pub struct DiffVersions {
     pub left: VersionId,
     pub right: VersionId,
 }
+/// K5：替换继承预览请求——来源 Skill 与拟接管的受管目标（部署关系）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetSaveAsCopyReplacementPreview {
+    pub source_skill_id: SkillId,
+    pub targets: Vec<crate::DeploymentId>,
+}
+/// K5：单个替换目标的预览事实。`consumer_deployment_ids` 列出同一物理
+/// 入口的全部活动消费者；共享目标接管必须逐项显式确认。身份不可核验的
+/// 目标按 `blocker` 如实呈现，绝不静默放行。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyReplacementTargetPreview {
+    pub deployment_id: crate::DeploymentId,
+    pub target_id: String,
+    pub path: String,
+    pub runtime_name: String,
+    pub managed: bool,
+    pub version_id: VersionId,
+    pub consumer_deployment_ids: Vec<crate::DeploymentId>,
+    pub requires_shared_target_confirmation: bool,
+    /// 稳定阻断码：`target_not_found`/`target_not_managed`/
+    /// `target_owner_mismatch`/`target_identity_unavailable`。None 表示
+    /// 当前事实可核验、可进入提交核验。
+    pub blocker: Option<String>,
+}
+/// K5：替换继承预览——§2 三件套（preview_id/expires_at/
+/// confirmation_fingerprint）加逐目标事实。指纹内容=（来源 skill_id，
+/// 来源当前 version_id，按部署记录身份排序的选定目标事实）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SaveAsCopyReplacementPreview {
+    pub source_skill_id: SkillId,
+    pub source_version_id: VersionId,
+    pub preview_id: crate::OperationId,
+    /// RFC 3339（UTC）。
+    pub expires_at: String,
+    pub confirmation_fingerprint: String,
+    pub targets: Vec<SaveAsCopyReplacementTargetPreview>,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListCombinations;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -447,6 +487,22 @@ pub struct SkillResult {
     pub high_risk_count: u32,
     #[serde(default)]
     pub upstream_state: Option<crate::source::SourceState>,
+    /// K5/MS-04：上游谱系——本主体由哪个来源 skill+version 复用修改而来
+    /// （ReuseModify 登记的有向事实）。None=无登记，诚实缺省。
+    #[serde(default)]
+    pub upstream_lineage: Option<SkillUpstreamLineage>,
+}
+/// K5/MS-04：详情查询暴露的上游谱系。来源展示名读取时解析；来源主体
+/// 已删除时为 None，不编造标签。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SkillUpstreamLineage {
+    pub source_skill_id: SkillId,
+    pub source_version_id: VersionId,
+    pub source_display_name: Option<String>,
+    /// 登记时间（Unix 秒的十进制字符串，Specta 不放行 64 位整数）。
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct VersionResult {
@@ -1074,6 +1130,8 @@ pub enum AppQuery {
     ListVersions(ListVersions),
     #[serde(rename = "get_rollback_impact")]
     GetRollbackImpact(GetRollbackImpact),
+    #[serde(rename = "get_save_as_copy_replacement_preview")]
+    GetSaveAsCopyReplacementPreview(GetSaveAsCopyReplacementPreview),
     #[serde(rename = "list_skill_operations")]
     ListSkillOperations(ListSkillOperations),
     #[serde(rename = "list_running_llm_checks")]
@@ -1215,6 +1273,8 @@ pub enum AppQueryResult {
     Versions(Vec<VersionResult>),
     #[serde(rename = "rollback_impact")]
     RollbackImpact(RollbackImpact),
+    #[serde(rename = "save_as_copy_replacement_preview")]
+    SaveAsCopyReplacementPreview(SaveAsCopyReplacementPreview),
     #[serde(rename = "markdown_files")]
     MarkdownFiles(Vec<MarkdownFileEntry>),
     #[serde(rename = "markdown_file")]
