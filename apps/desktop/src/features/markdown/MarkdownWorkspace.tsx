@@ -248,9 +248,13 @@ export function MarkdownWorkspace({
                 </Button>
               ) : null}
             </div>
-            {effectiveMode === "compare" ? (
-              <p className="sh-markdown-workspace__compare-hint">{t("markdown.workspace.compareHint")}</p>
-            ) : null}
+            {/* 提示行在四个视图常驻预留：对照说明只在该模式出现，
+                但行高恒定，切换页签不再推移下方分区。 */}
+            <div className="sh-markdown-workspace__mode-note">
+              {effectiveMode === "compare" ? (
+                <p className="sh-markdown-workspace__compare-hint">{t("markdown.workspace.compareHint")}</p>
+              ) : null}
+            </div>
             {effectiveMode === "read" ? (
               fileRail ? (
                 <div className="sh-markdown-workspace__stage">

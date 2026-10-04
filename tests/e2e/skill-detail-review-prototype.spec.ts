@@ -367,6 +367,37 @@ test("review version rows keep shared info and action slots across rows", async 
   await expectSameLeft(restoreSlots);
 });
 
+test("review keeps the workspace region height across tabs and unifies safety card actions", async ({ page }) => {
+  await page.goto(reviewUrl);
+  await page.getByRole("link", { name: "内容与文件" }).click();
+
+  // 四个视图共用同一舞台高度且联动提示行常驻预留：切换页签时
+  // 下方安全检查区的纵向位置不得变化。
+  const safetyTop = () =>
+    page.evaluate(
+      () => Math.round(document.querySelector("#review-safety").getBoundingClientRect().top + window.scrollY),
+    );
+  const tops: number[] = [];
+  for (const mode of ["阅读", "源码", "对照", "编辑"]) {
+    await page.getByRole("tab", { name: mode }).click();
+    await page.waitForTimeout(300);
+    tops.push(await safetyTop());
+  }
+  expect(new Set(tops).size).toBe(1);
+
+  // 安全区两张检查卡共用动作槽：运行按钮都收在 .sh-workflow-actions，
+  // 右缘跨卡一致，不因卡片内容差异一个居左一个居右。
+  await page.getByRole("link", { name: "安全检查" }).click();
+  const rights = await page.evaluate(() => {
+    const buttons = [
+      ...document.querySelectorAll("#review-safety .sh-workflow-grid .sh-workflow-actions .sh-button"),
+    ];
+    return buttons.map((button) => Math.round(button.getBoundingClientRect().right));
+  });
+  expect(rights).toHaveLength(2);
+  expect(new Set(rights).size).toBe(1);
+});
+
 test("review versions compare, rename and restore with current relationship impact", async ({ page }) => {  await page.goto(reviewUrl);
   await page.getByRole("link", { name: "版本历史" }).click();
 

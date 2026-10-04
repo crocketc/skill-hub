@@ -304,7 +304,13 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
           <CheckSummary check={checkByKind("basic")} riskAware={presentationMode === "risk-aware" && basicFindings.length > 0} />
-          {facade.runBasicCheck ? <Button disabled={basicRunning} loading={basicRunning} onClick={() => void handleRunBasic()} size="sm">{t("security.basic.run")}</Button> : null}
+          {facade.runBasicCheck ? (
+            // 与 LLM 卡同一动作槽（.sh-workflow-actions 右对齐），
+            // 两张检查卡的运行按钮位置一致。
+            <div className="sh-workflow-actions">
+              <Button disabled={basicRunning} loading={basicRunning} onClick={() => void handleRunBasic()} size="sm">{t("security.basic.run")}</Button>
+            </div>
+          ) : null}
           {basicError ? <p role="alert">{t("security.basic.runFailed", { message: basicError })}</p> : null}
         </section>
         <section aria-labelledby="llm-security-heading" className="sh-workflow-card">

@@ -540,6 +540,12 @@
   overflow: visible;
 }
 
+/* 提示行常驻预留：对照说明只在该模式出现，但四个视图都保留同一行高，
+   切换页签时工作区整体高度与下方分区位置不变。 */
+.sh-markdown-workspace__mode-note {
+  min-height: 1.125rem;
+}
+
 .sh-markdown-workspace__compare-hint {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
