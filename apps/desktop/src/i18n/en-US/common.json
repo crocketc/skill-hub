@@ -1421,6 +1421,7 @@
         "recheck": "Recheck",
         "securityLocalScope": "Local preview data only. No network request is made.",
         "securityLoading": "Loading results",
+        "securityNoVersion": "No version is available to check.",
         "securityRunning": "Checking",
         "securityFailed": "Check failed",
         "securityFindings": "{{count}} risks found; {{actionable}} need attention",
@@ -1796,6 +1797,7 @@
       "rollbackTo": "Rollback to {{version}}",
       "selectCompare": "Select {{version}} for comparison",
       "updateAvailableTitle": "Upstream update available",
+      "updateStatusUnknown": "Upstream version has not been checked; update status is unknown.",
       "updateUnavailable": "Upstream update comparison is not connected yet.",
       "updateVersion": "Current {{current}} → upstream {{upstream}}",
       "upstreamPending": "version pending",
@@ -1808,6 +1810,29 @@
       "none": "No established relationships",
       "operationHistoryEmpty": "No operation journal entries yet.",
       "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
+      "historyLabels": {
+        "errors": {
+          "conflict": "A conflicting change prevented this operation.",
+          "unknown": "Details unavailable"
+        },
+        "kinds": {
+          "create": "Skill creation",
+          "deploy": "Skill deployment",
+          "editContent": "Skill content edit",
+          "remove": "Skill removal",
+          "unknown": "Skill operation"
+        },
+        "phases": {
+          "applying": "In progress",
+          "committed": "Completed",
+          "needsRecovery": "Needs attention",
+          "planned": "Planned",
+          "prepared": "Prepared",
+          "rolledBack": "Rolled back",
+          "unknown": "Status unavailable",
+          "verifying": "Verifying"
+        }
+      },
       "usageEvidence": "Usage evidence"
     },
     "relations": {
@@ -1948,6 +1973,7 @@
       "loading": "Loading Skill details",
       "loadingMetadata": "Loading description and metadata",
       "metadataError": "Description and metadata could not be loaded",
+      "noCurrentVersionForSecurity": "No version is available to check; security checks have not been run.",
       "notFound": "This Skill is not in the local library",
       "unavailable": "Skill detail data is not connected yet"
     },
@@ -1955,6 +1981,7 @@
       "basicOther": "Basic check: {{state}}",
       "basicPassed": "Basic check passed",
       "deploymentLabel": "Deployment relations",
+      "deploymentsUnavailable": "Deployment count unavailable",
       "deployments_one": "{{count}}",
       "deployments_other": "{{count}}",
       "label": "Skill status",
@@ -2304,6 +2331,9 @@
     "description": "This deletes the Skill record, its content and version history from the central library; handle the copy at each target below.",
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
+    "errors": {
+      "deploymentTargetUnavailable": "Deployment target details could not be verified, so deletion was not prepared."
+    },
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
     "retained": "Kept: files outside SkillHub are never touched; each target copy follows the choice you make for its row.",

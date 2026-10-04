@@ -1019,8 +1019,8 @@ export function SkillLibraryPage({
         selected.map((skill) => removalFacade.prepareDelete(skill.id, skill.name)),
       );
       setBatchRemovalImpacts(impacts);
-    } catch {
-      const message = t("removal.batch.loadError");
+    } catch (reason: unknown) {
+      const message = describeError(reason, "removal.batch.loadError");
       setBatchRemovalError(message);
       // 影响读取失败：抽屉内与全局通知双通道可见，不静默。
       notify({ source: "library", kind: "removal-summary", title: message, tone: "danger" });

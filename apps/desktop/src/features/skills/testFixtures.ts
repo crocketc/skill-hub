@@ -65,6 +65,7 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
   alias: "PDF Reader",
   basicCheck: "passed",
   currentVersion: "1.4.0",
+  currentVersionId: "fixture-version-1",
   highRiskCount: 1,
   id: "skill-pdf",
   invocation: "pdf-reader <file>",

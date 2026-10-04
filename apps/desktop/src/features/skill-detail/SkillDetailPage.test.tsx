@@ -39,6 +39,7 @@ interface RenderDetailOptions {
   tracker?: OperationTracker;
   governanceFacade?: RelationGovernanceFacade;
   securityFacade?: SecurityFacade;
+  reviewPrototype?: boolean;
 }
 
 function createTestSecurityFacade(): SecurityFacade {
@@ -62,6 +63,7 @@ async function renderDetail({
   tracker,
   governanceFacade,
   securityFacade = createTestSecurityFacade(),
+  reviewPrototype = false,
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
@@ -73,11 +75,11 @@ async function renderDetail({
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} reviewPrototype={reviewPrototype} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} reviewPrototype={reviewPrototype} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -130,7 +132,80 @@ describe("SkillDetailPage shell", () => {
     expect(screen.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Run basic check" }));
-    await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "current"));
+    await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "version-241"));
+  });
+
+  it("runs the security review against the concrete current version identity", async () => {
+    const currentVersionId = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const detailFacade = createMockSkillDetailFacade();
+    const getSummary = detailFacade.getSummary.bind(detailFacade);
+    vi.spyOn(detailFacade, "getSummary").mockImplementation(async (skillId) =>
+      Object.assign(await getSummary(skillId), { currentVersionId }),
+    );
+    const fixture = separateCheckFixture();
+    const getChecks = vi.fn(async () => fixture.checks);
+    const runBasicCheck = vi.fn(async () => undefined);
+    const securityFacade: SecurityFacade = {
+      getChecks,
+      listFindings: async () => fixture.findings,
+      setFindingDisposition: async () => undefined,
+      getPreferences: async () => ({ llmProvider: "local-model", dataScope: "explicit_selection" }),
+      runBasicCheck,
+      runLlmCheck: async () => undefined,
+    };
+
+    await renderDetail({ facade: detailFacade, securityFacade });
+
+    await waitFor(() => expect(getChecks).toHaveBeenCalledWith("skill-pdf", currentVersionId));
+    fireEvent.click(screen.getByRole("button", { name: "Run basic check" }));
+    await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", currentVersionId));
+  });
+
+  it("does not query or offer security checks when there is no current version", async () => {
+    const detailFacade = createMockSkillDetailFacade();
+    const getSummary = detailFacade.getSummary.bind(detailFacade);
+    vi.spyOn(detailFacade, "getSummary").mockImplementation(async (skillId) =>
+      Object.assign(await getSummary(skillId), { currentVersionId: undefined }),
+    );
+    const getChecks = vi.fn(async () => separateCheckFixture().checks);
+    const securityFacade: SecurityFacade = {
+      ...createTestSecurityFacade(),
+      getChecks,
+    };
+
+    await renderDetail({ facade: detailFacade, securityFacade });
+
+    expect(await screen.findByText("No version is available to check; security checks have not been run.")).toBeVisible();
+    expect(getChecks).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Run basic check" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run AI check" })).not.toBeInTheDocument();
+  });
+
+  it("shows unavailable counts and unverified upstream state instead of zero or no update", async () => {
+    const facade = createMockSkillDetailFacade({
+      failRelations: true,
+      summary: {
+        agentDeploymentCount: undefined,
+        projectDeploymentCount: undefined,
+        upgradeAvailable: undefined,
+      },
+    });
+    await renderDetail({ facade });
+
+    expect(await screen.findAllByText("Deployment count unavailable")).toHaveLength(2);
+    expect(screen.getByText("Upstream version has not been checked; update status is unknown.")).toBeVisible();
+  });
+
+  it("keeps the review prototype security fixture scoped to its concrete fixture version", async () => {
+    const getChecks = vi.fn(async () => separateCheckFixture().checks);
+    const securityFacade: SecurityFacade = {
+      ...createTestSecurityFacade(),
+      getChecks,
+    };
+
+    await renderDetail({ reviewPrototype: true, securityFacade });
+
+    await waitFor(() => expect(getChecks).toHaveBeenCalledWith("skill-pdf", "version-241"));
   });
 
   it("loads deletion impact and returns to the library after confirmation", async () => {

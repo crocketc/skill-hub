@@ -16,7 +16,9 @@ interface DetailStatusRailProps {
 export function DetailStatusRail({ deployments: deploymentsOverride, facade, skillId, summary }: DetailStatusRailProps) {
   const { t } = useTranslation();
   const deployments = deploymentsOverride
-    ?? summary.agentDeploymentCount + summary.projectDeploymentCount;
+    ?? (summary.agentDeploymentCount !== undefined && summary.projectDeploymentCount !== undefined
+      ? summary.agentDeploymentCount + summary.projectDeploymentCount
+      : undefined);
   return (
     <div
       aria-label={t("skillDetail.statusRail.label")}
@@ -34,7 +36,12 @@ export function DetailStatusRail({ deployments: deploymentsOverride, facade, ski
           <dd>{summary.currentVersion}</dd>
           <VersionUpdateNotice compact summary={summary} />
         </div>
-        <div><dt>{t("skillDetail.statusRail.deploymentLabel")}</dt><dd>{t("skillDetail.statusRail.deployments", { count: deployments })}</dd></div>
+        <div>
+          <dt>{t("skillDetail.statusRail.deploymentLabel")}</dt>
+          <dd>{deployments === undefined
+            ? t("skillDetail.statusRail.deploymentsUnavailable")
+            : t("skillDetail.statusRail.deployments", { count: deployments })}</dd>
+        </div>
       </dl>
       <TrialActions facade={facade} skillId={skillId} summary={summary} />
     </div>

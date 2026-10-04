@@ -9,22 +9,25 @@ import type {
 import { serializeSkillLibrarySearchParams } from "../skills/queryState";
 
 export interface SkillDetailSummary {
-  agentDeploymentCount: number;
+  agentDeploymentCount?: number;
   aiCheck: CheckState;
   alias?: string;
   basicCheck: CheckState;
   currentVersion: string;
-  highRiskCount: number;
+  /** Immutable identity of the current version used by version-scoped actions. */
+  currentVersionId?: string;
+  highRiskCount?: number;
   id: string;
   lifecycle: SkillLifecycle;
   name: string;
-  pendingCount: number;
-  projectDeploymentCount: number;
+  pendingCount?: number;
+  projectDeploymentCount?: number;
   /** P1-12：概览块是全页唯一的用途陈述（头部不再重复）。口径见 nativeApi.summaryOf：
    * 用户用途优先，回退译文、原文。 */
   purpose: string;
   trialDue?: string;
-  upgradeAvailable: boolean;
+  /** Undefined means the upstream source has not been checked in this installation. */
+  upgradeAvailable?: boolean;
   upstreamVersion?: string;
 }
 

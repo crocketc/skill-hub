@@ -72,6 +72,8 @@ export interface SkillTableRow {
   alias?: string;
   basicCheck: CheckState;
   currentVersion: string;
+  /** Immutable version identity used by version-scoped security checks. */
+  currentVersionId?: string;
   highRiskCount: number;
   id: string;
   invocation?: string;

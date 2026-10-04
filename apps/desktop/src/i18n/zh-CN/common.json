@@ -1421,6 +1421,7 @@
         "recheck": "重新检查",
         "securityLocalScope": "仅使用本地预览数据，不访问网络。",
         "securityLoading": "正在读取检查结果",
+        "securityNoVersion": "没有可检查的版本。",
         "securityRunning": "检查中",
         "securityFailed": "运行失败",
         "securityFindings": "发现风险 {{count}} 项，{{actionable}} 项待处理",
@@ -1796,6 +1797,7 @@
       "rollbackTo": "回滚到 {{version}}",
       "selectCompare": "选择 {{version}} 进行比较",
       "updateAvailableTitle": "上游更新可用",
+      "updateStatusUnknown": "尚未检查上游版本，更新状态未知。",
       "updateUnavailable": "上游更新比较尚未连接",
       "updateVersion": "当前 {{current}} → 上游 {{upstream}}",
       "upstreamPending": "版本待获取",
@@ -1808,6 +1810,29 @@
       "none": "暂无已确认的关联",
       "operationHistoryEmpty": "暂无操作日志记录。",
       "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
+      "historyLabels": {
+        "errors": {
+          "conflict": "检测到冲突，操作未能完成。",
+          "unknown": "详情不可用"
+        },
+        "kinds": {
+          "create": "创建 Skill",
+          "deploy": "部署 Skill",
+          "editContent": "编辑 Skill 内容",
+          "remove": "移除 Skill",
+          "unknown": "Skill 操作"
+        },
+        "phases": {
+          "applying": "执行中",
+          "committed": "已完成",
+          "needsRecovery": "需要处理",
+          "planned": "等待开始",
+          "prepared": "已准备",
+          "rolledBack": "已撤销",
+          "unknown": "状态不可用",
+          "verifying": "正在核验"
+        }
+      },
       "usageEvidence": "使用证据"
     },
     "relations": {
@@ -1948,6 +1973,7 @@
       "loading": "正在加载 Skill 详情",
       "loadingMetadata": "正在加载描述与元数据",
       "metadataError": "无法加载描述与元数据",
+      "noCurrentVersionForSecurity": "当前没有可检查的版本，安全检查尚未运行。",
       "notFound": "本地 Skill 库中不存在此 Skill",
       "unavailable": "Skill 详情数据尚未接入"
     },
@@ -1955,6 +1981,7 @@
       "basicOther": "基础检查：{{state}}",
       "basicPassed": "基础检查已通过",
       "deploymentLabel": "部署关系",
+      "deploymentsUnavailable": "部署关系数量暂不可用",
       "deployments_one": "{{count}} 条",
       "deployments_other": "{{count}} 条",
       "label": "Skill 状态",
@@ -2304,6 +2331,9 @@
     "description": "将从集中库删除该 Skill 的记录、内容与版本历史；每个目标中的副本按下方选择处理。",
     "loading": "正在读取删除影响…",
     "loadError": "无法读取删除影响，请稍后重试。",
+    "errors": {
+      "deploymentTargetUnavailable": "无法核实部署目标详情，未准备删除操作。"
+    },
     "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
     "retained": "保留：SkillHub 之外的原文件不受影响；每个目标上的副本按你为该行选择的方式处理。",

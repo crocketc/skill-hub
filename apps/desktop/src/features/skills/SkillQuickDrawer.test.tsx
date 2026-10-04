@@ -142,6 +142,7 @@ const QUICK_VIEW: SkillQuickView = {
   alias: "reader",
   basicCheck: "passed",
   currentVersion: "1.4.0",
+  currentVersionId: "fixture-version-1",
   dependencies: ["pymupdf"],
   duplicateCandidates: ["document-reader"],
   externalChanges: ["SKILL.md changed outside SkillHub"],
@@ -283,6 +284,7 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
 
 interface DrawerHarnessProps {
   detailSearch?: string;
+  drawerPrototype?: boolean;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
   relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
@@ -298,6 +300,7 @@ interface DrawerHarnessProps {
 
 function DrawerHarness({
   detailSearch,
+  drawerPrototype = false,
   facade,
   libraryReturn,
   onDelete,
@@ -329,6 +332,7 @@ function DrawerHarness({
       </button>
       <SkillQuickDrawer
         detailSearch={detailSearch}
+        drawerPrototype={drawerPrototype}
         facade={facade}
         libraryReturn={libraryReturn}
         relationshipFacade={relationshipFacade}
@@ -1212,7 +1216,66 @@ it("runs security checks and shows findings directly in the drawer", async () =>
   expect(screen.queryByRole("link", { name: "Open security checks" })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Recheck" }));
-  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "current"));
+  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
+});
+
+it("does not query or offer security checks when the drawer Skill has no current version", async () => {
+  const facade = createMockSkillLibraryFacade();
+  const getSkillQuickView = facade.getSkillQuickView.bind(facade);
+  vi.spyOn(facade, "getSkillQuickView").mockImplementation(async (skillId) =>
+    Object.assign(await getSkillQuickView(skillId), { currentVersionId: undefined }),
+  );
+  const getChecks = vi.fn(async () => separateCheckFixture().checks);
+  const securityFacade: SecurityFacade = {
+    ...createPreviewSecurityFacade(),
+    getChecks,
+  };
+
+  await renderDrawer({ facade, securityFacade });
+
+  expect(await screen.findByText("No version is available to check; security checks have not been run.")).toBeVisible();
+  expect(getChecks).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Recheck" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "AI check" })).not.toBeInTheDocument();
+});
+
+it("uses the exact fixture version for security checks in the review prototype", async () => {
+  const getChecks = vi.fn(async () => separateCheckFixture().checks);
+  const listFindings = vi.fn(async () => separateCheckFixture().findings);
+  const runBasicCheck = vi.fn(async () => undefined);
+  const securityFacade: SecurityFacade = {
+    ...createPreviewSecurityFacade(),
+    getChecks,
+    listFindings,
+    runBasicCheck,
+  };
+
+  await renderDrawer({ drawerPrototype: true, facade: createMockSkillLibraryFacade(), securityFacade });
+
+  await waitFor(() => expect(getChecks).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
+  expect(listFindings).toHaveBeenCalledWith("skill-pdf", "fixture-version-1");
+  fireEvent.click(screen.getByRole("button", { name: "Recheck" }));
+  await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
+});
+
+it("keeps prototype security checks unavailable when the preview fixture has no version identity", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: { ...QUICK_VIEW, currentVersionId: undefined },
+  });
+  const getChecks = vi.fn(async () => separateCheckFixture().checks);
+  const runBasicCheck = vi.fn(async () => undefined);
+  const securityFacade: SecurityFacade = {
+    ...createPreviewSecurityFacade(),
+    getChecks,
+    runBasicCheck,
+  };
+
+  await renderDrawer({ drawerPrototype: true, facade, securityFacade });
+
+  expect(getChecks).not.toHaveBeenCalled();
+  expect(await screen.findByRole("button", { name: "Recheck" })).toBeDisabled();
+  expect(await screen.findByRole("button", { name: "AI check" })).toBeDisabled();
+  expect(runBasicCheck).not.toHaveBeenCalled();
 });
 
 it("closes with the shared close icon instead of a character glyph", async () => {

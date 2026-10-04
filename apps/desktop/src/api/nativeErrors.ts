@@ -118,6 +118,7 @@ export function keyedMessage(
     if (reason === "library_not_writable") return "errors.onboarding.libraryNotWritable";
   }
   if (code === "object.not_found") return "errors.objectNotFound";
+  if (code === "removal.deployment_target_unavailable") return "removal.errors.deploymentTargetUnavailable";
   if (code === "network.disabled") return "errors.networkDisabled";
   if (code === "llm.not_configured") return "settings.llm.notConfigured";
   if (code === "credential.unavailable") return "settings.llm.credentialUnavailable";

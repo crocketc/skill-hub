@@ -9,6 +9,13 @@ interface VersionUpdateNoticeProps {
 
 export function VersionUpdateNotice({ compact = false, summary }: VersionUpdateNoticeProps) {
   const { t } = useTranslation();
+  if (summary.upgradeAvailable === undefined) {
+    return (
+      <p aria-live="polite" className="sh-version-update__note" role="status">
+        {t("skillDetail.versions.updateStatusUnknown")}
+      </p>
+    );
+  }
   if (!summary.upgradeAvailable) return null;
 
   return (

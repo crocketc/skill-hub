@@ -3,10 +3,12 @@ import {
   queryApplication,
   type AppCommandResult,
   type AppQueryResult,
+  type DeploymentTarget,
   type RemovalDecision,
   type RemovalImpact as NativeRemovalImpact,
   type RemovalResult as NativeRemovalResult,
 } from "../../api/bindings";
+import { indexTargetsByAnyId } from "../deployment/targetProjection";
 import type {
   RemovalChoice,
   RemovalFacade,
@@ -28,6 +30,49 @@ function removalResult(result: AppCommandResult): NativeRemovalResult {
     throw new Error("removal.undeploy_commit_unexpected_result");
   }
   return result.payload;
+}
+
+function deploymentTargetUnavailable() {
+  return {
+    code: "removal.deployment_target_unavailable",
+    severity: "error",
+    params: {},
+    actions: [],
+  } as const;
+}
+
+function canonicalDeploymentTargetPath(path: string): string {
+  const trimmed = path.trim().replaceAll("\\", "/");
+  const isWindowsPath = /^[a-zA-Z]:\//.test(trimmed) || trimmed.startsWith("//");
+  const hasUncPrefix = trimmed.startsWith("//");
+  const collapsed = hasUncPrefix
+    ? `//${trimmed.slice(2).replace(/\/{2,}/g, "/")}`
+    : trimmed.replace(/\/{2,}/g, "/");
+  const withoutTrailingSeparators = collapsed.replace(/\/+$/g, "");
+  return isWindowsPath ? withoutTrailingSeparators.toLowerCase() : withoutTrailingSeparators;
+}
+
+function hasAmbiguousDeploymentTargetIdentity(
+  targets: readonly DeploymentTarget[],
+  deploymentTargetIds: ReadonlySet<string>,
+): boolean {
+  const identitiesByKey = new Map<string, { physicalId: string; path: string }>();
+  for (const target of targets) {
+    for (const key of [target.id, target.physical_id]) {
+      if (!deploymentTargetIds.has(key)) continue;
+      const canonicalPath = canonicalDeploymentTargetPath(target.path);
+      if (target.physical_identity_verified !== true || !target.physical_id.trim() || !canonicalPath) {
+        return true;
+      }
+      const identity = { physicalId: target.physical_id.trim(), path: canonicalPath };
+      const previous = identitiesByKey.get(key);
+      if (previous && (previous.physicalId !== identity.physicalId || previous.path !== identity.path)) {
+        return true;
+      }
+      identitiesByKey.set(key, identity);
+    }
+  }
+  return false;
 }
 
 export const nativeRemovalFacade = {
@@ -86,24 +131,43 @@ export const nativeRemovalFacade = {
       type: "prepare_delete_skill",
       payload: { skill_id: skillId },
     }));
-    let targetsResult: AppQueryResult | undefined;
-    try { targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null }); } catch { /* legacy/test bridge */ }
-    const targets = targetsResult?.type === "deployment_targets" ? new Map(
-      targetsResult.payload.flatMap((target) => [[target.id, target], [target.physical_id, target]] as const),
-    ) : new Map();
+    let targets: Map<string, DeploymentTarget> = new Map();
+    if (impact.deployments.length > 0) {
+      let targetsResult: AppQueryResult;
+      try {
+        targetsResult = await queryApplication({ type: "list_deployment_targets", payload: null });
+      } catch {
+        throw deploymentTargetUnavailable();
+      }
+      if (targetsResult.type !== "deployment_targets") {
+        throw deploymentTargetUnavailable();
+      }
+      const deploymentTargetIds = new Set(impact.deployments.map((deployment) => deployment.target_id));
+      if (hasAmbiguousDeploymentTargetIdentity(targetsResult.payload, deploymentTargetIds)) {
+        throw deploymentTargetUnavailable();
+      }
+      targets = indexTargetsByAnyId(targetsResult.payload);
+    }
+    const deployments = impact.deployments.map((deployment) => {
+      const target = targets.get(deployment.target_id);
+      if (!target || !target.path.trim() || !target.physical_id.trim() || target.physical_identity_verified !== true) {
+        throw deploymentTargetUnavailable();
+      }
+      return {
+        id: deployment.id,
+        label: target.label || deployment.runtime_name,
+        path: target.path,
+        physicalId: target.physical_id,
+        agentId: target.agent_client_id ?? undefined,
+        brand: target.agent_profile_id ?? undefined,
+        sharedDirectory: target.shared_directory,
+      };
+    });
     return {
       operationId: impact.operation_id,
       skillId: impact.skill_id,
       skillName: skillName ?? skillId,
-      deployments: impact.deployments.map((deployment) => ({
-        id: deployment.id,
-        label: targets.get(deployment.target_id)?.label ?? deployment.runtime_name,
-        path: targets.get(deployment.target_id)?.path ?? deployment.target_id,
-        physicalId: deployment.target_id,
-        agentId: targets.get(deployment.target_id)?.agent_client_id ?? undefined,
-        brand: targets.get(deployment.target_id)?.agent_profile_id ?? undefined,
-        sharedDirectory: targets.get(deployment.target_id)?.shared_directory,
-      })),
+      deployments,
       // QA-001：逐字段映射领域影响矩阵，不再把依赖冒充成关联项目。
       // 绑定因 serde(default) 将新字段标为可选；后端总是发送，
       // 此处按缺省空集归一以保持桌面契约稳定。

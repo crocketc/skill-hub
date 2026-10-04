@@ -22,19 +22,24 @@ async function renderMetadata({
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  render(
+  const renderPanel = (currentMetadata: SkillMetadata) => (
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
         <MetadataPanel
           facade={facade}
-          metadata={metadata}
+          metadata={currentMetadata}
           refreshSnapshot={refreshSnapshot}
           skillId="skill-pdf"
         />
       </I18nextProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  return { client, facade };
+  const rendered = render(renderPanel(metadata));
+  return {
+    client,
+    facade,
+    rerenderMetadata: (nextMetadata: SkillMetadata) => rendered.rerender(renderPanel(nextMetadata)),
+  };
 }
 
 async function renderMetadataWithBridge({
@@ -115,6 +120,58 @@ describe("MetadataPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("未能保存");
     expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("新的本地用途");
     expect(screen.queryByRole("textbox", { name: "我的备注" })).not.toBeInTheDocument();
+  });
+
+  it("discards an edited field on Escape without writing the draft", async () => {
+    const { facade } = await renderMetadata();
+    const editButton = screen.getByRole("button", { name: "编辑我的用途说明" });
+    fireEvent.click(editButton);
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    field.focus();
+    fireEvent.change(field, { target: { value: "尚未保存的用途" } });
+
+    fireEvent.keyDown(field, { key: "Escape", code: "Escape" });
+
+    expect(facade.calls.metadataPatches).toEqual([]);
+    expect(screen.queryByRole("textbox", { name: "我的用途说明" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "编辑我的用途说明" }));
+  });
+
+  it("keeps the draft on blur and restores the edit trigger after explicit cancel", async () => {
+    const { facade } = await renderMetadata();
+    const editButton = screen.getByRole("button", { name: "编辑我的用途说明" });
+    fireEvent.click(editButton);
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "暂时离开字段" } });
+
+    fireEvent.blur(field);
+
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("暂时离开字段");
+    expect(facade.calls.metadataPatches).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
+    expect(facade.calls.metadataPatches).toEqual([]);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "编辑我的用途说明" }));
+  });
+
+  it("keeps a local draft during refresh and cancels back to the latest persisted value", async () => {
+    const { facade, rerenderMetadata } = await renderMetadata();
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "本地尚未保存的用途" } });
+
+    rerenderMetadata({
+      ...detailFixture().metadata,
+      purpose: "另一处保存后的最新用途",
+    });
+
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("本地尚未保存的用途");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("另一处保存后的最新用途");
+    expect(facade.calls.metadataPatches).toEqual([]);
   });
 
   it("saves one section without rewriting the others", async () => {

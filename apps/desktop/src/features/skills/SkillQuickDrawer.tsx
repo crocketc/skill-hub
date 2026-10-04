@@ -24,6 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../../ui/Button";
+import { DataState } from "../../ui/DataState";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
 import { AgentPresentation } from "../../ui/AgentPresentation";
@@ -511,7 +512,19 @@ function SecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
   return (
     <ModuleCard title={t(MODULE_LABEL_KEYS.security_checks)}>
       <RiskSummary view={view} />
-      <SecurityResults facade={securityFacade} skillId={view.id} variant="drawer" versionId="current" />
+      {view.currentVersionId ? (
+        <SecurityResults
+          facade={securityFacade}
+          skillId={view.id}
+          variant="drawer"
+          versionId={view.currentVersionId}
+        />
+      ) : (
+        <DataState
+          message={t("skillDetail.states.noCurrentVersionForSecurity")}
+          state="empty"
+        />
+      )}
     </ModuleCard>
   );
 }
@@ -2757,24 +2770,27 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
   const { t } = useTranslation();
   const [runningKinds, setRunningKinds] = useState<Set<SecurityCheckKind>>(() => new Set());
   const [runErrors, setRunErrors] = useState<Partial<Record<SecurityCheckKind, boolean>>>({});
+  const versionId = view.currentVersionId;
   const resultQuery = useQuery({
-    queryKey: ["skill-drawer-prototype-security", view.id, view.currentVersion],
+    enabled: Boolean(versionId),
+    queryKey: ["skill-drawer-prototype-security", view.id, versionId],
     queryFn: async () => {
+      if (!versionId) return { checks: [], findings: [] };
       const [checks, findings] = await Promise.all([
-        securityFacade.getChecks(view.id, "current"),
-        securityFacade.listFindings(view.id, "current"),
+        securityFacade.getChecks(view.id, versionId),
+        securityFacade.listFindings(view.id, versionId),
       ]);
       return { checks, findings };
     },
   });
   const executeCheck = async (kind: SecurityCheckKind) => {
     const run = kind === "basic" ? securityFacade.runBasicCheck : securityFacade.runLlmCheck;
-    if (!run || runningKinds.has(kind)) return;
+    if (!versionId || !run || runningKinds.has(kind)) return;
     setRunErrors((current) => ({ ...current, [kind]: false }));
     setRunningKinds((current) => new Set(current).add(kind));
     try {
-      if (kind === "basic") await securityFacade.runBasicCheck?.(view.id, "current");
-      else await securityFacade.runLlmCheck?.(view.id, "current");
+      if (kind === "basic") await securityFacade.runBasicCheck?.(view.id, versionId);
+      else await securityFacade.runLlmCheck?.(view.id, versionId);
       await resultQuery.refetch();
     } catch {
       setRunErrors((current) => ({ ...current, [kind]: true }));
@@ -2801,7 +2817,9 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
     const failed = check?.state === "failed" || runErrors[kind] === true || resultQuery.isError;
     const hasRisk = count > 0;
     const clean = check?.state === "passed" && !hasRisk;
-    const stateText = resultQuery.isPending
+    const stateText = !versionId
+      ? t("skillLibrary.drawer.prototype.securityNoVersion")
+      : resultQuery.isPending
       ? t("skillLibrary.drawer.prototype.securityLoading")
       : running
         ? t("skillLibrary.drawer.prototype.securityRunning")
@@ -2812,7 +2830,9 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
             : clean
               ? t("skillLibrary.drawer.prototype.securityClean")
               : t("skillLibrary.drawer.prototype.securityNotRun");
-    const compactText = resultQuery.isPending
+    const compactText = !versionId
+      ? t("skillLibrary.drawer.prototype.securityNoVersion")
+      : resultQuery.isPending
       ? t("skillLibrary.drawer.prototype.securityLoading")
       : running
         ? t("skillLibrary.drawer.prototype.securityRunning")
@@ -2891,10 +2911,10 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
         {renderResult("llm")}
       </div>
       <div className="sh-skill-drawer__prototype-security-actions">
-        <Button disabled={!securityFacade.runBasicCheck || runningKinds.has("basic")} loading={runningKinds.has("basic")} onClick={() => void executeCheck("basic")} size="sm" variant="secondary">
+        <Button disabled={!versionId || !securityFacade.runBasicCheck || runningKinds.has("basic")} loading={runningKinds.has("basic")} onClick={() => void executeCheck("basic")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.recheck")}
         </Button>
-        <Button disabled={!securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
+        <Button disabled={!versionId || !securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.aiCheck")}
         </Button>
       </div>

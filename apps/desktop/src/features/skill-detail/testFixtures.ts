@@ -254,6 +254,7 @@ export function detailFixture(
       alias: "PDF 表格读取器",
       basicCheck: "passed",
       currentVersion: "v2.4.1",
+      currentVersionId: "version-241",
       highRiskCount: 0,
       id: "skill-pdf",
       lifecycle: "active",

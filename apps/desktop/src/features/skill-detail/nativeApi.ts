@@ -7,11 +7,13 @@ import {
   type ConflictAnalysis,
   type DeploymentTarget,
   type FindingDisposition,
+  type SkillMetadataPatch as NativeSkillMetadataPatch,
   type SkillResult,
   type UpdateDecision,
   type UpstreamCheckResult,
 } from "../../api/bindings";
 import { indexTargetsByAnyId } from "../deployment/targetProjection";
+import { skillHubI18n } from "../../i18n";
 import { usableLlmProviderLabel } from "../settings/llmApi";
 import {
   SkillDetailUnavailableError,
@@ -31,6 +33,46 @@ import {
   type SkillVersionDiff,
   type SkillVersionEntry,
 } from "./api";
+
+const HISTORY_KIND_KEYS: Record<string, string> = {
+  create_skill: "create",
+  deploy_skill: "deploy",
+  delete_skill: "remove",
+  remove_skill: "remove",
+  undeploy_skill: "remove",
+  save_markdown_content: "editContent",
+  save_skill_content: "editContent",
+};
+const HISTORY_PHASE_KEYS: Record<string, string> = {
+  planned: "planned",
+  prepared: "prepared",
+  applying: "applying",
+  verifying: "verifying",
+  committed: "committed",
+  needs_recovery: "needsRecovery",
+  rolled_back: "rolledBack",
+};
+const HISTORY_ERROR_KEYS: Record<string, string> = {
+  "operation.conflict": "conflict",
+};
+
+function historyTranslation(key: string): string {
+  return skillHubI18n.t(key as never) as string;
+}
+
+function operationHistoryLabel(entry: { kind: string; phase: string; error_code: string | null }): string {
+  const kindKey = HISTORY_KIND_KEYS[entry.kind] ?? "unknown";
+  const phaseKey = HISTORY_PHASE_KEYS[entry.phase] ?? "unknown";
+  const parts = [
+    historyTranslation("skillDetail.insights.historyLabels.kinds." + kindKey),
+    historyTranslation("skillDetail.insights.historyLabels.phases." + phaseKey),
+  ];
+  if (entry.error_code) {
+    const errorKey = HISTORY_ERROR_KEYS[entry.error_code] ?? "unknown";
+    parts.push(historyTranslation("skillDetail.insights.historyLabels.errors." + errorKey));
+  }
+  return parts.join(" · ");
+}
 
 function unavailableResult(): SkillDetailUnavailableError {
   return new SkillDetailUnavailableError();
@@ -62,23 +104,27 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
   // 头部别名行绝不回退到裸 SkillId（DEV-15/DEV-16）。
   const aliased = skill.display_name !== skill.runtime_name;
   return {
-    agentDeploymentCount: 0,
+    agentDeploymentCount: skill.agent_deployment_count,
     aiCheck: "not_run",
     alias: aliased ? skill.display_name : undefined,
     basicCheck: "not_run",
     // QA-010：概览展示后端推导的可读标签，内容哈希不进入展示层。
     currentVersion: skill.current_version_label ?? "unknown",
-    highRiskCount: 0,
+    currentVersionId: skill.current_version ?? undefined,
+    highRiskCount: skill.high_risk_count,
     id: skill.skill_id,
     lifecycle: lifecycleOf(skill),
     name: skill.display_name,
-    pendingCount: 0,
-    projectDeploymentCount: 0,
+    pendingCount: skill.pending_count,
+    projectDeploymentCount: skill.project_deployment_count,
     // P1-12：概览是全页唯一的用途陈述（头部不再重复）。口径：用户用途优先
     // （QA-008），缺省回退持久化译文，再回退原文，绝不留空。
     purpose: skill.user_purpose ?? skill.translated_description ?? skill.original_description,
     trialDue: skill.trial_due ?? undefined,
-    upgradeAvailable: false,
+    upgradeAvailable: skill.upstream_state == null
+      ? undefined
+      : skill.upstream_state === "update_available"
+        || skill.upstream_state === "update_available_with_local_changes",
   };
 }
 
@@ -169,8 +215,7 @@ async function saveTranslationRevision(
   if (result.type !== "translation_result") throw unavailableResult();
 }
 
-/** QA-008：set_metadata 是整体覆盖命令；先读取当前值合并补丁，
- * 避免只改一个字段时丢失标签、作者或许可证。 */
+/** QA-008：把用户改动映射成原生的字段级 patch，避免并发编辑覆盖其他字段。 */
 async function saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise<void> {
   // 译文修订走独立的 save_user_translation_revision 契约；清空（null）不是
   // 需求内的操作，保持原值不动。
@@ -182,20 +227,16 @@ async function saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise
       patch.translationText,
     );
   }
-  const skill = await getSkill(skillId);
+  const nativePatch: NativeSkillMetadataPatch = {};
+  if (patch.alias !== undefined) nativePatch.display_name = patch.alias?.trim() || null;
+  if (patch.note !== undefined) nativePatch.note = patch.note || null;
+  if (patch.tags !== undefined) nativePatch.tags = patch.tags;
+  if (patch.purpose !== undefined) nativePatch.user_purpose = patch.purpose || null;
+
+  if (Object.keys(nativePatch).length === 0) return;
   const result: AppCommandResult = await executeCommand({
-    type: "set_metadata",
-    payload: {
-      skill_id: skillId,
-      display_name: patch.alias === undefined
-        ? skill.display_name
-        : patch.alias?.trim() || skill.runtime_name,
-      note: patch.note === undefined ? skill.user_note : patch.note || null,
-      tags: patch.tags === undefined ? skill.tags : patch.tags,
-      author: skill.author,
-      license: skill.license,
-      user_purpose: patch.purpose === undefined ? skill.user_purpose : patch.purpose || null,
-    },
+    type: "patch_skill_metadata",
+    payload: { skill_id: skillId, patch: nativePatch },
   });
   if (result.type !== "operation_summary") throw unavailableResult();
 }
@@ -504,9 +545,7 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       externalChanges: [],
       operationHistory: result.payload.entries.map((entry) => ({
         id: entry.operation_id,
-        label: [entry.kind, entry.phase, entry.error_code ?? undefined]
-          .filter((part) => part !== undefined)
-          .join(" · "),
+        label: operationHistoryLabel(entry),
       })),
     };
     if (result.payload.limitation) {

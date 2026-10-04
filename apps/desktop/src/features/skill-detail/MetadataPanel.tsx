@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -55,6 +55,38 @@ function EditableTextSection({
   const [savedValue, setSavedValue] = useState(value);
   const [error, setError] = useState<string>();
   const fieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreEditFocus = useRef(false);
+
+  useEffect(() => {
+    // A refreshed durable value becomes the cancel target; an active local draft
+    // stays untouched until the user saves or cancels it.
+    setSavedValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (mode === "edit") {
+      fieldRef.current?.focus();
+    } else if (mode === "read" && restoreEditFocus.current) {
+      restoreEditFocus.current = false;
+      editTriggerRef.current?.focus();
+    }
+  }, [mode]);
+
+  const cancel = () => {
+    if (mode === "saving") return;
+    setDraft(savedValue);
+    setError(undefined);
+    restoreEditFocus.current = true;
+    setMode("read");
+  };
+
+  const onEditorKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancel();
+  };
 
   const save = () => {
     setMode("saving");
@@ -62,6 +94,7 @@ function EditableTextSection({
     void onSave(draft).then(
       () => {
         setSavedValue(draft);
+        restoreEditFocus.current = true;
         setMode("read");
       },
       () => {
@@ -80,6 +113,7 @@ function EditableTextSection({
           <IconButton
             icon="edit"
             label={t("skillDetail.metadata.edit", { label })}
+            ref={editTriggerRef}
             onClick={() => {
               setDraft(savedValue);
               setError(undefined);
@@ -89,6 +123,7 @@ function EditableTextSection({
         ) : (
           <Button
             aria-label={t("skillDetail.metadata.edit", { label })}
+            ref={editTriggerRef}
             onClick={() => {
               setDraft(savedValue);
               setError(undefined);
@@ -111,6 +146,7 @@ function EditableTextSection({
               aria-label={label}
               disabled={mode === "saving"}
               onChange={(event) => setDraft(event.currentTarget.value)}
+              onKeyDown={onEditorKeyDown}
               ref={(element) => {
                 fieldRef.current = element;
               }}
@@ -122,6 +158,7 @@ function EditableTextSection({
               aria-label={label}
               disabled={mode === "saving"}
               onChange={(event) => setDraft(event.currentTarget.value)}
+              onKeyDown={onEditorKeyDown}
               ref={(element) => {
                 fieldRef.current = element;
               }}
@@ -141,11 +178,7 @@ function EditableTextSection({
             </Button>
             <Button
               disabled={mode === "saving"}
-              onClick={() => {
-                setDraft(savedValue);
-                setError(undefined);
-                setMode("read");
-              }}
+              onClick={cancel}
               size="sm"
               variant="ghost"
             >
@@ -316,7 +349,6 @@ export function MetadataPanel({
             </div>
           </div>
           <EditableTextSection
-            key={`translation-${metadata.translation?.text ?? ""}`}
             label={t("skillDetail.metadata.translationText")}
             multiline
             onSave={(translationText) => savePatch({ translationText: translationText || null })}
@@ -376,14 +408,12 @@ export function MetadataPanel({
           字段，同一份数据在各视图的投影必须一致；头部别名行仅在别名与
           原名不同时出现，此处始终如实展示字段当前值。 */}
       <EditableTextSection
-        key={`alias-${metadata.alias ?? ""}`}
         label={t("skillDetail.metadata.alias")}
         onSave={(alias) => savePatch({ alias: alias || null })}
         reviewPresentation={reviewPresentation}
         value={metadata.alias ?? ""}
       />
       <EditableTextSection
-        key={`purpose-${metadata.purpose}`}
         label={t("skillDetail.metadata.purpose")}
         hint={t("skillDetail.metadata.purposeHint")}
         multiline
@@ -392,7 +422,6 @@ export function MetadataPanel({
         value={metadata.purpose}
       />
       <EditableTextSection
-        key={`tags-${metadata.tags.join(",")}`}
         label={t("skillDetail.metadata.tags")}
         hint={t("skillDetail.metadata.tagsHint")}
         onSave={(tags) =>
@@ -404,7 +433,6 @@ export function MetadataPanel({
         value={metadata.tags.join(", ")}
       />
       <EditableTextSection
-        key={`note-${metadata.note ?? ""}`}
         label={t("skillDetail.metadata.note")}
         multiline
         onSave={(note) => savePatch({ note: note || null })}

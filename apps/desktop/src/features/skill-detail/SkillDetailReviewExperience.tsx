@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
+import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { formatTimestamp } from "../../i18n";
@@ -70,6 +71,7 @@ export function SkillDetailReviewExperience({
   skillId,
   summary,
 }: SkillDetailReviewExperienceProps) {
+  const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
   // §关系治理：转为集中管理是演示状态；确认后头部入口隐藏、使用去向卡片联动为已集中管理。
   const [centralized, setCentralized] = useState(false);
@@ -182,7 +184,20 @@ export function SkillDetailReviewExperience({
               <ReviewSectionToggle label="安全检查" onToggle={() => toggleSection("review-safety")} open={openSections["review-safety"]} sectionId="review-safety" />
             </h2>
             <div hidden={!openSections["review-safety"]} id="review-safety-body">
-              <SecurityResults facade={reviewSecurityFacade} skillId={skillId} versionId="current" variant="embedded" presentationMode="risk-aware" />
+              {summary.currentVersionId ? (
+                <SecurityResults
+                  facade={reviewSecurityFacade}
+                  skillId={skillId}
+                  versionId={summary.currentVersionId}
+                  variant="embedded"
+                  presentationMode="risk-aware"
+                />
+              ) : (
+                <DataState
+                  message={t("skillDetail.states.noCurrentVersionForSecurity")}
+                  state="empty"
+                />
+              )}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-usage">

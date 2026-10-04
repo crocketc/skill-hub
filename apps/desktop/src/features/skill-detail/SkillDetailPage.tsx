@@ -78,7 +78,7 @@ function SkillTrajectory({
   source,
   version,
 }: {
-  deployments: number;
+  deployments?: number;
   source?: string;
   version: string;
 }) {
@@ -105,7 +105,9 @@ function SkillTrajectory({
         <Icon aria-hidden="true" name="deploy" size={16} />
         <span className="sh-skill-detail__trajectory-label">{t("skillDetail.trajectory.deployments")}</span>
         <span className="sh-skill-detail__trajectory-value">
-          {t("skillDetail.statusRail.deployments", { count: deployments })}
+          {deployments === undefined
+            ? t("skillDetail.statusRail.deploymentsUnavailable")
+            : t("skillDetail.statusRail.deployments", { count: deployments })}
         </span>
       </span>
     </div>
@@ -346,12 +348,14 @@ export function SkillDetailPage({
     );
   }
 
-  // DEV-22：状态栏与轨迹的部署关系计数与「关系」区块同源（同一份
-  // get_deployment_relations 查询，仅计活跃关系）。summary 里的计数字段
-  // 是后端未填充的占位 0，此前状态页签恒显 0、与关系页签矛盾。
+  // 部署关系优先使用「关系」区块的成功结果；查询失败时回退到 get_skill
+  // 的同口径计数。旧记录缺少任一计数时保留未知，不显示为 0。
   const deploymentCount = relationsQuery.data
     ? relationsQuery.data.length
-    : summaryQuery.data.agentDeploymentCount + summaryQuery.data.projectDeploymentCount;
+    : summaryQuery.data.agentDeploymentCount !== undefined
+      && summaryQuery.data.projectDeploymentCount !== undefined
+      ? summaryQuery.data.agentDeploymentCount + summaryQuery.data.projectDeploymentCount
+      : undefined;
 
   return (
     <section className="sh-skill-detail">
@@ -419,7 +423,19 @@ export function SkillDetailPage({
             </div>
             <div className="sh-skill-detail__block" id="security">
               <h3>{t("skillDetail.navigation.sections.security")}</h3>
-              <SecurityResults facade={securityFacade} skillId={skillId} variant="embedded" versionId="current" />
+              {summaryQuery.data.currentVersionId ? (
+                <SecurityResults
+                  facade={securityFacade}
+                  skillId={skillId}
+                  variant="embedded"
+                  versionId={summaryQuery.data.currentVersionId}
+                />
+              ) : (
+                <DataState
+                  message={t("skillDetail.states.noCurrentVersionForSecurity")}
+                  state="empty"
+                />
+              )}
             </div>
           </section>
           <section aria-labelledby="zone-content-heading" className="sh-skill-detail__zone" id="zone-content">

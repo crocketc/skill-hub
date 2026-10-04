@@ -4,6 +4,7 @@ import {
   queryApplication,
   type RelationshipOverview,
 } from "../../api/bindings";
+import { skillHubI18n } from "../../i18n";
 import {
   nativeSkillDetailFacade,
   setNativeCurrentVersion,
@@ -75,6 +76,11 @@ describe("native skill detail facade", () => {
       purpose: "用于 PDF 表格提取",
       lifecycle: "trial",
       trialDue: "2026-09-15",
+      agentDeploymentCount: undefined,
+      highRiskCount: undefined,
+      pendingCount: undefined,
+      projectDeploymentCount: undefined,
+      upgradeAvailable: undefined,
     });
     // QA-008：元数据面板的用途来自用户独立字段，不得用译文冒充；显示别名即 display_name。
     await expect(nativeSkillDetailFacade.getMetadata("skill-1")).resolves.toEqual({
@@ -97,6 +103,42 @@ describe("native skill detail facade", () => {
     expect(queryApplication).toHaveBeenCalledWith({
       type: "list_translations",
       payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("maps pending and high-risk counts, deployment counts, and upstream availability from the native summary", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: "Extract tables from PDFs",
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+        current_version_label: null,
+        agent_deployment_count: 3,
+        project_deployment_count: 2,
+        pending_count: 4,
+        high_risk_count: 1,
+        upstream_state: "update_available",
+      },
+    } as never);
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      agentDeploymentCount: 3,
+      highRiskCount: 1,
+      pendingCount: 4,
+      projectDeploymentCount: 2,
+      upgradeAvailable: true,
     });
   });
 
@@ -152,7 +194,7 @@ describe("native skill detail facade", () => {
     });
   });
 
-  it("saves metadata patches through the full overwrite contract without dropping fields", async () => {
+  it("sends only changed metadata fields through the native patch contract", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication).mockResolvedValue({
       type: "skill",
@@ -182,25 +224,68 @@ describe("native skill detail facade", () => {
       tags: ["new-tag"],
     });
 
-    expect(queryApplication).toHaveBeenCalledWith({
+    expect(queryApplication).not.toHaveBeenCalledWith({
       type: "get_skill",
       payload: { skill_id: "skill-1" },
     });
     expect(executeCommand).toHaveBeenCalledWith({
-      type: "set_metadata",
+      type: "patch_skill_metadata",
       payload: {
         skill_id: "skill-1",
-        display_name: "PDF Reader",
-        note: "Review before deployment",
-        tags: ["new-tag"],
-        author: "Ada",
-        license: "MIT",
-        user_purpose: "新的本地用途",
+        patch: {
+          user_purpose: "新的本地用途",
+          tags: ["new-tag"],
+        },
       },
     });
   });
 
-  it("clears an alias back to the runtime name through the metadata contract", async () => {
+  it("applies a single-field metadata update without reading the whole Skill first", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: "old note",
+        user_purpose: null,
+        tags: ["documents"],
+        author: "Ada",
+        license: "MIT",
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+        current_version_label: null,
+        agent_deployment_count: 0,
+        project_deployment_count: 0,
+        pending_count: 0,
+        high_risk_count: 0,
+      },
+    } as never);
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-patch", phase: "committed", message_code: "ok", error_code: null },
+    });
+
+    await nativeSkillDetailFacade.saveMetadata("skill-1", { note: "new note" });
+
+    expect(queryApplication).not.toHaveBeenCalledWith({
+      type: "get_skill",
+      payload: { skill_id: "skill-1" },
+    });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "patch_skill_metadata",
+      payload: {
+        skill_id: "skill-1",
+        patch: { note: "new note" },
+      },
+    });
+  });
+
+  it("clears only the alias through the tri-state metadata contract", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication).mockResolvedValue({
       type: "skill",
@@ -227,17 +312,10 @@ describe("native skill detail facade", () => {
 
     await nativeSkillDetailFacade.saveMetadata("skill-1", { alias: null });
 
+    expect(queryApplication).not.toHaveBeenCalled();
     expect(executeCommand).toHaveBeenCalledWith({
-      type: "set_metadata",
-      payload: {
-        skill_id: "skill-1",
-        display_name: "pdf-reader",
-        note: null,
-        tags: [],
-        author: null,
-        license: null,
-        user_purpose: null,
-      },
+      type: "patch_skill_metadata",
+      payload: { skill_id: "skill-1", patch: { display_name: null } },
     });
   });
 
@@ -423,6 +501,8 @@ describe("native skill detail facade", () => {
   });
 
   it("maps the persisted journal into the operation history with an honest limitation", async () => {
+    const previousLanguage = skillHubI18n.language;
+    await skillHubI18n.changeLanguage("zh-CN");
     vi.clearAllMocks();
     vi.mocked(queryApplication)
       .mockResolvedValueOnce({
@@ -459,8 +539,8 @@ describe("native skill detail facade", () => {
       deterministicDuplicates: ["PDF Reader（副本）"],
       externalChanges: [],
       operationHistory: [
-        { id: "op-1", label: "deploy_skill · committed" },
-        { id: "op-2", label: "remove_skill · rolled_back · operation.conflict" },
+        { id: "op-1", label: "部署 Skill · 已完成" },
+        { id: "op-2", label: "移除 Skill · 已撤销 · 检测到冲突，操作未能完成。" },
       ],
       operationHistoryLimitation: "skill_dimension_not_recorded",
     });
@@ -468,6 +548,77 @@ describe("native skill detail facade", () => {
       type: "list_skill_operations",
       payload: { skill_id: "skill-1" },
     });
+    await skillHubI18n.changeLanguage(previousLanguage);
+  });
+
+  it("keeps internal operation kinds, phases, and error codes out of insight labels", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "skill_operations",
+        payload: {
+          skill_id: "skill-1",
+          entries: [
+            { operation_id: "op-1", kind: "deploy_skill", phase: "committed", error_code: null },
+          ],
+          filtered: false,
+          limitation: null,
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        type: "deterministic_duplicates",
+        payload: [],
+      });
+
+    const insights = await nativeSkillDetailFacade.getInsights("skill-1");
+    const operationLabel = insights.operationHistory[0]?.label ?? "";
+
+    expect(operationLabel).not.toContain("deploy_skill");
+    expect(operationLabel).not.toContain("committed");
+    expect(operationLabel).not.toContain("operation.");
+  });
+
+  it("localizes known history facts and safely summarizes unknown future values in both locales", async () => {
+    const previousLanguage = skillHubI18n.language;
+    const entries = [
+      { operation_id: "known-deploy", kind: "deploy_skill", phase: "committed", error_code: null },
+      { operation_id: "known-remove", kind: "remove_skill", phase: "rolled_back", error_code: "operation.conflict" },
+      { operation_id: "unknown", kind: "vendor_task", phase: "future_phase", error_code: "vendor.secret_error" },
+    ];
+    const loadHistory = async () => {
+      vi.clearAllMocks();
+      vi.mocked(queryApplication)
+        .mockResolvedValueOnce({
+          type: "skill_operations",
+          payload: { skill_id: "skill-1", entries, filtered: false, limitation: null },
+        } as never)
+        .mockResolvedValueOnce({ type: "deterministic_duplicates", payload: [] } as never);
+      return nativeSkillDetailFacade.getInsights("skill-1");
+    };
+
+    try {
+      await skillHubI18n.changeLanguage("zh-CN");
+      const chinese = await loadHistory();
+      expect(chinese.operationHistory.map((entry) => entry.label)).toEqual([
+        "部署 Skill · 已完成",
+        "移除 Skill · 已撤销 · 检测到冲突，操作未能完成。",
+        "Skill 操作 · 状态不可用 · 详情不可用",
+      ]);
+
+      await skillHubI18n.changeLanguage("en-US");
+      const english = await loadHistory();
+      expect(english.operationHistory.map((entry) => entry.label)).toEqual([
+        "Skill deployment · Completed",
+        "Skill removal · Rolled back · A conflicting change prevented this operation.",
+        "Skill operation · Status unavailable · Details unavailable",
+      ]);
+      const unknownLabel = english.operationHistory[2]?.label ?? "";
+      expect(unknownLabel).not.toContain("vendor_task");
+      expect(unknownLabel).not.toContain("future_phase");
+      expect(unknownLabel).not.toContain("vendor.secret_error");
+    } finally {
+      await skillHubI18n.changeLanguage(previousLanguage);
+    }
   });
 
   it("submits an explicit finding disposition through the typed native command", async () => {
