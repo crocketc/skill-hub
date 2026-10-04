@@ -59,9 +59,9 @@ test("governance board stays compact, switches views with selection, and opens t
   await expect(page.getByTestId("governance-header-relation")).toBeVisible();
   await expect.poll(() => page.getByTestId("governance-row-list").evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await viewToggle.click();
-
-  const narrowCanvas = await canvas.boundingBox();
   await expect(page.getByTestId("governance-board-column-pending")).toBeVisible();
+
+  const narrowCanvas = await page.getByTestId("governance-row-list").boundingBox();
   await page.screenshot({
     path: path.join(screenshots, "relationship-governance-board-900x600.png"),
     fullPage: false,

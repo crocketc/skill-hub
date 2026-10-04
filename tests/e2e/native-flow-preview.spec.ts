@@ -171,7 +171,33 @@ async function installNativePreview(page: Page) {
     (window as unknown as { __combinationCommands: string[] }).__combinationCommands = combinationCommands;
 
     const ok = (type: string, payload: unknown) => ({ type, payload });
-    const invoke = async (command: string, args: any = {}) => {
+    type PreviewQuery = {
+      type: string;
+      payload: {
+        page?: number;
+        page_size?: number;
+        items?: Array<{ skill_id: string; logical_target_ids: string[]; preference: string }>;
+        request?: { logical_target_ids: string[]; skill_id: string; version_id: string; runtime_name: string };
+        key?: string;
+        path?: string;
+        skill_id?: string;
+        kind?: string;
+      };
+    };
+    type PreviewCommand = {
+      type: string;
+      payload: {
+        conflict_id?: string;
+        decision?: string;
+        plan?: unknown;
+        preview_id?: string;
+        pairs?: Array<{ pair_id: string; confirm_fallback: boolean; exclude: boolean }>;
+        prepared_deployment_id?: string;
+        to?: string;
+      };
+    };
+    type PreviewInvokeArgs = { query?: PreviewQuery; command?: PreviewCommand };
+    const invoke = async (command: string, args: PreviewInvokeArgs = {}) => {
       if (command === "plugin:event|listen") return 1;
       if (command === "plugin:event|unlisten" || command === "plugin:event|emit") return null;
       if (command === "plugin:dialog|open") return "C:/Preview/auditor";
@@ -179,7 +205,7 @@ async function installNativePreview(page: Page) {
       if (command === "plugin:app|version") return "0.2.0";
       if (command === "plugin:window|theme") return null;
       if (command === "query_application") {
-        const query = args.query;
+        const query = args.query!;
         switch (query.type) {
           case "get_bootstrap_snapshot": return ok("bootstrap_snapshot", bootstrap);
           case "get_discovery_snapshot": return ok("discovery_snapshot", discovery);
@@ -287,7 +313,7 @@ async function installNativePreview(page: Page) {
         }
       }
       if (command === "execute_command") {
-        const action = args.command;
+        const action = args.command!;
         if (action.type === "create_combination" || action.type === "update_combination" || action.type === "delete_combination" || action.type === "rename_combination") {
           combinationCommands.push(action.type);
         }
@@ -445,14 +471,30 @@ test("native preview fixtures return typed discovery results and fail loudly for
 
   const contract = await page.evaluate(async () => {
     const internals = (window as unknown as {
-      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<any> };
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
     }).__TAURI_INTERNALS__;
     const projection = await internals.invoke("query_application", {
       query: { type: "get_agent_directory_projection" },
-    });
+    }) as { type: string; payload: { directories: unknown[] } };
     const scan = await internals.invoke("execute_command", {
       command: { type: "scan_targets", payload: { scope_ids: [] } },
-    });
+    }) as {
+      type: string;
+      payload: {
+        generation: { generation: number; observed_at: number };
+        roots: string[];
+        discovered: Array<{
+          root: string;
+          relative_path: string;
+          marker: string;
+          metadata_fingerprint: string;
+        }>;
+        visited_paths: string[];
+        reparsed_count: number;
+        unchanged_count: number;
+        errors: Array<{ path: string; code: string }>;
+      };
+    };
     let unknownQueryError = "";
     try {
       await internals.invoke("query_application", {
