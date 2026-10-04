@@ -364,7 +364,10 @@ impl CentralLibrary {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or_default();
-        let staging = self.paths.tmp_dir.join(format!("visible-{}-{nonce}", skill.id()));
+        let staging = self
+            .paths
+            .tmp_dir
+            .join(format!("visible-{}-{nonce}", skill.id()));
         if let Err(error) = VersionStore::from_library(self).materialize(version, &staging) {
             let _ = fs::remove_dir_all(&staging);
             return Err(error);
@@ -380,14 +383,18 @@ impl CentralLibrary {
             }
         }
         let install_result = if self.store.should_fail("before_visible_staging_rename") {
-            Err(std::io::Error::other("injected visible staging rename failure"))
+            Err(std::io::Error::other(
+                "injected visible staging rename failure",
+            ))
         } else {
             fs::rename(&staging, &output)
         };
         if let Err(error) = install_result {
             if had_output {
                 let restore = if self.store.should_fail("before_visible_backup_restore") {
-                    Err(std::io::Error::other("injected visible backup restore failure"))
+                    Err(std::io::Error::other(
+                        "injected visible backup restore failure",
+                    ))
                 } else {
                     fs::rename(&backup, &output)
                 };
@@ -395,7 +402,10 @@ impl CentralLibrary {
                     let _ = fs::remove_dir_all(&staging);
                     return Err(io_error(error)
                         .with_param("reason", "visible_backup_restore_failed")
-                        .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                        .with_param(
+                            "recovery_backup_path",
+                            backup.to_string_lossy().into_owned(),
+                        )
                         .with_param("recovery_restore_error", restore_error.to_string())
                         .with_action(RecoveryAction::InspectTarget));
                 }
@@ -458,7 +468,10 @@ impl CentralLibrary {
         if !path_entry_exists(backup)? || !is_real_directory(backup)? {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "visible_backup_missing_or_invalid")
-                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
                 .with_action(RecoveryAction::InspectTarget));
         }
         let expected_backup_hash = replacement
@@ -468,7 +481,10 @@ impl CentralLibrary {
         if VersionStore::from_library(self).hash_tree_read_only(backup)? != expected_backup_hash {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "visible_backup_identity_changed")
-                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
                 .with_action(RecoveryAction::InspectTarget));
         }
         let nonce = SystemTime::now()
@@ -482,7 +498,10 @@ impl CentralLibrary {
         if path_entry_exists(&displaced)? {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "visible_displaced_path_occupied")
-                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
                 .with_action(RecoveryAction::InspectTarget));
         }
         let had_output = path_entry_exists(&replacement.output)?;
@@ -490,7 +509,9 @@ impl CentralLibrary {
             fs::rename(&replacement.output, &displaced).map_err(io_error)?;
         }
         let restore_result = if self.store.should_fail("before_visible_backup_restore") {
-            Err(std::io::Error::other("injected visible backup restore failure"))
+            Err(std::io::Error::other(
+                "injected visible backup restore failure",
+            ))
         } else {
             fs::rename(backup, &replacement.output)
         };
@@ -503,7 +524,10 @@ impl CentralLibrary {
             }
             let mut app_error = io_error(error)
                 .with_param("reason", "visible_backup_restore_failed")
-                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
                 .with_action(RecoveryAction::InspectTarget);
             if path_entry_exists(&displaced).unwrap_or(false) {
                 app_error = app_error.with_param(
@@ -512,10 +536,8 @@ impl CentralLibrary {
                 );
             }
             if let Some(compensation_error) = compensation_error {
-                app_error = app_error.with_param(
-                    "recovery_displaced_restore_error",
-                    compensation_error,
-                );
+                app_error =
+                    app_error.with_param("recovery_displaced_restore_error", compensation_error);
             }
             return Err(app_error);
         }
@@ -525,7 +547,10 @@ impl CentralLibrary {
         {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "visible_restored_tree_identity_changed")
-                .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
                 .with_action(RecoveryAction::InspectTarget));
         }
         if had_output {
@@ -651,14 +676,18 @@ impl CentralLibrary {
                 if let Some(expected) = expected_previous_tree_hash {
                     if path_entry_exists(&output)?
                         && is_real_directory(&output)?
-                        && VersionStore::from_library(self).hash_tree_read_only(&output)? == expected
+                        && VersionStore::from_library(self).hash_tree_read_only(&output)?
+                            == expected
                     {
                         return Ok(());
                     }
                 }
                 return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                     .with_param("reason", "visible_backup_missing_or_invalid")
-                    .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                    .with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    )
                     .with_action(RecoveryAction::InspectTarget));
             }
             let expected = expected_previous_tree_hash.ok_or_else(|| {
@@ -722,13 +751,12 @@ impl CentralLibrary {
         let filename = backup.file_name().and_then(|name| name.to_str());
         let expected_prefix = format!("visible-backup-{skill_id}-");
         let valid_name = filename.is_some_and(|name| {
-            name.strip_prefix(&expected_prefix)
-                .is_some_and(|nonce| {
-                    !nonce.is_empty()
-                        && nonce
-                            .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-                })
+            name.strip_prefix(&expected_prefix).is_some_and(|nonce| {
+                !nonce.is_empty()
+                    && nonce
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            })
         });
         if backup.parent() != Some(self.paths.tmp_dir.as_path()) || !valid_name {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
@@ -799,7 +827,10 @@ impl CentralLibrary {
             {
                 return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                     .with_param("reason", "visible_output_identity_changed")
-                    .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                    .with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    )
                     .with_action(RecoveryAction::InspectTarget));
             }
             if path_entry_exists(&backup)? {
@@ -812,7 +843,10 @@ impl CentralLibrary {
                 {
                     return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                         .with_param("reason", "visible_backup_identity_changed")
-                        .with_param("recovery_backup_path", backup.to_string_lossy().into_owned())
+                        .with_param(
+                            "recovery_backup_path",
+                            backup.to_string_lossy().into_owned(),
+                        )
                         .with_action(RecoveryAction::InspectTarget));
                 }
                 fs::remove_dir_all(backup).map_err(io_error)?;
