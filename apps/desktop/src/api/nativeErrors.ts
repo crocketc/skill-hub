@@ -111,6 +111,9 @@ export function keyedMessage(
     // K2 预览失效边界：prepared_removal 丢失/过期 → 拒绝提交并要求
     // 重新预览（故障矩阵裁决文案），不得落进「目标不存在」通用句。
     if (field === "prepared_removal") return "removal.errors.previewInvalidated";
+    // K3 预览失效边界：导出 prepared 快照丢失/过期 → 拒绝创建并要求
+    // 重新预览，与 K2 保持同一 field 感知模式（错误码以 K3-A 落地为准）。
+    if (field === "prepared_export") return "dataProtection.export.errors.previewInvalidated";
     return "errors.objectNotFound";
   }
   if (code === "import.skipped_by_user") return "importWorkflow.commitMessages.skipped";

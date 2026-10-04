@@ -104,13 +104,91 @@ describe("DataProtectionPage", () => {
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1, skill-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    expect(await screen.findByText(/skill-2/)).toBeVisible();
+    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
     const create = screen.getByRole("button", { name: "Create export" });
     expect(create).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(create);
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1", "skill-2"] }, versions: "current", format: "folder", output_dir: null }), [{ skill_id: "skill-2", decision: "include_and_mark" }]));
     expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
+  });
+
+  // K3-B 预览冻结（契约 §K3-1）：preview_id 三件套绑定主体/版本/格式/目录/
+  // 敏感决定，任一输入改变即作废旧预览——提示重新预览，且不得拿旧预览创建。
+  it("invalidates the export preview when a bound choice changes after review", async () => {
+    const facade = createFacade();
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    expect(screen.getByRole("button", { name: "Create export" })).toBeEnabled();
+
+    // 修改任一绑定选择（此处为格式）：旧预览立即作废。
+    fireEvent.change(screen.getByLabelText("Export format"), { target: { value: "zip" } });
+    expect(screen.getByText(/no longer valid/)).toBeVisible();
+    // 不得拿旧预览直接创建：创建入口随旧预览一起撤下。
+    expect(screen.queryByRole("button", { name: "Create export" })).not.toBeInTheDocument();
+    expect(facade.createExport).not.toHaveBeenCalled();
+
+    // 重新预览后恢复常规流程：新预览有效，创建可用。
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
+    expect(screen.queryByText(/no longer valid/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+    await waitFor(() => expect(facade.createExport).toHaveBeenCalledTimes(1));
+  });
+
+  // K3-B 扫描结果呈现（契约 §K3-2）：敏感项 DTO 为
+  // ExportSensitiveItem { skill_id, version_id, path, reason }（path 为版本内
+  // 相对路径，待 K3-A 绑定对齐），按「文件 + 可读原因」呈现，内部枚举
+  // 映射为用户事实文案，不裸露枚举值。
+  it("renders scanned sensitive files with their paths and user-facing reasons", async () => {
+    const facade = createFacade();
+    facade.prepareExport = vi.fn().mockResolvedValue({
+      selection: { skills: ["skill-1"] },
+      versions: "current",
+      skills: [],
+      sensitive_items: [
+        { skill_id: "skill-1", version_id: "skill-1-v2", path: "assets/.env", reason: "sensitive_filename" },
+        { skill_id: "skill-1", version_id: "skill-1-v2", path: "scripts/run.py", reason: "possible_plaintext_credential" },
+      ],
+    });
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+
+    expect(await screen.findByText("assets/.env")).toBeVisible();
+    expect(screen.getByText("scripts/run.py")).toBeVisible();
+    // 内部枚举映射为用户事实文案：sensitive_filename 说文件名可疑，
+    // possible_plaintext_credential 说内容可能含明文凭证；枚举原文不出现。
+    expect(screen.getByText(/file name/i)).toBeVisible();
+    expect(screen.getByText(/plaintext key or token/i)).toBeVisible();
+    expect(screen.queryByText("sensitive_filename")).not.toBeInTheDocument();
+    expect(screen.queryByText("possible_plaintext_credential")).not.toBeInTheDocument();
+  });
+
+  // K3-B 故障矩阵（契约 §K3-3）：创建收到过期/不存在预览类错误时映射为
+  // 「重新预览」指引；导出失败必须可见，不得伪装成功。
+  it("maps an expired export preview rejection to the re-preview guidance", async () => {
+    const facade = createFacade();
+    facade.createExport = vi.fn().mockRejectedValue({
+      code: "object.not_found",
+      severity: "error",
+      params: { field: "prepared_export" },
+      actions: [],
+    });
+    renderPage(facade);
+    fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review export" }));
+    await screen.findByLabelText("Export decision for skill-2");
+    fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create export" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/has expired or is missing/);
+    // 失败可见：不得出现成功结果文案。
+    expect(screen.queryByText(/Export created at/)).not.toBeInTheDocument();
   });
 
   it("lets the user export as a single zip archive", async () => {
@@ -120,7 +198,7 @@ describe("DataProtectionPage", () => {
     fireEvent.change(screen.getByLabelText("Export format"), { target: { value: "zip" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
     await waitFor(() => expect(facade.prepareExport).toHaveBeenCalledWith(expect.objectContaining({ selection: { skills: ["skill-1"] }, versions: "current", format: "zip", output_dir: null })));
-    expect(await screen.findByText(/skill-2/)).toBeVisible();
+    expect(await screen.findByLabelText("Export decision for skill-2")).toBeVisible();
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith(expect.objectContaining({ format: "zip" }), expect.anything()));
@@ -138,7 +216,7 @@ describe("DataProtectionPage", () => {
 
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
-    await screen.findByText(/skill-2/);
+    await screen.findByLabelText("Export decision for skill-2");
     fireEvent.change(screen.getByLabelText("Export decision for skill-2"), { target: { value: "include_and_mark" } });
     fireEvent.click(screen.getByRole("button", { name: "Create export" }));
     await waitFor(() =>

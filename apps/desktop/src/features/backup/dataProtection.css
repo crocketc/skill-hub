@@ -1,0 +1,48 @@
+/* K3 导出扫描与预览冻结的呈现样式。只使用语义 token（--ui-*、--space-*、
+   --font-*），与 base.css 的 sh-workflow-card 基础样式叠加；同类条目共用
+   同一布局槽位，长路径在自身区域内换行，不截断语义。 */
+
+.sh-export-scan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-export-scan__item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-subtle);
+}
+
+.sh-export-scan__path {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.sh-export-scan__reason {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ui-warning-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.sh-export-preview-invalidated {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-warning-border);
+  border-radius: 8px;
+  background: var(--ui-warning-background);
+  color: var(--ui-warning-foreground);
+}

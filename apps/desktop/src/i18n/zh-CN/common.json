@@ -3782,7 +3782,16 @@
       "exclude": "排除该 Skill",
       "include": "包含并标记",
       "commit": "创建导出",
-      "result": "导出已创建：{{path}}"
+      "result": "导出已创建：{{path}}",
+      "scanHeading": "扫描发现的敏感文件",
+      "previewInvalidatedNotice": "选择已更改：之前的导出预览已失效，请重新检查导出内容。",
+      "reasons": {
+        "possible_plaintext_credential": "该文件可能包含明文密钥或令牌。",
+        "sensitive_filename": "文件名疑似存放凭证（如 .env 或密钥文件）。"
+      },
+      "errors": {
+        "previewInvalidated": "导出预览已过期或不存在，请重新检查导出内容后再创建。"
+      }
     },
     "working": "正在执行，请稍候…",
     "tracker": {

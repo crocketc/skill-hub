@@ -710,6 +710,11 @@ test("data protection exposes export, restore, retention, and uninstall previews
   await expect(page.getByText(/1 skills are ready to export/)).toBeVisible();
   await page.getByRole("combobox", { name: "Export decision for pdf-reader" }).selectOption("include_and_mark");
   await expect(page.getByRole("button", { name: "Create export" })).toBeEnabled();
+  // K3-B 预览冻结：预览后修改任一绑定选择即作废旧预览——可见的重新预览
+  // 提示出现，创建入口撤下，绝不拿旧预览直接落盘。
+  await page.getByRole("combobox", { name: "Export format" }).selectOption("folder");
+  await expect(page.getByText(/no longer valid/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create export" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Run rolling backup" }).click();
   await expect(page.getByText(/Rolling backup finished: 3 kept/)).toBeVisible();

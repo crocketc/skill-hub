@@ -130,6 +130,19 @@ describe("nativeErrors", () => {
     expect(message).toContain("预览已失效，请重新确认");
   });
 
+  // K3 预览失效边界：导出 prepared 快照丢失/过期被后端拒绝（object.not_found
+  // + field=prepared_export，与 K2 prepared_removal 同一模式）时必须给出
+  // 「重新预览」指引，不得落进「目标不存在」的通用句让用户误以为数据丢失。
+  it("maps a lost prepared export to the re-preview guidance copy", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const message = describeNativeError(
+      { code: "object.not_found", severity: "error", params: { field: "prepared_export" }, actions: ["retry"] },
+      (key, options) => String(i18n.t(key as never, options as never)),
+      "dataProtection.export.commitError",
+    );
+    expect(message).toContain("导出预览已过期或不存在");
+  });
+
   it("keeps other object.not_found errors on the generic missing-object copy", () => {
     const message = describeNativeError(
       { code: "object.not_found", severity: "error", params: { field: "skill" }, actions: [] },

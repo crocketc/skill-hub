@@ -3782,7 +3782,16 @@
       "exclude": "Exclude this Skill",
       "include": "Include and mark",
       "commit": "Create export",
-      "result": "Export created at {{path}}"
+      "result": "Export created at {{path}}",
+      "scanHeading": "Sensitive files found by the scan",
+      "previewInvalidatedNotice": "Your choices changed, so the previous export preview is no longer valid. Review the export again.",
+      "reasons": {
+        "possible_plaintext_credential": "This file may contain a plaintext key or token.",
+        "sensitive_filename": "This file name suggests it holds credentials (for example .env or a key file)."
+      },
+      "errors": {
+        "previewInvalidated": "The export preview has expired or is missing. Review the export again before creating it."
+      }
     },
     "working": "Working, please wait…",
     "tracker": {
