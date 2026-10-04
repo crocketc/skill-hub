@@ -8,6 +8,8 @@
 //!    Zip 模式解压后是多个独立的 Skill ZIP（根目录即 SKILL.md，
 //!    供 Trae/Cline 等 IDE 型 Agent 直接导入）。
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use skillhub_core::backup::SensitiveContentDecision;
 use skillhub_core::export::{
     ExportFile, ExportFormat, ExportInput, ExportSelection, VersionSelection,
@@ -237,6 +239,83 @@ fn excluded_skill_is_omitted_from_the_outer_package() {
         !names.iter().any(|name| name.starts_with("skills/")),
         "被排除的 Skill 不得出现在外层包中: {names:?}"
     );
+}
+
+/// K3：扫描覆盖版本全部资产文件——.env 文件名与脚本内容都要命中，
+/// 不能只看 SKILL.md 正文。
+#[test]
+fn prepare_scans_sensitive_names_and_content_in_every_version_asset() {
+    let root = tempdir().unwrap();
+    let skill_id = SkillId::new();
+    let input = ExportInput {
+        selection: ExportSelection::Skills(vec![skill_id]),
+        versions: VersionSelection::Current,
+        skills: vec![skillhub_core::ExportSkill {
+            skill_id,
+            version_id: version(),
+            content: "A harmless skill description".into(),
+            display_name: "Assets".into(),
+            files: vec![
+                ExportFile {
+                    path: ".env".into(),
+                    data_base64: STANDARD.encode("SERVICE_TOKEN=fixture-value"),
+                },
+                ExportFile {
+                    path: "scripts/publish.py".into(),
+                    data_base64: STANDARD.encode("credential = 'sk-fixture-value'"),
+                },
+            ],
+        }],
+        format: ExportFormat::Folder,
+        output_dir: None,
+    };
+    let service = ExportService::new(root.path().to_path_buf());
+
+    let plan = service.prepare(&input).unwrap();
+
+    assert_eq!(
+        plan.sensitive_items.len(),
+        2,
+        "sensitive detection must include the .env and script assets"
+    );
+    assert!(plan
+        .sensitive_items
+        .iter()
+        .all(|item| item.skill_id == skill_id));
+}
+
+/// K3 纵深防御：create 只接受与 prepare 时相同的选择与版本集合；任何
+/// 漂移在写盘之前拒绝（目录零写入）。
+#[test]
+fn create_rejects_selection_or_version_drift_from_its_prepared_plan() {
+    let root = tempdir().unwrap();
+    let skill_id = SkillId::new();
+    let input = ExportInput {
+        selection: ExportSelection::Skills(vec![skill_id]),
+        versions: VersionSelection::Current,
+        skills: vec![skillhub_core::ExportSkill {
+            skill_id,
+            version_id: version(),
+            content: "Safe content".into(),
+            display_name: "Prepared".into(),
+            files: sample_files(),
+        }],
+        format: ExportFormat::Folder,
+        output_dir: None,
+    };
+    let service = ExportService::new(root.path().to_path_buf());
+    let plan = service.prepare(&input).unwrap();
+    let replacement_version = VersionId::parse(&format!("sha256:{}", "c".repeat(64))).unwrap();
+    let mut drifted = input;
+    drifted.versions = VersionSelection::History(vec![replacement_version.clone()]);
+    drifted.skills[0].version_id = replacement_version;
+
+    let error = service
+        .create(&drifted, &plan, &[])
+        .expect_err("a prepared plan must not authorize a different version selection");
+
+    assert_eq!(error.code, skillhub_core::ErrorCode::OperationConflict);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
 }
 
 /// K3 RED：单个资产无法解码/读取时 prepare 必须整体失败并列出失败文件，
