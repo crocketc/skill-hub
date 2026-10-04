@@ -13,11 +13,13 @@ async function renderMetadata({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
   refreshSnapshot,
+  reviewPresentation = false,
   skillId = "skill-pdf",
 }: {
   facade?: ReturnType<typeof createMockSkillDetailFacade>;
   metadata?: SkillMetadata;
   refreshSnapshot?: () => Promise<void>;
+  reviewPresentation?: boolean;
   skillId?: string;
 } = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -31,6 +33,7 @@ async function renderMetadata({
           facade={facade}
           metadata={currentMetadata}
           refreshSnapshot={refreshSnapshot}
+          reviewPresentation={reviewPresentation}
           skillId={skillId}
         />
       </I18nextProvider>
@@ -151,6 +154,89 @@ describe("MetadataPanel", () => {
     expect(screen.queryByRole("textbox", { name: "我的用途说明" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "编辑我的用途说明" }));
+  });
+
+  it("abandons the edit on Escape even when focus rests on the form action buttons", async () => {
+    const { facade } = await renderMetadata();
+    const editButton = screen.getByRole("button", { name: "编辑我的用途说明" });
+    fireEvent.click(editButton);
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "焦点在按钮上的草稿" } });
+
+    // 用户 Tab 到表单动作按钮（或点击后焦点停留在按钮）时按 Esc：
+    // 语义仍是放弃本次编辑，不要求焦点必须回到输入框内。
+    const cancelButton = screen.getByRole("button", { name: "取消" });
+    cancelButton.focus();
+    expect(document.activeElement).toBe(cancelButton);
+    fireEvent.keyDown(cancelButton, { key: "Escape", code: "Escape" });
+
+    expect(facade.calls.metadataPatches).toEqual([]);
+    expect(screen.queryByRole("textbox", { name: "我的用途说明" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("我的用途说明")).toHaveTextContent("用于 PDF 表格提取");
+    // 编辑态卸载重挂了编辑按钮，焦点应回到当前挂载的编辑触发器上。
+    const restoredEditButton = screen.getByRole("button", { name: "编辑我的用途说明" });
+    expect(document.activeElement).toBe(restoredEditButton);
+
+    // 取消后的第二次 Esc 不得误触发提交或重新进入编辑。
+    fireEvent.keyDown(restoredEditButton, { key: "Escape", code: "Escape" });
+    expect(facade.calls.metadataPatches).toEqual([]);
+    expect(screen.queryByRole("textbox", { name: "我的用途说明" })).not.toBeInTheDocument();
+  });
+
+  it("closes the translation overwrite confirmation on Escape before touching the field edit", async () => {
+    const facade = createMockSkillDetailFacade();
+    await renderMetadata({
+      facade,
+      metadata: detailFixture({ userRevisedTranslation: true }).metadata,
+    });
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "确认框打开时的字段草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    expect(screen.getByRole("alertdialog")).toBeVisible();
+
+    // 嵌套浮层在内：Esc 先收确认框，不穿透到字段的放弃编辑。
+    fireEvent.keyDown(field, { key: "Escape", code: "Escape" });
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("确认框打开时的字段草稿");
+    expect(facade.calls.intents).toEqual([]);
+    expect(facade.calls.metadataPatches).toEqual([]);
+  });
+
+  it("closes the translation purpose dialog on Escape before touching the field edit", async () => {
+    const facade = createMockSkillDetailFacade();
+    facade.emitIntent = async () => ({ text: "用于读取 PDF 文本" });
+    await renderMetadata({ facade });
+    fireEvent.click(screen.getByText("原始文本与译文"));
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "译文确认框打开时的字段草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    expect(await screen.findByText("用于读取 PDF 文本")).toBeVisible();
+
+    fireEvent.keyDown(field, { key: "Escape", code: "Escape" });
+
+    expect(screen.queryByText("用于读取 PDF 文本")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("译文确认框打开时的字段草稿");
+    expect(facade.calls.metadataPatches).toEqual([]);
+  });
+
+  it("closes the review AI preview dialog on Escape without touching the field edit", async () => {
+    const { facade } = await renderMetadata({ reviewPresentation: true });
+    fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
+    const field = screen.getByRole("textbox", { name: "我的用途说明" });
+    fireEvent.change(field, { target: { value: "预览浮层打开时的字段草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("预览浮层打开时的字段草稿");
+    expect(facade.calls.metadataPatches).toEqual([]);
+    expect(facade.calls.intents).toEqual([]);
   });
 
   it("keeps the draft on blur and restores the edit trigger after explicit cancel", async () => {

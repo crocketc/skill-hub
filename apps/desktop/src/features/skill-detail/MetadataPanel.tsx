@@ -81,7 +81,9 @@ function EditableTextSection({
     setMode("read");
   };
 
-  const onEditorKeyDown = (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  // G-18/MS-01：Escape 统一挂在编辑表单容器上——焦点在输入框、保存或取消按钮
+  // 时按 Esc 都是放弃本次编辑；只有显式点击「保存」才提交。
+  const onFormKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
@@ -140,13 +142,12 @@ function EditableTextSection({
         <p aria-label={label}>{savedValue || t("skillDetail.metadata.empty")}</p>
       ) : null}
       {mode !== "read" ? (
-        <div className="sh-metadata-panel__form">
+        <div className="sh-metadata-panel__form" onKeyDown={onFormKeyDown}>
           {multiline ? (
             <textarea
               aria-label={label}
               disabled={mode === "saving"}
               onChange={(event) => setDraft(event.currentTarget.value)}
-              onKeyDown={onEditorKeyDown}
               ref={(element) => {
                 fieldRef.current = element;
               }}
@@ -158,7 +159,6 @@ function EditableTextSection({
               aria-label={label}
               disabled={mode === "saving"}
               onChange={(event) => setDraft(event.currentTarget.value)}
-              onKeyDown={onEditorKeyDown}
               ref={(element) => {
                 fieldRef.current = element;
               }}
@@ -294,8 +294,26 @@ function MetadataPanelForSkill({
     }
   };
 
+  // G-18/MS-01：确认框类内层浮层打开时，Esc 先收浮层本身，不穿透到字段的
+  // 放弃编辑；capture 阶段先于表单容器的冒泡处理，且随后阻断继续传播。
+  // AI 预览 Radix 对话框是 modal portal，事件不会到达本面板，无需在此处理。
+  const onPanelKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Escape") return;
+    if (translationConfirmation) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTranslationConfirmation(false);
+      return;
+    }
+    if (translationPurposeDraft !== undefined) {
+      event.preventDefault();
+      event.stopPropagation();
+      setTranslationPurposeDraft(undefined);
+    }
+  };
+
   return (
-    <div className="sh-metadata-panel">
+    <div className="sh-metadata-panel" onKeyDownCapture={onPanelKeyDownCapture}>
       {/* P1-12：块标题"身份与来源"已是该区块唯一标题，事实清单由字段名自说明。 */}
       {!reviewPresentation ? <section className="sh-metadata-panel__facts">
         <dl>
