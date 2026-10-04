@@ -328,6 +328,19 @@ test.describe("removal confirmations", () => {
     await expect(dialog).toContainText("This target is shared");
     await expect(page.getByRole("button", { name: "Confirm removal from target" })).toBeDisabled();
   });
+
+  // K2/G-10：删除影响查询失败必须可见失败并停止流程——错误进 alert、
+  // 确认对话框（含确认入口）不出现，绝不静默或回退。
+  test("shows the deletion load failure visibly without any confirm entry", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/removal?scenario=load-failed");
+
+    await expect(page.getByRole("alert")).toContainText(
+      "Deployment target details could not be verified, so deletion was not prepared.",
+    );
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Confirm deletion from library/ })).toHaveCount(0);
+  });
 });
 
 test.describe("deployment width matrix", () => {

@@ -117,6 +117,28 @@ describe("nativeErrors", () => {
     expect(message).toBe("errors.inputInvalid");
   });
 
+  // K2 预览失效边界：prepared 丢失/过期被后端拒绝（object.not_found +
+  // field=prepared_removal）时必须给出「重新确认」指引，不得落进
+  // 「目标不存在」的通用句让用户误以为数据丢失。
+  it("maps a lost prepared removal to the re-preview guidance copy", async () => {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const message = describeNativeError(
+      { code: "object.not_found", severity: "error", params: { field: "prepared_removal" }, actions: ["retry"] },
+      (key, options) => String(i18n.t(key as never, options as never)),
+      "removal.commitError",
+    );
+    expect(message).toContain("预览已失效，请重新确认");
+  });
+
+  it("keeps other object.not_found errors on the generic missing-object copy", () => {
+    const message = describeNativeError(
+      { code: "object.not_found", severity: "error", params: { field: "skill" }, actions: [] },
+      (translationKey) => translationKey,
+      "errors.generic",
+    );
+    expect(message).toBe("errors.objectNotFound");
+  });
+
   // M-05：连接测试等界面不得出现中英混排的裸错误码——input.invalid 的
   // 通用文案必须是无内嵌代码的本地化句子；诊断详情由界面另行折叠展示。
   it("renders the generic input.invalid copy without interpolating the raw code", async () => {

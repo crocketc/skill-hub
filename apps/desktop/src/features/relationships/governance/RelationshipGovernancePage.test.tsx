@@ -182,6 +182,40 @@ const MANAGED_ROW = makeRow({
   path: "C:/agents/codex/skills/link-reader",
 });
 
+/** K2/G-07：可执行「从 Agent/项目移除」且需要共享影响显式确认的部署边。 */
+const SHARED_UNDEPLOY_ROW = makeRow({
+  relationId: "managed:dep-shared-undeploy",
+  readiness: "needs_validation",
+  primaryAction: "undeploy",
+  blockers: ["shared_impact_confirmation_required"],
+  displayName: "共享移除 PDF",
+  path: "C:/agents/codex/skills/shared-reader",
+});
+
+/** 共享目标移除行的独立台账：不影响 FULL_LEDGER 的计数断言。 */
+function sharedUndeployLedger(): RelationGovernanceLedger {
+  return {
+    rows: [SHARED_UNDEPLOY_ROW],
+    counts: {
+      all: 1,
+      eligible_to_centralize: 0,
+      needs_validation: 1,
+      blocked: 0,
+      status_normal: 0,
+      status_retained: 0,
+      status_needs_validation: 1,
+      status_needs_attention: 0,
+      status_blocked: 0,
+      source_copies: 0,
+      deployments: 1,
+    },
+    bucket: "all",
+    total: 1,
+    relationship_revision: "rev-1",
+    last_verified_at: "2026-09-17T08:00:00Z",
+  };
+}
+
 const FULL_LEDGER: RelationGovernanceLedger = {
   rows: [ELIGIBLE_ROW, SHARED_IMPACT_ROW, STALE_VERIFICATION_ROW, BLOCKED_ROW, MANAGED_ROW],
   counts: {
@@ -673,11 +707,32 @@ describe("RelationshipGovernancePage 单条治理", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
 
     await waitFor(() => expect(facade.prepareRelationUndeploy).toHaveBeenCalledWith(MANAGED_ROW.relation));
-    await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1"));
+    // K2/G-07：共享决定始终随提交透传；该行无需共享确认时为显式 false。
+    await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1", { confirmSharedTargetRemoval: false }));
     await screen.findByText(/已从目标移除/);
     await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
     const undeployOp = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
     expect(undeployOp?.operationId).toBe("op-undeploy-1");
+  });
+
+  it("passes the confirmed shared-target decision into the undeploy commit", async () => {
+    // K2/G-07：共享目标行在预览里勾选显式确认后，提交载荷必须携带
+    // confirmSharedTargetRemoval=true，不得丢弃用户的共享决定。
+    const facade = createFacade(sharedUndeployLedger(), {
+      commitRelationUndeploy: vi.fn().mockResolvedValue(undeployResult()),
+    });
+    await renderGovernanceApp({ facade });
+    await screen.findByTestId("governance-row-list");
+    await screen.findByText("共享移除 PDF");
+
+    // 该行第一个动作槽位是「纳入集中库管理」（仅差共享确认）；「从
+    // Agent/项目移除」用带动作名的独立 testid 定位。
+    fireEvent.click(screen.getByTestId("governance-action-undeploy-managed:dep-shared-undeploy"));
+    expect(await screen.findByRole("dialog", { name: "从 Agent/项目移除预览" })).toBeVisible();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "我已确认共享目录影响" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+
+    await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1", { confirmSharedTargetRemoval: true }));
   });
 
   it("reports a single undeploy failure in the notification center with the inline description", async () => {

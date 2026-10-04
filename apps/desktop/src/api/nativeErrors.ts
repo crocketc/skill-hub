@@ -80,8 +80,9 @@ export function describeNativeError(
   const code = nativeErrorCode(error);
   const params = nativeErrorParams(error);
   const reason = typeof params.reason === "string" ? params.reason : undefined;
+  const field = typeof params.field === "string" ? params.field : undefined;
 
-  const keyed = keyedMessage(code, reason);
+  const keyed = keyedMessage(code, reason, field);
   if (keyed) {
     return translate(keyed, { ...params, code: code ?? "", reason: reason ?? "" });
   }
@@ -98,11 +99,20 @@ export function describeNativeError(
  * 把错误码映射为 i18n key（不翻译）。供 describeNativeError 使用；
  * 也导出给无法直接拿到 `t` 的数据层（如 import 提交循环）把结构化
  * 错误码转成可被 `t()` 解析的 key，避免裸代码直达用户界面。
+ * `field` 是 AppError params.field：同为 object.not_found，prepared
+ * 丢失意味着预览过期（重新确认），其余仍是对象不存在。
  */
 export function keyedMessage(
   code: string | null,
   reason: string | undefined,
+  field?: string,
 ): string | null {
+  if (code === "object.not_found") {
+    // K2 预览失效边界：prepared_removal 丢失/过期 → 拒绝提交并要求
+    // 重新预览（故障矩阵裁决文案），不得落进「目标不存在」通用句。
+    if (field === "prepared_removal") return "removal.errors.previewInvalidated";
+    return "errors.objectNotFound";
+  }
   if (code === "import.skipped_by_user") return "importWorkflow.commitMessages.skipped";
   if (code === "import.same_runtime_name_conflict") return "importWorkflow.errors.sameRuntimeNameConflict";
   if (code === "import.exact_duplicate_conflict") return "importWorkflow.errors.exactDuplicateConflict";
@@ -117,7 +127,6 @@ export function keyedMessage(
     if (reason === "existing_library_manifest_missing") return "errors.onboarding.existingLibraryManifestMissing";
     if (reason === "library_not_writable") return "errors.onboarding.libraryNotWritable";
   }
-  if (code === "object.not_found") return "errors.objectNotFound";
   if (code === "removal.deployment_target_unavailable") return "removal.errors.deploymentTargetUnavailable";
   if (code === "network.disabled") return "errors.networkDisabled";
   if (code === "llm.not_configured") return "settings.llm.notConfigured";

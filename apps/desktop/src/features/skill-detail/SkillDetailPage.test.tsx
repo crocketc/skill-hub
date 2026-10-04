@@ -288,6 +288,53 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
   });
 
+  // K2/G-10：删除影响查询失败必须可见失败并停止流程——错误进 alert，
+  // 确认对话框（含确认按钮）完全不出现，commit 不被调用。
+  it("shows the load failure visibly and never opens the confirm dialog when impact preparation fails", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockRejectedValue({
+        code: "removal.deployment_target_unavailable", severity: "error", params: {}, actions: [],
+      }),
+      commitDelete: vi.fn(),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Deployment target details could not be verified, so deletion was not prepared.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+  });
+
+  // K2 预览失效边界：prepared 丢失（operationId 缺省）时提交必须被拒，
+  // 用户看到「预览已失效，请重新确认」，绝不静默 no-op。
+  it("rejects the commit with re-preview guidance when the prepared operation is missing", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: undefined,
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [],
+        dependentProjects: [],
+      }),
+      commitDelete: vi.fn(),
+    };
+    await renderDetail({ removalFacade, locale: "zh-CN" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "从库中删除 Skill" }));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "确认从库中删除" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("预览已失效，请重新确认。");
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+  });
+
   it("names the destructive entries after their own removal objects in Chinese", async () => {
     await renderDetail({ locale: "zh-CN" });
 

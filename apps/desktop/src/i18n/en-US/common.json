@@ -2333,7 +2333,8 @@
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "errors": {
-      "deploymentTargetUnavailable": "Deployment target details could not be verified, so deletion was not prepared."
+      "deploymentTargetUnavailable": "Deployment target details could not be verified, so deletion was not prepared.",
+      "previewInvalidated": "This preview is no longer valid. Please review and confirm again."
     },
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
@@ -2374,7 +2375,19 @@
     "tracker": {
       "batchLabel": "Remove from library"
     },
-    "dependentsLabel": "Dependent projects"
+    "dependentsLabel": "Dependent projects",
+    "outcome": {
+      "title": "Deletion outcome",
+      "applied": "{{count}} targets deleted.",
+      "partial": "{{applied}} targets deleted, {{failed}} not deleted; the library Skill was not deleted.",
+      "failed": "Target deletion did not complete; the library Skill was not deleted.",
+      "appliedGroup": "Deleted targets",
+      "failedGroup": "Not deleted",
+      "reasonDetail": "Reason: {{detail}}",
+      "reasonUnknown": "Deletion failed. Continue later or try again.",
+      "continue": "Continue (re-confirm)",
+      "continuing": "Re-checking…"
+    }
   },
   "undeploy": {
     "eyebrow": "Remove from Agent/Project",

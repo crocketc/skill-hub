@@ -3,11 +3,13 @@ import { BatchRemovalImpactDialog } from "./BatchRemovalImpactDialog";
 import { useTranslation } from "react-i18next";
 import { RemovalImpactDialog } from "./RemovalImpactDialog";
 import { UndeployDialog } from "./UndeployDialog";
+import { Icon } from "../../ui/Icon";
 import { removalImpactFixture, type RemovalImpact } from "./api";
 
 type PreviewScenario =
   | "impact"
   | "impact-error"
+  | "load-failed"
   | "batch"
   | "batch-busy"
   | "batch-bulk"
@@ -17,6 +19,7 @@ type PreviewScenario =
 const scenarios: readonly PreviewScenario[] = [
   "impact",
   "impact-error",
+  "load-failed",
   "batch",
   "batch-busy",
   "batch-bulk",
@@ -65,6 +68,19 @@ export function RemovalPreview() {
         onCancel={noop}
         onConfirm={noop}
       />
+    );
+  }
+
+  if (scenario === "load-failed") {
+    // K2/G-10：镜像 SkillDetailPage 影响查询失败的用户可见状态——
+    // 错误进 alert、确认对话框（含确认入口）完全不渲染。
+    return (
+      <section className="sh-workflow-card">
+        <p className="sh-removal-flow__error" role="alert">
+          <Icon aria-hidden="true" name="failure" size={16} />
+          {t("removal.errors.deploymentTargetUnavailable")}
+        </p>
+      </section>
     );
   }
 

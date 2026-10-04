@@ -2,6 +2,7 @@ import {
   executeCommand,
   queryApplication,
   type AppCommandResult,
+  type CommitUndeploy,
   type GovernanceHistoryPage,
   type ListGovernanceHistory,
   type RelationGovernanceBatchOutcome,
@@ -19,6 +20,7 @@ import type {
   RelationGovernanceBatchRequest,
   RelationGovernanceFacade,
   RelationshipGovernanceMutationRequest,
+  RelationUndeployDecision,
   RelationUndeployPreparation,
 } from "./api";
 
@@ -223,10 +225,21 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     return { relationId, deploymentId, operationId: result.payload.operation_id };
   },
 
-  async commitRelationUndeploy(operationId: string): Promise<RemovalResult> {
+  async commitRelationUndeploy(
+    operationId: string,
+    decision: RelationUndeployDecision,
+  ): Promise<RemovalResult> {
+    // K2/G-07：共享目标显式确认随提交载荷透传（缺省 false，后端必须拒绝
+    // 缺确认的共享回收）。生成绑定暂无该字段，先以本地类型扩展承载；
+    // 待 A 绑定后对齐，绝不手改 bindings.ts。
+    const payload: CommitUndeploy & { confirm_shared_target_removal: boolean } = {
+      prepared_undeploy_id: operationId,
+      decision: "remove_owned_target",
+      confirm_shared_target_removal: decision.confirmSharedTargetRemoval,
+    };
     const result: AppCommandResult = await executeCommand({
       type: "commit_undeploy",
-      payload: { prepared_undeploy_id: operationId, decision: "remove_owned_target" },
+      payload,
     });
     if (result.type !== "removal_result") {
       return unexpectedResult("commit_undeploy");

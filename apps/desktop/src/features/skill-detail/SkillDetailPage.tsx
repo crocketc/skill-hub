@@ -230,7 +230,12 @@ export function SkillDetailPage({
 
   const commitRemoval = async (choices: Record<string, RemovalChoice>) => {
     const operationId = removalImpact?.operationId;
-    if (!operationId) return;
+    if (!operationId) {
+      // K2 预览失效边界：prepared 丢失时拒绝提交并要求重新预览，
+      // 绝不静默 no-op 让确认动作看起来成功而什么都不发生。
+      setRemovalError(t("removal.errors.previewInvalidated"));
+      return;
+    }
     setRemovalSubmitting(true);
     setRemovalError(undefined);
     try {
@@ -277,7 +282,11 @@ export function SkillDetailPage({
 
   const commitUndeploy = async (decision: UndeployDecision) => {
     const operationId = undeployImpact?.operationId;
-    if (!operationId) return;
+    if (!operationId) {
+      // K2 预览失效边界：prepared 丢失时拒绝提交并要求重新预览，不静默。
+      setUndeployError(t("removal.errors.previewInvalidated"));
+      return;
+    }
     setUndeploySubmitting(true);
     setUndeployError(undefined);
     try {

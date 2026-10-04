@@ -2333,7 +2333,8 @@
     "loading": "正在读取删除影响…",
     "loadError": "无法读取删除影响，请稍后重试。",
     "errors": {
-      "deploymentTargetUnavailable": "无法核实部署目标详情，未准备删除操作。"
+      "deploymentTargetUnavailable": "无法核实部署目标详情，未准备删除操作。",
+      "previewInvalidated": "预览已失效，请重新确认。"
     },
     "commitError": "删除未完成，集中库保持不变，请检查后重试。",
     "dependents": "依赖项目：{{projects}}",
@@ -2374,7 +2375,19 @@
     "tracker": {
       "batchLabel": "移出技能库"
     },
-    "dependentsLabel": "依赖项目"
+    "dependentsLabel": "依赖项目",
+    "outcome": {
+      "title": "删除结果",
+      "applied": "{{count}} 个目标已删除。",
+      "partial": "已删除 {{applied}} 个目标，{{failed}} 个未删除；集中库 Skill 尚未删除。",
+      "failed": "目标删除未完成；集中库 Skill 未删除。",
+      "appliedGroup": "已删除的目标",
+      "failedGroup": "未删除的目标",
+      "reasonDetail": "原因：{{detail}}",
+      "reasonUnknown": "删除失败，可继续处理或稍后重试。",
+      "continue": "继续处理（重新确认）",
+      "continuing": "正在重新核对…"
+    }
   },
   "undeploy": {
     "eyebrow": "从 Agent/项目移除",

@@ -666,7 +666,10 @@ export function RelationshipGovernancePage({
       run: async (handle) => {
         const prepared = await facade.prepareRelationUndeploy(flow.row.relation);
         handle.correlate(prepared.operationId);
-        return await facade.commitRelationUndeploy(prepared.operationId);
+        // K2/G-07：预览对话框里的共享目标决定必须随提交透传，不得丢弃。
+        return await facade.commitRelationUndeploy(prepared.operationId, {
+          confirmSharedTargetRemoval: flow.sharedImpactConfirmed,
+        });
       },
       successNotice: () => ({
         title: t("relationships.governance.actions.undeploy"),

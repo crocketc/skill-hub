@@ -71,6 +71,15 @@ export interface RelationUndeployPreparation {
   operationId: string;
 }
 
+/**
+ * K2/G-07：「从 Agent/项目移除」的提交决定。共享目标的显式确认必须随
+ * 提交透传（载荷字段 `confirm_shared_target_removal`，缺省 false，后端
+ * 对缺确认的共享回收必须拒绝执行）——不得在 facade 里丢弃用户决定。
+ */
+export interface RelationUndeployDecision {
+  confirmSharedTargetRemoval: boolean;
+}
+
 /** Revision-guarded single relationship decision mutation. */
 export interface RelationshipGovernanceMutationRequest {
   operationId: OperationId;
@@ -164,7 +173,8 @@ export interface RelationGovernanceFacade {
   commitGovernanceBatch(batchId: string, relationIds: string[]): Promise<RelationGovernanceBatchOutcome>;
   rollbackGovernanceBatch(batchId: string, relationIds: string[]): Promise<RelationGovernanceBatchOutcome>;
   prepareRelationUndeploy(relation: GovernableRelation): Promise<RelationUndeployPreparation>;
-  commitRelationUndeploy(operationId: string): Promise<RemovalResult>;
+  /** 提交单条移除；共享目标决定随载荷透传（K2/G-07），不再硬编码。 */
+  commitRelationUndeploy(operationId: string, decision: RelationUndeployDecision): Promise<RemovalResult>;
 }
 
 /** URL 是可复现状态的唯一载体：来源、桶、搜索与对象过滤都进查询参数。 */
