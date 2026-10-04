@@ -48,11 +48,16 @@ import { VersionTimeline } from "./VersionTimeline";
 import { SourceUpdatePanel } from "./SourceUpdatePanel";
 import { SourceRelinkPanel } from "./SourceRelinkPanel";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
+import {
+  RemovalOutcomeResult,
+  type RemovalOutcomeTargetLabel,
+} from "../removal/RemovalOutcomeResult";
 import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type {
   RemovalFacade,
   RemovalImpact,
   RemovalChoice,
+  RemovalResult,
   UndeployDecision,
   UndeployImpact,
 } from "../removal/api";
@@ -203,6 +208,12 @@ export function SkillDetailPage({
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSubmitting, setRemovalSubmitting] = useState(false);
   const [removalError, setRemovalError] = useState<string>();
+  // K2/G-07：中央删除失败（目标已回收、中央 Skill 未删除）时的逐项结果面板数据；
+  // targetLabels 用 prepare 返回的目标显示名，绝不裸露 deployment_id。
+  const [removalOutcome, setRemovalOutcome] = useState<{
+    result: RemovalResult;
+    targetLabels: Record<string, RemovalOutcomeTargetLabel>;
+  } | null>(null);
   const [undeployImpact, setUndeployImpact] = useState<UndeployImpact | null>(null);
   const [undeploySubmitting, setUndeploySubmitting] = useState(false);
   const [undeployError, setUndeployError] = useState<string>();
@@ -219,6 +230,7 @@ export function SkillDetailPage({
   const startRemoval = async () => {
     setRemovalLoading(true);
     setRemovalError(undefined);
+    setRemovalOutcome(null);
     try {
       setRemovalImpact(await effectiveRemovalFacade.prepareDelete(skillId, summaryQuery.data?.name));
     } catch (reason) {
@@ -239,7 +251,7 @@ export function SkillDetailPage({
     setRemovalSubmitting(true);
     setRemovalError(undefined);
     try {
-      const result = await runTrackedOperation({
+      const result = await runTrackedOperation<RemovalResult>({
         tracker,
         notifications,
         kind: "remove",
@@ -248,13 +260,31 @@ export function SkillDetailPage({
         translate: (key, options) => String(t(key as never, options as never)),
         queryClient,
         invalidateQueryKeys: [skillLibraryKeys.root],
+        // K2/G-07：中央删除失败不是成功——tracker 如实记失败，不冒充完成。
+        summarize: (settled) => ({
+          succeeded: settled.centralSkillDeleted ? 1 : 0,
+          failed: settled.centralSkillDeleted ? 0 : 1,
+          skipped: 0,
+        }),
         run: async (handle) => {
           handle.correlate(operationId);
           return effectiveRemovalFacade.commitDelete(operationId, choices);
         },
       });
       if (!result.centralSkillDeleted) {
-        throw new Error("central skill was not deleted");
+        // 故障矩阵：delete_skill 失败——目标已回收但中央 Skill 未删除。渲染
+        // 逐项结果面板（含恢复入口）而不是抛原始错误；不导航回列表冒充完成。
+        setRemovalImpact(null);
+        setRemovalOutcome({
+          result,
+          targetLabels: Object.fromEntries(
+            (removalImpact?.deployments ?? []).map((deployment) => [
+              deployment.id,
+              { label: deployment.label, path: deployment.path },
+            ]),
+          ),
+        });
+        return;
       }
       navigate({ pathname: backPathname, search: backSearch }, { replace: true, state: libraryReturn ? { libraryReturn } : undefined });
     } catch (reason) {
@@ -588,6 +618,17 @@ export function SkillDetailPage({
           submitting={removalSubmitting}
         />
       ) : removalError && !removalLoading ? <p role="alert">{removalError}</p> : null}
+      {removalOutcome ? (
+        <RemovalOutcomeResult
+          continuing={removalLoading}
+          onContinue={() => {
+            setRemovalOutcome(null);
+            void startRemoval();
+          }}
+          result={removalOutcome.result}
+          targetLabels={removalOutcome.targetLabels}
+        />
+      ) : null}
       {undeployImpact ? (
         <UndeployDialog
           error={undeployError}

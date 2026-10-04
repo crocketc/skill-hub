@@ -2370,6 +2370,7 @@
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
       "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again.",
+      "centralDeleteOutcome": "Targets were removed, but the library Skill was not deleted; see the per-target outcome.",
       "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed.",
       "outcomeError": "Deletion failed ({{code}}).",
       "armConfirm": "Click again to confirm deleting {{count}} Skills",

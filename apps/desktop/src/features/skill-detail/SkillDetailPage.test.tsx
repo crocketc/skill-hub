@@ -88,6 +88,7 @@ async function renderDetail({
             <Route element={<p>Library route</p>} path="/library" />
             <Route element={<ExportProbe />} path="/settings/data-protection" />
             <Route element={<GovernanceProbe />} path="/relationships/governance" />
+            <Route element={<p>Recovery route</p>} path="/recovery" />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
@@ -263,6 +264,111 @@ describe("SkillDetailPage shell", () => {
     ]);
     expect(client.getQueryState(skillLibraryKeys.root)?.isInvalidated).toBe(true);
     expect(await screen.findByText("Library route")).toBeVisible();
+  });
+
+  // K2/G-07 故障矩阵：delete_skill 失败（centralSkillDeleted=false）时不得抛出
+  // 原始错误或冒充成功，也不导航回列表——渲染逐项目标结果面板：目标使用
+  // prepare 返回的显示名（绝不裸露 deployment_id），标题明示「目标已回收，
+  // 中央 Skill 未删除」，失败原因经统一映射可读，恢复入口携带
+  // recovery_operation_id 深链进入恢复中心。
+  it("renders the per-target outcome panel with a recovery entry when the central delete fails", async () => {
+    const tracker = createOperationTracker();
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [
+          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex" },
+          { id: "dep-2", label: "Claude Code", path: "C:/claude/skills/pdf-reader", physicalId: "claude" },
+        ],
+        dependentProjects: [],
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({
+        centralSkillDeleted: false,
+        state: "partially_committed",
+        recoveryOperationId: "op-restore-1",
+        centralDeleteError: "internal.error",
+        items: [
+          { deploymentId: "dep-1", status: "applied" },
+          { deploymentId: "dep-2", status: "failed", errorCode: "operation_conflict" },
+        ],
+      }),
+    };
+    const { client } = await renderDetail({ removalFacade, tracker });
+    client.setQueryData(skillLibraryKeys.root, { cached: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
+      { target: { value: "keep_deployed" } },
+    );
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\claude\\skills\\pdf-reader" }),
+      { target: { value: "remove_deployment" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm deletion from library" }));
+
+    const panel = await screen.findByTestId("removal-outcome-result");
+    expect(panel).toBeVisible();
+    expect(screen.getByTestId("removal-outcome-title")).toHaveTextContent(
+      "Targets were removed, but the library Skill was not deleted.",
+    );
+    expect(within(panel).getByText("Codex CLI")).toBeVisible();
+    expect(within(panel).getByText("Claude Code")).toBeVisible();
+    expect(within(panel).queryByText("dep-1")).not.toBeInTheDocument();
+    expect(within(panel).getByText(/operation conflicts with another/)).toBeVisible();
+    expect(screen.queryByText(/central skill was not deleted/)).not.toBeInTheDocument();
+    // tracker 如实记失败，不冒充成功；也不导航回列表。
+    const [finished] = tracker.getSnapshot();
+    expect(finished.status).toBe("failed");
+    expect(finished.resultSummary).toEqual({ succeeded: 0, failed: 1, skipped: 0 });
+    expect(screen.getByTestId("route-location")).toHaveTextContent("/library/skill-pdf");
+    fireEvent.click(screen.getByTestId("removal-outcome-recovery"));
+    expect(screen.getByTestId("route-location")).toHaveTextContent("/recovery?operationId=op-restore-1");
+  });
+
+  // 继续处理入口：按契约先重新 prepare（原确认已消费），再重新确认。
+  it("re-prepares the deletion impact from the outcome panel continue entry", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [
+          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex" },
+        ],
+        dependentProjects: [],
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({
+        centralSkillDeleted: false,
+        state: "partially_committed",
+        centralDeleteError: "internal.error",
+        items: [{ deploymentId: "dep-1", status: "failed", errorCode: "operation_conflict" }],
+      }),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
+      { target: { value: "keep_deployed" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm deletion from library" }));
+    await screen.findByTestId("removal-outcome-result");
+
+    fireEvent.click(screen.getByTestId("removal-outcome-continue"));
+    await waitFor(() => expect(removalFacade.prepareDelete).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(screen.queryByTestId("removal-outcome-result")).not.toBeInTheDocument();
   });
 
   it("cancels deletion without committing a prepared operation", async () => {

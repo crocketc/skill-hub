@@ -310,4 +310,31 @@ describe("nativeRelationshipsFacade", () => {
       expectedRelationshipRevision: "rev-8",
     })).rejects.toThrow("end_relationship returned an unexpected native result.");
   });
+
+  // K2/G-07 契约定稿：治理页对话框的共享决定是 confirmSharedTargetRemoval
+  // 布尔，提交载荷为 { prepared_undeploy_id, decision: "remove_owned_target",
+  // confirm_shared_target_removal }。按真实门面签名断言共享决定出现在提交
+  // 载荷（RED 要求的断言形态），不再 cast 到早期草稿的旧签名。
+  it("forwards the selected shared-target removal decision to the native commit", async () => {
+    executeCommandMock.mockResolvedValueOnce({
+      type: "removal_result",
+      payload: {
+        operation_id: "op-undeploy",
+        skill_id: "skill-pdf",
+        decisions: [],
+        central_skill_deleted: false,
+      },
+    });
+
+    await nativeGovernanceFacade.commitRelationUndeploy("op-undeploy", { confirmSharedTargetRemoval: true });
+
+    expect(executeCommandMock).toHaveBeenCalledWith({
+      type: "commit_undeploy",
+      payload: {
+        prepared_undeploy_id: "op-undeploy",
+        decision: "remove_owned_target",
+        confirm_shared_target_removal: true,
+      },
+    });
+  });
 });

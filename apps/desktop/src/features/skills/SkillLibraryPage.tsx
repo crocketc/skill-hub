@@ -86,8 +86,17 @@ import { SkillTable } from "./SkillTable";
 import { SourceUpdateCheckSummary } from "./SourceUpdateCheckSummary";
 import { BatchRemovalDrawer } from "./BatchRemovalDrawer";
 import { BatchOperationSummary, type BatchOutcome } from "../../ui/BatchOperationSummary";
-import type { RemovalChoice, RemovalFacade, RemovalImpact } from "../removal/api";
+import type {
+  RemovalChoice,
+  RemovalFacade,
+  RemovalImpact,
+  RemovalResult,
+} from "../removal/api";
 import { nativeRemovalFacade } from "../removal/nativeApi";
+import {
+  RemovalOutcomeResult,
+  type RemovalOutcomeTargetLabel,
+} from "../removal/RemovalOutcomeResult";
 import type { SkillDetailFacade } from "../skill-detail/api";
 
 export interface SkillLibraryCapabilities {
@@ -481,6 +490,12 @@ export function SkillLibraryPage({
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
   const [batchRemovalImpacts, setBatchRemovalImpacts] = useState<RemovalImpact[] | null>(null);
+  // K2/G-07：中央删除失败（目标已回收、中央 Skill 未删除）的逐项结果面板数据，
+  // 提交后常驻页面（toast 自动消退），直到下一次批量删除重新准备时清除。
+  const [batchRemovalOutcomes, setBatchRemovalOutcomes] = useState<Array<{
+    impact: RemovalImpact;
+    result: RemovalResult;
+  }>>([]);
   const [batchRemovalLoading, setBatchRemovalLoading] = useState(false);
   const [batchRemovalSubmitting, setBatchRemovalSubmitting] = useState(false);
   const [batchRemovalError, setBatchRemovalError] = useState<string>();
@@ -1011,6 +1026,7 @@ export function SkillLibraryPage({
   const startBatchRemoval = async (single?: { id: string; name: string }) => {
     setBatchRemovalLoading(true);
     setBatchRemovalError(undefined);
+    setBatchRemovalOutcomes([]);
     dismissByKind("removal-summary");
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
@@ -1034,6 +1050,8 @@ export function SkillLibraryPage({
     setBatchRemovalSubmitting(true);
     setBatchRemovalError(undefined);
     const impacts = batchRemovalImpacts;
+    // K2/G-07：中央删除失败的目标保留逐项结果，供提交后常驻结果面板使用。
+    const partialRemovalResults: Array<{ impact: RemovalImpact; result: RemovalResult }> = [];
     // 统一执行桥（任务 4）：批量移除进 tracker 在途投影，按已完成 Skill
     // 推进；逐项失败继续汇总，不首错即停，异常不吞掉（结果页仍可见）。
     const outcomes: BatchOutcome[] = await runTrackedOperation({
@@ -1063,8 +1081,14 @@ export function SkillLibraryPage({
           }
           try {
             const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
-            if (!result.centralSkillDeleted) throw new Error("central skill was not deleted");
-            settled.push({ id: outcomeId, label, status: "succeeded" });
+            if (!result.centralSkillDeleted) {
+              // K2/G-07：中央删除失败（目标已回收、中央 Skill 未删除）不抛原始
+              // 开发错误串——记录失败项并保留逐项结果面板数据。
+              partialRemovalResults.push({ impact, result });
+              settled.push({ id: outcomeId, label, status: "failed", message: t("removal.batch.centralDeleteOutcome") });
+            } else {
+              settled.push({ id: outcomeId, label, status: "succeeded" });
+            }
           } catch (reason: unknown) {
             // 结构化 AppError 不允许 String() 直达用户界面（P1-10 错误路径统一）。
             settled.push({
@@ -1092,6 +1116,8 @@ export function SkillLibraryPage({
       ),
       tone: failedCount > 0 ? "danger" : "success",
     });
+    // 中央删除失败的目标：结果面板常驻页面（toast 自动消退），带恢复与继续入口。
+    setBatchRemovalOutcomes(partialRemovalResults);
     setBatchRemovalImpacts(null);
     changeSelection({ kind: "none" });
     setBatchRemovalSubmitting(false);
@@ -1662,6 +1688,23 @@ export function SkillLibraryPage({
         onConfirm={commitBatchRemoval}
         submitting={batchRemovalSubmitting}
       /> : null}
+      {batchRemovalOutcomes.map(({ impact, result }) => (
+        <RemovalOutcomeResult
+          key={impact.skillId}
+          continuing={batchRemovalLoading}
+          onContinue={() => {
+            setBatchRemovalOutcomes([]);
+            void startBatchRemoval({ id: impact.skillId, name: impact.skillName });
+          }}
+          result={result}
+          targetLabels={Object.fromEntries(
+            impact.deployments.map((deployment) => [
+              deployment.id,
+              { label: deployment.label, path: deployment.path } satisfies RemovalOutcomeTargetLabel,
+            ]),
+          )}
+        />
+      ))}
     </section>
   );
 }
