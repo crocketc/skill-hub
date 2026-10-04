@@ -328,6 +328,9 @@ export function SkillDetailPage({
     reviewReturnParams.set("skill", skillId);
     return (
       <SkillDetailReviewExperience
+        adjacent={adjacentQuery.data}
+        backSearch={backSearch}
+        detailPathname={detailPathname}
         facade={facade}
         insights={insightsQuery.data}
         markdownFacade={markdownFacade}

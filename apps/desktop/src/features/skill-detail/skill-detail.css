@@ -277,6 +277,24 @@
   gap: var(--space-3);
 }
 
+@container workspace (min-width: 44rem) {
+  .sh-skill-detail-review__rail {
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - var(--space-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    position: sticky;
+    scrollbar-width: thin;
+    top: var(--space-2);
+  }
+
+  .sh-skill-detail__adjacent {
+    margin-top: auto;
+  }
+}
+
 .sh-skill-detail-review__nav {
   display: grid;
   gap: var(--space-1);
@@ -296,45 +314,66 @@
   color: var(--ui-ink);
 }
 
-.sh-skill-detail-review__header {
-  align-items: center;
+/* 侧栏吸附：标题、导航与相邻技能切换跟随视口，不随正文滚走。 */
+.sh-skill-detail--review .sh-skill-detail-review__layout {
+  grid-template-columns: minmax(11rem, 13rem) minmax(0, 1fr);
+}
+
+/* 技能身份区：固定高度（名称两行截断），切换技能时导航不上下跳动。 */
+.sh-skill-detail-review__identity {
   border-bottom: 1px solid var(--ui-border-subtle);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-4);
-  justify-content: space-between;
+  display: grid;
+  gap: var(--space-2);
+  min-height: 11rem;
+  align-content: start;
   padding-block: var(--space-2) var(--space-3);
 }
 
-.sh-skill-detail-review__header h1,
-.sh-skill-detail-review__header p {
-  margin: 0;
+.sh-skill-detail-review__identity-name {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
-.sh-skill-detail-review__header h1 {
+.sh-skill-detail-review__identity-name h1 {
   color: var(--ui-ink);
-  font-size: clamp(1.35rem, 2vw, 1.7rem);
+  display: -webkit-box;
+  font-size: 1.15rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   letter-spacing: -0.02em;
-  line-height: 1.25;
+  line-clamp: 2;
+  line-height: 1.3;
+  margin: 0;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
-.sh-skill-detail-review__header p,
+.sh-skill-detail-review__identity-name p,
 .sh-skill-detail-review__prototype-note {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
   margin: 0;
 }
 
-.sh-skill-detail-review__actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 .sh-skill-detail-review__prototype-note {
   padding-block: var(--space-2);
+}
+
+/* 主体动作：派发主强调整行，导出/删除同排低强调/危险色。 */
+.sh-skill-detail-review__actions {
+  display: grid;
+  gap: var(--space-1);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sh-skill-detail-review__actions > .sh-button:first-child {
+  grid-column: 1 / -1;
+}
+
+.sh-skill-detail-review__actions > .sh-button {
+  justify-content: center;
+  width: 100%;
 }
 
 .sh-skill-detail-review__overview {
@@ -596,16 +635,33 @@
     min-width: 0;
   }
 
-  .sh-skill-detail-review__header {
-    align-items: flex-start;
+  /* 窄屏：身份区收成一行（名称+操作并排），动作改横向三键。 */
+  .sh-skill-detail-review__identity {
+    align-items: center;
+    border-bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    justify-content: space-between;
+    min-height: 0;
+    padding-block: 0;
+  }
+
+  .sh-skill-detail-review__identity-name h1 {
+    -webkit-line-clamp: 1;
+    font-size: 1rem;
+    line-clamp: 1;
   }
 
   .sh-skill-detail-review__actions {
+    display: flex;
     flex: 0 1 auto;
+    flex-wrap: wrap;
+    gap: var(--space-1);
   }
 
-  .sh-skill-detail-review__header {
-    justify-content: flex-start;
+  .sh-skill-detail-review__actions > .sh-button {
+    width: auto;
   }
 
   .sh-skill-detail--review .sh-skill-detail-review__overview .sh-metadata-panel {
@@ -754,3 +810,90 @@
 
 .sh-skill-detail-review__conflict { border-color: var(--ui-warning-border, var(--ui-border)); }
 .sh-skill-detail-review__conflict label { display: flex; gap: var(--space-2); align-items: center; font-size: var(--font-size-sm); }
+
+/* —— 版本历史紧凑行：一条版本一行排布，信息左右展示，适合大窗口 —— */
+.sh-skill-detail--review .sh-version-timeline ol > li {
+  gap: var(--space-2);
+}
+
+.sh-skill-detail--review .sh-version-timeline article {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sh-skill-detail--review .sh-version-timeline__heading {
+  flex: none;
+  gap: var(--space-1);
+}
+
+.sh-skill-detail--review .sh-version-timeline article > p {
+  color: var(--ui-ink-muted);
+  flex: 1 1 auto;
+  font-size: var(--font-size-xs);
+  margin: 0;
+  min-width: 0;
+}
+
+.sh-skill-detail--review .sh-version-timeline article > .sh-button,
+.sh-skill-detail--review .sh-version-timeline article > label {
+  flex: none;
+}
+
+.sh-skill-detail--review .sh-version-timeline article > label {
+  align-items: center;
+  color: var(--ui-ink-muted);
+  display: flex;
+  font-size: var(--font-size-xs);
+  gap: var(--space-1);
+}
+
+/* —— 使用去向卡片：元素位置与尺寸固定，长值省略+悬浮全文 —— */
+.sh-skill-detail-review__destination-heading {
+  align-items: center;
+  flex-wrap: nowrap;
+  min-height: 2rem;
+}
+
+.sh-skill-detail-review__destination-heading > div {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sh-skill-detail-review__destination > p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— 评审字体层级：区标题 > 卡片标题 > 正文 > 辅助说明，
+   卡片标题不得大于区标题（修复“基础安全检查”大于“安全检查”）—— */
+.sh-skill-detail--review .sh-skill-detail-review__main h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin: 0 0 var(--space-2);
+}
+
+.sh-skill-detail--review .sh-skill-detail-review__main h3:not(.sh-markdown-renderer h3):not(.sh-skill-detail-review__facts h3) {
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 0 0 var(--space-1);
+}
+
+.sh-skill-detail--review .sh-skill-detail-review__main h4:not(.sh-markdown-renderer h4) {
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+/* 可点击文字规范：按钮文字一律不加下划线；正文内链接保持下划线与
+   主题色（由 markdown.css 承担），浮层标题与正文层级同上。 */
+.sh-skill-detail--review .sh-dialog__content h2 {
+  font-size: 1rem;
+  font-weight: 650;
+}

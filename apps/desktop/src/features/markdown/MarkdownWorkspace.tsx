@@ -252,15 +252,32 @@ export function MarkdownWorkspace({
               <p className="sh-markdown-workspace__compare-hint">{t("markdown.workspace.compareHint")}</p>
             ) : null}
             {effectiveMode === "read" ? (
-              <MarkdownRenderer
-                facade={facade}
-                filePath={file.path}
-                markdown={file.markdown}
-                skillId={skillId}
-              />
+              fileRail ? (
+                <div className="sh-markdown-workspace__stage">
+                  <MarkdownRenderer
+                    facade={facade}
+                    filePath={file.path}
+                    markdown={file.markdown}
+                    skillId={skillId}
+                  />
+                </div>
+              ) : (
+                <MarkdownRenderer
+                  facade={facade}
+                  filePath={file.path}
+                  markdown={file.markdown}
+                  skillId={skillId}
+                />
+              )
             ) : null}
             {effectiveMode === "source" ? (
-              <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
+              fileRail ? (
+                <div className="sh-markdown-workspace__stage">
+                  <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
+                </div>
+              ) : (
+                <pre className="sh-markdown-workspace__source">{file.markdown}</pre>
+              )
             ) : null}
             {effectiveMode === "compare" ? (
               <div className="sh-markdown-workspace__compare">
@@ -291,22 +308,24 @@ export function MarkdownWorkspace({
                   <DataState message={t("markdown.workspace.loadingFile")} state="loading" />
                 }
               >
-              <MarkdownEditor
-                facade={facade}
-                file={file}
-                key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
-                onExit={() => setMode("read")}
-                reviewSaveFlow={reviewSaveFlow}
-                onSaved={() => {
-                  void queryClient.invalidateQueries({
-                    queryKey: ["skill-detail", skillId, "summary"],
-                  });
-                  void queryClient.invalidateQueries({
-                    queryKey: ["skill-detail", skillId, "versions"],
-                  });
-                }}
-                skillId={skillId}
-              />
+                <div className={fileRail ? "sh-markdown-workspace__stage sh-markdown-workspace__stage--editor" : undefined}>
+                  <MarkdownEditor
+                    facade={facade}
+                    file={file}
+                    key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
+                    onExit={() => setMode("read")}
+                    reviewSaveFlow={reviewSaveFlow}
+                    onSaved={() => {
+                      void queryClient.invalidateQueries({
+                        queryKey: ["skill-detail", skillId, "summary"],
+                      });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["skill-detail", skillId, "versions"],
+                      });
+                    }}
+                    skillId={skillId}
+                  />
+                </div>
               </Suspense>
             ) : null}
           </div>

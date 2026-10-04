@@ -17,6 +17,7 @@ import { VersionTimeline } from "./VersionTimeline";
 import { ReviewHeaderActions, ReviewOverviewStatus, ReviewSubjectLocation } from "./SkillDetailReviewScenarios";
 import type { SkillLibraryReturnState } from "./detailContext";
 import type {
+  AdjacentSkillContext,
   SkillDetailFacade,
   SkillDetailInsights,
   SkillDetailSummary,
@@ -36,6 +37,9 @@ const sections = [
 type ReviewSectionId = typeof sections[number][0];
 
 interface SkillDetailReviewExperienceProps {
+  adjacent?: AdjacentSkillContext;
+  backSearch: string;
+  detailPathname: string;
   libraryReturn?: SkillLibraryReturnState;
   returnToLibrary: string;
   facade: SkillDetailFacade;
@@ -51,6 +55,9 @@ interface SkillDetailReviewExperienceProps {
 
 /** DEV review layout; writes remain in the in-memory preview facade. */
 export function SkillDetailReviewExperience({
+  adjacent,
+  backSearch,
+  detailPathname,
   libraryReturn,
   returnToLibrary,
   facade,
@@ -96,6 +103,15 @@ export function SkillDetailReviewExperience({
           >
             返回技能库
           </Link>
+          <div className="sh-skill-detail-review__identity">
+            <div className="sh-skill-detail-review__identity-name">
+              <h1>{summary.name}</h1>
+              <p>当前版本 · {summary.currentVersion}</p>
+            </div>
+            <div aria-label="技能操作" className="sh-skill-detail-review__actions">
+              <ReviewHeaderActions currentVersion={summary.currentVersion} />
+            </div>
+          </div>
           <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
             {sections.map(([id, label]) => (
               <a
@@ -109,17 +125,9 @@ export function SkillDetailReviewExperience({
               </a>
             ))}
           </nav>
+          <ReviewAdjacentSkills adjacent={adjacent} backSearch={backSearch} detailPathname={detailPathname} />
         </aside>
         <main className="sh-skill-detail__content sh-skill-detail-review__main">
-          <header className="sh-skill-detail-review__header">
-            <div>
-              <h1>{summary.name}</h1>
-              <p>当前版本 · {summary.currentVersion}</p>
-            </div>
-            <div aria-label="技能操作" className="sh-skill-detail-review__actions">
-              <ReviewHeaderActions currentVersion={summary.currentVersion} />
-            </div>
-          </header>
           <p className="sh-skill-detail-review__prototype-note" role="note">
             原型示例 · 操作不会更改真实文件、网络来源或技能库数据。
           </p>
@@ -178,6 +186,47 @@ export function SkillDetailReviewExperience({
         </main>
       </div>
     </section>
+  );
+}
+
+/** 相邻技能切换（复用生产 getAdjacentContext 契约与 DetailSectionNav 交互）。 */
+function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname }: {
+  adjacent?: AdjacentSkillContext;
+  backSearch: string;
+  detailPathname: string;
+}) {
+  const { t } = useTranslation();
+  if (!adjacent) return null;
+  return (
+    <nav aria-label={String(t("skillDetail.navigation.label"))} className="sh-skill-detail__adjacent">
+      <span>{String(t("skillDetail.navigation.position", { position: adjacent.position, total: adjacent.total }))}</span>
+      <div className="sh-skill-detail__adjacent-controls">
+        {adjacent.previous ? (
+          <Link
+            className="sh-button sh-button--ghost sh-button--sm"
+            to={{ pathname: `${detailPathname}/${adjacent.previous.id}`, search: backSearch }}
+          >
+            {String(t("skillDetail.navigation.previous"))}
+          </Link>
+        ) : (
+          <button className="sh-button sh-button--ghost sh-button--sm" disabled type="button">
+            {String(t("skillDetail.navigation.previous"))}
+          </button>
+        )}
+        {adjacent.next ? (
+          <Link
+            className="sh-button sh-button--ghost sh-button--sm"
+            to={{ pathname: `${detailPathname}/${adjacent.next.id}`, search: backSearch }}
+          >
+            {String(t("skillDetail.navigation.next"))}
+          </Link>
+        ) : (
+          <button className="sh-button sh-button--ghost sh-button--sm" disabled type="button">
+            {String(t("skillDetail.navigation.next"))}
+          </button>
+        )}
+      </div>
+    </nav>
   );
 }
 
@@ -242,26 +291,31 @@ function ReviewUsageDestinations() {
   return (
     <>
     <div aria-label="技能使用去向" className="sh-skill-detail-review__destinations">
-      {targets.map((target) => {
-        return (
-          <article className="sh-skill-detail-review__destination" key={target.id}>
-            <div className="sh-skill-detail-review__destination-heading">
-              <div>
-                {target.kind === "agent" || target.kind === "shared" ? (
-                  <AgentPresentation agentId={target.agentId} />
-                ) : <strong>{target.name}</strong>}
-                {target.kind === "shared" ? <div className="sh-skill-detail-review__shared-consumers"><span>此物理目录的识别方</span><AgentPresentation agentId="codebuddy.code" /></div> : null}
-              </div>
-              <StatusBadge tone={target.status === "已集中管理" ? "success" : "warning"}>
-                {target.status}
-              </StatusBadge>
-            </div>
-            <p>{target.detail}</p>
-            <code title={target.path}>{target.path}</code>
-            <div className="sh-skill-detail-review__source-actions"><Button onClick={() => { setTargetView("target"); setSelectedTarget(target.id); }} size="sm" variant="ghost">{target.kind === "project" ? "进入项目" : "进入 Agent"}</Button><Button onClick={() => { setTargetView("governance"); setSelectedTarget(target.id); }} size="sm" variant="ghost">查看治理详情</Button></div>
-          </article>
-        );
-      })}
+          {targets.map((target) => {
+            return (
+              <article className="sh-skill-detail-review__destination" key={target.id}>
+                <div className="sh-skill-detail-review__destination-heading">
+                  <div>
+                    {target.kind === "shared" ? (
+                      <AgentPresentation
+                        sharedAgentBrandKinds={{ "openai.codex-cli": ["cli"], "codebuddy.code": ["cli"] }}
+                        sharedAgentBrands={["openai.codex-cli", "codebuddy.code"]}
+                        sharedDirectory
+                      />
+                    ) : target.kind === "agent" ? (
+                      <AgentPresentation agentId={target.agentId} />
+                    ) : <strong>{target.name}</strong>}
+                  </div>
+                  <StatusBadge tone={target.status === "已集中管理" ? "success" : "warning"}>
+                    {target.status}
+                  </StatusBadge>
+                </div>
+                <p title={target.detail}>{target.detail}</p>
+                <code title={target.path}>{target.path}</code>
+                <div className="sh-skill-detail-review__source-actions"><Button onClick={() => { setTargetView("target"); setSelectedTarget(target.id); }} size="sm" variant="ghost">{target.kind === "project" ? "进入项目" : "进入 Agent"}</Button><Button onClick={() => { setTargetView("governance"); setSelectedTarget(target.id); }} size="sm" variant="ghost">查看治理详情</Button></div>
+              </article>
+            );
+          })}
     </div>
     {selectedTarget ? (() => {
       const target = targets.find((item) => item.id === selectedTarget);

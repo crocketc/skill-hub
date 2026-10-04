@@ -471,3 +471,23 @@ test("review dispatch previews same-name target occupancy handling", async ({ pa
   const retryDialog = page.getByRole("dialog", { name: "派发到 Agent 或项目" });
   await expect(retryDialog.getByLabel("演示：目标已有同名技能")).not.toBeChecked();
 });
+
+test("review rail hosts the fixed identity actions and adjacent skill navigation", async ({ page }) => {
+  await page.goto(reviewUrl);
+
+  const identity = page.locator(".sh-skill-detail-review__identity");
+  await expect(identity).toBeVisible();
+  await expect(identity).toContainText("当前版本 · v2.4.1");
+  await expect(identity.getByRole("button", { name: "派发", exact: true })).toBeVisible();
+
+  const adjacent = page.getByRole("navigation", { name: "Skill 导航" });
+  await expect(adjacent).toContainText("第 2 个，共 80 个");
+  await adjacent.getByRole("link", { name: "上一个 Skill" }).click();
+  await expect(page).toHaveURL(/skill-detail\/skill-doc/);
+  await expect(page.getByTestId("skill-detail-review")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "DOCX Writer" })).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Skill 导航" }).getByRole("link", { name: "下一个 Skill" }).click();
+  await expect(page).toHaveURL(/skill-detail\/skill-pdf/);
+  await expect(page.getByRole("heading", { level: 1, name: "PDF Reader" })).toBeVisible();
+});

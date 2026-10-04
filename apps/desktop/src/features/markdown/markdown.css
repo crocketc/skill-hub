@@ -382,6 +382,35 @@
 }
 
 /* —— 详情原型（fileRail）：文件结构侧栏 —— */
+/* 内容舞台：阅读/源码/对照/编辑共用同一高度（随窗口 62dvh 缩放，
+   上下限保证极小/极大窗口可用），内容超出在舞台内部滚动，
+   切换页签不再引起整页高度跳动。 */
+.sh-markdown-workspace--rail {
+  --sh-md-stage: clamp(24rem, 62dvh, 50rem);
+}
+
+.sh-markdown-workspace__stage {
+  block-size: var(--sh-md-stage);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  overflow: auto;
+}
+
+.sh-markdown-workspace__stage .sh-markdown-renderer {
+  max-height: none;
+  overflow: visible;
+  padding: var(--space-4);
+}
+
+.sh-markdown-workspace__stage .sh-markdown-workspace__source {
+  block-size: 100%;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  max-height: none;
+}
+
 .sh-markdown-workspace__body {
   display: grid;
   gap: var(--space-3);
@@ -468,8 +497,9 @@
   }
 }
 
-/* —— 对照模式：阅读|源码双栏，滚动按比例联动 —— */
+/* —— 对照模式：阅读|源码双栏，滚动按比例联动；高度与舞台一致 —— */
 .sh-markdown-workspace__compare {
+  block-size: var(--sh-md-stage, 36rem);
   display: grid;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
@@ -478,7 +508,7 @@
 }
 
 .sh-markdown-workspace__pane {
-  block-size: 36rem;
+  block-size: 100%;
   min-width: 0;
   overflow-y: auto;
 }
@@ -508,14 +538,15 @@
   margin: 0;
 }
 
+/* 编辑模式同样约束在舞台高度内：分屏面板预留工具栏/提示行后取剩余高度。 */
+.sh-markdown-workspace__stage--editor .sh-markdown-editor__split > div {
+  max-height: calc(var(--sh-md-stage, 36rem) - 5rem);
+}
+
 @media (max-width: 40rem) {
   .sh-markdown-workspace__compare {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sh-markdown-workspace__pane {
-    block-size: auto;
-    max-block-size: 24rem;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 
   .sh-markdown-workspace__pane + .sh-markdown-workspace__pane {
