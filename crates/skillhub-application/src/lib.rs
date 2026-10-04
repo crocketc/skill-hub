@@ -6823,14 +6823,29 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::OpenOfficialRelease(request) => return self.open_official_release(request),
             AppCommand::OpenExternalUrl(request) => return self.open_external_url(request),
-            AppCommand::OpenDefaultApplication(_) => {
-                return Err(not_yet_implemented("open_default_application"));
+            AppCommand::OpenDefaultApplication(request) => {
+                return self.open_local_resource(
+                    "execute.open_default_application",
+                    request.skill_id,
+                    &request.path,
+                    LocalOpenService::open_default,
+                );
             }
-            AppCommand::OpenSkillFolder(_) => {
-                return Err(not_yet_implemented("open_skill_folder"));
+            AppCommand::OpenSkillFolder(request) => {
+                return self.open_local_resource(
+                    "execute.open_skill_folder",
+                    request.skill_id,
+                    &request.path,
+                    LocalOpenService::open_folder,
+                );
             }
-            AppCommand::ChooseExternalApplication(_) => {
-                return Err(not_yet_implemented("choose_external_application"));
+            AppCommand::ChooseExternalApplication(request) => {
+                return self.open_local_resource(
+                    "execute.choose_external_application",
+                    request.skill_id,
+                    &request.path,
+                    LocalOpenService::choose_application,
+                );
             }
             AppCommand::SetApplicationUpdatePolicy(request) => {
                 return self.set_application_update_policy(request)
@@ -7518,11 +7533,25 @@ impl ApplicationFacade for LocalApplicationFacade {
                     }
                     None => None,
                 };
+                let central = self
+                    .library_runtime
+                    .snapshot()
+                    .ok()
+                    .map(|library| Arc::clone(&library.central));
                 self.with_database("query.get_skill", move |database| {
                     let skill = database
                         .catalog_repository()?
                         .get_detail(skill_id)?
                         .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                    // K9：真实物化根路径只报告确实存在的可见树，供"采纳本地
+                    // 来源"等预填场景使用；不派生自显示名或截断文本。
+                    let root_path = central.as_ref().and_then(|central| {
+                        let visible_root =
+                            central.visible_skill_path_for_runtime(skill_id, &skill.runtime_name);
+                        visible_root
+                            .is_dir()
+                            .then(|| visible_root.to_string_lossy().into_owned())
+                    });
                     Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
                         skill_id: skill.skill_id,
                         display_name: skill.display_name,
@@ -7539,8 +7568,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         current_version,
                         agent_deployment_count: skill.agent_deployment_count,
                         project_deployment_count: skill.project_deployment_count,
-                        // K9：RED 种子——真实物化根路径在 GREEN 提交中接线。
-                        root_path: None,
+                        root_path,
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,
@@ -7786,7 +7814,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 request.version_id.as_ref(),
                 &request.path,
             ),
-            AppQuery::ResolveLocalAsset(_) => Err(not_yet_implemented("resolve_local_asset")),
+            AppQuery::ResolveLocalAsset(request) => self.resolve_local_asset(request),
             AppQuery::AnalyzeGlobalSkillEvidence(request) => {
                 self.analyze_global_skill_evidence(request).await
             }
@@ -12702,6 +12730,141 @@ impl LocalApplicationFacade {
         })
     }
 
+    /// K9：本地资产解析。Markdown 与资产从同一个版本清单读取：`version_id`
+    /// 给定时读该版本（并校验归属），缺省读当前版本；任一文件不在该清单中
+    /// 都是明确失败，绝不跨版本补读。结果以 data URL 返回——webview 拿到
+    /// 的只有已通过边界校验的字节，而不是文件系统路径。
+    fn resolve_local_asset(
+        &self,
+        request: skillhub_core::api::ResolveLocalAsset,
+    ) -> AppResult<AppQueryResult> {
+        let markdown_path = validate_markdown_path(&request.markdown_path)?;
+        let asset_path = validate_relative_tree_path(&request.asset_path)?;
+        let media_type = local_asset_media_type(&asset_path).ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "asset_path")
+                .with_param("reason", "unsupported_asset_type")
+                .with_action(RecoveryAction::ChooseAnotherName)
+        })?;
+        let library = self.library_runtime.snapshot()?;
+        let version_id = match request.version_id.as_ref() {
+            Some(version_id) => {
+                let manifest = library.store.load_manifest(version_id)?;
+                if manifest.skill_id != request.skill_id {
+                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "version_id")
+                        .with_action(RecoveryAction::Acknowledge));
+                }
+                version_id.clone()
+            }
+            None => library.current(request.skill_id)?.ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", request.skill_id.to_string())
+            })?,
+        };
+        // 同版本保证：两个路径都必须出现在同一份清单里。Markdown 缺失与
+        // 资产缺失同样走 ObjectNotFound，不回退到其他版本。
+        let manifest = library.store.load_manifest(&version_id)?;
+        let markdown_present = manifest
+            .entries
+            .iter()
+            .any(|entry| entry.path == markdown_path.to_string_lossy());
+        if !markdown_present {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "markdown_path")
+                .with_param("path", request.markdown_path.clone())
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let (_, bytes) = library.read_file(
+            &version_id,
+            &request.asset_path,
+            LOCAL_ASSET_SIZE_LIMIT_BYTES as u64,
+        )?;
+        let data_url = {
+            use base64::Engine as _;
+            format!(
+                "data:{media_type};base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        };
+        Ok(AppQueryResult::LocalAsset(
+            skillhub_core::api::LocalAssetResolution {
+                skill_id: request.skill_id,
+                version_id,
+                markdown_path: request.markdown_path,
+                asset_path: request.asset_path,
+                media_type: media_type.to_owned(),
+                data_url,
+            },
+        ))
+    }
+
+    /// K9：本地打开命令的公共边界。Skill 必须存在，路径必须落在该 Skill
+    /// 的真实物化树内且真实存在；两侧都以规范身份比较，符号链接或目录
+    /// 连接指向树外的路径在这里被拒绝。平台打开器由桌面外壳注入。
+    fn open_local_resource(
+        &self,
+        operation: &'static str,
+        skill_id: skillhub_core::SkillId,
+        request_path: &str,
+        open: fn(&LocalOpenService, &str) -> AppResult<()>,
+    ) -> AppResult<AppCommandResult> {
+        if request_path.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "path")
+                .with_action(RecoveryAction::Retry));
+        }
+        let runtime_name = self.with_database(operation, |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .map(|skill| skill.runtime_name().to_owned())
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let library = self.library_runtime.snapshot()?;
+        let visible_root = library
+            .central
+            .visible_skill_path_for_runtime(skill_id, &runtime_name);
+        if !visible_root.is_dir() {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("reason", "visible_tree_missing")
+                .with_param("skill_id", skill_id.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        let requested = PathBuf::from(request_path);
+        if !requested.exists() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "path")
+                .with_param("reason", "path_missing")
+                .with_action(RecoveryAction::Retry));
+        }
+        let canonical_root = visible_root.canonicalize().map_err(|error| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_tree_identity_changed")
+                .with_param("detail", error.to_string())
+        })?;
+        let canonical_requested = requested.canonicalize().map_err(|error| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "path")
+                .with_param("detail", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        if !canonical_requested.starts_with(&canonical_root) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "path")
+                .with_param("reason", "path_outside_visible_tree")
+                .with_param("skill_id", skill_id.to_string()));
+        }
+        open(&self.local_open_service, request_path)?;
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "local_open.opened",
+        )))
+    }
+
     fn read_markdown_file(
         &self,
         skill_id: skillhub_core::SkillId,
@@ -13052,6 +13215,54 @@ fn validate_markdown_path(path: &str) -> AppResult<PathBuf> {
             .with_action(RecoveryAction::ChooseAnotherName));
     }
     Ok(relative.to_path_buf())
+}
+
+/// K9：版本树内相对路径校验——与 Markdown 路径同一规则，但不要求扩展名。
+fn validate_relative_tree_path(path: &str) -> AppResult<PathBuf> {
+    if path.is_empty() || path.contains('\\') {
+        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "path")
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    let relative = Path::new(path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("field", "path")
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    Ok(relative.to_path_buf())
+}
+
+/// K9：本地资产大小上限（10 MiB）。解析结果以 data URL 内联返回，上限
+/// 防止一次 IPC 载荷撑爆 webview；更大的文件本来就不该内联展示。
+const LOCAL_ASSET_SIZE_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+
+/// K9：允许内联进 webview 的媒体类型白名单。未知扩展名拒绝而不是猜测。
+/// SVG 以 `img` 载荷返回时浏览器禁用其内部脚本，风险与位图一致。
+fn local_asset_media_type(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        _ => return None,
+    })
 }
 
 /// K4：Markdown 内容与草稿共用的 1 MiB 上限。
@@ -13974,15 +14185,6 @@ fn journal_record(
 fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
-        .with_action(RecoveryAction::Retry)
-}
-
-/// RED-seed helper for contract variants whose behaviour lands in a later
-/// commit of the same batch; every call site is replaced before delivery.
-fn not_yet_implemented(operation: &'static str) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("operation", operation)
-        .with_param("reason", "not_yet_implemented")
         .with_action(RecoveryAction::Retry)
 }
 

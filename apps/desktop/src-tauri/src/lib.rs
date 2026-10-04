@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 use skillhub_application::relationship_watch_confirmation::{
     RelationshipCheckExecuting, RelationshipWatchPump,
 };
-use skillhub_application::{ExternalUrlOpener, LocalApplicationFacade, SystemExternalUrlOpener};
+use skillhub_application::{
+    ExternalUrlOpener, LocalApplicationFacade, LocalPathOpener, SystemExternalUrlOpener,
+    SystemLocalPathOpener,
+};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     FactsChanged,
@@ -398,6 +401,13 @@ fn register_external_url_opener(
     facade.set_external_url_opener(opener);
 }
 
+/// Hands the platform openers for local library resources to the facade.
+/// Without them the open commands refuse instead of pretending a path was
+/// opened, so the registration is part of the startup contract too.
+fn register_local_path_opener(facade: &LocalApplicationFacade, opener: Arc<dyn LocalPathOpener>) {
+    facade.set_local_path_opener(opener);
+}
+
 /// 一体化标题栏的窗口机制：窗口按配置以 `visible: false` 隐藏创建，setup
 /// 里先完成平台专属的去边框，再统一显示，避免 Windows 去边框瞬间原生
 /// 标题栏闪烁。Windows 在运行时去装饰（shadow 保持默认，保留投影与
@@ -429,6 +439,7 @@ pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()>
                     updater::TauriUpdateInstaller::for_app(app.handle().clone()),
                 ));
                 register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener));
+                register_local_path_opener(&facade, Arc::new(SystemLocalPathOpener));
                 start_relationship_watcher(app, &facade);
                 Ok(())
             }
@@ -841,6 +852,18 @@ mod external_link_tests {
         assert!(
             source.contains("register_external_url_opener(&facade, Arc::new(SystemExternalUrlOpener::default()))"),
             "the desktop shell must register the system opener during setup"
+        );
+    }
+
+    #[test]
+    fn startup_registers_the_system_local_path_opener() {
+        let source =
+            std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+                .expect("desktop shell source");
+        assert!(
+            source
+                .contains("register_local_path_opener(&facade, Arc::new(SystemLocalPathOpener));"),
+            "the desktop shell must register the local path opener during setup"
         );
     }
 

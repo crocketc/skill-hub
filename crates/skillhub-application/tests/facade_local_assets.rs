@@ -218,17 +218,32 @@ async fn resolve_local_asset_never_mixes_versions() {
         .await
         .expect("save v2 content");
 
-    // 请求 v2 版本但资产只存在于 v1：跨版本混读必须拒绝，而不是用
-    // 其他版本"尽力解析"。
+    // 请求 v2（保存后的当前版本）但资产只存在于 v1：跨版本混读必须
+    // 拒绝，而不是用其他版本"尽力解析"。
+    let v2_version_id = current_version(&fixture.facade, fixture.skill_id).await;
+    assert_ne!(v2_version_id, fixture.version_id);
     let error = resolve_asset(
         &fixture.facade,
         fixture.skill_id,
         "SKILL.md",
         "assets/logo.png",
-        Some(fixture.version_id),
+        Some(v2_version_id),
     )
     .await
     .expect_err("asset missing in the requested version must be refused");
+    assert_eq!(error.code, ErrorCode::ObjectNotFound);
+
+    // 当前版本已切换到 v2（v2 无该资产），null 解析跟随当前版本，应报
+    // 资产缺失而不是悄悄回退到 v1。
+    let error = resolve_asset(
+        &fixture.facade,
+        fixture.skill_id,
+        "SKILL.md",
+        "assets/logo.png",
+        None,
+    )
+    .await
+    .expect_err("null version_id must follow the current version");
     assert_eq!(error.code, ErrorCode::ObjectNotFound);
 
     // 显式历史读取仍然完整可用：Markdown 与资产都来自同一个 v1 清单。
@@ -237,17 +252,13 @@ async fn resolve_local_asset_never_mixes_versions() {
         fixture.skill_id,
         "SKILL.md",
         "assets/logo.png",
-        None,
+        Some(fixture.version_id.clone()),
     )
-    .await;
-    // 当前版本已切换到 v2（v2 无该资产），null 解析应报资产缺失而不是
-    // 悄悄回退到 v1。
-    match historical {
-        Err(error) => assert_eq!(error.code, ErrorCode::ObjectNotFound),
-        Ok(resolution) => {
-            panic!("null version_id must follow the current version, got {resolution:?}")
-        }
-    }
+    .await
+    .expect("explicit same-version historical read keeps working");
+    assert_eq!(historical.version_id, fixture.version_id);
+    let expected = format!("data:image/png;base64,{}", STANDARD.encode(PNG_BYTES));
+    assert_eq!(historical.data_url, expected);
 }
 
 #[tokio::test]
