@@ -1,5 +1,5 @@
-pub mod custom;
 pub mod compatibility;
+pub mod custom;
 pub mod discovery;
 pub mod profile;
 pub mod target;
@@ -9,11 +9,11 @@ pub use custom::{
     PathGrantResolver, ResolvedPathGrant,
 };
 pub use discovery::{
-    AgentDirectoryAvailability, AgentDirectoryFact, AgentDirectoryIdentity,
-    AgentDirectoryDeploymentStatus, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
-    AgentDirectoryProjection,
-    AgentDirectoryRole, AgentRepository, AgentRootObservation, ClientInstance, ClientPresence,
-    DirectoryObservationStatus, DiscoverySnapshot, LogicalTarget, PhysicalTarget,
+    AgentDirectoryAvailability, AgentDirectoryDeploymentStatus, AgentDirectoryFact,
+    AgentDirectoryIdentity, AgentDirectoryMemberCapabilities, AgentDirectoryMemberFact,
+    AgentDirectoryProjection, AgentDirectoryRole, AgentRepository, AgentRootObservation,
+    ClientInstance, ClientPresence, DirectoryObservationStatus, DiscoverySnapshot, LogicalTarget,
+    PhysicalTarget,
 };
 pub use profile::{
     validate_profile_strict, AgentClient, AgentProfile, CallPolicy, ClientKind,

@@ -620,7 +620,11 @@ async fn stale_planned_and_prepared_rows_settle_as_rolled_back_on_startup() {
                 physical_target_id: target_id,
                 logical_target_ids: vec!["agent-codex".into()],
                 target_path: target.path().to_string_lossy().into_owned(),
-                destination_path: target.path().join("stale-prepared").to_string_lossy().into_owned(),
+                destination_path: target
+                    .path()
+                    .join("stale-prepared")
+                    .to_string_lossy()
+                    .into_owned(),
                 source_path: source.path().to_string_lossy().into_owned(),
                 runtime_name: "stale-prepared".into(),
                 skill_id: skill.id(),

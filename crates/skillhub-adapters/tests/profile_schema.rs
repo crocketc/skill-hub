@@ -98,11 +98,12 @@ fn rejects_unsafe_agent_root() {
     for agent_root in ["{user_home}", "{user_home}/..", "{user_home}/**/skills"] {
         let json = profile_with_path("{user_home}/.example/skills").replace(
             r#""path":"{user_home}/.example/skills""#,
-            &format!(
-                r#""path":"{{user_home}}/.example/skills","agent_root":{agent_root:?}""#
-            ),
+            &format!(r#""path":"{{user_home}}/.example/skills","agent_root":{agent_root:?}""#),
         );
-        assert!(parse_custom_profile(&json).is_err(), "accepted {agent_root}");
+        assert!(
+            parse_custom_profile(&json).is_err(),
+            "accepted {agent_root}"
+        );
     }
 }
 

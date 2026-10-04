@@ -72,5 +72,7 @@ fn catalog_exposes_declared_deployment_capability_for_a_client() {
 #[test]
 fn catalog_lookup_misses_return_none_for_unknown_clients() {
     let catalog = ProfileCatalog::builtin();
-    assert!(catalog.deployment_capability_for_client("fixture.unknown").is_none());
+    assert!(catalog
+        .deployment_capability_for_client("fixture.unknown")
+        .is_none());
 }

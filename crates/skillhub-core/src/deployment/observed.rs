@@ -40,8 +40,7 @@ impl ObservedDeployment {
     pub fn to_deployment_relation_fact(&self) -> crate::relationship::DeploymentRelationFact {
         crate::relationship::DeploymentRelationFact {
             relation_id: self.id.to_string(),
-            skill_id: (self.match_state != ObservedMatchState::NameOnly)
-                .then_some(self.skill_id),
+            skill_id: (self.match_state != ObservedMatchState::NameOnly).then_some(self.skill_id),
             agent_client_id: self.client_id.clone(),
             path: self.original_path.clone(),
             path_key: observed_path_key(&self.original_path),
@@ -115,9 +114,7 @@ pub enum ObservedRowAction {
         fingerprint: String,
     },
     /// Persist a health fact for an existing target without ending or rebinding it.
-    RecordHealth {
-        reasons: Vec<RelationHealthReason>,
-    },
+    RecordHealth { reasons: Vec<RelationHealthReason> },
     /// 保留旧版显式结束路径的兼容动作；扫描缺少观察不应产生此动作。
     Release,
 }
@@ -381,7 +378,12 @@ mod tests {
             ObservedStatus::Active,
         );
         assert_eq!(verified.to_deployment_relation_fact().skill_id, Some(skill));
-        let diverged = row(skill, FP_B, ObservedMatchState::Diverged, ObservedStatus::Active);
+        let diverged = row(
+            skill,
+            FP_B,
+            ObservedMatchState::Diverged,
+            ObservedStatus::Active,
+        );
         assert_eq!(diverged.to_deployment_relation_fact().skill_id, Some(skill));
     }
 
@@ -428,10 +430,7 @@ mod tests {
             );
         }
         assert_eq!(
-            reconcile_missing_observed_row(
-                Some(&active),
-                &RelationshipPathProbe::PermissionDenied,
-            ),
+            reconcile_missing_observed_row(Some(&active), &RelationshipPathProbe::PermissionDenied,),
             ObservedRowAction::RecordHealth {
                 reasons: vec![RelationHealthReason::PermissionLimited],
             }

@@ -15,8 +15,8 @@ pub use model::{
     SourceLocator,
 };
 pub use repo::{
-    DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport,
-    RepoDiscoveryWarning, RepoScanState, SkillRepo, SkillRepoView, UpstreamOrigin,
+    DiscoverableRepoSkill, DownloadedRepoSkill, RepoDiscoveryReport, RepoDiscoveryWarning,
+    RepoScanState, SkillRepo, SkillRepoView, UpstreamOrigin,
 };
 pub use role::{SearchCandidateRecord, SearchCandidateStatus, SourceRecord, SourceRole};
 pub use update::{

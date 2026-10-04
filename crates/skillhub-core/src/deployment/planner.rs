@@ -181,7 +181,9 @@ fn merged_existing(targets: &[&VerifiedTarget]) -> Vec<ExistingDeployment> {
 }
 
 fn merged_capabilities(targets: &[&VerifiedTarget]) -> DeploymentCapability {
-    targets.iter().map(|target| target.capabilities().clone())
+    targets
+        .iter()
+        .map(|target| target.capabilities().clone())
         .reduce(|left, right| left.intersect(&right))
         .unwrap_or_else(|| DeploymentCapability::new(false, false, false))
 }
@@ -202,7 +204,18 @@ fn select_mode(
     let Some(mode) = mode else {
         return Err(
             AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
-                .with_param("reason", if capabilities.limitations.iter().any(|reason| reason.starts_with("agent_compatibility_unverified:")) { "agent_compatibility_unverified" } else { "capability_unavailable" })
+                .with_param(
+                    "reason",
+                    if capabilities
+                        .limitations
+                        .iter()
+                        .any(|reason| reason.starts_with("agent_compatibility_unverified:"))
+                    {
+                        "agent_compatibility_unverified"
+                    } else {
+                        "capability_unavailable"
+                    },
+                )
                 .with_param("physical_target_id", physical_target_id.to_owned())
                 .with_action(RecoveryAction::InspectTarget),
         );
@@ -210,7 +223,16 @@ fn select_mode(
     if !mode.is_supported_by(capabilities) {
         return Err(
             AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
-                .with_param("reason", if capabilities.limitations.iter().any(|reason| reason == &format!("agent_compatibility_unverified:{}", mode_code(mode))) { "agent_compatibility_unverified" } else { "capability_unavailable" })
+                .with_param(
+                    "reason",
+                    if capabilities.limitations.iter().any(|reason| {
+                        reason == &format!("agent_compatibility_unverified:{}", mode_code(mode))
+                    }) {
+                        "agent_compatibility_unverified"
+                    } else {
+                        "capability_unavailable"
+                    },
+                )
                 .with_param("physical_target_id", physical_target_id.to_owned())
                 .with_param("requested_mode", mode_code(mode))
                 .with_action(RecoveryAction::InspectTarget),

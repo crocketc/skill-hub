@@ -166,12 +166,14 @@ fn only_pending_uncertain_conflicts_enter_the_workspace() {
 
 #[test]
 fn keeps_deterministic_duplicate_history_visible_without_putting_it_back_in_the_queue() {
-    let mut duplicate = case("conflict:duplicate", ConflictClassification::SameSkillVersion);
+    let mut duplicate = case(
+        "conflict:duplicate",
+        ConflictClassification::SameSkillVersion,
+    );
     duplicate.kind = ConflictKind::DuplicateSameContent;
     duplicate.evidence.fingerprints_match = Some(true);
-    duplicate.evidence.identity_direction = Some(
-        skillhub_core::relationship::IdentityDirection::SameSkill,
-    );
+    duplicate.evidence.identity_direction =
+        Some(skillhub_core::relationship::IdentityDirection::SameSkill);
 
     let workspace = build_conflict_workspace(&[duplicate], &[], 8, Some(7)).expect("workspace");
 

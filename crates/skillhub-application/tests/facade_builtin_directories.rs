@@ -1,8 +1,7 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::{
-    AgentRootObservation, ClientInstance, ClientKind, ClientPresence,
-    DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget,
-    OperatingSystem, TargetScope,
+    AgentRootObservation, ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus,
+    DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem, TargetScope,
 };
 use skillhub_core::api::{
     AppCommand as RootAppCommand, AppCommandResult, AppQuery as RootAppQuery, AppQueryResult,
@@ -11,7 +10,9 @@ use skillhub_core::api::{
 };
 use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::DeploymentPlanRequest;
-use skillhub_core::{ApplicationFacade, DeploymentMode, DeploymentRepository, ErrorCode, VersionId};
+use skillhub_core::{
+    ApplicationFacade, DeploymentMode, DeploymentRepository, ErrorCode, VersionId,
+};
 use skillhub_storage::{CentralLibrary, Database};
 
 /// 内置目录测试基座：一个可用（exists/readable/writable）的内置逻辑目标。
@@ -186,8 +187,8 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
     std::fs::create_dir_all(&shared_path).expect("shared path");
     std::fs::create_dir_all(&ordinary_path).expect("ordinary path");
     std::fs::create_dir_all(&distinct_path).expect("distinct path");
-    let ordinary_physical_id = skillhub_core::physical_id_for_path(&ordinary_path)
-        .expect("ordinary directory identity");
+    let ordinary_physical_id =
+        skillhub_core::physical_id_for_path(&ordinary_path).expect("ordinary directory identity");
 
     let instance = |client_id: &str, kind| ClientInstance {
         profile_id: if client_id == "agent-skills" {
@@ -494,10 +495,7 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
             fact.role == skillhub_core::AgentDirectoryRole::AgentUser && !fact.is_shared_directory
         })
         .expect("Agent entity");
-    assert_eq!(
-        ordinary.role,
-        skillhub_core::AgentDirectoryRole::AgentUser
-    );
+    assert_eq!(ordinary.role, skillhub_core::AgentDirectoryRole::AgentUser);
     assert_eq!(
         ordinary.members.len(),
         2,
@@ -595,10 +593,9 @@ async fn agent_directory_projection_preserves_member_identity_and_capabilities()
         .members
         .iter()
         .all(|member| member.availability.available));
-    assert!(same_physical_identity
-        .iter()
-        .any(|fact| fact.role == skillhub_core::AgentDirectoryRole::Project
-            && fact.members.len() == 1));
+    assert!(same_physical_identity.iter().any(|fact| fact.role
+        == skillhub_core::AgentDirectoryRole::Project
+        && fact.members.len() == 1));
     let workspace = same_physical_identity
         .iter()
         .find(|fact| fact.role == skillhub_core::AgentDirectoryRole::AgentWorkspace)
@@ -700,7 +697,9 @@ async fn agent_directory_projection_keeps_abnormal_agent_root_observations() {
     let facade = LocalApplicationFacade::new(database);
 
     let result = facade
-        .query(RootAppQuery::GetAgentDirectoryProjection(GetAgentDirectoryProjection))
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
         .await
         .expect("query projection");
     let AppQueryResult::AgentDirectoryProjection(projection) = result else {
@@ -729,7 +728,10 @@ async fn agent_directory_projection_keeps_abnormal_agent_root_observations() {
         panic!("expected deployment targets");
     };
     assert_eq!(
-        targets.iter().map(|target| target.directory_status).collect::<Vec<_>>(),
+        targets
+            .iter()
+            .map(|target| target.directory_status)
+            .collect::<Vec<_>>(),
         statuses.into_iter().map(Some).collect::<Vec<_>>()
     );
 }
@@ -750,8 +752,7 @@ async fn agent_directory_projection_preserves_identity_changed_status() {
         .insert(&skill)
         .await
         .expect("insert skill");
-    let version_id =
-        VersionId::parse(&format!("sha256:{}", "d".repeat(64))).expect("version id");
+    let version_id = VersionId::parse(&format!("sha256:{}", "d".repeat(64))).expect("version id");
     database.connection_for_test().execute(
         "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
         rusqlite::params![version_id.to_string(), skill.id().to_string()],
@@ -813,7 +814,9 @@ async fn agent_directory_projection_preserves_identity_changed_status() {
     let facade = LocalApplicationFacade::new(database);
 
     let result = facade
-        .query(RootAppQuery::GetAgentDirectoryProjection(GetAgentDirectoryProjection))
+        .query(RootAppQuery::GetAgentDirectoryProjection(
+            GetAgentDirectoryProjection,
+        ))
         .await
         .expect("query projection");
     let AppQueryResult::AgentDirectoryProjection(projection) = result else {
@@ -837,7 +840,10 @@ async fn agent_directory_projection_preserves_identity_changed_status() {
         panic!("expected deployment targets");
     };
     assert_eq!(targets.len(), 1);
-    assert_eq!(targets[0].directory_status, Some(DirectoryObservationStatus::IdentityChanged));
+    assert_eq!(
+        targets[0].directory_status,
+        Some(DirectoryObservationStatus::IdentityChanged)
+    );
     assert!(!targets[0].available);
 }
 
@@ -847,8 +853,7 @@ async fn unresolved_registered_and_observed_paths_do_not_prove_identity_changed(
     let root = tempfile::tempdir().expect("agent root");
     let skills_path = root.path().join("skills");
     std::fs::create_dir(&skills_path).expect("create skills directory");
-    let stale_identity =
-        skillhub_core::physical_id_for_path(&skills_path).expect("stale identity");
+    let stale_identity = skillhub_core::physical_id_for_path(&skills_path).expect("stale identity");
     let skill = skillhub_core::catalog::Skill::new(skillhub_core::SkillId::new(), "Stale scan");
     database
         .catalog_repository()
@@ -1137,15 +1142,20 @@ async fn explicit_target_creation_creates_only_skill_directory_and_rescans() {
         }],
         physical_targets: Vec::new(),
     };
-    database.agent_repository().replace(&snapshot).expect("save discovery");
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("save discovery");
     let library_root = tempfile::tempdir().expect("library root");
     CentralLibrary::initialize(library_root.path()).expect("central library");
-    let facade = LocalApplicationFacade::new(database,);
+    let facade = LocalApplicationFacade::new(database);
 
     let result = facade
-        .execute(RootAppCommand::EnsureAgentTargetDirectory(EnsureAgentTargetDirectory {
-            target_id: "fixture-target".into(),
-        }))
+        .execute(RootAppCommand::EnsureAgentTargetDirectory(
+            EnsureAgentTargetDirectory {
+                target_id: "fixture-target".into(),
+            },
+        ))
         .await
         .expect("create target directory");
 
@@ -1206,7 +1216,11 @@ async fn shared_directory_targets_offer_the_intersection_of_member_capabilities(
         generation: "shared-capabilities".into(),
         observed_at: "2026-09-29T00:00:00Z".into(),
         instances: vec![
-            instance("agent-skills", "agent-skills.shared-directory", ClientKind::SharedDirectory),
+            instance(
+                "agent-skills",
+                "agent-skills.shared-directory",
+                ClientKind::SharedDirectory,
+            ),
             instance("openai", "openai.codex-desktop", ClientKind::Desktop),
         ],
         agent_roots: vec![
@@ -1214,7 +1228,11 @@ async fn shared_directory_targets_offer_the_intersection_of_member_capabilities(
             root_observation("openai", "openai.codex-desktop"),
         ],
         logical_targets: vec![
-            logical("shared-canonical", "agent-skills", "agent-skills.shared-directory"),
+            logical(
+                "shared-canonical",
+                "agent-skills",
+                "agent-skills.shared-directory",
+            ),
             logical("shared-desktop", "openai", "openai.codex-desktop"),
         ],
         physical_targets: Vec::new(),
@@ -1252,10 +1270,10 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
     let shared_path = root.path().join("shared");
     std::fs::create_dir_all(&ordinary_path).expect("ordinary path");
     std::fs::create_dir_all(&shared_path).expect("shared path");
-    let ordinary_physical_id = skillhub_core::physical_id_for_path(&ordinary_path)
-        .expect("ordinary identity");
-    let shared_physical_id = skillhub_core::physical_id_for_path(&shared_path)
-        .expect("shared identity");
+    let ordinary_physical_id =
+        skillhub_core::physical_id_for_path(&ordinary_path).expect("ordinary identity");
+    let shared_physical_id =
+        skillhub_core::physical_id_for_path(&shared_path).expect("shared identity");
 
     let instance = |profile_id: &str, client_id: &str, kind| ClientInstance {
         profile_id: profile_id.into(),
@@ -1332,7 +1350,11 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
         instances: vec![
             instance("openai", "openai.codex-cli", ClientKind::Cli),
             instance("openai", "openai.chatgpt-desktop", ClientKind::Desktop),
-            instance("agent-skills", "agent-skills.shared-directory", ClientKind::SharedDirectory),
+            instance(
+                "agent-skills",
+                "agent-skills.shared-directory",
+                ClientKind::SharedDirectory,
+            ),
         ],
         agent_roots: vec![
             root_observation("openai.codex-cli"),
@@ -1340,12 +1362,52 @@ async fn deployment_targets_agree_with_the_projection_on_selectable_members() {
             root_observation("agent-skills.shared-directory"),
         ],
         logical_targets: vec![
-            logical("ordinary-cli", "openai.codex-cli", &ordinary_path, &ordinary_physical_id, true, false, false),
-            logical("ordinary-desktop", "openai.chatgpt-desktop", &ordinary_path, &ordinary_physical_id, true, false, false),
+            logical(
+                "ordinary-cli",
+                "openai.codex-cli",
+                &ordinary_path,
+                &ordinary_physical_id,
+                true,
+                false,
+                false,
+            ),
+            logical(
+                "ordinary-desktop",
+                "openai.chatgpt-desktop",
+                &ordinary_path,
+                &ordinary_physical_id,
+                true,
+                false,
+                false,
+            ),
             builtin_target,
-            logical("shared-canonical", "agent-skills.shared-directory", &shared_path, &shared_physical_id, true, true, false),
-            logical("shared-cli", "openai.codex-cli", &shared_path, &shared_physical_id, true, true, false),
-            logical("candidate-cli", "openai.codex-cli", &candidate_path, "candidate:text", false, false, false),
+            logical(
+                "shared-canonical",
+                "agent-skills.shared-directory",
+                &shared_path,
+                &shared_physical_id,
+                true,
+                true,
+                false,
+            ),
+            logical(
+                "shared-cli",
+                "openai.codex-cli",
+                &shared_path,
+                &shared_physical_id,
+                true,
+                true,
+                false,
+            ),
+            logical(
+                "candidate-cli",
+                "openai.codex-cli",
+                &candidate_path,
+                "candidate:text",
+                false,
+                false,
+                false,
+            ),
         ],
         physical_targets: Vec::new(),
     };

@@ -1,9 +1,9 @@
 //! Shared application boundary implementations.
 
-mod external_link;
-mod pending_workspace;
 mod agent_compatibility;
+mod external_link;
 pub mod library_runtime;
+mod pending_workspace;
 mod relationship_governance_batch;
 mod relationship_governance_service;
 pub mod relationship_validation_service;
@@ -1551,7 +1551,9 @@ impl LocalApplicationFacade {
         let root_path = Path::new(&root.path);
         let target_path = Path::new(&target.path);
         if target_path == root_path || !target_path.starts_with(root_path) {
-            return Err(invalid_input("skill directory is outside the identified agent root"));
+            return Err(invalid_input(
+                "skill directory is outside the identified agent root",
+            ));
         }
         match std::fs::symlink_metadata(target_path) {
             Ok(metadata) if metadata.is_dir() => {}
@@ -5756,9 +5758,13 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CreateIgnoreRule(request) => {
                 if let skillhub_core::ignore::IgnoreSubject::ExactPending(id) = &request.subject {
                     if id.starts_with("work:") {
-                        return self.dismiss_pending_work(skillhub_core::pending::DismissPendingWork {
-                            item_id: id.clone(), defer_until: request.defer_until, reason: request.reason,
-                        }).await;
+                        return self
+                            .dismiss_pending_work(skillhub_core::pending::DismissPendingWork {
+                                item_id: id.clone(),
+                                defer_until: request.defer_until,
+                                reason: request.reason,
+                            })
+                            .await;
                     }
                 }
                 return self
@@ -5767,9 +5773,15 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .await
                     .map(AppCommandResult::IgnoreRule);
             }
-            AppCommand::DismissPendingWork(request) => return self.dismiss_pending_work(request).await,
-            AppCommand::ConfirmPendingWork(request) => return self.confirm_pending_work(request).await,
-            AppCommand::RecordAgentCompatibility(request) => return self.record_agent_compatibility(request),
+            AppCommand::DismissPendingWork(request) => {
+                return self.dismiss_pending_work(request).await
+            }
+            AppCommand::ConfirmPendingWork(request) => {
+                return self.confirm_pending_work(request).await
+            }
+            AppCommand::RecordAgentCompatibility(request) => {
+                return self.record_agent_compatibility(request)
+            }
             AppCommand::RemoveIgnoreRule(request) => {
                 return self.remove_ignore_rule(request.rule_id).await;
             }
@@ -5900,7 +5912,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let package = service.create(&input, &plan, &decisions)?;
                 let verification = service.verify(&package)?;
-                self.with_database("pending.backup.completed", |database| database.bootstrap_repository().mark_backup_verified())?;
+                self.with_database("pending.backup.completed", |database| {
+                    database.bootstrap_repository().mark_backup_verified()
+                })?;
                 return Ok(AppCommandResult::BackupCreated(BackupCreated {
                     path: package.root.to_string_lossy().into_owned(),
                     manifest: verification.manifest,
@@ -5914,7 +5928,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(Path::to_path_buf)
                     .unwrap_or_else(|| PathBuf::from("."));
                 let verification = BackupService::new(destination).verify(&package)?;
-                self.with_database("pending.backup.verified", |database| database.bootstrap_repository().mark_backup_verified())?;
+                self.with_database("pending.backup.verified", |database| {
+                    database.bootstrap_repository().mark_backup_verified()
+                })?;
                 return Ok(AppCommandResult::BackupManifest(verification.manifest));
             }
             AppCommand::PrepareRestore(request) => {
@@ -5954,7 +5970,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let package = backup.create(&input, &plan, &decisions)?;
                 backup.verify(&package)?;
-                self.with_database("pending.backup.completed", |database| database.bootstrap_repository().mark_backup_verified())?;
+                self.with_database("pending.backup.completed", |database| {
+                    database.bootstrap_repository().mark_backup_verified()
+                })?;
                 let retention =
                     RetentionService::new(library.root.join(".skillhub").join("backups"))
                         .apply(request.retention)?;
@@ -6200,8 +6218,15 @@ impl ApplicationFacade for LocalApplicationFacade {
                     items, &rules, self.today,
                 )))
             }
-            AppQuery::GetPendingWorkspace => self.pending_workspace().await.map(AppQueryResult::PendingWorkspace),
-            AppQuery::ListPendingConfirmations => self.with_database("pending.confirmations", |database| database.governance_task_repository().list_confirmations()).map(AppQueryResult::PendingConfirmations),
+            AppQuery::GetPendingWorkspace => self
+                .pending_workspace()
+                .await
+                .map(AppQueryResult::PendingWorkspace),
+            AppQuery::ListPendingConfirmations => self
+                .with_database("pending.confirmations", |database| {
+                    database.governance_task_repository().list_confirmations()
+                })
+                .map(AppQueryResult::PendingConfirmations),
             AppQuery::GetSkill(request) => {
                 let skill_id = request.skill_id;
                 let current_version = self
@@ -6588,9 +6613,10 @@ impl LocalApplicationFacade {
                     .collect::<Vec<_>>();
                 let deployment_status = if active.is_empty() {
                     AgentDirectoryDeploymentStatus::NotDeployed
-                } else if active.iter().any(|deployment| {
-                    deployment.state == skillhub_core::DeploymentState::Deployed
-                }) {
+                } else if active
+                    .iter()
+                    .any(|deployment| deployment.state == skillhub_core::DeploymentState::Deployed)
+                {
                     AgentDirectoryDeploymentStatus::Deployed
                 } else {
                     AgentDirectoryDeploymentStatus::PartiallyDeployed
@@ -6639,7 +6665,8 @@ impl LocalApplicationFacade {
                     target.status
                 };
                 let is_shared_directory = target.shared_reference
-                    || kinds_by_client.get(&(target.profile_id.as_str(), target.client_id.as_str()))
+                    || kinds_by_client
+                        .get(&(target.profile_id.as_str(), target.client_id.as_str()))
                         == Some(&skillhub_core::ClientKind::SharedDirectory);
                 let role = if target.builtin {
                     AgentDirectoryRole::Builtin
@@ -6681,10 +6708,11 @@ impl LocalApplicationFacade {
                     kind: kinds_by_client
                         .get(&(target.profile_id.as_str(), target.client_id.as_str()))
                         .cloned(),
-                    supports_shared_directory: snapshot.logical_targets.iter().any(|candidate|
+                    supports_shared_directory: snapshot.logical_targets.iter().any(|candidate| {
                         candidate.profile_id == target.profile_id
                             && candidate.client_id == target.client_id
-                            && candidate.shared_reference),
+                            && candidate.shared_reference
+                    }),
                     availability: AgentDirectoryAvailability {
                         status,
                         exists: target.exists,
@@ -6693,7 +6721,9 @@ impl LocalApplicationFacade {
                         available: target.available && !identity_changed,
                     },
                     capabilities: AgentDirectoryMemberCapabilities {
-                        compatibility: Some(agent_compatibility::target_compatibility(database, target)),
+                        compatibility: Some(agent_compatibility::target_compatibility(
+                            database, target,
+                        )),
                         deployment: capabilities,
                         preferred_mode: modes.first().cloned(),
                         modes,
@@ -7083,7 +7113,11 @@ impl LocalApplicationFacade {
                         .clone()
                         .unwrap_or_else(|| agent.directory.grant_id.clone()),
                     modes,
-                    agent_client_id: agent.profile.clients.first().map(|client| client.id.clone()),
+                    agent_client_id: agent
+                        .profile
+                        .clients
+                        .first()
+                        .map(|client| client.id.clone()),
                     agent_profile_id: None,
                     shared_directory: false,
                     shared_agent_brands: Vec::new(),
@@ -7362,9 +7396,10 @@ impl LocalApplicationFacade {
         let projects = self.with_database("query.get_deployment_batch_preview", |database| {
             database.project_repository().list()
         })?;
-        let custom_agents = self.with_database("query.get_deployment_batch_preview", |database| {
-            database.custom_agent_repository().list()
-        })?;
+        let custom_agents = self
+            .with_database("query.get_deployment_batch_preview", |database| {
+                database.custom_agent_repository().list()
+            })?;
 
         // Version: explicit, else the library's current version for the Skill.
         let version_id = match &item.version_id {
@@ -7513,7 +7548,12 @@ impl LocalApplicationFacade {
                 version_id: version_id.clone(),
                 runtime_name: runtime_name.clone(),
                 logical_target_ids,
-                target_label: batch_target_label(discovery_targets, &custom_agents, &projects, &first_logical),
+                target_label: batch_target_label(
+                    discovery_targets,
+                    &custom_agents,
+                    &projects,
+                    &first_logical,
+                ),
                 target_path,
                 destination_path: facts.destination_path.clone(),
                 preference: decision.preference,
@@ -7554,7 +7594,12 @@ impl LocalApplicationFacade {
                 version_id: version_id.clone(),
                 runtime_name: runtime_name.clone(),
                 logical_target_ids: vec![logical_id.clone()],
-                target_label: batch_target_label(discovery_targets, &custom_agents, &projects, &logical_id),
+                target_label: batch_target_label(
+                    discovery_targets,
+                    &custom_agents,
+                    &projects,
+                    &logical_id,
+                ),
                 target_path: String::new(),
                 destination_path: String::new(),
                 preference: decision.preference,
@@ -11469,7 +11514,9 @@ fn effective_target_capabilities(
 ) -> skillhub_core::DeploymentCapability {
     let compatibility = agent_compatibility::target_compatibility(database, target);
     let mut allowed = compatibility.deployment();
-    if let Some(declared) = skillhub_core::ProfileCatalog::builtin().deployment_capability_for_client(&target.client_id) {
+    if let Some(declared) =
+        skillhub_core::ProfileCatalog::builtin().deployment_capability_for_client(&target.client_id)
+    {
         allowed.limitations.extend(declared.limitations.clone());
     }
     host.intersect(&allowed)
@@ -11961,8 +12008,15 @@ fn custom_agent_directory_facts(
         .as_deref()
         .is_some_and(|baseline| observation.physical_id.as_deref() != Some(baseline));
     // Registering a custom path does not prove that an Agent can load Skills.
-    let compatibility = agent_compatibility::compatibility_for(database, &agent.id, None,
-        &agent_compatibility::custom_identity(agent, observation.physical_id.as_deref().unwrap_or_default()));
+    let compatibility = agent_compatibility::compatibility_for(
+        database,
+        &agent.id,
+        None,
+        &agent_compatibility::custom_identity(
+            agent,
+            observation.physical_id.as_deref().unwrap_or_default(),
+        ),
+    );
     let capabilities = host_capabilities.intersect(&compatibility.deployment());
     let modes = offered_modes(&capabilities);
     CustomAgentDirectoryFacts {
@@ -11985,7 +12039,8 @@ fn record_custom_agent_identity_baseline(agent: &mut skillhub_core::CustomAgent)
 fn registered_target_index(
     database: &skillhub_storage::Database,
     host_capabilities: &skillhub_core::DeploymentCapability,
-) -> AppResult<RegisteredTargetIndex> {    let mut facts = Vec::new();
+) -> AppResult<RegisteredTargetIndex> {
+    let mut facts = Vec::new();
     let mut roots = Vec::new();
     if let Some(snapshot) = database.agent_repository().load()? {
         for target in snapshot.logical_targets {

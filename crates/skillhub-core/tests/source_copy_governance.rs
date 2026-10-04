@@ -268,11 +268,9 @@ fn missing_with_accessible_parent_does_not_end_governance_relation() {
             SourceCopyTransition::Archive { .. }
         ));
     }
-    let SourceCopyTransition::Update(missing) = validate_source_copy_transition(
-        &copy,
-        SourceCopyProbe::MissingWithAccessibleParent,
-        2,
-    ) else {
+    let SourceCopyTransition::Update(missing) =
+        validate_source_copy_transition(&copy, SourceCopyProbe::MissingWithAccessibleParent, 2)
+    else {
         panic!("missing target remains a current relation");
     };
     assert!(missing.active);

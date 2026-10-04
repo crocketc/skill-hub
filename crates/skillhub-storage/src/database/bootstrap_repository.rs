@@ -273,8 +273,16 @@ impl<'a> BootstrapRepository<'a> {
         dimension: DeploymentDimension,
     ) -> AppResult<Vec<DeploymentChartCategory>> {
         let (column, label_code, scope_filter) = match dimension {
-            DeploymentDimension::Agent => ("t.agent_id", "deployment.dimension.agent", "t.project_id IS NULL"),
-            DeploymentDimension::Project => ("t.project_id", "deployment.dimension.project", "t.project_id IS NOT NULL"),
+            DeploymentDimension::Agent => (
+                "t.agent_id",
+                "deployment.dimension.agent",
+                "t.project_id IS NULL",
+            ),
+            DeploymentDimension::Project => (
+                "t.project_id",
+                "deployment.dimension.project",
+                "t.project_id IS NOT NULL",
+            ),
         };
         let sql = format!(
             "SELECT {column}, COUNT(*) FROM deployments d JOIN targets t ON t.id=d.target_id WHERE d.state IN ('deployed','active') AND d.managed=1 AND {scope_filter} GROUP BY {column} ORDER BY {column}"
@@ -360,7 +368,8 @@ impl<'a> BootstrapRepository<'a> {
             })
             .map_err(error)?
         {
-            let (id, kind, state, phase, error_code, created_at, progress_json) = row.map_err(error)?;
+            let (id, kind, state, phase, error_code, created_at, progress_json) =
+                row.map_err(error)?;
             recent_operations.push(RecentOperationSummary {
                 operation_id: id.parse().map_err(|_| invalid_snapshot())?,
                 kind,

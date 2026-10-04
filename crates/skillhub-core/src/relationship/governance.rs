@@ -847,9 +847,7 @@ fn governance_state(
 ) -> RelationGovernanceState {
     let health_reasons = match fact {
         GovernableRelationFact::SourceCopy(copy) => source_copy_health_reasons(copy),
-        GovernableRelationFact::Deployment(relation) => {
-            deployment_health_reasons(relation)
-        }
+        GovernableRelationFact::Deployment(relation) => deployment_health_reasons(relation),
     };
     let governance_status = if health_reasons.is_empty()
         && (management_status == RelationManagementStatus::TakenOver
@@ -877,13 +875,17 @@ fn governance_state(
     }
 }
 
-fn source_copy_health_reasons(
-    copy: &SourceCopyRelationFact,
-) -> Vec<RelationGovernanceReason> {
+fn source_copy_health_reasons(copy: &SourceCopyRelationFact) -> Vec<RelationGovernanceReason> {
     let mut reasons: Vec<RelationGovernanceReason> = copy
         .health_reasons
         .as_deref()
-        .map(|reasons| reasons.iter().copied().map(governance_health_reason).collect())
+        .map(|reasons| {
+            reasons
+                .iter()
+                .copied()
+                .map(governance_health_reason)
+                .collect()
+        })
         .unwrap_or_default();
     if copy.health_reasons.is_none() {
         reasons.push(RelationGovernanceReason::VerificationRequired);
@@ -908,20 +910,26 @@ fn source_copy_health_reasons(
     reasons
 }
 
-fn deployment_health_reasons(
-    relation: &DeploymentRelationFact,
-) -> Vec<RelationGovernanceReason> {
+fn deployment_health_reasons(relation: &DeploymentRelationFact) -> Vec<RelationGovernanceReason> {
     let mut reasons: Vec<RelationGovernanceReason> = relation
         .health_reasons
         .as_deref()
-        .map(|reasons| reasons.iter().copied().map(governance_health_reason).collect())
+        .map(|reasons| {
+            reasons
+                .iter()
+                .copied()
+                .map(governance_health_reason)
+                .collect()
+        })
         .unwrap_or_default();
     if relation.health_reasons.is_none() {
         reasons.push(RelationGovernanceReason::VerificationRequired);
     }
     match relation.match_state {
         ObservedMatchState::ContentVerified => {}
-        ObservedMatchState::NameOnly => reasons.push(RelationGovernanceReason::VerificationRequired),
+        ObservedMatchState::NameOnly => {
+            reasons.push(RelationGovernanceReason::VerificationRequired)
+        }
         ObservedMatchState::Diverged => reasons.push(RelationGovernanceReason::ContentChanged),
     }
     if relation.skill_id.is_none() {
@@ -944,9 +952,7 @@ fn governance_health_reason(reason: RelationHealthReason) -> RelationGovernanceR
         }
         RelationHealthReason::OperationFailed => RelationGovernanceReason::OperationFailed,
         RelationHealthReason::SubjectUnavailable => RelationGovernanceReason::SubjectUnavailable,
-        RelationHealthReason::ProbeUnavailable => {
-            RelationGovernanceReason::VerificationRequired
-        }
+        RelationHealthReason::ProbeUnavailable => RelationGovernanceReason::VerificationRequired,
     }
 }
 

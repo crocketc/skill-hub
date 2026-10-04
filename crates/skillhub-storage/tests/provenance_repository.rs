@@ -321,7 +321,9 @@ fn observed_relation_marks_divergence_without_duplicating_rows() {
     assert_eq!(normalized[0].content_fingerprint, "sha256:ff22");
     assert_eq!(
         normalized[0].health_reasons,
-        Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged])
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged
+        ])
     );
 }
 

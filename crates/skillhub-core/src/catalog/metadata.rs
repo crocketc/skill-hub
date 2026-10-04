@@ -82,7 +82,11 @@ pub struct InvocationPolicyFact {
 }
 
 impl InvocationPolicyFact {
-    pub fn from_parts(policy: CallPolicy, source: InvocationPolicySource, field: Option<String>) -> Self {
+    pub fn from_parts(
+        policy: CallPolicy,
+        source: InvocationPolicySource,
+        field: Option<String>,
+    ) -> Self {
         Self {
             mode: InvocationMode::from_call_policy(&policy),
             source,

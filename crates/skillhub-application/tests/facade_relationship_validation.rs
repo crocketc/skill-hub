@@ -332,7 +332,10 @@ async fn missing_source_stays_active_without_external_removed_history() {
     )
     .await;
     assert_eq!(second.items.len(), 1, "missing relation remains in scope");
-    assert_eq!(second.items[0].status, RelationshipCheckItemStatus::Unchanged);
+    assert_eq!(
+        second.items[0].status,
+        RelationshipCheckItemStatus::Unchanged
+    );
 
     let database = facade.database_for_tests().clone();
     let database = database.lock().unwrap();
@@ -344,7 +347,9 @@ async fn missing_source_stays_active_without_external_removed_history() {
     assert_eq!(active[0].archive_reason, None);
     assert_eq!(
         active[0].health_reasons,
-        Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::TargetEntryMissing
+        ])
     );
     let history = database
         .governance_history_repository()
@@ -768,7 +773,9 @@ mod watch_confirmation {
         assert_eq!(relations.len(), 1, "the relationship remains active");
         assert_eq!(
             relations[0].health_reasons,
-            Some(vec![skillhub_core::relationship::RelationHealthReason::TargetEntryMissing])
+            Some(vec![
+                skillhub_core::relationship::RelationHealthReason::TargetEntryMissing
+            ])
         );
     }
 

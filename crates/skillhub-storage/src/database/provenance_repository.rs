@@ -9,8 +9,8 @@ use skillhub_core::import::{
     OriginalMigrationResult, OriginalMigrationState,
 };
 use skillhub_core::relationship::{
-    DeploymentRelationFact, FileRepresentation, OwnershipState, RelationshipType,
-    RelationHealthReason, SourceRelationFact,
+    DeploymentRelationFact, FileRepresentation, OwnershipState, RelationHealthReason,
+    RelationshipType, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{

@@ -15,8 +15,8 @@ use skillhub_core::{
         LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
     },
     api::{
-        CommitImport, CommitOriginalMigration, CreateSkill, GetSkillProvenance, PrepareImport,
-        ListRelationGovernance, PrepareOriginalMigration, RollbackOriginalMigration,
+        CommitImport, CommitOriginalMigration, CreateSkill, GetSkillProvenance,
+        ListRelationGovernance, PrepareImport, PrepareOriginalMigration, RollbackOriginalMigration,
         RunInitializationScan,
     },
     import::{CandidateOwnership, ImportAction, ImportCandidate, ImportDecision},
@@ -379,7 +379,11 @@ async fn scan_establishes_maintains_and_preserves_missing_observed_relations() {
     let relation = ledger
         .rows
         .iter()
-        .find(|row| row.path().replace('\\', "/").ends_with("/agents/trae/skills/notes"))
+        .find(|row| {
+            row.path()
+                .replace('\\', "/")
+                .ends_with("/agents/trae/skills/notes")
+        })
         .expect("missing target remains in governance");
     assert_eq!(relation.skill_id(), Some(skill_id));
     assert!(relation
@@ -429,7 +433,11 @@ async fn scan_establishes_maintains_and_preserves_missing_observed_relations() {
     let relation = ledger
         .rows
         .iter()
-        .find(|row| row.path().replace('\\', "/").ends_with("/agents/trae/skills/notes"))
+        .find(|row| {
+            row.path()
+                .replace('\\', "/")
+                .ends_with("/agents/trae/skills/notes")
+        })
         .expect("restored target remains in governance");
     assert_eq!(relation.skill_id(), Some(skill_id));
     assert!(relation.governance.health_reasons.is_empty());
