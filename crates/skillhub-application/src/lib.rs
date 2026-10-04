@@ -6273,6 +6273,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                         lifecycle: skill.lifecycle,
                         trial_due: skill.trial_due,
                         current_version,
+                        agent_deployment_count: skill.agent_deployment_count,
+                        project_deployment_count: skill.project_deployment_count,
                         current_version_label,
                         invocation_policy: skill.invocation_policy,
                         declared_requirements: skill.declared_requirements,

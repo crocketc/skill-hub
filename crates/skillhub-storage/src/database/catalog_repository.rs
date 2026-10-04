@@ -136,6 +136,13 @@ impl<'a> CatalogRepositorySqlite<'a> {
         };
         let skill_id = row_id.parse().map_err(|_| bad_id())?;
         let mut item = read_status_row(skill_id, row)?;
+        let agent_targets = self.load_agent_target_ids()?;
+        let project_targets = self.load_project_target_ids()?;
+        self.attach_deployment_facts(
+            std::slice::from_mut(&mut item),
+            &agent_targets,
+            &project_targets,
+        )?;
         self.attach_tags(&mut item)?;
         Ok(Some(item))
     }

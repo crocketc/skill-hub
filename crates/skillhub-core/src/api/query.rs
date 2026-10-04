@@ -253,6 +253,12 @@ pub struct SkillResult {
     pub lifecycle: SkillLifecycle,
     pub trial_due: Option<String>,
     pub current_version: Option<VersionId>,
+    /// Current deployed physical Agent targets, matching the catalog list read model.
+    #[serde(default)]
+    pub agent_deployment_count: u32,
+    /// Current deployed registered project targets, matching the catalog list read model.
+    #[serde(default)]
+    pub project_deployment_count: u32,
     /// QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；
     /// 内容哈希只是技术身份，不进入展示标签（不可读时为 None）。
     #[serde(default)]

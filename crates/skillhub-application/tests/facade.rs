@@ -3402,13 +3402,102 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
     )
     .expect("alpha current");
     seed_version_and_current_pointer(&database, alpha.id(), &alpha_current, "1.0.0");
+    let codex_root = tempfile::tempdir().expect("codex target root");
+    let claude_root = tempfile::tempdir().expect("claude target root");
+    let shared_root = tempfile::tempdir().expect("shared target root");
+    let removed_root = tempfile::tempdir().expect("removed target root");
+    let codex_target_id =
+        skillhub_core::physical_id_for_path(codex_root.path()).expect("codex physical target id");
+    let claude_target_id =
+        skillhub_core::physical_id_for_path(claude_root.path()).expect("claude physical target id");
+    let shared_target_id =
+        skillhub_core::physical_id_for_path(shared_root.path()).expect("shared physical target id");
+    let removed_target_id = skillhub_core::physical_id_for_path(removed_root.path())
+        .expect("removed physical target id");
+    for (id, agent_id, path) in [
+        (&codex_target_id, "codex", codex_root.path()),
+        (&claude_target_id, "claude", claude_root.path()),
+        (&shared_target_id, "agentskills", shared_root.path()),
+        (&removed_target_id, "removed-agent", removed_root.path()),
+    ] {
+        database
+            .target_repository()
+            .upsert_physical_target(&skillhub_storage::PhysicalTargetRegistration {
+                id,
+                agent_id,
+                project_id: None,
+                scope: "global",
+                path: &path.to_string_lossy(),
+            })
+            .expect("register physical Agent target");
+    }
+    let project_root = tempfile::tempdir().expect("project target root");
+    let project = database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "Catalog project",
+            project_root.path(),
+        ))
+        .expect("register project");
     database
         .connection_for_test()
-        .execute_batch(
-            "INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-codex','codex','global','C:/agents/codex',0);\
-             INSERT INTO targets (id,agent_id,scope,path,created_at) VALUES ('agent-claude','claude','global','C:/agents/claude',0);",
+        .execute(
+            "INSERT INTO projects (id,name,path,created_at,updated_at) VALUES (?1,?2,?3,0,0)",
+            rusqlite::params![project.id.to_string(), project.name, project.device_path],
         )
-        .expect("seed agent targets");
+        .expect("seed project foreign-key row");
+    database
+        .target_repository()
+        .upsert_physical_target(&skillhub_storage::PhysicalTargetRegistration {
+            id: &project.physical_id,
+            agent_id: "skillhub",
+            project_id: Some(&project.id.to_string()),
+            scope: "project",
+            path: &project.device_path,
+        })
+        .expect("register physical project target");
+    let shared_logical_target = |id: &str| LogicalTarget {
+        id: id.to_owned(),
+        profile_id: "agentskills".into(),
+        client_id: id.to_owned(),
+        scope: TargetScope::Global,
+        path: shared_root.path().to_string_lossy().into_owned(),
+        agent_root_id: "shared-root".into(),
+        marker: "SKILL.md".into(),
+        precedence: DirectoryPrecedence::Preferred,
+        shared_reference: true,
+        builtin: false,
+        exists: true,
+        readable: true,
+        writable: true,
+        available: true,
+        physical_id: shared_target_id.clone(),
+        status: DirectoryObservationStatus::Existing,
+        physical_identity_verified: true,
+    };
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "catalog-projection".into(),
+            observed_at: "2026-10-04T00:00:00Z".into(),
+            instances: Vec::new(),
+            agent_roots: Vec::new(),
+            logical_targets: vec![
+                shared_logical_target("shared-alias-one"),
+                shared_logical_target("shared-alias-two"),
+            ],
+            physical_targets: vec![PhysicalTarget {
+                id: shared_target_id.clone(),
+                path: shared_root.path().to_string_lossy().into_owned(),
+                exists: true,
+                readable: true,
+                writable: true,
+                case_behavior: "case_sensitive".into(),
+                logical_target_ids: vec!["shared-alias-one".into(), "shared-alias-two".into()],
+            }],
+        })
+        .expect("save shared target aliases");
     let make_deployment = |target_id: &str| DeploymentRecord {
         id: skillhub_core::DeploymentId::new(),
         skill_id: alpha.id(),
@@ -3422,14 +3511,27 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
         observed_hash: None,
     };
     let deployment_repository = database.deployment_repository();
+    for (target_id, label) in [
+        (codex_target_id.as_str(), "codex"),
+        (claude_target_id.as_str(), "claude"),
+        (shared_target_id.as_str(), "shared physical target"),
+    ] {
+        deployment_repository
+            .insert(&make_deployment(target_id))
+            .await
+            .unwrap_or_else(|_| panic!("insert {label} deployment"));
+    }
     deployment_repository
-        .insert(&make_deployment("agent-codex"))
+        .insert(&DeploymentRecord {
+            state: DeploymentState::Removed,
+            ..make_deployment(&removed_target_id)
+        })
         .await
-        .expect("insert codex deployment");
+        .expect("insert removed deployment");
     deployment_repository
-        .insert(&make_deployment("agent-claude"))
+        .insert(&make_deployment(&project.physical_id))
         .await
-        .expect("insert claude deployment");
+        .expect("insert project deployment");
 
     let high_risk_run = skillhub_core::check::CheckRun::completed(
         "alpha-basic",
@@ -3479,12 +3581,18 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
     );
     assert_eq!(alpha_item.current_version, Some(alpha_current.clone()));
     assert_eq!(alpha_item.current_version_label.as_deref(), Some("1.0.0"));
-    assert_eq!(alpha_item.agent_deployment_count, 2);
+    assert_eq!(alpha_item.agent_deployment_count, 3);
+    let mut expected_agent_targets = vec![
+        codex_target_id.clone(),
+        claude_target_id.clone(),
+        shared_target_id.clone(),
+    ];
+    expected_agent_targets.sort();
     assert_eq!(
         alpha_item.agent_deployment_target_ids,
-        vec!["agent-claude".to_owned(), "agent-codex".to_owned()]
+        expected_agent_targets
     );
-    assert_eq!(alpha_item.project_deployment_count, 0);
+    assert_eq!(alpha_item.project_deployment_count, 1);
     assert_eq!(alpha_item.basic_check, CheckState::Failed);
     assert_eq!(alpha_item.ai_check, CheckState::NotChecked);
     assert_eq!(alpha_item.pending_count, 1);
@@ -3505,6 +3613,24 @@ async fn list_skills_query_returns_real_status_fields_and_sorts_by_agent_deploym
 
     assert_eq!(page.items[0].display_name, "Alpha");
     assert_eq!(page.items[1].display_name, "Beta");
+
+    let detail = facade
+        .query(RootAppQuery::GetSkill(GetSkill {
+            skill_id: alpha.id(),
+        }))
+        .await
+        .expect("skill detail");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    assert_eq!(
+        detail.agent_deployment_count,
+        alpha_item.agent_deployment_count
+    );
+    assert_eq!(
+        detail.project_deployment_count,
+        alpha_item.project_deployment_count
+    );
 }
 
 #[tokio::test]
