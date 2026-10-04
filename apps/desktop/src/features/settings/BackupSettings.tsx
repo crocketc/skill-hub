@@ -8,6 +8,11 @@ import type { BackupFacade } from "../backup/api";
 import { displayPath } from "../../platform/displayPath";
 import type { SettingsSnapshot } from "./api";
 
+// 裁决（与数据保护页导出下拉同口径）：备份存储层对 resolve_first 诚实拒绝
+// （BackupSensitiveDecisionRequired），下拉只提供真实可执行的两个决定；
+// 「先去解决敏感内容」如需入口属后续批次。
+type ExecutableSensitiveDecision = Exclude<SensitiveContentDecision, "resolve_first">;
+
 export function BackupSettings({ settings, facade, resolveSkillName }: {
   settings: SettingsSnapshot;
   facade?: BackupFacade;
@@ -19,7 +24,7 @@ export function BackupSettings({ settings, facade, resolveSkillName }: {
   const [plan, setPlan] = useState<BackupPlan>();
   const [skillNames, setSkillNames] = useState<Record<string, string>>({});
   const [result, setResult] = useState<string>();
-  const [decisions, setDecisions] = useState<Record<string, SensitiveContentDecision>>({});
+  const [decisions, setDecisions] = useState<Record<string, ExecutableSensitiveDecision>>({});
   const [error, setError] = useState<string>();
   const preflight = async () => {
     if (!facade) return;
@@ -71,11 +76,10 @@ export function BackupSettings({ settings, facade, resolveSkillName }: {
             <span>{t("settings.backup.sensitive", { skill: skillName })}</span>
             <select
               aria-label={t("settings.backup.decisionLabel", { skill: skillName })}
-              onChange={(event) => setDecisions((current) => ({ ...current, [item.skill_id]: event.target.value as SensitiveContentDecision }))}
+              onChange={(event) => setDecisions((current) => ({ ...current, [item.skill_id]: event.target.value as ExecutableSensitiveDecision }))}
               value={decisions[item.skill_id] ?? ""}
             >
               <option value="">{t("settings.backup.choose")}</option>
-              <option value="resolve_first">{t("settings.backup.decisions.resolve")}</option>
               <option value="exclude_skill">{t("settings.backup.decisions.exclude")}</option>
               <option value="include_and_mark">{t("settings.backup.decisions.include")}</option>
             </select>

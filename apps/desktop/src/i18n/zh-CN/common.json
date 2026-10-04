@@ -3667,7 +3667,6 @@
       "unnamedSkill": "未命名技能",
       "created": "备份已创建：{{path}}",
       "decisions": {
-        "resolve": "先处理敏感内容",
         "exclude": "排除该 Skill",
         "include": "包含并标记"
       }
