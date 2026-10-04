@@ -628,14 +628,24 @@ export async function analyzeNativeConflicts(
   return result.payload;
 }
 
-/** Switches the catalog pointer to an existing version after native validation. */
+/** Switches the catalog pointer to an existing version. The backend requires a
+ * single-use preview binding, so the real flow is preview first, then commit. */
 export async function setNativeCurrentVersion(
   skillId: string,
   versionId: string,
 ): Promise<void> {
+  const previewResult = await queryApplication({
+    type: "get_rollback_impact",
+    payload: { skill_id: skillId, target_version_id: versionId },
+  });
+  if (previewResult.type !== "rollback_impact") throw unavailableResult();
   const result: AppCommandResult = await executeCommand({
     type: "set_current_version",
-    payload: { skill_id: skillId, version_id: versionId },
+    payload: {
+      skill_id: skillId,
+      version_id: versionId,
+      preview_id: previewResult.payload.preview_id,
+    },
   });
   if (result.type !== "operation_summary") throw unavailableResult();
 }

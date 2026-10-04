@@ -658,8 +658,24 @@ describe("native skill detail facade", () => {
     });
   });
 
-  it("switches the current version through the typed native command", async () => {
+  it("switches the current version through the preview-bound native command", async () => {
     vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "rollback_impact",
+      payload: {
+        skill_id: "skill-1",
+        current_version_id: "sha256:aaa",
+        database_current_version_id: "sha256:aaa",
+        portable_current_version_id: "sha256:aaa",
+        visible_tree_fingerprint: "fp-1",
+        target_version_id: "sha256:bbb",
+        preview_id: "preview-1",
+        expires_at: "2026-10-04T00:00:00Z",
+        confirmation_fingerprint: "cf-1",
+        target_basic_check_required: false,
+        relations: [],
+      },
+    } as never);
     vi.mocked(executeCommand).mockResolvedValue({
       type: "operation_summary",
       payload: {
@@ -671,10 +687,29 @@ describe("native skill detail facade", () => {
     });
 
     await expect(setNativeCurrentVersion("skill-1", "sha256:bbb")).resolves.toBeUndefined();
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_rollback_impact",
+      payload: { skill_id: "skill-1", target_version_id: "sha256:bbb" },
+    });
     expect(executeCommand).toHaveBeenCalledWith({
       type: "set_current_version",
-      payload: { skill_id: "skill-1", version_id: "sha256:bbb" },
+      payload: {
+        skill_id: "skill-1",
+        version_id: "sha256:bbb",
+        preview_id: "preview-1",
+      },
     });
+  });
+
+  it("refuses to switch the current version without a fresh preview", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "versions",
+      payload: [],
+    } as never);
+
+    await expect(setNativeCurrentVersion("skill-1", "sha256:bbb")).rejects.toThrow();
+    expect(executeCommand).not.toHaveBeenCalled();
   });
 
   it("maps native versions into readable entries with sequence labels", async () => {
@@ -790,6 +825,22 @@ describe("native skill detail facade", () => {
   });
 
   it("commits a rollback through the native current-version switch", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "rollback_impact",
+      payload: {
+        skill_id: "skill-1",
+        current_version_id: "sha256:new",
+        database_current_version_id: null,
+        portable_current_version_id: null,
+        visible_tree_fingerprint: null,
+        target_version_id: "sha256:old",
+        preview_id: "preview-rollback-1",
+        expires_at: "2026-10-04T00:00:00Z",
+        confirmation_fingerprint: "cf-1",
+        target_basic_check_required: false,
+        relations: [],
+      },
+    } as never);
     vi.mocked(executeCommand).mockResolvedValue({
       type: "operation_summary",
       payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
@@ -797,7 +848,11 @@ describe("native skill detail facade", () => {
     await nativeSkillDetailFacade.commitRollback("skill-1", "sha256:old");
     expect(executeCommand).toHaveBeenCalledWith({
       type: "set_current_version",
-      payload: { skill_id: "skill-1", version_id: "sha256:old" },
+      payload: {
+        skill_id: "skill-1",
+        version_id: "sha256:old",
+        preview_id: "preview-rollback-1",
+      },
     });
   });
 });
