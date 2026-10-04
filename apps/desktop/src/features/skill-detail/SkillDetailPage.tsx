@@ -31,6 +31,7 @@ import { DetailHeader } from "./DetailHeader";
 import { DetailSectionNav } from "./DetailSectionNav";
 import { DetailStatusRail } from "./DetailStatusRail";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
+import { buildGovernanceLibraryReturnTo } from "../relationships/governance/libraryReturnContext";
 import { MetadataPanel } from "./MetadataPanel";
 import { LifecyclePanel } from "./LifecyclePanel";
 import { RelationsPanel } from "./RelationsPanel";
@@ -136,6 +137,9 @@ export function SkillDetailPage({
   const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
   const backSearch = detailSearchFromLibrary(location.search);
+  const governanceReturnTo = isPreviewRoute
+    ? undefined
+    : buildGovernanceLibraryReturnTo(skillId, backSearch, location.hash);
   const libraryQuery = parseSkillLibrarySearchParams(backSearch).query;
   const hasLibraryContext = Boolean(location.search || libraryReturn);
   const summaryQuery = useQuery({
@@ -382,11 +386,21 @@ export function SkillDetailPage({
             adjacent={adjacentQuery.data}
             backSearch={backSearch}
             detailPathname={detailPathname}
+            libraryReturn={libraryReturn}
           />
         </aside>
         <main className="sh-skill-detail__content">
           <DetailHeader
+            onDispatch={!isPreviewRoute ? () => navigate(`/deploy?skill=${encodeURIComponent(skillId)}`, {
+              state: libraryReturn ? { libraryReturn } : undefined,
+            }) : undefined}
             onDelete={!isPreviewRoute ? () => void startRemoval() : undefined}
+            onExport={!isPreviewRoute ? () => navigate("/settings/data-protection", {
+              state: {
+                exportSkillIds: [skillId],
+                ...(libraryReturn ? { libraryReturn } : {}),
+              },
+            }) : undefined}
             summary={summaryQuery.data}
           />
           <section aria-labelledby="zone-identity-heading" className="sh-skill-detail__zone" id="zone-identity">
@@ -469,7 +483,22 @@ export function SkillDetailPage({
                 <RelationsPanel
                   governanceHref={(relation) =>
                     `/relationships/governance?from=library&skillId=${encodeURIComponent(skillId)}&relationId=${encodeURIComponent(relation.relationId)}`}
+                  governanceNavigationState={(relation) => {
+                    const ledgerRow = governanceLedgerQuery.data?.rows.find((row) =>
+                      relationIdOf(row.relation) === relation.relationId &&
+                      row.relation.fact.skill_id === skillId,
+                    );
+                    const targetIdentity = ledgerRow?.target_identity?.skill_id === skillId
+                      ? ledgerRow.target_identity
+                      : null;
+                    return {
+                      ...(libraryReturn ? { libraryReturn } : {}),
+                      ...(governanceReturnTo ? { returnTo: governanceReturnTo } : {}),
+                      targetIdentity,
+                    };
+                  }}
                   historyHref="/relationships/governance/history"
+                  navigationState={libraryReturn ? { libraryReturn } : undefined}
                   onLoadRemovalImpact={loadRelationshipRemovalImpact}
                   onUndeploy={!isPreviewRoute ? (relation) => void startUndeploy(relation) : undefined}
                   relationship={relationshipViews}
@@ -528,16 +557,6 @@ export function SkillDetailPage({
             <h2 id="zone-lifecycle-heading">{t("skillDetail.zones.lifecycle")}</h2>
             <div className="sh-skill-detail__block" id="versions">
               <h3>{t("skillDetail.navigation.sections.versions")}</h3>
-              <div className="sh-button-row">
-                <Button
-                  onClick={() => navigate("/settings/data-protection", {
-                    state: { exportSkillIds: [skillId] },
-                  })}
-                  variant="secondary"
-                >
-                  {t("skillDetail.versions.exportSkill")}
-                </Button>
-              </div>
               <div id="source"><SourceUpdatePanel facade={facade} skillId={skillId} /></div>
               <VersionTimeline facade={facade} skillId={skillId} summary={summaryQuery.data} />
             </div>

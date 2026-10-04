@@ -81,6 +81,16 @@
   font-size: var(--font-size-sm);
 }
 
+.sh-skill-detail__header-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
 /* —— 分区导航（rail 内纵向；窄窗口退化为横向，见底部媒体查询） —— */
 .sh-skill-detail__rail-identity {
   display: grid;
@@ -249,6 +259,10 @@
 
   .sh-skill-detail__title-row {
     flex-direction: column;
+  }
+
+  .sh-skill-detail__header-actions {
+    justify-content: flex-start;
   }
 
   .sh-skill-detail__trajectory {

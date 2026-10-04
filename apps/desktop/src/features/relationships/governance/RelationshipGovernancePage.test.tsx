@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, type InitialEntry } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -312,7 +312,9 @@ function HistoryProbe() {
   return (
     <div>
       <p data-testid="location-key">{location.key}</p>
+      <p data-testid="location-path">{location.pathname}</p>
       <p data-testid="location-search">{location.search}</p>
+      <p data-testid="location-state">{JSON.stringify(location.state)}</p>
       <button data-testid="nav-depart" onClick={() => navigate("/operations/op-1")}>depart</button>
       <button data-testid="nav-back" onClick={() => navigate(-1)}>back</button>
     </div>
@@ -320,8 +322,9 @@ function HistoryProbe() {
 }
 
 interface RenderOptions {
-  entries?: string[];
+  entries?: InitialEntry[];
   initialIndex?: number;
+  locale?: "en-US" | "zh-CN";
   facade?: RelationGovernanceFacade;
   tracker?: OperationTracker;
   /** 包上 AppNotificationsProvider：桥接失败通知只有在真实通知服务下才会发出。 */
@@ -335,7 +338,7 @@ interface RenderedContext {
 }
 
 async function renderGovernanceApp(options: RenderOptions = {}): Promise<RenderedContext> {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const i18n = await createSkillHubI18n([options.locale ?? "zh-CN"]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const {
     entries = ["/relationships/governance"],
@@ -354,6 +357,7 @@ async function renderGovernanceApp(options: RenderOptions = {}): Promise<Rendere
         <Route element={<p>OPERATION_PAGE</p>} path="/operations/:operationId" />
         <Route element={<p>AGENT_ORIGIN</p>} path="/agents/:agentKey" />
         <Route element={<p>LIBRARY_ORIGIN</p>} path="/library" />
+        <Route element={<p data-testid="skill-detail-origin">SKILL_DETAIL_ORIGIN</p>} path="/library/:skillId" />
         <Route element={<p>PROJECT_ORIGIN</p>} path="/projects/:projectKey" />
         <Route element={<p>GRAPH_ORIGIN</p>} path="/relationships" />
         <Route element={<p>DECISIONS_ORIGIN</p>} path="/relationships/decisions" />
@@ -1007,12 +1011,144 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
     );
   });
 
+  it("returns to the validated Skill detail route and restores its library return state", async () => {
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 16, scrollTop: 412 };
+    await renderGovernanceApp({
+      entries: [{
+        pathname: "/relationships/governance",
+        search: "?from=library&skillId=skill-pdf&relationId=managed:dep-eligible",
+        state: {
+          libraryReturn,
+          returnTo: "/library/skill-pdf?q=pdf&sort=version%3Adesc",
+          targetIdentity: {
+            skill_id: "skill-pdf",
+            target_kind: "agent",
+            directory_node_id: "node-codex",
+            entry_path_key: "c:/agents/codex/skills/pdf-reader",
+          },
+        },
+      }],
+    });
+    await waitRows();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回技能库" }));
+
+    expect(await screen.findByTestId("skill-detail-origin")).toBeVisible();
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/library/skill-pdf");
+    expect(screen.getByTestId("location-search")).toHaveTextContent("?q=pdf&sort=version%3Adesc");
+    expect(screen.getByTestId("location-state")).toHaveTextContent(JSON.stringify({ libraryReturn }));
+  });
+
+  it.each([
+    ["external URL", "https://evil.example/"],
+    ["protocol-relative URL", "//evil.example/library/skill-pdf"],
+    ["encoded path separator", "/library/%2f%2fevil"],
+    ["double-encoded separator", "/library/%252f%252fevil"],
+    ["backslash", String.raw`/library/skill-pdf\..\evil`],
+    ["unapproved route", "/relationships/governance"],
+  ])("uses the safe library fallback for an invalid direct-open returnTo (%s)", async (_label, returnTo) => {
+    await renderGovernanceApp({
+      entries: [{
+        pathname: "/relationships/governance",
+        search: "?from=library&skillId=skill-pdf",
+        state: {
+          libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: "bad", scrollTop: 4 },
+          returnTo,
+        },
+      }],
+    });
+    await waitRows();
+    expect(screen.getByTestId("governance-return-context-warning")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回技能库" }));
+
+    expect(screen.getByText("LIBRARY_ORIGIN")).toBeVisible();
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/library");
+    expect(screen.getByTestId("location-state")).toHaveTextContent("null");
+  });
+
+  it("rejects a returnTo pointing at another Skill and falls back to the library", async () => {
+    await renderGovernanceApp({
+      entries: [{
+        pathname: "/relationships/governance",
+        search: "?from=library&skillId=skill-pdf",
+        state: {
+          libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 0, scrollTop: 0 },
+          returnTo: "/library/another-skill?q=pdf",
+        },
+      }],
+    });
+    await waitRows();
+    expect(screen.getByTestId("governance-return-context-warning")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回技能库" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/library");
+    expect(screen.getByTestId("location-state")).toHaveTextContent("null");
+  });
+
+  it("falls back to the library when opened directly without navigation history", async () => {
+    await renderGovernanceApp({ entries: ["/relationships/governance?from=library&skillId=skill-pdf"] });
+    await waitRows();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回技能库" }));
+
+    expect(await screen.findByText("LIBRARY_ORIGIN")).toBeVisible();
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/library");
+  });
+
   it("opens the governance preview for a deep-linked relationId", async () => {
     await renderGovernanceApp({
       entries: ["/relationships/governance?from=conflict&conflictId=case-1&relationId=managed:dep-shared"],
     });
     await waitRows();
     expect(await screen.findByRole("dialog", { name: "纳入集中库管理预览" })).toBeVisible();
+  });
+
+  it("re-fetches the Skill ledger row and does not authorize from stale target identity state", async () => {
+    const facade = createFacade();
+    await renderGovernanceApp({
+      entries: [{
+        pathname: "/relationships/governance",
+        search: "?from=library&skillId=skill-pdf&relationId=managed:dep-shared",
+        state: {
+          targetIdentity: {
+            skill_id: "another-skill",
+            target_kind: "project",
+            directory_node_id: "stale-node",
+            entry_path_key: "stale/path",
+          },
+        },
+      }],
+      facade,
+    });
+
+    expect(await screen.findByRole("dialog", { name: "纳入集中库管理预览" })).toBeVisible();
+    expect(facade.listGovernance).toHaveBeenCalledWith(
+      expect.objectContaining({ skill_id: "skill-pdf" }),
+    );
+    expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
+  });
+
+  it("explains when an exact library relation deep link no longer resolves", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?from=library&skillId=skill-pdf&relationId=missing-relation"],
+    });
+    await waitRows();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("这条关系在该技能中已不可用。");
+  });
+
+  it("shows the same stale relationship fact in English", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?from=library&skillId=skill-pdf&relationId=missing-relation"],
+      locale: "en-US",
+    });
+    await screen.findByTestId("governance-row-list");
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "This relationship is no longer available for this Skill.",
+    );
   });
 
   it("pushes classification filters into history so browser back restores all rows", async () => {

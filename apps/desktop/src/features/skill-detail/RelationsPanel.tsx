@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import type { GovernanceHistoryEntry, RemovalImpactFact } from "../../api/bindings";
+import type { GovernanceHistoryEntry, RelationTargetIdentity, RemovalImpactFact } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { AgentPresentation } from "../../ui/AgentPresentation";
@@ -18,6 +18,7 @@ import {
   type SkillRelationshipViews,
 } from "../relationshipGovernance/relationshipGovernance";
 import type { SkillRelation } from "./api";
+import type { SkillLibraryReturnState } from "./detailContext";
 
 export interface RelationsPanelProps {
   relations: SkillRelation[];
@@ -28,6 +29,14 @@ export interface RelationsPanelProps {
   onLoadRemovalImpact?: (relationId: string) => Promise<RemovalImpactFact>;
   /** 提供时每条治理关系行都有「管理关系」深链，指向治理页并携带 relationId。 */
   governanceHref?: (relation: RelationshipView) => string;
+  /** 详情进入治理页后返回时恢复列表焦点和滚动。 */
+  navigationState?: { libraryReturn: SkillLibraryReturnState };
+  /** 每条治理深链携带由当前台账行读取的精确关系身份，仅作导航上下文。 */
+  governanceNavigationState?: (relation: RelationshipView) => {
+    libraryReturn?: SkillLibraryReturnState;
+    returnTo?: string;
+    targetIdentity: RelationTargetIdentity | null;
+  };
   /** 任务 12.13：最近 N 条不可变来源事件（治理历史）；只读摘要，不复制治理流程。 */
   sourceEvents?: readonly GovernanceHistoryEntry[];
   /** 「查看全部」分页入口指向治理历史页。 */
@@ -36,7 +45,9 @@ export interface RelationsPanelProps {
 
 export function RelationsPanel({
   governanceHref,
+  governanceNavigationState,
   historyHref,
+  navigationState,
   onLoadRemovalImpact,
   onUndeploy,
   relations,
@@ -112,6 +123,7 @@ export function RelationsPanel({
                     <Link
                       className="sh-governance__row-link"
                       data-testid="governance-link"
+                      state={governanceNavigationState?.(row) ?? navigationState}
                       to={governanceHref(row)}
                     >
                       {t("relationships.governance.manageRelations")}
@@ -150,6 +162,7 @@ export function RelationsPanel({
             <Link
               className="sh-governance__row-link"
               data-testid="source-events-view-all"
+              state={navigationState}
               to={historyHref}
             >
               {t("relationships.governance.history.link")}

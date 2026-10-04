@@ -1754,6 +1754,7 @@
   },
   "skillDetail": {
     "actions": {
+      "label": "Skill actions",
       "delete": "Delete from library"
     },
     "versions": {
@@ -2973,6 +2974,10 @@
       "loading": "Loading the relationship governance ledger…",
       "loadError": "The relationship governance ledger is unavailable.",
       "retryLoad": "Reload",
+      "deepLink": {
+        "relationUnavailable": "This relationship is no longer available for this Skill.",
+        "returnContextUnavailable": "The original Skill detail location could not be verified. Back will return to the Skill library."
+      },
       "back": {
         "library": "Back to Skill library",
         "graph": "Back to Skill graph",

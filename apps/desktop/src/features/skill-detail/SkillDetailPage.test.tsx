@@ -14,6 +14,7 @@ import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import "./skill-detail.css";
 import baseCss from "../../styles/base.css?raw";
+import detailCss from "./skill-detail.css?raw";
 import type { SkillDetailFacade } from "./api";
 import type { MarkdownFacade } from "../markdown/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
@@ -25,6 +26,7 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import type {
   GovernanceHistoryEntry,
   RelationGovernanceRow,
+  RelationTargetIdentity,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { governanceContextCheckStorageKey } from "../relationships/governance/useRelationshipContextCheck";
@@ -73,6 +75,7 @@ async function renderDetail({
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={[entry]}>
+          <LocationProbe />
           <Routes>
             <Route
               element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} reviewPrototype={reviewPrototype} securityFacade={securityFacade} tracker={tracker} />}
@@ -84,6 +87,7 @@ async function renderDetail({
             />
             <Route element={<p>Library route</p>} path="/library" />
             <Route element={<ExportProbe />} path="/settings/data-protection" />
+            <Route element={<GovernanceProbe />} path="/relationships/governance" />
           </Routes>
         </MemoryRouter>
       </I18nextProvider>
@@ -95,7 +99,31 @@ async function renderDetail({
 function ExportProbe() {
   const location = useLocation();
   const ids = (location.state as { exportSkillIds?: string[] } | null)?.exportSkillIds ?? [];
-  return <p>export probe: {ids.join(",")}</p>;
+  return (
+    <>
+      <p>export probe: {ids.join(",")}</p>
+      <output data-testid="export-state">{JSON.stringify(location.state)}</output>
+    </>
+  );
+}
+
+function GovernanceProbe() {
+  const location = useLocation();
+  return (
+    <>
+      <p data-testid="governance-location">{`${location.pathname}${location.search}`}</p>
+      <output data-testid="governance-state">{JSON.stringify(location.state)}</output>
+    </>
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="route-location">
+      {`${location.pathname}${location.search}|${JSON.stringify(location.state)}`}
+    </output>
+  );
 }
 
 describe("SkillDetailPage shell", () => {
@@ -326,6 +354,25 @@ describe("SkillDetailPage shell", () => {
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
   });
 
+  it("carries the library return context through an adjacent Skill", async () => {
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
+    const user = userEvent.setup();
+    await renderDetail({
+      entry: {
+        pathname: "/library/skill-pdf",
+        search: "?q=pdf&sort=name",
+        state: { libraryReturn },
+      },
+    });
+
+    await user.click(await screen.findByRole("link", { name: "Next Skill" }));
+
+    expect(await screen.findByRole("heading", { name: "Spreadsheet Reader" })).toBeVisible();
+    expect(screen.getByTestId("route-location")).toHaveTextContent(
+      `/library/skill-sheet?q=pdf&sort=name|${JSON.stringify({ libraryReturn })}`,
+    );
+  });
+
   it("returns to the preview Skill library instead of the unavailable production route", async () => {
     await renderDetail({
       entry: {
@@ -504,6 +551,54 @@ describe("SkillDetailPage shell", () => {
     ).toBe(true);
   });
 
+  it("keeps the header dispatch, export, and delete entries in one ordered action slot", async () => {
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const header = document.querySelector(".sh-skill-detail__header");
+    const actions = screen.getByRole("group", { name: "Skill actions" });
+    const dispatch = within(actions).getByRole("button", { name: "Dispatch PDF Reader" });
+    const exportSkill = within(actions).getByRole("button", { name: "Export PDF Reader" });
+    const deleteSkill = within(actions).getByRole("button", { name: "Delete from library" });
+
+    expect(header).toContainElement(actions);
+    expect(dispatch.compareDocumentPosition(exportSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exportSkill.compareDocumentPosition(deleteSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions).toContainElement(dispatch);
+    expect(actions).toContainElement(exportSkill);
+    expect(actions).toContainElement(deleteSkill);
+  });
+
+  it("keeps header actions keyboard-ordered and wrapping at narrow widths", async () => {
+    const user = userEvent.setup();
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const actions = screen.getByRole("group", { name: "Skill actions" });
+    const dispatch = within(actions).getByRole("button", { name: "Dispatch PDF Reader" });
+    const exportSkill = within(actions).getByRole("button", { name: "Export PDF Reader" });
+    const deleteSkill = within(actions).getByRole("button", { name: "Delete from library" });
+    dispatch.focus();
+    expect(document.activeElement).toBe(dispatch);
+    await user.tab();
+    expect(document.activeElement).toBe(exportSkill);
+    await user.tab();
+    expect(document.activeElement).toBe(deleteSkill);
+
+    expect(actions).toHaveClass("sh-skill-detail__header-actions");
+    expect(detailCss).toMatch(/\.sh-skill-detail__header-actions\s*\{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*wrap[\s\S]*max-width:\s*100%/);
+    expect(detailCss).toMatch(/@container\s+workspace\s*\(max-width:\s*44rem\)[\s\S]*\.sh-skill-detail__header-actions\s*\{[\s\S]*justify-content:\s*flex-start/);
+  });
+
+  it("hides production-only header actions on the review prototype route", async () => {
+    await renderDetail({ reviewPrototype: true });
+
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Dispatch PDF Reader" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export PDF Reader" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete from library" })).not.toBeInTheDocument();
+  });
+
   it("activates the containing zone for a legacy section hash", async () => {
     await renderDetail({ entry: "/library/skill-pdf#versions" });
 
@@ -661,16 +756,50 @@ describe("SkillDetailPage shell", () => {
   });
 });
 
-it("exports the skill from the versions section with the skill id carried over", async () => {
+it("exports the current Skill from the header with its id and library return context carried over", async () => {
   const user = userEvent.setup();
-  await renderDetail({ entry: "/library/skill-pdf" });
+  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
+  await renderDetail({
+    entry: {
+      pathname: "/library/skill-pdf",
+      search: "?q=pdf",
+      state: { libraryReturn },
+    },
+  });
 
-  const exportBtn = await screen.findByRole("button", { name: /Export this skill/ });
+  const exportBtn = await screen.findByRole("button", { name: "Export PDF Reader" });
   await user.click(exportBtn);
   expect(await screen.findByText("export probe: skill-pdf")).toBeVisible();
+  expect(screen.getByTestId("export-state")).toHaveTextContent(
+    JSON.stringify({ exportSkillIds: ["skill-pdf"], libraryReturn }),
+  );
+});
+
+it("dispatches the exact Skill id and retains the filtered library return context", async () => {
+  const user = userEvent.setup();
+  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
+  await renderDetail({
+    entry: {
+      pathname: "/library/skill-pdf",
+      search: "?q=pdf&page=2",
+      state: { libraryReturn },
+    },
+  });
+
+  await user.click(await screen.findByRole("button", { name: "Dispatch PDF Reader" }));
+
+  expect(screen.getByTestId("route-location")).toHaveTextContent(
+    `/deploy?skill=skill-pdf|${JSON.stringify({ libraryReturn })}`,
+  );
 });
 
 describe("Task 7: governed relationship sections", () => {
+  // 本组测试会渲染真实治理 facade 并触发 12C 轻量检查，必须逐用例清理
+  // 挂载与 sessionStorage，避免上下文检查的会话记忆泄漏到后续测试组。
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
   const overview = {
     scope: { type: "skill" as const, value: { skill_id: "skill-pdf" } },
     directory_nodes: [],
@@ -745,6 +874,41 @@ describe("Task 7: governed relationship sections", () => {
     expect(screen.getAllByRole("button", { name: "查看移除影响" }).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("deep-links the exact relation and verified target identity with a controlled return route", async () => {
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 16, scrollTop: 412 };
+    const targetIdentity: RelationTargetIdentity = {
+      skill_id: "skill-pdf",
+      target_kind: "agent",
+      directory_node_id: "node-codex",
+      entry_path_key: "c:/agents/codex/skills/pdf-reader",
+    };
+    const governanceFacade = governanceStub({
+      rows: [governanceLedgerRow("rel-copy", "deployment", targetIdentity)],
+    });
+    const user = userEvent.setup();
+    await renderDetail({
+      entry: {
+        pathname: "/library/skill-pdf",
+        search: "?q=pdf",
+        state: { libraryReturn },
+      },
+      facade: createMockSkillDetailFacade({ relationshipOverview: overview }),
+      governanceFacade,
+      locale: "zh-CN",
+    });
+
+    await user.click(await screen.findByRole("link", { name: "管理关系" }));
+
+    expect(await screen.findByTestId("governance-location")).toHaveTextContent(
+      "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-copy",
+    );
+    expect(screen.getByTestId("governance-state")).toHaveTextContent(JSON.stringify({
+      libraryReturn,
+      returnTo: "/library/skill-pdf?q=pdf",
+      targetIdentity,
+    }));
+  });
+
   it("degrades honestly when the relationship overview is unavailable", async () => {
     await renderDetail({
       facade: {
@@ -765,7 +929,11 @@ describe("Task 7: governed relationship sections", () => {
 
 // —— 任务 12C（12.7/12.13）：详情页顶层一次 Light check + 最近来源事件摘要 ——
 
-function governanceLedgerRow(relationId: string, kind: "deployment" | "source_copy"): RelationGovernanceRow {
+function governanceLedgerRow(
+  relationId: string,
+  kind: "deployment" | "source_copy",
+  targetIdentity: RelationTargetIdentity | null = null,
+): RelationGovernanceRow {
   return {
     relation:
       kind === "deployment"
@@ -841,7 +1009,7 @@ function governanceLedgerRow(relationId: string, kind: "deployment" | "source_co
         { action: "revalidate", available: true, reasons: [] },
       ],
     },
-    target_identity: null,
+    target_identity: targetIdentity,
     evidence_relation_ids: [relationId],
   };
 }

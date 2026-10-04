@@ -2,7 +2,7 @@ import { governanceDestination } from "../../pending/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../../api/nativeErrors";
 import type {
   RelationGovernanceBatchAction,
@@ -48,6 +48,7 @@ import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
 import { GovernanceDecisionPreview, type GovernanceDecisionAction } from "./GovernanceDecisionPreview";
 import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
 import { governanceReasonLabelKey } from "./governancePresenter";
+import { readGovernanceLibraryReturnTarget } from "./libraryReturnContext";
 import "./governance.css";
 
 export type { RelationGovernanceFacade } from "./api";
@@ -103,6 +104,7 @@ export function RelationshipGovernancePage({
   tracker = operationTracker,
 }: RelationshipGovernancePageProps) {
   const { t } = useTranslation();
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
@@ -110,6 +112,10 @@ export function RelationshipGovernancePage({
   const deepLink = useMemo(
     () => parseGovernanceSearchParams(searchParams),
     [searchParams],
+  );
+  const libraryReturnTarget = useMemo(
+    () => readGovernanceLibraryReturnTarget(location.state, deepLink.skillId ?? undefined),
+    [deepLink.skillId, location.state],
   );
   const view = searchParams.get("view") === "table" ? "table" : "board";
   const boardScrollResetKey = JSON.stringify([
@@ -869,16 +875,34 @@ export function RelationshipGovernancePage({
 
   return (
     <RelationshipsLayout scope="governance">
-      {ledgerQuery.isSuccess && deepLink.relationId && !visibleRows.some((row) => relationIdOf(row.relation) === deepLink.relationId) ? <p role="status">{t("pending.linkResolved")}</p> : null}
+      {ledgerQuery.isSuccess && deepLink.relationId && !visibleRows.some((row) => relationIdOf(row.relation) === deepLink.relationId) ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
       {/* 工作台是 .sh-relationships 两行网格的唯一画布子元素：页签行 +
           画布行。治理页的块级内容一旦直接散落在网格里，画布行会被
           压缩，内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。 */}
       <div className="sh-governance">
       {deepLink.from ? (
         <div className="sh-governance__source-bar">
-          <Button onClick={() => navigate(-1)} size="sm" variant="ghost">
+          <Button
+            onClick={() => {
+              if (deepLink.from === "library") {
+                navigate(libraryReturnTarget?.to ?? "/library", {
+                  replace: true,
+                  state: libraryReturnTarget?.state,
+                });
+                return;
+              }
+              navigate(-1);
+            }}
+            size="sm"
+            variant="ghost"
+          >
             {t(`relationships.governance.back.${deepLink.from}` as never)}
           </Button>
+          {deepLink.from === "library" && !libraryReturnTarget ? (
+            <p data-testid="governance-return-context-warning" role="note">
+              {t("relationships.governance.deepLink.returnContextUnavailable")}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

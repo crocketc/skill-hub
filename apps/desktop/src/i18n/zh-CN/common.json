@@ -1754,6 +1754,7 @@
   },
   "skillDetail": {
     "actions": {
+      "label": "Skill 操作",
       "delete": "从库中删除 Skill"
     },
     "versions": {
@@ -2973,6 +2974,10 @@
       "loading": "正在加载关系治理清单…",
       "loadError": "关系治理清单暂不可用。",
       "retryLoad": "重新加载",
+      "deepLink": {
+        "relationUnavailable": "这条关系在该技能中已不可用。",
+        "returnContextUnavailable": "无法验证原技能详情位置；返回操作将回到技能库。"
+      },
       "back": {
         "library": "返回技能库",
         "graph": "返回技能图谱",

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import type { AdjacentSkillContext } from "./api";
+import type { SkillLibraryReturnState } from "./detailContext";
 
 /** 详情页五个信息区（设计规格 5.4）：身份、状态、正文、关系、生命周期。 */
 export const DETAIL_ZONES = [
@@ -37,12 +38,14 @@ interface DetailSectionNavProps {
   adjacent?: AdjacentSkillContext;
   backSearch: string;
   detailPathname: string;
+  libraryReturn?: SkillLibraryReturnState;
 }
 
 export function DetailSectionNav({
   adjacent,
   backSearch,
   detailPathname,
+  libraryReturn,
 }: DetailSectionNavProps) {
   const { t } = useTranslation();
   const location = useLocation();
@@ -106,6 +109,7 @@ export function DetailSectionNav({
             {adjacent.previous ? (
               <Link
                 className="sh-button sh-button--ghost sh-button--sm"
+                state={libraryReturn ? { libraryReturn } : undefined}
                 to={{ pathname: `${detailPathname}/${adjacent.previous.id}`, search: backSearch }}
               >
                 {t("skillDetail.navigation.previous")}
@@ -118,6 +122,7 @@ export function DetailSectionNav({
             {adjacent.next ? (
               <Link
                 className="sh-button sh-button--ghost sh-button--sm"
+                state={libraryReturn ? { libraryReturn } : undefined}
                 to={{ pathname: `${detailPathname}/${adjacent.next.id}`, search: backSearch }}
               >
                 {t("skillDetail.navigation.next")}
