@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { MarkdownContentConflictError } from "./api";
@@ -340,6 +340,7 @@ describe("MarkdownEditor", () => {
     );
   });
 
+  // K4 故障矩阵：身份冲突不允许静默覆盖，必须给出「重新加载 / 另存为副本」。
   it("surfaces a content conflict raised from the guarded replace flow", async () => {
     const facade = await renderEditor();
     facade.saveSkillContent = () =>
@@ -350,10 +351,88 @@ describe("MarkdownEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
     fireEvent.click(await screen.findByRole("button", { name: "Replace and save" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The file changed outside SkillHub. Your local draft was preserved.",
-    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("The file changed outside SkillHub");
+    expect(dialog).toHaveTextContent(/not overwritten/);
     expect(facade.calls.copiedVersions).toEqual([]);
+    expect(facade.calls.savedVersions).toEqual([]);
+
+    // 另存为副本：冲突前的内容原样落为独立 Skill，原文件保持不动。
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save as copy" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Copy saved as a new Skill");
+    expect(facade.calls.copiedVersions).toEqual([
+      {
+        expectedIdentity: "sha256:skill-md-v1",
+        markdown: "Conflicting",
+        path: "SKILL.md",
+        skillId: "pdf-reader",
+      },
+    ]);
+    expect(facade.calls.savedVersions).toEqual([]);
+    // 冲突未被静默覆盖：编辑器仍持有冲突前的内容。
+    expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "Conflicting",
+    );
+  });
+
+  it("reloads the latest file from a content conflict and drops the local draft", async () => {
+    const onExit = vi.fn();
+    const facade = await renderEditor({}, { onExit });
+    facade.saveSkillContent = () =>
+      Promise.reject(new MarkdownContentConflictError("SKILL.md"));
+    await replaceEditorText("Conflicting reload");
+    await screen.findByText("Draft saved locally");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Replace and save" }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reload the latest file" }));
+
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(facade.calls.discardedDrafts).toEqual([
+      { path: "SKILL.md", skillId: "pdf-reader" },
+    ]);
+    expect(facade.calls.savedVersions).toEqual([]);
+  });
+
+  // K4 故障矩阵：草稿写入失败时编辑器保留内存内容，且提供可重试入口。
+  it("keeps the in-memory content and offers a retry when the draft write fails", async () => {
+    const facade = await renderEditor();
+    let draftWritesFail = true;
+    const original = facade.saveDraft.bind(facade);
+    facade.saveDraft = async (...args) => {
+      if (draftWritesFail) {
+        throw new Error("fixture draft write failed");
+      }
+      return original(...args);
+    };
+    await replaceEditorText("Must survive a failed draft write");
+
+    expect(await screen.findByText("Could not save the local draft.")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "Must survive a failed draft write",
+    );
+
+    // 排除故障后重试：草稿真正落盘，状态恢复为已保存。
+    draftWritesFail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry saving the draft" }));
+    expect(await screen.findByText("Draft saved locally")).toBeVisible();
+    expect(facade.calls.savedDrafts[0]?.markdown).toBe("Must survive a failed draft write");
+  });
+
+  // K4 契约：草稿必须携带基准版本与基准内容身份，供后端校验漂移。
+  it("saves drafts with base version and content identity for the backend contract", async () => {
+    const facade = await renderEditor();
+    await replaceEditorText("Based draft");
+    await screen.findByText("Draft saved locally");
+
+    await waitFor(() => expect(facade.calls.savedDrafts).toHaveLength(1));
+    expect(facade.calls.savedDrafts[0]).toEqual({
+      base: { contentIdentity: "sha256:skill-md-v1", versionId: "v1" },
+      markdown: "Based draft",
+      path: "SKILL.md",
+      skillId: "pdf-reader",
+    });
   });
 
   it("syncs the preview to the source editor while sync scrolling is on", async () => {

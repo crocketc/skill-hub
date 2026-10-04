@@ -1,5 +1,6 @@
 import {
   MarkdownContentConflictError,
+  type MarkdownDraftBase,
   type MarkdownFacade,
   type MarkdownFileContent,
   type MarkdownSaveResult,
@@ -13,7 +14,12 @@ export interface MockMarkdownCalls {
   openedDefaults: Array<{ path: string; skillId: string }>;
   openedFolders: string[];
   openedUrls: string[];
-  savedDrafts: Array<{ markdown: string; path: string; skillId: string }>;
+  savedDrafts: Array<{
+    base?: MarkdownDraftBase;
+    markdown: string;
+    path: string;
+    skillId: string;
+  }>;
   copiedVersions: Array<{
     expectedIdentity: string;
     markdown: string;
@@ -31,6 +37,13 @@ export interface MockMarkdownCalls {
 
 export interface MockMarkdownFacade extends MarkdownFacade {
   calls: MockMarkdownCalls;
+  /** 测试可直接用 3 参形式预置草稿；编辑器调用时必须携带基准元数据。 */
+  saveDraft(
+    skillId: string,
+    path: string,
+    markdown: string,
+    base?: MarkdownDraftBase,
+  ): Promise<void>;
 }
 
 export interface MockMarkdownOptions {
@@ -48,12 +61,14 @@ const fixtureFiles: MarkdownFileContent[] = [
     editable: true,
     markdown: "---\nname: pdf-reader\n---\n\n# Extract PDF tables safely\n",
     path: "SKILL.md",
+    versionId: "v1",
   },
   {
     contentIdentity: "sha256:usage-md-v1",
     editable: true,
     markdown: "# Usage notes\n\nUse the reader with local PDF files.",
     path: "docs/usage.md",
+    versionId: "v1",
   },
 ];
 
@@ -137,7 +152,12 @@ export function createMarkdownPreviewFacade(): MockMarkdownFacade {
         return {
           ...file,
           markdown: markdownPreviewDocument,
-          draft: { markdown: "# Recovered draft", savedAt: "2026-09-11T08:00:00Z" },
+          draft: {
+            baseContentIdentity: "sha256:skill-md-v1",
+            baseVersionId: "v1",
+            markdown: "# Recovered draft",
+            savedAt: "2026-09-11T08:00:00Z",
+          },
         };
       }
       return file;
@@ -232,10 +252,15 @@ export function createMockMarkdownFacade(
     async resolveLocalAsset(skillId, markdownPath, assetPath) {
       return `asset://skill/${encodeURIComponent(skillId)}/${encodeURIComponent(markdownPath)}/${encodeURIComponent(assetPath)}`;
     },
-    async saveDraft(skillId, path, markdown) {
+    async saveDraft(skillId, path, markdown, base?) {
       const file = requireFile(path);
-      file.draft = { markdown, savedAt: "2026-08-26T12:00:00Z" };
-      calls.savedDrafts.push({ markdown, path, skillId });
+      file.draft = {
+        baseContentIdentity: base?.contentIdentity,
+        baseVersionId: base?.versionId ?? null,
+        markdown,
+        savedAt: "2026-08-26T12:00:00Z",
+      };
+      calls.savedDrafts.push({ base, markdown, path, skillId });
     },
     async saveMarkdownAsCopy(skillId, path, markdown, expectedIdentity) {
       requireFile(path);
@@ -255,6 +280,7 @@ export function createMockMarkdownFacade(
       calls.savedVersions.push({ expectedIdentity, markdown, path, skillId });
       file.markdown = markdown;
       file.contentIdentity = "sha256:skill-md-v2";
+      file.versionId = "v2";
       delete file.draft;
       return {
         contentIdentity: file.contentIdentity,

@@ -63,9 +63,19 @@
       "open": "Open link",
       "title": "Open external link?"
     },
+    "guard": {
+      "description": "This page has changes that are not saved as a version yet. Staying keeps your edits and the local draft; discarding deletes the local draft and unsaved changes are lost.",
+      "leave": "Discard draft and leave",
+      "stay": "Stay and keep editing",
+      "title": "Unsaved draft on this page"
+    },
     "editor": {
-      "conflict": "The file changed outside SkillHub. Your local draft was preserved.",
+      "conflictTitle": "The file changed outside SkillHub",
+      "conflictDescription": "Your local draft is preserved and was not overwritten. Reload the latest file, or save your current content as a separate copy.",
+      "conflictReload": "Reload the latest file",
+      "conflictSaveCopy": "Save as copy",
       "draftError": "Could not save the local draft.",
+      "draftRetry": "Retry saving the draft",
       "draftSaved": "Draft saved locally",
       "draftSaving": "Saving local draft",
       "issues": "Save issues",

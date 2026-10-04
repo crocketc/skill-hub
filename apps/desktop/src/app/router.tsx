@@ -25,6 +25,7 @@ import { RemovalPreview } from "../features/removal/RemovalPreview";
 import { OnlineDiscoveryPreview } from "../features/discovery/OnlineDiscoveryPreview";
 import { DiscoveryCardsPreview } from "../features/discovery/DiscoveryCardsPreview";
 import { UiFoundationsPreview } from "../features/dev-preview/UiFoundationsPreview";
+import { MarkdownRouteGuard } from "../features/markdown/MarkdownRouteGuard";
 import { MarkdownWorkspacePreview } from "../features/markdown/MarkdownWorkspacePreview";
 import { OverviewPreviewShell, overviewPreviewRelationshipsFacade } from "../features/overview/OverviewPreview";
 import { PendingPreview } from "../features/pending/PendingPreview";
@@ -209,7 +210,12 @@ function ProjectListRoute() {
 
 function SkillDetailRoute() {
   const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
-  return <RouteSuspense><SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} securityFacade={nativeSecurityFacade} /></RouteSuspense>;
+  return <RouteSuspense><>
+    {/* K4-B 离开保护必须挂在数据路由上下文中（useBlocker 依赖）；工作区所在
+        路由统一装配，编辑器经 draftGuardStore 上报 armed 状态。 */}
+    <MarkdownRouteGuard />
+    <SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} securityFacade={nativeSecurityFacade} />
+  </></RouteSuspense>;
 }
 
 function RecoveryRoute() {

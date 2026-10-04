@@ -3,18 +3,21 @@ import { search } from "@codemirror/search";
 import { useQueryClient } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Icon } from "../../ui/Icon";
 import {
   MarkdownContentConflictError,
+  type MarkdownDraftBase,
   type MarkdownFacade,
   type MarkdownFileContent,
   type MarkdownValidationIssue,
   markdownKeys,
 } from "./api";
+import { ConflictSaveDialog } from "./ConflictSaveDialog";
+import { draftGuardStore } from "./draftGuardStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ReplaceSaveDialog } from "./ReplaceSaveDialog";
 import { Switch } from "../../ui/Switch";
@@ -29,13 +32,23 @@ interface MarkdownEditorProps {
   facade: MarkdownFacade;
   file: MarkdownFileContent;
   onSaved: (newVersionId: string) => void;
-  reviewSaveFlow?: boolean;
+  /** Workspace 注册「切换文件/Tab 前持久化草稿」回调；传 null 表示注销。 */
+  registerPersist?: (persist: (() => Promise<void>) | null) => void;
   /** 用户明确结束编辑（保存后或放弃后）时回调；工作流据此回到阅读模式。 */
   onExit?: () => void;
+  reviewSaveFlow?: boolean;
   skillId: string;
 }
 
-export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow = false, skillId }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  facade,
+  file,
+  onSaved,
+  onExit,
+  registerPersist,
+  reviewSaveFlow = false,
+  skillId,
+}: MarkdownEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const initial = file.draft?.markdown ?? file.markdown;
@@ -50,6 +63,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
   const [savedVersion, setSavedVersion] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const [reviewSaveOpen, setReviewSaveOpen] = useState(false);
   const [reviewSaveMode, setReviewSaveMode] = useState<"overwrite" | "new">("overwrite");
   const [reviewSaveStep, setReviewSaveStep] = useState<"choose" | "impact">("choose");
@@ -62,12 +76,56 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
   );
   const lastDraft = useRef(initial);
   const draftTimer = useRef<ReturnType<typeof setTimeout>>();
+  // 放弃草稿后抑制防抖自动保存，防止已丢弃的草稿被重新写回。
+  const abandonedRef = useRef(false);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  // K4 契约：草稿基准（编辑起点的版本与内容身份），恢复旧草稿时沿用其基准。
+  const draftBaseRef = useRef<MarkdownDraftBase>(
+    file.draft
+      ? {
+          contentIdentity: file.draft.baseContentIdentity ?? file.contentIdentity,
+          versionId: file.draft.baseVersionId ?? file.versionId ?? null,
+        }
+      : { contentIdentity: file.contentIdentity, versionId: file.versionId ?? null },
+  );
   const issuesRef = useRef<HTMLElement>(null);
   const sourcePaneRef = useRef<HTMLDivElement>(null);
   const previewPaneRef = useRef<HTMLDivElement>(null);
   const syncScrollRef = useRef(syncScroll);
   const syncEchoRef = useRef<ScrollSyncEcho | null>(null);
   syncScrollRef.current = syncScroll;
+
+  const syncDraftCache = useCallback(
+    (markdown: string) => {
+      // 草稿写回查询缓存：切走再切回时编辑器能从缓存恢复最新输入。
+      queryClient.setQueryData<MarkdownFileContent>(
+        markdownKeys.file(skillId, file.path),
+        (prev) => prev
+          ? {
+              ...prev,
+              draft: {
+                baseContentIdentity: draftBaseRef.current.contentIdentity,
+                baseVersionId: draftBaseRef.current.versionId,
+                markdown,
+                savedAt: new Date().toISOString(),
+              },
+            }
+          : prev,
+      );
+    },
+    [file.path, queryClient, skillId],
+  );
+
+  const persistDraft = useCallback(
+    async (markdown: string) => {
+      await facade.saveDraft(skillId, file.path, markdown, draftBaseRef.current);
+      lastDraft.current = markdown;
+      syncDraftCache(markdown);
+      setDraftState("saved");
+    },
+    [facade, file.path, skillId, syncDraftCache],
+  );
 
   useEffect(() => {
     const sourcePane = sourcePaneRef.current;
@@ -113,37 +171,69 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
   }, []);
 
   useEffect(() => {
-    if (source === lastDraft.current) {
+    if (abandonedRef.current || source === lastDraft.current) {
       return;
     }
     setDraftState("saving");
     draftTimer.current = setTimeout(() => {
-      void facade.saveDraft(skillId, file.path, source)
-        .then(() => {
-          lastDraft.current = source;
-          setDraftState("saved");
-        })
-        .catch(() => setDraftState("error"));
+      void persistDraft(source).catch(() => setDraftState("error"));
     }, 500);
     return () => {
       if (draftTimer.current) {
         clearTimeout(draftTimer.current);
       }
     };
-  }, [facade, file.path, skillId, source]);
+  }, [persistDraft, source]);
 
   const persistCurrentDraft = async () => {
     if (draftTimer.current) {
       clearTimeout(draftTimer.current);
     }
-    await facade.saveDraft(skillId, file.path, source);
-    lastDraft.current = source;
-    setDraftState("saved");
+    if (abandonedRef.current || source === lastDraft.current) {
+      return;
+    }
+    try {
+      await persistDraft(source);
+    } catch (error) {
+      // 草稿写入失败：保留内存内容与可重试状态，错误向上交给调用方决定去留。
+      setDraftState("error");
+      throw error;
+    }
   };
+
+  const persistFnRef = useRef(persistCurrentDraft);
+  persistFnRef.current = persistCurrentDraft;
+
+  const retryDraft = () => {
+    setDraftState("saving");
+    void persistDraft(sourceRef.current).catch(() => setDraftState("error"));
+  };
+
+  // K4-B 离开保护登记：armed 状态与放弃回调供路由层守卫（draftGuardStore）使用。
+  const guardKey = `${skillId}:${file.path}`;
+  useEffect(() => {
+    return draftGuardStore.register({
+      abandon: () => {
+        abandonedRef.current = true;
+        if (draftTimer.current) {
+          clearTimeout(draftTimer.current);
+        }
+        lastDraft.current = sourceRef.current;
+        setDraftState("idle");
+        draftGuardStore.setArmed(guardKey, false);
+        void facade.discardDraft(skillId, file.path).catch(() => undefined);
+      },
+      armed: false,
+      key: guardKey,
+    });
+  }, [facade, file.path, guardKey, skillId]);
 
   const commit = async () => {
     setSaving(true);
     setSaveError(undefined);
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+    }
     try {
       const result = await facade.saveSkillContent(
         skillId,
@@ -154,16 +244,24 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
       setContentIdentity(result.contentIdentity);
       setIssues([]);
       setSavedVersion(result.newVersionId);
+      // 保存成功：后端负责清库内草稿；前端同步清本地草稿状态，防止防抖
+      // 定时器把刚清除的草稿重新写回。
+      lastDraft.current = source;
+      draftBaseRef.current = {
+        contentIdentity: result.contentIdentity,
+        versionId: result.newVersionId,
+      };
       setDraftState("idle");
       if (reviewSaveFlow) setReviewSaveResult("内容已保存为新版本；网络更新来源继续保留。");
       await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, file.path) });
       onSaved(result.newVersionId);
     } catch (error) {
-      setSaveError(
-        error instanceof MarkdownContentConflictError
-          ? t("markdown.editor.conflict")
-          : t("markdown.editor.saveError"),
-      );
+      if (error instanceof MarkdownContentConflictError) {
+        // 身份冲突：提供「重新加载 / 另存为副本」，不静默覆盖。
+        setConflictOpen(true);
+      } else {
+        setSaveError(t("markdown.editor.saveError"));
+      }
     } finally {
       setSaving(false);
     }
@@ -181,11 +279,11 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
         setReviewSaveResult(`新 Skill 已创建并记录“复用修改”关系；${reviewInheritance === "replace" ? "按替换继承展示目标影响。" : "没有继承使用位置。"}新 Skill 不会自动关联网络更新来源。`);
       }
     } catch (error) {
-      setSaveError(
-        error instanceof MarkdownContentConflictError
-          ? t("markdown.editor.conflict")
-          : t("markdown.editor.copyError"),
-      );
+      if (error instanceof MarkdownContentConflictError) {
+        setConflictOpen(true);
+      } else {
+        setSaveError(t("markdown.editor.copyError"));
+      }
     } finally {
       setSaving(false);
     }
@@ -196,7 +294,7 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
     setSaveError(undefined);
     try {
       await persistCurrentDraft();
-      const nextIssues = await facade.validateMarkdown(skillId, file.path, source);
+      const nextIssues = await facade.validateMarkdown(file.path, source);
       setIssues(nextIssues);
       if (nextIssues.length > 0) {
         queueMicrotask(() => issuesRef.current?.focus());
@@ -232,7 +330,28 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
   const hasWarnings = issues.some((issue) => issue.severity === "warning");
   const dirty = source !== file.markdown;
 
+  // K4-B 离开保护武装条件：有未保存的修改且内容非空（保存成功后 savedVersion
+  // 置位即解除，直到下一次输入）。
+  const guardArmed = dirty && source.trim().length > 0 && savedVersion === undefined;
+  useEffect(() => {
+    draftGuardStore.setArmed(guardKey, guardArmed);
+  }, [guardArmed, guardKey]);
+
+  // Workspace 在切换文件 / Tab 前调用注册的持久化函数，防抖窗口内的输入不丢。
+  useEffect(() => {
+    if (!registerPersist) {
+      return;
+    }
+    registerPersist(() => persistFnRef.current());
+    return () => registerPersist(null);
+  }, [registerPersist]);
+
   const discardAndExit = async () => {
+    abandonedRef.current = true;
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+    }
+    draftGuardStore.setArmed(guardKey, false);
     try {
       await facade.discardDraft(skillId, file.path);
       await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, file.path) });
@@ -312,6 +431,11 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
             </Button>
             {t("markdown.editor.copyHint")}
           </span> : null}
+          {draftState === "error" ? (
+            <Button onClick={retryDraft} size="sm" variant="secondary">
+              {t("markdown.editor.draftRetry")}
+            </Button>
+          ) : null}
           <Button loading={saving} onClick={() => {
             if (reviewSaveFlow) {
               setReviewSaveMode("overwrite");
@@ -378,7 +502,11 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
             }}
             extensions={[markdown(), search({ top: true })]}
             height="420px"
-            onChange={setSource}
+            onChange={(value) => {
+              // 新输入使"刚保存过"的版本提示失效，离开保护重新武装。
+              setSavedVersion(undefined);
+              setSource(value);
+            }}
             onCreateEditor={(view) => {
               view.contentDOM.setAttribute(
                 "aria-label",
@@ -408,6 +536,18 @@ export function MarkdownEditor({ facade, file, onSaved, onExit, reviewSaveFlow =
         onSaveCopy={() => void saveAsCopy()}
         open={replaceConfirmOpen}
         path={file.path}
+      />
+      <ConflictSaveDialog
+        busy={saving}
+        onReload={() => {
+          setConflictOpen(false);
+          void discardAndExit();
+        }}
+        onSaveCopy={() => {
+          setConflictOpen(false);
+          void saveAsCopy();
+        }}
+        open={conflictOpen}
       />
       {reviewSaveFlow ? (
         <Dialog.Root open={reviewSaveOpen} onOpenChange={(open) => { if (!open) closeReviewSave(); }}>

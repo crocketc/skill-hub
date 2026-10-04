@@ -125,6 +125,110 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
+  // K4 契约（snake_case 线格式，键名与后端命令一一对应；A 侧绑定落地后零改动接线）。
+  it("saves the local draft with base metadata through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-draft-1",
+        phase: "committed",
+        message_code: "markdown_draft.saved",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.saveDraft("skill-1", "SKILL.md", "# Draft", {
+        contentIdentity: "sha256:abc",
+        versionId: null,
+      }),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "save_markdown_draft",
+      payload: {
+        skill_id: "skill-1",
+        path: "SKILL.md",
+        markdown: "# Draft",
+        base_version_id: null,
+        base_content_identity: "sha256:abc",
+      },
+    });
+  });
+
+  it("discards the local draft through the native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-draft-2",
+        phase: "committed",
+        message_code: "markdown_draft.discarded",
+        error_code: null,
+      },
+    });
+
+    await expect(
+      nativeMarkdownFacade.discardDraft("skill-1", "SKILL.md"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "discard_markdown_draft",
+      payload: { skill_id: "skill-1", path: "SKILL.md" },
+    });
+  });
+
+  it("validates Markdown through the deterministic native command", async () => {
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "markdown_issues",
+      payload: [
+        { code: "frontmatter", line: 1, message: "Missing name", severity: "error" },
+      ],
+    } as never);
+
+    await expect(
+      nativeMarkdownFacade.validateMarkdown("SKILL.md", "# Draft"),
+    ).resolves.toEqual([
+      { code: "frontmatter", line: 1, message: "Missing name", severity: "error" },
+    ]);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "validate_markdown",
+      payload: { path: "SKILL.md", markdown: "# Draft" },
+    });
+  });
+
+  it("maps the native draft summary and base metadata onto the file content", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "markdown_file",
+      payload: {
+        content_identity: "sha256:abc",
+        editable: true,
+        markdown: "# Base",
+        path: "SKILL.md",
+        read_only_reason: null,
+        version_id: "v7",
+        draft: {
+          markdown: "# Draft",
+          base_version_id: "v7",
+          base_content_identity: "sha256:abc",
+          updated_at: "2026-09-30T10:00:00Z",
+        },
+      },
+    } as never);
+
+    await expect(nativeMarkdownFacade.readMarkdownFile("skill-1", "SKILL.md")).resolves.toEqual({
+      contentIdentity: "sha256:abc",
+      editable: true,
+      markdown: "# Base",
+      path: "SKILL.md",
+      readOnlyReason: undefined,
+      versionId: "v7",
+      draft: {
+        markdown: "# Draft",
+        savedAt: "2026-09-30T10:00:00Z",
+        baseVersionId: "v7",
+        baseContentIdentity: "sha256:abc",
+      },
+    });
+  });
+
   it("keeps unexpected production results unavailable", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "bootstrap_snapshot",

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -49,6 +49,14 @@ export function MarkdownWorkspace({
   const queryClient = useQueryClient();
   const [selectedOverride, setSelectedOverride] = useState<string>();
   const [mode, setMode] = useState<MarkdownMode>("read");
+  // 编辑器注册的「切换前持久化草稿」回调；离开编辑模式时置回 null。
+  const editorPersistRef = useRef<(() => Promise<void>) | null>(null);
+  const registerEditorPersist = useCallback(
+    (persist: (() => Promise<void>) | null) => {
+      editorPersistRef.current = persist;
+    },
+    [],
+  );
   const filesQuery = useQuery({
     queryFn: () => facade.listMarkdownFiles(skillId),
     queryKey: markdownKeys.files(skillId),
@@ -93,9 +101,24 @@ export function MarkdownWorkspace({
     mode === "edit" && !file?.editable
       ? "read"
       : mode;
+  // K4-B：切走前先把防抖窗口内的最新输入落成草稿；失败则留在编辑器，
+  // 由编辑器的草稿错误状态 + 重试入口承接，绝不静默丢弃输入。
+  const leaveEditor = async (apply: () => void) => {
+    const persist = editorPersistRef.current;
+    if (persist) {
+      try {
+        await persist();
+      } catch {
+        return;
+      }
+    }
+    apply();
+  };
   const selectFile = (path: string) => {
-    setSelectedOverride(path);
-    setMode("read");
+    void leaveEditor(() => {
+      setSelectedOverride(path);
+      setMode("read");
+    });
   };
   const discardDraft = async () => {
     await facade.discardDraft(skillId, selectedPath);
@@ -184,7 +207,7 @@ export function MarkdownWorkspace({
             </nav>
           ) : null}
           <PrototypeLayout className="sh-markdown-workspace__viewer" enabled={fileRail}>
-            {file.draft ? (
+            {file.draft && effectiveMode !== "edit" ? (
               <div className="sh-markdown-workspace__draft" role="status">
                 <span className="sh-markdown-status">
                   <Icon className="sh-markdown-status__icon" name="info" size={16} />
@@ -211,7 +234,7 @@ export function MarkdownWorkspace({
                 <Button
                   aria-selected={effectiveMode === nextMode}
                   key={nextMode}
-                  onClick={() => setMode(nextMode)}
+                  onClick={() => void leaveEditor(() => setMode(nextMode))}
                   role="tab"
                   size="sm"
                   variant={effectiveMode === nextMode ? "secondary" : "ghost"}
@@ -222,7 +245,7 @@ export function MarkdownWorkspace({
               {file.editable ? (
                 <Button
                   aria-selected={effectiveMode === "edit"}
-                  onClick={() => setMode("edit")}
+                  onClick={() => void leaveEditor(() => setMode("edit"))}
                   role="tab"
                   size="sm"
                   variant={effectiveMode === "edit" ? "secondary" : "ghost"}
@@ -269,8 +292,9 @@ export function MarkdownWorkspace({
                   <MarkdownEditor
                     facade={facade}
                     file={file}
-                    key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}-${file.draft?.savedAt ?? "formal"}`}
+                    key={reviewSaveFlow ? file.path : `${file.path}-${file.contentIdentity}`}
                     onExit={() => setMode("read")}
+                    registerPersist={registerEditorPersist}
                     reviewSaveFlow={reviewSaveFlow}
                     onSaved={() => {
                       void queryClient.invalidateQueries({

@@ -63,9 +63,19 @@
       "open": "打开链接",
       "title": "打开外部链接？"
     },
+    "guard": {
+      "description": "本页的修改尚未保存为版本。留下可继续编辑并保留本机草稿；放弃将删除本机草稿，未保存的修改会丢失。",
+      "leave": "放弃草稿并离开",
+      "stay": "留下继续编辑",
+      "title": "本页有未保存的草稿"
+    },
     "editor": {
-      "conflict": "文件已在 SkillHub 外发生变化，本机草稿已保留。",
+      "conflictTitle": "文件已在 SkillHub 外变化",
+      "conflictDescription": "本机草稿已保留，未被覆盖。可以重新加载最新文件，或把当前内容另存为独立副本。",
+      "conflictReload": "重新加载最新文件",
+      "conflictSaveCopy": "另存为副本",
       "draftError": "无法保存本机草稿。",
+      "draftRetry": "重试保存草稿",
       "draftSaved": "草稿已保存到本机",
       "draftSaving": "正在保存本机草稿",
       "issues": "保存问题",

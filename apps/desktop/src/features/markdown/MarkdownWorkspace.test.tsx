@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
@@ -64,6 +65,65 @@ describe("MarkdownWorkspace", () => {
     expect(await screen.findByRole("textbox", { name: "Markdown source" })).toBeVisible();
   });
 
+  it("persists the final editor input before switching files unmounts the editor", async () => {
+    const facade = await renderWorkspace();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown source" });
+    await user.click(editor);
+    await user.keyboard("{Control>}a{/Control}");
+    await user.paste("# Final input before switching");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Markdown file" }), {
+      target: { value: "docs/usage.md" },
+    });
+    expect(await screen.findByRole("heading", { name: "Usage notes" })).toBeVisible();
+
+    await waitFor(() => {
+      expect(facade.calls.savedDrafts).toContainEqual(expect.objectContaining({
+        markdown: "# Final input before switching",
+        path: "SKILL.md",
+      }));
+    });
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Markdown file" }), {
+      target: { value: "SKILL.md" },
+    });
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+    fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    expect(await screen.findByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "# Final input before switching",
+    );
+  });
+
+  // K4-B：切 Tab（编辑 → 阅读 → 编辑）前必须先把最新输入落成草稿，返回时
+  // 内容恢复——防抖窗口内的最后击键不允许丢。
+  it("restores the latest editor input when switching tabs away and back", async () => {
+    const facade = await renderWorkspace();
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Extract PDF tables safely" });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Markdown source" });
+    await user.click(editor);
+    await user.keyboard("{Control>}a{/Control}");
+    await user.paste("# Tab switch keeps this");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Read" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Edit" }));
+    expect(await screen.findByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
+      "# Tab switch keeps this",
+    );
+    await waitFor(() => {
+      expect(facade.calls.savedDrafts).toContainEqual(expect.objectContaining({
+        markdown: "# Tab switch keeps this",
+        path: "SKILL.md",
+      }));
+    });
+  });
+
   it("never offers in-place edit for a read-only external Skill", async () => {
     const facade = await renderWorkspace({ editable: false, readOnlyReason: "external" });
 
@@ -110,6 +170,9 @@ describe("MarkdownWorkspace", () => {
       "# Recovered draft",
     );
 
+    // 编辑中的草稿状态由编辑器承接；横幅与丢弃入口在阅读模式提供。
+    fireEvent.click(screen.getByRole("tab", { name: "Read" }));
+    expect(await screen.findByText("A local draft was restored.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Discard local draft" }));
     await waitFor(() => {
       expect(screen.queryByText("A local draft was restored.")).not.toBeInTheDocument();
