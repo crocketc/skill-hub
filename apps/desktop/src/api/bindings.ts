@@ -198,7 +198,7 @@ export type AnalyzeSemanticDuplicates = {
 	skill_id: SkillId,
 };
 
-export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPreferences } | { type: "begin_import_batch"; payload: BeginImportBatch } | { type: "finalize_import_batch"; payload: FinalizeImportBatch } | { type: "run_relationship_check"; payload: RunRelationshipCheck } | { type: "open_official_release"; payload: OpenOfficialRelease } | { type: "open_external_url"; payload: OpenExternalUrl } | { type: "open_default_application"; payload: OpenDefaultApplication } | { type: "open_skill_folder"; payload: OpenSkillFolder } | { type: "choose_external_application"; payload: ChooseExternalApplication } | { type: "set_application_update_policy"; payload: SetApplicationUpdatePolicy } | { type: "prepare_application_update"; payload: PrepareApplicationUpdate } | { type: "download_application_update"; payload: DownloadApplicationUpdate } | { type: "install_application_update"; payload: InstallApplicationUpdate } | { type: "rollback_application_update"; payload: RollbackApplicationUpdate } | { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "save_markdown_content"; payload: SaveMarkdownContent } | { type: "save_markdown_draft"; payload: SaveMarkdownDraft } | { type: "discard_markdown_draft"; payload: DiscardMarkdownDraft } | { type: "validate_markdown"; payload: ValidateMarkdown } | { type: "save_markdown_as_copy"; payload: SaveMarkdownAsCopy } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "patch_skill_metadata"; payload: PatchSkillMetadata } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "update_combination"; payload: UpdateCombination } | { type: "delete_combination"; payload: DeleteCombination } | { type: "rename_combination"; payload: RenameCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "prepare_original_migration"; payload: PrepareOriginalMigration } | { type: "retain_source_copy"; payload: RetainSourceCopy } | { type: "revoke_retention"; payload: RevokeRetention } | { type: "end_relationship"; payload: EndRelationship } | { type: "relink_source_copy"; payload: RelinkSourceCopy } | { type: "commit_original_migration"; payload: CommitOriginalMigration } | { type: "rollback_original_migration"; payload: RollbackOriginalMigration } | { type: "prepare_relation_migration"; payload: PrepareRelationMigration } | { type: "commit_relation_migration"; payload: CommitRelationMigration } | { type: "rollback_relation_migration"; payload: RollbackRelationMigration } | { type: "prepare_relation_governance_batch"; payload: PrepareRelationGovernanceBatch } | { type: "commit_relation_governance_batch"; payload: CommitRelationGovernanceBatch } | { type: "rollback_relation_governance_batch"; payload: RollbackRelationGovernanceBatch } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "prepare_source_update"; payload: PrepareSourceUpdate } | { type: "commit_source_update"; payload: CommitSourceUpdate } | { type: "ignore_source_update"; payload: IgnoreSourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment_preview"; payload: CommitDeploymentPreview } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "dismiss_pending_work"; payload: DismissPendingWork } | { type: "confirm_pending_work"; payload: ConfirmPendingWork } | { type: "record_agent_compatibility"; payload: RecordAgentCompatibility } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "analyze_conflict"; payload: AnalyzeConflict } | { type: "resolve_conflict_case"; payload: ResolveConflictCase } | { type: "translate_description"; payload: TranslateDescription } | { type: "translate_descriptions_batch"; payload: TranslateDescriptionsBatch } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "save_llm_provider"; payload: SaveLlmProvider } | { type: "delete_llm_provider"; payload: DeleteLlmProvider } | { type: "clear_llm_provider_credential"; payload: ClearLlmProviderCredential } | { type: "set_llm_provider_enabled"; payload: SetLlmProviderEnabled } | { type: "set_default_llm_provider"; payload: SetDefaultLlmProvider } | { type: "fetch_llm_models"; payload: FetchLlmModels } | { type: "test_llm_connection"; payload: TestLlmConnection } | { type: "run_import_ai_checks"; payload: RunImportAiChecks } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "prepare_restore"; payload: PrepareRestore } | { type: "commit_restore"; payload: CommitRestore } | { type: "prepare_initial_restore"; payload: PrepareInitialRestore } | { type: "commit_initial_restore"; payload: CommitInitialRestore } | { type: "run_rolling_backup"; payload: RunRollingBackup } | { type: "prepare_standard_export"; payload: PrepareStandardExport } | { type: "create_standard_export"; payload: CreateStandardExport } | { type: "prepare_uninstall"; payload: PrepareUninstall } | { type: "apply_uninstall_decision"; payload: ApplyUninstallDecision } | { type: "cancel_import"; payload: {
+export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPreferences } | { type: "begin_import_batch"; payload: BeginImportBatch } | { type: "finalize_import_batch"; payload: FinalizeImportBatch } | { type: "run_relationship_check"; payload: RunRelationshipCheck } | { type: "open_official_release"; payload: OpenOfficialRelease } | { type: "open_external_url"; payload: OpenExternalUrl } | { type: "open_default_application"; payload: OpenDefaultApplication } | { type: "open_skill_folder"; payload: OpenSkillFolder } | { type: "choose_external_application"; payload: ChooseExternalApplication } | { type: "set_application_update_policy"; payload: SetApplicationUpdatePolicy } | { type: "prepare_application_update"; payload: PrepareApplicationUpdate } | { type: "download_application_update"; payload: DownloadApplicationUpdate } | { type: "install_application_update"; payload: InstallApplicationUpdate } | { type: "rollback_application_update"; payload: RollbackApplicationUpdate } | { type: "create_skill"; payload: CreateSkill } | { type: "save_skill_content"; payload: SaveSkillContent } | { type: "save_markdown_content"; payload: SaveMarkdownContent } | { type: "save_markdown_draft"; payload: SaveMarkdownDraft } | { type: "discard_markdown_draft"; payload: DiscardMarkdownDraft } | { type: "validate_markdown"; payload: ValidateMarkdown } | { type: "save_markdown_as_copy"; payload: SaveMarkdownAsCopy } | { type: "rename_skill"; payload: RenameSkill } | { type: "set_lifecycle"; payload: SetLifecycle } | { type: "set_metadata"; payload: SetMetadata } | { type: "patch_skill_metadata"; payload: PatchSkillMetadata } | { type: "trust_skill_security"; payload: TrustSkillSecurity } | { type: "set_trial"; payload: SetTrial } | { type: "create_combination"; payload: CreateCombination } | { type: "update_combination"; payload: UpdateCombination } | { type: "delete_combination"; payload: DeleteCombination } | { type: "rename_combination"; payload: RenameCombination } | { type: "set_current_version"; payload: SetCurrentVersion } | { type: "pin_project_skill_version"; payload: PinProjectSkillVersion } | { type: "create_custom_agent"; payload: CreateCustomAgent } | { type: "update_custom_agent"; payload: UpdateCustomAgent } | { type: "remove_custom_agent"; payload: RemoveCustomAgent } | { type: "reset_profile_override"; payload: ResetProfileOverride } | { type: "set_profile_override"; payload: SetProfileOverride } | { type: "register_project"; payload: RegisterProject } | { type: "update_project"; payload: UpdateProject } | { type: "set_project_tags"; payload: SetProjectTags } | { type: "save_project_view"; payload: SaveProjectView } | { type: "write_shared_project_config"; payload: WriteSharedProjectConfig } | { type: "read_shared_project_config"; payload: ReadSharedProjectConfig } | { type: "prepare_project_assembly"; payload: PrepareProjectAssembly } | { type: "commit_project_assembly"; payload: CommitProjectAssembly } | { type: "prepare_import"; payload: PrepareImport } | { type: "commit_import"; payload: CommitImport } | { type: "prepare_original_migration"; payload: PrepareOriginalMigration } | { type: "retain_source_copy"; payload: RetainSourceCopy } | { type: "revoke_retention"; payload: RevokeRetention } | { type: "end_relationship"; payload: EndRelationship } | { type: "relink_source_copy"; payload: RelinkSourceCopy } | { type: "commit_original_migration"; payload: CommitOriginalMigration } | { type: "rollback_original_migration"; payload: RollbackOriginalMigration } | { type: "prepare_relation_migration"; payload: PrepareRelationMigration } | { type: "commit_relation_migration"; payload: CommitRelationMigration } | { type: "rollback_relation_migration"; payload: RollbackRelationMigration } | { type: "prepare_relation_governance_batch"; payload: PrepareRelationGovernanceBatch } | { type: "commit_relation_governance_batch"; payload: CommitRelationGovernanceBatch } | { type: "rollback_relation_governance_batch"; payload: RollbackRelationGovernanceBatch } | { type: "relink_source"; payload: RelinkSource } | { type: "check_source_update"; payload: CheckSourceUpdate } | { type: "prepare_source_update"; payload: PrepareSourceUpdate } | { type: "commit_source_update"; payload: CommitSourceUpdate } | { type: "ignore_source_update"; payload: IgnoreSourceUpdate } | { type: "prepare_deployment"; payload: PrepareDeployment } | { type: "commit_deployment_preview"; payload: CommitDeploymentPreview } | { type: "commit_deployment"; payload: CommitDeployment } | { type: "collect_deployment_changes"; payload: CollectDeploymentChanges } | { type: "restore_deployment"; payload: RestoreDeployment } | { type: "keep_independent_copy"; payload: KeepIndependentCopy } | { type: "ignore_external_change"; payload: IgnoreExternalChange } | { type: "prepare_undeploy"; payload: PrepareUndeploy } | { type: "commit_undeploy"; payload: CommitUndeploy } | { type: "prepare_delete_skill"; payload: PrepareDeleteSkill } | { type: "commit_delete_skill"; payload: CommitDeleteSkill } | { type: "detach_management"; payload: DetachManagement } | { type: "run_health_check"; payload: RunHealthCheck } | { type: "prepare_repair"; payload: PrepareRepair } | { type: "commit_repair"; payload: CommitRepair } | { type: "resolve_recovery"; payload: ResolveRecovery } | { type: "prepare_call_policy_change"; payload: PrepareCallPolicyChange } | { type: "commit_call_policy_change"; payload: CommitCallPolicyChange } | { type: "restore_original_call_policy"; payload: RestoreOriginalCallPolicy } | { type: "create_ignore_rule"; payload: CreateIgnoreRule } | { type: "dismiss_pending_work"; payload: DismissPendingWork } | { type: "confirm_pending_work"; payload: ConfirmPendingWork } | { type: "record_agent_compatibility"; payload: RecordAgentCompatibility } | { type: "remove_ignore_rule"; payload: RemoveIgnoreRule } | { type: "run_llm_safety_check"; payload: RunLlmSafetyCheck } | { type: "recheck_llm_safety"; payload: RecheckLlmSafety } | { type: "analyze_semantic_duplicates"; payload: AnalyzeSemanticDuplicates } | { type: "analyze_conflict"; payload: AnalyzeConflict } | { type: "resolve_conflict_case"; payload: ResolveConflictCase } | { type: "translate_description"; payload: TranslateDescription } | { type: "translate_descriptions_batch"; payload: TranslateDescriptionsBatch } | { type: "save_user_translation_revision"; payload: SaveUserTranslationRevision } | { type: "generate_online_search_query"; payload: GenerateOnlineSearchQuery } | { type: "save_llm_provider"; payload: SaveLlmProvider } | { type: "delete_llm_provider"; payload: DeleteLlmProvider } | { type: "clear_llm_provider_credential"; payload: ClearLlmProviderCredential } | { type: "set_llm_provider_enabled"; payload: SetLlmProviderEnabled } | { type: "set_default_llm_provider"; payload: SetDefaultLlmProvider } | { type: "fetch_llm_models"; payload: FetchLlmModels } | { type: "test_llm_connection"; payload: TestLlmConnection } | { type: "run_import_ai_checks"; payload: RunImportAiChecks } | { type: "prepare_backup"; payload: PrepareBackup } | { type: "create_backup"; payload: CreateBackup } | { type: "verify_backup"; payload: VerifyBackup } | { type: "prepare_restore"; payload: PrepareRestore } | { type: "commit_restore"; payload: CommitRestore } | { type: "prepare_initial_restore"; payload: PrepareInitialRestore } | { type: "commit_initial_restore"; payload: CommitInitialRestore } | { type: "run_rolling_backup"; payload: RunRollingBackup } | { type: "prepare_standard_export"; payload: PrepareStandardExport } | { type: "create_standard_export"; payload: CreateStandardExport } | { type: "prepare_uninstall"; payload: PrepareUninstall } | { type: "apply_uninstall_decision"; payload: ApplyUninstallDecision } | { type: "cancel_import"; payload: {
 	prepared_import_id: OperationId,
 } } | { type: "run_initialization_scan"; payload: RunInitializationScan } | { type: "complete_onboarding"; payload: CompleteOnboarding } | { type: "activate_library_root"; payload: ActivateLibraryRoot } | { type: "set_ui_preference"; payload: SetUiPreference } | { type: "set_version_label"; payload: SetVersionLabel } | { type: "add_skill_repo"; payload: AddSkillRepo } | { type: "remove_skill_repo"; payload: RemoveSkillRepo } | { type: "refresh_skill_repo"; payload: RefreshSkillRepo } | { type: "download_repo_skill"; payload: DownloadRepoSkill } | { type: "save_search_candidates"; payload: SaveSearchCandidates } | { type: "confirm_search_candidate"; payload: ConfirmSearchCandidate } | { type: "dismiss_search_candidate"; payload: DismissSearchCandidate } | { type: "discover_agent_targets"; payload: DiscoverAgentTargets } | { type: "ensure_agent_target_directory"; payload: EnsureAgentTargetDirectory } | { type: "scan_targets"; payload: ScanTargets } | { type: "rescan_skill"; payload: RescanSkill } | { type: "run_basic_check"; payload: RunBasicCheck } | { type: "recheck_basic"; payload: RecheckBasic } | { type: "set_finding_disposition"; payload: SetFindingDisposition } | { type: "cancel_operation"; payload: {
 	operation_id: OperationId,
@@ -206,7 +206,7 @@ export type AppCommand = { type: "set_desktop_preferences"; payload: DesktopPref
 	operation_id: OperationId,
 } };
 
-export type AppCommandResult = { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "import_batch_started"; payload: ImportBatchStarted } | { type: "import_batch_finalized"; payload: ImportBatchFinalized } | { type: "relationship_check_report"; payload: RelationshipCheckReport } | { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "prepared_application_update"; payload: PreparedApplicationUpdate } | { type: "downloaded_application_update"; payload: DownloadedApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "operation_summary"; payload: OperationSummary } | { type: "initialization_status"; payload: InitializationStatus } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "saved_skill_content"; payload: SavedSkillContent } | { type: "saved_skill_copy"; payload: SaveAsCopyOutcome } | { type: "markdown_draft_saved"; payload: MarkdownDraftSaved } | { type: "markdown_draft_discarded"; payload: MarkdownDraftDiscarded } | { type: "markdown_validation_result"; payload: MarkdownValidationResult } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "original_migration_plan"; payload: OriginalMigrationPlan } | { type: "source_copy_relation_updated"; payload: SourceCopyRelationFact } | { type: "relationship_governance_mutation"; payload: RelationshipGovernanceMutationResult } | { type: "original_migration_result"; payload: OriginalMigrationResult } | { type: "prepared_relation_migration"; payload: PreparedRelationMigration } | { type: "relation_migration_result"; payload: RelationMigrationResult } | { type: "relation_governance_batch"; payload: RelationGovernanceBatchOutcome } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "source_update_preview"; payload: SourceUpdatePreview } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_preview_commit_result"; payload: DeploymentPreviewCommitResult } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "conflict_analysis"; payload: ConflictAnalysis } | { type: "conflict_resolved"; payload: ConflictResolutionOutcome } | { type: "translation_result"; payload: TranslationResult } | { type: "batch_translation_result"; payload: BatchTranslationOutcome } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "llm_provider_view"; payload: LlmProviderView } | { type: "llm_models"; payload: string[] } | { type: "connection_test"; payload: ConnectionTestResult } | { type: "import_ai_checks_report"; payload: ImportAiChecksReport } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest } | { type: "backup_created"; payload: BackupCreated } | { type: "restore_plan"; payload: RestorePlan } | { type: "restore_result"; payload: RestoreResult } | { type: "backup_retention_result"; payload: BackupRetentionResult } | { type: "export_preview"; payload: ExportPreview } | { type: "export_result"; payload: ExportResult } | { type: "uninstall_impact"; payload: UninstallImpact } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "downloaded_repo_skill"; payload: DownloadedRepoSkill } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "combination"; payload: CombinationResult };
+export type AppCommandResult = { type: "desktop_preferences"; payload: DesktopPreferences } | { type: "import_batch_started"; payload: ImportBatchStarted } | { type: "import_batch_finalized"; payload: ImportBatchFinalized } | { type: "relationship_check_report"; payload: RelationshipCheckReport } | { type: "application_update"; payload: ApplicationUpdate } | { type: "application_update_policy"; payload: ApplicationUpdatePolicy } | { type: "prepared_application_update"; payload: PreparedApplicationUpdate } | { type: "downloaded_application_update"; payload: DownloadedApplicationUpdate } | { type: "application_update_state"; payload: UpdateState } | { type: "operation_summary"; payload: OperationSummary } | { type: "trust_skill_security"; payload: TrustSkillSecurityOutcome } | { type: "initialization_status"; payload: InitializationStatus } | { type: "discovery_snapshot"; payload: DiscoverySnapshot } | { type: "saved_skill_content"; payload: SavedSkillContent } | { type: "saved_skill_copy"; payload: SaveAsCopyOutcome } | { type: "markdown_draft_saved"; payload: MarkdownDraftSaved } | { type: "markdown_draft_discarded"; payload: MarkdownDraftDiscarded } | { type: "markdown_validation_result"; payload: MarkdownValidationResult } | { type: "custom_agent"; payload: CustomAgent } | { type: "custom_agent_override"; payload: CustomAgentOverride } | { type: "project"; payload: Project } | { type: "saved_project_view"; payload: SavedProjectView } | { type: "shared_project_config"; payload: SharedProjectConfig } | { type: "assembly_plan"; payload: AssemblyPlan } | { type: "scan_result"; payload: ScanResult } | { type: "basic_check_result"; payload: BasicCheckResult } | { type: "prepared_import"; payload: PreparedImport } | { type: "import_summary"; payload: ImportSummary } | { type: "original_migration_plan"; payload: OriginalMigrationPlan } | { type: "source_copy_relation_updated"; payload: SourceCopyRelationFact } | { type: "relationship_governance_mutation"; payload: RelationshipGovernanceMutationResult } | { type: "original_migration_result"; payload: OriginalMigrationResult } | { type: "prepared_relation_migration"; payload: PreparedRelationMigration } | { type: "relation_migration_result"; payload: RelationMigrationResult } | { type: "relation_governance_batch"; payload: RelationGovernanceBatchOutcome } | { type: "upstream_check_result"; payload: UpstreamCheckResult } | { type: "source_update_preview"; payload: SourceUpdatePreview } | { type: "applied_source_update"; payload: AppliedSourceUpdate } | { type: "prepared_deployment"; payload: PreparedDeployment } | { type: "deployment_preview_commit_result"; payload: DeploymentPreviewCommitResult } | { type: "deployment_summary"; payload: DeploymentSummary } | { type: "reconcile_result"; payload: ReconcileResult } | { type: "removal_impact"; payload: RemovalImpact } | { type: "removal_result"; payload: RemovalResult } | { type: "health_report"; payload: HealthReport } | { type: "repair_plan"; payload: RepairPlan } | { type: "call_policy_plan"; payload: CallPolicyPlan } | { type: "ignore_rule"; payload: IgnoreRule } | { type: "llm_safety_check_result"; payload: LlmSafetyCheckResult } | { type: "duplicate_analysis"; payload: DuplicateAnalysis } | { type: "conflict_analysis"; payload: ConflictAnalysis } | { type: "conflict_resolved"; payload: ConflictResolutionOutcome } | { type: "translation_result"; payload: TranslationResult } | { type: "batch_translation_result"; payload: BatchTranslationOutcome } | { type: "online_search_query"; payload: SearchQuerySuggestion } | { type: "llm_provider_view"; payload: LlmProviderView } | { type: "llm_models"; payload: string[] } | { type: "connection_test"; payload: ConnectionTestResult } | { type: "import_ai_checks_report"; payload: ImportAiChecksReport } | { type: "backup_plan"; payload: BackupPlan } | { type: "backup_manifest"; payload: BackupManifest } | { type: "backup_created"; payload: BackupCreated } | { type: "restore_plan"; payload: RestorePlan } | { type: "restore_result"; payload: RestoreResult } | { type: "backup_retention_result"; payload: BackupRetentionResult } | { type: "export_preview"; payload: ExportPreview } | { type: "export_result"; payload: ExportResult } | { type: "uninstall_impact"; payload: UninstallImpact } | { type: "skill_repos"; payload: SkillRepoView[] } | { type: "repo_discovery_report"; payload: RepoDiscoveryReport } | { type: "downloaded_repo_skill"; payload: DownloadedRepoSkill } | { type: "search_candidates"; payload: SearchCandidateRecord[] } | { type: "combination"; payload: CombinationResult };
 
 export type AppEvent = { type: "operation_progress"; payload: OperationProgress } | { type: "operation_finished"; payload: OperationSummary } | { type: "facts_changed"; payload: FactsChanged };
 
@@ -524,6 +524,14 @@ export type CommitImport = {
 	 *  批内已有分析而提交签名缺失或不符 → 拒绝并要求重新分析。
 	 */
 	batch_signature?: string | null,
+	/**
+	 *  W3-1（FB-003 裁决第 1 节 / §23）：危险级候选的用户安全决策。仅
+	 *  危险级候选必填：缺省时该候选 commit 被拒
+	 *  （import.security_decision_required，批内其他候选不受影响）；
+	 *  proceed=仍要导入（导入后进入预警状态、决定留痕）；skip=不导入
+	 *  （不落库，按跳过落账）。警告级/放行级候选无需该字段。
+	 */
+	security_decision?: ImportSecurityDecision | null,
 };
 
 export type CommitInitialRestore = {
@@ -1421,7 +1429,13 @@ export type EnsureAgentTargetDirectory = {
 };
 
 /**  Stable machine-readable failures returned by the application boundary. */
-export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" | "deployment.name_mismatch" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "llm.auth_failed" | "llm.model_not_found" | "llm.rate_limited" | "llm.request_timeout" | "llm.cancelled" | "llm.endpoint_unreachable" | "llm.server_error" | "llm.invalid_json" | "llm.response_interrupted" | "llm.protocol_incompatible" | "llm.credential_read_failed" | "llm.capability_disabled" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required" | "backup.restore_decision_required" | "backup.export_decision_required" | "application_update.unavailable" | "application_update.install_blocked" | "application_update.integrity_failed" | "application_update.signature_missing" | "application_update.signature_invalid" | "application_update.invalid_artifact_url" | "application_update.download_cancelled" | "external_link.opener_unavailable" | "local_open.opener_unavailable" | "local_open.unsupported" | "import.runtime_name_conflict" | "import.same_name_disposition_required" | "import.batch_composition_changed";
+export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" |
+/**
+ *  W3-1（FB-003 裁决第 1 节）：Skill 处于安全预警状态，派发被拒。
+ *  错误参数带技能名/级别等可读信息与处理入口指引；导入门禁不再使用
+ *  `deployment.security_check_blocked`。
+ */
+"deployment.security_alert_blocked" | "deployment.name_mismatch" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "llm.auth_failed" | "llm.model_not_found" | "llm.rate_limited" | "llm.request_timeout" | "llm.cancelled" | "llm.endpoint_unreachable" | "llm.server_error" | "llm.invalid_json" | "llm.response_interrupted" | "llm.protocol_incompatible" | "llm.credential_read_failed" | "llm.capability_disabled" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required" | "backup.restore_decision_required" | "backup.export_decision_required" | "application_update.unavailable" | "application_update.install_blocked" | "application_update.integrity_failed" | "application_update.signature_missing" | "application_update.signature_invalid" | "application_update.invalid_artifact_url" | "application_update.download_cancelled" | "external_link.opener_unavailable" | "local_open.opener_unavailable" | "local_open.unsupported" | "import.runtime_name_conflict" | "import.same_name_disposition_required" | "import.batch_composition_changed" | "import.security_decision_required";
 
 export type EvidenceCoverage = {
 	sources: string[],
@@ -1912,6 +1926,13 @@ export type ImportCandidate = {
 	acquisition?: ImportAcquisitionContext | null,
 };
 
+/**
+ *  W3-1：候选徽标的真实基础检查状态（§6.0 既有债修复）。扫描成功时由
+ *  分级推导（passed/warning/failed），扫描失败为 `Unavailable`——绝不假
+ *  显示 not_checked。
+ */
+export type ImportCandidateCheckState = "passed" | "warning" | "failed" | "unavailable";
+
 /**  Agent reading compatibility, independent of host creation capabilities. */
 export type ImportCompatibility = {
 	copy: CompatibilityStatus,
@@ -2046,6 +2067,44 @@ export type ImportProvenance = {
 	content_fingerprint: string,
 	/**  导入时间（epoch 秒；跨 IPC 以字符串承载，见 `crate::i64_string`）。 */
 	imported_at: string,
+};
+
+/**
+ *  W3-1（FB-003 裁决第 1 节 / §23）：用户对危险级候选的显式安全决策。
+ *  仅危险级候选必填：`Proceed` = 仍要导入（导入后进入预警状态、不可派发，
+ *  决定以 decision_source=import 留痕）；`Skip` = 不导入（不落库，按跳过
+ *  落账）。警告级/放行级无需该决策；一个候选的决策不牵连批内其他候选。
+ */
+export type ImportSecurityDecision = "proceed" | "skip";
+
+/**
+ *  一条发现的分级明细归属：处置环节完整展示所需的稳定字段（内部
+ *  finding id 不外露，展示名映射由客户端负责）。
+ */
+export type ImportSecurityFindingSummary = {
+	code: string,
+	product_level: ProductLevel,
+	file: string | null,
+	line_start: number | null,
+};
+
+/**
+ *  W3-1（FB-003 §23）：单个候选导入的产品级安全分级结论。"放行级"是
+ *  无发现的状态；有发现时取发现中的最高产品级。分级只由确定性规则集
+ *  产生，AI 结果不参与任何分级或放行判定。
+ */
+export type ImportSecurityLevel = "pass" | "warning" | "danger";
+
+/**
+ *  W3-1：prepare 阶段确定性扫描的分级摘要，随 `PreparedImport` 返回，
+ *  供导入向导处置环节呈现危险明细与候选徽标据实显示。
+ */
+export type ImportSecuritySummary = {
+	level?: ImportSecurityLevel,
+	danger_count?: number,
+	warning_count?: number,
+	findings?: ImportSecurityFindingSummary[],
+	check_state?: ImportCandidateCheckState,
 };
 
 /**  Long-lived provenance classification; acquisition cache paths are excluded. */
@@ -2946,6 +3005,13 @@ export type PreparedImport = {
 	 *  已校验非空并以此名重跑库内冲突校验。提交必须携带同一覆盖名。
 	 */
 	runtime_name_override?: string | null,
+	/**
+	 *  W3-1（FB-003）：prepare 阶段确定性扫描的分级摘要与基础检查状态。
+	 *  扫描失败时 check_state=unavailable，不假显示已检查。提交期的门禁
+	 *  决策依据同一份分级（完整发现由应用层留存，不随 wire 暴露内部
+	 *  finding id）。
+	 */
+	security?: ImportSecuritySummary,
 };
 
 export type PreparedRelationMigration = {
@@ -2969,6 +3035,14 @@ export type PreparedRelationMigration = {
 export type PreviewProjectDirectory = {
 	path: string,
 };
+
+/**
+ *  W3-1（FB-003 §23）：确定性规则的产品级分级。`Danger` 是危险级（导入时
+ *  必须由用户显式决策"仍要导入／不导入"），`Warning` 是警告级（直接导入
+ *  并写入预警）。"放行级"是"无发现"的状态，不是规则属性，因此不在枚举
+ *  内。分级只基于确定性规则集标注，AI 不参与任何分级或放行判定。
+ */
+export type ProductLevel = "danger" | "warning";
 
 /**
  *  A registered project. `device_path` is deliberately device-local and is
@@ -4391,6 +4465,12 @@ export type SkillListItem = {
 	pending_count: number,
 	high_risk_count: number,
 	/**
+	 *  W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态。`Some` 表示
+	 *  处于预警（不可派发、待办三选处理），值是预警级别；`None` 表示放行
+	 *  或已完全信任。
+	 */
+	security_alert?: ProductLevel | null,
+	/**
 	 *  Latest explicit upstream observation; absent means the Skill has not
 	 *  been checked yet in this installation.
 	 */
@@ -4618,6 +4698,11 @@ export type SkillResult = {
 	pending_count?: number,
 	high_risk_count?: number,
 	upstream_state?: SourceState | null,
+	/**
+	 *  W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态，与列表
+	 *  投影同一事实来源。详情不得比列表更薄。
+	 */
+	security_alert?: ProductLevel | null,
 	/**
 	 *  K5/MS-04：上游谱系——本主体由哪个来源 skill+version 复用修改而来
 	 *  （ReuseModify 登记的有向事实）。None=无登记，诚实缺省。
@@ -4935,6 +5020,28 @@ export type TranslationView = {
 	needs_update: boolean,
 };
 
+/**
+ *  W3-1（FB-003 裁决第 1 节）：待办"完全信任"。解除该 Skill 当前内容版本
+ *  的安全预警，恢复可派发等操作；决定留痕（来源=trust、时间、绑定当前
+ *  内容版本）。同版本重复信任幂等；警告级预警同样可以信任解除。
+ *  "不信任（删除）"复用既有删除流程（含影响确认），"稍后处理"复用既有
+ *  顺延，均不新增命令。
+ */
+export type TrustSkillSecurity = {
+	skill_id: SkillId,
+};
+
+/**
+ *  W3-1：完全信任决定的留痕事实。`decided_at` 是 Unix 秒的十进制字符串
+ *  （Specta 不放行 64 位整数）。
+ */
+export type TrustSkillSecurityOutcome = {
+	skill_id: SkillId,
+	/**  信任绑定的当前内容版本；同版本不再重复预警。 */
+	version_id: VersionId,
+	decided_at: string,
+};
+
 export type UninstallAction = "backup" | "standard_export" | "undeploy_all" | "leave_targets_independent" | "remove_device_data" | "retain_central_library" | "clear_credentials" | "cancel";
 
 export type UninstallImpact = {
@@ -5098,7 +5205,12 @@ export type WorkItem = {
 };
 
 /**  Work is derived from durable domain facts, never from notification history. */
-export type WorkKind = "recovery" | "conflict" | "governance" | "governance_followup" | "security_finding" | "trial_due" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
+export type WorkKind = "recovery" | "conflict" | "governance" | "governance_followup" | "security_finding" |
+/**
+ *  W3-1（FB-003 裁决第 1 节）：安全预警状态——危险/警告级导入后进入
+ *  预警，不可派发，待办三选处理（完全信任/删除/稍后处理）。
+ */
+"security_alert" | "trial_due" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
 
 export type WriteSharedProjectConfig = {
 	project_id: ProjectId,

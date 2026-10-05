@@ -1153,6 +1153,7 @@ mod relationship_watch_lifecycle_tests {
                 candidate_key: None,
                 runtime_name_override: None,
                 batch_signature: None,
+                security_decision: None,
             })),
         )
         .expect("commit import");
