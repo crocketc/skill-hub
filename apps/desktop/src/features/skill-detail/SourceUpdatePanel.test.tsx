@@ -311,8 +311,11 @@ it("pulls the commit entries and offers re-preview when the preview expired", as
 
   // 预览已被结算：提交入口撤下，唯一出路是重新获取预览。
   expect(await screen.findByText(/预览已失效/)).toBeVisible();
+  // W2-1：stale 态没有"预览仍有效"的快速重试说明——事实已变化，不能给假入口。
+  expect(screen.queryByText(/预览仍有效/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "确认采用上游版本" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "保留本地版本" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "按原决定重试" })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "重新获取预览" }));
   await waitFor(() => expect(prepareSourceUpdate).toHaveBeenCalledTimes(2));
@@ -367,11 +370,40 @@ it("keeps the preview and allows a retry on other commit rejections", async () =
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("来源暂不可用");
-  // 预览保留：同一个 preview_id 可直接重试。
-  expect(screen.getByRole("button", { name: "确认采用上游版本" })).toBeVisible();
+  // W2-1 守卫式快速重试：可重试失败如实说明预览仍有效、系统会先核验一致，
+  // 不预先断言一致；原决定（采用上游）的入口改为"按原决定重试"。
+  expect(screen.getByText(/预览仍有效/)).toBeVisible();
+  expect(screen.getByText(/核验内容是否仍与预览一致/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "按原决定重试" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "确认采用上游版本" })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: "确认采用上游版本" }));
+  await user.click(screen.getByRole("button", { name: "按原决定重试" }));
   expect(await screen.findByText(/已采用上游版本/)).toBeVisible();
+});
+
+it("labels the failed decision as the retry entry and keeps the alternative explicit", async () => {
+  const user = userEvent.setup();
+  await renderPanel(makeFacade({
+    commitSourceUpdate: async () => {
+      throw {
+        code: "operation.conflict",
+        severity: "error",
+        params: { reason: "source_unavailable" },
+        actions: [],
+      };
+    },
+  }));
+
+  await checkForUpdates(user);
+  await user.click(await screen.findByRole("button", { name: "采用上游版本" }));
+  await screen.findByText("更新预览");
+  // 原决定是保留本地：失败后"保留本地版本"成为按原决定重试的入口，
+  // 采用上游的替代决定保持原文案，不把替代选项伪装成重试。
+  await user.click(screen.getByRole("button", { name: "保留本地版本" }));
+  expect(await screen.findByText(/预览仍有效/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "按原决定重试" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "保留本地版本" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "确认采用上游版本" })).toBeVisible();
 });
 
 it("states honestly when a skill has no upstream to check", async () => {

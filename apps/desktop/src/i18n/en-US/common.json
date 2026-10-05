@@ -2117,6 +2117,8 @@
       "filesModified": "Modified",
       "filesNone": "No file-level differences.",
       "confirmTakeUpstream": "Confirm take upstream",
+      "retryWithDecision": "Retry with original decision",
+      "retryHint": "The update failed to apply, but the preview is still valid. You can retry directly; the system will first verify the content still matches the preview.",
       "cancelCommit": "Cancel this update",
       "appliedUpstream": "Took upstream version {{version}}.",
       "keptLocal": "Kept the local version.",

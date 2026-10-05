@@ -42,7 +42,11 @@ type PanelState =
   | { phase: "checking" }
   | { phase: "preparing" }
   | { phase: "result"; result: UpstreamCheckResult }
-  | { phase: "preview"; preview: SourceUpdatePreview; error?: string }
+  /**
+   * 预览展示态；commit 失败但预览未被结算时回到这里，error/failedDecision
+   * 记录失败事实与被拒决定（W2-1：入口据 failedDecision 改为“按原决定重试”）。
+   */
+  | { phase: "preview"; preview: SourceUpdatePreview; error?: string; failedDecision?: UpdateDecision }
   | { phase: "committing"; preview: SourceUpdatePreview }
   | { phase: "applied"; applied: AppliedSourceUpdate }
   /** 预览已被后端结算（过期/漂移/事实变化）：提交入口撤下，唯一出路重新预览。 */
@@ -179,8 +183,9 @@ export function SourceUpdatePanel({ facade, skillId, tracker = operationTracker 
         setState({ phase: "stale" });
         return;
       }
-      // 其余拒绝预览保留：同一个 preview_id 可直接重试。
-      setState({ phase: "preview", preview, error: describe(error) });
+      // 其余拒绝预览保留：同一个 preview_id 可直接重试；记录被拒决定，
+      // 让重试入口如实标注“按原决定重试”（W2-1 守卫式快速重试）。
+      setState({ phase: "preview", preview, error: describe(error), failedDecision: decision });
     }
   };
 
@@ -266,6 +271,7 @@ export function SourceUpdatePanel({ facade, skillId, tracker = operationTracker 
         <PreviewView
           committing={state.phase === "committing"}
           error={state.phase === "preview" ? state.error : undefined}
+          failedDecision={state.phase === "preview" ? state.failedDecision : undefined}
           preview={state.preview}
           onDecide={(decision) => void decide(state.preview, decision)}
         />
@@ -391,11 +397,14 @@ function PreviewView({
   preview,
   committing,
   error,
+  failedDecision,
   onDecide,
 }: {
   preview: SourceUpdatePreview;
   committing: boolean;
   error?: string;
+  /** 本次被后端拒绝（但预览仍保留）的决定；其入口文案改为“按原决定重试”。 */
+  failedDecision?: UpdateDecision;
   onDecide: (decision: UpdateDecision) => void;
 }) {
   const { t } = useTranslation();
@@ -445,12 +454,19 @@ function PreviewView({
         )}
       </div>
       {error ? <p role="alert">{t("skillDetail.sourceUpdate.failed", { error })}</p> : null}
+      {/* W2-1 守卫式快速重试：可重试失败如实说明预览仍有效、重试前会重核
+          一致性（不预先断言一致）；stale 结算态不走这里，没有该说明。 */}
+      {error ? <p role="note">{t("skillDetail.sourceUpdate.retryHint")}</p> : null}
       <div className="sh-source-update__actions">
         <Button disabled={committing} onClick={() => onDecide("take_upstream")} variant="primary">
-          {t("skillDetail.sourceUpdate.confirmTakeUpstream")}
+          {failedDecision === "take_upstream"
+            ? t("skillDetail.sourceUpdate.retryWithDecision")
+            : t("skillDetail.sourceUpdate.confirmTakeUpstream")}
         </Button>
         <Button disabled={committing} onClick={() => onDecide("keep_local")} variant="secondary">
-          {t("skillDetail.sourceUpdate.keepLocal")}
+          {failedDecision === "keep_local"
+            ? t("skillDetail.sourceUpdate.retryWithDecision")
+            : t("skillDetail.sourceUpdate.keepLocal")}
         </Button>
         <Button disabled={committing} onClick={() => onDecide("cancel")} variant="ghost">
           {t("skillDetail.sourceUpdate.cancelCommit")}
