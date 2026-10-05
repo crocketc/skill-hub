@@ -4,6 +4,8 @@ use crate::search::SearchField;
 use crate::source::SourceDescriptor;
 use crate::SkillId;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 /// The strongest deterministic relationship found for an imported candidate.
 #[derive(
@@ -390,7 +392,9 @@ fn governance_group(
     }
 }
 
-pub(crate) fn normalize_runtime_name(value: &str) -> String {
+/// 规范化 runtime 名：trim + 小写。批内同名分组、覆盖名冲突检查与
+/// 单导入库内冲突核对共用同一形态，避免各层自造大小写规则。
+pub fn normalize_runtime_name(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
@@ -399,4 +403,298 @@ fn supports_takeover(ownership: CandidateOwnership) -> bool {
         ownership,
         CandidateOwnership::KnownAgentTarget | CandidateOwnership::RegisteredProject
     )
+}
+
+/// W2-2（FB-007 第一期）：批内冲突分析的输入候选事实。发现方已盖章的
+/// 确定性数据；core 不读文件系统、不访问数据库。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchCandidate {
+    /// 稳定候选键（acquisition identity + normalized relative root）。
+    pub candidate_key: String,
+    /// 发现时的 runtime 名（未处置前的事实名）。
+    pub runtime_name: String,
+    /// 候选内容指纹；不可得为 None（无法证明同内容/不同内容）。
+    pub candidate_tree_hash: Option<String>,
+    /// 源身份（acquisition 来源描述符）。
+    pub source: SourceDescriptor,
+}
+
+/// 同内容同来源组（明显重复）：建议保留一个、其余跳过。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchSameContentGroup {
+    /// 建议保留（导入）的候选键：组内候选键字典序最小者，确定性可复算。
+    pub keep_candidate_key: String,
+    /// 建议跳过（明显重复）的其余候选键，字典序排列。
+    pub skip_candidate_keys: Vec<String>,
+    /// 组内一致的规范化 runtime 名。
+    pub normalized_runtime_name: String,
+    /// 组内一致的候选内容指纹。
+    pub candidate_tree_hash: String,
+}
+
+/// 同名不同内容组：每一项都需要用户显式处置（独立命名或跳过），
+/// 不给静默默认。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchSameNameGroup {
+    /// 组内一致的规范化 runtime 名（分组键）。
+    pub normalized_runtime_name: String,
+    /// 需要逐个显式处置的候选键，字典序排列。
+    pub candidate_keys: Vec<String>,
+}
+
+/// 批内冲突分析结果：两组分组加组成签名。签名覆盖全部候选的
+/// （候选键、规范化名、内容指纹、源身份），提交期据此识别"决策之后
+/// 批内组成已变化"，不符则拒绝并要求重新分析。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportBatchConflictAnalysis {
+    pub same_content_groups: Vec<ImportBatchSameContentGroup>,
+    pub same_name_groups: Vec<ImportBatchSameNameGroup>,
+    /// 批内组成的确定性签名（sha256），与候选顺序无关。
+    pub signature: String,
+}
+
+/// W2-2（FB-007 第一期）：批内互检纯函数。与库内分析
+/// （[`analyze_import`]）同套模型：只比较确定性事实，不产生界面散文。
+///
+/// 分组规则（规则顺序固定）：
+/// 1. 同内容同来源（内容指纹与源身份都一致）→ 合并建议组，保留键最小
+///    者、其余建议跳过；
+/// 2. 同名不同内容（规范化 runtime 名一致且内容指纹都可得并不同）→
+///    同名组，每项 requires_choice。
+///
+/// 边界：空批/单候选不产组；同内容不同来源不是"明显重复"，不产合并组；
+/// 内容指纹缺失（None）无法证明同或不同，两侧都不分组（诚实缺省）。
+pub fn analyze_import_batch(candidates: &[ImportBatchCandidate]) -> ImportBatchConflictAnalysis {
+    // 规范化名一次算好；指纹缺失的候选不参与任何内容比较。
+    let entries: Vec<(&ImportBatchCandidate, String)> = candidates
+        .iter()
+        .map(|candidate| (candidate, normalize_runtime_name(&candidate.runtime_name)))
+        .collect();
+    // 规则 1：同内容 + 同来源 → 合并建议组。保留键固定取字典序最小者，
+    // 与输入顺序无关；不同来源的同内容候选不在此列（来源身份不同）。
+    let mut content_clusters: BTreeMap<(String, String, String), Vec<&str>> = BTreeMap::new();
+    for (candidate, normalized) in &entries {
+        let Some(hash) = candidate.candidate_tree_hash.as_deref() else {
+            continue;
+        };
+        let source_identity = serde_json::to_string(&candidate.source).unwrap_or_default();
+        content_clusters
+            .entry((normalized.clone(), hash.to_owned(), source_identity))
+            .or_default()
+            .push(candidate.candidate_key.as_str());
+    }
+    let same_content_groups = content_clusters
+        .into_iter()
+        .filter_map(|((normalized, hash, _source), mut keys)| {
+            keys.sort_unstable();
+            let keep = *keys.first()?;
+            let skips: Vec<String> = keys
+                .iter()
+                .filter(|key| **key != keep)
+                .map(|key| (*key).to_owned())
+                .collect();
+            if skips.is_empty() {
+                return None;
+            }
+            Some(ImportBatchSameContentGroup {
+                keep_candidate_key: keep.to_owned(),
+                skip_candidate_keys: skips,
+                normalized_runtime_name: normalized,
+                candidate_tree_hash: hash,
+            })
+        })
+        .collect();
+    // 规则 2：同名 + 双方指纹都可得且不同 → 同名组。指纹缺失不证明
+    // 不同，不进组（诚实缺省）；同名同内容的候选已被规则 1 建议合并，
+    // 不重复处置。
+    let mut name_members: BTreeMap<String, Vec<(&ImportBatchCandidate, String)>> = BTreeMap::new();
+    for (candidate, normalized) in &entries {
+        let Some(hash) = candidate.candidate_tree_hash.clone() else {
+            continue;
+        };
+        name_members
+            .entry(normalized.clone())
+            .or_default()
+            .push((candidate, hash));
+    }
+    let same_name_groups = name_members
+        .into_iter()
+        .filter_map(|(normalized, members)| {
+            if members.len() < 2 {
+                return None;
+            }
+            let first = &members[0].1;
+            let distinct = members.iter().any(|(_, hash)| hash != first);
+            if !distinct {
+                return None;
+            }
+            let mut keys: Vec<String> = members
+                .iter()
+                .map(|(candidate, _)| candidate.candidate_key.clone())
+                .collect();
+            keys.sort();
+            Some(ImportBatchSameNameGroup {
+                normalized_runtime_name: normalized,
+                candidate_keys: keys,
+            })
+        })
+        .collect();
+    let signature = batch_signature(&entries);
+    ImportBatchConflictAnalysis {
+        same_content_groups,
+        same_name_groups,
+        signature,
+    }
+}
+
+/// 批内组成签名：sha256 摘要 over 规范化行（候选键、规范化名、指纹、
+/// 源身份），行排序后以记录分隔符拼接。任何一项变化都会改变签名；
+/// 候选顺序无关。
+fn batch_signature(entries: &[(&ImportBatchCandidate, String)]) -> String {
+    let mut lines: Vec<String> = entries
+        .iter()
+        .map(|(candidate, normalized)| {
+            let source_identity = serde_json::to_string(&candidate.source).unwrap_or_default();
+            format!(
+                "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+                candidate.candidate_key,
+                normalized,
+                candidate.candidate_tree_hash.as_deref().unwrap_or(""),
+                source_identity,
+            )
+        })
+        .collect();
+    lines.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(lines.join("\u{1e}"));
+    format!("{:x}", hasher.finalize())
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    fn candidate(
+        key: &str,
+        name: &str,
+        hash: Option<&str>,
+        source: &SourceDescriptor,
+    ) -> ImportBatchCandidate {
+        ImportBatchCandidate {
+            candidate_key: key.to_owned(),
+            runtime_name: name.to_owned(),
+            candidate_tree_hash: hash.map(str::to_owned),
+            source: source.clone(),
+        }
+    }
+
+    fn local_source(path: &str) -> SourceDescriptor {
+        SourceDescriptor::new(
+            crate::source::SourceKind::Local,
+            crate::source::SourceLocator::local_path(path),
+        )
+    }
+
+    #[test]
+    fn empty_batch_and_single_candidate_produce_no_groups() {
+        let empty = analyze_import_batch(&[]);
+        assert!(empty.same_content_groups.is_empty());
+        assert!(empty.same_name_groups.is_empty());
+        assert!(!empty.signature.is_empty());
+
+        let source = local_source("C:\\tmp\\one");
+        let single = vec![candidate("k1", "Alpha", Some("h1"), &source)];
+        let analysis = analyze_import_batch(&single);
+        assert!(analysis.same_content_groups.is_empty());
+        assert!(analysis.same_name_groups.is_empty());
+        assert_ne!(analyze_import_batch(&single).signature, empty.signature);
+    }
+
+    #[test]
+    fn same_content_same_source_groups_and_excludes_other_sources() {
+        let source_a = local_source("C:\\tmp\\a");
+        let source_b = local_source("C:\\tmp\\b");
+        let candidates = vec![
+            candidate("k2", "Alpha", Some("h1"), &source_a),
+            candidate("k1", "alpha", Some("h1"), &source_a),
+            candidate("k3", "Alpha", Some("h1"), &source_b),
+        ];
+        let analysis = analyze_import_batch(&candidates);
+        assert_eq!(analysis.same_content_groups.len(), 1);
+        let group = &analysis.same_content_groups[0];
+        assert_eq!(group.keep_candidate_key, "k1");
+        assert_eq!(group.skip_candidate_keys, vec!["k2".to_owned()]);
+        assert_eq!(group.candidate_tree_hash, "h1");
+        assert!(analysis.same_name_groups.is_empty());
+    }
+
+    #[test]
+    fn same_name_different_content_groups_and_respects_unknown_hashes() {
+        let source = local_source("C:\\tmp\\a");
+        let candidates = vec![
+            candidate("k1", "Alpha", Some("h1"), &source),
+            candidate("k2", "alpha ", Some("h2"), &source),
+            // 指纹缺失：无法证明不同，不进同名组。
+            candidate("k3", "Alpha", None, &source),
+        ];
+        let analysis = analyze_import_batch(&candidates);
+        assert_eq!(analysis.same_name_groups.len(), 1);
+        assert_eq!(
+            analysis.same_name_groups[0].candidate_keys,
+            vec!["k1".to_owned(), "k2".to_owned()]
+        );
+        // 同名同内容不是"不同内容"，不产同名组。
+        let identical = vec![
+            candidate("k1", "Alpha", Some("h1"), &source),
+            candidate("k2", "alpha", Some("h1"), &source),
+        ];
+        assert!(analyze_import_batch(&identical).same_name_groups.is_empty());
+        // 同内容不同来源不产合并组（来源身份不同，不是明显重复）。
+        let other = local_source("C:\\tmp\\b");
+        let diff_source = vec![
+            candidate("k1", "Alpha", Some("h1"), &source),
+            candidate("k2", "Alpha", Some("h1"), &other),
+        ];
+        let analysis = analyze_import_batch(&diff_source);
+        assert!(analysis.same_content_groups.is_empty());
+        assert!(analysis.same_name_groups.is_empty());
+    }
+
+    #[test]
+    fn signature_ignores_order_and_reflects_composition() {
+        let source = local_source("C:\\tmp\\a");
+        let first = vec![
+            candidate("k1", "Alpha", Some("h1"), &source),
+            candidate("k2", "Beta", Some("h2"), &source),
+        ];
+        let reordered = vec![
+            candidate("k2", "Beta", Some("h2"), &source),
+            candidate("k1", "Alpha", Some("h1"), &source),
+        ];
+        assert_eq!(
+            analyze_import_batch(&first).signature,
+            analyze_import_batch(&reordered).signature
+        );
+        let grown = vec![
+            candidate("k1", "Alpha", Some("h1"), &source),
+            candidate("k2", "Beta", Some("h2"), &source),
+            candidate("k3", "Gamma", Some("h3"), &source),
+        ];
+        assert_ne!(
+            analyze_import_batch(&first).signature,
+            analyze_import_batch(&grown).signature
+        );
+        let changed_hash = vec![
+            candidate("k1", "Alpha", Some("h9"), &source),
+            candidate("k2", "Beta", Some("h2"), &source),
+        ];
+        assert_ne!(
+            analyze_import_batch(&first).signature,
+            analyze_import_batch(&changed_hash).signature
+        );
+    }
 }

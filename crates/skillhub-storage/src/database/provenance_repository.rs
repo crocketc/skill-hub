@@ -481,12 +481,20 @@ impl<'a> ProvenanceRepository<'a> {
                     .with_action(RecoveryAction::Retry));
             }
         }
+        // W2-2：同一候选先被守卫拒绝（failed）后又处置成功是合法重试。
+        // (batch_id, candidate_key) 只保留一行最终结果，新终态整体覆盖旧值。
         transaction
             .execute(
                 "INSERT INTO import_batch_items
                  (batch_id, candidate_key, skill_id, provenance_id, source_relation_id,
                   status, reason)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(batch_id, candidate_key) DO UPDATE SET
+                   skill_id=excluded.skill_id,
+                   provenance_id=excluded.provenance_id,
+                   source_relation_id=excluded.source_relation_id,
+                   status=excluded.status,
+                   reason=excluded.reason",
                 params![
                     item.batch_id,
                     item.candidate_key,

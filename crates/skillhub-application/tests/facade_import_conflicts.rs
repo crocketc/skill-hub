@@ -38,6 +38,7 @@ async fn prepare(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -63,6 +64,8 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("commit import");
@@ -115,6 +118,8 @@ async fn commit_in_batch(
             },
             batch_id: Some(batch_id.to_owned()),
             candidate_key: Some(candidate_key.to_owned()),
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await;
     match committed {
@@ -235,6 +240,8 @@ async fn commit_with(
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("commit import");

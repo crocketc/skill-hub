@@ -125,6 +125,12 @@ pub enum ErrorCode {
     LocalPathOpenerUnavailable,
     #[serde(rename = "local_open.unsupported")]
     LocalPathOpenUnsupported,
+    #[serde(rename = "import.runtime_name_conflict")]
+    ImportRuntimeNameConflict,
+    #[serde(rename = "import.same_name_disposition_required")]
+    ImportSameNameDispositionRequired,
+    #[serde(rename = "import.batch_composition_changed")]
+    ImportBatchCompositionChanged,
 }
 
 #[allow(non_upper_case_globals)]
@@ -199,6 +205,9 @@ impl ErrorCode {
             Self::ExternalLinkOpenerUnavailable => "external_link.opener_unavailable",
             Self::LocalPathOpenerUnavailable => "local_open.opener_unavailable",
             Self::LocalPathOpenUnsupported => "local_open.unsupported",
+            Self::ImportRuntimeNameConflict => "import.runtime_name_conflict",
+            Self::ImportSameNameDispositionRequired => "import.same_name_disposition_required",
+            Self::ImportBatchCompositionChanged => "import.batch_composition_changed",
         }
     }
 }

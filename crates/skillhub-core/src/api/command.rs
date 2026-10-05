@@ -367,6 +367,11 @@ pub struct CommitProjectAssembly {
 pub struct PrepareImport {
     pub candidate: ImportCandidate,
     pub tree_hash: Option<String>,
+    /// W2-2（FB-007）：同名不同内容处置＝独立命名时使用的覆盖名。仅在
+    /// 用户显式处置后传入；prepare 以覆盖名参与库内冲突校验，提交时以
+    /// 覆盖名落库。缺省 None 表示沿用发现的 runtime 名。
+    #[serde(default)]
+    pub runtime_name_override: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -383,6 +388,14 @@ pub struct CommitImport {
     /// 缺省时由应用层从来源与相对根派生，绝不使用显示名。
     #[serde(default)]
     pub candidate_key: Option<String>,
+    /// W2-2：独立命名的覆盖名。必须与 prepare 时一致；批内同名不同内容
+    /// 候选只有 Skip 或“独立导入＋覆盖名”两种合法处置，未处置即拒绝。
+    #[serde(default)]
+    pub runtime_name_override: Option<String>,
+    /// W2-2：决策所依据的批内分析签名（analyze_import_batch 返回）。
+    /// 批内已有分析而提交签名缺失或不符 → 拒绝并要求重新分析。
+    #[serde(default)]
+    pub batch_signature: Option<String>,
 }
 
 /// 打开一个导入批次；返回的 batch_id 由同一向导会话的所有提交共享。

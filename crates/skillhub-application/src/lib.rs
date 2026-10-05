@@ -184,6 +184,10 @@ pub struct LocalApplicationFacade {
     /// 发现时固化的权威来源分类，按 observed_path_key 索引；提交阶段按
     /// 同一 key 取回，不按路径拼写或显示名反推类别与物理身份。
     import_source_classifications: Mutex<HashMap<String, ClassifiedImportSource>>,
+    /// W2-2（FB-007）：`analyze_import_batch` 暂存的批内分析（会话内存，
+    /// 重启即清）。提交期据此核对组成签名与同名处置；不存在时不守卫，
+    /// 与既有单导入流兼容。batch_id → 暂存分析。
+    analyzed_import_batches: Mutex<HashMap<String, AnalyzedImportBatch>>,
     /// 关系路径探测实现；生产走真实文件系统，测试可注入受控假象。
     relationship_probe:
         Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
@@ -208,6 +212,15 @@ pub struct ClassifiedImportSource {
     pub physical_source_id: Option<String>,
     pub source_container_id: Option<String>,
     pub agent_client_id: Option<String>,
+}
+
+/// W2-2：`analyze_import_batch` 暂存的批内分析。除纯函数结果外，保留
+/// 候选键 → 规范化发现名 的映射，供提交期核对覆盖名与批内其他候选的
+/// 命名冲突（纯分析结果不含该项，避免向调用方多暴露一层）。
+#[derive(Clone)]
+struct AnalyzedImportBatch {
+    analysis: skillhub_core::ImportBatchConflictAnalysis,
+    candidate_names: BTreeMap<String, String>,
 }
 
 /// 一次成功导入在持久层的落点摘要。事件/关系/批次项的具体 ID 以不可变
@@ -2162,6 +2175,7 @@ impl LocalApplicationFacade {
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
+            analyzed_import_batches: Mutex::new(HashMap::new()),
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
@@ -2258,6 +2272,7 @@ impl LocalApplicationFacade {
             upstream_origins: Mutex::new(HashMap::new()),
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
+            analyzed_import_batches: Mutex::new(HashMap::new()),
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
@@ -2678,6 +2693,38 @@ impl LocalApplicationFacade {
                 let _ = repository.insert_sync(&journal);
             }
         }
+    }
+
+    /// W2-1 决定留痕：把用户当时的选择并入失败 journal 行的
+    /// `recovery_data.source_update_decision`（snake_case，如
+    /// `take_upstream`），保留既有载荷（如采用快照），重试审计可查
+    /// 「当时选了什么」。行不存在（流程尚未落 journal，如 preview 相位、
+    /// 过期与事实守卫失败）时忽略；任何失败都不掩盖原错误——本函数只
+    /// 服务审计留痕，不改变失败路径的调用方可见结果。
+    fn journal_note_source_update_decision(
+        &self,
+        operation_id: OperationId,
+        decision: skillhub_core::UpdateDecision,
+    ) {
+        let Ok(database) = self.database.lock() else {
+            return;
+        };
+        let repository = database.operation_repository();
+        let mut record = match repository.get_sync(operation_id) {
+            Ok(Some(record)) => record,
+            _ => return,
+        };
+        let decision = match serde_json::to_value(decision) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let mut payload = match record.recovery_data {
+            serde_json::Value::Object(map) => map,
+            _ => serde_json::Map::new(),
+        };
+        payload.insert("source_update_decision".to_owned(), decision);
+        record.recovery_data = serde_json::Value::Object(payload);
+        let _ = repository.update_sync(&record);
     }
 
     /// Settles an import-flow record and carries the candidate runtime name
@@ -5544,28 +5591,38 @@ impl LocalApplicationFacade {
                     &mut preview,
                     "operation.commit_source_update.facts_changed",
                 )?;
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         let snapshot_facts = match self.content_adoption_snapshot(&library, &skill, operation_id) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         if snapshot_facts.previous_version_id != snapshot.current_version_id {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_facts_changed")
                 .with_action(RecoveryAction::Retry);
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot_facts) {
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         let captured = match library.capture_with_status(skill_id, &remote_dir) {
             Ok(captured) => captured,
             Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         let version = captured.record;
@@ -5573,13 +5630,15 @@ impl LocalApplicationFacade {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_drifted")
                 .with_action(RecoveryAction::Retry);
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         let replacement =
             match self.adopt_captured_version(&library, &skill, &snapshot_facts, &version, false) {
                 Ok(replacement) => replacement,
                 Err((error, replacement)) => {
-                    return Err(self.settle_content_adoption_failure(
+                    let error = self.settle_content_adoption_failure(
                         &library,
                         &skill,
                         operation_id,
@@ -5589,7 +5648,9 @@ impl LocalApplicationFacade {
                         Some((&version, captured.created)),
                         false,
                         error,
-                    ));
+                    );
+                    self.journal_note_source_update_decision(operation_id, request.decision);
+                    return Err(error);
                 }
             };
         if let Err(error) = self.with_database("commit_source_update.persist", |database| {
@@ -5604,7 +5665,7 @@ impl LocalApplicationFacade {
             // D3：候选被采纳后忽略记录自动失效清除。
             source_repository.clear_ignored_updates(skill_id)
         }) {
-            return Err(self.settle_content_adoption_failure(
+            let error = self.settle_content_adoption_failure(
                 &library,
                 &skill,
                 operation_id,
@@ -5614,7 +5675,9 @@ impl LocalApplicationFacade {
                 Some((&version, captured.created)),
                 false,
                 error,
-            ));
+            );
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         self.journal_settle(operation_id, KIND, None);
         let _ = library
@@ -8633,6 +8696,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .map(AppQueryResult::ImportAnalysis)
                 })
             }
+            AppQuery::AnalyzeImportBatch(request) => self.analyze_import_batch(request).await,
             AppQuery::DiscoverImportCandidates(request) => {
                 let source = request.source;
                 let root = match source.locator.as_local_path().cloned() {
@@ -10371,33 +10435,109 @@ impl LocalApplicationFacade {
         })
     }
 
+    /// W2-2（FB-007）：批内冲突分析查询。对发现产物做纯函数互检：
+    /// 同内容同来源 → 合并建议（保留一个、其余建议跳过）；同名不同
+    /// 内容 → 逐项显式处置。`batch_id` 提供时把分析与"候选键 → 规范化
+    /// 发现名"一并暂存在会话内存，供提交期核对组成签名、同名处置与
+    /// 覆盖名冲突；暂存随进程结束即清，未暂存时提交期不做批内守卫
+    /// （与既有单导入流兼容）。
+    async fn analyze_import_batch(
+        &self,
+        request: skillhub_core::AnalyzeImportBatch,
+    ) -> AppResult<AppQueryResult> {
+        let batch_id = request.batch_id.clone().filter(|id| !id.trim().is_empty());
+        let mut batch_candidates = Vec::with_capacity(request.candidates.len());
+        let mut candidate_names = BTreeMap::new();
+        for candidate in &request.candidates {
+            let candidate_key = Self::candidate_key_for(candidate);
+            candidate_names.insert(
+                candidate_key.clone(),
+                skillhub_core::normalize_runtime_name(&candidate.runtime_name),
+            );
+            batch_candidates.push(skillhub_core::ImportBatchCandidate {
+                candidate_key,
+                runtime_name: candidate.runtime_name.clone(),
+                candidate_tree_hash: self.candidate_tree_hash(candidate, None),
+                source: candidate.source.clone(),
+            });
+        }
+        let analysis = skillhub_core::analyze_import_batch(&batch_candidates);
+        if let Some(batch_id) = batch_id {
+            self.analyzed_import_batches
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "query.analyze_import_batch")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .insert(
+                    batch_id,
+                    AnalyzedImportBatch {
+                        analysis: analysis.clone(),
+                        candidate_names,
+                    },
+                );
+        }
+        Ok(AppQueryResult::ImportBatchAnalysis(analysis))
+    }
+
     fn prepare_import(&self, request: skillhub_core::PrepareImport) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         let candidate = request.candidate;
         let runtime_name = candidate.runtime_name.clone();
-        let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
-        let result = self.with_database("execute.prepare_import", |database| {
-            let facts = Self::import_source_facts(database, &candidate)?;
-            let analysis = database.import_repository().analyze(
-                candidate.clone(),
-                tree_hash.as_deref(),
-                &facts,
-            )?;
-            let prepared = PreparedImport {
-                id: operation_id,
-                candidate,
-                analysis,
+        // W2-2（FB-007）：同名不同内容项的独立命名。覆盖名在准备期校验
+        // 非空，分析按"覆盖名生效后的候选"重跑；暂存候选保留发现时的
+        // 事实名，提交期才以覆盖名落地。准备期不写库，放弃无残留。
+        let runtime_name_override = request
+            .runtime_name_override
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_owned)
+            .filter(|name| !name.is_empty());
+        // 显式提供但 trim 后为空是无效覆盖名：拒绝，不静默当作未提供。
+        let override_error =
+            if request.runtime_name_override.is_some() && runtime_name_override.is_none() {
+                Some(
+                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "runtime_name_override")
+                        .with_param("reason", "import.runtime_name_invalid")
+                        .with_action(RecoveryAction::ChooseAnotherName),
+                )
+            } else {
+                None
             };
-            self.prepared_imports
-                .lock()
-                .map_err(|_| {
-                    AppError::new(ErrorCode::InternalError, Severity::Error)
-                        .with_param("operation", "execute.prepare_import")
-                        .with_action(RecoveryAction::Retry)
-                })?
-                .insert(prepared.id, prepared.clone());
-            Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
-        });
+        let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
+        let mut analysis_candidate = candidate.clone();
+        if let Some(name) = &runtime_name_override {
+            analysis_candidate.runtime_name = name.clone();
+        }
+        let result = if let Some(error) = override_error {
+            Err(error)
+        } else {
+            self.with_database("execute.prepare_import", |database| {
+                let facts = Self::import_source_facts(database, &analysis_candidate)?;
+                let analysis = database.import_repository().analyze(
+                    analysis_candidate,
+                    tree_hash.as_deref(),
+                    &facts,
+                )?;
+                let prepared = PreparedImport {
+                    id: operation_id,
+                    candidate,
+                    analysis,
+                    runtime_name_override: runtime_name_override.clone(),
+                };
+                self.prepared_imports
+                    .lock()
+                    .map_err(|_| {
+                        AppError::new(ErrorCode::InternalError, Severity::Error)
+                            .with_param("operation", "execute.prepare_import")
+                            .with_action(RecoveryAction::Retry)
+                    })?
+                    .insert(prepared.id, prepared.clone());
+                Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
+            })
+        };
         match result.as_ref() {
             Ok(_) => self.journal_import(
                 operation_id,
@@ -10796,6 +10936,142 @@ impl LocalApplicationFacade {
         batch_id: &str,
         candidate_key: &str,
     ) -> AppResult<AppCommandResult> {
+        // W2-2（FB-007）：提交期批内守卫。先核对覆盖名本身的一致性与
+        // 合法性，再核对批内分析（暂存于会话内存）的组成签名与同名处置；
+        // 任何拒绝都走 commit_import_flow 的失败路径：failed 批次项 +
+        // RolledBack 日志，不产生库内事实。
+        let override_name = match request.runtime_name_override.as_deref() {
+            Some(name) => {
+                let trimmed = name.trim();
+                if trimmed.is_empty() {
+                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "runtime_name_override")
+                        .with_param("reason", "import.runtime_name_invalid")
+                        .with_action(RecoveryAction::ChooseAnotherName));
+                }
+                Some(trimmed.to_owned())
+            }
+            None => None,
+        };
+        if override_name.is_some() && request.decision == skillhub_core::ImportDecision::Skip {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "runtime_name_override")
+                .with_param("reason", "import.skip_with_runtime_name_override")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        // prepared.runtime_name_override 在准备期已 trim 校验；提交必须
+        // 携带同一覆盖名（None ↔ Some 或值不同都算改口）。
+        if override_name != prepared.runtime_name_override {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "runtime_name_override")
+                .with_param("reason", "import.runtime_name_override_mismatch")
+                .with_action(RecoveryAction::Retry));
+        }
+        if let Some(name) = &override_name {
+            // 覆盖名与库内既有 runtime 名冲突 → 拒绝。同批已提交的候选
+            // 此刻已是库内事实，同样被这里拦下。
+            let normalized = skillhub_core::normalize_runtime_name(name);
+            let conflicts_library =
+                self.with_database("execute.commit_import.override_check", |database| {
+                    Ok(database
+                        .import_repository()
+                        .list_existing()?
+                        .iter()
+                        .any(|record| {
+                            skillhub_core::normalize_runtime_name(&record.runtime_name)
+                                == normalized
+                        }))
+                })?;
+            if conflicts_library {
+                return Err(
+                    AppError::new(ErrorCode::ImportRuntimeNameConflict, Severity::Error)
+                        .with_param("runtime_name", name.clone())
+                        .with_param("reason", "import.runtime_name_exists_in_library")
+                        .with_action(RecoveryAction::ChooseAnotherName),
+                );
+            }
+        }
+        let stored = self
+            .analyzed_import_batches
+            .lock()
+            .map_err(|_| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("operation", "execute.commit_import")
+                    .with_action(RecoveryAction::Retry)
+            })?
+            .get(batch_id)
+            .cloned();
+        if let Some(stored) = stored {
+            if !stored.candidate_names.contains_key(candidate_key) {
+                // 提交的候选不在已分析的批内组成里（分析之后批内新增）
+                // → 拒绝并要求重新分析。
+                return Err(AppError::new(
+                    ErrorCode::ImportBatchCompositionChanged,
+                    Severity::Error,
+                )
+                .with_param("batch_id", batch_id.to_owned())
+                .with_param("candidate_key", candidate_key.to_owned())
+                .with_action(RecoveryAction::Retry));
+            }
+            if let Some(signature) = &request.batch_signature {
+                if *signature != stored.analysis.signature {
+                    // 决策依据的签名与暂存分析不符：决策之后批内组成已
+                    // 变化（候选被跳过/新增/内容变化）→ 拒绝并要求重新
+                    // 分析。
+                    return Err(AppError::new(
+                        ErrorCode::ImportBatchCompositionChanged,
+                        Severity::Error,
+                    )
+                    .with_param("batch_id", batch_id.to_owned())
+                    .with_param("reason", "import.batch_signature_mismatch")
+                    .with_action(RecoveryAction::Retry));
+                }
+            }
+            let same_name_member = stored
+                .analysis
+                .same_name_groups
+                .iter()
+                .any(|group| group.candidate_keys.iter().any(|key| key == candidate_key));
+            if same_name_member {
+                // 同名不同内容：只有"跳过"或"独立命名（携带覆盖名，导入
+                // 决策本身仍受 analysis.actions 约束）"两种合法处置；既不
+                // 跳过也不改名的静默导入一律拒绝，不给静默默认。
+                let dispositioned = match request.decision {
+                    skillhub_core::ImportDecision::Skip => true,
+                    _ => override_name.is_some(),
+                };
+                if !dispositioned {
+                    return Err(AppError::new(
+                        ErrorCode::ImportSameNameDispositionRequired,
+                        Severity::Error,
+                    )
+                    .with_param("batch_id", batch_id.to_owned())
+                    .with_param("candidate_key", candidate_key.to_owned())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+                }
+            }
+            if let Some(name) = &override_name {
+                // 覆盖名与批内其他候选的发现名撞名 → 拒绝（同批尚未提交
+                // 的候选不在库内，库内检查看不到它们）。
+                let normalized = skillhub_core::normalize_runtime_name(name);
+                let collides = stored
+                    .candidate_names
+                    .iter()
+                    .any(|(key, existing)| key != candidate_key && *existing == normalized);
+                if collides {
+                    return Err(AppError::new(
+                        ErrorCode::ImportRuntimeNameConflict,
+                        Severity::Error,
+                    )
+                    .with_param("runtime_name", name.clone())
+                    .with_param(
+                        "reason",
+                        "import.runtime_name_conflicts_with_batch_candidate",
+                    )
+                    .with_action(RecoveryAction::ChooseAnotherName));
+                }
+            }
+        }
         if !prepared.analysis.actions.contains(&request.decision) {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "decision")
@@ -10983,7 +11259,12 @@ impl LocalApplicationFacade {
             let version = store.capture(skill_id, source)?;
             // QA-009：导入时读取 SKILL.md 头部 description 作为原始说明；
             // 头部缺失或不可读时保持空串，不阻塞导入。
-            let mut skill = Skill::new(skill_id, prepared.candidate.runtime_name.clone());
+            // W2-2：覆盖名在守卫里已核对与 prepare 一致；这里解析最终
+            // 落库名（覆盖名优先，否则发现名）。
+            let final_runtime_name = override_name
+                .clone()
+                .unwrap_or_else(|| prepared.candidate.runtime_name.clone());
+            let mut skill = Skill::new(skill_id, final_runtime_name.clone());
             if let Some(description) = read_frontmatter_description(source) {
                 skill = skill.with_description(description);
             }
@@ -11086,21 +11367,19 @@ impl LocalApplicationFacade {
                 // Takeover keeps the original source.  The separate original
                 // migration flow owns deletion and its explicit backup/rollback
                 // confirmation; this step only verifies the managed copy.
-                if let Err(error) =
-                    store
-                        .hash_tree_read_only(central.visible_skill_path_for_runtime(
-                            skill_id,
-                            &prepared.candidate.runtime_name,
-                        ))
-                        .and_then(|hash| {
-                            if hash == version.manifest.tree_hash {
-                                Ok(hash)
-                            } else {
-                                Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                                    .with_param("reason", "takeover_verification_mismatch")
-                                    .with_action(RecoveryAction::RollbackOperation))
-                            }
-                        })
+                if let Err(error) = store
+                    .hash_tree_read_only(
+                        central.visible_skill_path_for_runtime(skill_id, &final_runtime_name),
+                    )
+                    .and_then(|hash| {
+                        if hash == version.manifest.tree_hash {
+                            Ok(hash)
+                        } else {
+                            Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                                .with_param("reason", "takeover_verification_mismatch")
+                                .with_action(RecoveryAction::RollbackOperation))
+                        }
+                    })
                 {
                     return Err(cleanup_import_error(
                         error,
