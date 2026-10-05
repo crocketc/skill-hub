@@ -44,6 +44,7 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
                  INSERT INTO check_runs(id, skill_id, version_id, kind, state, started_at)
                      VALUES ('check-1', 'archived-skill', 'sha256:archived-version', 'basic', 'passed', 4);
                  ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+                 ALTER TABLE check_runs DROP COLUMN trigger;
                  DROP TABLE relationship_governance_mutation_receipts;
                  DROP TABLE skill_lineage;
                  PRAGMA user_version = 22;",
@@ -55,7 +56,7 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
     assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
     assert_eq!(
         migrated.migration_report().applied_versions,
-        vec![23, 24, 25, 26]
+        vec![23, 24, 25, 26, 27]
     );
     assert!(migrated
         .has_table("relationship_governance_mutation_receipts")
@@ -999,4 +1000,44 @@ fn v19_migration_error_rolls_back_schema_data_and_user_version() {
         )
         .unwrap();
     assert_eq!(dangling_member, 1, "旧成员数据不能被部分迁移破坏");
+}
+
+/// W1-3：旧库升级后 check_runs.trigger 列出现，既有行默认 'manual'。
+#[test]
+fn check_run_trigger_column_defaults_to_manual_after_upgrade() {
+    let file = NamedTempFile::new().unwrap();
+    {
+        let database = Database::open(file.path()).unwrap();
+        let connection = database.connection_for_test();
+        connection
+            .execute_batch(
+                "INSERT INTO skills(id, display_name, runtime_name, created_at, updated_at)
+                     VALUES ('legacy-skill', 'Legacy', 'legacy', 1, 1);
+                 INSERT INTO versions(id, skill_id, content_hash, manifest_json, created_at)
+                     VALUES ('sha256:legacy-version', 'legacy-skill', 'sha256:content', '{}', 2);
+                 INSERT INTO check_runs(id, skill_id, version_id, kind, state, started_at)
+                     VALUES ('check-legacy', 'legacy-skill', 'sha256:legacy-version', 'basic', 'passed', 3);",
+            )
+            .unwrap();
+        // 模拟 0027 之前的旧库：无 trigger 列、schema 版本停在 26。
+        connection
+            .execute("ALTER TABLE check_runs DROP COLUMN trigger", [])
+            .unwrap();
+        connection
+            .execute_batch("PRAGMA user_version = 26;")
+            .unwrap();
+    }
+
+    let migrated = Database::open(file.path()).unwrap();
+    assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
+    assert_eq!(migrated.migration_report().applied_versions, vec![27]);
+    let trigger: String = migrated
+        .connection_for_test()
+        .query_row(
+            "SELECT trigger FROM check_runs WHERE id = 'check-legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(trigger, "manual", "pre-existing rows read as manual checks");
 }

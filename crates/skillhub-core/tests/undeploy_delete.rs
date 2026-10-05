@@ -164,6 +164,7 @@ fn fixture_with_undeploy_shared_choice(
         combinations: Vec::new(),
         related_skills: Vec::new(),
         unknown_external_references: Vec::new(),
+        draft_count: 0,
     };
     let backend = FakeRemovalBackend {
         skill_id,
@@ -180,6 +181,7 @@ fn fixture_with_undeploy_shared_choice(
             combinations: Vec::new(),
             related_skills: Vec::new(),
             unknown_external_references: Vec::new(),
+            draft_count: 0,
         },
         removed_targets: Arc::new(Mutex::new(Vec::new())),
         removed_relations: Arc::new(Mutex::new(Vec::new())),

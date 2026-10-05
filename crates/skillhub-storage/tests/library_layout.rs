@@ -285,3 +285,76 @@ fn removing_a_portable_skill_also_removes_its_visible_managed_directory() {
     assert!(!visible.exists());
     assert!(library.load_manifest().unwrap().skills.is_empty());
 }
+
+/// W1-2：草稿目录移动 helper。把 `drafts/<skill_id>/` 移入指定备份路径，
+/// 返回是否发生了移动；无草稿时返回 false；注入故障时草稿原位保留。
+#[test]
+fn drafts_removal_moves_skill_drafts_into_retained_backup() {
+    use skillhub_storage::MarkdownDraftStore;
+    use std::sync::Arc;
+
+    let ws = TempWorkspace::new().unwrap();
+    let library = CentralLibrary::initialize(ws.central_root()).unwrap();
+    let drafts = MarkdownDraftStore::from_library(&library);
+    let skill = SkillId::new();
+    drafts
+        .save(skill, "SKILL.md", "# draft\n", None, "object-1", 1)
+        .unwrap();
+    drafts
+        .save(skill, "docs/notes.md", "# notes\n", None, "object-2", 2)
+        .unwrap();
+
+    let backup = library.paths().tmp_dir.join("drafts-backup-fixture");
+    let moved = library.prepare_drafts_removal(skill, &backup).unwrap();
+    assert!(moved, "a subject with drafts reports a moved directory");
+    assert!(!library.paths().drafts_dir.join(skill.to_string()).exists());
+    assert!(backup.is_dir());
+    assert_eq!(std::fs::read_dir(&backup).unwrap().count(), 2);
+
+    // 无草稿主体：不移动、不建备份目录。
+    let empty_backup = library.paths().tmp_dir.join("drafts-backup-empty");
+    let absent = SkillId::new();
+    let moved = library
+        .prepare_drafts_removal(absent, &empty_backup)
+        .unwrap();
+    assert!(!moved, "a subject without drafts reports no move");
+    assert!(
+        !empty_backup.exists(),
+        "no backup directory appears for an empty subject"
+    );
+
+    // 消费既有"丢弃备份"步骤：同一路径原语可丢弃草稿备份。
+    library.discard_visible_tree_removal(&backup).unwrap();
+    assert!(!backup.exists());
+
+    // 注入故障：移动失败时草稿原位保留，错误带稳定故障点。
+    let armed_faults = Arc::new(std::sync::Mutex::new(std::collections::HashSet::from([
+        "before_drafts_removal_rename",
+    ])));
+    let faulted = {
+        let armed_faults = Arc::clone(&armed_faults);
+        CentralLibrary::initialize_with_fault_handler(
+            ws.central_root(),
+            Arc::new(move |point| armed_faults.lock().unwrap().remove(point)),
+        )
+        .unwrap()
+    };
+    let drafts = MarkdownDraftStore::from_library(&faulted);
+    let skill = SkillId::new();
+    drafts
+        .save(skill, "SKILL.md", "# stuck\n", None, "object-4", 4)
+        .unwrap();
+    let backup = faulted.paths().tmp_dir.join("drafts-backup-fault");
+    let error = faulted
+        .prepare_drafts_removal(skill, &backup)
+        .expect_err("the injected fault must fail the move");
+    assert_eq!(
+        error.params.get("fault"),
+        Some(&serde_json::json!("before_drafts_removal_rename"))
+    );
+    assert!(
+        faulted.paths().drafts_dir.join(skill.to_string()).is_dir(),
+        "a failed move must leave the drafts in place"
+    );
+    assert!(!backup.exists());
+}

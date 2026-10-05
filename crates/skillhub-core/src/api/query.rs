@@ -2,7 +2,8 @@ use crate::agent::{AgentDirectoryProjection, CustomAgent, DiscoverySnapshot};
 use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
 use crate::catalog::{DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle};
 use crate::check::{
-    CheckKind, CheckResult as DomainCheckResult, CheckState, Finding, FindingDisposition,
+    CheckKind, CheckResult as DomainCheckResult, CheckState, CheckTrigger, Finding,
+    FindingDisposition,
 };
 use crate::deployment::DeploymentMode;
 use crate::evidence::UsageEvidenceAnalysis;
@@ -786,6 +787,9 @@ pub struct BasicCheckResult {
     pub checked_at: Option<String>,
     pub finding_count: u32,
     pub actionable_count: u32,
+    /// W1-3（FB-006）：该记录的触发来源；无记录时回退为 manual。
+    #[serde(default)]
+    pub trigger: CheckTrigger,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -844,6 +848,7 @@ impl BasicCheckResult {
             checked_at: run.and_then(|run| run.ended_at.map(|value| value.to_string())),
             finding_count,
             actionable_count,
+            trigger: run.map(|run| run.trigger).unwrap_or_default(),
         }
     }
 }
