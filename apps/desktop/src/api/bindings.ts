@@ -318,6 +318,8 @@ export type BasicCheckResult = {
 	checked_at: string | null,
 	finding_count: number,
 	actionable_count: number,
+	/**  W1-3（FB-006）：该记录的触发来源；无记录时回退为 manual。 */
+	trigger?: CheckTrigger,
 };
 
 /**
@@ -404,6 +406,12 @@ export type CheckSourceUpdates = {
 
 /**  User-visible result states. Availability of an optional LLM is not a state. */
 export type CheckState = "not_checked" | "running" | "passed" | "failed";
+
+/**
+ *  W1-3（FB-006）：检查记录的触发来源。`manual` 兼容导入标注之前的全部
+ *  既有行为；`import` 标注由导入边界扫描登记的首次基础检查记录。
+ */
+export type CheckTrigger = "manual" | "import";
 
 /**
  *  Offers the platform "open with" chooser for one file inside the Skill's
@@ -3497,6 +3505,12 @@ export type RemovalImpact = {
 	related_skills?: string[],
 	/**  SkillHub 未托管的同名内容路径；只提示、不修改。 */
 	unknown_external_references?: string[],
+	/**
+	 *  W1-2：该主体 drafts 目录下的未完成编辑草稿数（无草稿为 0）。
+	 *  删除主体时这些草稿级联清理；`serde(default)` 保持既有持久化
+	 *  操作负载的向后兼容。
+	 */
+	draft_count?: number,
 };
 
 export type RemovalImpactFact = {
