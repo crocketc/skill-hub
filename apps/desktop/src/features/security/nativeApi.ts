@@ -7,8 +7,25 @@ import {
 } from "../../api/bindings";
 import type { SecurityCheck, SecurityCheckKind, SecurityFacade, SecurityFinding, SecurityPreferences } from "./api";
 
+function checkTrigger(payload: unknown): SecurityCheck["trigger"] {
+  // W1-3：wire 契约再生成前按桥接断言读取检查记录触发来源；
+  // 缺省（含 manual）不标注，UI 仅在 import 时显示「导入时检查」。
+  // TODO(lead): remove cast after bindings regeneration
+  const trigger = (payload as { trigger?: unknown } | null | undefined)?.trigger;
+  return trigger === "import" ? "import" : trigger === "manual" ? "manual" : undefined;
+}
+
 function checkResult(result: AppQueryResult): SecurityCheck {
-  if (result.type === "basic_check_result") return { kind: "basic", state: result.payload.state, checkedAt: result.payload.checked_at ?? undefined, findingCount: result.payload.finding_count, actionableCount: result.payload.actionable_count };
+  if (result.type === "basic_check_result") {
+    return {
+      kind: "basic",
+      state: result.payload.state,
+      checkedAt: result.payload.checked_at ?? undefined,
+      findingCount: result.payload.finding_count,
+      actionableCount: result.payload.actionable_count,
+      trigger: checkTrigger(result.payload),
+    };
+  }
   if (result.type === "llm_safety_check_result") return { kind: "llm", state: result.payload.state, checkedAt: result.payload.checked_at ?? undefined, findingCount: result.payload.finding_count, actionableCount: result.payload.actionable_count };
   throw new Error("security.check_unexpected_result");
 }

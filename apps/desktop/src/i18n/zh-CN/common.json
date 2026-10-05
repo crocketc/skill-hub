@@ -2409,6 +2409,14 @@
     "riskAwareSummary": "仍有高风险待处理 · {{highRisk}} 项高风险 · {{pending}} 项待处理；检查已完成",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
+    "notCheckedBasic": "此版本尚无基础检查记录，可运行基础检查获取当前结果。",
+    "checkSource": {
+      "import": "导入时检查"
+    },
+    "riskAware": {
+      "handled": "已处置高风险 {{highRisk}} 项 · {{pending}} 项待处理。原始风险发现保留，不代表内容无风险。",
+      "summary": "高风险 {{highRisk}} 项 · {{pending}} 项待处理。请结合检查范围与发现记录判断。"
+    },
     "drawer": {
       "basicAction": "重新检查",
       "dateUnavailable": "时间不可用",
@@ -2447,6 +2455,7 @@
       "cancel": "取消检查",
       "cancelFailed": "取消请求未成功：{{message}}",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
+      "providerMissingPrototype": "可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。",
       "configure": "配置 AI 设置",
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",
@@ -2474,6 +2483,7 @@
     "dependents": "依赖项目：{{projects}}",
     "retained": "保留：SkillHub 之外的原文件不受影响；每个目标上的副本按你为该行选择的方式处理。",
     "recovery": "恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。",
+    "drafts": "删除将同时删除该技能未完成的编辑草稿。",
     "choiceLabel": "目标副本处理方式",
     "choose": "选择处理方式",
     "choices": {
@@ -2499,6 +2509,7 @@
       "busy": "正在删除 {{count}} 个 Skill…",
       "nonAtomicNotice": "批量删除逐项提交，不是原子操作：已删除的部分不会自动恢复。",
       "impact": {
+        "drafts": "未完成的编辑草稿：{{count}} 项",
         "declaredDependencies": "声明依赖",
         "combinations": "所在组合",
         "pinnedVersions": "固定版本：{{count}} 项",
@@ -4128,6 +4139,7 @@
       "run": "运行滚动备份",
       "running": "正在运行…",
       "cacheNote": "缓存清理：临时下载目录（仓库发现）超过 24 小时的残留会在下次下载时自动清理；集中库内没有需要手动清理的缓存。",
+      "draftHint": "备份不包含未保存的编辑草稿，编辑中的内容请先保存。",
       "failed": "滚动备份失败：{{error}}",
       "result": "滚动备份完成：保留 {{retained}} 份，清理 {{removed}} 份。"
     }

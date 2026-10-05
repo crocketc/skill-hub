@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { RemovalShell } from "./RemovalShell";
-import { RemovalDeploymentTarget, RemovalImpactMatrix } from "./RemovalImpactPieces";
+import { RemovalDeploymentTarget, RemovalImpactDisclaimer, RemovalImpactMatrix } from "./RemovalImpactPieces";
 
 interface BatchRemovalImpactDialogProps {
   error?: string;
@@ -68,11 +68,9 @@ export function BatchRemovalImpactDialog({
     >
       <p>{t("removal.batch.description", { count })}</p>
       {/* P1-15：批量删除同属“删除库中 Skill”对象——提交前固定说明
-         保留什么（库外原文件）与恢复方式（仅事先导出的备份）。 */}
-      <div className="sh-removal-flow__disclaimer">
-        <p>{t("removal.retained")}</p>
-        <p>{t("removal.recovery")}</p>
-      </div>
+         保留什么（库外原文件）与恢复方式（仅事先导出的备份）；
+         W1-2：草稿说明由共享组件在任一对象确有草稿时追加。 */}
+      <RemovalImpactDisclaimer impacts={impacts} />
       {impacts.map((impact) => (
         <section className="sh-removal-impact__skill" key={impact.operationId ?? impact.skillId}>
           <h3>{impact.skillName}</h3>

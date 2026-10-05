@@ -122,3 +122,32 @@ it("presents the commit failure as an icon-plus-text alert instead of bare prose
   expect(alert).toHaveTextContent("删除未完成。集中库未被改动，请检查后重试。");
   expect(alert.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
 });
+
+// W1-2：删除级联清理编辑草稿——有草稿时影响矩阵出现草稿维度，
+// 确认说明区追加「将同时删除草稿」；无草稿时两者都不出现。
+it("lists unfinished edit drafts and states their deletion only when drafts exist", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const impact = { ...removalImpactFixture(), draftCount: 3 };
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RemovalImpactDialog impact={impact} onConfirm={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByText("未完成的编辑草稿：3 项")).toBeVisible();
+  expect(screen.getByText("删除将同时删除该技能未完成的编辑草稿。")).toBeVisible();
+});
+
+it("omits the draft dimension and draft confirmation copy when the skill has no drafts", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RemovalImpactDialog impact={removalImpactFixture()} onConfirm={() => undefined} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.queryByText(/未完成的编辑草稿/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/编辑草稿/)).not.toBeInTheDocument();
+});

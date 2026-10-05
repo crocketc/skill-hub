@@ -418,10 +418,14 @@ export function DataProtectionPage({
           {rollingBusy ? t("backup.retention.running") : t("backup.retention.run")}
         </Button>
         <p>{t("backup.retention.cacheNote")}</p>
+        {/* W1-1：备份范围不含未保存编辑草稿——在用户做备份决策处说明，不放页头。 */}
+        <p>{t("backup.retention.draftHint")}</p>
         {rollingError ? <p role="alert">{t("backup.retention.failed", { error: rollingError })}</p> : null}
         {rollingResult ? (
           <p role="status">
-            {t("backup.retention.result", { retained: rollingResult.retained, removed: rollingResult.removed })}
+            {t("backup.retention.result", { retained: rollingResult.retained, removed: rollingResult.removed })}{" "}
+            {/* 完成后复核同一提示：备份不包含未保存的编辑草稿。 */}
+            {t("backup.retention.draftHint")}
           </p>
         ) : null}
       </section>

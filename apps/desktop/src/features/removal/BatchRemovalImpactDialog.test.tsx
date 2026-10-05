@@ -120,3 +120,18 @@ it("states retention and the backup-only recovery path before batch deletion", a
   expect(screen.getByText(/Recovery: deleting from the library cannot be undone/)).toBeVisible();
   expect(screen.getByText(/export a backup first/)).toBeVisible();
 });
+
+// W1-2：草稿维度与草稿确认文案由共享组件承载，批量对话框自动生效——
+// 任一影响对象有草稿即整批提示一次。
+it("carries the draft dimension and draft confirmation copy through the shared pieces", async () => {
+  await renderDialog({ impacts: [{ ...impacts[0], draftCount: 2 }, impacts[1]] });
+
+  expect(screen.getByText("Unfinished edit drafts: 2")).toBeVisible();
+  expect(screen.getByText("Deleting also removes the skill's unfinished edit drafts.")).toBeVisible();
+});
+
+it("omits the draft copy when no impact has drafts", async () => {
+  await renderDialog({ impacts: [{ ...impacts[0], draftCount: 0 }, impacts[1]] });
+
+  expect(screen.queryByText(/edit drafts/i)).not.toBeInTheDocument();
+});

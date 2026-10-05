@@ -2409,6 +2409,14 @@
     "riskAwareSummary": "High-risk findings remain · {{highRisk}} high risk · {{pending}} pending; check completed",
     "noFindings": "No findings recorded.",
     "notChecked": "This check has not run yet.",
+    "notCheckedBasic": "No basic check record exists for this version; run the basic check to get a current result.",
+    "checkSource": {
+      "import": "Checked at import"
+    },
+    "riskAware": {
+      "handled": "Dispositions recorded for {{highRisk}} high-risk findings · {{pending}} pending; the original findings are retained, which does not mean the content is risk-free.",
+      "summary": "{{highRisk}} high-risk findings · {{pending}} pending; judge together with the check scope and the recorded findings."
+    },
     "drawer": {
       "basicAction": "Recheck",
       "dateUnavailable": "time unavailable",
@@ -2447,6 +2455,7 @@
       "cancel": "Cancel check",
       "cancelFailed": "The cancellation request failed: {{message}}",
       "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
+      "providerMissingPrototype": "Configure a provider in Settings → Network & AI; the current prototype does not send content.",
       "configure": "Configure AI settings",
       "scopeExplicitSelection": "Only explicitly selected Skill content is sent.",
       "scopeOther": "Current data scope: {{scope}}",
@@ -2474,6 +2483,7 @@
     "dependents": "Dependent projects: {{projects}}",
     "retained": "Kept: files outside SkillHub are never touched; each target copy follows the choice you make for its row.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
+    "drafts": "Deleting also removes the skill's unfinished edit drafts.",
     "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
     "choices": {
@@ -2499,6 +2509,7 @@
       "busy": "Deleting {{count}} Skills…",
       "nonAtomicNotice": "Batch deletion commits skill by skill and is not atomic: deleted skills are not restored automatically.",
       "impact": {
+        "drafts": "Unfinished edit drafts: {{count}}",
         "declaredDependencies": "Declared dependencies",
         "combinations": "Combinations",
         "pinnedVersions": "Pinned versions: {{count}}",
@@ -4128,6 +4139,7 @@
       "run": "Run rolling backup",
       "running": "Running…",
       "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the central library has no cache that needs manual cleanup.",
+      "draftHint": "Backups do not include unsaved edit drafts; save your edits first.",
       "failed": "Rolling backup failed: {{error}}",
       "result": "Rolling backup finished: {{retained}} kept, {{removed}} removed."
     }

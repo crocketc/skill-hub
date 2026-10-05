@@ -81,6 +81,34 @@ describe("security native API", () => {
     });
   });
 
+  it("carries the import trigger from the check payload and leaves triggerless runs unmarked", async () => {
+    // W1-3：导入时登记的首次基础检查记录带 trigger=import；缺 trigger 的
+    // 旧载荷不伪造标注（undefined），manual 同样不显示「导入时检查」。
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({ type: "basic_check_result", payload: {
+        state: "passed", checked_at: "2026-09-01T00:00:00Z", finding_count: 0, actionable_count: 0,
+        trigger: "import",
+      } as never })
+      .mockResolvedValueOnce({ type: "llm_safety_check_result", payload: {
+        state: "not_checked", checked_at: null, finding_count: 0, actionable_count: 0,
+      } as never })
+      .mockResolvedValueOnce({ type: "basic_check_result", payload: {
+        state: "passed", checked_at: "2026-09-02T00:00:00Z", finding_count: 0, actionable_count: 0,
+      } as never })
+      .mockResolvedValueOnce({ type: "llm_safety_check_result", payload: {
+        state: "not_checked", checked_at: null, finding_count: 0, actionable_count: 0,
+      } as never });
+
+    await expect(nativeSecurityFacade.getChecks("skill-1", "version-1")).resolves.toEqual([
+      expect.objectContaining({ kind: "basic", state: "passed", trigger: "import" }),
+      expect.objectContaining({ kind: "llm", state: "not_checked" }),
+    ]);
+    await expect(nativeSecurityFacade.getChecks("skill-1", "version-1")).resolves.toEqual([
+      expect.objectContaining({ kind: "basic", state: "passed", trigger: undefined }),
+      expect.objectContaining({ kind: "llm", state: "not_checked" }),
+    ]);
+  });
+
   it("runs the deterministic basic check through the native command", async () => {
     vi.mocked(executeCommand).mockResolvedValue({ type: "basic_check_result", payload: {} as never });
 

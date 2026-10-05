@@ -376,13 +376,16 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
       </p> : null}
       {presentationMode === "risk-aware" ? (
         <p className="sh-skill-detail-review__safety-summary" data-testid="review-safety-summary" role="status">
-          {pendingHighRisk ? t("security.riskAwareSummary", { highRisk: pendingHighRisk, pending: pendingCount }) : highRiskCount ? `已处置高风险 ${highRiskCount} 项 · ${pendingCount} 项待处理。原始风险发现保留，不代表内容无风险。` : `高风险 ${highRiskCount} 项 · ${pendingCount} 项待处理。请结合检查范围与发现记录判断。`}
+          {/* W1-3 既有债：risk-aware 三分支文案全部由 i18n 承载，不再硬编码。 */}
+          {pendingHighRisk
+            ? t("security.riskAwareSummary", { highRisk: pendingHighRisk, pending: pendingCount })
+            : t(highRiskCount ? "security.riskAware.handled" : "security.riskAware.summary", { highRisk: highRiskCount, pending: pendingCount })}
         </p>
       ) : null}
       <div className="sh-workflow-grid">
         <section aria-labelledby="basic-security-heading" className="sh-workflow-card">
           <h2 id="basic-security-heading">{t("security.basicHeading")}</h2>
-          <CheckSummary check={checkByKind("basic")} riskAware={presentationMode === "risk-aware" && basicFindings.length > 0} />
+          <CheckSummary check={checkByKind("basic")} notCheckedHintKey="security.notCheckedBasic" riskAware={presentationMode === "risk-aware" && basicFindings.length > 0} />
           {facade.runBasicCheck ? (
             // 与 LLM 卡同一动作槽（.sh-workflow-actions 右对齐），
             // 两张检查卡的运行按钮位置一致。
@@ -409,7 +412,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
                 ? preferences.dataScope === "explicit_selection"
                   ? t("security.llm.scopeExplicitSelection")
                   : t("security.llm.scopeOther", { scope: preferences.dataScope })
-                : <><span>{t("security.llm.providerMissing")}</span> {presentationMode === "risk-aware" ? <span>可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。</span> : <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>}</>}
+                : <><span>{t("security.llm.providerMissing")}</span> {presentationMode === "risk-aware" ? <span>{t("security.llm.providerMissingPrototype")}</span> : <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>}</>}
             </p>
           ) : null}
           {runError ? <p role="alert">{t("security.llm.runFailed", { message: runError })}</p> : null}
@@ -513,7 +516,12 @@ function DrawerCheckRow({
       <span aria-label={statusLabel} className="sh-security-results__drawer-mark" role="img" tabIndex={0} title={details}>
         {icon}
       </span>
-      <span className="sh-security-results__drawer-name">{checkName}</span>
+      <span className="sh-security-results__drawer-name">
+        {checkName}
+        {/* W1-3：导入时检查的来源标注与名称同格（抽屉行是网格布局，
+            不新增单元格），tone 不变。 */}
+        {check?.trigger === "import" ? <small className="sh-security-results__check-source">{t("security.checkSource.import")}</small> : null}
+      </span>
       <span className="sh-security-results__drawer-count">{t("security.findingCount", { count: findingCount })}</span>
       {kind === "llm" && running && cancelAvailable && onCancel ? (
         <Button className="sh-security-results__drawer-run" disabled={!cancelEnabled || canceling} loading={canceling} onClick={onCancel} size="sm" variant="danger">
@@ -574,13 +582,15 @@ const CHECK_TONES: Record<SecurityCheck["state"], "success" | "danger" | "info" 
   running: "info",
 };
 
-function CheckSummary({ check, experimental = false, riskAware = false }: { check?: SecurityCheck; experimental?: boolean; riskAware?: boolean }) {
+function CheckSummary({ check, experimental = false, riskAware = false, notCheckedHintKey }: { check?: SecurityCheck; experimental?: boolean; riskAware?: boolean; notCheckedHintKey?: string }) {
   const { t, i18n } = useTranslation();
-  if (!check) return <p>{t("security.notChecked")}</p>;
+  // W1-3：缺记录（not_checked）态指向页内既有重查动作（如基础卡的
+  // 「运行基础检查」按钮），不留死胡同；未提供引导键时保持通用文案。
+  if (!check) return <p>{notCheckedHintKey ? t(notCheckedHintKey as never) : t("security.notChecked")}</p>;
   const checkedAt = formatCheckedAt(check.checkedAt, i18n.resolvedLanguage ?? i18n.language);
   const hasFindings = riskAware && check.state === "passed" && check.findingCount > 0;
   const label = hasFindings ? t("security.states.completedWithFindings") : t(`security.states.${check.state}`);
-  return <div className="sh-check-summary">{riskAware ? <span className={`sh-skill-detail-review__check-icon sh-skill-detail-review__check-icon--${hasFindings ? "risk" : check.state}`} role="img" aria-label={label} title={label} tabIndex={0}>{hasFindings ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="var(--ui-warning-background)" stroke="var(--ui-warning-foreground)" /><path d="M12 7v6.5" stroke="var(--ui-danger-foreground)" strokeWidth="2.3" /><circle cx="12" cy="17" r="1.3" fill="var(--ui-danger-foreground)" /></svg> : <Icon name={check.state === "passed" ? "success" : check.state === "failed" ? "error" : "info"} size={24} />}</span> : null}<StatusBadge tone={hasFindings ? "warning" : CHECK_TONES[check.state]}>{label}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{checkedAt ? <time className="sh-security-results__checked-at" dateTime={check.checkedAt}>{t("security.checkedAt", { date: checkedAt })}</time> : null}{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
+  return <div className="sh-check-summary">{riskAware ? <span className={`sh-skill-detail-review__check-icon sh-skill-detail-review__check-icon--${hasFindings ? "risk" : check.state}`} role="img" aria-label={label} title={label} tabIndex={0}>{hasFindings ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 5v6.1c0 5.1-3.4 8.7-8 10.4-4.6-1.7-8-5.3-8-10.4V5l8-2.5Z" fill="var(--ui-warning-background)" stroke="var(--ui-warning-foreground)" /><path d="M12 7v6.5" stroke="var(--ui-danger-foreground)" strokeWidth="2.3" /><circle cx="12" cy="17" r="1.3" fill="var(--ui-danger-foreground)" /></svg> : <Icon name={check.state === "passed" ? "success" : check.state === "failed" ? "error" : "info"} size={24} />}</span> : null}<StatusBadge tone={hasFindings ? "warning" : CHECK_TONES[check.state]}>{label}</StatusBadge><strong>{t("security.findingCount", { count: check.findingCount })}</strong>{checkedAt ? <time className="sh-security-results__checked-at" dateTime={check.checkedAt}>{t("security.checkedAt", { date: checkedAt })}</time> : null}{check.trigger === "import" ? <small className="sh-security-results__check-source">{t("security.checkSource.import")}</small> : null}{experimental ? <small>{t("security.experimental")}</small> : null}</div>;
 }
 
 function formatCheckedAt(value: string | undefined, language: string): string | undefined {

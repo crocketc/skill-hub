@@ -45,6 +45,15 @@ export function RemovalImpactMatrix({ impact }: { impact: RemovalImpact }) {
   const relatedSkills = impact.relatedSkills ?? [];
   const unknownExternalReferences = impact.unknownExternalReferences ?? [];
   const dimensions: RemovalImpactDimension[] = [];
+  const draftCount = impact.draftCount ?? 0;
+  if (draftCount > 0) {
+    // W1-2：草稿随主体级联删除，是最直接影响；无草稿时不渲染该维度，
+    // 也不给出无意义警告。
+    dimensions.push({
+      label: t("removal.batch.impact.drafts", { count: draftCount }),
+      values: [],
+    });
+  }
   if (dependentProjects.length > 0) {
     dimensions.push({ label: t("removal.dependentsLabel"), values: dependentProjects });
   }
@@ -89,5 +98,19 @@ export function RemovalImpactMatrix({ impact }: { impact: RemovalImpact }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** W1-2：提交前固定说明（保留什么 / 恢复方式）＋条件草稿说明——单删对话框与
+ *  批量删除共用同一结构，草稿说明仅当任一影响对象确有未完成草稿时出现。 */
+export function RemovalImpactDisclaimer({ impacts }: { impacts: RemovalImpact[] }) {
+  const { t } = useTranslation();
+  const hasDrafts = impacts.some((impact) => (impact.draftCount ?? 0) > 0);
+  return (
+    <div className="sh-removal-flow__disclaimer">
+      <p>{t("removal.retained")}</p>
+      <p>{t("removal.recovery")}</p>
+      {hasDrafts ? <p>{t("removal.drafts")}</p> : null}
+    </div>
   );
 }

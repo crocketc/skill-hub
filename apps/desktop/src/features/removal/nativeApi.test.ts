@@ -92,6 +92,8 @@ it("maps the full deletion impact matrix onto the desktop contract", async () =>
     combinations: ["Cleanup combo"],
     related_skills: ["notes packager"],
     unknown_external_references: ["/agents/root/notes"],
+    // W1-2：prepare_delete 返回随主体删除的未保存编辑草稿数量。
+    draft_count: 2,
   };
   vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
 
@@ -108,6 +110,23 @@ it("maps the full deletion impact matrix onto the desktop contract", async () =>
     combinations: ["Cleanup combo"],
     relatedSkills: ["notes packager"],
     unknownExternalReferences: ["/agents/root/notes"],
+    draftCount: 2,
+  });
+});
+
+it("defaults the draft count to zero for legacy impacts without draft_count", async () => {
+  // W1-2：旧载荷缺 draft_count 时按 0 归一，消费方按“无草稿”处理，不显示草稿行。
+  const impact = {
+    operation_id: "op-legacy",
+    skill_id: "skill-pdf",
+    deployments: [],
+    requires_shared_target_choice: false,
+    dependencies: [],
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
+
+  await expect(nativeRemovalFacade.prepareDelete("skill-pdf", "PDF Reader")).resolves.toMatchObject({
+    draftCount: 0,
   });
 });
 
