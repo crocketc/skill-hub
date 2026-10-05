@@ -67,13 +67,12 @@ fn mutable_archive_server(initial: Vec<u8>) -> (String, Arc<Mutex<Vec<u8>>>) {
                 }
                 let head = String::from_utf8_lossy(&request);
                 let path = head.split_whitespace().nth(1).unwrap_or("/");
-                let (status, payload) = if path
-                    .starts_with("/anthropics/skills/archive/refs/heads/main.zip")
-                {
-                    (200, shared.lock().unwrap().clone())
-                } else {
-                    (404, b"not found".to_vec())
-                };
+                let (status, payload) =
+                    if path.starts_with("/anthropics/skills/archive/refs/heads/main.zip") {
+                        (200, shared.lock().unwrap().clone())
+                    } else {
+                        (404, b"not found".to_vec())
+                    };
                 let response = format!(
                     "HTTP/1.1 {status} Test\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     payload.len()
@@ -118,17 +117,16 @@ fn tagged_archive_server(
                     let _ = stream.write_all(response.as_bytes());
                     return;
                 }
-                let (status, payload) = if path.starts_with(
-                    "/anthropics/skills/archive/refs/heads/main.zip",
-                ) {
-                    (200, branch_body.as_slice())
-                } else if path.contains("/releases/tag/") {
-                    (200, b"release page".as_slice())
-                } else if path.starts_with("/anthropics/skills/archive/refs/tags/v2.0.0.zip") {
-                    (200, tag_body.as_slice())
-                } else {
-                    (404, b"not found".as_slice())
-                };
+                let (status, payload) =
+                    if path.starts_with("/anthropics/skills/archive/refs/heads/main.zip") {
+                        (200, branch_body.as_slice())
+                    } else if path.contains("/releases/tag/") {
+                        (200, b"release page".as_slice())
+                    } else if path.starts_with("/anthropics/skills/archive/refs/tags/v2.0.0.zip") {
+                        (200, tag_body.as_slice())
+                    } else {
+                        (404, b"not found".as_slice())
+                    };
                 let response = format!(
                     "HTTP/1.1 {status} Test\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     payload.len()
@@ -427,11 +425,8 @@ async fn prepare_returns_candidate_preview_with_label_and_file_summary() {
         "候选身份必须来自真实下载的候选内容"
     );
     assert!(
-        preview
-            .files
-            .iter()
-            .any(|change| change.path == "SKILL.md"
-                && change.change == skillhub_core::SourceUpdateFileChangeKind::Modified),
+        preview.files.iter().any(|change| change.path == "SKILL.md"
+            && change.change == skillhub_core::SourceUpdateFileChangeKind::Modified),
         "文件级变更摘要必须报告 SKILL.md 修改"
     );
     assert_rfc3339_utc(&preview.expires_at);
@@ -475,7 +470,9 @@ async fn commit_adopts_candidate_across_all_four_consumers() {
     assert_eq!(pointer, new_version.to_string(), "①DB 指针");
     let library = CentralLibrary::open_existing(&library_root).expect("reopen library");
     assert_eq!(
-        VersionStore::from_library(&library).current(skill_id).unwrap(),
+        VersionStore::from_library(&library)
+            .current(skill_id)
+            .unwrap(),
         Some(new_version.clone()),
         "②版本库指针"
     );
@@ -565,7 +562,7 @@ async fn commit_rejects_when_the_upstream_drifts_after_prepare() {
     let phase: String = database
         .connection_for_test()
         .query_row(
-            "SELECT phase FROM operations WHERE id=?1",
+            "SELECT phase FROM operations WHERE operation_id=?1",
             [preview.preview_id.to_string()],
             |row| row.get(0),
         )
@@ -598,10 +595,7 @@ async fn commit_rejects_when_the_current_version_drifts_after_prepare() {
     )]));
     let workspace = tempfile::tempdir().expect("workspace");
     let library_root = workspace.path().join("library");
-    let facade = facade_with_library(
-        &workspace.path().join("db.sqlite"),
-        &library_root,
-    );
+    let facade = facade_with_library(&workspace.path().join("db.sqlite"), &library_root);
     facade.set_repo_discovery_provider_for_tests(Arc::new(
         RepoDiscoveryProvider::with_archive_base_for_tests(&base.0),
     ));
@@ -749,7 +743,7 @@ async fn keep_local_and_cancel_settle_the_preview_without_adopting() {
         database
             .connection_for_test()
             .query_row(
-                "SELECT phase FROM operations WHERE id=?1",
+                "SELECT phase FROM operations WHERE operation_id=?1",
                 [keep_preview.preview_id.to_string()],
                 |row| row.get(0),
             )
@@ -783,9 +777,13 @@ async fn commit_rejects_unknown_or_mismatched_previews() {
     ));
 
     // 从未 Prepare 过的 preview_id 直接 Commit：必须在预览查询阶段被拒绝。
-    let error = commit(&facade, skillhub_core::OperationId::new(), UpdateDecision::TakeUpstream)
-        .await
-        .expect_err("commit without a prepared preview must be rejected");
+    let error = commit(
+        &facade,
+        skillhub_core::OperationId::new(),
+        UpdateDecision::TakeUpstream,
+    )
+    .await
+    .expect_err("commit without a prepared preview must be rejected");
     assert_eq!(error.code, ErrorCode::OperationConflict);
     assert_eq!(error_reason(&error), Some("source_update_preview_missing"));
 }
@@ -833,13 +831,14 @@ async fn ignore_persists_survives_restart_and_clears_after_adoption() {
         RepoDiscoveryProvider::with_archive_base_for_tests(&base.0),
     ));
     let observed = status(&facade, skill_id).await;
-    assert!(
-        observed.candidate_ignored,
-        "忽略记录必须跨会话持久化"
-    );
+    assert!(observed.candidate_ignored, "忽略记录必须跨会话持久化");
 
-    // 候选被采纳后忽略记录自动失效清除。
-    let applied = commit(&facade, preview.preview_id, UpdateDecision::TakeUpstream)
+    // 候选被采纳后忽略记录自动失效清除。上一会话的 prepared 预览已被
+    // 启动清扫结算（D2），采纳必须走重新预览：同一上游内容重准备得到
+    // 同一候选身份，恰好证明忽略记录按候选身份仍然命中。
+    let fresh = prepare_preview(&facade, skill_id).await;
+    assert_eq!(fresh.candidate_identity, preview.candidate_identity);
+    let applied = commit(&facade, fresh.preview_id, UpdateDecision::TakeUpstream)
         .await
         .expect("adopt the ignored candidate");
     let AppCommandResult::AppliedSourceUpdate(applied) = applied else {

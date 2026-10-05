@@ -2,8 +2,8 @@ use super::Database;
 use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 use skillhub_core::source::{
-    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole, SourceState,
-    UpstreamCheckResult,
+    IgnoredSourceUpdate, SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole,
+    SourceState, UpstreamCheckResult,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
 
@@ -273,6 +273,95 @@ impl<'a> SourceRepository<'a> {
         })
         .transpose()
     }
+
+    /// K6：最近一次来源更新检查的落库时刻（Unix 秒）。读自
+    /// source_update_checks 表（record_update_check 与观察快照同事务写入）；
+    /// 从未检查过时为 None，调用方诚实缺省。
+    pub fn last_update_checked_at(&self, skill_id: SkillId) -> AppResult<Option<i64>> {
+        self.database
+            .connection
+            .query_row(
+                "SELECT checked_at FROM source_update_checks WHERE skill_id=?1",
+                [skill_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(error)
+    }
+
+    /// K6/D3：按候选身份读取 Skill 的忽略记录（持久化于 settings KV，
+    /// `source.ignored_updates.{skill_id}`）。「关闭窗口」不产生记录；
+    /// 采纳或来源身份变更后由调用方整体清除。
+    pub fn ignored_updates(&self, skill_id: SkillId) -> AppResult<Vec<IgnoredSourceUpdate>> {
+        let raw: Option<String> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT value_json FROM settings WHERE key=?1",
+                [format!("source.ignored_updates.{skill_id}")],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(error)?;
+        let Some(raw) = raw else {
+            return Ok(Vec::new());
+        };
+        serde_json::from_str(&raw)
+            .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))
+    }
+
+    /// K6/D3：按 skill+来源+候选身份持久化一条忽略记录。幂等：同一候选
+    /// 重复忽略只保留首次记录。
+    pub fn ignore_update(
+        &self,
+        skill_id: SkillId,
+        candidate_identity: &str,
+        upstream_url: &str,
+    ) -> AppResult<()> {
+        let mut ignored = self.ignored_updates(skill_id)?;
+        if ignored
+            .iter()
+            .any(|record| record.candidate_identity == candidate_identity)
+        {
+            return Ok(());
+        }
+        ignored.push(IgnoredSourceUpdate {
+            candidate_identity: candidate_identity.to_owned(),
+            upstream_url: upstream_url.to_owned(),
+            ignored_at_epoch: chrono_epoch_seconds(),
+        });
+        let snapshot = serde_json::to_string(&ignored)
+            .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
+        self.database
+            .connection
+            .execute(
+                "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,strftime('%s','now')) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+                rusqlite::params![format!("source.ignored_updates.{skill_id}"), snapshot],
+            )
+            .map(|_| ())
+            .map_err(error)
+    }
+
+    /// K6/D3：清除 Skill 的全部忽略记录（候选被采纳或来源身份变更后自动
+    /// 失效）。幂等：没有记录时同样视为已清理。
+    pub fn clear_ignored_updates(&self, skill_id: SkillId) -> AppResult<()> {
+        self.database
+            .connection
+            .execute(
+                "DELETE FROM settings WHERE key=?1",
+                [format!("source.ignored_updates.{skill_id}")],
+            )
+            .map(|_| ())
+            .map_err(error)
+    }
+}
+
+/// Unix 秒（忽略记录的落库时刻；与仓库其他 epoch 时间戳同一口径）。
+fn chrono_epoch_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 fn source_state_code(state: SourceState) -> &'static str {

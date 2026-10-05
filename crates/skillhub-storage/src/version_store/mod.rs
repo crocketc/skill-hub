@@ -424,11 +424,20 @@ impl VersionStore {
     /// writing objects into the library. Import analysis is read-only and
     /// must not mutate the object store merely to compare a candidate.
     pub fn hash_tree_read_only(&self, root: impl AsRef<Path>) -> AppResult<String> {
+        Ok(self.scan_tree_read_only(root)?.0)
+    }
+
+    /// K6：只读扫描目录为规范 FileEntry 列表并给出同一口径的树哈希。
+    /// 来源更新预览用它对候选树与当前版本清单做文件级对比，不写对象库。
+    pub fn scan_tree_read_only(
+        &self,
+        root: impl AsRef<Path>,
+    ) -> AppResult<(String, Vec<FileEntry>)> {
         let root = root.as_ref();
         let mut entries = Vec::new();
         collect_hash_entries(root, root, &mut entries)?;
         entries.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
-        Ok(manifest::tree_hash(&entries))
+        Ok((manifest::tree_hash(&entries), entries))
     }
 
     fn find_manifest(&self, id: &VersionId) -> AppResult<PathBuf> {

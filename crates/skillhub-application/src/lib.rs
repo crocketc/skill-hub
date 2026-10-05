@@ -38,14 +38,14 @@ use skillhub_adapters::source::{
     SkillsShProvider,
 };
 use skillhub_core::api::{
-    BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
-    CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CommitSourceUpdate,
-    CreateCombination, CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels,
-    FetchLlmProvider, GetRollbackImpact, GetSaveAsCopyReplacementPreview, GetSourceUpdateStatus,
-    IgnoreSourceUpdate, PatchSkillMetadata, PinProjectSkillVersion, PrepareSourceUpdate,
-    RelinkSource, RenameCombination, RenameSkill, SaveAsCopyInheritance,
-    SaveAsCopyInheritanceOutcome, SaveAsCopyOrigin, SaveAsCopyOutcome, SaveAsCopyReplacementChoice,
-    SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome, CheckSourceUpdate,
+    CheckSourceUpdates, ClearLlmProviderCredential, CommitSourceUpdate, CreateCombination,
+    CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
+    GetRollbackImpact, GetSaveAsCopyReplacementPreview, GetSourceUpdateStatus, IgnoreSourceUpdate,
+    PatchSkillMetadata, PinProjectSkillVersion, PrepareSourceUpdate, RelinkSource,
+    RenameCombination, RenameSkill, SaveAsCopyInheritance, SaveAsCopyInheritanceOutcome,
+    SaveAsCopyOrigin, SaveAsCopyOutcome, SaveAsCopyReplacementChoice, SaveLlmProvider,
+    SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
     TranslateDescriptionsBatch, UpdateCombination,
@@ -88,7 +88,7 @@ use skillhub_core::llm::{
 use skillhub_core::relationship::{DirectoryRole, SourceCopyRelationFact};
 use skillhub_core::source::{
     RepoDiscoveryReport, RepoDiscoveryWarning, RepoScanState, SkillRepo, SourceDescriptor,
-    SourceLocator, SourceState, UpdateDecision,
+    SourceLocator, SourceState,
 };
 use skillhub_core::{ensure_original_deletion_authorized, plan_original_migration};
 use skillhub_core::{
@@ -5021,9 +5021,12 @@ impl LocalApplicationFacade {
     }
 
     fn relink_source(&self, request: RelinkSource) -> AppResult<AppCommandResult> {
+        // G-15：来源身份先经确定性校验+规范化（不联网），非法输入拒绝且
+        // 不落库，既有已验证 upstream 原样保留。
+        let source = validate_source_identity(request.source)?;
         let library = self.library_runtime.snapshot()?;
-        let source_revision = match &request.source.locator {
-            SourceLocator::LocalPath(path) => {
+        let source_revision = match &source.locator {
+            skillhub_core::SourceLocator::LocalPath(path) => {
                 validate_skill_source(path)?;
                 library.current(request.skill_id)?.and_then(|current| {
                     library
@@ -5033,7 +5036,9 @@ impl LocalApplicationFacade {
                         .map(|record| record.manifest.tree_hash)
                 })
             }
-            SourceLocator::HttpsUrl(_) | SourceLocator::GitUrl(_) => None,
+            skillhub_core::SourceLocator::HttpsUrl(_) | skillhub_core::SourceLocator::GitUrl(_) => {
+                None
+            }
         };
         self.with_database("execute.relink_source", |database| {
             if database
@@ -5047,10 +5052,14 @@ impl LocalApplicationFacade {
             }
             database
                 .source_repository()
-                .relink(request.skill_id, request.source)?;
+                .relink(request.skill_id, source)?;
             database
                 .source_repository()
                 .set_revision(request.skill_id, source_revision.as_deref())?;
+            // K6/D3：来源身份变更后，旧来源的忽略记录自动失效清除。
+            database
+                .source_repository()
+                .clear_ignored_updates(request.skill_id)?;
             Ok(AppCommandResult::OperationSummary(operation_summary(
                 "source.relinked",
             )))
@@ -5225,7 +5234,10 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::UpstreamCheckResult(
             skillhub_core::UpstreamCheckResult::new(skill_id, state)
                 .with_versions(current, None)
-                .with_upstream_label(upstream_label),
+                .with_upstream_label(upstream_label)
+                // K6：候选身份=候选树哈希；B 侧状态查询与忽略候选都以它
+                // 判别"是不是同一个候选"。
+                .with_candidate_identity(Some(remote_hash)),
         ))
     }
 
@@ -5245,59 +5257,407 @@ impl LocalApplicationFacade {
         Ok(AppQueryResult::SourceUpdateChecks(outcomes))
     }
 
-    /// K6：来源更新候选预览（RED 种子）。GREEN 提交接线：
-    /// 复用 check_remote_source_update 的下载与对比管线产出候选身份与
-    /// 文件级变更摘要，以统一预览绑定三件套持久化到操作日志。
+    /// K6：来源更新候选预览。复用 check 的下载与哈希管线取回候选，产出
+    /// 统一预览绑定三件套（preview_id + expires_at + confirmation_fingerprint）
+    /// 并以 Prepared 相位持久化到操作日志：候选身份（候选树哈希）、当前
+    /// 版本与过期时刻进入 recovery_data，Commit 前逐一重核；「关闭窗口」
+    /// 不落任何记录。与当前基线一致的候选没有可采纳的更新，拒绝并要求
+    /// 重新检查。
     async fn prepare_source_update(
         &self,
         request: PrepareSourceUpdate,
     ) -> AppResult<AppCommandResult> {
-        let _ = request;
-        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-            .with_param("reason", "source_update_preview_not_available")
-            .with_action(RecoveryAction::Retry))
+        let skill_id = request.skill_id;
+        let skill_exists = self
+            .with_database("execute.prepare_source_update.skill", |database| {
+                Ok(database.catalog_repository()?.get_sync(skill_id)?.is_some())
+            })?;
+        if !skill_exists {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("skill_id", skill_id.to_string()));
+        }
+        let source = self.with_database("execute.prepare_source_update.source", |database| {
+            database.source_repository().for_skill(skill_id)
+        })?;
+        if source.as_ref().map(|source| source.kind) != Some(skillhub_core::SourceKind::Git) {
+            // AR-020：只有已验证的远端 git 来源存在"上游候选"；本地目录
+            // 来源没有上游可预览，如实拒绝而不是伪造预览。
+            return Err(no_upstream_source_error(skill_id));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let current = library.current(skill_id)?;
+        let current_record = match current.as_ref() {
+            Some(current) => library
+                .list(skill_id)?
+                .into_iter()
+                .find(|record| &record.id == current),
+            None => None,
+        };
+        // 复用 check 的取数口径：release tag 归档优先，回退分支归档。
+        let workspace = tempfile::tempdir().map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?;
+        let (remote_dir, upstream_label) =
+            self.fetch_remote_source_dir(skill_id, workspace.path())?;
+        let (candidate_identity, remote_entries) = library.scan_tree_read_only(&remote_dir)?;
+        if current_record
+            .as_ref()
+            .map(|record| record.manifest.tree_hash.as_str())
+            == Some(candidate_identity.as_str())
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_up_to_date")
+                .with_param("skill_id", skill_id.to_string())
+                .with_action(RecoveryAction::Retry));
+        }
+        let files = source_update_file_changes(
+            current_record.as_ref().map(|record| &record.manifest),
+            &remote_entries,
+        );
+        // 预览本身即一次"发现候选"的检查：把 UpdateAvailable 与候选身份
+        // 写入观察记录，B 侧状态查询（candidate_ignored 等）才能覆盖
+        // "预览后未重新检查就忽略/提交"的链路。
+        self.with_database("execute.prepare_source_update.observe", |database| {
+            database.source_repository().record_update_check(
+                &skillhub_core::UpstreamCheckResult::new(skill_id, SourceState::UpdateAvailable)
+                    .with_versions(current.clone(), None)
+                    .with_upstream_label(upstream_label.clone())
+                    .with_candidate_identity(Some(candidate_identity.clone())),
+            )
+        })?;
+        let database_current_version_id = self
+            .with_database("execute.prepare_source_update.facts", |database| {
+                database.current_version(skill_id)
+            })?;
+        let confirmation_fingerprint =
+            source_update_fingerprint(skill_id, current.as_ref(), &candidate_identity)?;
+        let expires_at = now_seconds() + SOURCE_UPDATE_PREVIEW_TTL_SECONDS;
+        let operation_id = OperationId::new();
+        let snapshot = SourceUpdatePreviewSnapshot {
+            skill_id,
+            current_version_id: current.clone(),
+            database_current_version_id,
+            candidate_identity: candidate_identity.clone(),
+            upstream_label: upstream_label.clone(),
+            expires_at,
+            confirmation_fingerprint: confirmation_fingerprint.clone(),
+        };
+        let mut record = skillhub_core::OperationRecord::planned(
+            operation_id,
+            "prepare_source_update",
+            confirmation_fingerprint.clone(),
+        );
+        record.phase = skillhub_core::OperationPhase::Prepared;
+        record.progress.phase = record.phase;
+        record.progress.message_code = "operation.commit_source_update.prepared".to_owned();
+        record.progress.total = 1;
+        record.recovery_data = serde_json::to_value(&snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.with_database("prepare_source_update.insert_preview", |database| {
+            database.operation_repository().insert_sync(&record)
+        })?;
+        Ok(AppCommandResult::SourceUpdatePreview(
+            skillhub_core::SourceUpdatePreview {
+                skill_id,
+                preview_id: operation_id,
+                expires_at: format_rfc3339_utc(expires_at),
+                confirmation_fingerprint,
+                current_version_id: current,
+                candidate_identity,
+                upstream_label,
+                files,
+            },
+        ))
     }
 
-    /// K6：来源更新提交（RED 种子）。GREEN 提交接线：重核当前版本与上游
-    /// 候选未漂移后按统一内容采用流落库，全程 journal，失败按 K1 恢复
-    /// 矩阵恢复可见树。
+    /// K6：预览绑定的来源更新提交。统一预览绑定模式：提交前重核预览
+    /// （未过期、仍处于 Prepared）、当前事实（store 与 DB 指针未漂移）与
+    /// 上游候选（重取后身份一致）；任一漂移都把预览结算为 RolledBack 并
+    /// 要求重新预览，被结算的预览不能二次提交（D2：重启后上一会话的
+    /// prepared 预览已被启动清扫结算，提交同样被拒绝）。破坏性采纳
+    /// （TakeUpstream）走统一内容采用流：Applying 检查点先于首个物理
+    /// 变更落库，失败按 K1 矩阵补偿四消费面；成功后记录来源 revision、
+    /// UpToDate 观察并清除忽略记录（D3）。KeepLocal/Cancel 是非破坏性
+    /// 决定：只结算预览，不做任何物理变更。
     async fn commit_source_update(
         &self,
         request: CommitSourceUpdate,
     ) -> AppResult<AppCommandResult> {
-        let _ = request;
-        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-            .with_param("reason", "source_update_commit_not_available")
-            .with_action(RecoveryAction::Retry))
+        let _guard = self.version_adoption_lock.lock().await;
+        let mut preview = self.with_database("commit_source_update.load_preview", |database| {
+            database
+                .operation_repository()
+                .get_sync(request.preview_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("reason", "source_update_preview_missing")
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        if preview.kind != "prepare_source_update"
+            || preview.phase != skillhub_core::OperationPhase::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_not_prepared")
+                .with_action(RecoveryAction::Retry));
+        }
+        let snapshot: SourceUpdatePreviewSnapshot =
+            serde_json::from_value(preview.recovery_data.clone()).map_err(|_| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "source_update_preview_invalid")
+                    .with_action(RecoveryAction::InspectTarget)
+            })?;
+        let skill_id = snapshot.skill_id;
+        if matches!(
+            request.decision,
+            skillhub_core::UpdateDecision::KeepLocal | skillhub_core::UpdateDecision::Cancel
+        ) {
+            self.settle_source_update_preview(
+                &mut preview,
+                "operation.commit_source_update.decided",
+            )?;
+            return Ok(AppCommandResult::AppliedSourceUpdate(
+                skillhub_core::AppliedSourceUpdate::new(skill_id, request.decision),
+            ));
+        }
+        if request.decision != skillhub_core::UpdateDecision::TakeUpstream {
+            // CreateIndependentBranch 不由本入口执行；预览保持可用。
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_decision_unsupported")
+                .with_action(RecoveryAction::Acknowledge));
+        }
+        if snapshot.expires_at <= now_seconds() {
+            self.settle_source_update_preview(
+                &mut preview,
+                "operation.commit_source_update.expired",
+            )?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_expired")
+                .with_action(RecoveryAction::Retry));
+        }
+        // 重核当前事实：store 指针与 DB 指针必须仍指向预览时的版本。
+        let library = self.library_runtime.snapshot()?;
+        let current = library.current(skill_id)?;
+        let database_current_version_id = self
+            .with_database("commit_source_update.facts", |database| {
+                database.current_version(skill_id)
+            })?;
+        if current != snapshot.current_version_id
+            || database_current_version_id != snapshot.database_current_version_id
+        {
+            self.settle_source_update_preview(
+                &mut preview,
+                "operation.commit_source_update.facts_changed",
+            )?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_facts_changed")
+                .with_action(RecoveryAction::Retry));
+        }
+        // 重取上游候选并重核身份：Prepare→Commit 之间上游推进（分支前进/
+        // tag 重指）后旧预览一律拒绝。取数失败（网络中断等）按暂时性失败
+        // 处理：预览保留，可重试提交。
+        let workspace = tempfile::tempdir().map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?;
+        let (remote_dir, _) = self.fetch_remote_source_dir(skill_id, workspace.path())?;
+        let (fresh_identity, _) = library.scan_tree_read_only(&remote_dir)?;
+        if fresh_identity != snapshot.candidate_identity {
+            self.settle_source_update_preview(
+                &mut preview,
+                "operation.commit_source_update.drifted",
+            )?;
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_drifted")
+                .with_action(RecoveryAction::Retry));
+        }
+
+        // ---- 统一内容采用流：从这里开始可能出现库内物理变更 ----
+        const KIND: &str = "commit_source_update";
+        let operation_id = OperationId::new();
+        self.journal_begin(operation_id, KIND);
+        let skill = match self.with_database("commit_source_update.skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_action(RecoveryAction::ChooseAnotherName)
+                })
+        }) {
+            Ok(skill) => skill,
+            Err(error) => {
+                self.settle_source_update_preview(
+                    &mut preview,
+                    "operation.commit_source_update.facts_changed",
+                )?;
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let snapshot_facts = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        if snapshot_facts.previous_version_id != snapshot.current_version_id {
+            let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_facts_changed")
+                .with_action(RecoveryAction::Retry);
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot_facts) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        let captured = match library.capture_with_status(skill_id, &remote_dir) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        let version = captured.record;
+        if version.manifest.tree_hash != snapshot.candidate_identity {
+            let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "source_update_preview_drifted")
+                .with_action(RecoveryAction::Retry);
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        let replacement =
+            match self.adopt_captured_version(&library, &skill, &snapshot_facts, &version, false) {
+                Ok(replacement) => replacement,
+                Err((error, replacement)) => {
+                    return Err(self.settle_content_adoption_failure(
+                        &library,
+                        &skill,
+                        operation_id,
+                        KIND,
+                        &snapshot_facts,
+                        replacement.as_ref(),
+                        Some((&version, captured.created)),
+                        false,
+                        error,
+                    ));
+                }
+            };
+        if let Err(error) = self.with_database("commit_source_update.persist", |database| {
+            let source_repository = database.source_repository();
+            source_repository.set_revision(skill_id, Some(&version.manifest.tree_hash))?;
+            source_repository.record_update_check(
+                &skillhub_core::UpstreamCheckResult::new(skill_id, SourceState::UpToDate)
+                    .with_versions(Some(version.id.clone()), Some(version.id.clone()))
+                    .with_upstream_label(snapshot.upstream_label.clone())
+                    .with_candidate_identity(Some(snapshot.candidate_identity.clone())),
+            )?;
+            // D3：候选被采纳后忽略记录自动失效清除。
+            source_repository.clear_ignored_updates(skill_id)
+        }) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot_facts,
+                Some(&replacement),
+                Some((&version, captured.created)),
+                false,
+                error,
+            ));
+        }
+        self.journal_settle(operation_id, KIND, None);
+        let _ = library
+            .central
+            .finalize_visible_tree_replacement(replacement);
+        self.settle_source_update_preview(&mut preview, "operation.commit_source_update.consumed")?;
+        Ok(AppCommandResult::AppliedSourceUpdate(
+            skillhub_core::AppliedSourceUpdate {
+                skill_id,
+                decision: request.decision,
+                new_version: Some(version.id),
+                deployments_need_reconciliation: true,
+            },
+        ))
     }
 
-    /// K6/D3：忽略候选（RED 种子）。GREEN 提交接线：按 skill+来源+候选
-    /// 身份持久化；候选被采纳或来源身份变更后自动失效清除。
+    /// K6：把预览记录结算为 RolledBack（过期/漂移/事实变化/已决定/已消费）。
+    /// 被结算的预览不能再被提交，重新预览是唯一出路。
+    fn settle_source_update_preview(
+        &self,
+        preview: &mut skillhub_core::OperationRecord,
+        message_code: &str,
+    ) -> AppResult<()> {
+        preview.phase = skillhub_core::OperationPhase::RolledBack;
+        preview.progress.phase = preview.phase;
+        preview.progress.message_code = message_code.to_owned();
+        self.with_database("commit_source_update.settle_preview", |database| {
+            database.operation_repository().update_sync(preview)
+        })
+    }
+
+    /// K6/D3：忽略一个候选（按 skill+来源+候选身份持久化，幂等）。
+    /// 「关闭窗口」不调用本命令、不产生任何记录。
     fn ignore_source_update(&self, request: IgnoreSourceUpdate) -> AppResult<AppCommandResult> {
-        let _ = request;
-        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-            .with_param("reason", "source_update_ignore_not_available")
-            .with_action(RecoveryAction::Retry))
+        self.with_database("execute.ignore_source_update", |database| {
+            let source = database
+                .source_repository()
+                .for_skill(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", request.skill_id.to_string())
+                })?;
+            let upstream_url = source.locator.as_url().unwrap_or_default().to_owned();
+            database.source_repository().ignore_update(
+                request.skill_id,
+                &request.candidate_identity,
+                &upstream_url,
+            )
+        })?;
+        Ok(AppCommandResult::OperationSummary(operation_summary(
+            "source.update_ignored",
+        )))
     }
 
-    /// K6：来源候选/检查状态查询（RED 种子）。GREEN 提交接线：读取最近
-    /// 一次持久化检查事实与忽略记录，不发起网络请求。
+    /// K6：来源候选/检查状态查询（B 侧渲染用）。只读持久化事实：最近
+    /// 一次检查（state/候选身份/检查时刻/来源版本标签）与忽略记录；
+    /// 不发起网络请求。从未检查过的 Skill 诚实缺省 state=None。
     fn get_source_update_status(
         &self,
         request: GetSourceUpdateStatus,
     ) -> AppResult<AppQueryResult> {
-        let _ = request;
-        Ok(AppQueryResult::SourceUpdateStatus(
-            skillhub_core::api::SourceUpdateStatus {
-                skill_id: request.skill_id,
-                state: None,
-                checked_at: None,
-                upstream_label: None,
-                candidate_identity: None,
-                ignored_candidates: Vec::new(),
-                candidate_ignored: false,
-            },
-        ))
+        let skill_id = request.skill_id;
+        let status = self.with_database("query.source_update_status", |database| {
+            let repository = database.source_repository();
+            let last = repository.last_update_check(skill_id)?;
+            let checked_at = repository
+                .last_update_checked_at(skill_id)?
+                .map(format_rfc3339_utc);
+            let ignored_candidates: Vec<String> = repository
+                .ignored_updates(skill_id)?
+                .into_iter()
+                .map(|record| record.candidate_identity)
+                .collect();
+            let candidate_identity = last
+                .as_ref()
+                .and_then(|check| check.candidate_identity.clone());
+            let candidate_ignored = candidate_identity
+                .as_ref()
+                .map(|identity| ignored_candidates.contains(identity))
+                .unwrap_or(false);
+            Ok(skillhub_core::api::SourceUpdateStatus {
+                skill_id,
+                state: last.as_ref().map(|check| check.state),
+                checked_at,
+                upstream_label: last.as_ref().and_then(|check| check.upstream_label.clone()),
+                candidate_identity,
+                ignored_candidates,
+                candidate_ignored,
+            })
+        })?;
+        Ok(AppQueryResult::SourceUpdateStatus(status))
     }
 
     fn rename_skill(&self, request: RenameSkill) -> AppResult<AppCommandResult> {
@@ -13950,6 +14310,140 @@ fn validate_skill_source(source: &Path) -> AppResult<()> {
     Ok(())
 }
 
+/// K6/G-15：来源身份的确定性校验与规范化（不联网）。kind 与 locator 形态
+/// 必须一致；HttpsUrl/GitUrl 走严格 https URL 解析并规范化后落库；非法
+/// 输入返回 InvalidInput 且不落库，既有已验证来源原样保留。本地路径的
+/// 边界校验仍由 [`validate_skill_source`] 在执行时完成。
+fn validate_source_identity(
+    source: skillhub_core::SourceDescriptor,
+) -> AppResult<skillhub_core::SourceDescriptor> {
+    let kind_matches = matches!(
+        (&source.kind, &source.locator),
+        (
+            skillhub_core::SourceKind::Local,
+            skillhub_core::SourceLocator::LocalPath(_)
+        ) | (
+            skillhub_core::SourceKind::Https,
+            skillhub_core::SourceLocator::HttpsUrl(_)
+        ) | (
+            skillhub_core::SourceKind::Git,
+            skillhub_core::SourceLocator::GitUrl(_)
+        )
+    );
+    if !kind_matches {
+        return Err(invalid_source_identity("source_kind_mismatch"));
+    }
+    let locator = match source.locator {
+        skillhub_core::SourceLocator::HttpsUrl(url) => {
+            skillhub_core::SourceLocator::HttpsUrl(normalize_https_url(&url)?)
+        }
+        skillhub_core::SourceLocator::GitUrl(url) => {
+            skillhub_core::SourceLocator::GitUrl(normalize_https_url(&url)?)
+        }
+        skillhub_core::SourceLocator::LocalPath(_) => source.locator,
+    };
+    Ok(skillhub_core::SourceDescriptor {
+        kind: source.kind,
+        locator,
+    })
+}
+
+fn invalid_source_identity(reason: &str) -> AppError {
+    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+        .with_param("field", "source")
+        .with_param("reason", reason)
+        .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+/// 严格 https URL 解析 + 规范化，产出稳定的来源身份字符串：
+/// scheme/host 小写、默认端口 443 去除、锚点剥离、尾斜杠去除；
+/// github.com 的路径大小写不敏感（同仓库别名归并）。查询串、userinfo、
+/// 反斜杠、空白/控制字符、IPv6 字面量、`.`/`..` 路径段一律拒绝。
+fn normalize_https_url(raw: &str) -> AppResult<String> {
+    const MAX_URL_LEN: usize = 2048;
+    let invalid = || invalid_source_identity("source_url_invalid");
+    if raw.is_empty() || raw.len() > MAX_URL_LEN {
+        return Err(invalid_source_identity("source_url_length"));
+    }
+    let some = raw.chars().find(|c| {
+        c.is_whitespace() || c.is_control() || matches!(c, '\\' | '@' | '[' | ']' | '?' | '"')
+    });
+    if some.is_some() {
+        return Err(invalid());
+    }
+    let Some(rest) = raw
+        .get(..8)
+        .filter(|head| head.eq_ignore_ascii_case("https://"))
+        .map(|_| &raw[8..])
+    else {
+        return Err(invalid());
+    };
+    // 锚点不属于来源身份，剥离；查询串已在上面整体拒绝。
+    let rest = rest.split('#').next().unwrap_or(rest);
+    let (authority, path) = match rest.split_once('/') {
+        Some((authority, path)) => (authority, Some(path)),
+        None => (rest, None),
+    };
+    if authority.is_empty() {
+        return Err(invalid());
+    }
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            (host, Some(port.parse::<u16>().map_err(|_| invalid())?))
+        }
+        _ => (authority, None),
+    };
+    let host = host.to_ascii_lowercase();
+    if !host
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-')
+    {
+        return Err(invalid());
+    }
+    if host.split('.').any(str::is_empty) || !host.contains('.') {
+        return Err(invalid());
+    }
+    if host
+        .split('.')
+        .any(|label| label.len() > 63 || label.starts_with('-') || label.ends_with('-'))
+    {
+        return Err(invalid());
+    }
+    if let Some(port) = port {
+        if port == 0 {
+            return Err(invalid());
+        }
+    }
+    if let Some(path) = path {
+        if path
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+        {
+            return Err(invalid());
+        }
+    }
+    let path = path.map(|value| value.trim_end_matches('/'));
+    let path = match path {
+        Some("") => None,
+        path => path,
+    };
+    // GitHub 仓库路径大小写不敏感：归一为小写，保证同一仓库的别名
+    // 归并为同一来源身份（其他主机保留路径原大小写）。
+    let path = match (host.as_str(), path) {
+        ("github.com", Some(path)) => Some(path.to_ascii_lowercase()),
+        (_, path) => path.map(str::to_owned),
+    };
+    let mut normalized = format!("https://{host}");
+    if let Some(port) = port.filter(|port| *port != 443) {
+        normalized.push_str(&format!(":{port}"));
+    }
+    if let Some(path) = path {
+        normalized.push('/');
+        normalized.push_str(&path);
+    }
+    Ok(normalized)
+}
+
 fn validate_markdown_path(path: &str) -> AppResult<PathBuf> {
     if path.is_empty() || path.contains('\\') {
         return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
@@ -14684,6 +15178,106 @@ struct ContentAdoptionSnapshot {
     portable_previous_record: Option<skillhub_core::PortableSkillRecord>,
     visible_backup_path: Option<PathBuf>,
     visible_tree_fingerprint: Option<String>,
+}
+
+/// K6：来源更新候选预览的 TTL（与版本采用预览同口径，秒）。
+const SOURCE_UPDATE_PREVIEW_TTL_SECONDS: i64 = 900;
+
+/// K6：预览绑定的持久化快照。Commit 重核的"预览时事实"：当前版本
+/// （store 与 DB 指针）、候选身份、过期时刻与指纹；任一事实漂移都
+/// 拒绝提交并要求重新预览。
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct SourceUpdatePreviewSnapshot {
+    skill_id: skillhub_core::SkillId,
+    current_version_id: Option<skillhub_core::VersionId>,
+    database_current_version_id: Option<skillhub_core::VersionId>,
+    candidate_identity: String,
+    upstream_label: Option<String>,
+    expires_at: i64,
+    confirmation_fingerprint: String,
+}
+
+/// K6 指纹：(skill_id, 当前版本, 候选身份) 的确定性摘要。任何一项变化
+/// 都产生不同指纹，旧预览在 Commit 重核时被拒绝。
+fn source_update_fingerprint(
+    skill_id: skillhub_core::SkillId,
+    current_version_id: Option<&skillhub_core::VersionId>,
+    candidate_identity: &str,
+) -> AppResult<String> {
+    #[derive(serde::Serialize)]
+    struct SourceUpdateFingerprint<'a> {
+        skill_id: skillhub_core::SkillId,
+        current_version_id: Option<&'a skillhub_core::VersionId>,
+        candidate_identity: &'a str,
+    }
+    let bytes = serde_json::to_vec(&SourceUpdateFingerprint {
+        skill_id,
+        current_version_id,
+        candidate_identity,
+    })
+    .map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
+    })?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+/// K6：文件级变更摘要——当前版本清单与候选树的确定性对比，按路径排序。
+/// 候选独有 → Added；双方都有但内容对象不同 → Modified；清单独有 → Removed。
+fn source_update_file_changes(
+    current: Option<&skillhub_core::VersionManifest>,
+    remote: &[skillhub_core::FileEntry],
+) -> Vec<skillhub_core::SourceUpdateFileChange> {
+    use skillhub_core::SourceUpdateFileChangeKind;
+    let current_entries: std::collections::HashMap<&str, &skillhub_core::FileEntry> = current
+        .map(|manifest| {
+            manifest
+                .entries
+                .iter()
+                .map(|entry| (entry.path.as_str(), entry))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut changes = Vec::new();
+    for remote_entry in remote {
+        match current_entries.get(remote_entry.path.as_str()) {
+            None => changes.push(skillhub_core::SourceUpdateFileChange {
+                path: remote_entry.path.clone(),
+                change: SourceUpdateFileChangeKind::Added,
+            }),
+            Some(local) if local.object_id != remote_entry.object_id => {
+                changes.push(skillhub_core::SourceUpdateFileChange {
+                    path: remote_entry.path.clone(),
+                    change: SourceUpdateFileChangeKind::Modified,
+                });
+            }
+            _ => {}
+        }
+    }
+    if let Some(manifest) = current {
+        for entry in &manifest.entries {
+            if !remote
+                .iter()
+                .any(|remote_entry| remote_entry.path == entry.path)
+            {
+                changes.push(skillhub_core::SourceUpdateFileChange {
+                    path: entry.path.clone(),
+                    change: SourceUpdateFileChangeKind::Removed,
+                });
+            }
+        }
+    }
+    changes.sort_by(|left, right| left.path.cmp(&right.path));
+    changes
+}
+
+/// K6/AR-020：没有可预览/可采纳的上游来源时的可读拒绝原因。
+fn no_upstream_source_error(skill_id: skillhub_core::SkillId) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("reason", "no_upstream_source")
+        .with_param("skill_id", skill_id.to_string())
+        .with_action(RecoveryAction::Acknowledge)
 }
 
 #[derive(serde::Serialize)]
