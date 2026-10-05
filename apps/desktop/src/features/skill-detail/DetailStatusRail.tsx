@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { CHECK_STATE_LABEL_KEYS, checkStateTone } from "../shared/checkState";
 import type { SkillDetailSummary } from "./api";
 import type { SkillDetailFacade } from "./api";
 import { TrialActions } from "./TrialActions";
@@ -34,10 +35,14 @@ export function DetailStatusRail({ deployments: deploymentsOverride, facade, ski
       className="sh-skill-detail__status-summary"
       role="group"
     >
-      <StatusBadge tone={summary.basicCheck === "passed" ? "success" : "warning"}>
+      {/* 2026-10-05 枚举定稿：徽标 tone 与状态词与列表共用同一映射，
+          5 态语义（通过/警告/失败/未运行/不可用）逐态可读，不裸露枚举值。 */}
+      <StatusBadge tone={checkStateTone(summary.basicCheck)}>
         {summary.basicCheck === "passed"
           ? t("skillDetail.statusRail.basicPassed")
-          : t("skillDetail.statusRail.basicOther", { state: summary.basicCheck })}
+          : t("skillDetail.statusRail.basicOther", {
+              state: t(CHECK_STATE_LABEL_KEYS[summary.basicCheck]),
+            })}
       </StatusBadge>
       <dl>
         <div>
