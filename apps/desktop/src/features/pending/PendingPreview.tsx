@@ -63,7 +63,7 @@ function previewFlag(name: string): boolean {
 
 function longList(count: number): PendingItem[] {
   return Array.from({ length: count }, (_, index) => {
-    const kinds: PendingKind[] = ["security_finding", "basic_check", "trial_due", "source_update", "conflict", "governance", "governance_followup", "agent_compatibility", "recovery", "ai_setup", "backup_setup", "import_skills"];
+    const kinds: PendingKind[] = ["security_finding", "security_alert", "basic_check", "trial_due", "source_update", "conflict", "governance", "governance_followup", "agent_compatibility", "recovery", "ai_setup", "backup_setup", "import_skills"];
     const risks: Array<PendingItem["risk"]> = ["high", "medium", "low", null];
     const kind = kinds[index % kinds.length];
     const skillNumber = Math.floor(index / kinds.length) + 1;
@@ -76,6 +76,7 @@ function longList(count: number): PendingItem[] {
                 : `skill-${skillNumber}`;
     const messageByKind: Record<PendingKind, string> = {
       security_finding: "pending.messages.securityFinding",
+      security_alert: "pending.reasons.security_alert.import",
       basic_check: "pending.reasons.basic_check",
       trial_due: "pending.messages.trialDue",
       source_update: "pending.reasons.source_update",
@@ -93,7 +94,7 @@ function longList(count: number): PendingItem[] {
     return {
       id: `${kind}:${subject}:preview-${index + 1}`,
       subject,
-      displayName: ["security_finding", "basic_check", "trial_due", "source_update"].includes(kind) ? `Skill ${skillNumber}` : undefined,
+      displayName: ["security_finding", "security_alert", "basic_check", "trial_due", "source_update"].includes(kind) ? `Skill ${skillNumber}` : undefined,
       kind,
       code: kind,
       message: messageByKind[kind],

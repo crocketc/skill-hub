@@ -1,4 +1,4 @@
-export type PendingKind = "trial_due" | "security_finding" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
+export type PendingKind = "trial_due" | "security_finding" | "security_alert" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
 export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
   agentBrand?: string;

@@ -147,7 +147,7 @@ export const nativePendingFacade: PendingFacade = {
     }
     const rules = result.payload
       .filter((rule): rule is typeof rule & { subject: { type: "exact_pending"; value: string } } => rule.subject.type === "exact_pending");
-    const subjectOf = (value: string) => /^(?:work:)?(?:trial_due|security_finding|basic_check|source_update):([^:]+):/.exec(value)?.[1];
+    const subjectOf = (value: string) => /^(?:work:)?(?:trial_due|security_finding|security_alert|basic_check|source_update):([^:]+):/.exec(value)?.[1];
     const names = await skillNames(rules.flatMap((rule) => {
       const id = subjectOf(rule.subject.value);
       return id ? [id] : [];

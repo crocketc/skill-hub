@@ -1,7 +1,7 @@
 import type { PendingItem, PendingKind } from "./api";
 import type { AgentKindKey } from "../../ui/AgentPresentation";
 
-export const pendingKinds: PendingKind[] = ["recovery", "conflict", "governance", "governance_followup", "security_finding", "basic_check", "trial_due", "import_skills", "ai_setup", "backup_setup", "source_update", "agent_compatibility"];
+export const pendingKinds: PendingKind[] = ["recovery", "conflict", "governance", "governance_followup", "security_finding", "security_alert", "basic_check", "trial_due", "import_skills", "ai_setup", "backup_setup", "source_update", "agent_compatibility"];
 export const actionableCount = (items: PendingItem[]) => items.filter((item) => !item.recommended).length;
 export const canSnoozePendingItem = (item: PendingItem) => item.canSnooze !== false && ["trial_due", "import_skills", "ai_setup", "backup_setup", "source_update"].includes(item.kind);
 
@@ -11,7 +11,7 @@ export const pendingCategories: PendingCategory[] = ["software", "skill_review",
 
 export function pendingCategoryForKind(kind: PendingKind): PendingCategory {
   if (["ai_setup", "backup_setup", "import_skills"].includes(kind)) return "software";
-  if (["trial_due", "security_finding", "basic_check", "source_update"].includes(kind)) return "skill_review";
+  if (["trial_due", "security_finding", "security_alert", "basic_check", "source_update"].includes(kind)) return "skill_review";
   if (["conflict", "governance", "governance_followup"].includes(kind)) return "relationships";
   if (kind === "agent_compatibility") return "agents";
   return "recovery";
@@ -54,7 +54,7 @@ function pendingGroup(item: PendingItem): Pick<PendingGroup, "key" | "category" 
   switch (item.kind) {
     case "ai_setup": case "backup_setup": case "import_skills":
       return { key: `software:${item.kind}`, category: "software", kind: item.kind, href: item.href ?? pendingDestination(item) };
-    case "security_finding": case "basic_check":
+    case "security_finding": case "security_alert": case "basic_check":
       return {
         key: "skill_review:security_check",
         category: "skill_review",
@@ -161,7 +161,7 @@ export function pendingDestination(item: PendingItem): string {
   const subject = encodeURIComponent(item.subject ?? "");
   switch (item.kind) {
     case "agent_compatibility": return `/agents/${subject}`;
-    case "security_finding": case "basic_check": {
+    case "security_finding": case "security_alert": case "basic_check": {
       const params = new URLSearchParams();
       if (item.versionId) params.set("version", item.versionId);
       if (item.checkKind) params.set("kind", item.checkKind);
