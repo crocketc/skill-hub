@@ -81,6 +81,43 @@ impl FindingDisposition {
     }
 }
 
+/// W3-1（FB-003 §23）：确定性规则的产品级分级。`Danger` 是危险级（导入时
+/// 必须由用户显式决策"仍要导入／不导入"），`Warning` 是警告级（直接导入
+/// 并写入预警）。"放行级"是"无发现"的状态，不是规则属性，因此不在枚举
+/// 内。分级只基于确定性规则集标注，AI 不参与任何分级或放行判定。
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Deserialize,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductLevel {
+    Danger,
+    #[default]
+    Warning,
+}
+
+impl ProductLevel {
+    /// 裁决定稿映射（§23）：critical/error 类确定性规则为危险级，warning
+    /// 类为警告级。规则文件对每条规则显式标注 `product_level`；本函数只
+    /// 作为规则缺级时的确定性兜底与测试对照，不替代逐条标注。
+    pub const fn from_severity(severity: Severity) -> Self {
+        match severity {
+            Severity::Critical | Severity::Error => Self::Danger,
+            Severity::Warning | Severity::Info => Self::Warning,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Finding {
     pub id: String,
@@ -94,6 +131,11 @@ pub struct Finding {
     pub disposition: FindingDisposition,
     #[serde(default = "default_allowed_dispositions")]
     pub allowed_dispositions: BTreeSet<FindingDisposition>,
+    /// W3-1：规则的产品级，由规则集在扫描时透传。历史存储行读出时为
+    /// None（分级是扫描/预警时刻的即时结论，不回填旧行）；serde default
+    /// 保持旧载荷可解析。
+    #[serde(default)]
+    pub product_level: Option<ProductLevel>,
 }
 
 impl Finding {
@@ -109,6 +151,7 @@ impl Finding {
             message_params: BTreeMap::new(),
             disposition: FindingDisposition::Actionable,
             allowed_dispositions: default_allowed_dispositions(),
+            product_level: None,
         }
     }
 

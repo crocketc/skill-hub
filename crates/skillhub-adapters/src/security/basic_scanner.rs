@@ -20,6 +20,15 @@ pub struct BasicScanReport {
     pub binary_files: Vec<BinaryFileMetadata>,
 }
 
+impl BasicScanReport {
+    /// W3-1（FB-003 §23）：把确定性发现映射为产品级分级摘要（危险/警告
+    /// 计数与逐条明细归属；无发现即放行级）。分级只由规则集标注决定，
+    /// 不读取任何 AI 结果；同一份发现恒得到同一份摘要。
+    pub fn security_summary(&self) -> skillhub_core::application::ImportSecuritySummary {
+        skillhub_core::application::ImportSecuritySummary::from_findings(&self.findings)
+    }
+}
+
 /// Local-only scanner. It reads bytes and never invokes a shell, interpreter,
 /// network client, decoder with side effects, or model.
 #[derive(Clone, Debug, Default)]
@@ -235,11 +244,25 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
             if !seen.insert((code, line_number)) {
                 continue;
             }
-            let severity = ruleset
-                .rule(code)
-                .map(|rule| rule.severity)
-                .unwrap_or(Severity::Warning);
-            findings.push(make_finding(code, severity, file, line_number, line));
+            let (severity, product_level) = match ruleset.rule(code) {
+                Some(rule) => (rule.severity, rule.product_level),
+                // 规则集缺级时按 §23 severity 类映射确定性兜底，不放弃分级。
+                None => {
+                    let severity = Severity::Warning;
+                    (
+                        severity,
+                        skillhub_core::check::ProductLevel::from_severity(severity),
+                    )
+                }
+            };
+            findings.push(make_finding(
+                code,
+                severity,
+                product_level,
+                file,
+                line_number,
+                line,
+            ));
         }
     }
 }
@@ -260,10 +283,18 @@ fn is_download_command(lower: &str) -> bool {
         || lower.contains(" iwr ")
 }
 
-fn make_finding(code: &str, severity: Severity, file: &str, line: u32, evidence: &str) -> Finding {
+fn make_finding(
+    code: &str,
+    severity: Severity,
+    product_level: skillhub_core::check::ProductLevel,
+    file: &str,
+    line: u32,
+    evidence: &str,
+) -> Finding {
     let evidence_hash = sha256(evidence.as_bytes());
     let id = sha256(format!("{code}\0{file}\0{line}\0{evidence_hash}").as_bytes());
     let mut finding = Finding::at(id, code, severity, file, line, None);
+    finding.product_level = Some(product_level);
     finding.evidence_hash = Some(evidence_hash);
     if code == "security.possible_plaintext_credential" {
         finding.message_params.insert(

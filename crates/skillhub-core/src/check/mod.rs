@@ -4,5 +4,5 @@ mod model;
 pub use derive::{derive_check_state, CheckProjection, CheckResult};
 pub use model::{
     CheckKind, CheckRepository, CheckRun, CheckRunPhase, CheckState, CheckTrigger, Finding,
-    FindingCode, FindingDisposition,
+    FindingCode, FindingDisposition, ProductLevel,
 };

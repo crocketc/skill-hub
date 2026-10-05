@@ -1,5 +1,6 @@
 use skillhub_adapters::security::BasicScanner;
-use skillhub_core::check::FindingDisposition;
+use skillhub_core::application::ImportSecurityLevel;
+use skillhub_core::check::{FindingDisposition, ProductLevel};
 use skillhub_core::Severity;
 use std::fs;
 use std::path::PathBuf;
@@ -201,4 +202,99 @@ fn finding_identity_and_evidence_are_deterministic() {
             && finding.file.is_some()
             && finding.line_start.is_some()
     }));
+}
+
+/// W3-1（FB-003 §23）：规则集逐条标注产品级，映射与裁决收口一致——
+/// critical/error 类确定性规则为危险级（danger），warning 类为警告级
+/// （warning）；放行级是"无发现"，不是规则属性。severity 字段保留，
+/// 分级是叠加的产品字段。逐条映射依据见 rules/basic-v1-levels.md。
+#[test]
+fn ruleset_declares_product_level_for_every_rule_matching_the_ruling_mapping() {
+    let ruleset = skillhub_adapters::security::BasicRuleset::v1();
+    assert_eq!(ruleset.rules.len(), 12);
+    for rule in &ruleset.rules {
+        let expected = match rule.severity {
+            Severity::Critical | Severity::Error => ProductLevel::Danger,
+            Severity::Warning | Severity::Info => ProductLevel::Warning,
+        };
+        assert_eq!(
+            rule.product_level, expected,
+            "rule {} must follow the §23 severity-class mapping",
+            rule.code
+        );
+    }
+    let danger_codes: Vec<_> = ruleset
+        .rules
+        .iter()
+        .filter(|rule| rule.product_level == ProductLevel::Danger)
+        .map(|rule| rule.code.as_str())
+        .collect();
+    assert_eq!(
+        danger_codes,
+        vec![
+            "security.destructive_command",
+            "security.elevation",
+            "security.permission_change",
+            "security.persistence",
+            "security.download_and_execute",
+            "security.data_upload",
+            "security.path_traversal",
+        ]
+    );
+}
+
+/// 扫描发现透传规则的产品级：危险级与警告级各取一例，证明级别来自
+/// 规则集标注而不是运行时推断。
+#[test]
+fn findings_carry_product_level_from_the_ruleset() {
+    let destructive = scan_fixture("dangerous-commands");
+    let finding = destructive
+        .iter()
+        .find(|finding| finding.code == "security.destructive_command")
+        .expect("destructive finding");
+    assert_eq!(finding.product_level, Some(ProductLevel::Danger));
+
+    let credentials = scan_fixture("user-api-key");
+    let credential = credentials.single();
+    assert_eq!(credential.code, "security.possible_plaintext_credential");
+    assert_eq!(credential.product_level, Some(ProductLevel::Warning));
+}
+
+/// BasicScanReport 携带分级结果：危险/警告计数与逐条明细归属；无发现
+/// 即放行级。分级只由确定性规则决定，扫描输入相同则结果可复现。
+#[test]
+fn scan_report_classifies_danger_warning_and_pass_levels() {
+    let scanner = BasicScanner::default();
+    let dangerous = scanner
+        .scan_version_report(fixture_path("dangerous-commands"))
+        .expect("scan");
+    let summary = dangerous.security_summary();
+    assert_eq!(summary.level, ImportSecurityLevel::Danger);
+    assert!(summary.danger_count >= 2, "summary: {summary:?}");
+    assert_eq!(summary.warning_count, 0);
+    assert!(summary.findings.iter().any(|finding| {
+        finding.code == "security.destructive_command"
+            && finding.product_level == ProductLevel::Danger
+            && finding.file.as_deref() == Some("SKILL.md")
+            && finding.line_start.is_some()
+    }));
+
+    let mixed = scanner
+        .scan_version_report(fixture_path("all-rule-categories"))
+        .expect("scan");
+    let mixed_summary = mixed.security_summary();
+    assert_eq!(mixed_summary.level, ImportSecurityLevel::Danger);
+    assert!(
+        mixed_summary.warning_count >= 1,
+        "summary: {mixed_summary:?}"
+    );
+
+    let benign = scanner
+        .scan_version_report(fixture_path("benign-commands"))
+        .expect("scan");
+    let benign_summary = benign.security_summary();
+    assert_eq!(benign_summary.level, ImportSecurityLevel::Pass);
+    assert_eq!(benign_summary.danger_count, 0);
+    assert_eq!(benign_summary.warning_count, 0);
+    assert!(benign_summary.findings.is_empty());
 }

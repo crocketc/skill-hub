@@ -31,8 +31,9 @@ pub use duplicate_service::{DuplicateCandidateProvider, DuplicateService};
 pub use health_service::{HealthBackend, HealthService};
 pub use ignore_service::{IgnoreBackend, IgnoreService};
 pub use import_service::{
-    ImportBackend, ImportBatchContext, ImportItemResult, ImportItemStatus, ImportService,
-    ImportSummary, PreparedImport,
+    ImportBackend, ImportBatchContext, ImportCandidateCheckState, ImportItemResult,
+    ImportItemStatus, ImportSecurityFindingSummary, ImportSecurityLevel, ImportSecuritySummary,
+    ImportService, ImportSummary, PreparedImport,
 };
 pub use llm_safety_service::LlmSafetyService;
 pub use operation_service::OperationService;
