@@ -5,8 +5,8 @@ test("recovery navigation remains blocked until the native bootstrap contract is
   await expect(page.getByText("Unable to read data")).toBeVisible();
 });
 
-// P1-14：受控"保存并替换原 Skill"主链路——替换保存经确认面板（推荐副本、
-// 风险与可恢复说明）创建版本，详情页版本时间线的回滚链路保持可用。
+// P1-14：受控"保存并替换原 Skill"主链路——替换保存经确认面板（推荐另存为
+// 新 Skill、风险与可恢复说明）创建版本，详情页版本时间线的回滚链路保持可用。
 test("guarded replace save records a version and the timeline stays recoverable", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/skill-detail/skill-pdf#description");
@@ -23,8 +23,9 @@ test("guarded replace save records a version and the timeline stays recoverable"
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   // 覆盖风险 + 可恢复边界必须出现在确认面板里。
+  // MS-06/D4：伪独立分支语义移除后，推荐按钮统一为“另存为新 Skill”。
   await expect(dialog).toContainText("history version");
-  await expect(dialog.getByRole("button", { name: "Save as copy (recommended)" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Save as new skill (recommended)" })).toBeVisible();
 
   await dialog.getByRole("button", { name: "Replace and save" }).click();
   // 保存命令成功后：确认面板关闭、无保存失败告警；工作区按新 contentIdentity

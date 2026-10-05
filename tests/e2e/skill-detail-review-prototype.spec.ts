@@ -147,17 +147,30 @@ test("review content save uses the active Markdown draft for overwrite and new-s
   const editor = page.locator(".cm-content");
   await editor.fill("# 评审中的 PDF Reader\n\n当前编辑草稿由保存面板直接读取。\n");
 
+  // K5/MS-06：创建分支收编进统一另存对话框——原型选择步只承载保存方式与
+  // 草稿事实，继承选择与目标预览都由真实 SaveAsCopyDialog 按真实预览承载。
   await page.getByRole("button", { name: "保存…" }).click();
   const saveDialog = page.getByRole("dialog", { name: "保存内容" });
   await expect(saveDialog).toBeVisible();
-  await saveDialog.getByLabel("创建新 Skill").check();
-  await saveDialog.getByLabel("不继承使用位置").check();
+  await saveDialog.getByLabel("创建新 Skill（另存，登记复用修改来源）").check();
   await saveDialog.getByRole("button", { name: "查看保存影响" }).click();
   const newSkillImpact = page.getByRole("dialog", { name: "保存影响预览" });
   await expect(newSkillImpact.locator("pre")).toContainText("当前编辑草稿由保存面板直接读取。");
-  await expect(newSkillImpact).toContainText("新 Skill 不会自动关联网络更新来源");
-  await page.getByRole("button", { name: "取消" }).click();
-  await expect(saveDialog).toHaveCount(0);
+  await expect(newSkillImpact).toContainText("使用位置影响由保存前的目标预览如实分列");
+  await newSkillImpact.getByRole("button", { name: "继续：选择继承与目标" }).click();
+
+  // 真实另存对话框：不继承/替换继承二选一，默认不继承。
+  const copyDialog = page.getByRole("dialog", { name: "另存为新技能" });
+  await expect(copyDialog).toBeVisible();
+  await expect(copyDialog.getByLabel("不继承使用位置")).toBeChecked();
+  await expect(copyDialog.getByLabel("接管选定的使用位置")).toBeVisible();
+  await copyDialog.getByRole("button", { name: "创建新技能" }).click();
+  const copyResult = page.getByRole("dialog", { name: "新技能已创建" });
+  await expect(copyResult).toBeVisible();
+  await expect(copyResult).toContainText("已登记「复用修改」来源。");
+  await expect(copyResult).toContainText("未请求接管使用位置；原有使用位置保持原状。");
+  await copyResult.getByRole("button", { name: "关闭" }).click();
+  await expect(copyDialog).toHaveCount(0);
   await expect(editor).toContainText("当前编辑草稿由保存面板直接读取。");
 
   await page.getByRole("button", { name: "保存…" }).click();
@@ -168,14 +181,20 @@ test("review content save uses the active Markdown draft for overwrite and new-s
   await page.getByRole("button", { name: "确认保存并创建版本" }).click();
   await expect(page.getByText("内容已保存为新版本；网络更新来源继续保留。", { exact: true })).toBeVisible();
 
+  // 替换继承分支：确认门在真实对话框——无候选目标时如实呈现空态，
+  // 没有目标预览就没有接管提交入口。
   await page.getByRole("button", { name: "保存…" }).click();
   const newSkillDialog = page.getByRole("dialog", { name: "保存内容" });
-  await newSkillDialog.getByLabel("创建新 Skill").check();
-  await newSkillDialog.getByLabel("替换继承当前使用位置").check();
+  await newSkillDialog.getByLabel("创建新 Skill（另存，登记复用修改来源）").check();
   await newSkillDialog.getByRole("button", { name: "查看保存影响" }).click();
-  await expect(page.getByRole("dialog", { name: "保存影响预览" })).toContainText("2 个受管链接按新主体更新；1 个独立副本原样保留、不自动覆盖");
-  await page.getByRole("button", { name: "确认创建新 Skill" }).click();
-  await expect(page.getByText(/新 Skill 已创建并记录“复用修改”关系/)).toBeVisible();
+  // 影响步更换对话框标题（保存内容 → 保存影响预览），按新名称重新解析。
+  await page.getByRole("dialog", { name: "保存影响预览" }).getByRole("button", { name: "继续：选择继承与目标" }).click();
+  const replaceDialog = page.getByRole("dialog", { name: "另存为新技能" });
+  await replaceDialog.getByLabel("接管选定的使用位置").check();
+  await expect(replaceDialog).toContainText("当前没有可接管的使用位置。");
+  await expect(replaceDialog.getByRole("button", { name: "生成接管预览" })).toBeDisabled();
+  await replaceDialog.getByRole("button", { name: "取消" }).click();
+  await expect(replaceDialog).toHaveCount(0);
 });
 
 test("review overview supports trial review dates and lightweight combination membership edits", async ({ page }) => {

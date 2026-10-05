@@ -193,6 +193,7 @@ async function installNativePreview(page: Page) {
         preview_id?: string;
         pairs?: Array<{ pair_id: string; confirm_fallback: boolean; exclude: boolean }>;
         prepared_deployment_id?: string;
+        skill_id?: string;
         to?: string;
       };
     };
@@ -220,6 +221,8 @@ async function installNativePreview(page: Page) {
           case "list_skill_operations": return ok("skill_operations", skillOperations);
           case "diff_versions": return ok("version_diff", { added: ["new section"], changed: ["SKILL.md"], removed: [] });
           case "check_source_updates": return ok("source_update_checks", [{ skill_id: "pdf-reader", state: "update_available" }]);
+          // K6：来源更新面板的持久化状态投影（从未检查过的诚实缺省）。
+          case "get_source_update_status": return ok("source_update_status", { skill_id: query.payload.skill_id ?? "pdf-reader", state: null, checked_at: null, upstream_label: null, candidate_identity: null, ignored_candidates: [], candidate_ignored: false });
           // 恢复候选走的是 **查询**（`queryApplication { type: "list_recovery_candidates" }`），
           // 不是命令；写在下面 execute_command 分支里等于没接线，恢复页只能拿到
           // default 的 bootstrap_snapshot，于是整页落进错误态。
@@ -376,7 +379,9 @@ async function installNativePreview(page: Page) {
           case "verify_backup": return ok("backup_manifest", { format_version: 1, entries: [], contains_sensitive_skill_content: false });
           case "prepare_restore": return ok("restore_plan", { format_version: 1, skills: 1, deployments_requiring_rediscovery: 0, conflicts: [{ skill_id: "pdf-reader", detail: "Existing Skill", kind: "same_skill" }] });
           case "commit_restore": return ok("restore_result", { skills_restored: 1, skills_skipped: 0, deployments_requiring_rediscovery: 0 });
-          case "prepare_standard_export": return ok("export_plan", { selection: { skills: ["pdf-reader"] }, versions: "current", skills: [{ skill_id: "pdf-reader", version_id: "v1", content: "# PDF", display_name: "PDF Reader" }], sensitive_items: [{ skill_id: "pdf-reader", reason: "contains credential-like content" }] });
+          // K3 两段式导出：prepare 只产出预览绑定三件套（export_preview），
+          // create 只带 preview_id + 决定并返回 export_result。
+          case "prepare_standard_export": return ok("export_preview", { selection: { skills: ["pdf-reader"] }, versions: "current", skills: [{ skill_id: "pdf-reader", version_id: "v1", display_name: "PDF Reader" }], sensitive_items: [{ skill_id: "pdf-reader", version_id: "v1", path: "SKILL.md", reason: "contains credential-like content" }], preview_id: "export-preview-1", expires_at: new Date(Date.now() + 600000).toISOString(), confirmation_fingerprint: "export-fp-1" });
           case "create_standard_export": return ok("export_result", { path: "C:/Preview/skillhub-export.zip", skills_exported: 1 });
           case "resolve_recovery": return ok("operation_summary", operationSummary);
           case "set_ui_preference": return ok("operation_summary", operationSummary);
@@ -397,7 +402,9 @@ async function installNativePreview(page: Page) {
           }
           case "commit_deployment": return ok("deployment_summary", { operation_id: "op-deploy-1", skill_id: args.command.payload.prepared_deployment_id, version_id: "v1", committed: true, targets: [{ logical_target_ids: ["codex-target"], physical_target_id: "codex-physical", status: "succeeded", error_code: null, residue: false }] });
           case "check_source_update": return ok("upstream_check_result", { skill_id: "pdf-reader", state: "update_available", local_version: "v1", upstream_version: "v2", upstream_label: "v2.0.0" });
-          case "apply_source_update": return ok("applied_source_update", { skill_id: "pdf-reader", decision: args.command.payload.decision, new_version: args.command.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
+          // K6 预览绑定流：采纳入口 prepare 出三件套预览，决定经 commit 消耗。
+          case "prepare_source_update": return ok("source_update_preview", { skill_id: action.payload.skill_id ?? "pdf-reader", preview_id: "preview-source-1", expires_at: new Date(Date.now() + 600000).toISOString(), confirmation_fingerprint: "source-fp-1", current_version_id: "v1", candidate_identity: "sha256:source-candidate-1", upstream_label: "v2.0.0", files: [{ path: "SKILL.md", change: "modified" }] });
+          case "commit_source_update": return ok("applied_source_update", { skill_id: "pdf-reader", decision: action.payload.decision, new_version: action.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
           case "relink_source":
           case "set_version_label":
           case "set_current_version": return ok("operation_summary", operationSummary);
@@ -708,8 +715,11 @@ test("data protection exposes export, restore, retention, and uninstall previews
   await page.getByRole("combobox", { name: "Export format" }).selectOption("zip");
   await page.getByRole("button", { name: "Review export" }).click();
   await expect(page.getByText(/1 skills are ready to export/)).toBeVisible();
-  await page.getByRole("combobox", { name: "Export decision for pdf-reader" }).selectOption("include_and_mark");
+  // 敏感项呈现统一用显示名（K3-B）：决定下拉按显示名命名，不裸露 skill_id。
+  await page.getByRole("combobox", { name: "Export decision for PDF Reader" }).selectOption("include_and_mark");
   await expect(page.getByRole("button", { name: "Create export" })).toBeEnabled();
+  await page.getByRole("button", { name: "Create export" }).click();
+  await expect(page.getByText(/Export created at/)).toBeVisible();
   // K3-B 预览冻结：预览后修改任一绑定选择即作废旧预览——可见的重新预览
   // 提示出现，创建入口撤下，绝不拿旧预览直接落盘。
   await page.getByRole("combobox", { name: "Export format" }).selectOption("folder");
@@ -911,9 +921,15 @@ test("native skill detail exposes metadata, relations, findings, and versions", 
   await page.getByRole("link", { name: "Lifecycle" }).click();
   await expect(page).toHaveURL(/#zone-lifecycle$/);
   await expect(page.getByRole("heading", { name: "v1", exact: true })).toBeVisible();
+  // K6 预览绑定流：检查命中候选后，采纳入口先 prepare 出更新预览，
+  // 「保留本地」等决定都在预览态经 commit 提交，不再有检查后的直连按钮。
   await page.getByRole("button", { name: "Check source updates" }).click();
   await expect(page.getByText(/Update available: local v1/)).toBeVisible();
-  await page.getByRole("button", { name: "Keep local" }).click();
+  await page.getByRole("button", { name: "Take upstream", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Update preview" })).toBeVisible();
+  await expect(page.getByText(/the preview is valid until/i)).toBeVisible();
+  await expect(page.getByRole("group", { name: "File changes" })).toContainText("SKILL.md");
+  await page.getByRole("button", { name: "Keep local", exact: true }).click();
   await expect(page.getByText("Kept the local version.")).toBeVisible();
   await page.getByLabel("Select v1 for comparison").check();
   await page.getByLabel("Select v0 for comparison").check();

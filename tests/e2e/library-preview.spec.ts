@@ -99,5 +99,11 @@ test("quick drawer opens from card activation and the version section stays reac
   // T3-C：详情页导航已重组为五信息区，版本章节位于"生命周期"分区。
   await page.getByRole("link", { name: "Lifecycle" }).click();
   await expect(page).toHaveURL(/#zone-lifecycle$/);
-  await expect(page.getByRole("button", { name: /Export this skill/ })).toBeVisible();
+  // 46d7177d：预览路由（/__preview/**）无库上下文，DetailHeader 的
+  // dispatch/delete/export 操作位按既定规则收口隐藏；生命周期分区可达性
+  // 以该分区真实渲染的版本时间线及其交互元素为锚。
+  const lifecycle = page.locator("#zone-lifecycle");
+  await expect(lifecycle.getByRole("heading", { name: "Version history" })).toBeVisible();
+  await expect(lifecycle.locator(".sh-version-timeline")).toBeVisible();
+  await expect(lifecycle.getByRole("button", { name: "Compare selected versions" })).toBeVisible();
 });

@@ -130,7 +130,13 @@ test("keeps legacy section hashes working for deep links", async ({ page }) => {
 
   await page.goto("/__preview/skill-detail/skill-pdf#versions");
   await expect(page.getByRole("heading", { name: "Version history" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Export this skill/ })).toBeVisible();
+  // 46d7177d：预览路由（/__preview/**）的 DetailHeader 隐藏 dispatch/delete/
+  // export 操作位（无库上下文）；深链可达性以分区真实渲染的版本时间线为锚。
+  await expect(page.locator("#versions .sh-version-timeline")).toBeVisible();
+  await expect(page.locator("#versions").getByRole("heading", { name: "v2.4.1" })).toBeVisible();
+  await expect(
+    page.locator("#versions").getByRole("button", { name: "Compare selected versions" }),
+  ).toBeVisible();
 });
 
 test("renders the deterministic long-name fixture without horizontal overflow", async ({ page }) => {
@@ -217,9 +223,16 @@ test.describe("responsive workspace behaviour", () => {
 
     await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
 
-    // 唯一滚动所有者可以滚到最后一个章节块；末项操作（导出）仍然可达。
+    // 唯一滚动所有者可以滚到最后一个章节块；可达性探针用版本块内真实
+    // 存在的可操作元素（46d7177d：预览路由 DetailHeader 隐藏 export，
+    // 不能再拿顶栏导出按钮当末章节探针）。
     await page.locator("#versions").scrollIntoViewIfNeeded();
-    await expect(page.getByRole("button", { name: /Export this skill/ })).toBeVisible();
+    await expect(
+      page.locator("#versions").getByRole("button", { name: "Check source updates" }),
+    ).toBeVisible();
+    await expect(
+      page.locator("#versions").getByRole("button", { name: "Compare selected versions" }),
+    ).toBeVisible();
     await page.locator("#external").scrollIntoViewIfNeeded();
     await expect(page.getByRole("heading", { name: "External changes", exact: true })).toBeVisible();
 
