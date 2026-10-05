@@ -4,7 +4,7 @@
 
 ## 当前候选
 
-> 2026-09-29 状态：Agent 根目录识别、基于物理路径的卡片归并、共享目录独立卡片、待创建目录和详情页入口已完成代码与自动化回归；前端测试 2013/2013、相关浏览器 E2E 53/53、前端检查与生产构建通过，相关 Rust facade/repository 测试通过。桌面人工验收、真实客户端接入和本次发布安装包仍未完成。当前真机入口见 `docs/development/人工验收清单-2026-09-30.md`。
+> 2026-09-29 状态：Agent 根目录识别、基于物理路径的卡片归并、共享目录独立卡片、待创建目录和详情页入口已完成代码与自动化回归；前端测试 2013/2013、相关浏览器 E2E 53/53、前端检查与生产构建通过，相关 Rust facade/repository 测试通过。桌面人工验收、真实客户端接入和本次发布安装包仍未完成。当前真机入口见 `docs/development/人工验收清单-2026-10-05.md`。
 
 - 代码验收基线：`a337f4c2`（Agent 识别/卡片/共享目录增量实现及文档清理；本清单同步提交随后追加）
 - 浏览器自动化基线：`a337f4c2`（相关 E2E 53/53；全量历史基线仍见下方证据表）
@@ -26,7 +26,7 @@
 | Agent repository 测试 | 通过 | `cargo test -p skillhub-storage --test agent_repository --test bootstrap_repository --test custom_agent_repository`：33/33 |
 | Rust 工作区编译 | 通过 | `cargo test --workspace --no-run` |
 | 变更格式检查 | 通过 | `git diff --check` |
-| 桌面人工验收 | 待执行 | 需要按 `docs/development/人工验收清单-2026-09-30.md` 完成真实 Tauri、文件系统和系统窗口取证 |
+| 桌面人工验收 | 待执行 | 需要按 `docs/development/人工验收清单-2026-10-05.md` 完成真实 Tauri、文件系统和系统窗口取证 |
 
 ## 证据状态
 
@@ -54,7 +54,7 @@
 | 前端生产构建 | 通过 | `pnpm build:frontend`（2026-09-24；仅既有大 chunk 提示） |
 | 发布静态预检 | 通过 | `pnpm verify:release`、`node scripts/verify_atomic_test_catalog.mjs`（349 条）、`pnpm test:release`、`node scripts/verify_frontend_lifecycle_scripts.mjs` 均通过（2026-09-24 于 `0b1eebb1`） |
 | i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0（2026-09-24 于 `0b1eebb1`）；zh/en 键集 parity 由前端测试覆盖 |
-| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-09-30.md` |
+| 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-10-05.md` |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
 | 备份/恢复/导出 native facade | 通过（自动化） | typed preflight/commit 适配器与 Rust facade 测试通过 |
