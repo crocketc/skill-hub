@@ -328,7 +328,7 @@ async fn relink_rejects_free_text_git_url_and_keeps_the_existing_origin() {
         .source_repository()
         .record_upstream(skill_id, &original)
         .expect("record upstream");
-    let facade = LocalApplicationFacade::new_with_library(database, &workspace.path().join("lib"));
+    let facade = LocalApplicationFacade::new_with_library(database, workspace.path().join("lib"));
 
     let error = facade
         .execute(AppCommand::RelinkSource(RelinkSource {

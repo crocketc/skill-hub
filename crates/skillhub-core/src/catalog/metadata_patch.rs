@@ -6,17 +6,12 @@ use std::marker::PhantomData;
 
 /// A wire-level patch value: an omitted field is unchanged, `null` clears it,
 /// and a concrete value replaces it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum PatchField<T> {
+    #[default]
     Unchanged,
     Clear,
     Set(T),
-}
-
-impl<T> Default for PatchField<T> {
-    fn default() -> Self {
-        Self::Unchanged
-    }
 }
 
 impl<T> PatchField<T> {

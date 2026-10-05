@@ -378,7 +378,7 @@ impl CentralLibrary {
             return Err(injected_fault("before_visible_replace"));
         }
         if had_output {
-            if let Err(error) = fs::rename(&output, &backup) {
+            if let Err(error) = fs::rename(&output, backup) {
                 let _ = fs::remove_dir_all(&staging);
                 return Err(io_error(error));
             }
@@ -397,7 +397,7 @@ impl CentralLibrary {
                         "injected visible backup restore failure",
                     ))
                 } else {
-                    fs::rename(&backup, &output)
+                    fs::rename(backup, &output)
                 };
                 if let Err(restore_error) = restore {
                     let _ = fs::remove_dir_all(&staging);
@@ -440,24 +440,23 @@ impl CentralLibrary {
                     .unwrap_or_default(),
             ));
         }
-        if path_entry_exists(&replacement.output)? {
-            if !is_real_directory(&replacement.output)?
+        if path_entry_exists(&replacement.output)?
+            && (!is_real_directory(&replacement.output)?
                 || VersionStore::from_library(self).hash_tree_read_only(&replacement.output)?
-                    != replacement.expected_tree_hash
-            {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param("reason", "visible_output_identity_changed")
-                    .with_param("path", replacement.output.to_string_lossy().into_owned())
-                    .with_param(
-                        "recovery_backup_path",
-                        replacement
-                            .backup
-                            .as_ref()
-                            .map(|path| path.to_string_lossy().into_owned())
-                            .unwrap_or_default(),
-                    )
-                    .with_action(RecoveryAction::InspectTarget));
-            }
+                    != replacement.expected_tree_hash)
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_param("path", replacement.output.to_string_lossy().into_owned())
+                .with_param(
+                    "recovery_backup_path",
+                    replacement
+                        .backup
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                )
+                .with_action(RecoveryAction::InspectTarget));
         }
         let Some(backup) = replacement.backup.as_ref() else {
             if path_entry_exists(&replacement.output)? {
@@ -914,7 +913,7 @@ impl CentralLibrary {
         }
         fs::rename(&output, &backup).map_err(io_error)?;
         if let Err(error) = fs::rename(&staging, &output) {
-            let _ = fs::rename(&backup, &output);
+            let _ = fs::rename(backup, &output);
             return Err(io_error(error));
         }
         // The replacement is already complete; a leftover backup can be
@@ -998,7 +997,7 @@ fn is_link_or_reparse(metadata: &fs::Metadata) -> bool {
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
     #[cfg(not(windows))]
     {

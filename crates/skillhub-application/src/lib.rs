@@ -6467,6 +6467,9 @@ impl LocalApplicationFacade {
     /// pointer, the portable manifest and the database projection follow. On
     /// failure the caller receives the error plus the replacement handle that
     /// compensation needs.
+    // Err 刻意携带补偿所需的 replacement 句柄（元组按设计偏大）；五个调用
+    // 点都按值解构，装箱只会给错误路径加一层间接。
+    #[allow(clippy::result_large_err)]
     fn adopt_captured_version(
         &self,
         context: &library_runtime::LibraryContext,
@@ -6626,7 +6629,7 @@ impl LocalApplicationFacade {
             );
             record.object_results = recovery_object_results(&failures);
             record.recovery_data =
-                serde_json::to_value(snapshot).unwrap_or_else(|_| serde_json::Value::Null);
+                serde_json::to_value(snapshot).unwrap_or(serde_json::Value::Null);
             self.journal_write(record);
         }
         error

@@ -80,11 +80,7 @@ fn commit_forwards_to_the_backend_and_checks_first() {
         assert_eq!(preview.candidate_identity, "sha256:candidate");
 
         let applied = service
-            .commit_update(
-                skill_id,
-                preview.preview_id.clone(),
-                UpdateDecision::TakeUpstream,
-            )
+            .commit_update(skill_id, preview.preview_id, UpdateDecision::TakeUpstream)
             .await
             .unwrap();
         assert_eq!(applied.skill_id, skill_id);

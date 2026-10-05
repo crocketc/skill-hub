@@ -478,36 +478,39 @@ async fn detail_deployment_counts_match_the_library_list_projection() {
 
     // 部署事实：两个 Agent 目标（其一重复行证明共享去重）、一个已移除
     // 行（不计入）、一个项目目标。
-    let connection = facade.database_for_tests().clone();
-    let database = connection.lock().expect("database lock");
-    database
-        .connection_for_test()
-        .execute(
-            "INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('proj-1', 'Demo', 'C:/fixture/project', 0, 0)",
+    // 用块作用域收掉 MutexGuard：clippy 的 await_holding_lock 按词法范围
+    // 判定，显式 drop 不出离作用域。
+    {
+        let connection = facade.database_for_tests().clone();
+        let database = connection.lock().expect("database lock");
+        database
+            .connection_for_test()
+            .execute(
+                "INSERT INTO projects (id, name, path, created_at, updated_at) VALUES ('proj-1', 'Demo', 'C:/fixture/project', 0, 0)",
             [],
         )
         .expect("insert project");
-    for (target_id, project_id) in [
-        ("agent-t1", None),
-        ("agent-t2", None),
-        ("proj-t1", Some("proj-1")),
-    ] {
-        database
+        for (target_id, project_id) in [
+            ("agent-t1", None),
+            ("agent-t2", None),
+            ("proj-t1", Some("proj-1")),
+        ] {
+            database
             .connection_for_test()
             .execute(
                 "INSERT INTO targets (id, agent_id, project_id, scope, path, created_at) VALUES (?1, 'agent-fixture', ?2, 'global', 'C:/fixture/target', 0)",
                 rusqlite::params![target_id, project_id],
             )
             .expect("insert target");
-    }
-    for (deployment_id, target_id, state, runtime) in [
-        ("dep-1", "agent-t1", "deployed", "managed-link-a"),
-        ("dep-2", "agent-t1", "deployed", "managed-link-b"),
-        ("dep-3", "agent-t2", "deployed", "managed-link-c"),
-        ("dep-4", "agent-t1", "removed", "managed-link-d"),
-        ("dep-5", "proj-t1", "deployed", "managed-copy-a"),
-    ] {
-        database
+        }
+        for (deployment_id, target_id, state, runtime) in [
+            ("dep-1", "agent-t1", "deployed", "managed-link-a"),
+            ("dep-2", "agent-t1", "deployed", "managed-link-b"),
+            ("dep-3", "agent-t2", "deployed", "managed-link-c"),
+            ("dep-4", "agent-t1", "removed", "managed-link-d"),
+            ("dep-5", "proj-t1", "deployed", "managed-copy-a"),
+        ] {
+            database
             .connection_for_test()
             .execute(
                 "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'directory_junction', 1, ?6, 'sha256:expected', 'sha256:expected', 0, 0)",
@@ -521,8 +524,8 @@ async fn detail_deployment_counts_match_the_library_list_projection() {
                 ],
             )
             .expect("insert deployment");
+        }
     }
-    drop(database);
 
     // 关系事实：指向当前物化树的真实链接（托管链接）+ 树外真实目录
     // 副本（独立副本）。
