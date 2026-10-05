@@ -128,6 +128,13 @@ export const nativePendingFacade: PendingFacade = {
   async recover(item) {
     await resolveRecoverableOperation(item.subject);
   },
+  // W3-1：完全信任是预警待办专属动作——决定由后端留痕（来源/时间）并绑定
+  // 当前内容版本；同版本不再预警，内容更新后重新预警。
+  async trust(item) {
+    if (item.kind !== "security_alert") throw new Error("Only security alert items can be trusted from pending work.");
+    const result = await executeCommand({ type: "trust_skill_security", payload: { skill_id: item.subject } });
+    if (result.type !== "trust_skill_security") throw new Error("trust_skill_security returned an unexpected native result.");
+  },
   async defer(items, days, reason) {
     requireSnoozable(items);
     const deferUntil = localDateDaysFromNow(days);

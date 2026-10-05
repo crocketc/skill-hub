@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -295,8 +295,7 @@ export function SkillDetailPage({
     }
   };
 
-  const startUndeploy = async (relation: SkillRelation) => {
-    setUndeployError(undefined);
+  const startUndeploy = async (relation: SkillRelation) => {    setUndeployError(undefined);
     try {
       // DEV-97：relation.label 来自后端目标 label（技术 client_id），
       // 确认标题呈现品牌显示名；共享目录与项目关系保持可读名称。
@@ -346,6 +345,21 @@ export function SkillDetailPage({
       setUndeploySubmitting(false);
     }
   };
+
+  // W3-1（FB-003 裁决第 1 节）：待办「不信任（删除）」经 removalRequest 状态
+  // 直达既有删除影响确认——复用 startRemoval 同一条流程，不造第二套删除；
+  // 每次挂载至多自动触发一次，且只响应当前 Skill 的请求。
+  const removalRequestHandledRef = useRef(false);
+  const removalRequest = (location.state as { removalRequest?: { skillId?: string } } | null)?.removalRequest;
+  const summaryReady = !summaryQuery.isPending && !summaryQuery.isError && Boolean(summaryQuery.data);
+  useEffect(() => {
+    if (removalRequestHandledRef.current) return;
+    if (isPreviewRoute || !summaryReady) return;
+    if (!removalRequest || removalRequest.skillId !== skillId) return;
+    removalRequestHandledRef.current = true;
+    void startRemoval();
+    // startRemoval 只依赖 skillId 与 summary 名称；挂载期一次性触发。
+  }, [isPreviewRoute, removalRequest, skillId, summaryReady]);
 
   if (summaryQuery.isPending) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;

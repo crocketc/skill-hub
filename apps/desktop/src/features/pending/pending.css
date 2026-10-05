@@ -303,6 +303,13 @@
   gap: var(--space-1) var(--space-3);
 }
 
+.sh-pending-item__note {
+  color: var(--ui-ink-muted);
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .sh-pending-item__fact {
   align-items: center;
   color: var(--ui-ink-muted);

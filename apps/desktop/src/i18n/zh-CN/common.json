@@ -2288,7 +2288,10 @@
       "noCurrentVersion": "该 Skill 没有可用版本，暂时无法添加。请先生成或指定一个可用版本。",
       "runtimeNameUnavailable": "无法读取该 Skill 的名称，暂时无法添加。请刷新后重试。",
       "planStale": "预览已经过期，目标状态可能发生变化。请返回后重新预览。",
-      "targetNotWritable": "目标目录不可写，请检查目录权限后重试。"
+      "targetNotWritable": "目标目录不可写，请检查目录权限后重试。",
+      "securityAlertBlocked": "该技能存在待处理的安全预警，处理前不可派发；可在详情安全页或待办中处理。",
+      "securityAlertBlockedSecurityLink": "前往安全页处理",
+      "securityAlertBlockedPendingLink": "打开待办"
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
@@ -2699,7 +2702,9 @@
       "deferReason": "暂缓 {{days}} 天，到期后再提醒",
       "ignoreReason": "永久忽略该待处理事项",
       "open": "去处理",
-      "refresh": "刷新待办"
+      "refresh": "刷新待办",
+      "trust": "完全信任",
+      "distrustDelete": "不信任（删除）"
     },
     "defer": {
       "durationLabel": "暂缓时长",
@@ -2792,6 +2797,12 @@
       "convert_shared_reference_to_managed_link": "在关系治理中审阅共享引用，确认安全的管理方式。",
       "unknown_directory_recognition": "确认来源目录及用途；不支持的 Agent 路径可手动添加后重新检查。",
       "operation_failure_recovery": "前往恢复页面，根据实际操作记录处理未完成操作。"
+    },
+    "securityAlert": {
+      "confirmTitle": "完全信任该技能的安全状态？",
+      "confirmDescription": "信任后可正常派发；此决定会记录留痕并绑定当前内容版本，内容更新后再次发现风险将重新预警。",
+      "confirmConfirm": "确认信任",
+      "deferNote": "稍后处理将保留待办并持续不可派发。"
     }
   },
   "recovery": {

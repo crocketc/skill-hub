@@ -6,7 +6,7 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import { AppNotificationsProvider } from "../../ui/notifications";
 import type { HandledEntry, PendingFacade, PendingItem } from "./api";
 import { PendingPage } from "./PendingPage";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 function fakeFacade(overrides: Partial<PendingFacade> = {}): PendingFacade {
   return {
@@ -702,4 +702,66 @@ it("routes relationship follow-up to its workbench without confirming it on the 
   expect(screen.getByText("skill-b")).toBeVisible();
   expect(confirm).not.toHaveBeenCalled();
   expect(resolve).not.toHaveBeenCalled();
+});
+
+// W3-1（FB-003 裁决第 1 节）：预警待办是三选工作台——「完全信任」走确认后
+// 的留痕信任命令、「不信任（删除）」跳既有删除流；本类条目无顺延/忽略按钮，
+// 以静态说明承载「稍后处理＝保留待办并持续不可派发」的语义。
+const alertItem: PendingItem = {
+  id: "security_alert:skill-c:current",
+  subject: "skill-c", displayName: "Alerted Skill",
+  kind: "security_alert",
+  code: "current",
+  message: "pending.reasons.security_alert.import",
+  risk: "high",
+  canSnooze: false,
+  canConfirm: false,
+  affectedDeployments: 1,
+};
+
+it("offers full trust behind an explicit confirmation and re-reads the real list", async () => {
+  const trust = vi.fn(async () => undefined);
+  const list = vi.fn()
+    .mockResolvedValueOnce([alertItem])
+    .mockResolvedValueOnce([]);
+  await renderBridgedPage(fakeFacade({ list, trust }));
+  expect(await screen.findByText("Alerted Skill")).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: "完全信任" }));
+  expect(await screen.findByRole("alertdialog", { name: "完全信任该技能的安全状态？" })).toBeVisible();
+  expect(screen.getByText(/信任后可正常派发/)).toBeVisible();
+  expect(trust).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "确认信任" }));
+  await waitFor(() => expect(trust).toHaveBeenCalledTimes(1));
+  expect(trust).toHaveBeenCalledWith(expect.objectContaining({ subject: "skill-c", kind: "security_alert" }));
+  // 成功后经真实重读消失（第二次 list 返回空），不假刷新。
+  await screen.findByText("没有待处理事项");
+  expect(list).toHaveBeenCalledTimes(2);
+});
+
+it("routes distrust to the existing delete flow and explains the keep-pending choice", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <MemoryRouter initialEntries={["/pending"]}>
+      <I18nextProvider i18n={i18n}>
+        <Routes>
+          <Route element={<PendingPage facade={fakeFacade({ list: async () => [alertItem] })} />} path="/pending" />
+          <Route element={<LocationStateProbe />} path="/library/:skillId" />
+        </Routes>
+      </I18nextProvider>
+    </MemoryRouter>,
+  );
+  await act(async () => {});
+  expandPendingGroups();
+  expect(await screen.findByText("Alerted Skill")).toBeVisible();
+
+  // 无顺延/忽略；静态说明承载「稍后处理」语义。
+  expect(screen.queryByRole("button", { name: "暂缓" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "忽略" })).not.toBeInTheDocument();
+  expect(screen.getByText("稍后处理将保留待办并持续不可派发。")).toBeVisible();
+
+  fireEvent.click(screen.getByRole("link", { name: "不信任（删除）" }));
+  const routeState = JSON.parse(screen.getByTestId("route-state").textContent ?? "{}") as { removalRequest?: { skillId: string } };
+  expect(routeState.removalRequest).toEqual({ skillId: "skill-c" });
 });

@@ -5,6 +5,18 @@ import type { HandledEntry, PendingFacade, PendingItem, PendingKind } from "./ap
 /** Deterministic preview fixtures; DEV-only, never wired into production routes. */
 const BASE_ITEMS: PendingItem[] = [
   {
+    id: "security_alert:flagged-skill:current",
+    subject: "flagged-skill",
+    displayName: "flagged-skill",
+    kind: "security_alert",
+    code: "current",
+    message: "pending.reasons.security_alert.import",
+    risk: "high",
+    canSnooze: false,
+    canConfirm: false,
+    affectedDeployments: 2,
+  },
+  {
     id: "security_finding:pdf-reader:finding-7",
     subject: "pdf-reader",
     displayName: "pdf-reader",
@@ -155,6 +167,12 @@ export function PendingPreview() {
         }
       },
       resolve: async () => undefined,
+      // 信任后真实从预览列表移除该条目，下一次 list 重读即消失（与原生行为同构）。
+      trust: async (item) => {
+        if (failing) return fail();
+        const index = items.findIndex((candidate) => candidate.id === item.id);
+        if (index >= 0) items.splice(index, 1);
+      },
       recheck: failing ? fail : async () => undefined,
       convert: failing ? fail : async () => undefined,
       remove: async () => undefined,

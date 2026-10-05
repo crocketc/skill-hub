@@ -2288,7 +2288,10 @@
       "noCurrentVersion": "This Skill has no available version and cannot be added yet. Create or select a version first.",
       "runtimeNameUnavailable": "The Skill name could not be read, so it cannot be added yet. Refresh and try again.",
       "planStale": "This preview is out of date; the target may have changed. Go back and preview again.",
-      "targetNotWritable": "The target directory is not writable. Check its permissions and try again."
+      "targetNotWritable": "The target directory is not writable. Check its permissions and try again.",
+      "securityAlertBlocked": "This skill has an unhandled security alert; dispatch is blocked until it is handled. Handle it on the skill's security page or in pending work.",
+      "securityAlertBlockedSecurityLink": "Open security handling",
+      "securityAlertBlockedPendingLink": "Open pending work"
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
@@ -2699,7 +2702,9 @@
       "deferReason": "Deferred for {{days}} days; remind me when it is due",
       "ignoreReason": "Permanently ignore this pending item",
       "open": "Open task",
-      "refresh": "Refresh pending tasks"
+      "refresh": "Refresh pending tasks",
+      "trust": "Trust fully",
+      "distrustDelete": "Distrust (delete)"
     },
     "defer": {
       "durationLabel": "Defer duration",
@@ -2792,6 +2797,12 @@
       "convert_shared_reference_to_managed_link": "Review the shared reference in relationship governance.",
       "unknown_directory_recognition": "Confirm the source directory and its purpose. Unsupported Agent paths can be added manually and rechecked.",
       "operation_failure_recovery": "Use recovery to handle the incomplete operation based on its recorded state."
+    },
+    "securityAlert": {
+      "confirmTitle": "Trust this skill's security state fully?",
+      "confirmDescription": "Dispatch works normally after trusting; the decision is recorded and bound to the current content version. If risks are found again after the content changes, the alert returns.",
+      "confirmConfirm": "Confirm trust",
+      "deferNote": "Keeping it for later preserves the pending item and keeps dispatch blocked."
     }
   },
   "recovery": {

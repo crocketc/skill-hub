@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
@@ -510,4 +510,33 @@ it("offers a manage-relations deep link back to the governance workbench", async
   expect(link.getAttribute("href")).toBe(
     "/relationships/governance?from=library&skillId=skill-pdf",
   );
+});
+
+// W3-1（FB-003 裁决第 1 节）：派发被安全预警拒绝时不留死胡同——错误文案给
+// 出处理入口指引，并提供直达详情安全页与待办的处理链接。
+it("guides to the security page and pending work when dispatch is blocked by a security alert", async () => {
+  const user = userEvent.setup();
+  const blocked = { code: "deployment.security_alert_blocked", severity: "error", params: {}, actions: [] };
+  const facade = facadeFixture([], {
+    preview: vi.fn<BatchDeploymentFacade["preview"]>(async () => { throw blocked; }),
+  });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={["/library/skill-pdf/deploy"]}>
+        <Routes>
+          <Route element={<DeploymentDialog facade={facade} skillId="skill-pdf" versionId="current" />} path="/library/skill-pdf/deploy" />
+          <Route element={<p>Security route</p>} path="/library/skill-pdf/security" />
+          <Route element={<p>Pending route</p>} path="/pending" />
+        </Routes>
+      </MemoryRouter>
+    </I18nextProvider>,
+  );
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByText(/该技能存在待处理的安全预警，处理前不可派发/)).toBeVisible();
+  fireEvent.click(screen.getByRole("link", { name: "前往安全页处理" }));
+  expect(await screen.findByText("Security route")).toBeVisible();
 });

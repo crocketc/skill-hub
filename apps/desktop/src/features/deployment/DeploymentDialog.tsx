@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useInRouterContext } from "react-router-dom";
-import { describeNativeError } from "../../api/nativeErrors";
+import { describeNativeError, nativeErrorCode } from "../../api/nativeErrors";
 import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
@@ -77,6 +77,9 @@ export function DeploymentDialog({
   const [results, setResults] = useState<DeploymentResult[]>();
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
+  // W3-1（FB-003 裁决第 1 节）：派发被安全预警拒绝时给出处理入口链接，
+  // 不留死胡同；只在最近一次流程错误确实是预警拒绝时展示。
+  const [securityAlertBlocked, setSecurityAlertBlocked] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [creatingTargetId, setCreatingTargetId] = useState<string>();
 
@@ -112,6 +115,7 @@ export function DeploymentDialog({
 
   const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
     setFlowError(undefined);
+    setSecurityAlertBlocked(false);
     const item: BatchPreviewItem = {
       skillId,
       targetIds: selected.map((target) => target.id),
@@ -134,6 +138,7 @@ export function DeploymentDialog({
       setExclusionsDirty(false);
       setConfirmationsDirty(false);
     } catch (reason) {
+      setSecurityAlertBlocked(nativeErrorCode(reason) === "deployment.security_alert_blocked");
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
@@ -210,6 +215,7 @@ export function DeploymentDialog({
       setResults(withDisplayNames);
       onCommitted?.(withDisplayNames);
     } catch (reason) {
+      setSecurityAlertBlocked(nativeErrorCode(reason) === "deployment.security_alert_blocked");
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
       setCommitting(false);
@@ -374,6 +380,12 @@ export function DeploymentDialog({
         </p>
       ) : null}
       {flowError ? <DataState message={flowError} state="error" /> : null}
+      {flowError && securityAlertBlocked && inRouter ? (
+        <p className="sh-deployment-flow__alert-guidance" role="note">
+          <Link to={`/library/${encodeURIComponent(skillId)}/security`}>{t("deployment.errors.securityAlertBlockedSecurityLink")}</Link>
+          <Link to="/pending">{t("deployment.errors.securityAlertBlockedPendingLink")}</Link>
+        </p>
+      ) : null}
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
       {phase === "empty" ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}

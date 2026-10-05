@@ -135,6 +135,10 @@ function PendingGroupRow({
         const trialAction = item.kind === "trial_due"
           ? { kind: "pending_convert", label: String(t("pending.actions.convert")), perform: (target: PendingItem) => facade.convert(target) }
           : null;
+        // W3-1（FB-003 裁决第 1 节）：预警待办的「不信任（删除）」跳既有删除
+        // 流——进入详情页后由 removalRequest 状态自动打开既有删除影响确认，
+        // 不在待办造第二套删除。
+        const isSecurityAlert = item.kind === "security_alert";
         return <li className="sh-pending-item" key={item.id}>
           <input
             aria-label={String(t("pending.batch.selectItem", { subject: name }))}
@@ -159,9 +163,30 @@ function PendingGroupRow({
               {item.dueDate ? <small className="sh-pending-item__fact"><Icon aria-hidden="true" name="pending" />{t("pending.dueDate", { date: item.dueDate })}</small> : null}
               {typeof item.affectedDeployments === "number" ? <small className="sh-pending-item__fact"><Icon aria-hidden="true" name="deploy" />{t("pending.impact", { count: item.affectedDeployments })}</small> : null}
             </div>
+            {/* W3-1：预警条目无顺延/忽略；「稍后处理」语义由静态说明承载。 */}
+            {isSecurityAlert ? <small className="sh-pending-item__note">{t("pending.securityAlert.deferNote")}</small> : null}
           </div>
           <div aria-label={String(t("pending.item.actionsGroup", { subject: name }))} className="sh-pending-item__actions" role="group">
             <Link className="sh-button sh-button--secondary" to={getItemLink(item)} state={item.kind === "import_skills" && item.sourceRoots?.length ? { initialSources: item.sourceRoots, onboardingImport: true } : undefined}>{t("pending.actions.open")}</Link>
+            {isSecurityAlert && facade.trust ? (
+              <ConfirmDialog
+                cancelLabel={String(t("actions.cancel"))}
+                confirmLabel={String(t("pending.securityAlert.confirmConfirm"))}
+                description={String(t("pending.securityAlert.confirmDescription"))}
+                onConfirm={() => runOne(item, { kind: "pending_trust_security", label: String(t("pending.actions.trust")), perform: (target) => facade.trust!(target) })}
+                title={String(t("pending.securityAlert.confirmTitle"))}
+                trigger={<Button disabled={busy} loading={processingItemId === item.id} size="sm">{t("pending.actions.trust")}</Button>}
+              />
+            ) : null}
+            {isSecurityAlert ? (
+              <Link
+                className="sh-button sh-button--secondary"
+                state={{ removalRequest: { skillId: item.subject } }}
+                to={`/library/${encodeURIComponent(item.subject)}`}
+              >
+                {t("pending.actions.distrustDelete")}
+              </Link>
+            ) : null}
             {trialAction ? <Button disabled={busy} loading={processingItemId === item.id} onClick={() => runOne(item, trialAction)} size="sm">{trialAction.label}</Button> : null}
             {canSnooze ? <>
               <Select aria-label={String(t("pending.defer.durationLabel"))} className="sh-pending-item__defer-days" disabled={busy} value={deferDays} onChange={(event) => changeDeferDays(Number(event.target.value) as 7 | 30)}>

@@ -191,3 +191,25 @@ it("returns null when the saved view preference is missing or unparsable", async
   query.mockResolvedValue({ type: "ui_preference", payload: { key: "pending.view.kind", value_json: "{\"kind\":\"bogus\"}" } });
   await expect(nativePendingFacade.loadSavedView()).resolves.toBeNull();
 });
+
+// W3-1（FB-003 裁决第 1 节）：待办「完全信任」经原生 trust_skill_security
+// 命令留痕（后端记录来源/时间并绑定当前内容版本）；非预警条目拒绝信任。
+it("trusts a security alert item through the native trust command", async () => {
+  vi.mocked(executeCommand).mockResolvedValue({
+    type: "trust_skill_security",
+    payload: { skill_id: "skill-c", version_id: "v1", decided_at: "1759500000" },
+  });
+  await nativePendingFacade.trust!({
+    id: "security_alert:skill-c:current", subject: "skill-c", kind: "security_alert", code: "current", message: "m",
+  });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "trust_skill_security", payload: { skill_id: "skill-c" },
+  });
+});
+
+it("refuses to trust items that are not security alerts", async () => {
+  await expect(nativePendingFacade.trust!({
+    id: "trial_due:skill-a:trial", subject: "skill-a", kind: "trial_due", code: "trial", message: "m",
+  })).rejects.toThrow();
+  expect(executeCommand).not.toHaveBeenCalled();
+});

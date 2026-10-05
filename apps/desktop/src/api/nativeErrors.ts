@@ -192,6 +192,9 @@ export function keyedMessage(
     return "importWorkflow.errors.securityBlocked";
   }
   if (code === "deployment.security_check_blocked") return "deployment.results.failure.securityBlocked";
+  // W3-1（FB-003）：Skill 处于安全预警状态，派发被拒——文案直接给出处理入口
+  // 指引（详情安全页/待办），不留死胡同；配套链接由派发流错误呈现处挂载。
+  if (code === "deployment.security_alert_blocked") return "deployment.errors.securityAlertBlocked";
   if (code === "target.ownership_unknown") return "deployment.results.failure.ownershipUnknown";
   if (code === "agent_profile.invalid_capability") return reason === "agent_compatibility_unverified"
     ? "agents.compatibility.pendingError" : "deployment.results.failure.invalidCapability";

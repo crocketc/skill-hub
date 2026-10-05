@@ -1280,3 +1280,48 @@ describe("SkillDetailPage context check and source events (12C)", () => {
     ).toHaveAttribute("href", "/relationships/governance/history");
   });
 });
+
+// W3-1（FB-003 裁决第 1 节）：待办「不信任（删除）」经 removalRequest 状态
+// 直达既有删除影响确认——复用同一 prepareDelete→RemovalImpactDialog 流程，
+// 不新建第二套删除。
+describe("removal request entry", () => {
+  it("opens the existing removal confirmation when arriving with a matching removal request", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [],
+        dependentProjects: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      locale: "en-US",
+      removalFacade,
+    });
+
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+  });
+
+  it("ignores a removal request addressed to another skill", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn(),
+      commitDelete: vi.fn(),
+    };
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-other" } } },
+      locale: "en-US",
+      removalFacade,
+    });
+
+    await screen.findByRole("heading", { level: 1, name: "PDF Reader" });
+    expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
+  });
+});
