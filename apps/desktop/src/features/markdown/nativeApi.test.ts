@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
+import type { SaveMarkdownAsCopy } from "../../api/bindings";
 import { MarkdownUnavailableError } from "./api";
 import { nativeMarkdownFacade } from "./nativeApi";
 
@@ -7,6 +8,13 @@ vi.mock("../../api/bindings", () => ({
   executeCommand: vi.fn(),
   queryApplication: vi.fn(),
 }));
+
+/** K5 目标契约：save_markdown_as_copy 改为整体请求对象（GREEN 前生产签名未到位）。 */
+function saveCopyRequest(facade: object, request: SaveMarkdownAsCopy): Promise<unknown> {
+  return (facade as unknown as {
+    saveMarkdownAsCopy: (request: SaveMarkdownAsCopy) => Promise<unknown>;
+  }).saveMarkdownAsCopy(request);
+}
 
 describe("nativeMarkdownFacade", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -97,7 +105,48 @@ describe("nativeMarkdownFacade", () => {
     });
   });
 
-  it("saves Markdown as a copy through the native command", async () => {
+  // K5：另存副本命令承载来源血缘与继承选择；回执是统一 saved_skill_copy。
+  it("saves Markdown as a copy with origin and inheritance through the native command", async () => {
+    const payload = {
+      skill_id: "skill-1",
+      path: "SKILL.md",
+      markdown: "# Copy",
+      expected_identity: "sha256:content-1",
+      origin: { source_skill_id: "skill-1", source_version_id: "sha256:version-1" },
+      inheritance: "None" as const,
+    };
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "saved_skill_copy",
+      payload: {
+        content_identity: "sha256:copy-content",
+        display_name: "PDF Reader copy",
+        inheritance: "NotRequested",
+        lineage_registered: true,
+        path: "SKILL.md",
+        recovery_operation_id: null,
+        skill_id: "skill-copy",
+        version_id: "sha256:copy-version",
+      },
+    });
+
+    await expect(saveCopyRequest(nativeMarkdownFacade, payload)).resolves.toEqual({
+      content_identity: "sha256:copy-content",
+      display_name: "PDF Reader copy",
+      inheritance: "NotRequested",
+      lineage_registered: true,
+      path: "SKILL.md",
+      recovery_operation_id: null,
+      skill_id: "skill-copy",
+      version_id: "sha256:copy-version",
+    });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "save_markdown_as_copy",
+      payload,
+    });
+  });
+
+  // K5：回执守卫收紧为 saved_skill_copy；旧 saved_skill_content 不再被接受。
+  it("rejects a save_markdown_as_copy receipt without the unified copy outcome", async () => {
     vi.mocked(executeCommand).mockResolvedValue({
       type: "saved_skill_content",
       payload: {
@@ -108,20 +157,48 @@ describe("nativeMarkdownFacade", () => {
       },
     });
 
-    await expect(nativeMarkdownFacade.saveMarkdownAsCopy(
-      "skill-1",
-      "SKILL.md",
-      "# Copy",
-      "sha256:content-1",
-    )).resolves.toBeUndefined();
-    expect(executeCommand).toHaveBeenCalledWith({
-      type: "save_markdown_as_copy",
+    await expect(saveCopyRequest(nativeMarkdownFacade, {
+      skill_id: "skill-1",
+      path: "SKILL.md",
+      markdown: "# Copy",
+      expected_identity: "sha256:content-1",
+    })).rejects.toBeInstanceOf(MarkdownUnavailableError);
+  });
+
+  // K5：替换继承预览走真实查询绑定，逐目标事实原样透传。
+  it("queries the takeover replacement preview through the native binding", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "save_as_copy_replacement_preview",
       payload: {
-        skill_id: "skill-1",
-        path: "SKILL.md",
-        markdown: "# Copy",
-        expected_identity: "sha256:content-1",
+        confirmation_fingerprint: "fp-1",
+        expires_at: "2026-10-04T12:00:00Z",
+        preview_id: "preview-1",
+        source_skill_id: "skill-1",
+        source_version_id: "sha256:version-1",
+        targets: [
+          {
+            blocker: null,
+            consumer_deployment_ids: ["dep-1"],
+            deployment_id: "dep-1",
+            managed: true,
+            path: "C:/Agents/Codex/skills/pdf-reader",
+            requires_shared_target_confirmation: false,
+            runtime_name: "pdf-reader",
+            target_id: "tgt-1",
+            version_id: "sha256:version-1",
+          },
+        ],
       },
+    });
+
+    await expect((nativeMarkdownFacade as unknown as {
+      saveAsCopyReplacementPreview: (skillId: string, targets: string[]) => Promise<unknown>;
+    }).saveAsCopyReplacementPreview("skill-1", ["dep-1"])).resolves.toMatchObject({
+      preview_id: "preview-1",
+    });
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_save_as_copy_replacement_preview",
+      payload: { source_skill_id: "skill-1", targets: ["dep-1"] },
     });
   });
 

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SaveAsCopyOutcome, SaveMarkdownAsCopy } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { MarkdownContentConflictError, markdownKeys } from "./api";
@@ -10,8 +11,30 @@ import { MarkdownEditor } from "./MarkdownEditor";
 import { SYNC_SCROLL_STORAGE_KEY } from "./syncScroll";
 import {
   createMockMarkdownFacade,
+  type MockMarkdownFacade,
   type MockMarkdownOptions,
 } from "./testFixtures";
+
+/** K5：拦截另存副本命令，记录请求并回填统一回执（GREEN 前生产 fixture 尚无此形态）。 */
+function interceptSaveCopy(facade: MockMarkdownFacade) {
+  const requests: SaveMarkdownAsCopy[] = [];
+  (facade as unknown as Record<string, unknown>).saveMarkdownAsCopy = async (
+    request: SaveMarkdownAsCopy,
+  ) => {
+    requests.push(request);
+    return {
+      content_identity: "sha256:copy-content",
+      display_name: "PDF Reader copy",
+      inheritance: "NotRequested",
+      lineage_registered: true,
+      path: "C:/Library/skills/pdf-reader-copy/SKILL.md",
+      recovery_operation_id: null,
+      skill_id: "skill-copy",
+      version_id: "ver-copy-1",
+    } satisfies SaveAsCopyOutcome;
+  };
+  return requests;
+}
 
 async function renderEditor(
   options: MockMarkdownOptions = {},
@@ -234,30 +257,48 @@ describe("MarkdownEditor", () => {
     });
   });
 
-  it("saves the edited draft as an independent copy and keeps the original editor open", async () => {
+  it("opens the save-as-copy dialog and records source lineage when the copy is created", async () => {
     const facade = await renderEditor();
+    const copyRequests = interceptSaveCopy(facade);
     await replaceEditorText("Independent copy");
     await screen.findByText("Draft saved locally");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save as copy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save as new skill" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Copy saved as a new Skill");
-    expect(facade.calls.copiedVersions).toHaveLength(1);
-    expect(facade.calls.copiedVersions[0]?.markdown).toBe("Independent copy");
+    // MS-06：另存入口不再一次性静默保存，而是打开统一对话框（不继承为默认分支）。
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Save as a new skill")).toBeVisible();
+    expect(facade.calls.copiedVersions).toHaveLength(0);
+    expect(copyRequests).toHaveLength(0);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create the new skill" }));
+
+    await waitFor(() => expect(copyRequests).toHaveLength(1));
+    expect(copyRequests[0]).toMatchObject({
+      expected_identity: "sha256:skill-md-v1",
+      inheritance: "None",
+      markdown: "Independent copy",
+      origin: { source_skill_id: "pdf-reader", source_version_id: "v1" },
+      path: "SKILL.md",
+      skill_id: "pdf-reader",
+    });
+    // 编辑器保持打开：结果与新主体入口都在对话框内呈现。
     expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
       "Independent copy",
     );
   });
 
-  it("keeps the local draft and gives an actionable error when copy-save fails", async () => {
+  it("keeps the local draft and shows an actionable error inside the dialog when copy-save fails", async () => {
     await renderEditor({ failCopy: true });
     await replaceEditorText("Copy that must remain");
     await screen.findByText("Draft saved locally");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save as copy" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save as new skill" }));
 
-    expect(await screen.findByText(/Could not save the copy\. Check that the library is writable/))
-      .toBeVisible();
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create the new skill" }));
+
+    expect(await within(dialog).findByText(/Could not create the new skill/)).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(
       "Copy that must remain",
     );
@@ -279,12 +320,15 @@ describe("MarkdownEditor", () => {
     expect(facade.calls.savedVersions).toEqual([]);
   });
 
-  it("explains that normal save creates a new version and exposes copy-save", async () => {
+  it("explains that normal save creates a new version and exposes the unified save-as-new-skill entry", async () => {
     await renderEditor();
 
     expect(screen.getByText(/Saving creates a new version/)).toBeVisible();
-    const copyButton = screen.getByRole("button", { name: "Save as copy" });
+    const copyButton = screen.getByRole("button", { name: "Save as new skill" });
     expect(copyButton).toBeEnabled();
+    // MS-06：入口文案不再宣称「独立 Skill/独立副本」——统一为新 Skill+可选接管语义。
+    expect(screen.queryByText(/separate Skill/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/optional takeover of usage locations/i)).toBeVisible();
   });
 
   it("guards the replace save behind a dialog that recommends a copy", async () => {
@@ -302,7 +346,7 @@ describe("MarkdownEditor", () => {
     expect(dialog).toHaveTextContent(/roll back/);
     // 推荐副本是主操作（视觉主按钮），替换保存是次操作。
     const recommended = within(dialog).getByRole("button", {
-      name: "Save as copy (recommended)",
+      name: "Save as new skill (recommended)",
     });
     const replace = within(dialog).getByRole("button", { name: "Replace and save" });
     expect(recommended).toHaveClass("sh-button--primary");
@@ -351,19 +395,22 @@ describe("MarkdownEditor", () => {
     expect(facade.calls.savedVersions).toHaveLength(1);
   });
 
-  it("saves a copy from the guarded dialog and never touches the original", async () => {
+  it("opens the save-as-copy dialog from the guarded dialog and never touches the original", async () => {
     const facade = await renderEditor();
+    interceptSaveCopy(facade);
     await replaceEditorText("Dialog copy");
     await screen.findByText("Draft saved locally");
 
     fireEvent.click(screen.getByRole("button", { name: "Save and create version" }));
     fireEvent.click(
-      await screen.findByRole("button", { name: "Save as copy (recommended)" }),
+      await screen.findByRole("button", { name: "Save as new skill (recommended)" }),
     );
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Copy saved as a new Skill");
-    expect(facade.calls.copiedVersions).toHaveLength(1);
+    // 受控入口收编：确认面板关闭，统一对话框打开；原文件不会被顺手覆盖。
+    const copyDialog = await screen.findByRole("dialog");
+    expect(within(copyDialog).getByText("Save as a new skill")).toBeVisible();
     expect(facade.calls.savedVersions).toEqual([]);
+    expect(facade.calls.copiedVersions).toEqual([]);
   });
 
   it("leaves content untouched when the replace confirmation is cancelled", async () => {
@@ -402,17 +449,12 @@ describe("MarkdownEditor", () => {
     expect(facade.calls.copiedVersions).toEqual([]);
     expect(facade.calls.savedVersions).toEqual([]);
 
-    // 另存为副本：冲突前的内容原样落为独立 Skill，原文件保持不动。
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save as copy" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Copy saved as a new Skill");
-    expect(facade.calls.copiedVersions).toEqual([
-      {
-        expectedIdentity: "sha256:skill-md-v1",
-        markdown: "Conflicting",
-        path: "SKILL.md",
-        skillId: "pdf-reader",
-      },
-    ]);
+    // 另存为新技能：冲突出口收编进统一对话框，静默保存不再发生。
+    interceptSaveCopy(facade);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save as new skill" }));
+    const copyDialog = await screen.findByRole("dialog");
+    expect(within(copyDialog).getByText("Save as a new skill")).toBeVisible();
+    expect(facade.calls.copiedVersions).toEqual([]);
     expect(facade.calls.savedVersions).toEqual([]);
     // 冲突未被静默覆盖：编辑器仍持有冲突前的内容。
     expect(screen.getByRole("textbox", { name: "Markdown source" })).toHaveTextContent(

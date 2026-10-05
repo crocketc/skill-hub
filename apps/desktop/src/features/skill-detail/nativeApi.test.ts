@@ -157,6 +157,63 @@ describe("native skill detail facade", () => {
     });
   });
 
+  // K5/MS-04：上游谱系原样透传给详情摘要；None=无登记，不做任何派生。
+  it("carries the upstream reuse-modify lineage through to the summary", async () => {
+    const lineage = {
+      created_at: "1728000000",
+      source_display_name: "Source skill",
+      source_skill_id: "skill-src",
+      source_version_id: "ver-src",
+    };
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+        upstream_lineage: lineage,
+      },
+    } as never);
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      upstreamLineage: lineage,
+    });
+  });
+
+  it("keeps the upstream lineage absent when the backend registers none", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal",
+        trial_due: null,
+        current_version: null,
+      },
+    } as never);
+
+    const summary = await nativeSkillDetailFacade.getSummary("skill-1");
+    expect(summary.upstreamLineage).toBeUndefined();
+  });
+
   it("keeps the summary tree root unknown when the backend reports no materialized tree", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication).mockResolvedValue({
