@@ -9,7 +9,7 @@
 | 产品定位、实体/主体与关系边界 | [产品定位与模型边界](产品定位与模型边界.md) | [关系治理裁决](../superpowers/specs/2026-10-03-relationship-governance-product-decisions.md)第1—3节；[技能操作模型](../superpowers/specs/2026-10-03-skill-operation-model-discussion.md)第15—16节 |
 | 前端展示/组件、抽屉/详情/列表按钮 | [界面呈现与操作入口](界面呈现与操作入口.md) | 操作入口/样式已确认，未实现能力依真实契约；不按旧稿恢复过时入口 |
 | 接管、健康异常、修复、回收/结束、图谱 | 上述两份规范与[关系治理裁决](../superpowers/specs/2026-10-03-relationship-governance-product-decisions.md) | [统一增量实施计划](../superpowers/plans/2026-10-03-relationship-governance-incremental-implementation-plan.md)，权威事实/执行/恢复契约 |
-| 画像、试用、内容/版本、来源更新、派生、检查、组合/导出/主体删除 | [技能操作模型](../superpowers/specs/2026-10-03-skill-operation-model-discussion.md)相关动作节及职责边界 | 界面规范负责入口/样式；版本/来源与新批量仍须实际契约和执行验证；导入安全分级与预警、批内冲突、检查记录、删除级联、备份说明、重试通道按[未决事项产品裁决](../superpowers/specs/2026-10-05-未决事项产品裁决.md) |
+| 画像、试用、内容/版本、来源更新、派生、检查、组合/导出/主体删除 | [技能操作模型](../superpowers/specs/2026-10-03-skill-operation-model-discussion.md)相关动作节及职责边界 | 界面规范负责入口/样式；版本/来源与新批量仍须实际契约和执行验证；导入安全分级与预警、批内冲突的门禁语义与处置流程见[技能操作模型第 23 节](../superpowers/specs/2026-10-03-skill-operation-model-discussion.md)（规则权威表述见[未决事项产品裁决](../superpowers/specs/2026-10-05-未决事项产品裁决.md)）；检查记录、删除级联、备份说明、重试通道按[未决事项产品裁决](../superpowers/specs/2026-10-05-未决事项产品裁决.md) |
 
 ## 维护和优先级
 
