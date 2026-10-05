@@ -1163,6 +1163,148 @@ describe("native translation loop", () => {
   });
 });
 
+describe("K6 source update preview bindings", () => {
+  it("prepares a source update preview through the typed command", async () => {
+    vi.clearAllMocks();
+    const previewPayload = {
+      skill_id: "skill-1",
+      preview_id: "preview-1",
+      expires_at: "2026-10-04T12:00:00Z",
+      confirmation_fingerprint: "fp-1",
+      current_version_id: "sha256:v3",
+      candidate_identity: "sha256:cand",
+      upstream_label: "v4.0",
+      files: [
+        { path: "SKILL.md", change: "modified" },
+        { path: "new.md", change: "added" },
+      ],
+    };
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "source_update_preview",
+      payload: previewPayload,
+    } as never);
+
+    await expect(nativeSkillDetailFacade.prepareSourceUpdate("skill-1")).resolves.toBe(previewPayload);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "prepare_source_update",
+      payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("refuses to continue when prepare returns an unexpected result", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "ok", error_code: null },
+    } as never);
+
+    await expect(nativeSkillDetailFacade.prepareSourceUpdate("skill-1")).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof Error && error.name === "SkillDetailUnavailableError",
+    );
+  });
+
+  it("commits a preview decision with the preview id only", async () => {
+    vi.clearAllMocks();
+    const applied = {
+      skill_id: "skill-1",
+      decision: "take_upstream",
+      new_version: "sha256:v4",
+      deployments_need_reconciliation: true,
+    };
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "applied_source_update",
+      payload: applied,
+    } as never);
+
+    await expect(
+      nativeSkillDetailFacade.commitSourceUpdate("preview-1", "take_upstream"),
+    ).resolves.toBe(applied);
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "commit_source_update",
+      payload: { preview_id: "preview-1", decision: "take_upstream" },
+    });
+  });
+
+  it("ignores a candidate by its identity through the typed command", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-ignore",
+        phase: "committed",
+        message_code: "source.update_ignored",
+        error_code: null,
+      },
+    } as never);
+
+    await expect(
+      nativeSkillDetailFacade.ignoreSourceUpdate("skill-1", "sha256:cand"),
+    ).resolves.toBeUndefined();
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "ignore_source_update",
+      payload: { skill_id: "skill-1", candidate_identity: "sha256:cand" },
+    });
+  });
+
+  it("reads the persisted source update status including the never-checked default", async () => {
+    vi.clearAllMocks();
+    const status = {
+      skill_id: "skill-1",
+      state: null,
+      checked_at: null,
+      upstream_label: null,
+      candidate_identity: null,
+      ignored_candidates: ["sha256:old"],
+      candidate_ignored: false,
+    };
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "source_update_status",
+      payload: status,
+    } as never);
+
+    await expect(nativeSkillDetailFacade.getSourceUpdateStatus("skill-1")).resolves.toBe(status);
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_source_update_status",
+      payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("builds the relink locator from the user-selected kind, never from guessing", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: { operation_id: "op-1", phase: "committed", message_code: "source.relinked", error_code: null },
+    } as never);
+
+    await nativeSkillDetailFacade.relinkSource("skill-1", { kind: "local", value: " C:/src " });
+    await nativeSkillDetailFacade.relinkSource("skill-1", {
+      kind: "https",
+      value: "https://github.com/o/r",
+    });
+    await nativeSkillDetailFacade.relinkSource("skill-1", { kind: "git", value: "git@github.com:o/r.git" });
+
+    expect(executeCommand).toHaveBeenNthCalledWith(1, {
+      type: "relink_source",
+      payload: { skill_id: "skill-1", source: { kind: "local", locator: { local_path: "C:/src" } } },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+      type: "relink_source",
+      payload: {
+        skill_id: "skill-1",
+        source: { kind: "https", locator: { https_url: "https://github.com/o/r" } },
+      },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
+      type: "relink_source",
+      payload: {
+        skill_id: "skill-1",
+        source: { kind: "git", locator: { git_url: "git@github.com:o/r.git" } },
+      },
+    });
+  });
+});
+
 describe("native relationship governance queries", () => {
   it("loads the relationship overview scoped to the skill", async () => {
     const overview: RelationshipOverview = {
