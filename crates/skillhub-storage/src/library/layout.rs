@@ -626,6 +626,27 @@ impl CentralLibrary {
         Ok(())
     }
 
+    /// W1-2：把 Skill 的草稿目录（`drafts/<skill_id>/`）移入保留的 tmp 备份，
+    /// 使编辑草稿随主体删除一并清理、绝不残留孤儿。返回 `true` 表示发生了
+    /// 移动，`false` 表示该主体没有草稿。失败时草稿原位保留。
+    pub fn prepare_drafts_removal(&self, skill_id: SkillId, backup: &Path) -> AppResult<bool> {
+        let drafts = self.paths.drafts_dir.join(skill_id.to_string());
+        if path_entry_exists(backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "drafts_backup_path_occupied")
+                .with_param("path", backup.to_string_lossy().into_owned())
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if !path_entry_exists(&drafts)? {
+            return Ok(false);
+        }
+        if self.store.should_fail("before_drafts_removal_rename") {
+            return Err(injected_fault("before_drafts_removal_rename"));
+        }
+        fs::rename(&drafts, backup).map_err(io_error)?;
+        Ok(true)
+    }
+
     /// Restores a retained backup after restarting an interrupted adoption.
     /// The supplied path must be an internal backup produced for this Skill.
     pub fn recover_visible_tree_backup(

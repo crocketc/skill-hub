@@ -725,6 +725,14 @@ impl DeploymentBackend for LocalDeploymentBackend {
 }
 
 impl LocalDeploymentBackend {
+    /// W1-2：统计主体 drafts 目录下的草稿文件数，供删除影响清单报告。
+    /// drafts 目录缺失按 0 处理；真实 IO 错误向上传播。
+    fn library_draft_count(&self, skill_id: skillhub_core::SkillId) -> AppResult<u32> {
+        let library = self.library_runtime.snapshot()?;
+        skillhub_storage::MarkdownDraftStore::from_library(&library.central)
+            .count_for_skill(skill_id)
+    }
+
     /// Writes the accounting row for a target that is already on disk, and
     /// returns the id the row actually carries.  `insert_sync` reuses the row
     /// that already owns this `(target, runtime_name)` position, so the
@@ -816,6 +824,9 @@ impl RemovalBackend for LocalDeploymentBackend {
             .map(|record| record.target_id.clone())
             .collect();
         let matrix = deletion_impact_matrix(&database, skill_id, &managed_target_ids)?;
+        // W1-2：影响清单报告未完成编辑草稿数；库上下文不可用的环境（纯
+        // 数据库测试）按 0 报告——删除本身在无库时无法执行。
+        let draft_count = self.library_draft_count(skill_id).unwrap_or(0);
         Ok(skillhub_core::RemovalImpact {
             operation_id: OperationId::new(),
             skill_id,
@@ -827,6 +838,7 @@ impl RemovalBackend for LocalDeploymentBackend {
             combinations: matrix.combinations,
             related_skills: matrix.related_skills,
             unknown_external_references: matrix.unknown_external_references,
+            draft_count,
         })
     }
 
@@ -861,6 +873,7 @@ impl RemovalBackend for LocalDeploymentBackend {
             combinations: Vec::new(),
             related_skills: Vec::new(),
             unknown_external_references: Vec::new(),
+            draft_count: 0,
         })
     }
 
@@ -961,9 +974,35 @@ impl RemovalBackend for LocalDeploymentBackend {
         {
             return Err(mark_irreversible_skill_deletion(&backup, error));
         }
+        // W1-2（裁决 A）：主体删除已成功，编辑草稿随主体级联清理——草稿
+        // 属主体私有数据，保留只会成为永久残留。先移入同一 tmp 备份区
+        // （与 visible-backup 同模式命名），随既有"丢弃备份"步骤一并清理；
+        // 移动失败不得静默留下孤儿草稿，按不可逆删除如实上报恢复材料。
+        let drafts_backup = library.central.paths().tmp_dir.join(format!(
+            "drafts-backup-{}-{}",
+            skill_id,
+            OperationId::new()
+        ));
+        let drafts_moved = match library
+            .central
+            .prepare_drafts_removal(skill_id, &drafts_backup)
+        {
+            Ok(moved) => moved,
+            Err(error) => {
+                return Err(mark_irreversible_skill_deletion(&backup, error).with_param(
+                    "pending_drafts_path",
+                    drafts_dir_path(&library.central, skill_id)
+                        .to_string_lossy()
+                        .into_owned(),
+                ));
+            }
+        };
         if tree_backed_up {
             // 备份只在全部消费面确认删除后丢弃；残留失败是无害的 tmp 垃圾。
             let _ = library.central.discard_visible_tree_removal(&backup);
+        }
+        if drafts_moved {
+            let _ = library.central.discard_visible_tree_removal(&drafts_backup);
         }
         Ok(())
     }
@@ -1070,6 +1109,15 @@ fn mark_irreversible_skill_deletion(backup: &Path, error: AppError) -> AppError 
             "recovery_backup_path",
             backup.to_string_lossy().into_owned(),
         )
+}
+
+/// W1-2：主体 drafts 目录路径（`drafts/<skill_id>/`），供失败路径在错误
+/// 参数中如实指出尚未清理的草稿位置。
+fn drafts_dir_path(
+    central: &skillhub_storage::CentralLibrary,
+    skill_id: skillhub_core::SkillId,
+) -> std::path::PathBuf {
+    central.paths().drafts_dir.join(skill_id.to_string())
 }
 
 #[async_trait]
@@ -10472,11 +10520,19 @@ impl LocalApplicationFacade {
 
     /// Import is a write boundary: run the deterministic scanner against the
     /// user source before creating any catalog/version/materialized files.
+    /// The report is kept so W1-3 can register the same scan as the version's
+    /// first basic check record instead of scanning a second time.
     /// Findings are returned as structured evidence so clients can explain
     /// the block without parsing a localized error sentence.
-    fn enforce_import_security_gate(candidate: &skillhub_core::ImportCandidate) -> AppResult<()> {
-        let report =
-            BasicScanner::default().scan_version_report(Path::new(&candidate.absolute_root))?;
+    fn scan_import_security_report(
+        candidate: &skillhub_core::ImportCandidate,
+    ) -> AppResult<skillhub_adapters::security::BasicScanReport> {
+        BasicScanner::default().scan_version_report(Path::new(&candidate.absolute_root))
+    }
+
+    fn enforce_import_security_gate(
+        report: &skillhub_adapters::security::BasicScanReport,
+    ) -> AppResult<()> {
         if report.findings.is_empty() {
             return Ok(());
         }
@@ -10496,6 +10552,49 @@ impl LocalApplicationFacade {
             .with_param("finding_count", report.findings.len() as u64)
             .with_param("findings", serde_json::Value::Array(evidence))
             .with_action(RecoveryAction::ReviewSecurityFindings))
+    }
+
+    /// W1-3（FB-006）：把导入边界扫描登记为该版本的首次基础检查记录。
+    /// 只在“该版本尚无任何检查记录”且“扫描时的候选树哈希与已入库版本
+    /// 清单一致”时登记；其余情况跳过——诚实地缺失一条记录，而不是登记
+    /// 一条与版本内容无关的检查。持久化失败向上抛出，由调用方按导入
+    /// 失败回滚整次导入，绝不留下半份状态。
+    fn register_import_basic_check(
+        &self,
+        database: &Database,
+        candidate: &skillhub_core::ImportCandidate,
+        skill_id: skillhub_core::SkillId,
+        version: &skillhub_core::VersionRecord,
+        findings: &[skillhub_core::check::Finding],
+    ) -> AppResult<()> {
+        let scanned_tree_hash = self.candidate_tree_hash(candidate, None);
+        let existing_run = database.check_repository().current_for_version_sync(
+            skill_id,
+            &version.id,
+            CheckKind::Basic,
+        )?;
+        if !may_register_import_check(
+            scanned_tree_hash.as_deref(),
+            &version.manifest.tree_hash,
+            existing_run.as_ref(),
+        ) {
+            return Ok(());
+        }
+        let run_id = format!("basic-{}-0", version.id.as_str());
+        let mut run = CheckRun::completed(
+            run_id,
+            skill_id,
+            version.id.clone(),
+            CheckKind::Basic,
+            findings.to_vec(),
+        );
+        run.ruleset_id = Some("basic-v1".to_owned());
+        run.coverage_inputs = serde_json::Value::Object(Default::default());
+        run.trigger = skillhub_core::check::CheckTrigger::Import;
+        run.generation = 0;
+        run.started_at = now_millis();
+        run.ended_at = Some(now_millis());
+        database.check_repository().insert_sync(&run)
     }
 
     fn cancel_import(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
@@ -10784,7 +10883,9 @@ impl LocalApplicationFacade {
                 },
             )));
         }
-        Self::enforce_import_security_gate(&prepared.candidate)?;
+        // 扫描一次并保留报告：安全闸门用结论，检查登记用同一份报告。
+        let security_report = Self::scan_import_security_report(&prepared.candidate)?;
+        Self::enforce_import_security_gate(&security_report)?;
         if request.decision == skillhub_core::ImportDecision::ReuseExisting {
             let skill_id = prepared
                 .analysis
@@ -10937,6 +11038,21 @@ impl LocalApplicationFacade {
                 }
             }
             if let Err(error) = database.record_current_version(skill_id, &version) {
+                return Err(cleanup_import_error(
+                    error,
+                    cleanup_import_state(database, central, store, skill_id, &version),
+                ));
+            }
+            // W1-3（FB-006）：导入边界扫描登记为该版本的首条基础检查记录。
+            // 登记失败视为导入失败并回滚库内状态——“无检查记录的导入”
+            // 不是完成的导入。
+            if let Err(error) = self.register_import_basic_check(
+                database,
+                &prepared.candidate,
+                skill_id,
+                &version,
+                &security_report.findings,
+            ) {
                 return Err(cleanup_import_error(
                     error,
                     cleanup_import_state(database, central, store, skill_id, &version),
@@ -14051,6 +14167,17 @@ impl LocalApplicationFacade {
     }
 }
 
+/// W1-3（FB-006）：导入检查登记的纯判定闸门。只有“扫描时哈希与入库
+/// 版本清单一致”且“该版本尚无任何检查记录”时才允许登记；覆盖单元
+/// 测试见本文件底部 tests 模块。
+fn may_register_import_check(
+    scanned_tree_hash: Option<&str>,
+    version_tree_hash: &str,
+    existing_run: Option<&CheckRun>,
+) -> bool {
+    scanned_tree_hash == Some(version_tree_hash) && existing_run.is_none()
+}
+
 fn cleanup_import_state(
     database: &Database,
     central: &CentralLibrary,
@@ -15995,7 +16122,7 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 mod tests {
     use super::{
         civil_date_from_days, command_changes_version_adoption_facts, format_rfc3339_utc,
-        LocalApplicationFacade,
+        may_register_import_check, LocalApplicationFacade,
     };
     use skillhub_core::api::{AppCommand, AppQuery};
     use skillhub_core::catalog::{CallPolicy, Skill};
@@ -16034,6 +16161,50 @@ mod tests {
         assert_eq!(format_rfc3339_utc(1_789_000_000), "2026-09-10T00:26:40Z");
         assert_eq!(format_rfc3339_utc(1_767_225_599), "2025-12-31T23:59:59Z");
         assert_eq!(format_rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
+    /// W1-3（FB-006）：导入检查登记只允许“内容一致且尚无记录”的组合；
+    /// 哈希不一致是诚实缺失（跳过登记、不报错），已有记录绝不覆盖。
+    #[test]
+    fn import_check_registration_requires_matching_hash_and_absent_run() {
+        use skillhub_core::check::{CheckKind, CheckRun};
+
+        let skill_id = SkillId::new();
+        let version_id: skillhub_core::VersionId = format!("sha256:{}", "b".repeat(64))
+            .parse()
+            .expect("valid version id");
+        let version_hash = "tree-hash-1";
+        let existing = CheckRun::running(
+            "basic-existing-0",
+            skill_id,
+            version_id.clone(),
+            CheckKind::Basic,
+        );
+
+        // 内容一致且无记录：登记。
+        assert!(may_register_import_check(
+            Some(version_hash),
+            version_hash,
+            None
+        ));
+        // 扫描哈希缺失或与入库版本不一致：跳过登记（诚实缺失，不报错）。
+        assert!(!may_register_import_check(None, version_hash, None));
+        assert!(!may_register_import_check(
+            Some("tree-hash-2"),
+            version_hash,
+            None
+        ));
+        // 已有任何记录（含 manual）：绝不覆盖、不加第二条。
+        assert!(!may_register_import_check(
+            Some(version_hash),
+            version_hash,
+            Some(&existing)
+        ));
+        assert!(!may_register_import_check(
+            Some("tree-hash-2"),
+            version_hash,
+            Some(&existing)
+        ));
     }
 
     #[test]

@@ -84,6 +84,28 @@ impl MarkdownDraftStore {
         }
     }
 
+    /// W1-2：该主体 drafts 目录下的草稿文件数；无草稿为 0。原子写入的
+    /// 临时文件（`.` 前缀）不计数。
+    pub fn count_for_skill(&self, skill_id: SkillId) -> AppResult<u32> {
+        let directory = self.root.join(skill_id.to_string());
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(io_error(error)),
+        };
+        let mut count = 0u32;
+        for entry in entries {
+            let entry = entry.map_err(io_error)?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            if entry.path().is_file() && !file_name.starts_with('.') && file_name.ends_with(".json")
+            {
+                count = count.saturating_add(1);
+            }
+        }
+        Ok(count)
+    }
+
     /// 草稿文件路径：`drafts/<skill_id>/<sha256(path)>.json`。安全哈希
     /// 防路径穿越与非法文件名；调用方负责先校验 path 形状。
     fn draft_file(&self, skill_id: SkillId, path: &str) -> AppResult<PathBuf> {
@@ -229,5 +251,38 @@ mod tests {
             file.parent().expect("parent"),
             &root.path().join(skill.to_string())
         );
+    }
+
+    /// W1-2：草稿计数——只统计已保存的草稿文件，忽略原子写入临时文件；
+    /// 无草稿主体返回 0。
+    #[test]
+    fn count_for_skill_counts_saved_drafts_only() {
+        let root = tempfile::tempdir().expect("root");
+        let store = store_in(root.path());
+        let skill = SkillId::new();
+        let other = SkillId::new();
+        assert_eq!(store.count_for_skill(skill).expect("count"), 0);
+        store
+            .save(skill, "SKILL.md", "# Draft\n", None, "object-1", 1)
+            .expect("save draft");
+        store
+            .save(skill, "docs/notes.md", "# Notes\n", None, "object-2", 2)
+            .expect("save second draft");
+        store
+            .save(other, "SKILL.md", "# Other\n", None, "object-3", 3)
+            .expect("save other draft");
+        assert_eq!(store.count_for_skill(skill).expect("count"), 2);
+        assert_eq!(store.count_for_skill(other).expect("count"), 1);
+        // 临时文件不计数。
+        std::fs::write(
+            root.path()
+                .join(skill.to_string())
+                .join(".draft.json.1.tmp"),
+            b"x",
+        )
+        .expect("write temp file");
+        assert_eq!(store.count_for_skill(skill).expect("count"), 2);
+        store.discard(skill, "SKILL.md").expect("discard");
+        assert_eq!(store.count_for_skill(skill).expect("count"), 1);
     }
 }

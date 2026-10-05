@@ -4,7 +4,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 use skillhub_core::check::{
     derive_check_state, CheckKind, CheckRepository as CheckRepositoryPort, CheckRun, CheckRunPhase,
-    Finding, FindingDisposition,
+    CheckTrigger, Finding, FindingDisposition,
 };
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId, VersionId};
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ impl<'a> CheckRepositorySqlite<'a> {
             .database
             .connection
             .query_row(
-                "SELECT skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code FROM check_runs WHERE id=?1",
+                "SELECT skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code,trigger FROM check_runs WHERE id=?1",
                 [id],
                 |row| {
                     Ok((
@@ -42,6 +42,7 @@ impl<'a> CheckRepositorySqlite<'a> {
                         row.get::<_, Option<i64>>(8)?,
                         row.get::<_, String>(9)?,
                         row.get::<_, Option<String>>(10)?,
+                        row.get::<_, String>(11)?,
                     ))
                 },
             )
@@ -60,6 +61,7 @@ impl<'a> CheckRepositorySqlite<'a> {
                 ended,
                 coverage,
                 failure,
+                trigger,
             )| {
                 let skill_id = skill.parse().map_err(|_| invalid_record())?;
                 let version_id = version.parse().map_err(|_| invalid_record())?;
@@ -80,6 +82,7 @@ impl<'a> CheckRepositorySqlite<'a> {
                     ended_at: ended,
                     coverage_inputs,
                     failure_code: failure,
+                    trigger: parse_trigger(&trigger)?,
                     findings: Vec::new(),
                 };
                 run.findings = load_findings(&self.database.connection, id)?;
@@ -121,7 +124,7 @@ impl<'a> CheckRepositorySqlite<'a> {
             .unchecked_transaction()
             .map_err(error)?;
         tx.execute(
-            "INSERT INTO check_runs(id,skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            "INSERT INTO check_runs(id,skill_id,version_id,kind,generation,state,ruleset_id,model_id,started_at,ended_at,coverage_json,failure_code,trigger) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
             params![
                 run.id,
                 run.skill_id.to_string(),
@@ -135,6 +138,7 @@ impl<'a> CheckRepositorySqlite<'a> {
                 run.ended_at,
                 serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
                 run.failure_code,
+                trigger_code(run.trigger),
             ],
         )
         .map_err(error)?;
@@ -151,7 +155,7 @@ impl<'a> CheckRepositorySqlite<'a> {
             .map_err(error)?;
         let changed = tx
             .execute(
-                "UPDATE check_runs SET skill_id=?2,version_id=?3,kind=?4,generation=?5,state=?6,ruleset_id=?7,model_id=?8,started_at=?9,ended_at=?10,coverage_json=?11,failure_code=?12 WHERE id=?1",
+                "UPDATE check_runs SET skill_id=?2,version_id=?3,kind=?4,generation=?5,state=?6,ruleset_id=?7,model_id=?8,started_at=?9,ended_at=?10,coverage_json=?11,failure_code=?12,trigger=?13 WHERE id=?1",
                 params![
                     run.id,
                     run.skill_id.to_string(),
@@ -165,6 +169,7 @@ impl<'a> CheckRepositorySqlite<'a> {
                     run.ended_at,
                     serde_json::to_string(&run.coverage_inputs).map_err(|_| invalid_record())?,
                     run.failure_code,
+                    trigger_code(run.trigger),
                 ],
             )
             .map_err(error)?;
@@ -348,6 +353,21 @@ fn state_code(run: &CheckRun) -> &'static str {
         skillhub_core::check::CheckState::Running => "running",
         skillhub_core::check::CheckState::Passed => "passed",
         skillhub_core::check::CheckState::Failed => "failed",
+    }
+}
+
+fn trigger_code(trigger: CheckTrigger) -> &'static str {
+    match trigger {
+        CheckTrigger::Manual => "manual",
+        CheckTrigger::Import => "import",
+    }
+}
+
+fn parse_trigger(value: &str) -> AppResult<CheckTrigger> {
+    match value {
+        "manual" => Ok(CheckTrigger::Manual),
+        "import" => Ok(CheckTrigger::Import),
+        _ => Err(invalid_record()),
     }
 }
 

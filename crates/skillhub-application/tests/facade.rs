@@ -2044,6 +2044,7 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
         .execute_batch(
             "UPDATE skills SET lifecycle='archived';
              ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+             ALTER TABLE check_runs DROP COLUMN trigger;
              DROP TABLE relationship_governance_mutation_receipts;
              DROP TABLE skill_lineage;
              PRAGMA user_version=22;",
@@ -2825,7 +2826,9 @@ async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
         .source_locator
         .as_deref()
         .is_some_and(|locator| !locator.is_empty()));
-    assert_eq!(detail.basic_check, CheckState::NotChecked);
+    // W1-3（FB-006）：导入边界扫描登记为首条基础检查记录后，干净导入的
+    // 详情读模型直接显示真实的 Passed 状态，而不是“未检查”。
+    assert_eq!(detail.basic_check, CheckState::Passed);
     assert_eq!(detail.ai_check, CheckState::NotChecked);
     assert_eq!(detail.pending_count, 0);
     assert_eq!(detail.high_risk_count, 0);

@@ -223,3 +223,56 @@ fn pending_findings_only_come_from_the_current_run() {
         .unwrap()
         .is_empty());
 }
+
+/// W1-3：检查记录携带触发来源（trigger）。manual 兼容旧行为；import
+/// 标注导入边界扫描。trigger 随 run 与 findings 行同事务往返。
+#[test]
+fn check_run_trigger_round_trips_and_defaults_to_manual() {
+    let db = Database::open_in_memory().unwrap();
+    let skill = SkillId::new();
+    let version = version_id();
+    seed_skill_and_version(&db, skill, &version);
+
+    // 缺省构造：manual（兼容既有路径）。
+    let manual = CheckRun::completed(
+        "basic-manual",
+        skill,
+        version.clone(),
+        CheckKind::Basic,
+        vec![],
+    );
+    assert_eq!(manual.trigger, skillhub_core::check::CheckTrigger::Manual);
+
+    let mut imported = CheckRun::completed(
+        "basic-import",
+        skill,
+        version.clone(),
+        CheckKind::Basic,
+        vec![Finding::new(
+            "finding-1",
+            "security.command_interpolation",
+            Severity::Warning,
+        )],
+    );
+    imported.trigger = skillhub_core::check::CheckTrigger::Import;
+
+    let repository = db.check_repository();
+    block_on(repository.insert(&manual)).unwrap();
+    block_on(repository.insert(&imported)).unwrap();
+
+    let loaded_manual = block_on(repository.get("basic-manual")).unwrap().unwrap();
+    assert_eq!(
+        loaded_manual.trigger,
+        skillhub_core::check::CheckTrigger::Manual
+    );
+    let loaded_import = block_on(repository.get("basic-import")).unwrap().unwrap();
+    assert_eq!(
+        loaded_import, imported,
+        "trigger and findings round-trip together"
+    );
+    assert_eq!(
+        loaded_import.findings.len(),
+        1,
+        "findings rows persist for the import run"
+    );
+}

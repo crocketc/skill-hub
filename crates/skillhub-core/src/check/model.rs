@@ -146,6 +146,18 @@ fn default_allowed_dispositions() -> BTreeSet<FindingDisposition> {
     .collect()
 }
 
+/// W1-3（FB-006）：检查记录的触发来源。`manual` 兼容导入标注之前的全部
+/// 既有行为；`import` 标注由导入边界扫描登记的首次基础检查记录。
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckTrigger {
+    #[default]
+    Manual,
+    Import,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CheckRun {
     pub id: String,
@@ -161,6 +173,9 @@ pub struct CheckRun {
     pub ended_at: Option<i64>,
     pub coverage_inputs: Value,
     pub failure_code: Option<String>,
+    /// W1-3：触发来源；缺省 manual 保持旧记录与旧路径的语义。
+    #[serde(default)]
+    pub trigger: CheckTrigger,
     pub findings: Vec<Finding>,
 }
 
@@ -196,6 +211,7 @@ impl CheckRun {
             ended_at: None,
             coverage_inputs: Value::Object(Default::default()),
             failure_code: None,
+            trigger: CheckTrigger::Manual,
             findings: Vec::new(),
         }
     }

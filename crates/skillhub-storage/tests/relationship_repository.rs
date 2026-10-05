@@ -76,6 +76,7 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
     db.connection_for_test()
         .execute_batch(
             "ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
+             ALTER TABLE check_runs DROP COLUMN trigger;
              DROP TABLE relation_governance_confirmations;
              DROP TABLE relationship_governance_mutation_receipts;
              DROP TABLE skill_lineage;
