@@ -82,25 +82,26 @@ pub use agent::{
 pub use api::{
     ActivateLibraryRoot, AddSkillRepo, AnalyzeGlobalSkillEvidence, AnalyzeImport,
     AnalyzeSemanticDuplicates, AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult,
-    ApplicationFacade, ApplySourceUpdate, ApplyUninstallDecision, BackupDecision,
+    ApplicationFacade, ApplyUninstallDecision, BackupDecision,
     CheckApplicationUpdate, CheckSourceUpdate, CollectDeploymentChanges, CommitCallPolicyChange,
     CommitDeleteSkill, CommitDeployment, CommitImport, CommitInitialRestore,
-    CommitRelationMigration, CommitRepair, CommitRestore, CommitUndeploy, CreateBackup,
-    CreateIgnoreRule, CreateStandardExport, DeploymentTarget, DetachManagement,
+    CommitRelationMigration, CommitRepair, CommitRestore, CommitSourceUpdate, CommitUndeploy,
+    CreateBackup, CreateIgnoreRule, CreateStandardExport, DeploymentTarget, DetachManagement,
     DiscardMarkdownDraft, DiscoverImportCandidates, DiscoverRepoSkills, DownloadApplicationUpdate,
     DownloadRepoSkill, EnsureAgentTargetDirectory, FactsChanged, GenerateOnlineSearchQuery,
     GetAgentDirectoryProjection, GetCallPolicy, GetDeploymentPlan, GetDeploymentRelations,
     GetLlmSafetyCheckResult, GetMarkdownDraft, GetProjectAssemblyPlan, GetReconcilePlan,
-    GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact, GetUiPreference,
-    GetUiPreferenceResult, IgnoreExternalChange, InstallApplicationUpdate, KeepIndependentCopy,
+    GetRelationshipOverview, GetRelationshipRemovalImpact, GetRemovalImpact, GetSourceUpdateStatus,
+    GetUiPreference, GetUiPreferenceResult, IgnoreExternalChange, IgnoreSourceUpdate,
+    InstallApplicationUpdate, KeepIndependentCopy,
     ListDeploymentTargets, ListDeployments, ListMarkdownFiles, ListPendingItems,
     ListSkillOperations, ListSkillRepos, ListSkills, LlmCheckRun, MarkdownDraftDiscarded,
     MarkdownDraftSaved, MarkdownDraftSummary, MarkdownFileContent, MarkdownFileEntry,
     MarkdownValidationIssue, MarkdownValidationResult, OpenOfficialRelease, Page,
     PrepareApplicationUpdate, PrepareBackup, PrepareCallPolicyChange, PrepareDeleteSkill,
     PrepareDeployment, PrepareImport, PrepareInitialRestore, PrepareRelationMigration,
-    PrepareRepair, PrepareRestore, PrepareStandardExport, PrepareUndeploy, PrepareUninstall,
-    ReadMarkdownFile, RecheckLlmSafety, RefreshSkillRepo, RelationMigrationInput,
+    PrepareRepair, PrepareRestore, PrepareSourceUpdate, PrepareStandardExport, PrepareUndeploy,
+    PrepareUninstall, ReadMarkdownFile, RecheckLlmSafety, RefreshSkillRepo, RelationMigrationInput,
     RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelationshipOverview,
     RelationshipOverviewScope, RelationshipScope, RelinkSource, RemoveIgnoreRule, RemoveSkillRepo,
     ResolveRecovery, RestoreDecision, RestoreDeployment, RestoreOriginalCallPolicy,
@@ -108,7 +109,8 @@ pub use api::{
     RunLlmSafetyCheck, RunRollingBackup, SaveMarkdownDraft, SaveUserTranslationRevision,
     SearchOnlineSources, SearchOnlineSourcesAssisted, SetApplicationUpdatePolicy, SetUiPreference,
     SkillListItem, SkillListPage, SkillOperationEntry, SkillOperationsResult, SkillVersionFilter,
-    TranslateDescription, TranslateDescriptionsBatch, ValidateMarkdown, VerifyBackup,
+    SourceUpdateStatus, TranslateDescription, TranslateDescriptionsBatch, ValidateMarkdown,
+    VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,
@@ -222,7 +224,9 @@ pub use relationship::{
 };
 pub use scan::{DiscoveredSkill, ScanGeneration, ScanIssue, ScanRepository, ScanResult, ScanScope};
 pub use source::{
-    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
+    AppliedSourceUpdate, IgnoredSourceUpdate, SourceState, SourceUpdateBackend,
+    SourceUpdateFileChange, SourceUpdateFileChangeKind, SourceUpdatePreview, UpdateDecision,
+    UpstreamCheckResult,
 };
 pub use source::{
     SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin, SourceDescriptor, SourceKind,

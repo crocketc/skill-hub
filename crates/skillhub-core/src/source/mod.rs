@@ -20,5 +20,7 @@ pub use repo::{
 };
 pub use role::{SearchCandidateRecord, SearchCandidateStatus, SourceRecord, SourceRole};
 pub use update::{
-    AppliedSourceUpdate, SourceState, SourceUpdateBackend, UpdateDecision, UpstreamCheckResult,
+    AppliedSourceUpdate, IgnoredSourceUpdate, SourceState, SourceUpdateBackend,
+    SourceUpdateFileChange, SourceUpdateFileChangeKind, SourceUpdatePreview, UpdateDecision,
+    UpstreamCheckResult,
 };

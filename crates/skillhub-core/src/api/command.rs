@@ -664,11 +664,30 @@ pub struct CheckSourceUpdate {
     pub skill_id: SkillId,
 }
 
+/// K6：来源更新候选预览。唯一合法的采纳入口是 Prepare→Commit 预览绑定；
+/// 直接采纳命令已移除，不保留第二套采纳流程。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
-pub struct ApplySourceUpdate {
+pub struct PrepareSourceUpdate {
     pub skill_id: SkillId,
+}
+
+/// K6：提交来源更新。只收 preview_id 与用户决定；当前版本与上游候选是否
+/// 漂移由后端在提交前重核，漂移/过期一律拒绝并要求重新预览。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitSourceUpdate {
+    pub preview_id: OperationId,
     pub decision: UpdateDecision,
+}
+
+/// K6/D3：忽略一个来源更新候选。按 skill+来源+候选身份持久化；候选被
+/// 采纳或来源身份变更后自动失效清除。「关闭窗口」不调用本命令。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct IgnoreSourceUpdate {
+    pub skill_id: SkillId,
+    pub candidate_identity: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -1407,8 +1426,12 @@ pub enum AppCommand {
     RelinkSource(RelinkSource),
     #[serde(rename = "check_source_update")]
     CheckSourceUpdate(CheckSourceUpdate),
-    #[serde(rename = "apply_source_update")]
-    ApplySourceUpdate(ApplySourceUpdate),
+    #[serde(rename = "prepare_source_update")]
+    PrepareSourceUpdate(PrepareSourceUpdate),
+    #[serde(rename = "commit_source_update")]
+    CommitSourceUpdate(CommitSourceUpdate),
+    #[serde(rename = "ignore_source_update")]
+    IgnoreSourceUpdate(IgnoreSourceUpdate),
     #[serde(rename = "prepare_deployment")]
     PrepareDeployment(PrepareDeployment),
     #[serde(rename = "commit_deployment_preview")]
@@ -1641,6 +1664,8 @@ pub enum AppCommandResult {
     RelationGovernanceBatch(RelationGovernanceBatchOutcome),
     #[serde(rename = "upstream_check_result")]
     UpstreamCheckResult(crate::source::UpstreamCheckResult),
+    #[serde(rename = "source_update_preview")]
+    SourceUpdatePreview(crate::source::SourceUpdatePreview),
     #[serde(rename = "applied_source_update")]
     AppliedSourceUpdate(crate::source::AppliedSourceUpdate),
     #[serde(rename = "prepared_deployment")]

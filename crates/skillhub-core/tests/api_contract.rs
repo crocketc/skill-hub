@@ -156,10 +156,16 @@ fn source_update_commands_have_stable_wire_shapes() {
         ),
     });
     let check = AppCommand::CheckSourceUpdate(skillhub_core::CheckSourceUpdate { skill_id });
-    let apply = AppCommand::ApplySourceUpdate(skillhub_core::ApplySourceUpdate {
-        skill_id,
-        decision: skillhub_core::UpdateDecision::KeepLocal,
+    let prepare = AppCommand::PrepareSourceUpdate(skillhub_core::PrepareSourceUpdate { skill_id });
+    let commit = AppCommand::CommitSourceUpdate(skillhub_core::CommitSourceUpdate {
+        preview_id: OperationId::new(),
+        decision: skillhub_core::UpdateDecision::TakeUpstream,
     });
+    let ignore = AppCommand::IgnoreSourceUpdate(skillhub_core::IgnoreSourceUpdate {
+        skill_id,
+        candidate_identity: "sha256:candidate".into(),
+    });
+    let status = AppQuery::GetSourceUpdateStatus(skillhub_core::GetSourceUpdateStatus { skill_id });
     assert_eq!(
         serde_json::to_value(relink).unwrap()["type"],
         "relink_source"
@@ -169,8 +175,20 @@ fn source_update_commands_have_stable_wire_shapes() {
         "check_source_update"
     );
     assert_eq!(
-        serde_json::to_value(apply).unwrap()["type"],
-        "apply_source_update"
+        serde_json::to_value(prepare).unwrap()["type"],
+        "prepare_source_update"
+    );
+    assert_eq!(
+        serde_json::to_value(commit).unwrap()["type"],
+        "commit_source_update"
+    );
+    assert_eq!(
+        serde_json::to_value(ignore).unwrap()["type"],
+        "ignore_source_update"
+    );
+    assert_eq!(
+        serde_json::to_value(status).unwrap()["type"],
+        "get_source_update_status"
     );
 }
 

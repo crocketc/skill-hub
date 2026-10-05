@@ -1114,10 +1114,19 @@ async fn k1b_take_upstream_success_points_every_consumer_at_the_new_version() {
     ));
     let skill_id = import_skill_with_upstream(&facade, "# Portable\n").await;
 
+    let preview = facade
+        .execute(AppCommand::PrepareSourceUpdate(
+            skillhub_core::PrepareSourceUpdate { skill_id },
+        ))
+        .await
+        .expect("prepare must preview the git candidate");
+    let AppCommandResult::SourceUpdatePreview(preview) = preview else {
+        panic!("expected source update preview");
+    };
     let applied = facade
-        .execute(AppCommand::ApplySourceUpdate(
-            skillhub_core::ApplySourceUpdate {
-                skill_id,
+        .execute(AppCommand::CommitSourceUpdate(
+            skillhub_core::CommitSourceUpdate {
+                preview_id: preview.preview_id,
                 decision: skillhub_core::UpdateDecision::TakeUpstream,
             },
         ))
@@ -1163,7 +1172,7 @@ async fn k1b_take_upstream_success_points_every_consumer_at_the_new_version() {
         "portable current_version 必须指向新版本"
     );
     assert_eq!(
-        journal_phase(&database_path, "apply_source_update"),
+        journal_phase(&database_path, "commit_source_update"),
         "committed",
         "成功的来源采用必须留下 Committed 日志行"
     );

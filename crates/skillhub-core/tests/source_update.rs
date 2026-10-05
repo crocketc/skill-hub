@@ -1,14 +1,33 @@
 use async_trait::async_trait;
 use skillhub_core::application::{SourceService, SourceUpdateBackend};
-use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
-use skillhub_core::{AppResult, SkillId, SourceState, UpdateDecision};
+use skillhub_core::source::{
+    SourceDescriptor, SourceKind, SourceLocator, SourceUpdateFileChange, SourceUpdatePreview,
+};
+use skillhub_core::{AppResult, OperationId, SkillId, SourceState, UpdateDecision};
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 struct RecordingSourceBackend {
     checks: Mutex<Vec<SkillId>>,
     relinks: Mutex<Vec<(SkillId, SourceDescriptor)>>,
-    applies: Mutex<Vec<(SkillId, UpdateDecision)>>,
+    prepares: Mutex<Vec<SkillId>>,
+    commits: Mutex<Vec<(SkillId, OperationId, UpdateDecision)>>,
+}
+
+fn preview_for(skill_id: SkillId) -> SourceUpdatePreview {
+    SourceUpdatePreview {
+        skill_id,
+        preview_id: OperationId::new(),
+        expires_at: "2026-01-01T00:00:00Z".into(),
+        confirmation_fingerprint: "fingerprint".into(),
+        current_version_id: None,
+        candidate_identity: "sha256:candidate".into(),
+        upstream_label: None,
+        files: vec![SourceUpdateFileChange {
+            path: "SKILL.md".into(),
+            change: skillhub_core::SourceUpdateFileChangeKind::Modified,
+        }],
+    }
 }
 
 #[async_trait]
@@ -29,18 +48,27 @@ impl SourceUpdateBackend for RecordingSourceBackend {
         ))
     }
 
-    async fn apply_source_update(
+    async fn prepare_source_update(&self, skill_id: SkillId) -> AppResult<SourceUpdatePreview> {
+        self.prepares.lock().unwrap().push(skill_id);
+        Ok(preview_for(skill_id))
+    }
+
+    async fn commit_source_update(
         &self,
         skill_id: SkillId,
+        preview_id: OperationId,
         decision: UpdateDecision,
     ) -> AppResult<skillhub_core::AppliedSourceUpdate> {
-        self.applies.lock().unwrap().push((skill_id, decision));
+        self.commits
+            .lock()
+            .unwrap()
+            .push((skill_id, preview_id, decision));
         Ok(skillhub_core::AppliedSourceUpdate::new(skill_id, decision))
     }
 }
 
 #[test]
-fn update_never_overwrites_local_modification_without_explicit_choice() {
+fn commit_forwards_to_the_backend_and_checks_first() {
     block_on(async {
         let backend = Arc::new(RecordingSourceBackend::default());
         let service = SourceService::new(backend.clone());
@@ -48,12 +76,26 @@ fn update_never_overwrites_local_modification_without_explicit_choice() {
         let check = service.check_update(skill_id).await.unwrap();
         assert_eq!(check.state, SourceState::UpdateAvailableWithLocalChanges);
 
-        let error = service
-            .apply_update(skill_id, UpdateDecision::TakeUpstream)
+        let preview = service.prepare_update(skill_id).await.unwrap();
+        assert_eq!(preview.candidate_identity, "sha256:candidate");
+
+        let applied = service
+            .commit_update(skill_id, preview.preview_id.clone(), UpdateDecision::TakeUpstream)
             .await
-            .unwrap_err();
-        assert_eq!(error.code.as_str(), "operation.conflict");
-        assert!(backend.applies.lock().unwrap().is_empty());
+            .unwrap();
+        assert_eq!(applied.skill_id, skill_id);
+        assert_eq!(
+            backend
+                .commits
+                .lock()
+                .unwrap()
+                .as_slice()
+                .iter()
+                .map(|(_, preview_id, decision)| (preview_id.to_string(), *decision))
+                .collect::<Vec<_>>(),
+            vec![(preview.preview_id.to_string(), UpdateDecision::TakeUpstream)],
+            "TakeUpstream 必须携带预览绑定到达后端"
+        );
     });
 }
 
@@ -75,7 +117,7 @@ fn relink_records_new_source_without_applying_an_update() {
             backend.relinks.lock().unwrap().as_slice(),
             &[(skill_id, source)]
         );
-        assert!(backend.applies.lock().unwrap().is_empty());
+        assert!(backend.commits.lock().unwrap().is_empty());
     });
 }
 
@@ -86,16 +128,19 @@ fn keep_local_and_cancel_are_non_destructive_decisions() {
         let service = SourceService::new(backend.clone());
         let skill_id = SkillId::new();
         let kept = service
-            .apply_update(skill_id, UpdateDecision::KeepLocal)
+            .commit_update(skill_id, OperationId::new(), UpdateDecision::KeepLocal)
             .await
             .unwrap();
         let cancelled = service
-            .apply_update(skill_id, UpdateDecision::Cancel)
+            .commit_update(skill_id, OperationId::new(), UpdateDecision::Cancel)
             .await
             .unwrap();
         assert_eq!(kept.decision, UpdateDecision::KeepLocal);
         assert_eq!(cancelled.decision, UpdateDecision::Cancel);
-        assert!(backend.applies.lock().unwrap().is_empty());
+        assert!(
+            backend.commits.lock().unwrap().is_empty(),
+            "非破坏性决定不得触碰后端"
+        );
     });
 }
 

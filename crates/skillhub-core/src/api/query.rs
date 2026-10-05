@@ -1109,6 +1109,31 @@ pub struct SourceUpdateCheckOutcome {
     pub state: crate::SourceState,
 }
 
+/// K6：Skill 来源候选/检查状态查询。只读已持久化的检查事实与忽略记录，
+/// 不发起网络请求；B 侧用它渲染候选与忽略状态，采纳/检查成功后失效刷新。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetSourceUpdateStatus {
+    pub skill_id: SkillId,
+}
+
+/// K6：来源候选/检查状态投影。从未检查过时 state 为 None（诚实缺省）；
+/// candidate_ignored 表示当前候选是否已被用户忽略（D3）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SourceUpdateStatus {
+    pub skill_id: SkillId,
+    pub state: Option<crate::SourceState>,
+    /// 最近一次检查时刻，RFC3339 UTC；从未检查过为 None。
+    pub checked_at: Option<String>,
+    pub upstream_label: Option<String>,
+    pub candidate_identity: Option<String>,
+    /// 该 Skill 当前全部被忽略的候选身份。
+    pub ignored_candidates: Vec<String>,
+    /// 当前候选是否被忽略。
+    pub candidate_ignored: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetProjectAssemblyPlan {
     pub project_id: crate::ProjectId,
@@ -1145,6 +1170,8 @@ pub enum AppQuery {
     ListLlmProviderPresets,
     #[serde(rename = "check_source_updates")]
     CheckSourceUpdates(CheckSourceUpdates),
+    #[serde(rename = "get_source_update_status")]
+    GetSourceUpdateStatus(GetSourceUpdateStatus),
     #[serde(rename = "list_markdown_files")]
     ListMarkdownFiles(ListMarkdownFiles),
     #[serde(rename = "read_markdown_file")]
@@ -1378,6 +1405,8 @@ pub enum AppQueryResult {
     LlmProviderPresets(Vec<crate::llm::LlmProviderPreset>),
     #[serde(rename = "source_update_checks")]
     SourceUpdateChecks(Vec<SourceUpdateCheckOutcome>),
+    #[serde(rename = "source_update_status")]
+    SourceUpdateStatus(SourceUpdateStatus),
     #[serde(rename = "call_policy")]
     CallPolicy(crate::CallPolicyResult),
     #[serde(rename = "llm_safety_check_result")]

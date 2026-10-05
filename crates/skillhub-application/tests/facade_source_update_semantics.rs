@@ -14,9 +14,10 @@ use std::sync::Arc;
 use skillhub_adapters::source::RepoDiscoveryProvider;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::{
-    api::CreateSkill, AppCommand, AppCommandResult, ApplicationFacade, ApplySourceUpdate,
-    CheckSourceUpdate, ErrorCode, ImportCandidate, ImportDecision, PrepareImport, SourceDescriptor,
-    SourceKind, SourceLocator, SourceState, UpdateDecision, UpstreamOrigin,
+    api::CreateSkill, AppCommand, AppCommandResult, ApplicationFacade, CheckSourceUpdate,
+    CommitSourceUpdate, ErrorCode, ImportCandidate, ImportDecision, PrepareImport,
+    PrepareSourceUpdate, SourceDescriptor, SourceKind, SourceLocator, SourceState, UpdateDecision,
+    UpstreamOrigin,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -193,12 +194,11 @@ async fn locally_created_skill_without_upstream_is_not_reported_as_updatable() {
     );
 
     let error = facade
-        .execute(AppCommand::ApplySourceUpdate(ApplySourceUpdate {
+        .execute(AppCommand::PrepareSourceUpdate(PrepareSourceUpdate {
             skill_id,
-            decision: UpdateDecision::TakeUpstream,
         }))
         .await
-        .expect_err("apply without upstream must fail");
+        .expect_err("prepare without upstream must fail");
     assert_eq!(error.code, ErrorCode::OperationConflict);
     assert_eq!(
         error.params.get("reason").and_then(|value| value.as_str()),
@@ -226,9 +226,18 @@ async fn take_upstream_on_git_source_downloads_remote_content_into_new_version()
     ));
 
     let skill_id = import_skill_with_upstream(&facade, "# Portable\n").await;
-    let applied = facade
-        .execute(AppCommand::ApplySourceUpdate(ApplySourceUpdate {
+    let prepared = facade
+        .execute(AppCommand::PrepareSourceUpdate(PrepareSourceUpdate {
             skill_id,
+        }))
+        .await
+        .expect("prepare must download and preview the git candidate");
+    let AppCommandResult::SourceUpdatePreview(preview) = prepared else {
+        panic!("expected source update preview");
+    };
+    let applied = facade
+        .execute(AppCommand::CommitSourceUpdate(CommitSourceUpdate {
+            preview_id: preview.preview_id,
             decision: UpdateDecision::TakeUpstream,
         }))
         .await

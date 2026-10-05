@@ -38,10 +38,11 @@ use skillhub_adapters::source::{
     SkillsShProvider,
 };
 use skillhub_core::api::{
-    ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
-    CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
-    CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    GetRollbackImpact, GetSaveAsCopyReplacementPreview, PatchSkillMetadata, PinProjectSkillVersion,
+    BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
+    CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CommitSourceUpdate,
+    CreateCombination, CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels,
+    FetchLlmProvider, GetRollbackImpact, GetSaveAsCopyReplacementPreview, GetSourceUpdateStatus,
+    IgnoreSourceUpdate, PatchSkillMetadata, PinProjectSkillVersion, PrepareSourceUpdate,
     RelinkSource, RenameCombination, RenameSkill, SaveAsCopyInheritance,
     SaveAsCopyInheritanceOutcome, SaveAsCopyOrigin, SaveAsCopyOutcome, SaveAsCopyReplacementChoice,
     SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
@@ -5244,165 +5245,57 @@ impl LocalApplicationFacade {
         Ok(AppQueryResult::SourceUpdateChecks(outcomes))
     }
 
-    fn apply_source_update(&self, request: ApplySourceUpdate) -> AppResult<AppCommandResult> {
-        if matches!(
-            request.decision,
-            UpdateDecision::KeepLocal | UpdateDecision::Cancel
-        ) {
-            return Ok(AppCommandResult::AppliedSourceUpdate(
-                skillhub_core::AppliedSourceUpdate::new(request.skill_id, request.decision),
-            ));
-        }
-        let AppCommandResult::UpstreamCheckResult(check) =
-            self.check_source_update(CheckSourceUpdate {
+    /// K6：来源更新候选预览（RED 种子）。GREEN 提交接线：
+    /// 复用 check_remote_source_update 的下载与对比管线产出候选身份与
+    /// 文件级变更摘要，以统一预览绑定三件套持久化到操作日志。
+    async fn prepare_source_update(
+        &self,
+        request: PrepareSourceUpdate,
+    ) -> AppResult<AppCommandResult> {
+        let _ = request;
+        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("reason", "source_update_preview_not_available")
+            .with_action(RecoveryAction::Retry))
+    }
+
+    /// K6：来源更新提交（RED 种子）。GREEN 提交接线：重核当前版本与上游
+    /// 候选未漂移后按统一内容采用流落库，全程 journal，失败按 K1 恢复
+    /// 矩阵恢复可见树。
+    async fn commit_source_update(
+        &self,
+        request: CommitSourceUpdate,
+    ) -> AppResult<AppCommandResult> {
+        let _ = request;
+        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("reason", "source_update_commit_not_available")
+            .with_action(RecoveryAction::Retry))
+    }
+
+    /// K6/D3：忽略候选（RED 种子）。GREEN 提交接线：按 skill+来源+候选
+    /// 身份持久化；候选被采纳或来源身份变更后自动失效清除。
+    fn ignore_source_update(&self, request: IgnoreSourceUpdate) -> AppResult<AppCommandResult> {
+        let _ = request;
+        Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("reason", "source_update_ignore_not_available")
+            .with_action(RecoveryAction::Retry))
+    }
+
+    /// K6：来源候选/检查状态查询（RED 种子）。GREEN 提交接线：读取最近
+    /// 一次持久化检查事实与忽略记录，不发起网络请求。
+    fn get_source_update_status(
+        &self,
+        request: GetSourceUpdateStatus,
+    ) -> AppResult<AppQueryResult> {
+        let _ = request;
+        Ok(AppQueryResult::SourceUpdateStatus(
+            skillhub_core::api::SourceUpdateStatus {
                 skill_id: request.skill_id,
-            })?
-        else {
-            return Err(internal("execute.apply_source_update.check"));
-        };
-        if request.decision == UpdateDecision::TakeUpstream {
-            if check.state == SourceState::NoUpstream {
-                // AR-020：没有上游就没有"采用上游"可执行，如实拒绝并给出
-                // 可读原因，而不是笼统冲突。
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param("reason", "no_upstream_source")
-                    .with_param("skill_id", request.skill_id.to_string())
-                    .with_action(RecoveryAction::Acknowledge));
-            }
-            if check.state != SourceState::UpdateAvailable {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param(
-                        "detail",
-                        "upstream update would overwrite local modifications",
-                    )
-                    .with_action(RecoveryAction::Acknowledge));
-            }
-        }
-        if request.decision == UpdateDecision::CreateIndependentBranch {
-            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                .with_param(
-                    "detail",
-                    "independent source branches are not persisted by this facade",
-                )
-                .with_action(RecoveryAction::Acknowledge));
-        }
-        let library = self.library_runtime.snapshot()?;
-        let source = self.with_database("execute.apply_source_update.source", |database| {
-            database.source_repository().for_skill(request.skill_id)
-        })?;
-        let Some(source) = source else {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                .with_param("skill_id", request.skill_id.to_string())
-                .with_action(RecoveryAction::ChooseAnotherName));
-        };
-        // AR-017：git 来源（远端坐标）的"采用上游"必须真实下载远端内容，
-        // 与检查阶段共用同一条下载管线；本地路径来源才直接从路径捕获。
-        // 临时工作区必须活到捕获完成，不能在 match 臂内提前释放。
-        let remote_workspace = if source.locator.as_local_path().is_none() {
-            Some(tempfile::tempdir().map_err(|error| {
-                AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("source", error.to_string())
-            })?)
-        } else {
-            None
-        };
-        let capture_source = match (&remote_workspace, source.locator.as_local_path()) {
-            (_, Some(path)) => std::borrow::Cow::Borrowed(path),
-            (Some(workspace), None) => std::borrow::Cow::Owned(
-                self.fetch_remote_source_dir(request.skill_id, workspace.path())?
-                    .0,
-            ),
-            (None, None) => {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param("reason", "source_unavailable")
-                    .with_param("skill_id", request.skill_id.to_string())
-                    .with_action(RecoveryAction::Retry));
-            }
-        };
-        let capture_source = capture_source.as_ref();
-        validate_skill_source(capture_source)?;
-        // ---- 统一内容采用流：从这里开始可能出现库内物理变更 ----
-        const KIND: &str = "apply_source_update";
-        let operation_id = OperationId::new();
-        self.journal_begin(operation_id, KIND);
-        let skill = match self.with_database("execute.apply_source_update.skill", |database| {
-            database
-                .catalog_repository()?
-                .get_sync(request.skill_id)?
-                .ok_or_else(|| {
-                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                        .with_param("skill_id", request.skill_id.to_string())
-                        .with_action(RecoveryAction::ChooseAnotherName)
-                })
-        }) {
-            Ok(skill) => skill,
-            Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
-            }
-        };
-        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
-            }
-        };
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
-        }
-        let captured = match library.capture_with_status(request.skill_id, capture_source) {
-            Ok(captured) => captured,
-            Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
-            }
-        };
-        let version = captured.record;
-        let replacement =
-            match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
-                Ok(replacement) => replacement,
-                Err((error, replacement)) => {
-                    return Err(self.settle_content_adoption_failure(
-                        &library,
-                        &skill,
-                        operation_id,
-                        KIND,
-                        &snapshot,
-                        replacement.as_ref(),
-                        Some((&version, captured.created)),
-                        false,
-                        error,
-                    ));
-                }
-            };
-        if let Err(error) = self.with_database("execute.apply_source_update.persist", |database| {
-            let source_repository = database.source_repository();
-            source_repository.set_revision(request.skill_id, Some(&version.manifest.tree_hash))?;
-            source_repository.record_update_check(
-                &skillhub_core::UpstreamCheckResult::new(request.skill_id, SourceState::UpToDate)
-                    .with_versions(Some(version.id.clone()), Some(version.id.clone())),
-            )
-        }) {
-            return Err(self.settle_content_adoption_failure(
-                &library,
-                &skill,
-                operation_id,
-                KIND,
-                &snapshot,
-                Some(&replacement),
-                Some((&version, captured.created)),
-                false,
-                error,
-            ));
-        }
-        self.journal_settle(operation_id, KIND, None);
-        let _ = library
-            .central
-            .finalize_visible_tree_replacement(replacement);
-        Ok(AppCommandResult::AppliedSourceUpdate(
-            skillhub_core::AppliedSourceUpdate {
-                skill_id: request.skill_id,
-                decision: request.decision,
-                new_version: Some(version.id),
-                deployments_need_reconciliation: true,
+                state: None,
+                checked_at: None,
+                upstream_label: None,
+                candidate_identity: None,
+                ignored_candidates: Vec::new(),
+                candidate_ignored: false,
             },
         ))
     }
@@ -7803,7 +7696,13 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.dismiss_search_candidate(request);
             }
             AppCommand::CheckSourceUpdate(request) => return self.check_source_update(request),
-            AppCommand::ApplySourceUpdate(request) => return self.apply_source_update(request),
+            AppCommand::PrepareSourceUpdate(request) => {
+                return self.prepare_source_update(request).await;
+            }
+            AppCommand::CommitSourceUpdate(request) => {
+                return self.commit_source_update(request).await;
+            }
+            AppCommand::IgnoreSourceUpdate(request) => return self.ignore_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
             AppCommand::PatchSkillMetadata(request) => {
                 return self.patch_skill_metadata(request);
@@ -8462,6 +8361,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListTranslations(request) => self.list_translations(request.skill_id),
             AppQuery::ListLlmProviderPresets => self.list_llm_provider_presets(),
             AppQuery::CheckSourceUpdates(request) => self.check_source_updates(request).await,
+            AppQuery::GetSourceUpdateStatus(request) => self.get_source_update_status(request),
             AppQuery::DiffVersions(request) => self.diff_versions(&request.left, &request.right),
             AppQuery::ListDeployments(request) => self.list_deployments(request.skill_id),
             AppQuery::GetDeploymentRelations(request) => {
@@ -14723,7 +14623,7 @@ fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
             // 组合部署经 DeploymentRepository::insert_sync 同步
             // deployment_relations——正是采用预览指纹读取的关系表。
             | AppCommand::CommitProjectAssembly(_)
-            | AppCommand::ApplySourceUpdate(_)
+            | AppCommand::CommitSourceUpdate(_)
             | AppCommand::CommitDeploymentPreview(_)
             | AppCommand::CommitDeployment(_)
             | AppCommand::CollectDeploymentChanges(_)
@@ -14773,7 +14673,7 @@ struct VersionAdoptionSnapshot {
 
 /// Pre-adoption facts of the four version consumers for one content adoption
 /// (CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy
-/// / ApplySourceUpdate). Persisted in the operation journal's Applying
+/// / CommitSourceUpdate). Persisted in the operation journal's Applying
 /// checkpoint before the first physical mutation; a failed adopt may only
 /// roll back to exactly these facts.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -15233,7 +15133,7 @@ fn skill_insights_operation_code(kind: &str, phase: &str, error_code: Option<Str
         "save_skill_content"
         | "save_markdown_content"
         | "save_markdown_as_copy"
-        | "apply_source_update" => "content_saved",
+        | "commit_source_update" => "content_saved",
         "relink_source_copy" | "detach_management" => "source_changed",
         "create_combination" | "update_combination" | "rename_combination"
         | "delete_combination" => "combination_changed",

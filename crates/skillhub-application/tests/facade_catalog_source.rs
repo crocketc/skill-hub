@@ -1,14 +1,12 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommandResult, ApplySourceUpdate, CheckSourceUpdate, CreateCombination, CreateSkill,
-    DeleteCombination, GetSkill, ListCombinations, PinProjectSkillVersion, RelinkSource,
+    AppCommandResult, CheckSourceUpdate, CreateCombination, CreateSkill, DeleteCombination,
+    GetSkill, ListCombinations, PinProjectSkillVersion, PrepareSourceUpdate, RelinkSource,
     SaveSkillContent, UpdateCombination,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::project::Project;
-use skillhub_core::source::{
-    SourceDescriptor, SourceKind, SourceLocator, SourceState, UpdateDecision,
-};
+use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator, SourceState};
 use skillhub_core::{AppCommand, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode};
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 
@@ -276,7 +274,7 @@ async fn relinking_to_local_directory_stops_reporting_upstream_updates() {
 }
 
 #[tokio::test]
-async fn applying_upstream_update_rejects_local_modifications_without_choice() {
+async fn preparing_upstream_update_rejects_skills_without_verified_upstream() {
     let database = Database::open_in_memory().expect("database");
     let library = tempfile::tempdir().expect("library");
     let source = source_with("# Upstream\n");
@@ -313,12 +311,18 @@ async fn applying_upstream_update_rejects_local_modifications_without_choice() {
         .await
         .expect("save local version");
     std::fs::write(source.path().join("SKILL.md"), "# New upstream\n").expect("upstream change");
+    // K6：本地目录 Skill 没有可验证的上游候选；采纳入口只有
+    // Prepare→Commit 预览绑定，prepare 必须如实拒绝而不是笼统冲突。
     let error = facade
-        .execute(AppCommand::ApplySourceUpdate(ApplySourceUpdate {
+        .execute(AppCommand::PrepareSourceUpdate(PrepareSourceUpdate {
             skill_id,
-            decision: UpdateDecision::TakeUpstream,
         }))
         .await
-        .expect_err("must require choice");
+        .expect_err("prepare without a verified upstream must fail");
     assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("reason").and_then(|value| value.as_str()),
+        Some("no_upstream_source"),
+        "失败原因必须可读、可定位，而不是笼统冲突"
+    );
 }
