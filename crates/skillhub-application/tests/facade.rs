@@ -2045,6 +2045,7 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
             "UPDATE skills SET lifecycle='archived';
              ALTER TABLE deployment_relations DROP COLUMN health_reasons_json;
              DROP TABLE relationship_governance_mutation_receipts;
+             DROP TABLE skill_lineage;
              PRAGMA user_version=22;",
         )
         .expect("simulate legacy database");
@@ -4820,9 +4821,11 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
     };
     assert_ne!(saved.skill_id, skill.id());
 
+    // K5：副本不再追加 (copy) 后缀——展示名沿用来源；中央库同名主体
+    // 合法，来源与副本同时命中文本检索。
     let listed = facade
         .query(RootAppQuery::ListSkills(skillhub_core::api::ListSkills {
-            text: "Markdown editor (copy)".into(),
+            text: "Markdown editor".into(),
             page: 1,
             page_size: 10,
             filters: Default::default(),
@@ -4833,8 +4836,14 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
     let AppQueryResult::SkillPage(page) = listed else {
         panic!("expected skill page");
     };
-    assert_eq!(page.total, 1);
-    assert_eq!(page.items[0].skill_id, saved.skill_id);
+    assert_eq!(page.total, 2);
+    let copy_item = page
+        .items
+        .iter()
+        .find(|item| item.skill_id == saved.skill_id)
+        .expect("copied skill must be listed");
+    assert_eq!(copy_item.display_name, "Markdown editor");
+    assert!(!copy_item.display_name.contains("(copy)"));
 
     let original = facade
         .query(RootAppQuery::ReadMarkdownFile(

@@ -41,9 +41,10 @@ use skillhub_core::api::{
     ApplySourceUpdate, BasicCheckResult, BatchTranslationItemFailure, BatchTranslationOutcome,
     CheckSourceUpdate, CheckSourceUpdates, ClearLlmProviderCredential, CreateCombination,
     CreateSkill, DeleteCombination, DeleteLlmProvider, FetchLlmModels, FetchLlmProvider,
-    GetRollbackImpact, PatchSkillMetadata, PinProjectSkillVersion, RelinkSource, RenameCombination,
-    RenameSkill, SaveAsCopyInheritanceOutcome, SaveAsCopyOutcome, SaveLlmProvider,
-    SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
+    GetRollbackImpact, GetSaveAsCopyReplacementPreview, PatchSkillMetadata, PinProjectSkillVersion,
+    RelinkSource, RenameCombination, RenameSkill, SaveAsCopyInheritance,
+    SaveAsCopyInheritanceOutcome, SaveAsCopyOrigin, SaveAsCopyOutcome, SaveAsCopyReplacementChoice,
+    SaveLlmProvider, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
     TranslateDescriptionsBatch, UpdateCombination,
@@ -6587,14 +6588,544 @@ impl LocalApplicationFacade {
         result
     }
 
+    /// K5：替换继承预览。为显式列出的部署位置生成记账事实快照（含共享
+    /// 消费者分组与阻塞原因），以 preview_id + expires_at + 确认指纹
+    /// 三件套持久化到操作日志（phase=prepared）；提交端重新核对记账指纹，
+    /// 任何漂移都使预览失效。
+    fn get_save_as_copy_replacement_preview(
+        &self,
+        request: GetSaveAsCopyReplacementPreview,
+    ) -> AppResult<AppQueryResult> {
+        if request.targets.is_empty() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "targets")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let source_version_id = library.current(request.source_skill_id)?.ok_or_else(|| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("skill_id", request.source_skill_id.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let facts = self.with_database("query.save_as_copy_replacement_preview", |database| {
+            inspect_save_as_copy_replacement_targets(
+                database,
+                request.source_skill_id,
+                &request.targets,
+            )
+        })?;
+        let preview_id = OperationId::new();
+        let expires_at = now_epoch_seconds() + SAVE_AS_COPY_REPLACEMENT_PREVIEW_TTL_SECONDS;
+        let confirmation_fingerprint = save_as_copy_replacement_fingerprint(
+            request.source_skill_id,
+            &source_version_id,
+            &facts,
+        )?;
+        let snapshot = SaveAsCopyReplacementSnapshot {
+            source_skill_id: request.source_skill_id,
+            source_version_id: source_version_id.clone(),
+            expires_at,
+            confirmation_fingerprint: confirmation_fingerprint.clone(),
+            targets: facts.clone(),
+        };
+        let mut record = skillhub_core::OperationRecord::planned(
+            preview_id,
+            SAVE_AS_COPY_REPLACEMENT_PREVIEW_KIND,
+            confirmation_fingerprint.clone(),
+        );
+        record.phase = skillhub_core::OperationPhase::Prepared;
+        record.progress.phase = record.phase;
+        record.progress.total = facts.len() as u32;
+        record.progress.message_code =
+            "operation.save_as_copy_replacement_preview.prepared".to_owned();
+        record.recovery_data = serde_json::to_value(&snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.with_database(
+            "query.save_as_copy_replacement_preview.persist",
+            |database| database.operation_repository().insert_sync(&record),
+        )?;
+        let targets = facts
+            .iter()
+            .map(
+                |fact| skillhub_core::api::SaveAsCopyReplacementTargetPreview {
+                    deployment_id: fact.deployment_id,
+                    target_id: fact.target_id.clone().unwrap_or_default(),
+                    path: fact.path.clone().unwrap_or_default(),
+                    runtime_name: fact.runtime_name.clone().unwrap_or_default(),
+                    managed: fact.managed.unwrap_or(false),
+                    version_id: fact.version_id.clone(),
+                    consumer_deployment_ids: fact
+                        .consumer_deployment_ids
+                        .iter()
+                        .filter_map(|raw| raw.parse().ok())
+                        .collect(),
+                    requires_shared_target_confirmation: fact.consumer_deployment_ids.len() > 1,
+                    blocker: fact.blocker.clone(),
+                },
+            )
+            .collect();
+        Ok(AppQueryResult::SaveAsCopyReplacementPreview(
+            skillhub_core::api::SaveAsCopyReplacementPreview {
+                source_skill_id: request.source_skill_id,
+                source_version_id,
+                preview_id,
+                expires_at: format_rfc3339_utc(expires_at),
+                confirmation_fingerprint,
+                targets,
+            },
+        ))
+    }
+
+    /// K5：提交端预览校验。核对 kind、prepared 相位、有效期、来源当前
+    /// 版本与记账指纹；逐项检查阻塞原因、选择与预览一致以及共享目标
+    /// 确认门（K2 语义）。全部通过后消耗预览（一次性），返回逐项执行
+    /// 计划。
+    fn validate_save_as_copy_replacement(
+        &self,
+        source_skill_id: skillhub_core::SkillId,
+        preview_id: OperationId,
+        choices: &[SaveAsCopyReplacementChoice],
+    ) -> AppResult<Vec<(SaveAsCopyReplacementTargetFact, bool)>> {
+        let preview_invalid = |reason: &'static str| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", reason)
+                .with_action(RecoveryAction::Retry)
+        };
+        let settle_rolled_back =
+            |record: &skillhub_core::OperationRecord, message: &'static str| -> AppResult<()> {
+                let mut settled = record.clone();
+                settled.phase = skillhub_core::OperationPhase::RolledBack;
+                settled.progress.phase = settled.phase;
+                settled.progress.message_code = message.to_owned();
+                self.with_database("save_as_copy_replacement.settle_preview", |database| {
+                    database.operation_repository().update_sync(&settled)
+                })
+            };
+        let mut record = self
+            .with_database("save_as_copy_replacement.load_preview", |database| {
+                database.operation_repository().get_sync(preview_id)
+            })?
+            .ok_or_else(|| preview_invalid("save_as_copy_preview_missing"))?;
+        if record.kind != SAVE_AS_COPY_REPLACEMENT_PREVIEW_KIND
+            || record.phase != skillhub_core::OperationPhase::Prepared
+        {
+            return Err(preview_invalid("save_as_copy_preview_not_prepared"));
+        }
+        let snapshot: SaveAsCopyReplacementSnapshot =
+            serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| preview_invalid("save_as_copy_preview_invalid"))?;
+        if snapshot.expires_at <= now_epoch_seconds() {
+            settle_rolled_back(
+                &record,
+                "operation.save_as_copy_replacement_preview.expired",
+            )?;
+            return Err(preview_invalid("save_as_copy_preview_expired"));
+        }
+        if snapshot.source_skill_id != source_skill_id {
+            return Err(preview_invalid("save_as_copy_preview_source_mismatch"));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let current = library
+            .current(source_skill_id)?
+            .ok_or_else(|| preview_invalid("save_as_copy_preview_source_missing"))?;
+        if current != snapshot.source_version_id {
+            settle_rolled_back(&record, "operation.save_as_copy_replacement_preview.stale")?;
+            return Err(preview_invalid("save_as_copy_preview_source_moved"));
+        }
+        // 记账漂移核对：以当前部署记账重算指纹，与预览时的指纹比较。
+        let fresh = self.with_database("save_as_copy_replacement.refresh_facts", |database| {
+            inspect_save_as_copy_replacement_targets(
+                database,
+                source_skill_id,
+                &snapshot.target_ids(),
+            )
+        })?;
+        let fingerprint = save_as_copy_replacement_fingerprint(
+            source_skill_id,
+            &snapshot.source_version_id,
+            &fresh,
+        )?;
+        if fingerprint != snapshot.confirmation_fingerprint {
+            settle_rolled_back(&record, "operation.save_as_copy_replacement_preview.stale")?;
+            return Err(preview_invalid("save_as_copy_preview_drifted"));
+        }
+        // 选择必须与预览逐项对应：不多、不少、不重复。
+        let mut seen = std::collections::HashSet::new();
+        for choice in choices {
+            if !seen.insert(choice.deployment_id) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "inheritance.targets")
+                    .with_param("deployment_id", choice.deployment_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+        }
+        let preview_ids: std::collections::HashSet<skillhub_core::DeploymentId> =
+            fresh.iter().map(|fact| fact.deployment_id).collect();
+        let chosen_ids: std::collections::HashSet<skillhub_core::DeploymentId> =
+            choices.iter().map(|choice| choice.deployment_id).collect();
+        if preview_ids != chosen_ids || choices.len() != fresh.len() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "inheritance.targets")
+                .with_param("reason", "replacement_choices_mismatch_preview")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        // 阻塞原因与共享确认门都在提交端按最新记账复核。
+        for fact in &fresh {
+            if let Some(blocker) = &fact.blocker {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("deployment_id", fact.deployment_id.to_string())
+                    .with_param("reason", blocker.clone())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            let confirm = choices
+                .iter()
+                .find(|choice| choice.deployment_id == fact.deployment_id)
+                .map(|choice| choice.confirm_shared_target_removal)
+                .unwrap_or(false);
+            if fact.consumer_deployment_ids.len() > 1 && !confirm {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("deployment_id", fact.deployment_id.to_string())
+                    .with_param("reason", "shared_target_confirmation_required")
+                    .with_param("consumers", fact.consumer_deployment_ids.len().to_string())
+                    .with_action(RecoveryAction::Acknowledge));
+            }
+        }
+        // 预览一次性：校验通过即消耗，杜绝同一预览驱动第二次替换。
+        record.phase = skillhub_core::OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = fresh.len() as u32;
+        record.progress.message_code =
+            "operation.save_as_copy_replacement_preview.consumed".to_owned();
+        self.with_database("save_as_copy_replacement.consume_preview", |database| {
+            database.operation_repository().update_sync(&record)
+        })?;
+        let plan = fresh
+            .into_iter()
+            .map(|fact| {
+                let confirm = choices
+                    .iter()
+                    .find(|choice| choice.deployment_id == fact.deployment_id)
+                    .map(|choice| choice.confirm_shared_target_removal)
+                    .unwrap_or(false);
+                (fact, confirm)
+            })
+            .collect();
+        Ok(plan)
+    }
+
+    /// K5：逐项执行替换继承。每项独立归属结果：预检（所有权验证）失败
+    /// 不触碰条目；交接失败还原备份条目。已成功项不重复执行，旧使用
+    /// 关系进入治理历史，新使用关系建立并验证。部分失败持久化 Applying
+    /// 相位与逐项载荷作为恢复依据；新主体永不因此被删除。
+    fn execute_save_as_copy_replacement(
+        &self,
+        library: &library_runtime::LibraryContext,
+        copy: &Skill,
+        version_id: &skillhub_core::VersionId,
+        operation_id: OperationId,
+        plan: Vec<(SaveAsCopyReplacementTargetFact, bool)>,
+    ) -> AppResult<SaveAsCopyInheritanceOutcome> {
+        let filesystem = DeploymentFilesystem::new();
+        let mut items: Vec<skillhub_core::api::SaveAsCopyTargetResult> = Vec::new();
+        for (fact, _confirm) in &plan {
+            let consumers: Vec<skillhub_core::DeploymentId> = fact
+                .consumer_deployment_ids
+                .iter()
+                .filter_map(|raw| raw.parse().ok())
+                .collect();
+            let base = |error_code: Option<ErrorCode>| skillhub_core::api::SaveAsCopyTargetResult {
+                deployment_id: fact.deployment_id,
+                target_id: fact.target_id.clone().unwrap_or_default(),
+                path: fact.path.clone().unwrap_or_default(),
+                runtime_name: fact.runtime_name.clone().unwrap_or_default(),
+                consumer_deployment_ids: consumers.clone(),
+                status: match error_code {
+                    Some(_) => skillhub_core::api::SaveAsCopyTargetStatus::Failed,
+                    None => skillhub_core::api::SaveAsCopyTargetStatus::Applied,
+                },
+                error_code,
+            };
+            // 预检：部署记录仍存在、仍受管、仍归属来源主体。
+            let record = self.with_database(
+                "execute.save_markdown_as_copy.replacement.load",
+                |database| {
+                    Ok(database
+                        .deployment_repository()
+                        .list_all()?
+                        .into_iter()
+                        .find(|record| record.id == fact.deployment_id))
+                },
+            )?;
+            let record = match record {
+                Some(record)
+                    if record.state == DeploymentState::Deployed
+                        && record.managed
+                        && fact
+                            .owner_skill_id
+                            .is_some_and(|owner| record.skill_id == owner) =>
+                {
+                    record
+                }
+                _ => {
+                    items.push(base(Some(ErrorCode::OperationConflict)));
+                    continue;
+                }
+            };
+            let proof = match self.save_as_copy_deployment_proof(&record) {
+                Ok(proof) => proof,
+                Err(error) => {
+                    items.push(base(Some(error.code)));
+                    continue;
+                }
+            };
+            // 所有权验证：身份或内容漂移 → 本项失败，条目保持原状。
+            if let Err(error) = filesystem.verify_ownership(&proof) {
+                items.push(base(Some(error.code)));
+                continue;
+            }
+            // 交接：先把原条目改名为备份（可还原），再把新版本树原子
+            // 就位；任何失败都还原备份并按本项失败归属。
+            let backup = proof.destination_path.with_file_name(format!(
+                "{}.skillhub-replacing-{}",
+                proof
+                    .destination_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("entry"),
+                OperationId::new()
+            ));
+            if std::fs::rename(&proof.destination_path, &backup).is_err() {
+                items.push(base(Some(ErrorCode::InternalError)));
+                continue;
+            }
+            let staging =
+                std::env::temp_dir().join(format!("skillhub-replace-{}", OperationId::new()));
+            let target_plan = TargetPlan {
+                physical_target_id: record.target_id.clone(),
+                logical_target_ids: Vec::new(),
+                target_path: backup
+                    .parent()
+                    .map(|parent| parent.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                destination_path: proof.destination_path.to_string_lossy().into_owned(),
+                source_path: staging.to_string_lossy().into_owned(),
+                runtime_name: record.runtime_name.clone(),
+                skill_id: copy.id(),
+                version_id: version_id.clone(),
+                mode: record.mode,
+                change: TargetChange::Create,
+                warnings: Vec::new(),
+                conflicts: Vec::new(),
+            };
+            let applied = library
+                .materialize(version_id, &staging)
+                .and_then(|()| filesystem.prepare(&target_plan))
+                .and_then(|prepared| filesystem.apply(prepared));
+            match applied {
+                Ok(applied) => {
+                    let re_pointed = DeploymentRecord {
+                        id: record.id,
+                        skill_id: copy.id(),
+                        version_id: version_id.clone(),
+                        target_id: record.target_id.clone(),
+                        state: DeploymentState::Deployed,
+                        mode: record.mode,
+                        managed: true,
+                        runtime_name: record.runtime_name.clone(),
+                        expected_hash: applied.observed_tree_hash.clone(),
+                        observed_hash: Some(applied.observed_tree_hash.clone()),
+                    };
+                    let committed = self.with_database(
+                        "execute.save_markdown_as_copy.replacement.commit",
+                        |database| {
+                            database
+                                .deployment_repository()
+                                .insert_sync(&re_pointed)
+                                .map(|_| ())
+                        },
+                    );
+                    match committed {
+                        Ok(()) => {
+                            let _ = std::fs::remove_dir_all(&backup);
+                            self.append_replace_inheritance_history(
+                                &record,
+                                copy,
+                                &proof.destination_path,
+                                operation_id,
+                            );
+                            items.push(base(None));
+                        }
+                        Err(error) => {
+                            let _ = std::fs::remove_dir_all(&proof.destination_path);
+                            let _ = std::fs::rename(&backup, &proof.destination_path);
+                            items.push(base(Some(error.code)));
+                        }
+                    }
+                }
+                Err(error) => {
+                    let _ = std::fs::remove_dir_all(&staging);
+                    let _ = std::fs::rename(&backup, &proof.destination_path);
+                    items.push(base(Some(error.code)));
+                }
+            }
+            let _ = std::fs::remove_dir_all(&staging);
+        }
+        let all_applied = items
+            .iter()
+            .all(|item| item.status == skillhub_core::api::SaveAsCopyTargetStatus::Applied);
+        if all_applied {
+            self.journal_settle(operation_id, SAVE_MARKDOWN_AS_COPY_KIND, None);
+            Ok(SaveAsCopyInheritanceOutcome::Replaced { items })
+        } else {
+            // 恢复依据：Applying 相位 + 逐项载荷持久化；该行出现在恢复
+            // 候选中，重启后仍可逐项核对真实结果。
+            let items_payload = serde_json::to_value(&items).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+                    .with_action(RecoveryAction::Retry)
+            })?;
+            let mut record = journal_record(
+                operation_id,
+                SAVE_MARKDOWN_AS_COPY_KIND,
+                skillhub_core::OperationPhase::Applying,
+                None,
+            );
+            record.recovery_data = serde_json::json!({
+                "skill_id": copy.id().to_string(),
+                "version_id": version_id.to_string(),
+                "items": items_payload,
+            });
+            self.journal_write(record);
+            Ok(SaveAsCopyInheritanceOutcome::PartiallyReplaced { items })
+        }
+    }
+
+    /// K5：从部署记录重建所有权证明（与移除路径同一套身份与内容锚点）。
+    fn save_as_copy_deployment_proof(
+        &self,
+        deployment: &DeploymentRecord,
+    ) -> AppResult<OwnershipProof> {
+        let target_root: String =
+            self.with_database("save_as_copy_replacement.target_root", |database| {
+                database
+                    .connection_for_test()
+                    .query_row(
+                        "SELECT path FROM targets WHERE id=?1",
+                        [deployment.target_id.as_str()],
+                        |row| row.get(0),
+                    )
+                    .map_err(|_| {
+                        AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                            .with_param("field", "deployment_target")
+                            .with_action(RecoveryAction::InspectTarget)
+                    })
+            })?;
+        let target_root = std::path::PathBuf::from(target_root);
+        if physical_id_for_path(&target_root).as_deref() != Some(deployment.target_id.as_str()) {
+            return Err(AppError::new(ErrorCode::OwnershipMismatch, Severity::Error)
+                .with_param("detail", "registered deployment target identity changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let destination_path = target_root.join(&deployment.runtime_name);
+        let identity_for_mode = |path: &std::path::Path| {
+            if deployment.mode == DeploymentMode::SymbolicLink {
+                symlink_physical_id_for_path(path)
+            } else {
+                physical_id_for_path(path)
+            }
+        };
+        let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("detail", "deployment target identity is unavailable")
+                .with_action(RecoveryAction::InspectTarget)
+        })?;
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(deployment.skill_id.to_string())
+            .join(deployment.version_id.as_str());
+        Ok(OwnershipProof {
+            mode: deployment.mode,
+            destination_path,
+            source_path,
+            expected_hash: deployment.expected_hash.clone(),
+            target_identity,
+            skill_id: deployment.skill_id,
+            version_id: deployment.version_id.clone(),
+            runtime_name: deployment.runtime_name.clone(),
+        })
+    }
+
+    /// K5：替换继承的治理历史——旧使用关系结束 + 新使用关系建立，
+    /// 两条追加事件写时快照展示名与路径。
+    fn append_replace_inheritance_history(
+        &self,
+        old_record: &DeploymentRecord,
+        new_skill: &Skill,
+        destination: &std::path::Path,
+        operation_id: OperationId,
+    ) {
+        let relation_id = format!("managed:{}", old_record.id);
+        let path = destination.to_string_lossy().into_owned();
+        let _ = self.with_database("save_as_copy_replacement.history", |database| {
+            let old_display = database
+                .catalog_repository()?
+                .get_sync(old_record.skill_id)
+                .ok()
+                .flatten()
+                .map(|skill| skill.display_name().to_owned())
+                .unwrap_or_else(|| "unknown-skill".to_owned());
+            let ended = GovernanceHistoryEvent {
+                event_id: format!("hist-{}", OperationId::new()),
+                relation_id: relation_id.clone(),
+                skill_id: Some(old_record.skill_id.to_string()),
+                skill_display_name: old_display,
+                agent_presentation: serde_json::json!({ "target_id": old_record.target_id }),
+                path: path.clone(),
+                scope: "managed_deployment".to_owned(),
+                project_id: None,
+                action: "replace_inheritance".to_owned(),
+                result: "source_relation_ended".to_owned(),
+                reason: None,
+                operation_id: Some(operation_id.to_string()),
+                occurred_at: now_epoch_seconds(),
+            };
+            database.governance_history_repository().append(&ended)?;
+            let established = GovernanceHistoryEvent {
+                event_id: format!("hist-{}", OperationId::new()),
+                relation_id,
+                skill_id: Some(new_skill.id().to_string()),
+                skill_display_name: new_skill.display_name().to_owned(),
+                agent_presentation: serde_json::json!({ "target_id": old_record.target_id }),
+                path,
+                scope: "managed_deployment".to_owned(),
+                project_id: None,
+                action: "replace_inheritance".to_owned(),
+                result: "new_relation_established".to_owned(),
+                reason: None,
+                operation_id: Some(operation_id.to_string()),
+                occurred_at: now_epoch_seconds(),
+            };
+            database
+                .governance_history_repository()
+                .append(&established)
+        });
+    }
+
     fn save_markdown_as_copy(&self, request: SaveMarkdownAsCopy) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_markdown_as_copy");
         self.save_markdown_as_copy_flow(request, operation_id)
     }
 
-    /// 另存为副本：新建主体的统一采用流（与 create_skill 同形，无来源
-    /// 登记）。失败补偿删除副本 catalog 行、丢弃版本对象并移除新可见树。
+    /// 另存为副本：新建主体的统一采用流。K5 起新主体可选择登记来源
+    /// 血缘（origin）并按持久化预览接管显式选择的受管目标（替换继承）；
+    /// 网络来源与未选择的关系永不迁移。失败补偿删除副本 catalog 行、
+    /// 丢弃版本对象并移除新可见树；原主体不受影响。
     fn save_markdown_as_copy_flow(
         &self,
         request: SaveMarkdownAsCopy,
@@ -6652,10 +7183,17 @@ impl LocalApplicationFacade {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
+        // K5：显示名只影响展示——显式指定时使用（去除首尾空白），否则
+        // 沿用来源展示名；不再追加 (copy)。运行时名称继承来源；中央库
+        // 同名主体合法（可见路径内嵌主体 id）。
+        let display_name = match request.target_display_name.as_deref().map(str::trim) {
+            Some(trimmed) if !trimmed.is_empty() => trimmed.to_owned(),
+            _ => skill.display_name().to_owned(),
+        };
         let copy = match Skill::from_parts(
             skillhub_core::SkillId::new(),
-            format!("{} (copy)", skill.display_name()),
-            format!("{}-copy", skill.runtime_name()),
+            display_name,
+            skill.runtime_name().to_owned(),
             skill.original_description().to_owned(),
             skill.translated_description().map(str::to_owned),
             skill.note().map(str::to_owned),
@@ -6671,6 +7209,67 @@ impl LocalApplicationFacade {
             Ok(copy) => copy,
             Err(error) => {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
+        // K5：来源登记一致性——origin 必须指向本命令的来源主体，且引用
+        // 版本归属该主体；不一致按输入错误拒绝，不产生任何副作用。
+        let lineage_origin: Option<SaveAsCopyOrigin> = match &request.origin {
+            Some(origin) => {
+                if origin.source_skill_id != request.skill_id {
+                    let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("field", "origin.source_skill_id")
+                        .with_action(RecoveryAction::ChooseAnotherName);
+                    return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                }
+                let belongs =
+                    self.with_database("execute.save_markdown_as_copy.origin", |database| {
+                        let owned: i64 = database
+                            .connection_for_test()
+                            .query_row(
+                                "SELECT COUNT(*) FROM versions WHERE id=?1 AND skill_id=?2",
+                                [
+                                    origin.source_version_id.to_string(),
+                                    origin.source_skill_id.to_string(),
+                                ],
+                                |row| row.get(0),
+                            )
+                            .map_err(|error| {
+                                AppError::new(ErrorCode::InternalError, Severity::Error)
+                                    .with_param("source", error.to_string())
+                                    .with_action(RecoveryAction::Retry)
+                            })?;
+                        Ok(owned > 0)
+                    })?;
+                if !belongs {
+                    let error = AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("field", "origin.source_version_id")
+                        .with_action(RecoveryAction::Retry);
+                    return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                }
+                Some(origin.clone())
+            }
+            None => None,
+        };
+        // K5：替换继承预览校验（kind/相位/过期/指纹/选择一致/共享确认门）。
+        // 校验全部通过并消耗预览之后才开始创建新主体；任何拒绝都保持
+        // 原主体、目标条目与记账不变。
+        let replacement_plan = match &request.inheritance {
+            SaveAsCopyInheritance::None => None,
+            SaveAsCopyInheritance::ReplaceTargets {
+                preview_id,
+                targets,
+            } => {
+                match self.validate_save_as_copy_replacement(request.skill_id, *preview_id, targets)
+                {
+                    Ok(plan) => Some(plan),
+                    Err(error) => {
+                        return Err(self.settle_content_adoption_rejected(
+                            operation_id,
+                            KIND,
+                            error,
+                        ));
+                    }
+                }
             }
         };
         let snapshot = match self.content_adoption_snapshot(&library, &copy, operation_id) {
@@ -6733,22 +7332,78 @@ impl LocalApplicationFacade {
                         ));
                     }
                 };
-            self.journal_settle(operation_id, KIND, None);
+            // K5/MS-04：登记「来源 skill+version → 新主体首版本」的有向
+            // 血缘。登记失败按创建失败补偿（删除新主体 catalog 行、版本
+            // 对象与可见树；原主体、旧版本与网络来源不受影响）。
+            let lineage_registered = match &lineage_origin {
+                Some(origin) => {
+                    let fact = skillhub_core::SkillLineageFact {
+                        skill_id: copy.id(),
+                        version_id: version.id.clone(),
+                        origin_skill_id: origin.source_skill_id,
+                        origin_version_id: origin.source_version_id.clone(),
+                        created_at: now_epoch_seconds(),
+                    };
+                    match self.with_database("execute.save_markdown_as_copy.lineage", |database| {
+                        database.lineage_repository().record(&fact)
+                    }) {
+                        Ok(()) => true,
+                        Err(error) => {
+                            return Err(self.settle_content_adoption_failure(
+                                &library,
+                                &copy,
+                                operation_id,
+                                KIND,
+                                &snapshot,
+                                Some(&replacement),
+                                Some((&version, captured.created)),
+                                true,
+                                error,
+                            ));
+                        }
+                    }
+                }
+                None => false,
+            };
             let _ = library
                 .central
                 .finalize_visible_tree_replacement(replacement);
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
+            // K5：替换继承在新主体建立并通过验证之后逐项执行。执行器负责
+            // journal 结算：全部成功 → Committed；任一失败 → Applying 相位
+            // + 逐项载荷持久化（恢复候选）。绝不因部分失败删除新主体——
+            // 已成功目标可能正在使用它；也绝不回滚已成功目标。
+            let (inheritance, recovery_operation_id) = match replacement_plan {
+                Some(plan) => {
+                    let outcome = self.execute_save_as_copy_replacement(
+                        &library,
+                        &copy,
+                        &version.id,
+                        operation_id,
+                        plan,
+                    )?;
+                    let recovery = match outcome {
+                        SaveAsCopyInheritanceOutcome::PartiallyReplaced { .. } => {
+                            Some(operation_id)
+                        }
+                        _ => None,
+                    };
+                    (outcome, recovery)
+                }
+                None => {
+                    self.journal_settle(operation_id, KIND, None);
+                    (SaveAsCopyInheritanceOutcome::NotRequested, None)
+                }
+            };
             Ok(AppCommandResult::SavedSkillCopy(SaveAsCopyOutcome {
                 skill_id: copy.id(),
                 path: request.path.clone(),
                 version_id: version.id,
                 content_identity,
-                // K5：RED 种子——display_name 暂沿用旧「(copy)」命名；GREEN
-                // 提交去除硬编码后缀并接线 target_display_name。
                 display_name: copy.display_name().to_owned(),
-                lineage_registered: false,
-                inheritance: SaveAsCopyInheritanceOutcome::NotRequested,
-                recovery_operation_id: None,
+                lineage_registered,
+                inheritance,
+                recovery_operation_id,
             }))
         })();
         let _ = std::fs::remove_dir_all(&staging);
@@ -7631,8 +8286,23 @@ impl ApplicationFacade for LocalApplicationFacade {
                         pending_count: skill.pending_count,
                         high_risk_count: skill.high_risk_count,
                         upstream_state: skill.upstream_state,
-                        // K5/MS-04：RED 种子——真实上游谱系在 GREEN 提交中接线。
-                        upstream_lineage: None,
+                        // K5/MS-04：上游谱系——「来源 skill+version → 新 skill
+                        // 首版本」的有向事实，仅在详情投影暴露。
+                        upstream_lineage: database.lineage_repository().for_skill(skill_id)?.map(
+                            |fact| skillhub_core::api::SkillUpstreamLineage {
+                                source_skill_id: fact.origin_skill_id,
+                                source_version_id: fact.origin_version_id,
+                                source_display_name: database
+                                    .catalog_repository()
+                                    .and_then(|repository| {
+                                        repository.get_sync(fact.origin_skill_id)
+                                    })
+                                    .ok()
+                                    .flatten()
+                                    .map(|skill| skill.display_name().to_owned()),
+                                created_at: Some(format_rfc3339_utc(fact.created_at)),
+                            },
+                        ),
                     }))
                 })
             }
@@ -7783,21 +8453,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppQuery::ListVersions(request) => self.list_versions(request.skill_id),
             AppQuery::GetRollbackImpact(request) => self.get_rollback_impact(request),
-            AppQuery::GetSaveAsCopyReplacementPreview(_) => {
-                // K5：RED 种子——替换继承预览未接线；GREEN 提交持久化预览。
-                Ok(AppQueryResult::SaveAsCopyReplacementPreview(
-                    skillhub_core::api::SaveAsCopyReplacementPreview {
-                        source_skill_id: skillhub_core::SkillId::new(),
-                        source_version_id: skillhub_core::VersionId::parse(
-                            "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-                        )
-                        .expect("seed version id"),
-                        preview_id: OperationId::new(),
-                        expires_at: String::new(),
-                        confirmation_fingerprint: String::new(),
-                        targets: Vec::new(),
-                    },
-                ))
+            AppQuery::GetSaveAsCopyReplacementPreview(request) => {
+                self.get_save_as_copy_replacement_preview(request)
             }
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
@@ -14361,6 +15018,164 @@ fn target_changed_error(detail: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::TargetChanged, Severity::Error)
         .with_param("detail", detail.into())
         .with_action(RecoveryAction::Retry)
+}
+
+/// K5：替换继承目标的记账事实快照（指纹与预览日志载荷共用）。阻塞目标
+/// 只保留部署 id、已知消费者与阻塞原因，其余字段为空。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementTargetFact {
+    deployment_id: skillhub_core::DeploymentId,
+    target_id: Option<String>,
+    path: Option<String>,
+    runtime_name: Option<String>,
+    mode: Option<DeploymentMode>,
+    managed: Option<bool>,
+    owner_skill_id: Option<skillhub_core::SkillId>,
+    version_id: Option<skillhub_core::VersionId>,
+    expected_hash: Option<String>,
+    consumer_deployment_ids: Vec<String>,
+    blocker: Option<String>,
+}
+
+/// K5：替换继承预览的持久化快照（操作日志 recovery_data）。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementSnapshot {
+    source_skill_id: skillhub_core::SkillId,
+    source_version_id: skillhub_core::VersionId,
+    expires_at: i64,
+    confirmation_fingerprint: String,
+    targets: Vec<SaveAsCopyReplacementTargetFact>,
+}
+
+impl SaveAsCopyReplacementSnapshot {
+    fn target_ids(&self) -> Vec<skillhub_core::DeploymentId> {
+        self.targets.iter().map(|fact| fact.deployment_id).collect()
+    }
+}
+
+/// K5：另存副本替换继承预览的操作日志 kind 与有效期（与其它预览一致的
+/// 15 分钟窗口）。
+const SAVE_AS_COPY_REPLACEMENT_PREVIEW_KIND: &str = "save_as_copy_replacement_preview";
+const SAVE_AS_COPY_REPLACEMENT_PREVIEW_TTL_SECONDS: i64 = 900;
+const SAVE_MARKDOWN_AS_COPY_KIND: &str = "save_markdown_as_copy";
+
+/// K5：按最新部署记账收集替换目标事实。共享语义与 K2 一致：同一物理
+/// 目标上存在多个活跃部署即为共享目标，消费者列出全部活跃部署。
+fn inspect_save_as_copy_replacement_targets(
+    database: &Database,
+    source_skill_id: skillhub_core::SkillId,
+    requested: &[skillhub_core::DeploymentId],
+) -> AppResult<Vec<SaveAsCopyReplacementTargetFact>> {
+    let deployed: std::collections::HashMap<String, DeploymentRecord> = database
+        .deployment_repository()
+        .list_all()?
+        .into_iter()
+        .filter(|record| record.state == DeploymentState::Deployed)
+        .map(|record| (record.id.to_string(), record))
+        .collect();
+    let mut consumers_by_target: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for record in deployed.values() {
+        consumers_by_target
+            .entry(record.target_id.clone())
+            .or_default()
+            .push(record.id.to_string());
+    }
+    for consumers in consumers_by_target.values_mut() {
+        consumers.sort();
+        consumers.dedup();
+    }
+    let mut facts = Vec::new();
+    for deployment_id in requested {
+        let Some(record) = deployed.get(&deployment_id.to_string()) else {
+            facts.push(SaveAsCopyReplacementTargetFact {
+                deployment_id: *deployment_id,
+                target_id: None,
+                path: None,
+                runtime_name: None,
+                mode: None,
+                managed: None,
+                owner_skill_id: None,
+                version_id: None,
+                expected_hash: None,
+                consumer_deployment_ids: Vec::new(),
+                blocker: Some("target_not_found".to_owned()),
+            });
+            continue;
+        };
+        let consumers = consumers_by_target
+            .get(&record.target_id)
+            .cloned()
+            .unwrap_or_default();
+        let mut fact = SaveAsCopyReplacementTargetFact {
+            deployment_id: *deployment_id,
+            target_id: Some(record.target_id.clone()),
+            path: None,
+            runtime_name: Some(record.runtime_name.clone()),
+            mode: Some(record.mode),
+            managed: Some(record.managed),
+            owner_skill_id: Some(record.skill_id),
+            version_id: Some(record.version_id.clone()),
+            expected_hash: Some(record.expected_hash.clone()),
+            consumer_deployment_ids: consumers.clone(),
+            blocker: None,
+        };
+        if !record.managed || record.state != DeploymentState::Deployed {
+            fact.blocker = Some("target_not_managed".to_owned());
+        } else if record.skill_id != source_skill_id {
+            fact.blocker = Some("target_owner_mismatch".to_owned());
+        } else {
+            let target_path: Option<String> = database
+                .connection_for_test()
+                .query_row(
+                    "SELECT path FROM targets WHERE id=?1",
+                    [record.target_id.as_str()],
+                    |row| row.get(0),
+                )
+                .ok();
+            let identity = target_path
+                .as_deref()
+                .and_then(|path| physical_id_for_path(std::path::Path::new(path)));
+            if identity.as_deref() != Some(record.target_id.as_str()) {
+                fact.blocker = Some("target_identity_unavailable".to_owned());
+            } else {
+                let destination = std::path::Path::new(target_path.as_deref().unwrap_or(""))
+                    .join(&record.runtime_name);
+                fact.path = Some(destination.to_string_lossy().into_owned());
+            }
+        }
+        facts.push(fact);
+    }
+    Ok(facts)
+}
+
+/// K5：确认指纹——覆盖来源主体/版本身份与全部记账事实（含消费者分组
+/// 与阻塞原因）。预览之后任何记账漂移都会改变指纹并使预览失效；
+/// 物理内容漂移不改记账，由提交端逐项所有权验证兜底。
+fn save_as_copy_replacement_fingerprint(
+    source_skill_id: skillhub_core::SkillId,
+    source_version_id: &skillhub_core::VersionId,
+    targets: &[SaveAsCopyReplacementTargetFact],
+) -> AppResult<String> {
+    #[derive(serde::Serialize)]
+    struct FingerprintInput<'a> {
+        source_skill_id: skillhub_core::SkillId,
+        source_version_id: &'a skillhub_core::VersionId,
+        targets: &'a [SaveAsCopyReplacementTargetFact],
+    }
+    let value = FingerprintInput {
+        source_skill_id,
+        source_version_id,
+        targets,
+    };
+    let bytes = serde_json::to_vec(&value).map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("source", error.to_string())
+            .with_action(RecoveryAction::Retry)
+    })?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 fn journal_record(

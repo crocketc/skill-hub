@@ -295,6 +295,12 @@ impl DeploymentFilesystem {
         Ok(())
     }
 
+    /// K5：按所有权证明核对条目仍归属记录（物理身份 + 内容哈希；链接
+    /// 模式只核对链接本身）。替换继承在交接前用它逐项验证。
+    pub fn verify_ownership(&self, proof: &OwnershipProof) -> AppResult<()> {
+        verify_owned(proof)
+    }
+
     pub fn remove_owned(&self, proof: &OwnershipProof) -> AppResult<()> {
         verify_owned(proof)?;
         remove_target(proof)

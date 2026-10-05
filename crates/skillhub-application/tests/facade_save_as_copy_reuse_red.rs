@@ -93,6 +93,15 @@ async fn seed_source_skill(fixture: &mut Fixture, name: &str, markdown: &str) ->
     store
         .set_current(skill.id(), &captured.id)
         .expect("set current");
+    // 与 create_skill 一致：来源版本登记进 SQL 版本表（origin 归属校验、
+    // 部署外键都依赖它）。
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT OR IGNORE INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
+            rusqlite::params![captured.id.to_string(), skill.id().to_string()],
+        )
+        .expect("insert source version");
     let (identity, _) = store
         .read_file(&captured.id, "SKILL.md", 1_048_576)
         .expect("read identity");

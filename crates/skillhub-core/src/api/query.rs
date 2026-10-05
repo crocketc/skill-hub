@@ -402,7 +402,8 @@ pub struct SaveAsCopyReplacementTargetPreview {
     pub path: String,
     pub runtime_name: String,
     pub managed: bool,
-    pub version_id: VersionId,
+    /// 目标无法核验（blocker 存在）时为 None。
+    pub version_id: Option<VersionId>,
     pub consumer_deployment_ids: Vec<crate::DeploymentId>,
     pub requires_shared_target_confirmation: bool,
     /// 稳定阻断码：`target_not_found`/`target_not_managed`/
