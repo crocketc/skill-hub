@@ -4128,6 +4128,7 @@
       "run": "Run rolling backup",
       "running": "Running…",
       "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the central library has no cache that needs manual cleanup.",
+      "draftHint": "Backups do not include unsaved edit drafts; save your edits first.",
       "failed": "Rolling backup failed: {{error}}",
       "result": "Rolling backup finished: {{retained}} kept, {{removed}} removed."
     }

@@ -493,6 +493,25 @@ describe("DataProtectionPage", () => {
   });
 });
 
+// W1-1：备份不含未保存编辑草稿——说明区常态可见（备份前），完成 status 行复核同一提示。
+it("states before and after a rolling backup that unsaved edit drafts are not included", async () => {
+  const user = userEvent.setup();
+  const runRollingBackup = vi.fn(async () => ({ retained: 3, removed: 2 }));
+  const facade = {
+    ...createFacade(),
+    runRollingBackup,
+  };
+  renderPage(facade);
+
+  // 备份前：滚动备份区块的分区注记常态可见。
+  expect(screen.getByText(/Backups do not include unsaved edit drafts/)).toBeVisible();
+
+  await user.click(await screen.findByRole("button", { name: "Run rolling backup" }));
+  expect(await screen.findByText(/3 kept/)).toBeVisible();
+  // 完成后：提示在分区注记与完成 status 行各出现一次。
+  expect(screen.getAllByText(/Backups do not include unsaved edit drafts/)).toHaveLength(2);
+});
+
 it("runs a rolling backup with the configured retention policy and reports cleanup", async () => {
   const user = userEvent.setup();
   const runRollingBackup = vi.fn(async () => ({ retained: 3, removed: 2 }));
