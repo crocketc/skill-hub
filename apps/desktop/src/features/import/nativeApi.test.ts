@@ -30,6 +30,15 @@ describe("native import facade", () => {
     });
   }
 
+  // W2-2：提交期以真实批次号重跑批内分析；返回最新组成签名。
+  function mockCommitBatchAnalysis(signature = "commit-batch-sig") {
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "import_batch_analysis",
+      payload: { same_content_groups: [], same_name_groups: [], signature },
+    });
+    return signature;
+  }
+
   it("discovers local candidates through the typed native query", async () => {
     vi.mocked(queryApplication).mockResolvedValue({
       type: "import_candidates",
@@ -66,39 +75,53 @@ describe("native import facade", () => {
   });
 
   it("combines deterministic native analyses into a conflict plan", async () => {
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "import_analysis",
-      payload: {
-        actions: ["keep_independent", "skip"],
-        candidate: {
-          absolute_root: "C:/incoming/notes",
-          default_action: "review",
-          marker: "SKILL.md",
-          ownership: "arbitrary_local_directory",
-          ownership_detail: null,
-          relative_root: "notes",
-          runtime_name: "notes",
-          source: { kind: "local", locator: { local_path: "C:/incoming" } },
-        },
-        conflicts: [{
-          kind: "same_runtime_name_different_content",
-          reason_code: "import.same_runtime_name_conflict",
-          requires_choice: true,
-          skill_id: "skill-1",
-        }],
-        duplicate_kind: "same_runtime_name_different_content",
-        matches: [{
-          skill_id: "skill-1",
-          display_name: "Existing Notes",
-          runtime_name: "notes",
-          source: { kind: "local", locator: { local_path: "C:/library/notes" } },
-          ownership: "central_library",
-          basis: "runtime_name",
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: {
+          actions: ["keep_independent", "skip"],
+          candidate: {
+            absolute_root: "C:/incoming/notes",
+            default_action: "review",
+            marker: "SKILL.md",
+            ownership: "arbitrary_local_directory",
+            ownership_detail: null,
+            relative_root: "notes",
+            runtime_name: "notes",
+            source: { kind: "local", locator: { local_path: "C:/incoming" } },
+          },
+          conflicts: [{
+            kind: "same_runtime_name_different_content",
+            reason_code: "import.same_runtime_name_conflict",
+            requires_choice: true,
+            skill_id: "skill-1",
+          }],
           duplicate_kind: "same_runtime_name_different_content",
-          matched_fields: [],
-        }],
-      },
-    });
+          matches: [{
+            skill_id: "skill-1",
+            display_name: "Existing Notes",
+            runtime_name: "notes",
+            source: { kind: "local", locator: { local_path: "C:/library/notes" } },
+            ownership: "central_library",
+            basis: "runtime_name",
+            duplicate_kind: "same_runtime_name_different_content",
+            matched_fields: [],
+          }],
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: {
+          same_content_groups: [{
+            candidate_tree_hash: "hash-a",
+            keep_candidate_key: "native-a|notes",
+            normalized_runtime_name: "notes",
+            skip_candidate_keys: ["native-b|notes"],
+          }],
+          same_name_groups: [],
+          signature: "analysis-batch-sig",
+        },
+      });
 
     const candidate = {
       basicCheck: "not_checked" as const,
@@ -106,11 +129,19 @@ describe("native import facade", () => {
       name: "notes",
       ownership: "unknown" as const,
       path: "C:/incoming/notes",
+      relativeRoot: "notes",
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
     const plan = await nativeImportFacade.analyzeConflicts([candidate]);
 
-    expect(queryApplication).toHaveBeenCalledWith(expect.objectContaining({ type: "analyze_import" }));
+    // 批内互检与库内分析并行发出；展示阶段尚无批次号，batch_id 为 null。
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "analyze_import_batch",
+      payload: {
+        batch_id: null,
+        candidates: [expect.objectContaining({ runtime_name: "notes" })],
+      },
+    });
     expect(plan.conflicts).toEqual([
       expect.objectContaining({
         allowedActions: ["independent", "skip"],
@@ -126,20 +157,46 @@ describe("native import facade", () => {
         }],
       }),
     ]);
+    // 组成员键由后端稳定键映射回前端候选（相对根后缀）；无法映射的键
+    // 如实丢弃，不伪造成员。
+    expect(plan.batchAnalysis).toEqual({
+      sameContentGroups: [{
+        keepCandidateId: candidate.id,
+        normalizedRuntimeName: "notes",
+        skipCandidateIds: [],
+      }],
+      sameNameGroups: [],
+      signature: "analysis-batch-sig",
+    });
   });
 
   it("reports live per-candidate progress as native analyses resolve", async () => {
     const progress = vi.fn();
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "import_analysis",
-      payload: {
-        actions: ["skip"],
-        candidate: {} as never,
-        conflicts: [],
-        duplicate_kind: null,
-        matches: [],
-      },
-    });
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: {
+          actions: ["skip"],
+          candidate: {} as never,
+          conflicts: [],
+          duplicate_kind: null,
+          matches: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: {
+          actions: ["skip"],
+          candidate: {} as never,
+          conflicts: [],
+          duplicate_kind: null,
+          matches: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+      });
     const makeCandidate = async (name: string) => ({
       basicCheck: "not_checked" as const,
       id: `C:/incoming/${name}#${name}`,
@@ -161,6 +218,7 @@ describe("native import facade", () => {
   it("prepares and commits a selected local candidate", async () => {
     const progress = vi.fn();
     mockBeginBatch();
+    mockCommitBatchAnalysis("commit-batch-sig");
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -198,6 +256,8 @@ describe("native import facade", () => {
 
     expect(executeCommand).toHaveBeenNthCalledWith(1, expect.objectContaining({ type: "begin_import_batch" }));
     expect(executeCommand).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: "prepare_import" }));
+    // W2-2：candidate_key 缺省——稳定键由应用层从来源与相对根派生（与批内
+    // 分析同一形态）；前端展示键不冒充身份。commit 携带提交期最新签名。
     expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
       payload: {
@@ -205,7 +265,7 @@ describe("native import facade", () => {
         governance_decision: { group_actions: {}, item_overrides: {} },
         prepared_import_id: "operation-1",
         batch_id: "batch-1",
-        candidate_key: candidate.id,
+        batch_signature: "commit-batch-sig",
       },
     });
     expect(executeCommand).toHaveBeenLastCalledWith({
@@ -230,6 +290,7 @@ describe("native import facade", () => {
 
   it("uses an allowed default decision when a candidate has no required conflict", async () => {
     mockBeginBatch();
+    mockCommitBatchAnalysis();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -270,7 +331,7 @@ describe("native import facade", () => {
         governance_decision: { group_actions: {}, item_overrides: {} },
         prepared_import_id: "operation-default",
         batch_id: "batch-1",
-        candidate_key: candidate.id,
+        batch_signature: "commit-batch-sig",
       },
     });
     expect(result).toEqual(expect.objectContaining({ action: "independent", status: "succeeded" }));
@@ -298,8 +359,13 @@ describe("native import facade", () => {
           duplicate_kind: null,
           matches: [],
         },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "analysis-sig" },
       });
     mockBeginBatch();
+    mockCommitBatchAnalysis("commit-sig");
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -320,9 +386,18 @@ describe("native import facade", () => {
     const plan = await nativeImportFacade.analyzeConflicts([candidate]);
     await nativeImportFacade.commitImport(plan, { [candidate.id]: "copy" });
 
-    expect(queryApplication).toHaveBeenLastCalledWith({
+    expect(queryApplication).toHaveBeenNthCalledWith(2, {
       type: "analyze_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
+    });
+    // 展示阶段批内分析不暂存（batch_id=null），提交阶段以真实批次号重跑。
+    expect(queryApplication).toHaveBeenNthCalledWith(3, {
+      type: "analyze_import_batch",
+      payload: { batch_id: null, candidates: [nativeCandidate] },
+    });
+    expect(queryApplication).toHaveBeenLastCalledWith({
+      type: "analyze_import_batch",
+      payload: { batch_id: "batch-1", candidates: [nativeCandidate] },
     });
     expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "prepare_import",
@@ -332,6 +407,7 @@ describe("native import facade", () => {
 
   it("resolves unknown native error codes to readable copy for failed imports", async () => {
     mockBeginBatch();
+    mockCommitBatchAnalysis();
     vi.mocked(executeCommand).mockRejectedValueOnce({
       code: "io_error",
       params: { operation: "capture", path: "C:/incoming/notes" },
@@ -365,6 +441,7 @@ describe("native import facade", () => {
 
   it("maps known native error codes to their translation keys", async () => {
     mockBeginBatch();
+    mockCommitBatchAnalysis();
     vi.mocked(executeCommand).mockRejectedValueOnce({
       code: "network.disabled",
     });
@@ -391,6 +468,7 @@ describe("native import facade", () => {
 
   it("maps takeover verification conflicts by their structured reason", async () => {
     mockBeginBatch();
+    mockCommitBatchAnalysis();
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -494,18 +572,31 @@ describe("native import facade", () => {
       path: "C:/incoming/notes",
       source: await nativeImportFacade.parseSource("C:/incoming"),
     };
-    vi.mocked(queryApplication).mockResolvedValue({
-      type: "import_analysis",
-      payload: {
-        actions: ["keep_independent", "skip"],
-        candidate: {} as never,
-        conflicts: [],
-        duplicate_kind: "same_runtime_name_different_content",
-        matches: [],
-      },
-    });
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: {
+          actions: ["keep_independent", "skip"],
+          candidate: {} as never,
+          conflicts: [],
+          duplicate_kind: "same_runtime_name_different_content",
+          matches: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: {
+          same_content_groups: [],
+          same_name_groups: [{
+            candidate_keys: ["native-a|notes"],
+            normalized_runtime_name: "notes",
+          }],
+          signature: "analysis-sig",
+        },
+      });
     await nativeImportFacade.analyzeConflicts([candidate]);
     mockBeginBatch();
+    mockCommitBatchAnalysis("commit-sig");
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -522,7 +613,7 @@ describe("native import facade", () => {
 
     expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
-      payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3", batch_id: "batch-1", candidate_key: candidate.id },
+      payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3", batch_id: "batch-1", batch_signature: "commit-sig" },
     });
   });
 
@@ -531,6 +622,7 @@ describe("native import facade", () => {
   // 如实为 0。
   it("creates exactly one batch per commit session and reuses it for every item", async () => {
     mockBeginBatch("batch-session");
+    mockCommitBatchAnalysis("session-sig");
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
@@ -595,13 +687,25 @@ describe("native import facade", () => {
     );
     expect(batchCommands).toHaveLength(1);
     expect(executeCommand).toHaveBeenNthCalledWith(1, { type: "begin_import_batch", payload: {} });
+    // 提交期批内分析恰好重跑一次（同一 batch_id），两个候选项共用同一签名。
+    const batchQueries = vi.mocked(queryApplication).mock.calls.filter(
+      ([query]) => query.type === "analyze_import_batch",
+    );
+    expect(batchQueries).toHaveLength(1);
+    expect(batchQueries[0]).toEqual([{
+      type: "analyze_import_batch",
+      payload: {
+        batch_id: "batch-session",
+        candidates: [expect.objectContaining({ runtime_name: "one" }), expect.objectContaining({ runtime_name: "two" })],
+      },
+    }]);
     expect(executeCommand).toHaveBeenNthCalledWith(3, expect.objectContaining({
       type: "commit_import",
-      payload: expect.objectContaining({ batch_id: "batch-session", candidate_key: first.id }),
+      payload: expect.objectContaining({ batch_id: "batch-session", batch_signature: "session-sig" }),
     }));
     expect(executeCommand).toHaveBeenNthCalledWith(5, expect.objectContaining({
       type: "commit_import",
-      payload: expect.objectContaining({ batch_id: "batch-session", candidate_key: second.id }),
+      payload: expect.objectContaining({ batch_id: "batch-session", batch_signature: "session-sig" }),
     }));
     expect(executeCommand).toHaveBeenLastCalledWith({
       type: "finalize_import_batch",
@@ -610,5 +714,160 @@ describe("native import facade", () => {
     expect(outcome.batch).toEqual({ batchId: "batch-session", manageableSourceCount: 1 });
     expect(outcome.results.map((result) => result.skillId)).toEqual(["skill-a", "skill-b"]);
     expect(outcome.results.map((result) => result.sourceRelationId)).toEqual(["rel-a", undefined]);
+  });
+
+  // W2-2（FB-007）：独立命名与批内签名贯穿 prepare/commit 出参。
+  it("carries the independent rename and the fresh batch signature through prepare and commit", async () => {
+    mockBeginBatch("batch-rename");
+    mockCommitBatchAnalysis("fresh-sig");
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-rename",
+          candidate: {} as never,
+          analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          committed: true,
+          batch: { batch_id: "batch-rename" },
+          items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-renamed", status: "succeeded" }],
+          operation_id: "operation-rename",
+        },
+      });
+    mockFinalizeBatch("batch-rename", "1");
+
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source,
+    };
+    const outcome = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "independent" },
+      undefined,
+      undefined,
+      { runtimeNameOverrides: { [candidate.id]: "Notes Renamed" }, batchSignature: "plan-sig" },
+    );
+
+    // 提交期以真实批次号重跑批内分析（存储分析 + 取最新签名）。
+    expect(queryApplication).toHaveBeenLastCalledWith({
+      type: "analyze_import_batch",
+      payload: {
+        batch_id: "batch-rename",
+        candidates: [expect.objectContaining({ runtime_name: "notes" })],
+      },
+    });
+    // prepare 与 commit 携带同一覆盖名（后端要求两次一致）。
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+      type: "prepare_import",
+      payload: {
+        candidate: expect.anything(),
+        tree_hash: null,
+        runtime_name_override: "Notes Renamed",
+      },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
+      type: "commit_import",
+      payload: {
+        decision: "copy_as_independent_managed_skill",
+        governance_decision: { group_actions: {}, item_overrides: {} },
+        prepared_import_id: "operation-rename",
+        batch_id: "batch-rename",
+        batch_signature: "fresh-sig",
+        runtime_name_override: "Notes Renamed",
+      },
+    });
+    expect(outcome.results[0]).toEqual(expect.objectContaining({ status: "succeeded" }));
+  });
+
+  it("does not attach a runtime override to a skipped candidate", async () => {
+    mockBeginBatch();
+    mockCommitBatchAnalysis();
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: "operation-skip",
+          candidate: {} as never,
+          analysis: { actions: ["skip"] } as never,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          committed: false,
+          batch: { batch_id: "batch-1" },
+          items: [{ decision: "skip", governance_tasks: [], original_preserved: true, provenance: null, reason_code: "import.skipped_by_user", skill_id: null, status: "skipped" }],
+          operation_id: "operation-skip",
+        },
+      });
+    mockFinalizeBatch("batch-1", "0");
+
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source,
+    };
+    await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "skip" },
+      undefined,
+      undefined,
+      { runtimeNameOverrides: { [candidate.id]: "Notes Renamed" }, batchSignature: null },
+    );
+
+    // skip + 覆盖名是非法组合（后端拒绝）：出参绝不携带覆盖名。
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+      type: "prepare_import",
+      payload: { candidate: expect.anything(), tree_hash: null },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      type: "commit_import",
+      payload: expect.not.objectContaining({ runtime_name_override: expect.anything() }),
+    }));
+  });
+
+  // W2-2：三个新错误码映射为可读引导文案，不裸码上屏。
+  it.each([
+    ["import.runtime_name_conflict", "importWorkflow.errors.runtimeNameConflict"],
+    ["import.same_name_disposition_required", "importWorkflow.errors.sameNameDispositionRequired"],
+    ["import.batch_composition_changed", "importWorkflow.errors.batchCompositionChanged"],
+  ])("maps %s to its guidance key", async (code, expectedKey) => {
+    mockBeginBatch();
+    mockCommitBatchAnalysis();
+    vi.mocked(executeCommand).mockRejectedValueOnce({ code });
+    mockFinalizeBatch("batch-1", "0");
+
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const candidate = {
+      basicCheck: "passed" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source,
+    };
+    const { results: [result] } = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "copy" },
+    );
+
+    expect(result).toEqual(expect.objectContaining({
+      message: expectedKey,
+      reasonCode: code,
+      status: "failed",
+    }));
   });
 });

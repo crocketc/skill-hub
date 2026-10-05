@@ -4,6 +4,7 @@ import {
   type AppCommandResult,
   type AppQueryResult,
   type ImportAnalysis,
+  type ImportBatchConflictAnalysis,
   type ImportCandidate as NativeImportCandidate,
   type ImportDecision,
   type ImportGovernanceDecision,
@@ -14,6 +15,7 @@ import {
   ImportCancelledError,
   parseSourceInput,
   type ImportAction,
+  type ImportBatchAnalysis,
   type ImportCandidate,
   type ImportConflict,
   type ImportFacade,
@@ -113,6 +115,8 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
     frontmatterName: candidate.frontmatter_name ?? null,
     ownership: ownership(candidate.ownership),
     path: normalizeWindowsPath(candidate.absolute_root),
+    // W2-2：相对根是批内候选键的稳定后缀，用于组键 → 前端候选的映射。
+    relativeRoot: candidate.relative_root,
     source: candidateSource(candidate.source),
   };
 }
@@ -281,6 +285,76 @@ function queryImportAnalysis(result: AppQueryResult): ImportAnalysis {
   return result.payload;
 }
 
+function queryImportBatchAnalysis(result: AppQueryResult): ImportBatchConflictAnalysis {
+  if (result.type !== "import_batch_analysis") {
+    throw new Error("native import batch analysis query returned an unexpected result");
+  }
+  return result.payload;
+}
+
+const IS_WINDOWS =
+  typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent);
+
+/** 镜像后端 observed_path_key：统一分隔符；Windows 上小写（路径大小写不敏感）。 */
+function observedPathKey(relativeRoot: string | null | undefined): string {
+  const value = (relativeRoot ?? "").replace(/\\/g, "/");
+  return IS_WINDOWS ? value.toLowerCase() : value;
+}
+
+/**
+ * 把批内分组的后端稳定候选键映射回前端候选 id：键前缀是来源身份的 SipHash
+ * （TS 无法复现），后缀是 observed path key。按「后缀 + 组归一化名」匹配，
+ * 同键多个候选按 id 排序、未占用者优先，保证确定性；无法诚实映射的键
+ * 直接丢弃，绝不伪造成员。边界：同名且同相对路径但来源不同的极端批会
+ * 出现键歧义——处置挂在解析顺序候选上仍可有效提交，最终裁决由后端按
+ * 稳定键校验（prepare/commit 的错误码如实呈现）。
+ */
+function batchAnalysisFromNative(
+  analysis: ImportBatchConflictAnalysis,
+  candidates: ImportCandidate[],
+): ImportBatchAnalysis {
+  const consumed = new Set<string>();
+  const pool = new Map<string, ImportCandidate[]>();
+  for (const candidate of [...candidates].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const key = `${candidate.name.trim().toLowerCase()}|${observedPathKey(candidate.relativeRoot)}`;
+    const bucket = pool.get(key);
+    if (bucket) bucket.push(candidate);
+    else pool.set(key, [candidate]);
+  }
+  const take = (candidateKey: string, runtimeName: string): ImportCandidate | undefined => {
+    const separator = candidateKey.indexOf("|");
+    const suffix = separator >= 0 ? candidateKey.slice(separator + 1) : candidateKey;
+    const bucket = pool.get(
+      `${runtimeName.trim().toLowerCase()}|${observedPathKey(suffix)}`,
+    );
+    const match = bucket?.find((candidate) => !consumed.has(candidate.id));
+    if (match) consumed.add(match.id);
+    return match;
+  };
+  return {
+    sameContentGroups: analysis.same_content_groups.flatMap((group) => {
+      const keep = take(group.keep_candidate_key, group.normalized_runtime_name);
+      if (!keep) return [];
+      return [{
+        keepCandidateId: keep.id,
+        normalizedRuntimeName: group.normalized_runtime_name,
+        skipCandidateIds: group.skip_candidate_keys.flatMap((key) => {
+          const skip = take(key, group.normalized_runtime_name);
+          return skip ? [skip.id] : [];
+        }),
+      }];
+    }),
+    sameNameGroups: analysis.same_name_groups.map((group) => ({
+      normalizedRuntimeName: group.normalized_runtime_name,
+      candidateIds: group.candidate_keys.flatMap((key) => {
+        const member = take(key, group.normalized_runtime_name);
+        return member ? [member.id] : [];
+      }),
+    })),
+    signature: analysis.signature,
+  };
+}
+
 function sourceLabel(source: ImportAnalysis["matches"][number]["source"]): string | undefined {
   if (!source) return undefined;
   return source.locator.local_path ?? source.locator.https_url ?? source.locator.git_url;
@@ -366,10 +440,11 @@ export const nativeImportFacade: ImportFacade = {
   async analyzeConflicts(candidates, onProgress) {
     const conflicts: ImportConflict[] = [];
     let completed = 0;
-    // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。候选数组长度即真实
-    // 总数，每个候选查询 resolve 即累计一次真实已完成数；进度只反映已完成的
-    // IPC 查询，不做任何估算（OPT-20260914-01）。
-    const analyses = await Promise.all(candidates.map((candidate) => queryApplication({
+    // W2-2：批内互检与逐候选库内分析并行发出（展示阶段还没有批次号，
+    // batch_id 为 null）。宿主不支持该查询时诚实降级为无批内分组，
+    // 不伪造分组，也不让批内分析失败拖垮整个分析阶段。
+    // 注意先创建逐候选查询、再发起批内查询：两者并发，调用顺序稳定。
+    const analysisQueries = candidates.map((candidate) => queryApplication({
       type: "analyze_import",
       payload: {
         candidate: nativeCandidateFor(candidate),
@@ -379,7 +454,21 @@ export const nativeImportFacade: ImportFacade = {
       completed += 1;
       onProgress?.({ candidateId: candidate.id, completed, total: candidates.length });
       return { candidate, analysis: queryImportAnalysis(result) };
-    })));
+    }));
+    const batchAnalysisQuery = queryApplication({
+      type: "analyze_import_batch",
+      payload: {
+        batch_id: null,
+        candidates: candidates.map(nativeCandidateFor),
+      },
+    })
+      .then(queryImportBatchAnalysis)
+      .catch(() => undefined);
+    // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。候选数组长度即真实
+    // 总数，每个候选查询 resolve 即累计一次真实已完成数；进度只反映已完成的
+    // IPC 查询，不做任何估算（OPT-20260914-01）。
+    const analyses = await Promise.all(analysisQueries);
+    const batchAnalysis = await batchAnalysisQuery;
     for (const { candidate, analysis } of analyses) {
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
@@ -409,16 +498,33 @@ export const nativeImportFacade: ImportFacade = {
       governanceGroups: mergeGovernanceGroups(
         analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
       ),
+      ...(batchAnalysis
+        ? { batchAnalysis: batchAnalysisFromNative(batchAnalysis, candidates) }
+        : {}),
     };
   },
 
-  async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }) {
+  async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }, dispositions) {
     // 计划 9.3：一次向导提交会话只创建一个批次；每项 commit 复用同一
     // batch_id。批次上下文来自 begin/finalize 与后端回显，绝不从
     // results[0] 偶然取得。
     const batchId = importBatchStarted(
       await executeCommand({ type: "begin_import_batch", payload: {} }),
     );
+    // W2-2：提交期重跑批内分析刷新组成签名——analyze 之后批次才存在，
+    // 后端按 batch_id 校验签名，组成变化即整批拒绝（绝不假成功）。
+    // candidate_key 一律缺省：稳定键由应用层从来源与相对根派生，前端
+    // 自造键会破坏批内守卫。
+    let batchSignature: string | null = null;
+    if (plan.candidates.length > 0) {
+      batchSignature = queryImportBatchAnalysis(await queryApplication({
+        type: "analyze_import_batch",
+        payload: {
+          batch_id: batchId,
+          candidates: plan.candidates.map(nativeCandidateFor),
+        },
+      })).signature;
+    }
     const results: ImportResult[] = [];
     for (const [index, candidate] of plan.candidates.entries()) {
       onProgress?.({
@@ -428,12 +534,18 @@ export const nativeImportFacade: ImportFacade = {
       });
       const selectedAction = actions[candidate.id];
       let action = selectedAction ?? "copy";
+      // W2-2：独立命名只对非跳过项透传（skip 与改名互斥）；空白名视同未填。
+      const rawOverride = dispositions?.runtimeNameOverrides?.[candidate.id];
+      const rename = selectedAction !== "skip" && rawOverride !== undefined && rawOverride.trim()
+        ? rawOverride.trim()
+        : null;
       try {
         const prepared = preparedImport(await executeCommand({
           type: "prepare_import",
           payload: {
             candidate: nativeCandidateFor(candidate),
             tree_hash: null,
+            ...(rename ? { runtime_name_override: rename } : {}),
           },
         }));
         const decision = selectedAction
@@ -447,7 +559,8 @@ export const nativeImportFacade: ImportFacade = {
             governance_decision: decisionForPrepared(governanceDecision, prepared.analysis.governance_groups ?? []),
             prepared_import_id: prepared.id,
             batch_id: batchId,
-            candidate_key: candidate.id,
+            ...(batchSignature ? { batch_signature: batchSignature } : {}),
+            ...(rename && action !== "skip" ? { runtime_name_override: rename } : {}),
           },
         }));
         results.push(resultForSummary(candidate, action, summary));

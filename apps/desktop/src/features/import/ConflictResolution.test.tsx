@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
-import type { ImportConflict } from "./api";
+import type { ImportAction, ImportBatchAnalysis, ImportCandidate, ImportConflict } from "./api";
 import { ConflictResolution } from "./ConflictResolution";
+import { parseSourceInput } from "./api";
 
 const conflict: ImportConflict = {
   candidateId: "agent-pdf",
@@ -274,4 +275,210 @@ it("applies one chosen action to every conflict of the filtered kind at once", a
   expect(onAction).toHaveBeenCalledTimes(2);
   expect(onAction).toHaveBeenCalledWith("pdf-a", "copy");
   expect(onAction).toHaveBeenCalledWith("pdf-b", "copy");
+});
+
+// ---- W2-2（FB-007）：批内分组区块 ----
+
+const batchSource = await parseSourceInput("C:/incoming");
+const batchCandidates: ImportCandidate[] = [
+  {
+    basicCheck: "passed",
+    id: "notes-a",
+    name: "Notes Sync",
+    ownership: "unknown",
+    path: "C:/incoming/notes-sync",
+    source: batchSource,
+  },
+  {
+    basicCheck: "passed",
+    id: "notes-b",
+    name: "Notes Sync",
+    ownership: "unknown",
+    path: "C:/incoming/backup/notes-sync",
+    source: batchSource,
+  },
+  {
+    basicCheck: "passed",
+    id: "alpha-a",
+    name: "Alpha",
+    ownership: "unknown",
+    path: "C:/codex/skills/alpha",
+    source: batchSource,
+  },
+  {
+    basicCheck: "passed",
+    id: "alpha-b",
+    name: "Alpha",
+    ownership: "unknown",
+    path: "C:/claude/skills/alpha",
+    source: batchSource,
+  },
+];
+
+const batchAnalysis: ImportBatchAnalysis = {
+  sameContentGroups: [
+    {
+      keepCandidateId: "notes-a",
+      normalizedRuntimeName: "notes sync",
+      skipCandidateIds: ["notes-b"],
+    },
+  ],
+  sameNameGroups: [
+    { candidateIds: ["alpha-a", "alpha-b"], normalizedRuntimeName: "alpha" },
+  ],
+  signature: "sig-1",
+};
+
+function renderBatch(props: {
+  actions: Record<string, string>;
+  overrides?: Record<string, string>;
+  onAction?: (candidateId: string, action: ImportAction) => void;
+  onOverrideName?: (candidateId: string, name: string) => void;
+  conflicts?: ImportConflict[];
+}) {
+  return render(
+    <I18nextProvider i18n={i18nForBatch}>
+      <ConflictResolution
+        actions={props.actions as never}
+        batchAnalysis={batchAnalysis}
+        candidates={batchCandidates}
+        conflicts={props.conflicts ?? []}
+        onAction={props.onAction ?? vi.fn()}
+        onOverrideName={props.onOverrideName ?? vi.fn()}
+        overrides={props.overrides ?? {}}
+      />
+    </I18nextProvider>,
+  );
+}
+
+let i18nForBatch: Awaited<ReturnType<typeof createSkillHubI18n>>;
+
+it("renders the batch same-content group with the merge suggestion preselected", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  const onAction = vi.fn();
+  renderBatch({
+    actions: { "notes-a": "copy", "notes-b": "skip" },
+    onAction,
+  });
+
+  // 批内分组区块在无库内冲突时也必须呈现。
+  expect(screen.getByText("批内重复：内容与来源相同")).toBeVisible();
+  expect(
+    screen.getByText(/建议保留一项导入、其余跳过/),
+  ).toBeVisible();
+  // 建议角色标识：保留/跳过徽标。
+  expect(screen.getByText("建议保留")).toBeVisible();
+  expect(screen.getByText("建议跳过")).toBeVisible();
+  // 建议已默认选中（keep=复制，其余=跳过）。
+  const copyRadios = screen.getAllByRole("radio", { name: "复制到 SkillHub" });
+  expect(copyRadios[0]).toBeChecked();
+  expect(copyRadios[1]).not.toBeChecked();
+  const skipRadios = screen.getAllByRole("radio", { name: "跳过此候选项" });
+  expect(skipRadios[0]).not.toBeChecked();
+  expect(skipRadios[1]).toBeChecked();
+  // 建议可改：改选即回传逐项动作。
+  fireEvent.click(skipRadios[0]);
+  expect(onAction).toHaveBeenCalledWith("notes-a", "skip");
+});
+
+it("requires an explicit disposition for every batch same-name member with no default", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  renderBatch({ actions: {} });
+
+  expect(screen.getByText("批内同名：内容不同")).toBeVisible();
+  expect(screen.getByText(/必须逐项处置/)).toBeVisible();
+  for (const radio of screen.getAllByRole("radio", { name: "独立导入" })) {
+    expect(radio).not.toBeChecked();
+  }
+  for (const radio of screen.getAllByRole("radio", { name: "跳过此候选项" })) {
+    expect(radio).not.toBeChecked();
+  }
+});
+
+it("reveals an inline rename input for the independent disposition and reports collisions", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  const onOverrideName = vi.fn();
+  const user = userEvent.setup();
+  renderBatch({ actions: { "alpha-a": "independent" }, onOverrideName });
+
+  const input = screen.getByLabelText("新名称");
+  expect(input).toBeVisible();
+  // 库内冲突展示名参与即时校验说明。
+  expect(screen.getByText(/不能与批内其他候选或库内已有 Skill 重名/)).toBeVisible();
+
+  await user.type(input, "A");
+  expect(onOverrideName).toHaveBeenLastCalledWith("alpha-a", "A");
+});
+
+it("marks an empty override as invalid and keeps guidance visible", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  renderBatch({ actions: { "alpha-a": "independent" }, overrides: { "alpha-a": "  " } });
+
+  const input = screen.getByLabelText("新名称");
+  expect(input).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText("请先填写新名称，再选择独立导入。")).toBeVisible();
+});
+
+it("marks batch-colliding overrides as invalid with a distinct message", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  renderBatch({
+    actions: { "alpha-a": "independent" },
+    overrides: { "alpha-a": "Alpha" },
+  });
+
+  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText("该名称与批内其他候选重名，请换一个。")).toBeVisible();
+});
+
+it("marks library-colliding overrides as invalid with a distinct message", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  const libraryConflict: ImportConflict = {
+    candidateId: "alpha-a",
+    candidateName: "Alpha",
+    kind: "same_name",
+    matchedSkills: [
+      {
+        displayName: "Library Alpha",
+        id: "lib-1",
+        runtimeName: "Library Alpha",
+      },
+    ],
+    summary: "import.same_runtime_name_conflict",
+    allowedActions: ["independent", "skip"],
+    required: true,
+  };
+  renderBatch({
+    actions: { "alpha-a": "independent" },
+    conflicts: [libraryConflict],
+    overrides: { "alpha-a": "Library Alpha" },
+  });
+
+  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText("该名称与库内已有 Skill 重名，请换一个。")).toBeVisible();
+});
+
+it("shows no invalid marking while the typed rename is fresh", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  renderBatch({
+    actions: { "alpha-a": "independent" },
+    overrides: { "alpha-a": "Alpha Prime" },
+  });
+
+  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "false");
+});
+
+it("keeps both batch sections out of the way when the plan carries no batch analysis", async () => {
+  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18nForBatch}>
+      <ConflictResolution
+        actions={{}}
+        conflicts={[sameNameA]}
+        onAction={vi.fn()}
+      />
+    </I18nextProvider>,
+  );
+
+  expect(screen.queryByText("批内重复：内容与来源相同")).not.toBeInTheDocument();
+  expect(screen.queryByText("批内同名：内容不同")).not.toBeInTheDocument();
 });

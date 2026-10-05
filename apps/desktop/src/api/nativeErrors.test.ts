@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../i18n";
-import { nativeErrorCode, nativeErrorParams, describeNativeError, isStructuredNativeError } from "./nativeErrors";
+import { nativeErrorCode, nativeErrorParams, keyedMessage, describeNativeError, isStructuredNativeError } from "./nativeErrors";
 
 describe("nativeErrors", () => {
   it("explains unverified Agent reading separately from filesystem link failure", async () => {
@@ -219,6 +219,20 @@ describe("nativeErrors", () => {
       "deployment.results.failure.generic",
     );
     expect(message).toBe("deployment.results.failure.nameMismatch");
+  });
+
+  // W2-2（FB-007）：批内守卫三错误码 → 专属引导文案键（改名重试 /
+  // 补处置 / 重新分析），绝不裸码上屏。
+  it("maps the batch import guard codes to dedicated guidance keys", () => {
+    expect(keyedMessage("import.runtime_name_conflict", undefined)).toBe(
+      "importWorkflow.errors.runtimeNameConflict",
+    );
+    expect(keyedMessage("import.same_name_disposition_required", undefined)).toBe(
+      "importWorkflow.errors.sameNameDispositionRequired",
+    );
+    expect(keyedMessage("import.batch_composition_changed", undefined)).toBe(
+      "importWorkflow.errors.batchCompositionChanged",
+    );
   });
 });
 

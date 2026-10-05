@@ -1739,3 +1739,49 @@ it("closes the wizard for later without touching retain or cleanup decisions", a
   expect(onOpenLibrary).toHaveBeenCalledOnce();
   expect(commitSpy).toHaveBeenCalledTimes(1);
 });
+
+// ---- W2-2（FB-007）：批内分组与显式处置的向导级门禁 ----
+
+it("seeds the merge suggestion and gates commit until every batch same-name member is disposed", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "batch-conflicts" });
+  await renderWizard(facade);
+
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
+  // 批内候选名称两两重复：按名称取全部复选框逐个勾选。
+  for (const checkbox of [
+    ...screen.getAllByRole("checkbox", { name: "Notes Sync" }),
+    ...screen.getAllByRole("checkbox", { name: "Alpha" }),
+  ]) {
+    await user.click(checkbox);
+  }
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  // 同内容组先给出合并建议：保留项预选“复制”，其余预选“跳过”。
+  expect(await screen.findByText("批内重复：内容与来源相同")).toBeVisible();
+  const copyRadios = screen.getAllByRole("radio", { name: "复制到 SkillHub" });
+  expect(copyRadios[0]).toBeChecked();
+  expect(copyRadios[1]).not.toBeChecked();
+
+  // 同名组未处置：提交被禁用，告警区如实给出剩余数量与处置指引。
+  expect(screen.getByText("批内同名：内容不同")).toBeVisible();
+  const commit = screen.getByRole("button", { name: "提交导入" });
+  expect(commit).toBeDisabled();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    /还有 2 个同名不同内容的候选项未处置/,
+  );
+
+  // 逐项处置：第一个 Alpha 独立导入并改名，第二个 Alpha 跳过。
+  const sameNameSection = screen.getByText("批内同名：内容不同").closest("section");
+  expect(sameNameSection).not.toBeNull();
+  const scope = within(sameNameSection as HTMLElement);
+  await user.click(scope.getAllByRole("radio", { name: "独立导入" })[0]);
+  await user.type(scope.getAllByLabelText("新名称")[0], "Alpha Prime");
+  await user.click(scope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
+
+  // 全部处置后门禁解除，告警消失。
+  expect(commit).toBeEnabled();
+  expect(screen.queryByText(/还有 2 个同名不同内容的候选项未处置/)).not.toBeInTheDocument();
+});

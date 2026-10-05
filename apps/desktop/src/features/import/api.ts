@@ -52,6 +52,34 @@ export interface ImportCandidate {
   basicCheck: "not_checked" | "passed" | "failed";
   /** DEV-3：SKILL.md frontmatter `name`；与 name（文件夹名）不一致时给非阻塞警告。 */
   frontmatterName?: string | null;
+  /**
+   * W2-2（FB-007）：候选在其来源根下的相对目录。native facade 从真实
+   * 扫描结果填充；mock/预览可缺省。批内候选 key 的稳定后缀。
+   */
+  relativeRoot?: string | null;
+}
+
+/** analyze_import_batch 的同内容组：后端建议保留项与其余应跳过项。 */
+export interface ImportBatchSameContentGroup {
+  /** 建议保留（= 复制导入）的候选；同内容孪生可互换。 */
+  keepCandidateId: string;
+  normalizedRuntimeName: string;
+  /** 建议跳过的重复孪生。 */
+  skipCandidateIds: string[];
+}
+
+/** analyze_import_batch 的同名不同内容组：成员必须逐项显式处置。 */
+export interface ImportBatchSameNameGroup {
+  normalizedRuntimeName: string;
+  candidateIds: string[];
+}
+
+/** 批内冲突分组与组成签名；组内 id 均指本次计划的候选。 */
+export interface ImportBatchAnalysis {
+  sameContentGroups: ImportBatchSameContentGroup[];
+  sameNameGroups: ImportBatchSameNameGroup[];
+  /** 组成签名：提交时携带，组成变化即被后端拒绝（batch_composition_changed）。 */
+  signature: string;
 }
 
 export interface ImportMatchedSkill {
@@ -82,6 +110,8 @@ export interface ImportPlan {
   conflicts: ImportConflict[];
   /** prepare_import 的确定性关系分类；前端只负责确认，不重新判断。 */
   governanceGroups?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceGroup[];
+  /** W2-2：批内冲突分组与组成签名；无批内分析（或环境不支持）时缺省。 */
+  batchAnalysis?: ImportBatchAnalysis;
 }
 
 /** OPT-20260914-08：导入成功时随结果返回的存证摘要（导入那一刻的事实）。 */
@@ -139,6 +169,17 @@ export interface ImportProgress {
   total: number;
 }
 
+/** W2-2：提交时随批内处置透传的数据；门面自行映射到 prepare/commit 字段。 */
+export interface ImportCommitDispositions {
+  /** candidateId → 独立导入的新名；仅动作为 independent 的项会被透传。 */
+  runtimeNameOverrides?: Record<string, string>;
+  /**
+   * 提交期刷新的批次组成签名（native 门面在 begin_import_batch 后重跑
+   * analyze_import_batch 取得）；与 analyze 阶段不一致即被后端拒绝。
+   */
+  batchSignature?: string | null;
+}
+
 /** M-29：来源分层——每个已选目录的扫描状态；未扫描也必须可见。 */
 export type SourceScanStatus =
   | { kind: "unscanned" }
@@ -183,6 +224,8 @@ export interface ImportFacade {
     actions: Record<string, ImportAction>,
     onProgress?: (progress: ImportProgress) => void,
     governanceDecision?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceDecision,
+    /** W2-2：批内处置（独立改名 + 提交期签名）；无批内分析时缺省。 */
+    dispositions?: ImportCommitDispositions,
   ): Promise<ImportCommitOutcome>;
   cancel(): Promise<void>;
   /** Optional advisory AI safety pre-check (step 5). Findings never change
@@ -295,12 +338,15 @@ export type MockImportScenario =
   | "safe-local"
   | "agent-owned-partial"
   | "conflict-required"
+  | "batch-conflicts"
   | "cancelled";
 
 export interface MockImportCalls {
   analyzedCandidates: string[][];
   cancelled: number;
   committedActions: Array<Record<string, ImportAction>>;
+  /** W2-2：提交时携带的批内处置（未携带的调用不记录）。 */
+  committedDispositions: ImportCommitDispositions[];
   executedCommands: string[];
   parsedInputs: string[];
   acquiredSources: string[];
@@ -370,6 +416,45 @@ function fixtureCandidates(
   scenario: MockImportScenario,
   source: SourceDescriptor,
 ): ImportCandidate[] {
+  if (scenario === "batch-conflicts") {
+    // W2-2：两个同内容孪生（Notes Sync）+ 两个同名不同内容（Alpha），
+    // relativeRoot 各不相同，覆盖批内分组的两种形态。
+    return [
+      {
+        basicCheck: "passed" as const,
+        id: "notes-a",
+        name: "Notes Sync",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/notes-sync`,
+        relativeRoot: "notes-sync",
+      },
+      {
+        basicCheck: "passed" as const,
+        id: "notes-b",
+        name: "Notes Sync",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/backup/notes-sync`,
+        relativeRoot: "backup/notes-sync",
+      },
+      {
+        basicCheck: "passed" as const,
+        id: "alpha-a",
+        name: "Alpha",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/codex/alpha`,
+        relativeRoot: "codex/alpha",
+      },
+      {
+        basicCheck: "passed" as const,
+        id: "alpha-b",
+        name: "Alpha",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/claude/alpha`,
+        relativeRoot: "claude/alpha",
+      },
+    ].map((candidate) => ({ ...candidate, source }));
+  }
+
   const base = [
     {
       basicCheck: "passed" as const,
@@ -430,6 +515,26 @@ function fixtureConflicts(
   return [];
 }
 
+/** W2-2：batch-conflicts 场景的确定性批内分组（id 跟随实际候选）。 */
+function fixtureBatchAnalysis(candidates: ImportCandidate[]): ImportBatchAnalysis {
+  return {
+    sameContentGroups: [
+      {
+        keepCandidateId: candidates[0].id,
+        normalizedRuntimeName: "notes sync",
+        skipCandidateIds: [candidates[1].id],
+      },
+    ],
+    sameNameGroups: [
+      {
+        candidateIds: [candidates[2].id, candidates[3].id],
+        normalizedRuntimeName: "alpha",
+      },
+    ],
+    signature: "mock-batch-signature",
+  };
+}
+
 export function createMockImportFacade(
   options: MockImportOptions,
 ): MockImportFacade {
@@ -438,6 +543,7 @@ export function createMockImportFacade(
     acquiredSources: [],
     cancelled: 0,
     committedActions: [],
+    committedDispositions: [],
     executedCommands: [],
     parsedInputs: [],
   };
@@ -477,6 +583,9 @@ export function createMockImportFacade(
       const plan = {
         candidates: selected,
         conflicts: fixtureConflicts(options.scenario, selected),
+        ...(options.scenario === "batch-conflicts"
+          ? { batchAnalysis: fixtureBatchAnalysis(selected) }
+          : {}),
         ...(options.governance
           ? {
               governanceGroups: fixtureGovernanceGroups(selected),
@@ -486,8 +595,39 @@ export function createMockImportFacade(
       facade.fixtures.plan = clone(plan);
       return clone(plan);
     },
-    async commitImport(plan, actions) {
+    async commitImport(plan, actions, _onProgress, _governanceDecision, dispositions) {
       calls.committedActions.push(clone(actions));
+      if (dispositions !== undefined) {
+        calls.committedDispositions.push(clone(dispositions));
+      }
+      const analysis = plan.batchAnalysis;
+      // W2-2 提交期守卫（mock 与真实后端同口径；最终裁决仍由后端给出）：
+      // 1) 签名门——携带的组成签名与计划不一致 → 整批失败，唯一出路重新分析。
+      if (
+        analysis &&
+        dispositions?.batchSignature != null &&
+        dispositions.batchSignature !== analysis.signature
+      ) {
+        const results = plan.candidates.map<ImportResult>((candidate) => ({
+          action: actions[candidate.id] ?? "copy",
+          candidateId: candidate.id,
+          message: "importWorkflow.errors.batchCompositionChanged",
+          reasonCode: "import.batch_composition_changed",
+          status: "failed",
+        }));
+        facade.fixtures.results = clone(results);
+        return clone({
+          batch: { batchId: "batch-mock", manageableSourceCount: 0 },
+          results,
+        });
+      }
+      // 2) 处置门——同名不同内容组的成员必须逐项跳过或独立命名（新名非空
+      //    且不等于组名），否则该行失败并给出补处置指引；其余行照常。
+      const sameNameMembers = new Map(
+        (analysis?.sameNameGroups ?? []).flatMap((group) =>
+          group.candidateIds.map((id) => [id, group] as const),
+        ),
+      );
       const results = plan.candidates.map<ImportResult>((candidate, index) => {
         const action = actions[candidate.id] ?? "copy";
         if (action === "skip") {
@@ -497,6 +637,24 @@ export function createMockImportFacade(
             message: "已跳过",
             status: "skipped",
           };
+        }
+        const group = sameNameMembers.get(candidate.id);
+        if (group) {
+          const override = dispositions?.runtimeNameOverrides?.[candidate.id] ?? "";
+          const normalized = override.trim().toLowerCase();
+          if (
+            action !== "independent" ||
+            !normalized ||
+            normalized === group.normalizedRuntimeName
+          ) {
+            return {
+              action,
+              candidateId: candidate.id,
+              message: "importWorkflow.errors.sameNameDispositionRequired",
+              reasonCode: "import.same_name_disposition_required",
+              status: "failed",
+            };
+          }
         }
         if (options.governance && index === 0) {
           // 治理确认的"创建待办"路径：结果携带已持久化的治理待办事实。
