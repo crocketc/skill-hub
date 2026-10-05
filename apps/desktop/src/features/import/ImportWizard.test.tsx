@@ -1785,3 +1785,66 @@ it("seeds the merge suggestion and gates commit until every batch same-name memb
   expect(commit).toBeEnabled();
   expect(screen.queryByText(/还有 2 个同名不同内容的候选项未处置/)).not.toBeInTheDocument();
 });
+
+// ---- W3-1（FB-003）：危险级候选的安全决策门禁与透传 ----
+
+async function runToConflictsWithSecurityDanger(_facade: ReturnType<typeof createMockImportFacade>) {
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
+  for (const checkbox of [
+    ...screen.getAllByRole("checkbox", { name: "Risky Deploy" }),
+    ...screen.getAllByRole("checkbox", { name: "Suspicious Fetch" }),
+    ...screen.getAllByRole("checkbox", { name: "Safe Notes" }),
+  ]) {
+    await user.click(checkbox);
+  }
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await screen.findByRole("heading", { name: "危险级安全风险（需要逐个决策）" });
+  return user;
+}
+
+it("gates commit until every danger candidate has an explicit security decision", async () => {
+  const facade = createMockImportFacade({ scenario: "security-danger" });
+  await renderWizard(facade);
+  const user = await runToConflictsWithSecurityDanger(facade);
+
+  // 危险级区块置顶呈现；未决策时提交禁用，告警如实给出剩余数量与指引。
+  const commit = screen.getByRole("button", { name: "提交导入" });
+  expect(commit).toBeDisabled();
+  expect(screen.getByRole("alert")).toHaveTextContent(/还有 1 个危险级技能未做安全决策/);
+
+  // “仍然导入”是显式决策：选择后门禁解除、告警消失。
+  await user.click(screen.getByRole("radio", { name: "仍然导入（导入后需处理预警才能派发）" }));
+  expect(commit).toBeEnabled();
+  expect(screen.queryByText(/还有 1 个危险级技能未做安全决策/)).not.toBeInTheDocument();
+
+  // 切换为“不导入”同样是显式决策：门禁保持解除。
+  await user.click(screen.getByRole("radio", { name: "不导入" }));
+  expect(commit).toBeEnabled();
+});
+
+it("passes explicit security decisions to commit and shows the skip row honestly", async () => {
+  const facade = createMockImportFacade({ scenario: "security-danger" });
+  await renderWizard(facade);
+  const user = await runToConflictsWithSecurityDanger(facade);
+
+  // 对危险级候选选择“不导入”：决策原样透传给门面（后端按跳过落账）。
+  await user.click(screen.getByRole("radio", { name: "不导入" }));
+  await user.click(screen.getByRole("button", { name: "提交导入" }));
+
+  expect(facade.calls.committedDispositions[0]?.securityDecisions).toEqual({
+    "risky-deploy": "skip",
+  });
+
+  // 完成页如实呈现：成功/跳过明细默认折叠，展开后共三行——该候选是
+  // “已跳过”行并给出安全决策文案（不假装导入成功），其余两行正常导入。
+  await user.click(await screen.findByRole("button", { name: "查看成功和跳过明细" }));
+  expect(await screen.findByText("已按你的选择跳过（不导入）")).toBeVisible();
+  const skipRow = screen.getByText("已按你的选择跳过（不导入）").closest("li");
+  expect(skipRow).not.toBeNull();
+  expect(skipRow).toHaveTextContent("已跳过");
+  const summaryList = skipRow!.closest("ul");
+  expect(within(summaryList as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
+});

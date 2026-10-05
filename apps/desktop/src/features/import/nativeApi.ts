@@ -9,6 +9,7 @@ import {
   type ImportDecision,
   type ImportGovernanceDecision,
   type ImportGovernanceGroup,
+  type PreparedImport,
 } from "../../api/bindings";
 import { keyedMessage, nativeErrorCode, nativeErrorParams } from "../../api/nativeErrors";
 import {
@@ -21,6 +22,9 @@ import {
   type ImportFacade,
   type ImportMatchedSkill,
   type ImportResult,
+  type ImportSecurityFindingView,
+  type ImportSecurityPlan,
+  type ImportSecuritySummaryView,
   type SourceDescriptor,
 } from "./api";
 import { normalizeWindowsPath } from "../../platform/directoryPicker";
@@ -376,6 +380,25 @@ function preparedImport(result: AppCommandResult) {
   return result.payload;
 }
 
+/** W3-1：把 prepare 返回的安全摘要映射为处置环节的展示视图。 */
+function securitySummaryView(
+  security: PreparedImport["security"],
+): ImportSecuritySummaryView {
+  const findings: ImportSecurityFindingView[] = (security?.findings ?? []).map((finding) => ({
+    code: finding.code,
+    file: finding.file,
+    lineStart: finding.line_start,
+    productLevel: finding.product_level,
+  }));
+  return {
+    checkState: security?.check_state,
+    dangerCount: security?.danger_count ?? 0,
+    findings,
+    level: security?.level ?? "pass",
+    warningCount: security?.warning_count ?? 0,
+  };
+}
+
 function importSummary(result: AppCommandResult) {
   if (result.type !== "import_summary") {
     throw new Error("native import commit returned an unexpected result");
@@ -464,11 +487,40 @@ export const nativeImportFacade: ImportFacade = {
     })
       .then(queryImportBatchAnalysis)
       .catch(() => undefined);
+    // W3-1：逐候选 prepare 带回安全分级摘要（与后端留存报告同一份发现）
+    // 与真实 check_state。prepare 只写会话内存、放弃无残留（后端语义）；
+    // 单个候选准备失败诚实降级为无安全摘要 + 徽标保持未检查，不让其
+    // 拖垮整个分析阶段——提交期门禁仍由后端错误码把守。经一次微任务
+    // 再调用，避免同步抛错打断并发装配。
+    const prepareQueries = candidates.map((candidate) =>
+      Promise.resolve()
+        .then(() => executeCommand({
+          type: "prepare_import",
+          payload: {
+            candidate: nativeCandidateFor(candidate),
+            tree_hash: null,
+          },
+        }))
+        .then(preparedImport)
+        .catch(() => undefined));
     // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。候选数组长度即真实
     // 总数，每个候选查询 resolve 即累计一次真实已完成数；进度只反映已完成的
     // IPC 查询，不做任何估算（OPT-20260914-01）。
-    const analyses = await Promise.all(analysisQueries);
-    const batchAnalysis = await batchAnalysisQuery;
+    const [analyses, batchAnalysis, prepares] = await Promise.all([
+      Promise.all(analysisQueries),
+      batchAnalysisQuery,
+      Promise.all(prepareQueries),
+    ]);
+    const security: ImportSecurityPlan = {};
+    const preparedCandidates = candidates.map((candidate, index) => {
+      const prepared = prepares[index];
+      if (!prepared) return candidate;
+      if (prepared.security) security[candidate.id] = securitySummaryView(prepared.security);
+      const checkState = prepared.security?.check_state;
+      // §6.0 债务清偿：候选徽标用 prepare 的真实 check_state 替换硬编码
+      // 的“尚未检查”；prepare 失败（无返回）时保持 not_checked。
+      return checkState ? { ...candidate, basicCheck: checkState } : candidate;
+    });
     for (const { candidate, analysis } of analyses) {
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
@@ -493,11 +545,12 @@ export const nativeImportFacade: ImportFacade = {
       }
     }
     return {
-      candidates,
+      candidates: preparedCandidates,
       conflicts,
       governanceGroups: mergeGovernanceGroups(
         analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
       ),
+      ...(Object.keys(security).length ? { security } : {}),
       ...(batchAnalysis
         ? { batchAnalysis: batchAnalysisFromNative(batchAnalysis, candidates) }
         : {}),
@@ -539,6 +592,10 @@ export const nativeImportFacade: ImportFacade = {
       const rename = selectedAction !== "skip" && rawOverride !== undefined && rawOverride.trim()
         ? rawOverride.trim()
         : null;
+      // W3-1：危险级候选的显式安全决策随 commit_import 透传（skip=不导入，
+      // 后端按跳过落账；proceed=仍要导入）。未决策的候选不携带该字段——
+      // 危险级缺决策由后端以 import.security_decision_required 拒绝该候选。
+      const securityDecision = dispositions?.securityDecisions?.[candidate.id];
       try {
         const prepared = preparedImport(await executeCommand({
           type: "prepare_import",
@@ -561,6 +618,7 @@ export const nativeImportFacade: ImportFacade = {
             batch_id: batchId,
             ...(batchSignature ? { batch_signature: batchSignature } : {}),
             ...(rename && action !== "skip" ? { runtime_name_override: rename } : {}),
+            ...(securityDecision ? { security_decision: securityDecision } : {}),
           },
         }));
         results.push(resultForSummary(candidate, action, summary));

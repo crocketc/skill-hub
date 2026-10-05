@@ -348,6 +348,22 @@ describe("native import facade", () => {
       runtime_name: "notes",
       source: { kind: "local" as const, locator: { local_path: "C:/workspace" } },
     };
+    // W3-1：分析阶段逐候选 prepare（安全摘要 + 真实 check_state）先排队。
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "prepared_import",
+      payload: {
+        id: "operation-analysis",
+        candidate: nativeCandidate,
+        analysis: { actions: ["establish_managed_relation"] } as never,
+        security: {
+          check_state: "passed",
+          danger_count: 0,
+          findings: [],
+          level: "pass",
+          warning_count: 0,
+        },
+      },
+    });
     vi.mocked(queryApplication)
       .mockResolvedValueOnce({ type: "import_candidates", payload: [nativeCandidate] })
       .mockResolvedValueOnce({
@@ -399,7 +415,13 @@ describe("native import facade", () => {
       type: "analyze_import_batch",
       payload: { batch_id: "batch-1", candidates: [nativeCandidate] },
     });
-    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+    // W3-1：分析阶段（第 1 次）与提交阶段（第 3 次）各自 prepare，且
+    // 都复用发现的候选事实，不自造候选。
+    expect(executeCommand).toHaveBeenNthCalledWith(1, {
+      type: "prepare_import",
+      payload: { candidate: nativeCandidate, tree_hash: null },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "prepare_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
@@ -611,7 +633,9 @@ describe("native import facade", () => {
 
     await nativeImportFacade.commitImport({ candidates: [candidate], conflicts: [] }, { [candidate.id]: "independent" });
 
-    expect(executeCommand).toHaveBeenNthCalledWith(3, {
+    // W3-1：分析阶段逐候选 prepare 占用第 1 次 executeCommand，批次开始
+    // 第 2 次，提交期 prepare 第 3 次，commit_import 落在第 4 次。
+    expect(executeCommand).toHaveBeenNthCalledWith(4, {
       type: "commit_import",
       payload: { decision: "copy_as_independent_managed_skill", governance_decision: { group_actions: {}, item_overrides: {} }, prepared_import_id: "operation-3", batch_id: "batch-1", batch_signature: "commit-sig" },
     });
@@ -870,4 +894,246 @@ describe("native import facade", () => {
       status: "failed",
     }));
   });
+// ---- W3-1（FB-003）：prepare 阶段安全分级摘要与决策透传 ----
+// （本节位于 describe 之外，批次事实排队助手在此本地声明。）
+
+function localBeginBatch(batchId = "batch-sec-1") {
+  vi.mocked(executeCommand).mockResolvedValueOnce({
+    type: "import_batch_started",
+    payload: { batch_id: batchId },
+  });
+}
+
+function localFinalizeBatch(batchId = "batch-sec-1", manageableSourceCount = "1") {
+  vi.mocked(executeCommand).mockResolvedValueOnce({
+    type: "import_batch_finalized",
+    payload: { batch_id: batchId, manageable_source_count: manageableSourceCount },
+  });
+}
+
+function localCommitBatchAnalysis(signature = "commit-sig") {
+  vi.mocked(queryApplication).mockResolvedValueOnce({
+    type: "import_batch_analysis",
+    payload: { same_content_groups: [], same_name_groups: [], signature },
+  });
+}
+
+function securityCandidate() {
+  return {
+    basicCheck: "not_checked" as const,
+    id: "C:/incoming/risky#risky",
+    name: "risky",
+    ownership: "unknown" as const,
+    path: "C:/incoming/risky",
+    source: { displayTarget: "C:/incoming", executesCommand: false as const, input: "C:/incoming", kind: "local_path" as const },
+  };
+}
+
+it("surfaces prepare-time security summaries and real check states in the plan", async () => {
+  vi.mocked(queryApplication)
+    .mockResolvedValueOnce({
+      type: "import_analysis",
+      payload: {
+        actions: ["copy_into_library"],
+        candidate: {} as never,
+        conflicts: [],
+        duplicate_kind: null,
+        matches: [],
+      },
+    })
+    .mockResolvedValueOnce({
+      type: "import_batch_analysis",
+      payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+    });
+  vi.mocked(executeCommand).mockResolvedValueOnce({
+    type: "prepared_import",
+    payload: {
+      id: "operation-sec-1",
+      candidate: {} as never,
+      analysis: { actions: ["copy_into_library"] } as never,
+      security: {
+        check_state: "warning",
+        danger_count: 1,
+        findings: [
+          {
+            code: "security.destructive_command",
+            file: "scripts/deploy.sh",
+            line_start: 12,
+            product_level: "danger",
+          },
+        ],
+        level: "danger",
+        warning_count: 0,
+      },
+    },
+  });
+
+  const candidate = securityCandidate();
+  const plan = await nativeImportFacade.analyzeConflicts([candidate]);
+
+  // 分析阶段逐候选 prepare：安全摘要随 prepared 结果返回（与后端留存
+  // 的同一份发现）。
+  expect(executeCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "prepare_import" }),
+  );
+  expect(plan.security?.[candidate.id]).toEqual({
+    checkState: "warning",
+    dangerCount: 1,
+    findings: [
+      {
+        code: "security.destructive_command",
+        file: "scripts/deploy.sh",
+        lineStart: 12,
+        productLevel: "danger",
+      },
+    ],
+    level: "danger",
+    warningCount: 0,
+  });
+  // 候选徽标不再硬编码“尚未检查”：prepare 的 check_state 据实显示。
+  expect(plan.candidates[0]?.basicCheck).toBe("warning");
+});
+
+it("keeps the analysis usable when prepare-time security staging fails", async () => {
+  vi.mocked(queryApplication)
+    .mockResolvedValueOnce({
+      type: "import_analysis",
+      payload: {
+        actions: ["copy_into_library"],
+        candidate: {} as never,
+        conflicts: [],
+        duplicate_kind: null,
+        matches: [],
+      },
+    })
+    .mockResolvedValueOnce({
+      type: "import_batch_analysis",
+      payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+    });
+  vi.mocked(executeCommand).mockRejectedValueOnce(new Error("prepare failed"));
+
+  const candidate = securityCandidate();
+  const plan = await nativeImportFacade.analyzeConflicts([candidate]);
+
+  // 诚实降级：该候选没有安全摘要、徽标保持未检查；分析本身不被拖垮。
+  expect(plan.security?.[candidate.id]).toBeUndefined();
+  expect(plan.candidates[0]?.basicCheck).toBe("not_checked");
+  expect(plan.conflicts).toEqual([]);
+});
+
+it("forwards explicit security decisions on commit_import", async () => {
+  for (const decision of ["proceed", "skip"] as const) {
+    vi.mocked(executeCommand).mockClear();
+    vi.mocked(queryApplication).mockClear();
+    localBeginBatch();
+    localCommitBatchAnalysis("commit-sig");
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: {
+          id: `operation-${decision}`,
+          candidate: {} as never,
+          analysis: { actions: ["copy_into_library", "skip"] } as never,
+          security: {
+            check_state: "warning",
+            danger_count: 1,
+            findings: [],
+            level: "danger",
+            warning_count: 0,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_summary",
+        payload: {
+          batch: { batch_id: "batch-1" },
+          committed: decision === "proceed",
+          items: [
+            {
+              decision: "copy_into_library",
+              governance_tasks: [],
+              original_preserved: true,
+              provenance: null,
+              reason_code: decision === "skip" ? "import.skipped_by_security_decision" : null,
+              skill_id: decision === "proceed" ? "skill-1" : null,
+              source_relation_id: null,
+              status: decision === "proceed" ? ("succeeded" as const) : ("skipped" as const),
+            },
+          ],
+          operation_id: `operation-${decision}`,
+        },
+      });
+    localFinalizeBatch();
+
+    const candidate = securityCandidate();
+    const outcome = await nativeImportFacade.commitImport(
+      { candidates: [candidate], conflicts: [] },
+      { [candidate.id]: "copy" },
+      undefined,
+      undefined,
+      { securityDecisions: { [candidate.id]: decision } },
+    );
+
+    const commitCall = vi.mocked(executeCommand).mock.calls.find(
+      ([command]) => command.type === "commit_import",
+    );
+    expect(commitCall).toBeDefined();
+    const payload = (commitCall?.[0] as { payload: Record<string, unknown> }).payload;
+    expect(payload.security_decision).toBe(decision);
+    if (decision === "skip") {
+      // 跳过原因码映射为可读的完成页文案（不裸码）。
+      expect(outcome.results[0]?.message).toBe(
+        "importWorkflow.commitMessages.skippedBySecurityDecision",
+      );
+    }
+  }
+});
+
+it("omits security_decision when the candidate carries no explicit decision", async () => {
+  localBeginBatch();
+  localCommitBatchAnalysis("commit-sig");
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({
+      type: "prepared_import",
+      payload: {
+        id: "operation-plain",
+        candidate: {} as never,
+        analysis: { actions: ["copy_into_library"] } as never,
+      },
+    })
+    .mockResolvedValueOnce({
+      type: "import_summary",
+      payload: {
+        batch: { batch_id: "batch-1" },
+        committed: true,
+        items: [
+          {
+            decision: "copy_into_library",
+            governance_tasks: [],
+            original_preserved: true,
+            provenance: null,
+            reason_code: null,
+            skill_id: "skill-1",
+            source_relation_id: "rel-1",
+            status: "succeeded" as const,
+          },
+        ],
+        operation_id: "operation-plain",
+      },
+    });
+  localFinalizeBatch();
+
+  const candidate = securityCandidate();
+  await nativeImportFacade.commitImport(
+    { candidates: [candidate], conflicts: [] },
+    { [candidate.id]: "copy" },
+  );
+
+  const commitCall = vi.mocked(executeCommand).mock.calls.find(
+    ([command]) => command.type === "commit_import",
+  );
+  expect(commitCall).toBeDefined();
+  const payload = (commitCall?.[0] as { payload: Record<string, unknown> }).payload;
+  expect("security_decision" in payload).toBe(false);
+});
 });

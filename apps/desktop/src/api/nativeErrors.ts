@@ -131,6 +131,10 @@ export function keyedMessage(
   if (code === "import.runtime_name_conflict") return "importWorkflow.errors.runtimeNameConflict";
   if (code === "import.same_name_disposition_required") return "importWorkflow.errors.sameNameDispositionRequired";
   if (code === "import.batch_composition_changed") return "importWorkflow.errors.batchCompositionChanged";
+  // W3-1（FB-003）：危险级候选缺安全决策 → 指引回处置环节逐个决策；
+  // 显式“不导入”按跳过落账，完成页以跳过行呈现，绝不裸码。
+  if (code === "import.security_decision_required") return "importWorkflow.errors.securityDecisionRequired";
+  if (code === "import.skipped_by_security_decision") return "importWorkflow.commitMessages.skippedBySecurityDecision";
   if (code === "operation.conflict") {
     if (reason === "takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
     // K3 存储层漂移护栏：create 实际输入与预览计划不一致 → 与预览漂移同一文案。

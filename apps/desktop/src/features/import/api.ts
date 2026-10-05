@@ -49,7 +49,12 @@ export interface ImportCandidate {
   source: SourceDescriptor;
   path: string;
   ownership: CandidateOwnership;
-  basicCheck: "not_checked" | "passed" | "failed";
+  /**
+   * W3-1：候选检查状态。acquire 阶段只有 not_checked；analyze 阶段的
+   * prepare 会带回真实 check_state（passed/warning/failed/unavailable），
+   * 徽标据实显示，不再硬编码“尚未检查”。
+   */
+  basicCheck: "not_checked" | "passed" | "failed" | "warning" | "unavailable";
   /** DEV-3：SKILL.md frontmatter `name`；与 name（文件夹名）不一致时给非阻塞警告。 */
   frontmatterName?: string | null;
   /**
@@ -82,6 +87,36 @@ export interface ImportBatchAnalysis {
   signature: string;
 }
 
+/**
+ * W3-1（FB-003）：prepare_import 随 prepared 结果返回的安全分级摘要视图。
+ * 展示只消费这里的结构化事实（级别/数量/逐条发现的规则码与位置），
+ * 不渲染 candidate id、finding 序号等内部标识；可读名称由界面映射。
+ */
+export interface ImportSecurityFindingView {
+  code: string;
+  productLevel: import("../../api/bindings").ProductLevel;
+  file?: string | null;
+  lineStart?: number | null;
+}
+
+export interface ImportSecuritySummaryView {
+  level: import("../../api/bindings").ImportSecurityLevel;
+  dangerCount: number;
+  warningCount: number;
+  findings: ImportSecurityFindingView[];
+  /** prepare 的候选检查状态；缺省时徽标保持 not_checked。 */
+  checkState?: import("../../api/bindings").ImportCandidateCheckState;
+}
+
+/** candidateId → 安全摘要；analyzeConflicts 阶段由 prepare_import 汇总。 */
+export type ImportSecurityPlan = Record<string, ImportSecuritySummaryView>;
+
+/**
+ * W3-1：危险级候选的用户决策。proceed=仍然导入（导入后进入预警状态，
+ * 处理前不可派发）；skip=不导入（后端按跳过落账，不落库）。
+ */
+export type ImportSecurityDecision = "proceed" | "skip";
+
 export interface ImportMatchedSkill {
   id: string;
   displayName: string;
@@ -112,6 +147,12 @@ export interface ImportPlan {
   governanceGroups?: import("../relationshipGovernance/relationshipGovernance").ImportGovernanceGroup[];
   /** W2-2：批内冲突分组与组成签名；无批内分析（或环境不支持）时缺省。 */
   batchAnalysis?: ImportBatchAnalysis;
+  /**
+   * W3-1：candidateId → prepare 阶段的安全分级摘要。analyze 环境不支持
+   * prepare（或准备失败）时缺省——处置环节不渲染安全区块，最终门禁仍由
+   * 提交期后端错误码（import.security_decision_required）把守。
+   */
+  security?: ImportSecurityPlan;
 }
 
 /** OPT-20260914-08：导入成功时随结果返回的存证摘要（导入那一刻的事实）。 */
@@ -169,7 +210,7 @@ export interface ImportProgress {
   total: number;
 }
 
-/** W2-2：提交时随批内处置透传的数据；门面自行映射到 prepare/commit 字段。 */
+/** W2-2/W3-1：提交时随处置透传的数据；门面自行映射到 prepare/commit 字段。 */
 export interface ImportCommitDispositions {
   /** candidateId → 独立导入的新名；仅动作为 independent 的项会被透传。 */
   runtimeNameOverrides?: Record<string, string>;
@@ -178,6 +219,11 @@ export interface ImportCommitDispositions {
    * analyze_import_batch 取得）；与 analyze 阶段不一致即被后端拒绝。
    */
   batchSignature?: string | null;
+  /**
+   * W3-1：candidateId → 危险级候选的安全决策。skip=不导入（后端按跳过
+   * 落账）；proceed=仍然导入（进入预警状态）。仅对做了决策的候选透传。
+   */
+  securityDecisions?: Record<string, ImportSecurityDecision>;
 }
 
 /** M-29：来源分层——每个已选目录的扫描状态；未扫描也必须可见。 */
@@ -339,6 +385,8 @@ export type MockImportScenario =
   | "agent-owned-partial"
   | "conflict-required"
   | "batch-conflicts"
+  /** W3-1：危险级候选（需逐个安全决策）+ 警告级候选 + 放行级候选。 */
+  | "security-danger"
   | "cancelled";
 
 export interface MockImportCalls {
@@ -455,6 +503,34 @@ function fixtureCandidates(
     ].map((candidate) => ({ ...candidate, source }));
   }
 
+  if (scenario === "security-danger") {
+    // W3-1：一个危险级候选（需逐个安全决策）、一个警告级候选（聚合
+    // 提示）与一个放行级候选；check_state 随 prepare 语义据实标注。
+    return [
+      {
+        basicCheck: "warning" as const,
+        id: "risky-deploy",
+        name: "Risky Deploy",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/risky-deploy`,
+      },
+      {
+        basicCheck: "warning" as const,
+        id: "suspicious-fetch",
+        name: "Suspicious Fetch",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/suspicious-fetch`,
+      },
+      {
+        basicCheck: "passed" as const,
+        id: "safe-notes",
+        name: "Safe Notes",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/safe-notes`,
+      },
+    ].map((candidate) => ({ ...candidate, source }));
+  }
+
   const base = [
     {
       basicCheck: "passed" as const,
@@ -535,6 +611,64 @@ function fixtureBatchAnalysis(candidates: ImportCandidate[]): ImportBatchAnalysi
   };
 }
 
+/**
+ * W3-1：security-danger 场景的确定性安全分级（id 跟随实际候选）。字段
+ * 结构与 bindings 的 ImportSecuritySummary 一致（含 check_state），保证
+ * mock 契约与真实门面同形。
+ */
+function fixtureSecurityPlan(candidates: ImportCandidate[]): ImportSecurityPlan {
+  const [risky, warn, safe] = candidates;
+  const plan: ImportSecurityPlan = {};
+  if (risky) {
+    plan[risky.id] = {
+      checkState: "warning",
+      dangerCount: 2,
+      findings: [
+        {
+          code: "security.destructive_command",
+          file: "scripts/deploy.sh",
+          lineStart: 12,
+          productLevel: "danger",
+        },
+        {
+          code: "security.elevation",
+          file: "scripts/deploy.sh",
+          lineStart: 27,
+          productLevel: "danger",
+        },
+      ],
+      level: "danger",
+      warningCount: 0,
+    };
+  }
+  if (warn) {
+    plan[warn.id] = {
+      checkState: "warning",
+      dangerCount: 0,
+      findings: [
+        {
+          code: "security.possible_plaintext_credential",
+          file: "SKILL.md",
+          lineStart: 18,
+          productLevel: "warning",
+        },
+      ],
+      level: "warning",
+      warningCount: 1,
+    };
+  }
+  if (safe) {
+    plan[safe.id] = {
+      checkState: "passed",
+      dangerCount: 0,
+      findings: [],
+      level: "pass",
+      warningCount: 0,
+    };
+  }
+  return plan;
+}
+
 export function createMockImportFacade(
   options: MockImportOptions,
 ): MockImportFacade {
@@ -585,6 +719,9 @@ export function createMockImportFacade(
         conflicts: fixtureConflicts(options.scenario, selected),
         ...(options.scenario === "batch-conflicts"
           ? { batchAnalysis: fixtureBatchAnalysis(selected) }
+          : {}),
+        ...(options.scenario === "security-danger"
+          ? { security: fixtureSecurityPlan(selected) }
           : {}),
         ...(options.governance
           ? {
@@ -637,6 +774,30 @@ export function createMockImportFacade(
             message: "已跳过",
             status: "skipped",
           };
+        }
+        // W3-1 提交期守卫（与后端 import.security_decision_required 同口径）：
+        // 危险级候选必须显式决策——skip（不导入，按跳过落账）或 proceed
+        // （仍要导入，进入预警状态）；缺决策时该行失败，其余行照常。
+        if (plan.security?.[candidate.id]?.level === "danger") {
+          const securityDecision = dispositions?.securityDecisions?.[candidate.id];
+          if (securityDecision === "skip") {
+            return {
+              action,
+              candidateId: candidate.id,
+              message: "importWorkflow.commitMessages.skippedBySecurityDecision",
+              reasonCode: "import.skipped_by_security_decision",
+              status: "skipped",
+            };
+          }
+          if (!securityDecision) {
+            return {
+              action,
+              candidateId: candidate.id,
+              message: "importWorkflow.errors.securityDecisionRequired",
+              reasonCode: "import.security_decision_required",
+              status: "failed",
+            };
+          }
         }
         const group = sameNameMembers.get(candidate.id);
         if (group) {
