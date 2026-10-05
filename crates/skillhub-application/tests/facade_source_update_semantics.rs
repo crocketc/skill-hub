@@ -131,6 +131,7 @@ async fn import_skill_with_upstream(
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");

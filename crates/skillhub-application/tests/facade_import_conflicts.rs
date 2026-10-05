@@ -66,6 +66,7 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import");
@@ -120,6 +121,7 @@ async fn commit_in_batch(
             candidate_key: Some(candidate_key.to_owned()),
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await;
     match committed {
@@ -242,6 +244,7 @@ async fn commit_with(
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import");

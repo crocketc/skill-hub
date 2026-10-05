@@ -27,6 +27,11 @@ pub enum ErrorCode {
     OwnershipMismatch,
     #[serde(rename = "deployment.security_check_blocked")]
     CheckBlocked,
+    /// W3-1（FB-003 裁决第 1 节）：Skill 处于安全预警状态，派发被拒。
+    /// 错误参数带技能名/级别等可读信息与处理入口指引；导入门禁不再使用
+    /// `deployment.security_check_blocked`。
+    #[serde(rename = "deployment.security_alert_blocked")]
+    DeploymentSecurityAlertBlocked,
     #[serde(rename = "deployment.name_mismatch")]
     DeploymentNameMismatch,
     #[serde(rename = "operation.conflict")]
@@ -131,6 +136,8 @@ pub enum ErrorCode {
     ImportSameNameDispositionRequired,
     #[serde(rename = "import.batch_composition_changed")]
     ImportBatchCompositionChanged,
+    #[serde(rename = "import.security_decision_required")]
+    ImportSecurityDecisionRequired,
 }
 
 #[allow(non_upper_case_globals)]
@@ -150,6 +157,7 @@ impl ErrorCode {
             Self::OwnershipUnknown => "target.ownership_unknown",
             Self::OwnershipMismatch => "deployment.ownership_mismatch",
             Self::CheckBlocked => "deployment.security_check_blocked",
+            Self::DeploymentSecurityAlertBlocked => "deployment.security_alert_blocked",
             Self::DeploymentNameMismatch => "deployment.name_mismatch",
             Self::OperationConflict => "operation.conflict",
             Self::OperationIdReusedWithDifferentRequest => {
@@ -208,6 +216,7 @@ impl ErrorCode {
             Self::ImportRuntimeNameConflict => "import.runtime_name_conflict",
             Self::ImportSameNameDispositionRequired => "import.same_name_disposition_required",
             Self::ImportBatchCompositionChanged => "import.batch_composition_changed",
+            Self::ImportSecurityDecisionRequired => "import.security_decision_required",
         }
     }
 }

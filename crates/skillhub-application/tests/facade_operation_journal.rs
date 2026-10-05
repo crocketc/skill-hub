@@ -272,6 +272,7 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import");

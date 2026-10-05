@@ -20,6 +20,15 @@ pub struct BasicScanReport {
     pub binary_files: Vec<BinaryFileMetadata>,
 }
 
+impl BasicScanReport {
+    /// W3-1（FB-003 §23）：把确定性发现映射为产品级分级摘要（危险/警告
+    /// 计数与逐条明细归属；无发现即放行级）。分级只由规则集标注决定，
+    /// 不读取任何 AI 结果；同一份发现恒得到同一份摘要。
+    pub fn security_summary(&self) -> skillhub_core::application::ImportSecuritySummary {
+        skillhub_core::application::ImportSecuritySummary::from_findings(&self.findings)
+    }
+}
+
 /// Local-only scanner. It reads bytes and never invokes a shell, interpreter,
 /// network client, decoder with side effects, or model.
 #[derive(Clone, Debug, Default)]
@@ -178,7 +187,14 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
                 || lower.contains("--data")
                 || lower.contains(" -d ")
                 || lower.contains("-method post")
-                || lower.contains("upload"))
+                // W3-1 误报治理：裸词 "upload" 会把只提到上传的文档行
+                // （docs/upload.md、上传清单）误判为数据外发；改用具体
+                // 上传旗标，真实上传语句（--upload-file／-T／--post-file／
+                // -Method Put）仍然命中，upload-patterns 夹具保持全数检出。
+                || lower.contains("--upload")
+                || lower.contains("--post-file")
+                || lower.contains("-method put")
+                || lower.contains("curl ") && lower.contains(" -t "))
             && !example_line
         {
             codes.push("security.data_upload");
@@ -207,7 +223,12 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
         {
             codes.push("security.obfuscation");
         }
-        if lower.contains("../")
+        // W3-1 误报治理（rules/basic-v1-levels.md #9 复核注记）：Markdown
+        // 链接目标 `](../shared/x.md)` 是导航语法，不读取或写入文件，不再
+        // 触发路径穿越；命令与裸路径中的 `../`、以及 `..\`／编码形态仍按
+        // 原始行判断，豁免不得扩大到非链接上下文。
+        let outside_link_targets = strip_markdown_link_targets(&lower);
+        if outside_link_targets.contains("../")
             || lower.contains(r"..\")
             || lower.contains("%2e%2e")
             || lower.contains("..%2f")
@@ -235,13 +256,50 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
             if !seen.insert((code, line_number)) {
                 continue;
             }
-            let severity = ruleset
-                .rule(code)
-                .map(|rule| rule.severity)
-                .unwrap_or(Severity::Warning);
-            findings.push(make_finding(code, severity, file, line_number, line));
+            let (severity, product_level) = match ruleset.rule(code) {
+                Some(rule) => (rule.severity, rule.product_level),
+                // 规则集缺级时按 §23 severity 类映射确定性兜底，不放弃分级。
+                None => {
+                    let severity = Severity::Warning;
+                    (
+                        severity,
+                        skillhub_core::check::ProductLevel::from_severity(severity),
+                    )
+                }
+            };
+            findings.push(make_finding(
+                code,
+                severity,
+                product_level,
+                file,
+                line_number,
+                line,
+            ));
         }
     }
+}
+
+/// W3-1 误报治理：移除 Markdown 内联链接/图片的链接目标段
+/// （`[text](target)` → `[text](`），用于豁免链接目标里的 `../`。
+/// 未闭合的 `](` 视为普通文本保守处理（不豁免其后内容）。
+fn strip_markdown_link_targets(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(start) = rest.find("](") {
+        let (before, after) = rest.split_at(start + 2);
+        result.push_str(before);
+        match after.find(')') {
+            Some(end) => {
+                rest = &after[end + 1..];
+            }
+            None => {
+                result.push_str(after);
+                rest = "";
+            }
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 fn is_example_line(lower: &str) -> bool {
@@ -260,10 +318,18 @@ fn is_download_command(lower: &str) -> bool {
         || lower.contains(" iwr ")
 }
 
-fn make_finding(code: &str, severity: Severity, file: &str, line: u32, evidence: &str) -> Finding {
+fn make_finding(
+    code: &str,
+    severity: Severity,
+    product_level: skillhub_core::check::ProductLevel,
+    file: &str,
+    line: u32,
+    evidence: &str,
+) -> Finding {
     let evidence_hash = sha256(evidence.as_bytes());
     let id = sha256(format!("{code}\0{file}\0{line}\0{evidence_hash}").as_bytes());
     let mut finding = Finding::at(id, code, severity, file, line, None);
+    finding.product_level = Some(product_level);
     finding.evidence_hash = Some(evidence_hash);
     if code == "security.possible_plaintext_credential" {
         finding.message_params.insert(

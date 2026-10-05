@@ -3,11 +3,126 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::check::{Finding, ProductLevel};
 use crate::import::{
     analyze_import, ExistingSkillRecord, ImportAnalysis, ImportCandidate, ImportDecision,
 };
 use crate::relationship::GovernanceTaskFact;
 use crate::{AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity, SkillId};
+
+/// W3-1（FB-003 §23）：单个候选导入的产品级安全分级结论。"放行级"是
+/// 无发现的状态；有发现时取发现中的最高产品级。分级只由确定性规则集
+/// 产生，AI 结果不参与任何分级或放行判定。
+#[derive(
+    Clone, Copy, Debug, Default, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSecurityLevel {
+    #[default]
+    Pass,
+    Warning,
+    Danger,
+}
+
+/// W3-1：候选徽标的真实基础检查状态（§6.0 既有债修复）。扫描成功时由
+/// 分级推导（passed/warning/failed），扫描失败为 `Unavailable`——绝不假
+/// 显示 not_checked。
+#[derive(
+    Clone, Copy, Debug, Default, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportCandidateCheckState {
+    #[default]
+    Passed,
+    Warning,
+    Failed,
+    Unavailable,
+}
+
+/// W3-1（FB-003 裁决第 1 节 / §23）：用户对危险级候选的显式安全决策。
+/// 仅危险级候选必填：`Proceed` = 仍要导入（导入后进入预警状态、不可派发，
+/// 决定以 decision_source=import 留痕）；`Skip` = 不导入（不落库，按跳过
+/// 落账）。警告级/放行级无需该决策；一个候选的决策不牵连批内其他候选。
+#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSecurityDecision {
+    Proceed,
+    Skip,
+}
+
+/// 一条发现的分级明细归属：处置环节完整展示所需的稳定字段（内部
+/// finding id 不外露，展示名映射由客户端负责）。
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportSecurityFindingSummary {
+    pub code: String,
+    pub product_level: ProductLevel,
+    pub file: Option<String>,
+    pub line_start: Option<u32>,
+}
+
+/// W3-1：prepare 阶段确定性扫描的分级摘要，随 `PreparedImport` 返回，
+/// 供导入向导处置环节呈现危险明细与候选徽标据实显示。
+#[derive(
+    Clone, Debug, Default, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ImportSecuritySummary {
+    #[serde(default)]
+    pub level: ImportSecurityLevel,
+    #[serde(default)]
+    pub danger_count: u32,
+    #[serde(default)]
+    pub warning_count: u32,
+    #[serde(default)]
+    pub findings: Vec<ImportSecurityFindingSummary>,
+    #[serde(default)]
+    pub check_state: ImportCandidateCheckState,
+}
+
+impl ImportSecuritySummary {
+    /// 从确定性扫描发现计算分级（§23 定稿映射）：任一 danger 类发现 →
+    /// 危险级；否则存在 warning 类发现 → 警告级；无发现 → 放行级。
+    /// `product_level` 缺失的历史发现按其 severity 类映射兜底，不因缺
+    /// 字段而漏判危险级。
+    pub fn from_findings(findings: &[Finding]) -> Self {
+        let mut summary = Self {
+            level: ImportSecurityLevel::Pass,
+            danger_count: 0,
+            warning_count: 0,
+            findings: Vec::with_capacity(findings.len()),
+            check_state: ImportCandidateCheckState::Passed,
+        };
+        for finding in findings {
+            let product_level = finding
+                .product_level
+                .unwrap_or_else(|| ProductLevel::from_severity(finding.severity));
+            match product_level {
+                ProductLevel::Danger => summary.danger_count += 1,
+                ProductLevel::Warning => summary.warning_count += 1,
+            }
+            summary.findings.push(ImportSecurityFindingSummary {
+                code: finding.code.clone(),
+                product_level,
+                file: finding.file.clone(),
+                line_start: finding.line_start,
+            });
+        }
+        summary.level = if summary.danger_count > 0 {
+            ImportSecurityLevel::Danger
+        } else if summary.warning_count > 0 {
+            ImportSecurityLevel::Warning
+        } else {
+            ImportSecurityLevel::Pass
+        };
+        summary.check_state = match summary.level {
+            ImportSecurityLevel::Pass => ImportCandidateCheckState::Passed,
+            ImportSecurityLevel::Warning => ImportCandidateCheckState::Warning,
+            ImportSecurityLevel::Danger => ImportCandidateCheckState::Failed,
+        };
+        summary
+    }
+}
 
 /// Side effects required by a committed import. The native adapter owns the
 /// actual filesystem/library implementation; this service owns ordering and
@@ -36,6 +151,12 @@ pub struct PreparedImport {
     /// 已校验非空并以此名重跑库内冲突校验。提交必须携带同一覆盖名。
     #[serde(default)]
     pub runtime_name_override: Option<String>,
+    /// W3-1（FB-003）：prepare 阶段确定性扫描的分级摘要与基础检查状态。
+    /// 扫描失败时 check_state=unavailable，不假显示已检查。提交期的门禁
+    /// 决策依据同一份分级（完整发现由应用层留存，不随 wire 暴露内部
+    /// finding id）。
+    #[serde(default)]
+    pub security: ImportSecuritySummary,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
@@ -137,6 +258,7 @@ where
             ),
             candidate,
             runtime_name_override: None,
+            security: ImportSecuritySummary::default(),
         };
         self.prepared
             .lock()

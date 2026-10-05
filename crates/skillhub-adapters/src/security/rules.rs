@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use skillhub_core::check::ProductLevel;
 use skillhub_core::{AppError, AppResult, ErrorCode, Severity};
 use std::collections::BTreeSet;
 use std::fs;
@@ -6,11 +7,17 @@ use std::path::Path;
 
 /// A versioned, deterministic set of rules. Display text is deliberately not
 /// part of the ruleset so localization cannot change scan output.
+///
+/// W3-1（FB-003 §23）：每条规则显式标注产品级 `product_level`（危险级
+/// danger／警告级 warning；放行级是无发现，不是规则属性）。逐条定级与
+/// 依据见 `rules/basic-v1-levels.md`；`severity` 字段保留（兼容既有存储
+/// 与查询），产品级不回写 severity。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicRule {
     pub code: String,
     pub severity: Severity,
     pub category: String,
+    pub product_level: ProductLevel,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

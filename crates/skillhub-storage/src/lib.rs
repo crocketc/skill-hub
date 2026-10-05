@@ -16,7 +16,8 @@ pub use database::{
     PendingApplicationUpdate, PersistedConnectionTest, PersistedTranslation,
     PhysicalTargetRegistration, ProjectRepository, ProvenanceRepository, RecoveryPoint,
     RelationshipGovernanceMutationReceipt, RelationshipImpactSnapshot, RelationshipRepository,
-    ScanRepository, SearchCandidateRepository, SearchRepository, TargetRepository,
+    ScanRepository, SearchCandidateRepository, SearchRepository, SecurityAlertRecord,
+    SecurityAlertRepository, SecurityAlertSource, SecurityAlertState, TargetRepository,
     UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
 };
 pub use library::{

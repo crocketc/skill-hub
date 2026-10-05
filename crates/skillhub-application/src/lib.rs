@@ -188,6 +188,11 @@ pub struct LocalApplicationFacade {
     /// 重启即清）。提交期据此核对组成签名与同名处置；不存在时不守卫，
     /// 与既有单导入流兼容。batch_id → 暂存分析。
     analyzed_import_batches: Mutex<HashMap<String, AnalyzedImportBatch>>,
+    /// W3-1（FB-003）：prepare 阶段确定性扫描留存的完整报告（会话内存）。
+    /// 分级摘要随 `PreparedImport` 上 wire；完整发现仅用于提交期的检查
+    /// 登记，不外露内部 finding id。prepared id → 扫描报告。
+    prepared_import_security_reports:
+        Mutex<HashMap<OperationId, skillhub_adapters::security::BasicScanReport>>,
     /// 关系路径探测实现；生产走真实文件系统，测试可注入受控假象。
     relationship_probe:
         Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
@@ -630,6 +635,42 @@ impl LocalDeploymentBackend {
     }
 }
 
+/// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
+/// （危险级"仍要导入"或警告级导入后、未完全信任）时不可派发。拒绝错误
+/// 带技能名/级别等可读参数，并给出处理入口指引（详情安全页/待办），
+/// 不留死胡同。
+fn ensure_no_security_alert(
+    database: &Database,
+    skill_id: skillhub_core::SkillId,
+    version_id: &skillhub_core::VersionId,
+) -> AppResult<()> {
+    let level = database
+        .security_alert_repository()
+        .active_alert_level(skill_id, version_id)?;
+    let Some(level) = level else {
+        return Ok(());
+    };
+    let level_text = match level {
+        skillhub_core::check::ProductLevel::Danger => "danger",
+        skillhub_core::check::ProductLevel::Warning => "warning",
+    };
+    let display_name = database
+        .catalog_repository()?
+        .get_sync(skill_id)
+        .ok()
+        .flatten()
+        .map(|skill| skill.display_name().to_owned())
+        .unwrap_or_else(|| skill_id.to_string());
+    Err(
+        AppError::new(ErrorCode::DeploymentSecurityAlertBlocked, Severity::Error)
+            .with_param("skill_name", display_name)
+            .with_param("skill_id", skill_id.to_string())
+            .with_param("version_id", version_id.to_string())
+            .with_param("level", level_text)
+            .with_action(RecoveryAction::ReviewSecurityFindings),
+    )
+}
+
 #[async_trait]
 impl DeploymentBackend for LocalDeploymentBackend {
     /// Task 13B: a prepared plan is only a claim about registered reality.
@@ -637,6 +678,15 @@ impl DeploymentBackend for LocalDeploymentBackend {
     /// registered targets, occupancy, capabilities and source version; any
     /// drift refuses the stale plan instead of being applied blindly.
     async fn revalidate(&self, plan: &DeploymentPlan) -> AppResult<DeploymentPlan> {
+        // W3-1（FB-003 裁决第 1 节）：派发 commit 前重验预警状态——计划
+        // 生成到落盘之间预警可能才落地，提交以当前事实为准。
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("deployment.revalidate"))?;
+            ensure_no_security_alert(&database, plan.skill_id, &plan.version_id)?;
+        }
         let index = self.revalidation_index()?;
         let library = self.library_runtime.snapshot()?;
         // The planned source version must still exist and still declare the
@@ -2176,6 +2226,7 @@ impl LocalApplicationFacade {
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
             analyzed_import_batches: Mutex::new(HashMap::new()),
+            prepared_import_security_reports: Mutex::new(HashMap::new()),
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
@@ -2273,6 +2324,7 @@ impl LocalApplicationFacade {
             acquired_import_sources: Mutex::new(HashMap::new()),
             import_source_classifications: Mutex::new(HashMap::new()),
             analyzed_import_batches: Mutex::new(HashMap::new()),
+            prepared_import_security_reports: Mutex::new(HashMap::new()),
             relationship_probe: Mutex::new(
                 relationship_validation_service::default_relationship_probe(),
             ),
@@ -2798,6 +2850,7 @@ impl LocalApplicationFacade {
     /// records must be settled before the next startup snapshot is built.
     fn discard_prepared_imports(&self, operation_ids: &[OperationId]) {
         for operation_id in operation_ids {
+            self.forget_import_security_report(operation_id);
             let removed = self
                 .prepared_imports
                 .lock()
@@ -8178,6 +8231,11 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::IgnoreSourceUpdate(request) => return self.ignore_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
+            AppCommand::TrustSkillSecurity(request) => {
+                return self
+                    .trust_skill_security(request)
+                    .map(AppCommandResult::TrustSkillSecurity);
+            }
             AppCommand::PatchSkillMetadata(request) => {
                 return self.patch_skill_metadata(request);
             }
@@ -8658,6 +8716,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         ai_check: skill.ai_check,
                         pending_count: skill.pending_count,
                         high_risk_count: skill.high_risk_count,
+                        security_alert: skill.security_alert,
                         upstream_state: skill.upstream_state,
                         // K5/MS-04：上游谱系——「来源 skill+version → 新 skill
                         // 首版本」的有向事实，仅在详情投影暴露。
@@ -9646,7 +9705,45 @@ impl LocalApplicationFacade {
             .map(AppCommandResult::DeploymentSummary)
     }
 
+    /// W3-1（FB-003 裁决第 1 节）：待办"完全信任"。解除该 Skill 当前内容
+    /// 版本的安全预警，恢复可派发；决定留痕（来源=trust、时间、绑定版本）。
+    /// 同版本重复信任幂等；警告级预警同样可以信任解除。"不信任（删除）"
+    /// 复用既有删除流程，"稍后处理"复用既有顺延，均不新增命令。
+    fn trust_skill_security(
+        &self,
+        request: skillhub_core::api::TrustSkillSecurity,
+    ) -> AppResult<skillhub_core::api::TrustSkillSecurityOutcome> {
+        self.with_database("execute.trust_skill_security", |database| {
+            let detail = database
+                .catalog_repository()?
+                .get_detail(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                        .with_param("skill_id", request.skill_id.to_string())
+                })?;
+            // 决定绑定当前内容版本：尚无任何内容版本的记录没有可信任的对象。
+            let version = detail.current_version.ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_param("reason", "security_trust_requires_content_version")
+            })?;
+            database
+                .security_alert_repository()
+                .record_trust(request.skill_id, &version)?;
+            Ok(skillhub_core::api::TrustSkillSecurityOutcome {
+                skill_id: request.skill_id,
+                version_id: version,
+                decided_at: now_epoch_seconds().to_string(),
+            })
+        })
+    }
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
+        // W3-1（FB-003 裁决第 1 节）：预警状态期间不可派发。计划查询与派发
+        // commit 的 revalidate 共用同一判据；planner 的惰性 CheckRun 路径
+        // 保持不动，不复用。
+        self.with_database("query.get_deployment_plan.security_gate", |database| {
+            ensure_no_security_alert(database, request.skill_id, &request.version_id)
+        })?;
         let library = self.library_runtime.snapshot()?;
         let source_path = library
             .root
@@ -10507,6 +10604,19 @@ impl LocalApplicationFacade {
                 None
             };
         let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
+        // W3-1（FB-003 裁决第 1 节 / §23）：扫描从 commit 末段提前到
+        // prepare（candidate_tree_hash 确定之后）。分级摘要随 prepared
+        // 结果返回，供导入向导处置环节呈现与候选徽标据实显示；扫描失败
+        // 如实 unavailable，不假显示已检查。完整报告留存会话内存，提交期
+        // 用同一份发现做门禁决策与检查登记。
+        let security_report = Self::scan_import_security_report(&candidate).ok();
+        let security = match &security_report {
+            Some(report) => report.security_summary(),
+            None => skillhub_core::application::ImportSecuritySummary {
+                check_state: skillhub_core::application::ImportCandidateCheckState::Unavailable,
+                ..Default::default()
+            },
+        };
         let mut analysis_candidate = candidate.clone();
         if let Some(name) = &runtime_name_override {
             analysis_candidate.runtime_name = name.clone();
@@ -10526,6 +10636,7 @@ impl LocalApplicationFacade {
                     candidate,
                     analysis,
                     runtime_name_override: runtime_name_override.clone(),
+                    security: security.clone(),
                 };
                 self.prepared_imports
                     .lock()
@@ -10535,6 +10646,16 @@ impl LocalApplicationFacade {
                             .with_action(RecoveryAction::Retry)
                     })?
                     .insert(prepared.id, prepared.clone());
+                if let Some(report) = security_report {
+                    self.prepared_import_security_reports
+                        .lock()
+                        .map_err(|_| {
+                            AppError::new(ErrorCode::InternalError, Severity::Error)
+                                .with_param("operation", "execute.prepare_import")
+                                .with_action(RecoveryAction::Retry)
+                        })?
+                        .insert(prepared.id, report);
+                }
                 Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
             })
         };
@@ -10670,28 +10791,85 @@ impl LocalApplicationFacade {
         BasicScanner::default().scan_version_report(Path::new(&candidate.absolute_root))
     }
 
-    fn enforce_import_security_gate(
-        report: &skillhub_adapters::security::BasicScanReport,
-    ) -> AppResult<()> {
-        if report.findings.is_empty() {
-            return Ok(());
+    /// W3-1：读取 prepare 时留存的完整扫描报告（会话内存）。返回克隆，
+    /// 不移除：门禁拒绝后同一 prepared 导入可补携决策重试。
+    fn prepared_import_security_report(
+        &self,
+        prepared_import_id: &OperationId,
+    ) -> Option<skillhub_adapters::security::BasicScanReport> {
+        self.prepared_import_security_reports
+            .lock()
+            .ok()?
+            .get(prepared_import_id)
+            .cloned()
+    }
+
+    /// W3-1：与 prepared 导入一并清理留存的扫描报告（提交成功/跳过/
+    /// 取消/AI 预检结算）。
+    fn forget_import_security_report(&self, prepared_import_id: &OperationId) {
+        if let Ok(mut reports) = self.prepared_import_security_reports.lock() {
+            reports.remove(prepared_import_id);
         }
-        let evidence = report
-            .findings
-            .iter()
-            .map(|finding| {
-                serde_json::json!({
-                    "code": finding.code,
-                    "file": finding.file,
-                    "line": finding.line_start,
-                })
-            })
-            .collect::<Vec<_>>();
-        Err(AppError::new(ErrorCode::CheckBlocked, Severity::Error)
-            .with_param("reason", "import_basic_check")
-            .with_param("finding_count", report.findings.len() as u64)
-            .with_param("findings", serde_json::Value::Array(evidence))
-            .with_action(RecoveryAction::ReviewSecurityFindings))
+    }
+
+    /// 跳过落账：不建事件、不建来源关系（4.10）。W3-1 起同时承接危险级
+    /// 候选 security_decision=skip 的“不导入”路径，同一套批次事实。
+    fn commit_import_skip(
+        &self,
+        request: &skillhub_core::CommitImport,
+        batch_id: &str,
+        candidate_key: &str,
+        governance_tasks: Vec<skillhub_core::GovernanceTaskFact>,
+        reason: &'static str,
+    ) -> AppResult<AppCommandResult> {
+        self.with_database("execute.commit_import.governance_task", |database| {
+            Self::persist_import_governance_tasks(database, &governance_tasks)
+        })?;
+        self.with_database("execute.commit_import.skip_item", |database| {
+            database.provenance_repository().record_batch_item(
+                &skillhub_storage::ImportBatchItemRecord {
+                    batch_id: batch_id.to_owned(),
+                    candidate_key: candidate_key.to_owned(),
+                    skill_id: None,
+                    provenance_id: None,
+                    source_relation_id: None,
+                    status: skillhub_storage::ImportBatchItemStatus::Skipped,
+                    reason: Some(reason.into()),
+                },
+            )
+        })?;
+        self.forget_import_security_report(&request.prepared_import_id);
+        self.prepared_imports
+            .lock()
+            .map_err(|_| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("operation", "execute.commit_import")
+                    .with_action(RecoveryAction::Retry)
+            })?
+            .remove(&request.prepared_import_id);
+        Ok(AppCommandResult::ImportSummary(Box::new(
+            skillhub_core::ImportSummary {
+                operation_id: request.prepared_import_id,
+                items: vec![skillhub_core::ImportItemResult {
+                    skill_id: None,
+                    decision: request.decision,
+                    status: if governance_tasks.is_empty() {
+                        skillhub_core::ImportItemStatus::Skipped
+                    } else {
+                        skillhub_core::ImportItemStatus::Todo
+                    },
+                    original_preserved: true,
+                    reason_code: Some(reason.into()),
+                    governance_tasks,
+                    provenance: None,
+                    source_relation_id: None,
+                }],
+                committed: true,
+                batch: Some(skillhub_core::ImportBatchContext {
+                    batch_id: batch_id.to_owned(),
+                }),
+            },
+        )))
     }
 
     /// W1-3（FB-006）：把导入边界扫描登记为该版本的首次基础检查记录。
@@ -10752,6 +10930,7 @@ impl LocalApplicationFacade {
     }
 
     fn cancel_import_flow(&self, prepared_import_id: OperationId) -> AppResult<AppCommandResult> {
+        self.forget_import_security_report(&prepared_import_id);
         let removed = self
             .prepared_imports
             .lock()
@@ -11110,58 +11289,64 @@ impl LocalApplicationFacade {
         let governance_tasks =
             Self::import_governance_tasks(&prepared.analysis, &request.governance_decision);
         if request.decision == skillhub_core::ImportDecision::Skip {
-            self.with_database("execute.commit_import.governance_task", |database| {
-                Self::persist_import_governance_tasks(database, &governance_tasks)
-            })?;
-            // 跳过只落批次项，不建事件、不建来源关系（4.10）。
-            self.with_database("execute.commit_import.skip_item", |database| {
-                database.provenance_repository().record_batch_item(
-                    &skillhub_storage::ImportBatchItemRecord {
-                        batch_id: batch_id.to_owned(),
-                        candidate_key: candidate_key.to_owned(),
-                        skill_id: None,
-                        provenance_id: None,
-                        source_relation_id: None,
-                        status: skillhub_storage::ImportBatchItemStatus::Skipped,
-                        reason: Some("import.skipped_by_user".into()),
-                    },
-                )
-            })?;
-            self.prepared_imports
-                .lock()
-                .map_err(|_| {
-                    AppError::new(ErrorCode::InternalError, Severity::Error)
-                        .with_param("operation", "execute.commit_import")
-                        .with_action(RecoveryAction::Retry)
-                })?
-                .remove(&request.prepared_import_id);
-            return Ok(AppCommandResult::ImportSummary(Box::new(
-                skillhub_core::ImportSummary {
-                    operation_id: request.prepared_import_id,
-                    items: vec![skillhub_core::ImportItemResult {
-                        skill_id: None,
-                        decision: request.decision,
-                        status: if governance_tasks.is_empty() {
-                            skillhub_core::ImportItemStatus::Skipped
-                        } else {
-                            skillhub_core::ImportItemStatus::Todo
-                        },
-                        original_preserved: true,
-                        reason_code: Some("import.skipped_by_user".into()),
-                        governance_tasks,
-                        provenance: None,
-                        source_relation_id: None,
-                    }],
-                    committed: true,
-                    batch: Some(skillhub_core::ImportBatchContext {
-                        batch_id: batch_id.to_owned(),
-                    }),
-                },
-            )));
+            return self.commit_import_skip(
+                request,
+                batch_id,
+                candidate_key,
+                governance_tasks,
+                "import.skipped_by_user",
+            );
         }
-        // 扫描一次并保留报告：安全闸门用结论，检查登记用同一份报告。
-        let security_report = Self::scan_import_security_report(&prepared.candidate)?;
-        Self::enforce_import_security_gate(&security_report)?;
+        // W3-1（FB-003 裁决第 1 节 / §23）：门禁从“发现即整批阻断”改为单
+        // Skill 粒度的显式决策。报告优先用 prepare 时留存的同一份发现——
+        // 分级与决策绑定用户评审过的内容；缺失（prepare 扫描失败）时重扫，
+        // 失败如实让导入失败，不假通过。
+        let security_report =
+            match self.prepared_import_security_report(&request.prepared_import_id) {
+                Some(report) => report,
+                None => Self::scan_import_security_report(&prepared.candidate)?,
+            };
+        let security_summary = security_report.security_summary();
+        if request.security_decision
+            == Some(skillhub_core::application::ImportSecurityDecision::Skip)
+        {
+            // 用户对该候选显式选择“不导入”：不落库，按跳过落账。
+            return self.commit_import_skip(
+                request,
+                batch_id,
+                candidate_key,
+                governance_tasks,
+                "import.skipped_by_security_decision",
+            );
+        }
+        if security_summary.level == skillhub_core::application::ImportSecurityLevel::Danger
+            && request.security_decision.is_none()
+        {
+            // 仅危险级必填决策；缺省时拒绝该候选（commit_import_flow 落
+            // 失败批次项、可重试），批内其他候选不受影响。结构化 findings
+            // 随错误返回，供处置环节完整展示，不解析本地化文案。
+            let evidence = security_summary
+                .findings
+                .iter()
+                .map(|finding| {
+                    serde_json::json!({
+                        "code": finding.code,
+                        "product_level": finding.product_level,
+                        "file": finding.file,
+                        "line": finding.line_start,
+                    })
+                })
+                .collect::<Vec<_>>();
+            return Err(
+                AppError::new(ErrorCode::ImportSecurityDecisionRequired, Severity::Error)
+                    .with_param("runtime_name", prepared.candidate.runtime_name.clone())
+                    .with_param("danger_count", security_summary.danger_count as u64)
+                    .with_param("findings", serde_json::Value::Array(evidence))
+                    .with_action(RecoveryAction::ReviewSecurityFindings),
+            );
+        }
+        // 放行级无感；警告级直接导入（预警落账见预警状态实施步骤）；
+        // 危险级必须已携带 proceed。检查登记用同一份报告（W1-3）。
         if request.decision == skillhub_core::ImportDecision::ReuseExisting {
             let skill_id = prepared
                 .analysis
@@ -11209,6 +11394,7 @@ impl LocalApplicationFacade {
                     Some(fingerprint),
                 )
             })?;
+            self.forget_import_security_report(&request.prepared_import_id);
             self.prepared_imports
                 .lock()
                 .map_err(|_| {
@@ -11339,6 +11525,31 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
+            // W3-1（FB-003 裁决第 1 节）：危险级"仍要导入"与全部警告级导入
+            // 后，该 Skill 进入预警状态——不可派发、加入待办、三选处理。
+            // 预警绑定本次导入捕获的内容版本；落账失败视为导入失败并回滚，
+            // 不假通过。放行级与"复用已有 Skill"（未捕获新版本）不产生预警。
+            if security_summary.level != skillhub_core::application::ImportSecurityLevel::Pass {
+                let alert_level = match security_summary.level {
+                    skillhub_core::application::ImportSecurityLevel::Danger => {
+                        skillhub_core::check::ProductLevel::Danger
+                    }
+                    skillhub_core::application::ImportSecurityLevel::Warning
+                    | skillhub_core::application::ImportSecurityLevel::Pass => {
+                        skillhub_core::check::ProductLevel::Warning
+                    }
+                };
+                if let Err(error) = database.security_alert_repository().record_import_alert(
+                    skill_id,
+                    &version.id,
+                    alert_level,
+                ) {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            }
             // 导入即存证（单一 record_import_outcome）：在同一事务里追加
             // 不可变事件、批次项，并按权威类别/物理身份 upsert 来源副本；
             // Online/项目/集中库只写事件。失败视为导入失败并回滚库内
@@ -11407,6 +11618,7 @@ impl LocalApplicationFacade {
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
             }
+            self.forget_import_security_report(&request.prepared_import_id);
             self.prepared_imports
                 .lock()
                 .map_err(|_| {

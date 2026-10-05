@@ -153,6 +153,7 @@ async fn commit_copy(
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import");
@@ -495,6 +496,7 @@ async fn repeated_import_is_an_explicit_conflict_and_keeps_provenance_history() 
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("reuse commit");

@@ -6,7 +6,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 use super::relationship_repository::deployment_entry_path;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 27;
+pub const CURRENT_SCHEMA_VERSION: u32 = 28;
 
 #[derive(Clone, Copy)]
 struct Migration<'a> {
@@ -122,6 +122,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 27,
         sql: include_str!("../../migrations/0027_check_run_trigger.sql"),
+    },
+    Migration {
+        version: 28,
+        sql: include_str!("../../migrations/0028_security_alerts.sql"),
     },
 ];
 

@@ -331,6 +331,8 @@ fn parse_error_code(value: &str) -> AppResult<ErrorCode> {
         ErrorCode::ImportRuntimeNameConflict,
         ErrorCode::ImportSameNameDispositionRequired,
         ErrorCode::ImportBatchCompositionChanged,
+        ErrorCode::ImportSecurityDecisionRequired,
+        ErrorCode::DeploymentSecurityAlertBlocked,
         ErrorCode::CallPolicyNotSupported,
         ErrorCode::IgnoreOnlyExactSubjectsSupported,
         ErrorCode::LlmInvalidStructuredResponse,

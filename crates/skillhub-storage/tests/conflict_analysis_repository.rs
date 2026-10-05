@@ -162,6 +162,8 @@ fn v14_database_upgrades_to_current_schema_and_keeps_conflict_facts_readable() {
                 [r#"{"fingerprints_match":null,"names_match":null,"identity_direction":null,"sufficient_identity_evidence":false}"#],
             )
             .unwrap();
+        // 该夹具手工回放 0001–0014 迁移，security_alerts（0028 起）尚不存在，
+        // 无需回滚清理。
         connection.pragma_update(None, "user_version", 14).unwrap();
     }
     let upgraded = Database::open(&db_path).unwrap();

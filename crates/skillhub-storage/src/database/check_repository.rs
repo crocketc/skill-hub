@@ -327,6 +327,9 @@ fn load_findings(connection: &rusqlite::Connection, run_id: &str) -> AppResult<V
                 .map(|value| serde_json::from_str(&value).map_err(|_| invalid_record()))
                 .transpose()?
                 .unwrap_or_else(default_allowed_dispositions),
+            // W3-1：check_findings 列不持久化产品级；历史行读出为 None，
+            // 分级结论由扫描/预警时刻的计算路径携带，不回填旧行。
+            product_level: None,
         })
     })
     .collect()
