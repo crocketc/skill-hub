@@ -709,6 +709,54 @@ fn import_batch_lifecycle_records_non_succeeded_items_and_finalizes_once() {
 }
 
 #[test]
+fn batch_item_outcome_can_be_replaced_by_a_later_attempt() {
+    let database = Database::open_in_memory().unwrap();
+    let repository = database.provenance_repository();
+    repository.begin_import_batch("batch", 1).unwrap();
+
+    // W2-2：第一次尝试可以失败（例如同名未处置被提交期守卫拒绝）。
+    repository
+        .record_batch_item(&ImportBatchItemRecord {
+            batch_id: "batch".into(),
+            candidate_key: "candidate-retry".into(),
+            skill_id: None,
+            provenance_id: None,
+            source_relation_id: None,
+            status: ImportBatchItemStatus::Failed,
+            reason: Some("import.same_name_disposition_required".into()),
+        })
+        .unwrap();
+
+    // 同一候选随后处置完成并成功落地：新终态覆盖旧失败，(batch, candidate)
+    // 只保留一行最终结果，重试不被唯一键卡死。
+    let skill = SkillId::new();
+    insert_skill(&database, skill);
+    repository
+        .record_batch_item(&ImportBatchItemRecord {
+            batch_id: "batch".into(),
+            candidate_key: "candidate-retry".into(),
+            skill_id: Some(skill),
+            provenance_id: None,
+            source_relation_id: None,
+            status: ImportBatchItemStatus::Succeeded,
+            reason: None,
+        })
+        .unwrap();
+
+    let (count, status): (i64, String) = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*), MAX(status) FROM import_batch_items
+             WHERE batch_id='batch' AND candidate_key='candidate-retry'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(status, "succeeded");
+}
+
+#[test]
 fn caller_transaction_rolls_back_batch_lifecycle_changes() {
     let database = Database::open_in_memory().unwrap();
     database

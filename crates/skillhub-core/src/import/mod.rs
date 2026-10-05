@@ -5,9 +5,11 @@ mod model;
 mod provenance;
 
 pub use conflict::{
-    analyze_import, DuplicateKind, ExistingSkillRecord, ImportAnalysis, ImportConflict,
-    ImportGovernanceAction, ImportGovernanceClassification, ImportGovernanceGroup,
-    ImportGovernanceMember, ImportMatch, ImportSourceFacts, MatchBasis,
+    analyze_import, analyze_import_batch, normalize_runtime_name, DuplicateKind,
+    ExistingSkillRecord, ImportAnalysis, ImportBatchCandidate, ImportBatchConflictAnalysis,
+    ImportBatchSameContentGroup, ImportBatchSameNameGroup, ImportConflict, ImportGovernanceAction,
+    ImportGovernanceClassification, ImportGovernanceGroup, ImportGovernanceMember, ImportMatch,
+    ImportSourceFacts, MatchBasis,
 };
 pub use decision::{
     import_conflict_case_id, import_governance_task_id, plan_import_conflict_case,

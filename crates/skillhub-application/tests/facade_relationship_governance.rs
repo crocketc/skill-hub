@@ -768,6 +768,7 @@ async fn import_copies_without_a_governance_confirmation_and_preserves_the_sourc
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -786,6 +787,8 @@ async fn import_copies_without_a_governance_confirmation_and_preserves_the_sourc
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("an import does not govern the source during commit");
@@ -819,6 +822,7 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -844,6 +848,8 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -899,6 +905,7 @@ async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -922,6 +929,8 @@ async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("takeover committed");
@@ -3374,6 +3383,7 @@ async fn import_from_shared_directory_groups_members_with_affected_agents() {
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3411,6 +3421,8 @@ async fn import_from_shared_directory_groups_members_with_affected_agents() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -3465,6 +3477,7 @@ async fn same_name_conflict_todo_maps_to_classify_same_name_skill() {
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3499,6 +3512,8 @@ async fn same_name_conflict_todo_maps_to_classify_same_name_skill() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -3547,6 +3562,7 @@ async fn exact_duplicate_todo_maps_to_select_authoritative_version() {
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3576,6 +3592,8 @@ async fn exact_duplicate_todo_maps_to_select_authoritative_version() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -3660,6 +3678,7 @@ async fn verified_observed_copy_import_is_grouped_as_content_identical_copy() {
                 "Notes",
             ),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -5054,6 +5073,7 @@ mod unified_and_history {
             .execute(AppCommand::PrepareImport(skillhub_core::PrepareImport {
                 candidate,
                 tree_hash: None,
+                runtime_name_override: None,
             }))
             .await
             .expect("prepared import");
@@ -5075,6 +5095,8 @@ mod unified_and_history {
                 },
                 batch_id: None,
                 candidate_key: None,
+                runtime_name_override: None,
+                batch_signature: None,
             }))
             .await
             .expect("commit import");
@@ -5403,6 +5425,7 @@ mod retain_and_cleanup_prepare {
             .execute(AppCommand::PrepareImport(PrepareImport {
                 candidate,
                 tree_hash: None,
+                runtime_name_override: None,
             }))
             .await
             .expect("prepared import");
@@ -5419,6 +5442,8 @@ mod retain_and_cleanup_prepare {
                 },
                 batch_id: None,
                 candidate_key: None,
+                runtime_name_override: None,
+                batch_signature: None,
             }))
             .await
             .expect("commit import");

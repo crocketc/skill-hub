@@ -59,8 +59,8 @@ pub use command::{
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AnalyzeGlobalSkillEvidence, AnalyzeImport, AppQuery, AppQueryResult, BasicCheckResult,
-    CheckSourceUpdates, CombinationResult, DeploymentBatchPreview,
+    AnalyzeGlobalSkillEvidence, AnalyzeImport, AnalyzeImportBatch, AppQuery, AppQueryResult,
+    BasicCheckResult, CheckSourceUpdates, CombinationResult, DeploymentBatchPreview,
     DeploymentBatchPreviewRequestItem, DeploymentPairPreview, DeploymentTarget,
     DeterministicDuplicateEntry, DiffVersions, DiscoverImportCandidates, DiscoverRepoSkills,
     FindingResult, GetAgentDirectoryProjection, GetBasicCheckResult, GetBootstrapSnapshot,

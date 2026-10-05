@@ -51,8 +51,7 @@ use std::sync::Arc;
 use skillhub_adapters::source::RepoDiscoveryProvider;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommand, AppCommandResult, AppQueryResult, CommitSourceUpdate, PrepareSourceUpdate,
-    SaveSkillContent,
+    AppCommand, AppCommandResult, CommitSourceUpdate, PrepareSourceUpdate, SaveSkillContent,
 };
 use skillhub_core::{
     AppResult, ApplicationFacade, ErrorCode, ImportCandidate, ImportDecision, PrepareImport,
@@ -103,7 +102,7 @@ fn archive_server(route: &'static str, body: Vec<u8>) -> String {
                     payload.len()
                 );
                 let _ = stream.write_all(response.as_bytes());
-                let _ = stream.write_all(&payload);
+                let _ = stream.write_all(payload);
             });
         }
     });
@@ -146,6 +145,7 @@ async fn import_skill_with_upstream(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -167,6 +167,8 @@ async fn import_skill_with_upstream(
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -251,12 +253,18 @@ fn restore_persist_phase(facade: &LocalApplicationFacade, suffix: &str) {
     let database = database.lock().unwrap();
     database
         .connection_for_test()
-        .execute(&format!("DROP TRIGGER break_source_update_persist_{suffix}"), [])
+        .execute(
+            &format!("DROP TRIGGER break_source_update_persist_{suffix}"),
+            [],
+        )
         .expect("remove persist-phase breaker");
 }
 
 /// 读取预览行的相位（结算结局断言用）。
-fn preview_phase(database_path: &std::path::Path, preview_id: skillhub_core::OperationId) -> String {
+fn preview_phase(
+    database_path: &std::path::Path,
+    preview_id: skillhub_core::OperationId,
+) -> String {
     let database = Database::open(database_path).expect("reopen database");
     database
         .connection_for_test()
@@ -359,7 +367,9 @@ async fn physical_failure_keeps_the_preview_retryable_with_the_original_decision
     let recovery_data = adoption_journal_recovery_data(&database_path, "commit_source_update");
     assert_eq!(recovery_data.len(), 1);
     assert_eq!(
-        recovery_data[0].get("source_update_decision").and_then(|value| value.as_str()),
+        recovery_data[0]
+            .get("source_update_decision")
+            .and_then(|value| value.as_str()),
         Some("take_upstream"),
         "失败 journal 行必须保留用户决定（W2-1 留痕要求）"
     );
@@ -371,10 +381,7 @@ async fn physical_failure_keeps_the_preview_retryable_with_the_original_decision
     let AppCommandResult::AppliedSourceUpdate(applied) = retried else {
         panic!("expected applied source update");
     };
-    assert!(
-        applied.new_version.is_some(),
-        "重试成功必须产生新版本"
-    );
+    assert!(applied.new_version.is_some(), "重试成功必须产生新版本");
     assert_eq!(
         std::fs::read_to_string(visible_skill_tree(&library_root, skill_id).join("SKILL.md"))
             .expect("visible SKILL.md"),
@@ -613,10 +620,7 @@ async fn missing_skill_settles_while_pre_checkpoint_rejection_keeps_the_preview(
         let database = database.lock().unwrap();
         database
             .connection_for_test()
-            .execute(
-                "DELETE FROM skills WHERE id=?1",
-                [skill_id.to_string()],
-            )
+            .execute("DELETE FROM skills WHERE id=?1", [skill_id.to_string()])
             .expect("remove skill row");
     }
     let error = commit(&facade, preview.preview_id, UpdateDecision::TakeUpstream)

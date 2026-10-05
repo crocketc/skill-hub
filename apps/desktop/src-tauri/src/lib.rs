@@ -1129,6 +1129,7 @@ mod relationship_watch_lifecycle_tests {
             skillhub_core::PrepareImport {
                 candidate,
                 tree_hash: None,
+                runtime_name_override: None,
             },
         )))
         .expect("prepared import");
@@ -1150,6 +1151,8 @@ mod relationship_watch_lifecycle_tests {
                 },
                 batch_id: None,
                 candidate_key: None,
+                runtime_name_override: None,
+                batch_signature: None,
             })),
         )
         .expect("commit import");

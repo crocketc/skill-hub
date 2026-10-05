@@ -120,6 +120,7 @@ async fn prepare(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -150,6 +151,8 @@ async fn commit_copy(
             governance_decision,
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("commit import");
@@ -490,6 +493,8 @@ async fn repeated_import_is_an_explicit_conflict_and_keeps_provenance_history() 
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("reuse commit");

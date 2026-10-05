@@ -87,6 +87,7 @@ async fn commit_import_records_upstream_origin_as_long_term_git_source() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -108,6 +109,8 @@ async fn commit_import_records_upstream_origin_as_long_term_git_source() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");
@@ -153,6 +156,7 @@ async fn local_imports_without_upstream_do_not_record_git_sources() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -174,6 +178,8 @@ async fn local_imports_without_upstream_do_not_record_git_sources() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("committed import");

@@ -231,6 +231,7 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate: import_candidate(&source),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepare import");
@@ -269,6 +270,8 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
             },
             batch_id: None,
             candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
         }))
         .await
         .expect("commit import");
@@ -291,6 +294,7 @@ async fn import_prepare_commit_and_cancel_write_the_full_lifecycle() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate: named_import_candidate(&cancelled_source, "Other"),
             tree_hash: None,
+            runtime_name_override: None,
         }))
         .await
         .expect("prepare second import");

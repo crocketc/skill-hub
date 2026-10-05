@@ -7,7 +7,7 @@ use crate::check::{
 };
 use crate::deployment::DeploymentMode;
 use crate::evidence::UsageEvidenceAnalysis;
-use crate::import::{ImportAnalysis, ImportCandidate};
+use crate::import::{ImportAnalysis, ImportBatchConflictAnalysis, ImportCandidate};
 use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery, SourceState};
@@ -597,6 +597,16 @@ pub struct ListSavedProjectViews;
 pub struct AnalyzeImport {
     pub candidate: ImportCandidate,
     pub tree_hash: Option<String>,
+}
+
+/// W2-2（FB-007）：批内冲突分析。输入发现阶段产出的一批候选，core 纯
+/// 函数互检分组；`batch_id` 提供时应用层把分析暂存在会话内存，供提交
+/// 期核对组成签名与同名处置。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct AnalyzeImportBatch {
+    pub batch_id: Option<String>,
+    pub candidates: Vec<ImportCandidate>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -1219,6 +1229,8 @@ pub enum AppQuery {
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "analyze_import")]
     AnalyzeImport(AnalyzeImport),
+    #[serde(rename = "analyze_import_batch")]
+    AnalyzeImportBatch(AnalyzeImportBatch),
     #[serde(rename = "discover_import_candidates")]
     DiscoverImportCandidates(DiscoverImportCandidates),
     #[serde(rename = "search_online_sources")]
@@ -1350,6 +1362,8 @@ pub enum AppQueryResult {
     SavedProjectViews(Vec<SavedProjectView>),
     #[serde(rename = "import_analysis")]
     ImportAnalysis(ImportAnalysis),
+    #[serde(rename = "import_batch_analysis")]
+    ImportBatchAnalysis(ImportBatchConflictAnalysis),
     #[serde(rename = "import_candidates")]
     ImportCandidates(Vec<ImportCandidate>),
     #[serde(rename = "open_import_batches")]
