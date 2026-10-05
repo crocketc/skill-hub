@@ -2474,6 +2474,7 @@
     "dependents": "Dependent projects: {{projects}}",
     "retained": "Kept: files outside SkillHub are never touched; each target copy follows the choice you make for its row.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
+    "drafts": "Deleting also removes the skill's unfinished edit drafts.",
     "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
     "choices": {
@@ -2499,6 +2500,7 @@
       "busy": "Deleting {{count}} Skills…",
       "nonAtomicNotice": "Batch deletion commits skill by skill and is not atomic: deleted skills are not restored automatically.",
       "impact": {
+        "drafts": "Unfinished edit drafts: {{count}}",
         "declaredDependencies": "Declared dependencies",
         "combinations": "Combinations",
         "pinnedVersions": "Pinned versions: {{count}}",

@@ -2474,6 +2474,7 @@
     "dependents": "依赖项目：{{projects}}",
     "retained": "保留：SkillHub 之外的原文件不受影响；每个目标上的副本按你为该行选择的方式处理。",
     "recovery": "恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。",
+    "drafts": "删除将同时删除该技能未完成的编辑草稿。",
     "choiceLabel": "目标副本处理方式",
     "choose": "选择处理方式",
     "choices": {
@@ -2499,6 +2500,7 @@
       "busy": "正在删除 {{count}} 个 Skill…",
       "nonAtomicNotice": "批量删除逐项提交，不是原子操作：已删除的部分不会自动恢复。",
       "impact": {
+        "drafts": "未完成的编辑草稿：{{count}} 项",
         "declaredDependencies": "声明依赖",
         "combinations": "所在组合",
         "pinnedVersions": "固定版本：{{count}} 项",

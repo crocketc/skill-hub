@@ -4,7 +4,7 @@ import { Button } from "../../ui/Button";
 import type { RemovalChoice, RemovalImpact } from "./api";
 import { Icon } from "../../ui/Icon";
 import { RemovalShell } from "./RemovalShell";
-import { RemovalDeploymentTarget, RemovalImpactMatrix } from "./RemovalImpactPieces";
+import { RemovalDeploymentTarget, RemovalImpactDisclaimer, RemovalImpactMatrix } from "./RemovalImpactPieces";
 import { displayPath } from "../../platform/displayPath";
 
 interface RemovalImpactDialogProps {
@@ -60,11 +60,9 @@ export function RemovalImpactDialog({ error, impact, onCancel, onConfirm, submit
       </div>
       {/* DEV-97：影响矩阵与批量删除共用同一结构化呈现。 */}
       <RemovalImpactMatrix impact={impact} />
-      {/* P1-15：提交前固定说明保留什么与恢复方式（如实提示仅备份可恢复）。 */}
-      <div className="sh-removal-flow__disclaimer">
-        <p>{t("removal.retained")}</p>
-        <p>{t("removal.recovery")}</p>
-      </div>
+      {/* P1-15：提交前固定说明保留什么与恢复方式（如实提示仅备份可恢复）；
+          W1-2：草稿说明由共享组件在确有草稿时追加。 */}
+      <RemovalImpactDisclaimer impacts={[impact]} />
       {error ? <p className="sh-removal-flow__error" role="alert"><Icon aria-hidden="true" name="failure" size={16} />{error}</p> : null}
     </RemovalShell>
   );

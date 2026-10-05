@@ -26,6 +26,8 @@ export type RemovalImpact = {
   combinations: string[];
   relatedSkills: string[];
   unknownExternalReferences: string[];
+  /** W1-2：随主体删除的未保存编辑草稿数量；旧载荷缺省按 0 归一。 */
+  draftCount?: number;
 };
 
 /** K2：多目标删除逐项执行状态（生成绑定 RemovalItemStatus）。 */
