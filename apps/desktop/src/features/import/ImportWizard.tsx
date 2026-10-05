@@ -16,6 +16,7 @@ import {
   ImportUnavailableError,
   type ImportAction,
   type ImportAiPreCheckReport,
+  type ImportCommitDispositions,
   type ImportFacade,
   type ImportPlan,
   type ImportProgress,
@@ -26,6 +27,10 @@ import {
   type SourceScanStatus,
   unavailableImportFacade,
 } from "./api";
+import {
+  batchSuggestionActions,
+  pendingBatchDispositionIds,
+} from "./batchDispositions";
 import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
@@ -79,6 +84,11 @@ interface WizardState {
   selectedIds: string[];
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
+  /**
+   * W2-2（FB-007）：candidateId → 独立导入的新名。与 actions 同生命周期：
+   * 只对动作为 independent 的候选随 prepare/commit 透传。
+   */
+  overrides: Record<string, string>;
   commitProgress?: ImportProgress;
   results: ImportResult[];
   /** 任务 10：本次提交的批次上下文；治理深链参数的唯一来源。 */
@@ -113,6 +123,7 @@ type WizardEvent =
   | { type: "analysis_succeeded"; plan: ImportPlan }
   | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
+  | { type: "override_changed"; candidateId: string; name: string }
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
   | { type: "commit_succeeded"; results: ImportResult[]; batch?: ImportBatchSummary }
@@ -127,6 +138,7 @@ const initialState: WizardState = {
   actions: {},
   candidates: [],
   candidatesBySource: [],
+  overrides: {},
   phase: "source",
   results: [],
   selectedIds: [],
@@ -156,6 +168,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidates: [],
         descriptor: undefined,
         error: undefined,
+        overrides: {},
         phase: "source",
         plan: undefined,
         commitProgress: undefined,
@@ -174,6 +187,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidatesBySource: [],
         commitProgress: undefined,
         error: undefined,
+        overrides: {},
         phase: "source",
         plan: undefined,
         selectedIds: [],
@@ -265,19 +279,31 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       };
     case "analysis_progress":
       return { ...state, analysisProgress: event.progress };
-    case "analysis_succeeded":
+    case "analysis_succeeded": {
       // 离开分析阶段即丢弃进度快照：避免下一次分析开始前残留旧数据。
+      // W2-2：批内同内容组播种“保留=复制、其余=跳过”的默认选择（可改）；
+      // 同名不同内容成员绝不播种——必须逐项显式处置。只填空位，不覆盖
+      // 用户已做出的选择。
+      const suggestions = event.plan.batchAnalysis
+        ? batchSuggestionActions(event.plan.batchAnalysis, event.plan.conflicts)
+        : {};
+      const seededActions = { ...state.actions };
+      for (const [candidateId, action] of Object.entries(suggestions)) {
+        if (action && !seededActions[candidateId]) seededActions[candidateId] = action;
+      }
       return {
         ...state,
         analysisProgress: undefined,
         analysisStartedAt: undefined,
         analysisTotal: undefined,
+        actions: seededActions,
         error: undefined,
         // 内容/名称冲突是导入前必须先解决的事实；关系影响只在冲突决定
         // 之后按需确认，避免用户在尚未知道 Skill 决定时先处理另一类关系。
         phase: "conflicts",
         plan: event.plan,
       };
+    }
     case "analysis_cancelled":
       // 分析阶段的取消：回到候选阶段，已选候选保留，在途结果由 operation
       // 序号守卫丢弃（不进入冲突阶段）。
@@ -290,6 +316,11 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       };
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
+    case "override_changed":
+      return {
+        ...state,
+        overrides: { ...state.overrides, [event.candidateId]: event.name },
+      };
     case "commit_started":
       return {
         ...state,
@@ -317,6 +348,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
+        overrides: state.previousPhase === "conflicts" ? {} : state.overrides,
         batch: undefined,
         analysisProgress: undefined,
         analysisStartedAt: undefined,
@@ -768,6 +800,20 @@ type: "failed",
     const operation = ++operationRef.current;
     const total = state.plan.candidates.length;
     dispatch({ type: "commit_started", total });
+    // W2-2：独立命名只对动作为 independent 的候选随 prepare/commit 透传；
+    // 批内签名随处置一起携带（native 门面以提交期重跑的分析为准，mock
+    // 门面据此演示组成变化的整批拒绝）。无批内分析时不携带处置。
+    const dispositions: ImportCommitDispositions | undefined = state.plan.batchAnalysis
+      ? {
+          runtimeNameOverrides: Object.fromEntries(
+            Object.entries(state.overrides).filter(
+              ([candidateId, name]) =>
+                state.actions[candidateId] === "independent" && name.trim().length > 0,
+            ),
+          ),
+          batchSignature: state.plan.batchAnalysis.signature,
+        }
+      : undefined;
     try {
       const outcome = await runTrackedOperation<ImportCommitOutcome>({
         tracker,
@@ -804,7 +850,7 @@ type: "failed",
           facade.commitImport(state.plan!, state.actions, (progress) => {
             handle.progress(progress.completed, progress.total);
             if (operation === operationRef.current) dispatch({ type: "commit_progress", progress });
-          }),
+          }, undefined, dispositions),
       });
       if (operation === operationRef.current) {
         dispatch({ type: "commit_succeeded", results: outcome.results, batch: outcome.batch });
@@ -856,6 +902,17 @@ type: "failed",
   const missingRequiredAction = (state.plan?.conflicts ?? []).some(
     (conflict) => conflict.required && !state.actions[conflict.candidateId],
   );
+  // W2-2：同名不同内容组的成员未逐项处置（跳过或有效独立命名）前，
+  // 提交在 UI 层先行拦截；与后端 import.same_name_disposition_required 同口径。
+  const pendingBatchDispositionCount = state.plan?.batchAnalysis
+    ? pendingBatchDispositionIds(
+        state.plan.batchAnalysis,
+        state.plan.conflicts,
+        state.plan.candidates,
+        state.actions,
+        state.overrides,
+      ).length
+    : 0;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   // onboarding 页脚禁用判定只信任真实条目状态（未扫描/解析中）。
@@ -955,7 +1012,7 @@ type: "failed",
       actions = {
         primary: [
           <Button
-            disabled={missingRequiredAction || commitLockNotice}
+            disabled={missingRequiredAction || pendingBatchDispositionCount > 0 || commitLockNotice}
             key="commit"
             onClick={() => void commit()}
             size="lg"
@@ -1152,9 +1209,20 @@ type: "failed",
           </section>
           <ConflictResolution
             actions={state.actions}
+            batchAnalysis={state.plan.batchAnalysis}
+            candidates={state.plan.candidates}
             conflicts={state.plan.conflicts}
             onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
+            onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
+            overrides={state.overrides}
           />
+          {pendingBatchDispositionCount > 0 ? (
+            <p aria-live="polite" role="alert" className="sh-import-source__notice">
+              {t("importWorkflow.conflicts.batch.pendingAlert", {
+                count: pendingBatchDispositionCount,
+              })}
+            </p>
+          ) : null}
           <section aria-labelledby="import-ai-precheck-heading" className="sh-import-wizard__gate">
             <h2 id="import-ai-precheck-heading">{t("importWorkflow.aiPreCheck.heading")}</h2>
             <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.description")}</p>

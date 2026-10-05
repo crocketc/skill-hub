@@ -126,6 +126,11 @@ export function keyedMessage(
   if (code === "import.exact_duplicate_conflict") return "importWorkflow.errors.exactDuplicateConflict";
   if (code === "import.takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
   if (code === "import.unknown_failure") return "importWorkflow.errors.unknown";
+  // W2-2（FB-007）批内守卫三错误码：改名重试 / 补处置 / 重新分析，
+  // 绝不让裸错误码直达用户界面。
+  if (code === "import.runtime_name_conflict") return "importWorkflow.errors.runtimeNameConflict";
+  if (code === "import.same_name_disposition_required") return "importWorkflow.errors.sameNameDispositionRequired";
+  if (code === "import.batch_composition_changed") return "importWorkflow.errors.batchCompositionChanged";
   if (code === "operation.conflict") {
     if (reason === "takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
     // K3 存储层漂移护栏：create 实际输入与预览计划不一致 → 与预览漂移同一文案。

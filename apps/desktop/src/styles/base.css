@@ -4226,6 +4226,50 @@ a {
   color: var(--color-text-muted);
 }
 
+/* W2-2（FB-007）：批内分组区块——同内容建议合并、同名成员逐项显式处置。 */
+.sh-import-conflicts__batch-sections {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.sh-import-conflicts__batch-group {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.sh-import-conflicts__batch-group > h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+}
+
+.sh-import-conflicts__batch-group > p {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.sh-import-conflicts__rename {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 24rem;
+}
+
+.sh-import-conflicts__rename input {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.sh-import-conflicts__rename input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
 .sh-import-conflicts__options label {
   display: inline-flex;
   align-items: center;

@@ -233,7 +233,10 @@
       "unknown": "The import step could not be completed.",
       "sameRuntimeNameConflict": "The folder name matches an existing Skill; choose another import action.",
       "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",
-      "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved."
+      "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved.",
+      "runtimeNameConflict": "A runtime name conflict was detected while importing: the name is already taken by another Skill. Choose a different name for this candidate and try again.",
+      "sameNameDispositionRequired": "The batch contains same-name candidates with different content. Dispose of each one — import it independently with a new name, or skip it — then submit again.",
+      "batchCompositionChanged": "The batch composition changed, so nothing was imported in this submission. Run the conflict analysis again, confirm the dispositions, and submit again."
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
@@ -385,7 +388,21 @@
       "batchScopeNote": "Only affects conflicts matching the current filter; each item can still be adjusted individually.",
       "detailsToggle": "Details",
       "summaryHeading": "Conflict summary for this import",
-      "summary": "{{conflicts}} conflicts found; {{required}} of them require your choice before continuing."
+      "summary": "{{conflicts}} conflicts found; {{required}} of them require your choice before continuing.",
+      "batch": {
+        "sameContentTitle": "Duplicates within the batch: same content and source",
+        "sameContentDescription": "These candidates are identical copies from the same source. The suggestion is to keep one for import and skip the rest; every choice stays editable.",
+        "keepBadge": "Suggested to keep",
+        "skipBadge": "Suggested to skip",
+        "sameNameTitle": "Same name within the batch: different content",
+        "sameNameDescription": "These candidates share a runtime name but have different content, so each one needs an explicit disposition: import it independently with a new name, or skip it. Submission stays locked until every member is decided.",
+        "renameLabel": "New name",
+        "renameGuidance": "The new name must not collide with other batch candidates or existing library Skills; the final decision happens at submission.",
+        "renameEmpty": "Enter a new name before choosing independent import.",
+        "renameBatchCollision": "This name collides with another candidate in the batch. Choose a different one.",
+        "renameLibraryCollision": "This name collides with an existing Skill in the library. Choose a different one.",
+        "pendingAlert": "{{count}} same-name candidates with different content are still undecided. Choose independent import or skip for each one before submitting."
+      }
     },
     "summary": {
       "eyebrow": "Import summary",

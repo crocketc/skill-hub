@@ -233,7 +233,10 @@
       "unknown": "导入步骤未能完成。",
       "sameRuntimeNameConflict": "文件夹名与已有 Skill 相同，需要重新选择导入方式。",
       "exactDuplicateConflict": "候选内容与已有 Skill 重复，未自动覆盖原内容。",
-      "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。"
+      "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。",
+      "runtimeNameConflict": "导入时发现运行时名称冲突：该名称已被其他 Skill 占用。请为该候选项更换名称后重试。",
+      "sameNameDispositionRequired": "批内存在同名不同内容的候选项：请为每一项选择独立导入（填写新名称）或跳过后，再重新提交。",
+      "batchCompositionChanged": "批内组成已变化，本次提交没有执行任何导入；请重新分析冲突并确认处置后再次提交。"
     },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
@@ -385,7 +388,21 @@
       "batchScopeNote": "仅作用于当前筛选出的冲突；每条冲突仍可单独调整。",
       "detailsToggle": "详情",
       "summaryHeading": "本次导入的冲突结论",
-      "summary": "共发现 {{conflicts}} 处冲突；其中 {{required}} 处必须由你选择处理方式后才能继续。"
+      "summary": "共发现 {{conflicts}} 处冲突；其中 {{required}} 处必须由你选择处理方式后才能继续。",
+      "batch": {
+        "sameContentTitle": "批内重复：内容与来源相同",
+        "sameContentDescription": "这些候选的内容与来源完全相同，属于明显重复。建议保留一项导入、其余跳过；每一项都可以改选。",
+        "keepBadge": "建议保留",
+        "skipBadge": "建议跳过",
+        "sameNameTitle": "批内同名：内容不同",
+        "sameNameDescription": "这些候选项的运行时名称相同但内容不同，必须逐项处置：为每一项选择独立导入并填写新名称，或跳过。处置完成前无法提交。",
+        "renameLabel": "新名称",
+        "renameGuidance": "新名称不能与批内其他候选或库内已有 Skill 重名；最终以提交时的校验结果为准。",
+        "renameEmpty": "请先填写新名称，再选择独立导入。",
+        "renameBatchCollision": "该名称与批内其他候选重名，请换一个。",
+        "renameLibraryCollision": "该名称与库内已有 Skill 重名，请换一个。",
+        "pendingAlert": "还有 {{count}} 个同名不同内容的候选项未处置，请为每一项选择独立导入或跳过后再提交。"
+      }
     },
     "summary": {
       "eyebrow": "导入摘要",

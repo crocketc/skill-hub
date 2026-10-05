@@ -75,4 +75,107 @@ describe("ImportFacade contract", () => {
       expect.objectContaining({ candidates }),
     );
   });
+
+  // W2-2（FB-007）：批内分组场景——同内容建议合并、同名成员未处置即拒绝。
+  it("fixtures the batch-conflicts scenario with merge suggestions and disposition gates", async () => {
+    const facade = createMockImportFacade({ scenario: "batch-conflicts" });
+    const source = await facade.parseSource("C:\\Incoming");
+    const candidates = await facade.acquireCandidates(source);
+    const plan = await facade.analyzeConflicts(candidates);
+
+    expect(plan.batchAnalysis).toEqual({
+      sameContentGroups: [
+        expect.objectContaining({
+          keepCandidateId: candidates[0].id,
+          normalizedRuntimeName: "notes sync",
+          skipCandidateIds: [candidates[1].id],
+        }),
+      ],
+      sameNameGroups: [
+        expect.objectContaining({
+          candidateIds: [candidates[2].id, candidates[3].id],
+          normalizedRuntimeName: "alpha",
+        }),
+      ],
+      signature: expect.any(String),
+    });
+
+    // 同名成员未显式处置（copy 不算处置）→ 提交被拒并映射为引导文案。
+    const blocked = await facade.commitImport(plan, {
+      [candidates[0].id]: "copy",
+      [candidates[1].id]: "skip",
+      [candidates[2].id]: "copy",
+      [candidates[3].id]: "copy",
+    });
+    expect(blocked.results.map((result) => result.status)).toEqual([
+      "succeeded",
+      "skipped",
+      "failed",
+      "failed",
+    ]);
+    for (const result of blocked.results.slice(2)) {
+      expect(result).toEqual(expect.objectContaining({
+        message: "importWorkflow.errors.sameNameDispositionRequired",
+        reasonCode: "import.same_name_disposition_required",
+      }));
+    }
+
+    // 逐项处置（独立命名 + 跳过）后成功；出参如实记录处置与签名。
+    const signature = plan.batchAnalysis!.signature;
+    const settled = await facade.commitImport(
+      plan,
+      {
+        [candidates[0].id]: "copy",
+        [candidates[1].id]: "skip",
+        [candidates[2].id]: "independent",
+        [candidates[3].id]: "skip",
+      },
+      undefined,
+      undefined,
+      {
+        runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" },
+        batchSignature: signature,
+      },
+    );
+    expect(settled.results.map((result) => result.status)).toEqual([
+      "succeeded",
+      "skipped",
+      "succeeded",
+      "skipped",
+    ]);
+    expect(facade.calls.committedDispositions).toEqual([
+      { batchSignature: signature, runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" } },
+    ]);
+  });
+
+  it("rejects a stale batch signature with the composition-changed guidance", async () => {
+    const facade = createMockImportFacade({ scenario: "batch-conflicts" });
+    const source = await facade.parseSource("C:\\Incoming");
+    const candidates = await facade.acquireCandidates(source);
+    const plan = await facade.analyzeConflicts(candidates);
+
+    const stale = await facade.commitImport(
+      plan,
+      {
+        [candidates[0].id]: "copy",
+        [candidates[1].id]: "skip",
+        [candidates[2].id]: "independent",
+        [candidates[3].id]: "skip",
+      },
+      undefined,
+      undefined,
+      {
+        runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" },
+        batchSignature: "mock-stale-signature",
+      },
+    );
+
+    for (const result of stale.results) {
+      expect(result).toEqual(expect.objectContaining({
+        message: "importWorkflow.errors.batchCompositionChanged",
+        reasonCode: "import.batch_composition_changed",
+        status: "failed",
+      }));
+    }
+  });
 });

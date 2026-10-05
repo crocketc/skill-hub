@@ -76,6 +76,28 @@ it("keeps the structured reason in data without rendering it as user copy", asyn
   expect(screen.queryByText("import.same_runtime_name_conflict")).not.toBeInTheDocument();
 });
 
+it("renders the batch composition-changed guard as re-analysis guidance, never a bare code", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ImportSummary
+        results={[{
+          candidateId: "alpha-a",
+          action: "independent",
+          status: "failed",
+          message: "importWorkflow.errors.batchCompositionChanged",
+          reasonCode: "import.batch_composition_changed",
+        }]}
+      />
+    </I18nextProvider>,
+  );
+
+  // W2-2（FB-007）：提交期批次组成变化 → 唯一出路是重新分析，不假成功。
+  expect(screen.getByText(/批内组成已变化/)).toBeVisible();
+  expect(screen.getByText(/重新分析/)).toBeVisible();
+  expect(screen.queryByText(/batch_composition_changed/)).not.toBeInTheDocument();
+});
+
 it("shows todo outcomes as actionable results instead of hiding them as success", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const todo = {
