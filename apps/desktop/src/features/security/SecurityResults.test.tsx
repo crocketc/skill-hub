@@ -55,9 +55,11 @@ interface FacadeOverrides {
   /** 挂载全局通知中心，用于断言统一反馈的可见结果。 */
   withNotices?: boolean;
   variant?: "page" | "embedded" | "drawer";
+  /** 原型呈现模式：risk-aware 分支的摘要与文案由 i18n 承载（W1-3 既有债）。 */
+  presentationMode?: "standard" | "risk-aware";
 }
 
-async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant, presentationMode }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   let currentFindings = findings ?? fixture.findings;
@@ -94,7 +96,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
+      <SecurityResults facade={facade} presentationMode={presentationMode} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
     </I18nextProvider>
   );
   const view = render(
@@ -148,7 +150,9 @@ it("renders an explicit unchecked state when a successful read contains no saved
 
   expect(await screen.findByText("暂无安全问题记录。")).toBeVisible();
   expect(screen.getByRole("heading", { name: "基础安全检查" })).toBeVisible();
-  expect(screen.getAllByText("此检查尚未运行。")).toHaveLength(2);
+  // W1-3：缺记录态指向页内既有「运行基础检查」动作，不留死胡同；AI 卡保持自身文案。
+  expect(screen.getByText("此版本尚无基础检查记录，可运行基础检查获取当前结果。")).toBeVisible();
+  expect(screen.getByText("此检查尚未运行。")).toBeVisible();
   expect(screen.queryByText("正在加载安全检查")).not.toBeInTheDocument();
 });
 
@@ -321,6 +325,76 @@ it("shows a readable check time so refreshed results are visible in an embedded 
 
   expect(await screen.findByText(/^最近检查：/)).toBeVisible();
   expect(screen.getByRole("time")).toHaveAttribute("dateTime", "2026-01-15T12:00:00.000Z");
+});
+
+// W1-3：检查记录来源标注——trigger=import 显示「导入时检查」，manual/缺省不显示。
+it("marks an import-time basic check next to its check time", async () => {
+  await renderSecurity({
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 0, actionableCount: 0, trigger: "import" },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [],
+  });
+
+  expect(await screen.findByText("导入时检查")).toBeVisible();
+  expect(screen.getByRole("time")).toHaveAttribute("dateTime", "2026-01-15T12:00:00.000Z");
+});
+
+it("does not show the import-time mark when the check has no import trigger", async () => {
+  await renderSecurity({
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 0, actionableCount: 0 },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [],
+  });
+
+  await screen.findByText(/^最近检查：/);
+  expect(screen.queryByText("导入时检查")).not.toBeInTheDocument();
+});
+
+it("marks the import-time source in the drawer status row as well", async () => {
+  await renderSecurity({
+    variant: "drawer",
+    checks: [
+      { kind: "basic", state: "passed", checkedAt: "2026-01-15T12:00:00.000Z", findingCount: 0, actionableCount: 0, trigger: "import" },
+      { kind: "llm", state: "not_checked", findingCount: 0, actionableCount: 0 },
+    ],
+    findings: [],
+    preferences: { llmProvider: "local-model", dataScope: "explicit_selection" },
+  });
+
+  expect(await screen.findByText("导入时检查")).toBeVisible();
+  expect(screen.getByRole("img", { name: /基础.*检查通过/ })).toBeVisible();
+});
+
+// W1-3 既有债：risk-aware 分支硬编码中文迁入 i18n，三个分支键位齐全。
+it("renders risk-aware summaries through i18n keys instead of hardcoded copy", async () => {
+  const handled = await renderSecurity({
+    presentationMode: "risk-aware",
+    findings: [makeFinding({ id: "ra-1", highRisk: true, severity: "high", disposition: "acknowledged" })],
+  });
+  // 已处置高风险：说明原始发现保留，不冒充无风险。
+  expect(await handled.findByTestId("review-safety-summary")).toHaveTextContent("已处置高风险 1 项 · 0 项待处理。原始风险发现保留，不代表内容无风险。");
+  // 卸载第一棵树，避免下一分支的查询命中前一棵树的同 testid 节点。
+  handled.unmount();
+
+  const pending = await renderSecurity({
+    presentationMode: "risk-aware",
+    findings: [makeFinding({ id: "ra-2" })],
+  });
+  expect(await pending.findByTestId("review-safety-summary")).toHaveTextContent("高风险 0 项 · 1 项待处理。请结合检查范围与发现记录判断。");
+});
+
+it("explains the risk-aware provider gap through i18n without a settings link", async () => {
+  await renderSecurity({
+    presentationMode: "risk-aware",
+    preferences: { llmProvider: "", dataScope: "explicit_selection" },
+  });
+
+  expect(await screen.findByText("可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。")).toBeVisible();
+  expect(screen.queryByRole("link", { name: "配置 AI 设置" })).not.toBeInTheDocument();
 });
 
 it("disables the AI check entry with an explanation when no LLM provider is configured", async () => {

@@ -6,6 +6,8 @@ export type SecurityCheck = {
   checkedAt?: string;
   findingCount: number;
   actionableCount: number;
+  /** W1-3：检查记录触发来源；旧载荷缺省不标注（不显示「导入时检查」）。 */
+  trigger?: "import" | "manual";
 };
 export type SecurityFinding = {
   id: string;

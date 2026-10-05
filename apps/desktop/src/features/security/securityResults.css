@@ -13,6 +13,14 @@
   font-size: var(--font-size-sm);
 }
 
+/* W1-3：检查记录来源标注（如「导入时检查」）——弱化呈现，不改状态色。 */
+.sh-security-results__check-source {
+  margin-left: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+
 .sh-security-results--embedded .sh-workflow-card {
   min-width: 0;
   padding: var(--space-3);

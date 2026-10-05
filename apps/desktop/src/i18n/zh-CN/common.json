@@ -2409,6 +2409,14 @@
     "riskAwareSummary": "仍有高风险待处理 · {{highRisk}} 项高风险 · {{pending}} 项待处理；检查已完成",
     "noFindings": "暂无安全问题记录。",
     "notChecked": "此检查尚未运行。",
+    "notCheckedBasic": "此版本尚无基础检查记录，可运行基础检查获取当前结果。",
+    "checkSource": {
+      "import": "导入时检查"
+    },
+    "riskAware": {
+      "handled": "已处置高风险 {{highRisk}} 项 · {{pending}} 项待处理。原始风险发现保留，不代表内容无风险。",
+      "summary": "高风险 {{highRisk}} 项 · {{pending}} 项待处理。请结合检查范围与发现记录判断。"
+    },
     "drawer": {
       "basicAction": "重新检查",
       "dateUnavailable": "时间不可用",
@@ -2447,6 +2455,7 @@
       "cancel": "取消检查",
       "cancelFailed": "取消请求未成功：{{message}}",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
+      "providerMissingPrototype": "可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。",
       "configure": "配置 AI 设置",
       "scopeExplicitSelection": "仅发送显式选择的 Skill 内容",
       "scopeOther": "当前发送范围：{{scope}}",
