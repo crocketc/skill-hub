@@ -248,6 +248,8 @@ function DeploymentRoute() {
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(effectiveSkillId) }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(effectiveSkillId) }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.relationship(effectiveSkillId) }),
+            // 部署改变关系事实，洞察页的组合/依赖/外部变化随之过期。
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.insights(effectiveSkillId) }),
             refreshSnapshot(),
           ]);
           notifyDeploymentFactsChanged();
@@ -278,6 +280,7 @@ function BatchDeploymentRoute() {
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.relations(succeededSkillId) }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(succeededSkillId) }),
             queryClient.invalidateQueries({ queryKey: skillDetailKeys.relationship(succeededSkillId) }),
+            queryClient.invalidateQueries({ queryKey: skillDetailKeys.insights(succeededSkillId) }),
           ]),
           refreshSnapshot(),
         ]);
