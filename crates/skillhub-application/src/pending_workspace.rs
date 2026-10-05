@@ -127,6 +127,32 @@ impl LocalApplicationFacade {
                         }
                     }
                 }
+                // W3-1（FB-003 裁决第 1 节）：预警状态派生待办条目——带技能
+                // 名/级别/来源上下文；"稍后处理"留在待办且期间持续不可派发，
+                // 因此该条目不可忽略或顺延移除，只能三选处理。
+                if let Some(level) = database
+                    .security_alert_repository()
+                    .active_alert_level(id, &version)?
+                {
+                    let mut item = work(
+                        WorkKind::SecurityAlert,
+                        id.to_string(),
+                        &version.to_string(),
+                    );
+                    item.display_name = name.clone();
+                    item.version_id = Some(version.to_string());
+                    // 来源上下文：当前预警只来自导入落账（decision_source=import）。
+                    item.message_code = "pending.reasons.security_alert.import".into();
+                    item.risk = Some(match level {
+                        skillhub_core::check::ProductLevel::Danger => {
+                            skillhub_core::pending::PendingRisk::High
+                        }
+                        skillhub_core::check::ProductLevel::Warning => {
+                            skillhub_core::pending::PendingRisk::Medium
+                        }
+                    });
+                    items.push(item);
+                }
                 if matches!(
                     detail.upstream_state,
                     Some(
@@ -376,6 +402,7 @@ impl LocalApplicationFacade {
                     WorkKind::Conflict => 1,
                     WorkKind::Governance => 2,
                     WorkKind::SecurityFinding => 3,
+                    WorkKind::SecurityAlert => 3,
                     _ => 4,
                 },
                 item.id.clone(),

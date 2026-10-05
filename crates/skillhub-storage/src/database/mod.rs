@@ -26,6 +26,7 @@ mod relationship_repository;
 mod scan_repository;
 mod search_candidate_repository;
 mod search_repository;
+mod security_alert_repository;
 mod skill_repo_repository;
 mod skill_repo_scan_state_repository;
 mod source_repository;
@@ -79,6 +80,9 @@ pub use relationship_repository::{
 pub use scan_repository::ScanRepository;
 pub use search_candidate_repository::SearchCandidateRepository;
 pub use search_repository::SearchRepository;
+pub use security_alert_repository::{
+    SecurityAlertRecord, SecurityAlertRepository, SecurityAlertSource, SecurityAlertState,
+};
 pub use skill_repo_repository::SkillRepoRepository;
 pub use skill_repo_scan_state_repository::SkillRepoScanStateRepository;
 pub use source_repository::SourceRepository;
@@ -205,6 +209,11 @@ impl Database {
 
     pub fn scan_repository(&self) -> ScanRepository<'_> {
         ScanRepository::new(self)
+    }
+
+    /// W3-1（FB-003 裁决第 1 节）：安全预警状态（导入落账与信任留痕）。
+    pub fn security_alert_repository(&self) -> SecurityAlertRepository<'_> {
+        SecurityAlertRepository::new(self)
     }
 
     /// OPT-20260914-08：导入存证、已观察部署关系与原始迁移审计。

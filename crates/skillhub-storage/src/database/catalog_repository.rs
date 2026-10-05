@@ -415,7 +415,11 @@ fn status_columns() -> String {
          (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.disposition='actionable'),\
          (SELECT COUNT(*) FROM check_findings f WHERE f.run_id IN ({latest_basic_id},{latest_llm_id}) AND f.severity IN ('error','critical') AND f.disposition='actionable'),\
          (SELECT suc.state FROM source_update_checks suc WHERE suc.skill_id=s.id LIMIT 1),\
-         s.call_policy,m.invocation_source,m.invocation_field,m.requirements_json"
+         s.call_policy,m.invocation_source,m.invocation_field,m.requirements_json,\
+         (SELECT sa.level FROM security_alerts sa WHERE sa.skill_id=s.id AND sa.version_id=cp.version_id \
+           AND sa.decision_source='import' AND sa.state IN ('alert','dismissed_later') \
+           AND NOT EXISTS(SELECT 1 FROM security_alerts st WHERE st.skill_id=s.id AND st.version_id=cp.version_id \
+             AND st.decision_source='trust' AND st.state='trusted') LIMIT 1)"
     )
 }
 
@@ -450,6 +454,7 @@ struct StatusRow {
     invocation_source: Option<String>,
     invocation_field: Option<String>,
     requirements_json: String,
+    security_alert: Option<String>,
 }
 
 fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
@@ -491,6 +496,13 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
         ai_check: parse_check_state(row.ai_check)?,
         pending_count: row.pending_count.max(0) as u32,
         high_risk_count: row.high_risk_count.max(0) as u32,
+        // W3-1（FB-003 裁决第 1 节）：预警状态与列表/详情共用同一事实来源。
+        security_alert: row
+            .security_alert
+            .as_deref()
+            .map(parse_product_level)
+            .transpose()?
+            .flatten(),
         upstream_state: row
             .upstream_state
             .as_deref()
@@ -506,6 +518,17 @@ fn read_status_row(id: SkillId, row: StatusRow) -> AppResult<SkillListItem> {
             .map(DeclaredRequirementFact::from_declared)
             .collect(),
     })
+}
+
+/// W3-1：security_alerts.level 存的是 ProductLevel 的 serde 值
+/// （danger/warning）；未知值按内部错误处理，不静默当作放行。
+fn parse_product_level(value: &str) -> AppResult<Option<skillhub_core::check::ProductLevel>> {
+    match value {
+        "danger" => Ok(Some(skillhub_core::check::ProductLevel::Danger)),
+        "warning" => Ok(Some(skillhub_core::check::ProductLevel::Warning)),
+        _ => Err(AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("product_level", value.to_owned())),
+    }
 }
 
 fn latest_check_run_expr(skill: &str, version: &str, kind: &str) -> String {
@@ -622,6 +645,7 @@ fn map_status_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, StatusRo
             requirements_json: row
                 .get::<_, Option<String>>(23)?
                 .unwrap_or_else(|| "[]".to_owned()),
+            security_alert: row.get(24)?,
         },
     ))
 }

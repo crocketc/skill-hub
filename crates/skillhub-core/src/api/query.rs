@@ -3,7 +3,7 @@ use crate::app_update::{ApplicationUpdate, CheckApplicationUpdate, UpdateState};
 use crate::catalog::{DeclaredRequirementFact, InvocationPolicyFact, SkillLifecycle};
 use crate::check::{
     CheckKind, CheckResult as DomainCheckResult, CheckState, CheckTrigger, Finding,
-    FindingDisposition,
+    FindingDisposition, ProductLevel,
 };
 use crate::deployment::DeploymentMode;
 use crate::evidence::UsageEvidenceAnalysis;
@@ -146,6 +146,11 @@ pub struct SkillListItem {
     /// a UI default or a count of high-risk findings only.
     pub pending_count: u32,
     pub high_risk_count: u32,
+    /// W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态。`Some` 表示
+    /// 处于预警（不可派发、待办三选处理），值是预警级别；`None` 表示放行
+    /// 或已完全信任。
+    #[serde(default)]
+    pub security_alert: Option<ProductLevel>,
     /// Latest explicit upstream observation; absent means the Skill has not
     /// been checked yet in this installation.
     #[serde(default)]
@@ -489,6 +494,10 @@ pub struct SkillResult {
     pub high_risk_count: u32,
     #[serde(default)]
     pub upstream_state: Option<crate::source::SourceState>,
+    /// W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态，与列表
+    /// 投影同一事实来源。详情不得比列表更薄。
+    #[serde(default)]
+    pub security_alert: Option<ProductLevel>,
     /// K5/MS-04：上游谱系——本主体由哪个来源 skill+version 复用修改而来
     /// （ReuseModify 登记的有向事实）。None=无登记，诚实缺省。
     #[serde(default)]

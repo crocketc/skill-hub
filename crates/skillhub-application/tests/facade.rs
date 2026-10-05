@@ -2047,6 +2047,7 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
              ALTER TABLE check_runs DROP COLUMN trigger;
              DROP TABLE relationship_governance_mutation_receipts;
              DROP TABLE skill_lineage;
+             DROP TABLE security_alerts;
              PRAGMA user_version=22;",
         )
         .expect("simulate legacy database");

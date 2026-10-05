@@ -635,6 +635,42 @@ impl LocalDeploymentBackend {
     }
 }
 
+/// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
+/// （危险级"仍要导入"或警告级导入后、未完全信任）时不可派发。拒绝错误
+/// 带技能名/级别等可读参数，并给出处理入口指引（详情安全页/待办），
+/// 不留死胡同。
+fn ensure_no_security_alert(
+    database: &Database,
+    skill_id: skillhub_core::SkillId,
+    version_id: &skillhub_core::VersionId,
+) -> AppResult<()> {
+    let level = database
+        .security_alert_repository()
+        .active_alert_level(skill_id, version_id)?;
+    let Some(level) = level else {
+        return Ok(());
+    };
+    let level_text = match level {
+        skillhub_core::check::ProductLevel::Danger => "danger",
+        skillhub_core::check::ProductLevel::Warning => "warning",
+    };
+    let display_name = database
+        .catalog_repository()?
+        .get_sync(skill_id)
+        .ok()
+        .flatten()
+        .map(|skill| skill.display_name().to_owned())
+        .unwrap_or_else(|| skill_id.to_string());
+    Err(
+        AppError::new(ErrorCode::DeploymentSecurityAlertBlocked, Severity::Error)
+            .with_param("skill_name", display_name)
+            .with_param("skill_id", skill_id.to_string())
+            .with_param("version_id", version_id.to_string())
+            .with_param("level", level_text)
+            .with_action(RecoveryAction::ReviewSecurityFindings),
+    )
+}
+
 #[async_trait]
 impl DeploymentBackend for LocalDeploymentBackend {
     /// Task 13B: a prepared plan is only a claim about registered reality.
@@ -642,6 +678,15 @@ impl DeploymentBackend for LocalDeploymentBackend {
     /// registered targets, occupancy, capabilities and source version; any
     /// drift refuses the stale plan instead of being applied blindly.
     async fn revalidate(&self, plan: &DeploymentPlan) -> AppResult<DeploymentPlan> {
+        // W3-1（FB-003 裁决第 1 节）：派发 commit 前重验预警状态——计划
+        // 生成到落盘之间预警可能才落地，提交以当前事实为准。
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("deployment.revalidate"))?;
+            ensure_no_security_alert(&database, plan.skill_id, &plan.version_id)?;
+        }
         let index = self.revalidation_index()?;
         let library = self.library_runtime.snapshot()?;
         // The planned source version must still exist and still declare the
@@ -8666,6 +8711,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         ai_check: skill.ai_check,
                         pending_count: skill.pending_count,
                         high_risk_count: skill.high_risk_count,
+                        security_alert: skill.security_alert,
                         upstream_state: skill.upstream_state,
                         // K5/MS-04：上游谱系——「来源 skill+version → 新 skill
                         // 首版本」的有向事实，仅在详情投影暴露。
@@ -9655,6 +9701,12 @@ impl LocalApplicationFacade {
     }
 
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
+        // W3-1（FB-003 裁决第 1 节）：预警状态期间不可派发。计划查询与派发
+        // commit 的 revalidate 共用同一判据；planner 的惰性 CheckRun 路径
+        // 保持不动，不复用。
+        self.with_database("query.get_deployment_plan.security_gate", |database| {
+            ensure_no_security_alert(database, request.skill_id, &request.version_id)
+        })?;
         let library = self.library_runtime.snapshot()?;
         let source_path = library
             .root
@@ -11435,6 +11487,31 @@ impl LocalApplicationFacade {
                     error,
                     cleanup_import_state(database, central, store, skill_id, &version),
                 ));
+            }
+            // W3-1（FB-003 裁决第 1 节）：危险级"仍要导入"与全部警告级导入
+            // 后，该 Skill 进入预警状态——不可派发、加入待办、三选处理。
+            // 预警绑定本次导入捕获的内容版本；落账失败视为导入失败并回滚，
+            // 不假通过。放行级与"复用已有 Skill"（未捕获新版本）不产生预警。
+            if security_summary.level != skillhub_core::application::ImportSecurityLevel::Pass {
+                let alert_level = match security_summary.level {
+                    skillhub_core::application::ImportSecurityLevel::Danger => {
+                        skillhub_core::check::ProductLevel::Danger
+                    }
+                    skillhub_core::application::ImportSecurityLevel::Warning
+                    | skillhub_core::application::ImportSecurityLevel::Pass => {
+                        skillhub_core::check::ProductLevel::Warning
+                    }
+                };
+                if let Err(error) = database.security_alert_repository().record_import_alert(
+                    skill_id,
+                    &version.id,
+                    alert_level,
+                ) {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
             }
             // 导入即存证（单一 record_import_outcome）：在同一事务里追加
             // 不可变事件、批次项，并按权威类别/物理身份 upsert 来源副本；

@@ -47,6 +47,7 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
                  ALTER TABLE check_runs DROP COLUMN trigger;
                  DROP TABLE relationship_governance_mutation_receipts;
                  DROP TABLE skill_lineage;
+                 DROP TABLE security_alerts;
                  PRAGMA user_version = 22;",
             )
             .unwrap();
@@ -56,8 +57,10 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
     assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
     assert_eq!(
         migrated.migration_report().applied_versions,
-        vec![23, 24, 25, 26, 27]
+        // W3-1（FB-003 裁决第 1 节）：0028 起新增 security_alerts 预警状态表。
+        vec![23, 24, 25, 26, 27, 28]
     );
+    assert!(migrated.has_table("security_alerts").unwrap());
     assert!(migrated
         .has_table("relationship_governance_mutation_receipts")
         .unwrap());
@@ -1024,13 +1027,17 @@ fn check_run_trigger_column_defaults_to_manual_after_upgrade() {
             .execute("ALTER TABLE check_runs DROP COLUMN trigger", [])
             .unwrap();
         connection
+            .execute("DROP TABLE security_alerts", [])
+            .unwrap();
+        connection
             .execute_batch("PRAGMA user_version = 26;")
             .unwrap();
     }
 
     let migrated = Database::open(file.path()).unwrap();
     assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
-    assert_eq!(migrated.migration_report().applied_versions, vec![27]);
+    // W3-1（FB-003 裁决第 1 节）：0028 起新增 security_alerts 预警状态表。
+    assert_eq!(migrated.migration_report().applied_versions, vec![27, 28]);
     let trigger: String = migrated
         .connection_for_test()
         .query_row(

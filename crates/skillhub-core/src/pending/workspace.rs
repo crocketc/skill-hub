@@ -9,6 +9,9 @@ pub enum WorkKind {
     Governance,
     GovernanceFollowup,
     SecurityFinding,
+    /// W3-1（FB-003 裁决第 1 节）：安全预警状态——危险/警告级导入后进入
+    /// 预警，不可派发，待办三选处理（完全信任/删除/稍后处理）。
+    SecurityAlert,
     TrialDue,
     BasicCheck,
     ImportSkills,
