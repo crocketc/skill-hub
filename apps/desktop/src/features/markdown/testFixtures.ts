@@ -1,4 +1,10 @@
 import {
+  type DeploymentRecord,
+  type SaveAsCopyOutcome,
+  type SaveAsCopyReplacementPreview,
+  type SaveMarkdownAsCopy,
+} from "../../api/bindings";
+import {
   MarkdownContentConflictError,
   type MarkdownDraftBase,
   type MarkdownFacade,
@@ -21,18 +27,16 @@ export interface MockMarkdownCalls {
     path: string;
     skillId: string;
   }>;
-  copiedVersions: Array<{
-    expectedIdentity: string;
-    markdown: string;
-    path: string;
-    skillId: string;
-  }>;
+  /** K5：记录整体另存副本请求（含来源血缘与继承选择）。 */
+  copiedVersions: SaveMarkdownAsCopy[];
   savedVersions: Array<{
     expectedIdentity: string;
     markdown: string;
     path: string;
     skillId: string;
   }>;
+  /** K5：替换继承预览调用记录（供对话框契约断言目标集合）。 */
+  previewCalls: Array<{ skillId: string; targets: string[] }>;
   /** K9：资源解析调用必须可观测——版本身份是否随调用传递就看这里。 */
   resolvedAssets: Array<{
     assetPath: string;
@@ -57,9 +61,17 @@ export interface MockMarkdownOptions {
   editable?: boolean;
   failSave?: boolean;
   failCopy?: boolean;
+  /** K5：预览查询失败（对话框须如实呈现不可用）。 */
+  failPreview?: boolean;
   missingFile?: boolean;
   readOnlyReason?: MarkdownFileContent["readOnlyReason"];
   validationIssues?: MarkdownValidationIssue[];
+  /** K5：自定义另存回执；缺省为已登记血缘、未接管任何使用位置。 */
+  copyOutcome?: SaveAsCopyOutcome;
+  /** K5：自定义替换继承预览；缺省为双目标（其一共享、需逐项确认）。 */
+  preview?: SaveAsCopyReplacementPreview;
+  /** K5：部署记录列表；缺省为两个活动目标与一个已移除目标。 */
+  deployments?: DeploymentRecord[];
 }
 
 const fixtureFiles: MarkdownFileContent[] = [
@@ -126,6 +138,89 @@ export const markdownPreviewDocument = [
 const largeDiagramAsset = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#3f7259"/><text x="80" y="140" font-family="sans-serif" font-size="56" fill="#eef0ec">1600 x 900 preview asset</text></svg>',
 )}`;
+
+/** K5：默认替换继承预览——两个可核验目标，其中 dep-2 是共享物理目标。 */
+export const fixtureReplacementPreview: SaveAsCopyReplacementPreview = {
+  confirmation_fingerprint: "fp-fixture",
+  expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+  preview_id: "preview-fixture",
+  source_skill_id: "pdf-reader",
+  source_version_id: "v1",
+  targets: [
+    {
+      blocker: null,
+      consumer_deployment_ids: ["dep-1"],
+      deployment_id: "dep-1",
+      managed: true,
+      path: "C:/Agents/Codex/skills/pdf-reader",
+      requires_shared_target_confirmation: false,
+      runtime_name: "pdf-reader",
+      target_id: "tgt-1",
+      version_id: "v1",
+    },
+    {
+      blocker: null,
+      consumer_deployment_ids: ["dep-2", "dep-3"],
+      deployment_id: "dep-2",
+      managed: true,
+      path: "C:/Shared/agents/skills/pdf-reader",
+      requires_shared_target_confirmation: true,
+      runtime_name: "pdf-reader",
+      target_id: "tgt-2",
+      version_id: "v1",
+    },
+  ],
+};
+
+const fixtureDeployments: DeploymentRecord[] = [
+  {
+    expected_hash: "hash-1",
+    id: "dep-1",
+    managed: true,
+    mode: "managed_copy",
+    observed_hash: "hash-1",
+    runtime_name: "pdf-reader",
+    skill_id: "pdf-reader",
+    state: "deployed",
+    target_id: "tgt-1",
+    version_id: "v1",
+  },
+  {
+    expected_hash: "hash-2",
+    id: "dep-2",
+    managed: true,
+    mode: "symbolic_link",
+    observed_hash: null,
+    runtime_name: "pdf-reader",
+    skill_id: "pdf-reader",
+    state: "deployed",
+    target_id: "tgt-2",
+    version_id: "v1",
+  },
+  {
+    expected_hash: "hash-3",
+    id: "dep-gone",
+    managed: true,
+    mode: "managed_copy",
+    observed_hash: null,
+    runtime_name: "pdf-reader",
+    skill_id: "pdf-reader",
+    state: "removed",
+    target_id: "tgt-gone",
+    version_id: "v1",
+  },
+];
+
+const defaultCopyOutcome: SaveAsCopyOutcome = {
+  content_identity: "sha256:copy-content",
+  display_name: "PDF Reader copy",
+  inheritance: "NotRequested",
+  lineage_registered: true,
+  path: "C:/Library/skills/pdf-reader-copy/SKILL.md",
+  recovery_operation_id: null,
+  skill_id: "skill-copy",
+  version_id: "ver-copy-1",
+};
 
 /**
  * Preview facade: same deterministic contract as the unit mock, but the
@@ -202,6 +297,7 @@ export function createMockMarkdownFacade(
     savedDrafts: [],
     copiedVersions: [],
     savedVersions: [],
+    previewCalls: [],
     resolvedAssets: [],
   };
 
@@ -234,6 +330,11 @@ export function createMockMarkdownFacade(
         path: file.path,
         primary: file.path === "SKILL.md",
       }));
+    },
+    // K5：替换继承的目标选择列表来自真实形状的部署记录；由调用方筛活动目标。
+    async listDeployments(skillId) {
+      const deployments = options.deployments ?? fixtureDeployments;
+      return deployments.filter((deployment) => deployment.skill_id === skillId);
     },
     async openDefaultApplication(skillId, path) {
       calls.openedDefaults.push({ path, skillId });
@@ -272,12 +373,22 @@ export function createMockMarkdownFacade(
       };
       calls.savedDrafts.push({ base, markdown, path, skillId });
     },
-    async saveMarkdownAsCopy(skillId, path, markdown, expectedIdentity) {
-      requireFile(path);
+    // K5：另存副本请求整体入账；缺省回执为已登记血缘、未接管任何使用位置。
+    async saveMarkdownAsCopy(request) {
+      requireFile(request.path);
       if (options.failCopy) {
         throw new Error("Fixture copy save failed");
       }
-      calls.copiedVersions.push({ expectedIdentity, markdown, path, skillId });
+      calls.copiedVersions.push(request);
+      return options.copyOutcome ?? defaultCopyOutcome;
+    },
+    // K5：替换继承预览；previewCalls 记录目标集合，响应可用夹具定制。
+    async saveAsCopyReplacementPreview(skillId, targets) {
+      calls.previewCalls.push({ skillId, targets });
+      if (options.failPreview) {
+        throw new Error("Fixture preview failed");
+      }
+      return options.preview ?? fixtureReplacementPreview;
     },
     async saveSkillContent(skillId, path, markdown, expectedIdentity) {
       const file = requireFile(path);

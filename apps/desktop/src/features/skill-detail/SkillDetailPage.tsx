@@ -47,6 +47,7 @@ import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { VersionTimeline } from "./VersionTimeline";
 import { SourceUpdatePanel } from "./SourceUpdatePanel";
 import { SourceRelinkPanel } from "./SourceRelinkPanel";
+import { UpstreamLineage } from "./UpstreamLineage";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
 import {
   RemovalOutcomeResult,
@@ -458,6 +459,8 @@ export function SkillDetailPage({
                   skillId={skillId}
                 />
               )}
+              {/* K5/MS-04：上游谱系在身份数据区内如实呈现；未登记时不渲染。 */}
+              <UpstreamLineage lineage={summaryQuery.data.upstreamLineage} />
               <SourceRelinkPanel facade={facade} skillId={skillId} />
             </div>
           </section>

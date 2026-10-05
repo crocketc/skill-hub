@@ -20,6 +20,7 @@ import { ConflictSaveDialog } from "./ConflictSaveDialog";
 import { draftGuardStore } from "./draftGuardStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ReplaceSaveDialog } from "./ReplaceSaveDialog";
+import { SaveAsCopyDialog } from "./SaveAsCopyDialog";
 import { Switch } from "../../ui/Switch";
 import {
   type ScrollSyncEcho,
@@ -59,15 +60,15 @@ export function MarkdownEditor({
   const [draftState, setDraftState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [issues, setIssues] = useState<MarkdownValidationIssue[]>([]);
   const [saveError, setSaveError] = useState<string>();
-  const [copySaved, setCopySaved] = useState(false);
   const [savedVersion, setSavedVersion] = useState<string>();
   const [saving, setSaving] = useState(false);
+  // K5/MS-06：另存副本统一走对话框（来源血缘+可选替换继承），不再一次性静默保存。
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
   const [reviewSaveOpen, setReviewSaveOpen] = useState(false);
   const [reviewSaveMode, setReviewSaveMode] = useState<"overwrite" | "new">("overwrite");
   const [reviewSaveStep, setReviewSaveStep] = useState<"choose" | "impact">("choose");
-  const [reviewInheritance, setReviewInheritance] = useState<"replace" | "none">("replace");
   const [reviewSaveResult, setReviewSaveResult] = useState<string>();
   const [syncScroll, setSyncScroll] = useState(() =>
     readSyncScrollPreference(
@@ -270,26 +271,9 @@ export function MarkdownEditor({
     }
   };
 
-  const saveAsCopy = async () => {
-    setSaving(true);
+  const openCopyDialog = () => {
     setSaveError(undefined);
-    setCopySaved(false);
-    try {
-      await persistCurrentDraft();
-      await facade.saveMarkdownAsCopy(skillId, file.path, source, contentIdentity);
-      setCopySaved(true);
-      if (reviewSaveFlow) {
-        setReviewSaveResult(`新 Skill 已创建并记录“复用修改”关系；${reviewInheritance === "replace" ? "按替换继承展示目标影响。" : "没有继承使用位置。"}新 Skill 不会自动关联网络更新来源。`);
-      }
-    } catch (error) {
-      if (error instanceof MarkdownContentConflictError) {
-        setConflictOpen(true);
-      } else {
-        setSaveError(t("markdown.editor.copyError"));
-      }
-    } finally {
-      setSaving(false);
-    }
+    setCopyDialogOpen(true);
   };
 
   const validateAndSave = async (reviewSaveConfirmed = false) => {
@@ -377,7 +361,9 @@ export function MarkdownEditor({
 
   const confirmReviewSave = () => {
     closeReviewSave();
-    if (reviewSaveMode === "new") void saveAsCopy();
+    // K5/MS-06：创建分支收编进统一另存对话框——继承选择与目标预览都由
+    // 对话框按真实预览承载，原型步骤不再伪造影响事实。
+    if (reviewSaveMode === "new") openCopyDialog();
     else void validateAndSave(true);
   };
 
@@ -420,20 +406,18 @@ export function MarkdownEditor({
           {draftState === "saving" ? t("markdown.editor.draftSaving") : null}
           {draftState === "saved" ? t("markdown.editor.draftSaved") : null}
           {draftState === "error" ? t("markdown.editor.draftError") : null}
-          {copySaved ? t("markdown.editor.copyCreated") : null}
           {savedVersion ? t("markdown.editor.versionCreated", { version: savedVersion }) : null}
           {reviewSaveResult ? <span>{reviewSaveResult}</span> : null}
         </div>
         <div className="sh-markdown-editor__save-cluster">
           <span className="sh-markdown-editor__save-hint">
-            {reviewSaveFlow ? "受管链接跟随当前版本；独立副本不会自动更新。" : t("markdown.editor.saveHint")}
+            {reviewSaveFlow ? "受管链接跟随当前版本；未接管的使用位置保持原状。" : t("markdown.editor.saveHint")}
           </span>
           {!reviewSaveFlow ? <span className="sh-markdown-editor__copy-note">
             <Button
               aria-label={t("markdown.editor.saveAsCopy")}
               disabled={saving}
-              loading={saving}
-              onClick={() => void saveAsCopy()}
+              onClick={openCopyDialog}
               size="sm"
               variant="secondary"
             >
@@ -538,7 +522,10 @@ export function MarkdownEditor({
         busy={saving}
         onConfirmReplace={() => void commit()}
         onOpenChange={setReplaceConfirmOpen}
-        onSaveCopy={() => void saveAsCopy()}
+        onSaveCopy={() => {
+          setReplaceConfirmOpen(false);
+          openCopyDialog();
+        }}
         open={replaceConfirmOpen}
         path={file.path}
       />
@@ -550,9 +537,21 @@ export function MarkdownEditor({
         }}
         onSaveCopy={() => {
           setConflictOpen(false);
-          void saveAsCopy();
+          openCopyDialog();
         }}
         open={conflictOpen}
+      />
+      <SaveAsCopyDialog
+        expectedIdentity={contentIdentity}
+        facade={facade}
+        markdown={source}
+        onBeforeSave={persistCurrentDraft}
+        onOpenChange={setCopyDialogOpen}
+        onSaved={(outcome) => onSaved(outcome.version_id)}
+        open={copyDialogOpen}
+        path={file.path}
+        skillId={skillId}
+        sourceVersionId={file.versionId ?? null}
       />
       {reviewSaveFlow ? (
         <Dialog.Root open={reviewSaveOpen} onOpenChange={(open) => { if (!open) closeReviewSave(); }}>
@@ -561,22 +560,22 @@ export function MarkdownEditor({
             <Dialog.Description>{reviewSaveStep === "choose" ? "当前正在编辑的内容会直接用于本次保存。" : "请核对编辑草稿与主体、来源、使用位置的影响。"}</Dialog.Description>
             {reviewSaveStep === "choose" ? <fieldset className="sh-skill-detail-review__choice-list"><legend>保存方式</legend>
               <label><input checked={reviewSaveMode === "overwrite"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("overwrite")} type="radio" />覆盖当前 Skill（保留旧版本）</label>
-              <label><input checked={reviewSaveMode === "new"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("new")} type="radio" />创建新 Skill</label>
-            </fieldset> : null}
-            {reviewSaveMode === "new" && reviewSaveStep === "choose" ? <fieldset className="sh-skill-detail-review__choice-list"><legend>新 Skill 的使用位置</legend>
-              <label><input checked={reviewInheritance === "replace"} name="review-markdown-inheritance" onChange={() => setReviewInheritance("replace")} type="radio" />替换继承当前使用位置</label>
-              <label><input checked={reviewInheritance === "none"} name="review-markdown-inheritance" onChange={() => setReviewInheritance("none")} type="radio" />不继承使用位置</label>
+              <label><input checked={reviewSaveMode === "new"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("new")} type="radio" />创建新 Skill（另存，登记复用修改来源）</label>
             </fieldset> : null}
             {reviewSaveStep === "impact" ? <>
               <p>正在保存的文件：<strong>{file.path.split(/[\\/]/).filter(Boolean).at(-1) ?? "技能文件"}</strong> · {source.length} 个字符</p>
               <pre className="sh-skill-detail-review__draft-preview">{source.slice(0, 480)}{source.length > 480 ? "…" : ""}</pre>
               <ul className="sh-skill-detail-review__impact-list">
-                {reviewSaveMode === "overwrite" ? <><li>当前版本保留在历史中</li><li>已关联的网络更新来源继续关联</li><li>受管链接 2 个：更新后跟随当前版本</li><li>独立副本 1 个：保持原状，不自动更新</li></> : <><li>原 Skill 与新 Skill 记录“复用修改”关系</li><li>{reviewInheritance === "replace" ? "替换继承使用位置：2 个受管链接按新主体更新；1 个独立副本原样保留、不自动覆盖" : "不继承使用位置：2 个受管链接与 1 个独立副本都保持原状"}</li><li>新 Skill 不会自动关联网络更新来源</li></>}
+                {/* K5/MS-06：创建分支的继承选择与目标影响由统一另存对话框按
+                    真实预览呈现，原型影响步不再伪造「受管链接/独立副本」数量。 */}
+                <li>当前版本保留在历史中</li>
+                <li>已关联的网络更新来源继续关联</li>
+                <li>使用位置影响由保存前的目标预览如实分列</li>
               </ul>
             </> : null}
             <div className="sh-dialog__actions">
               <Button onClick={closeReviewSave} size="sm" variant="ghost">取消</Button>
-              {reviewSaveStep === "choose" ? <Button onClick={() => setReviewSaveStep("impact")} size="sm">查看保存影响</Button> : <Button disabled={saving} loading={saving} onClick={confirmReviewSave} size="sm">{reviewSaveMode === "overwrite" ? "确认保存并创建版本" : "确认创建新 Skill"}</Button>}
+              {reviewSaveStep === "choose" ? <Button onClick={() => setReviewSaveStep("impact")} size="sm">查看保存影响</Button> : <Button disabled={saving} loading={saving} onClick={confirmReviewSave} size="sm">{reviewSaveMode === "overwrite" ? "确认保存并创建版本" : "继续：选择继承与目标"}</Button>}
             </div>
           </Dialog.Content></Dialog.Portal>
         </Dialog.Root>

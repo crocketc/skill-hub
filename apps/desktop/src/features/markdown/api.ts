@@ -3,9 +3,24 @@
  * 违规字段与确定性参数，没有行号与严重性；用户事实文案由展示层按
  * code+field+params 映射，这里不做二次形状。
  */
-import type { MarkdownValidationIssue } from "../../api/bindings";
+import type {
+  DeploymentRecord,
+  MarkdownValidationIssue,
+  SaveAsCopyOutcome,
+  SaveAsCopyReplacementPreview,
+  SaveMarkdownAsCopy,
+} from "../../api/bindings";
 
 export type { MarkdownValidationIssue };
+export type {
+  DeploymentRecord,
+  SaveAsCopyInheritanceOutcome,
+  SaveAsCopyOutcome,
+  SaveAsCopyReplacementPreview,
+  SaveAsCopyReplacementTargetPreview,
+  SaveAsCopyTargetResult,
+  SaveMarkdownAsCopy,
+} from "../../api/bindings";
 
 export interface MarkdownFileEntry {
   label: string;
@@ -66,7 +81,26 @@ export function joinSkillTreePath(rootPath: string, relativePath: string): strin
   return `${root}/${relative}`;
 }
 
-export interface MarkdownFacade {
+/**
+ * K5：另存副本统一契约（来源血缘 + 可选替换继承）。生成绑定类型零改动
+ * 直用，不建本地重复形状。
+ */
+export interface SaveAsCopyFacade {
+  /** 来源 Skill 的部署记录（对话框筛选活动目标，供替换继承预览选择）。 */
+  listDeployments(skillId: string): Promise<DeploymentRecord[]>;
+  /** 替换继承预览：preview_id/expires_at/指纹 + 逐目标事实。 */
+  saveAsCopyReplacementPreview(
+    skillId: string,
+    targets: string[],
+  ): Promise<SaveAsCopyReplacementPreview>;
+  /**
+   * 另存副本命令：请求即生成绑定 SaveMarkdownAsCopy（origin 缺省=不登记
+   * 血缘；inheritance 缺省=不继承），回执是统一 SaveAsCopyOutcome。
+   */
+  saveMarkdownAsCopy(request: SaveMarkdownAsCopy): Promise<SaveAsCopyOutcome>;
+}
+
+export interface MarkdownFacade extends SaveAsCopyFacade {
   chooseExternalApplication(skillId: string, path: string): Promise<void>;
   discardDraft(skillId: string, path: string): Promise<void>;
   /** K4：单文件草稿查询；无草稿时如实为 null，不伪造空草稿。 */
@@ -93,12 +127,6 @@ export interface MarkdownFacade {
     path: string,
     markdown: string,
     base: MarkdownDraftBase,
-  ): Promise<void>;
-  saveMarkdownAsCopy(
-    skillId: string,
-    path: string,
-    markdown: string,
-    expectedIdentity: string,
   ): Promise<void>;
   saveSkillContent(
     skillId: string,
@@ -138,12 +166,14 @@ export const unavailableMarkdownFacade: MarkdownFacade = {
   chooseExternalApplication: unavailable,
   discardDraft: unavailable,
   getDraft: unavailable,
+  listDeployments: unavailable,
   listMarkdownFiles: unavailable,
   openDefaultApplication: unavailable,
   openExternalUrl: unavailable,
   openSkillFolder: unavailable,
   readMarkdownFile: unavailable,
   resolveLocalAsset: unavailable,
+  saveAsCopyReplacementPreview: unavailable,
   saveDraft: unavailable,
   saveMarkdownAsCopy: unavailable,
   saveSkillContent: unavailable,

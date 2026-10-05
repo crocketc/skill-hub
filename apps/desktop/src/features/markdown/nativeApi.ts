@@ -99,17 +99,34 @@ export const nativeMarkdownFacade: MarkdownFacade = {
       newVersionId: result.payload.version_id,
     };
   },
-  async saveMarkdownAsCopy(skillId, path, markdown, expectedIdentity) {
+  async saveMarkdownAsCopy(request) {
+    // K5：请求即生成绑定 SaveMarkdownAsCopy（origin/inheritance/target_display_name
+    // 可选），回执守卫收紧为统一 saved_skill_copy（SaveAsCopyOutcome）。
     const result = await executeCommand({
       type: "save_markdown_as_copy",
-      payload: {
-        skill_id: skillId,
-        path,
-        markdown,
-        expected_identity: expectedIdentity,
-      },
+      payload: request,
     });
-    if (result.type !== "saved_skill_content") throw unavailableResult();
+    if (result.type !== "saved_skill_copy") throw unavailableResult();
+    return result.payload;
+  },
+  async saveAsCopyReplacementPreview(skillId, targets) {
+    // K5：替换继承预览——preview_id/expires_at/指纹与逐目标事实原样透传，
+    // 展示层不得伪造或改写任何目标事实。
+    const result: AppQueryResult = await queryApplication({
+      type: "get_save_as_copy_replacement_preview",
+      payload: { source_skill_id: skillId, targets },
+    });
+    if (result.type !== "save_as_copy_replacement_preview") throw unavailableResult();
+    return result.payload;
+  },
+  async listDeployments(skillId) {
+    // K5：替换继承的目标选择列表来自真实部署记录；对话框按状态筛选活动目标。
+    const result: AppQueryResult = await queryApplication({
+      type: "list_deployments",
+      payload: { skill_id: skillId },
+    });
+    if (result.type !== "deployments") throw unavailableResult();
+    return result.payload;
   },
   async saveDraft(skillId, path, markdown, base) {
     // K4：结果守卫是草稿回执 markdown_draft_saved（载荷 skill_id/path/updated_at

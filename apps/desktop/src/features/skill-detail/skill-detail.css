@@ -1017,3 +1017,31 @@
   font-size: 1rem;
   font-weight: 650;
 }
+
+/* K5/MS-04：上游「复用修改」谱系。未登记时组件不渲染；来源主体已删除
+   时呈现无标签形态，不渲染链接。 */
+.sh-skill-detail__lineage {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--ui-border);
+}
+
+.sh-skill-detail__lineage h4 {
+  margin: 0 0 var(--space-1);
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.sh-skill-detail__lineage p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.sh-skill-detail__lineage-time {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}

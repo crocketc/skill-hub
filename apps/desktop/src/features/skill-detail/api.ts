@@ -1,4 +1,4 @@
-import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, SkillUpstreamLineage, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -34,6 +34,11 @@ export interface SkillDetailSummary {
    * 供 Markdown 工作台打开命令与接管预填写实路径，不派生自显示别名。
    */
   rootPath?: string;
+  /**
+   * K5：上游“复用修改”谱系；后端未登记或未提供时缺省，界面不渲染谱系块，
+   * 绝不伪造来源名称。source_display_name 为 null 时按不可解析如实呈现。
+   */
+  upstreamLineage?: SkillUpstreamLineage | null;
   trialDue?: string;
   /** Undefined means the upstream source has not been checked in this installation. */
   upgradeAvailable?: boolean;

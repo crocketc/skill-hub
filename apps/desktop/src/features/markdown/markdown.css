@@ -600,3 +600,92 @@
     min-height: 2.75rem;
   }
 }
+
+/* K5/MS-06：另存为新技能统一对话框。选择步是「继承分支 + 候选目标」
+   两个显式分组的表单；预览步逐目标分列事实；结果步逐项三态。 */
+.sh-save-copy__dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: min(46rem, calc(100vh - 2rem));
+  overflow: auto;
+}
+
+.sh-save-copy__fieldset {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-save-copy__fieldset legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.sh-save-copy__notice {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--ui-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-danger-background);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-save-copy__targets {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sh-save-copy__target-facts {
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-save-copy__fact-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sh-save-copy__blocker {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--ui-danger-foreground);
+}
+
+.sh-save-copy__lead {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-lg);
+}
+
+.sh-save-copy__result-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sh-save-copy__result-applied {
+  color: var(--ui-success-foreground, var(--ui-ink));
+  font-weight: 600;
+}
+
+.sh-save-copy__result-failed {
+  color: var(--ui-danger-foreground);
+}

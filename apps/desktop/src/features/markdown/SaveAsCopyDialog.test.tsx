@@ -160,7 +160,9 @@ function createDialogFacade(
     async saveMarkdownAsCopy(request: SaveMarkdownAsCopy) {
       copyRequests.push(request);
       if (options.saveError) throw options.saveError;
-      return options.saveOutcome ?? copyOutcome;
+      const outcome = options.saveOutcome ?? copyOutcome;
+      // 后端契约：血缘是否登记取决于请求是否携带 origin；夹具保持同口径。
+      return { ...outcome, lineage_registered: request.origin !== undefined };
     },
   };
   return { ...facade, copyRequests, previewCalls };
@@ -204,7 +206,7 @@ async function renderDialog(
     <ThemeProvider>
       <QueryClientProvider client={client}>
         <I18nextProvider i18n={i18n}>
-          <MemoryRouter initialEntries={["/library/pdf-reader"]}>
+          <MemoryRouter initialEntries={["/"]}>
             <Routes>
               <Route element={<div>new skill detail page</div>} path="/library/:skillId" />
               <Route element={<div>recovery page</div>} path="/recovery" />
@@ -227,15 +229,16 @@ async function renderDialog(
   return facade;
 }
 
-async function chooseReplaceAndPreview(facade: ReturnType<typeof createDialogFacade>) {
+async function chooseReplaceAndPreview(
+  _facade: ReturnType<typeof createDialogFacade>,
+) {
   const user = userEvent.setup();
   const dialog = screen.getByRole("dialog");
   await user.click(
     within(dialog).getByRole("radio", { name: "Take over selected usage locations" }),
   );
-  await within(dialog).findByRole("checkbox", {
-    name: /C:\/Agents\/Codex\/skills\/pdf-reader/,
-  });
+  // 选样步只有部署记录（无路径事实）；路径分列出现在预览之后。
+  await within(dialog).findByRole("checkbox", { name: "pdf-reader · dep-1" });
   await user.click(within(dialog).getByRole("button", { name: "Preview takeover" }));
   await within(dialog).findByText("C:/Agents/Codex/skills/pdf-reader");
   return { dialog, user };
@@ -367,6 +370,9 @@ describe("SaveAsCopyDialog", () => {
     expect(within(dialog).getByText(/preview has expired/i)).toBeVisible();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Choose targets again" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Preview takeover" }),
+    );
     await waitFor(() => expect(facade.previewCalls).toHaveLength(2));
   });
 
@@ -376,6 +382,9 @@ describe("SaveAsCopyDialog", () => {
     });
     const { dialog, user } = await chooseReplaceAndPreview(facade);
 
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Shared physical target/i }),
+    );
     await user.click(within(dialog).getByRole("button", { name: "Create the new skill" }));
 
     // 指纹/漂移拒绝：撤下提交入口，引导重新预览；旧预览不再可用。
@@ -397,6 +406,9 @@ describe("SaveAsCopyDialog", () => {
     });
     const { dialog, user } = await chooseReplaceAndPreview(facade);
 
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /Shared physical target/i }),
+    );
     await user.click(within(dialog).getByRole("button", { name: "Create the new skill" }));
 
     // 预览未被消费：稳定错误码可见，允许补齐确认后用同一 preview_id 重试。
@@ -405,7 +417,6 @@ describe("SaveAsCopyDialog", () => {
     ).toBeVisible();
     expect(within(dialog).getByRole("button", { name: /Retry with this preview/i })).toBeEnabled();
 
-    await user.click(within(dialog).getByRole("checkbox", { name: /Shared physical target/i }));
     await user.click(within(dialog).getByRole("button", { name: /Retry with this preview/i }));
 
     await waitFor(() => expect(facade.copyRequests).toHaveLength(2));

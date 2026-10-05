@@ -159,6 +159,8 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     purpose: skill.user_purpose ?? skill.translated_description ?? skill.original_description,
     // K9：真实物化根目录（可见树）；树未物化时后端给 null，缺省即未知。
     rootPath: skill.root_path ?? undefined,
+    // K5：上游“复用修改”谱系直传；未登记（字段缺失或 null）时缺省，不伪造来源。
+    upstreamLineage: skill.upstream_lineage ?? undefined,
     trialDue: skill.trial_due ?? undefined,
     upgradeAvailable: skill.upstream_state == null
       ? undefined
