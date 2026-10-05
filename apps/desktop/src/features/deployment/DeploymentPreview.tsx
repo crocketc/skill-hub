@@ -117,6 +117,7 @@ type PreviewScenario =
   | "warning"
   | "partial"
   | "fail-preview"
+  | "security-alert-blocked"
   | "unavailable"
   | "empty"
   | "fallback"
@@ -132,6 +133,7 @@ const scenarios: readonly PreviewScenario[] = [
   "warning",
   "partial",
   "fail-preview",
+  "security-alert-blocked",
   "unavailable",
   "empty",
   "fallback",
@@ -198,6 +200,14 @@ function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenar
     }));
 }
 
+/** W3-1：与原生 IPC 结构化 AppError 同形的拦截错误（nativeErrorCode 可识别）。 */
+const SECURITY_ALERT_BLOCKED = {
+  actions: [],
+  code: "deployment.security_alert_blocked",
+  params: {},
+  severity: "error",
+} as const;
+
 function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
   return {
     listTargets: async () => {
@@ -209,6 +219,11 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
     preview: async (items, context) => {
       if (scenario === "fail-preview" || scenario === "batch-preview-fail") {
         throw new Error("deployment.target_not_writable");
+      }
+      // W3-1：派发前安全预警拦截——结构化错误码经 keyedMessage 升级为
+      // 可读文案，并在单技能对话框内给出安全页/待办导航。
+      if (scenario === "security-alert-blocked") {
+        throw SECURITY_ALERT_BLOCKED;
       }
       const pairs = pairsFor(
         items,
@@ -257,9 +272,9 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
 /**
  * DEV-only preview for the deployment flows (T4-D). `?scenario=` selects
  * deterministic layouts: pair disposition groups, partial failure, preview
- * failure, target discovery failure, and the batch route with 8 or 60+
- * Skills and long paths. Everything runs on mock facades without native or
- * network calls.
+ * failure, security-alert dispatch block, target discovery failure, and the
+ * batch route with 8 or 60+ Skills and long paths. Everything runs on mock
+ * facades without native or network calls.
  */
 export function DeploymentPreview() {
   const scenario = useMemo(previewScenario, []);

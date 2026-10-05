@@ -57,9 +57,11 @@ interface FacadeOverrides {
   variant?: "page" | "embedded" | "drawer";
   /** 原型呈现模式：risk-aware 分支的摘要与文案由 i18n 承载（W1-3 既有债）。 */
   presentationMode?: "standard" | "risk-aware";
+  /** W3-1：security_alert 投影事实（列表/详情同一来源）；缺省=未提供。 */
+  securityAlert?: "danger" | "warning" | null;
 }
 
-async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant, presentationMode }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant, presentationMode, securityAlert }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   let currentFindings = findings ?? fixture.findings;
@@ -96,7 +98,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} presentationMode={presentationMode} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
+      <SecurityResults facade={facade} presentationMode={presentationMode} securityAlert={securityAlert} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
     </I18nextProvider>
   );
   const view = render(
@@ -723,4 +725,20 @@ describe("发现项处置与统一执行反馈", () => {
       expect(operation.status).toBe("cancelled");
     });
   });
+});
+
+// W3-1（FB-003 裁决第 1 节）：安全页的预警处理记录只来自 security_alert
+// 投影（与列表/详情同一事实来源），不由本页发现项重新推导。
+it("shows the security alert handling record sourced only from the projection", async () => {
+  await renderSecurity({ securityAlert: "warning" });
+
+  const record = await screen.findByRole("status", { name: "安全处理记录" });
+  expect(record).toBeVisible();
+  expect(record).toHaveTextContent("处理前不可派发");
+});
+
+it("shows no handling record when the projection carries no alert", async () => {
+  await renderSecurity({ securityAlert: null });
+
+  expect(screen.queryByRole("status", { name: "安全处理记录" })).not.toBeInTheDocument();
 });

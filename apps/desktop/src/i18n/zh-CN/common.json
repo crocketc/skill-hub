@@ -200,10 +200,10 @@
       "openDefault": "使用默认应用打开",
       "openFailed": "未能打开：{{detail}}",
       "openFailedDetail": "打开操作未完成（{{code}}）。文件可能已被移动、删除或权限受限，可重试或改为在文件夹中打开。",
-       "openOpenerUnavailable": "系统打开器不可用，未能打开本地路径。",
+      "openOpenerUnavailable": "系统打开器不可用，未能打开本地路径。",
       "openUnsupported": "当前平台（{{platform}}）不提供应用选择器，未打开文件。",
       "rootUnknown": "此 Skill 的本地目录位置未知，无法打开本地文件。",
-     "openFolder": "打开 Skill 文件夹",
+      "openFolder": "打开 Skill 文件夹",
       "readOnly": {
         "builtin": "此文件内置于 Agent，因此为只读。",
         "external": "此文件由外部来源管理，因此为只读。",
@@ -236,7 +236,8 @@
       "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。",
       "runtimeNameConflict": "导入时发现运行时名称冲突：该名称已被其他 Skill 占用。请为该候选项更换名称后重试。",
       "sameNameDispositionRequired": "批内存在同名不同内容的候选项：请为每一项选择独立导入（填写新名称）或跳过后，再重新提交。",
-      "batchCompositionChanged": "批内组成已变化，本次提交没有执行任何导入；请重新分析冲突并确认处置后再次提交。"
+      "batchCompositionChanged": "批内组成已变化，本次提交没有执行任何导入；请重新分析冲突并确认处置后再次提交。",
+      "securityDecisionRequired": "有危险级技能未做安全决策：请为每个危险级技能选择仍然导入或不导入后再提交。"
     },
     "eyebrow": "安全导入流程",
     "title": "导入 Skill",
@@ -321,7 +322,9 @@
       "basicCheck": {
         "not_checked": "尚未检查",
         "passed": "基础检查通过",
-        "failed": "基础检查失败"
+        "failed": "基础检查失败",
+        "warning": "基础检查有警告",
+        "unavailable": "基础检查不可用"
       },
       "ownership": {
         "managed": "由 SkillHub 管理",
@@ -402,6 +405,38 @@
         "renameBatchCollision": "该名称与批内其他候选重名，请换一个。",
         "renameLibraryCollision": "该名称与库内已有 Skill 重名，请换一个。",
         "pendingAlert": "还有 {{count}} 个同名不同内容的候选项未处置，请为每一项选择独立导入或跳过后再提交。"
+      },
+      "security": {
+        "dangerTitle": "危险级安全风险（需要逐个决策）",
+        "dangerDescription": "以下技能命中了危险级确定性规则。请对每个技能显式选择：仍然导入（导入后进入预警状态，处理前不可派发），或不导入。",
+        "findingsLabel": "命中的确定性规则",
+        "chooseLabel": "安全决策",
+        "proceedLabel": "仍然导入（导入后需处理预警才能派发）",
+        "skipLabel": "不导入",
+        "warningTitle": "警告级安全提示",
+        "warningSummary": "以下 {{count}} 个技能存在警告级提示，将正常导入并进入预警状态（处理前不可派发）。",
+        "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再提交。",
+        "level": {
+          "danger": "危险级",
+          "warning": "警告级"
+        },
+        "findings": {
+          "security": {
+            "command_interpolation": "命令字符串拼接，可能被注入额外命令",
+            "destructive_command": "包含破坏性命令（如强制删除、格式化）",
+            "download_and_execute": "下载内容并直接执行",
+            "data_upload": "向外部服务上传本地数据",
+            "elevation": "尝试提升权限执行命令",
+            "obfuscation": "存在混淆或编码隐藏的指令",
+            "path_traversal": "访问声明目录之外的路径",
+            "permission_change": "修改文件或目录权限",
+            "persistence": "写入自启动或持久化配置",
+            "possible_plaintext_credential": "疑似明文凭据",
+            "prompt_injection": "疑似提示注入内容",
+            "suspicious_external_resource": "引用可疑的外部资源"
+          },
+          "unknown": "未识别的规则（{{code}}）"
+        }
       }
     },
     "summary": {
@@ -496,7 +531,8 @@
     "commitMessages": {
       "imported": "已导入",
       "skipped": "已跳过",
-      "noDetail": "导入未提交（本机服务未返回详细原因）"
+      "noDetail": "导入未提交（本机服务未返回详细原因）",
+      "skippedBySecurityDecision": "已按你的选择跳过（不导入）"
     },
     "tracker": {
       "label": "批量导入 Skill"
@@ -1846,7 +1882,8 @@
   "skillDetail": {
     "actions": {
       "label": "Skill 操作",
-      "delete": "从库中删除 Skill"
+      "delete": "从库中删除 Skill",
+      "securityHandling": "安全处理"
     },
     "versions": {
       "exportSkill": "导出此 Skill（标准导出）",
@@ -2251,7 +2288,10 @@
       "noCurrentVersion": "该 Skill 没有可用版本，暂时无法添加。请先生成或指定一个可用版本。",
       "runtimeNameUnavailable": "无法读取该 Skill 的名称，暂时无法添加。请刷新后重试。",
       "planStale": "预览已经过期，目标状态可能发生变化。请返回后重新预览。",
-      "targetNotWritable": "目标目录不可写，请检查目录权限后重试。"
+      "targetNotWritable": "目标目录不可写，请检查目录权限后重试。",
+      "securityAlertBlocked": "该技能存在待处理的安全预警，处理前不可派发；可在详情安全页或待办中处理。",
+      "securityAlertBlockedSecurityLink": "前往安全页处理",
+      "securityAlertBlockedPendingLink": "打开待办"
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
@@ -2662,7 +2702,9 @@
       "deferReason": "暂缓 {{days}} 天，到期后再提醒",
       "ignoreReason": "永久忽略该待处理事项",
       "open": "去处理",
-      "refresh": "刷新待办"
+      "refresh": "刷新待办",
+      "trust": "完全信任",
+      "distrustDelete": "不信任（删除）"
     },
     "defer": {
       "durationLabel": "暂缓时长",
@@ -2755,6 +2797,12 @@
       "convert_shared_reference_to_managed_link": "在关系治理中审阅共享引用，确认安全的管理方式。",
       "unknown_directory_recognition": "确认来源目录及用途；不支持的 Agent 路径可手动添加后重新检查。",
       "operation_failure_recovery": "前往恢复页面，根据实际操作记录处理未完成操作。"
+    },
+    "securityAlert": {
+      "confirmTitle": "完全信任该技能的安全状态？",
+      "confirmDescription": "信任后可正常派发；此决定会记录留痕并绑定当前内容版本，内容更新后再次发现风险将重新预警。",
+      "confirmConfirm": "确认信任",
+      "deferNote": "稍后处理将保留待办并持续不可派发。"
     }
   },
   "recovery": {
@@ -4203,5 +4251,11 @@
       "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
       "batchResult": "成功 {{succeeded}}、失败 {{failed}}"
     }
+  },
+  "securityAlert": {
+    "badge": "预警",
+    "blockedHint": "处理前不可派发",
+    "recordLabel": "安全处理记录",
+    "recordActive": "当前版本处于安全预警状态：处理前不可派发。请处理预警后再派发。"
   }
 }

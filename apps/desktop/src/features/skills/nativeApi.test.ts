@@ -740,4 +740,20 @@ describe("native combination rename wiring", () => {
       nativeSkillLibraryFacade.renameCombination?.("Writing stack", "Reading stack"),
     ).rejects.toBeInstanceOf(SkillLibraryUnavailableError);
   });
+
+  // W3-1（FB-003 裁决第 1 节）：列表投影携带 security_alert 事实，
+  // 行模型原样透传（null=放行或已完全信任），列表徽标不得另行推断。
+  it("carries the security alert projection into the table row", async () => {
+    vi.mocked(queryApplication).mockResolvedValue(
+      skillPage([
+        nativeItem({ security_alert: "warning" }),
+        nativeItem({ skill_id: "skill-2", display_name: "Doc Reader" }),
+      ]),
+    );
+
+    const page = await nativeSkillLibraryFacade.listSkills(DEFAULT_SKILL_QUERY);
+
+    expect(page.items[0]?.securityAlert).toBe("warning");
+    expect(page.items[1]?.securityAlert).toBeNull();
+  });
 });

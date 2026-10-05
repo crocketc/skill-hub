@@ -1,5 +1,5 @@
 import { pendingKinds } from "../features/pending/workspace";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
@@ -324,7 +324,15 @@ function RepoManagerRoute() {
 function SecurityRoute() {
   const [params] = useSearchParams();
   const { skillId } = useParams();
-  return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} skillId={skillId ?? "unknown"} versionId={params.get("version") ?? "current"} findingId={params.get("finding") ?? undefined} checkKind={params.get("kind") ?? undefined} /></RouteSuspense>;
+  // W3-1：预警留痕与列表/详情共用同一 security_alert 投影（get_skill 读模型，
+  // 与详情页同 queryKey 共享缓存）；读模型失联时如实省略记录块，不拖垮安全页。
+  const summaryQuery = useQuery({
+    enabled: Boolean(skillId),
+    queryFn: () => nativeSkillDetailFacade.getSummary(skillId ?? ""),
+    queryKey: skillDetailKeys.summary(skillId ?? ""),
+    retry: false,
+  });
+  return <RouteSuspense><SecurityResults facade={nativeSecurityFacade} securityAlert={summaryQuery.data?.securityAlert} skillId={skillId ?? "unknown"} versionId={params.get("version") ?? "current"} findingId={params.get("finding") ?? undefined} checkKind={params.get("kind") ?? undefined} /></RouteSuspense>;
 }
 
 function OperationRoute() {

@@ -30,6 +30,8 @@ type PreviewScenario =
   | "default"
   | "bulk"
   | "conflict"
+  | "batch-conflicts"
+  | "security-danger"
   | "governance"
   | "fail-acquire"
   | "cancel"
@@ -40,6 +42,8 @@ const scenarios: readonly PreviewScenario[] = [
   "default",
   "bulk",
   "conflict",
+  "batch-conflicts",
+  "security-danger",
   "governance",
   "fail-acquire",
   "cancel",
@@ -86,7 +90,10 @@ function createPreviewSetup(scenario: PreviewScenario): PreviewSetup {
     };
   }
   const mock: MockImportFacade = createMockImportFacade({
-    scenario: scenario === "conflict" ? "conflict-required" : "safe-local",
+    scenario: scenario === "conflict" ? "conflict-required"
+      : scenario === "batch-conflicts" ? "batch-conflicts"
+      : scenario === "security-danger" ? "security-danger"
+      : "safe-local",
   });
   let facade: ImportFacade = mock;
   if (scenario === "bulk") {
@@ -140,7 +147,8 @@ function createPreviewSetup(scenario: PreviewScenario): PreviewSetup {
 /**
  * DEV-only preview for the import flow (T4-C): the default scenario keeps the
  * AI pre-check loop used by llm-loops; `?scenario=` selects deterministic
- * layouts (bulk 60+, conflicts, failures, cancel, onboarding variant).
+ * layouts (bulk 60+, conflicts, in-batch conflicts W2-2, security danger
+ * decisions W3-1, failures, cancel, onboarding variant).
  * Everything runs on the mock facade without native or network calls.
  */
 export function ImportWizardPreview() {

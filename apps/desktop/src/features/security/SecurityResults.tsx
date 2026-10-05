@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import type { ProductLevel } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation, type TrackedOperationHandle } from "../../platform/runTrackedOperation";
@@ -13,6 +14,7 @@ import { StatusBadge } from "../../ui/StatusBadge";
 import { Icon } from "../../ui/Icon";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { FindingActions } from "./FindingActions";
+import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences } from "./api";
 import "./securityResults.css";
 
@@ -25,11 +27,16 @@ export interface SecurityResultsProps {
   variant?: "page" | "embedded" | "drawer";
   /** Prototype presentation separates run completion from unresolved risk. */
   presentationMode?: "standard" | "risk-aware";
+  /**
+   * W3-1（FB-003 裁决第 1 节）：当前版本的安全预警留痕（security_alert 投影，
+   * 与列表/详情同一事实来源）；缺省或 null 不渲染，不由本页发现项重新推导。
+   */
+  securityAlert?: ProductLevel | null;
   /** 统一执行桥的在途投影；测试可注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page", presentationMode = "standard" }: SecurityResultsProps) {
+export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page", presentationMode = "standard", securityAlert }: SecurityResultsProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const scopeKey = `${skillId}\u0000${versionId}`;
@@ -286,6 +293,14 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
   if (loadedScope !== scopeKey) return <DataState message={t("security.states.loading")} state="loading" />;
   const basicFindings = findings.filter((finding) => finding.kind === "basic");
   const llmFindings = findings.filter((finding) => finding.kind === "llm");
+  // W3-1：预警处理留痕只来自 security_alert 投影（与列表/详情同一事实来源），
+  // 有什么渲染什么，不由本页发现项重新推导，也不伪造历史处理记录。
+  const alertRecord = securityAlert ? (
+    <p aria-label={t("securityAlert.recordLabel")} className="sh-security-alert-record" role="status">
+      <SecurityAlertBadge level={securityAlert} />
+      {t("securityAlert.recordActive")}
+    </p>
+  ) : null;
   const highRiskCount = findings.filter((finding) => finding.highRisk).length;
   const pendingHighRisk = findings.filter((finding) => finding.highRisk && finding.disposition === "actionable").length;
   const pendingCount = findings.filter((finding) => finding.disposition === "actionable").length;
@@ -305,6 +320,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
     return (
       <div className="sh-security-results sh-security-results--drawer">
         {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || checkKind === finding.kind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
+        {alertRecord}
         <div className="sh-security-results__drawer-checks">
           <DrawerCheckRow
             check={basicCheck}
@@ -370,6 +386,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
   }
   const content = (
     <>
+      {alertRecord}
       {findingId ? <p role="status">{t(findings.some((finding) => finding.id === findingId && (!checkKind || finding.kind === checkKind) && finding.disposition === "actionable") ? "pending.focusFinding" : "pending.linkResolved")}</p> : null}
       {presentationMode !== "risk-aware" ? <p aria-label={t("security.findingSummaryLabel")} className="sh-security-results__summary" role="status">
         {t("security.findingSummary", { highRisk: highRiskCount, pending: pendingCount })}

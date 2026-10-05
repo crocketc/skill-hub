@@ -200,10 +200,10 @@
       "openDefault": "Open in default app",
       "openFailed": "Could not open: {{detail}}",
       "openFailedDetail": "The open action did not complete ({{code}}). The file may have been moved, deleted, or blocked by permissions; retry, or open the Skill folder instead.",
-       "openOpenerUnavailable": "The system opener is unavailable; nothing was opened.",
+      "openOpenerUnavailable": "The system opener is unavailable; nothing was opened.",
       "openUnsupported": "This platform does not offer an application chooser ({{platform}}); nothing was opened.",
       "rootUnknown": "The local folder location of this Skill is unknown, so nothing was opened.",
-     "openFolder": "Open Skill folder",
+      "openFolder": "Open Skill folder",
       "readOnly": {
         "builtin": "This file is read-only because it is built into an Agent.",
         "external": "This file is read-only because it is managed externally.",
@@ -236,7 +236,8 @@
       "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved.",
       "runtimeNameConflict": "A runtime name conflict was detected while importing: the name is already taken by another Skill. Choose a different name for this candidate and try again.",
       "sameNameDispositionRequired": "The batch contains same-name candidates with different content. Dispose of each one — import it independently with a new name, or skip it — then submit again.",
-      "batchCompositionChanged": "The batch composition changed, so nothing was imported in this submission. Run the conflict analysis again, confirm the dispositions, and submit again."
+      "batchCompositionChanged": "The batch composition changed, so nothing was imported in this submission. Run the conflict analysis again, confirm the dispositions, and submit again.",
+      "securityDecisionRequired": "A danger-level skill has no security decision yet: choose import anyway or do not import for each danger-level skill, then commit again."
     },
     "eyebrow": "Safe import workflow",
     "title": "Import Skills",
@@ -321,7 +322,9 @@
       "basicCheck": {
         "not_checked": "Not checked",
         "passed": "Basic check passed",
-        "failed": "Basic check failed"
+        "failed": "Basic check failed",
+        "warning": "Basic check has warnings",
+        "unavailable": "Basic check unavailable"
       },
       "ownership": {
         "managed": "Managed by SkillHub",
@@ -402,6 +405,38 @@
         "renameBatchCollision": "This name collides with another candidate in the batch. Choose a different one.",
         "renameLibraryCollision": "This name collides with an existing Skill in the library. Choose a different one.",
         "pendingAlert": "{{count}} same-name candidates with different content are still undecided. Choose independent import or skip for each one before submitting."
+      },
+      "security": {
+        "dangerTitle": "Danger-level security findings (decide per skill)",
+        "dangerDescription": "These skills match danger-level deterministic rules. For each skill, explicitly choose: import anyway (it enters alert state and cannot be dispatched until handled) or do not import.",
+        "findingsLabel": "Matched deterministic rules",
+        "chooseLabel": "Security decision",
+        "proceedLabel": "Import anyway (the alert must be handled before dispatch)",
+        "skipLabel": "Do not import",
+        "warningTitle": "Warning-level security notices",
+        "warningSummary": "The following {{count}} skills have warning-level findings. They will be imported normally and enter alert state (cannot be dispatched until handled).",
+        "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one, then commit.",
+        "level": {
+          "danger": "Danger",
+          "warning": "Warning"
+        },
+        "findings": {
+          "security": {
+            "command_interpolation": "Command string interpolation that may inject extra commands",
+            "destructive_command": "Contains destructive commands (such as forced deletion or formatting)",
+            "download_and_execute": "Downloads content and executes it directly",
+            "data_upload": "Uploads local data to an external service",
+            "elevation": "Attempts to run commands with elevated privileges",
+            "obfuscation": "Contains obfuscated or encoded hidden instructions",
+            "path_traversal": "Accesses paths outside the declared directory",
+            "permission_change": "Changes file or directory permissions",
+            "persistence": "Writes autostart or persistence configuration",
+            "possible_plaintext_credential": "Possible plaintext credential",
+            "prompt_injection": "Possible prompt injection content",
+            "suspicious_external_resource": "References a suspicious external resource"
+          },
+          "unknown": "Unrecognized rule ({{code}})"
+        }
       }
     },
     "summary": {
@@ -496,7 +531,8 @@
     "commitMessages": {
       "imported": "Imported",
       "skipped": "Skipped",
-      "noDetail": "Import was not committed (the native service returned no detail)"
+      "noDetail": "Import was not committed (the native service returned no detail)",
+      "skippedBySecurityDecision": "Skipped by your decision (not imported)"
     },
     "tracker": {
       "label": "Batch import Skills"
@@ -1846,7 +1882,8 @@
   "skillDetail": {
     "actions": {
       "label": "Skill actions",
-      "delete": "Delete from library"
+      "delete": "Delete from library",
+      "securityHandling": "Security handling"
     },
     "versions": {
       "exportSkill": "Export this skill (standard export)",
@@ -2251,7 +2288,10 @@
       "noCurrentVersion": "This Skill has no available version and cannot be added yet. Create or select a version first.",
       "runtimeNameUnavailable": "The Skill name could not be read, so it cannot be added yet. Refresh and try again.",
       "planStale": "This preview is out of date; the target may have changed. Go back and preview again.",
-      "targetNotWritable": "The target directory is not writable. Check its permissions and try again."
+      "targetNotWritable": "The target directory is not writable. Check its permissions and try again.",
+      "securityAlertBlocked": "This skill has an unhandled security alert; dispatch is blocked until it is handled. Handle it on the skill's security page or in pending work.",
+      "securityAlertBlockedSecurityLink": "Open security handling",
+      "securityAlertBlockedPendingLink": "Open pending work"
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
@@ -2662,7 +2702,9 @@
       "deferReason": "Deferred for {{days}} days; remind me when it is due",
       "ignoreReason": "Permanently ignore this pending item",
       "open": "Open task",
-      "refresh": "Refresh pending tasks"
+      "refresh": "Refresh pending tasks",
+      "trust": "Trust fully",
+      "distrustDelete": "Distrust (delete)"
     },
     "defer": {
       "durationLabel": "Defer duration",
@@ -2755,6 +2797,12 @@
       "convert_shared_reference_to_managed_link": "Review the shared reference in relationship governance.",
       "unknown_directory_recognition": "Confirm the source directory and its purpose. Unsupported Agent paths can be added manually and rechecked.",
       "operation_failure_recovery": "Use recovery to handle the incomplete operation based on its recorded state."
+    },
+    "securityAlert": {
+      "confirmTitle": "Trust this skill's security state fully?",
+      "confirmDescription": "Dispatch works normally after trusting; the decision is recorded and bound to the current content version. If risks are found again after the content changes, the alert returns.",
+      "confirmConfirm": "Confirm trust",
+      "deferNote": "Keeping it for later preserves the pending item and keeps dispatch blocked."
     }
   },
   "recovery": {
@@ -4203,5 +4251,11 @@
       "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
       "batchResult": "Succeeded {{succeeded}}, failed {{failed}}"
     }
+  },
+  "securityAlert": {
+    "badge": "Alert",
+    "blockedHint": "Dispatch is blocked until handled",
+    "recordLabel": "Security handling record",
+    "recordActive": "The current version is under a security alert: dispatch is blocked until it is handled."
   }
 }

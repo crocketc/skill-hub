@@ -131,6 +131,10 @@ export function keyedMessage(
   if (code === "import.runtime_name_conflict") return "importWorkflow.errors.runtimeNameConflict";
   if (code === "import.same_name_disposition_required") return "importWorkflow.errors.sameNameDispositionRequired";
   if (code === "import.batch_composition_changed") return "importWorkflow.errors.batchCompositionChanged";
+  // W3-1（FB-003）：危险级候选缺安全决策 → 指引回处置环节逐个决策；
+  // 显式“不导入”按跳过落账，完成页以跳过行呈现，绝不裸码。
+  if (code === "import.security_decision_required") return "importWorkflow.errors.securityDecisionRequired";
+  if (code === "import.skipped_by_security_decision") return "importWorkflow.commitMessages.skippedBySecurityDecision";
   if (code === "operation.conflict") {
     if (reason === "takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
     // K3 存储层漂移护栏：create 实际输入与预览计划不一致 → 与预览漂移同一文案。
@@ -188,6 +192,9 @@ export function keyedMessage(
     return "importWorkflow.errors.securityBlocked";
   }
   if (code === "deployment.security_check_blocked") return "deployment.results.failure.securityBlocked";
+  // W3-1（FB-003）：Skill 处于安全预警状态，派发被拒——文案直接给出处理入口
+  // 指引（详情安全页/待办），不留死胡同；配套链接由派发流错误呈现处挂载。
+  if (code === "deployment.security_alert_blocked") return "deployment.errors.securityAlertBlocked";
   if (code === "target.ownership_unknown") return "deployment.results.failure.ownershipUnknown";
   if (code === "agent_profile.invalid_capability") return reason === "agent_compatibility_unverified"
     ? "agents.compatibility.pendingError" : "deployment.results.failure.invalidCapability";

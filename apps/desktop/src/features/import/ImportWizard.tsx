@@ -21,6 +21,7 @@ import {
   type ImportPlan,
   type ImportProgress,
   type ImportResult,
+  type ImportSecurityDecision,
   type SourceDescriptor,
   type ImportBatchSummary,
   type ImportCommitOutcome,
@@ -89,6 +90,11 @@ interface WizardState {
    * 只对动作为 independent 的候选随 prepare/commit 透传。
    */
   overrides: Record<string, string>;
+  /**
+   * W3-1（FB-003）：candidateId → 危险级候选的安全决策（proceed=仍然导入，
+   * skip=不导入）。与 actions 同生命周期：新计划重置；提交时随处置透传。
+   */
+  securityDecisions: Record<string, ImportSecurityDecision>;
   commitProgress?: ImportProgress;
   results: ImportResult[];
   /** 任务 10：本次提交的批次上下文；治理深链参数的唯一来源。 */
@@ -124,6 +130,7 @@ type WizardEvent =
   | { type: "analysis_cancelled" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "override_changed"; candidateId: string; name: string }
+  | { type: "security_decision_selected"; candidateId: string; decision: ImportSecurityDecision }
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
   | { type: "commit_succeeded"; results: ImportResult[]; batch?: ImportBatchSummary }
@@ -141,6 +148,7 @@ const initialState: WizardState = {
   overrides: {},
   phase: "source",
   results: [],
+  securityDecisions: {},
   selectedIds: [],
   sourceResults: [],
   sourceText: "",
@@ -169,6 +177,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         descriptor: undefined,
         error: undefined,
         overrides: {},
+        securityDecisions: {},
         phase: "source",
         plan: undefined,
         commitProgress: undefined,
@@ -188,6 +197,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         commitProgress: undefined,
         error: undefined,
         overrides: {},
+        securityDecisions: {},
         phase: "source",
         plan: undefined,
         selectedIds: [],
@@ -297,6 +307,8 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisStartedAt: undefined,
         analysisTotal: undefined,
         actions: seededActions,
+        // W3-1：新计划重置安全决策——旧计划的决策不冒充新计划的事实。
+        securityDecisions: {},
         error: undefined,
         // 内容/名称冲突是导入前必须先解决的事实；关系影响只在冲突决定
         // 之后按需确认，避免用户在尚未知道 Skill 决定时先处理另一类关系。
@@ -320,6 +332,14 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         overrides: { ...state.overrides, [event.candidateId]: event.name },
+      };
+    case "security_decision_selected":
+      return {
+        ...state,
+        securityDecisions: {
+          ...state.securityDecisions,
+          [event.candidateId]: event.decision,
+        },
       };
     case "commit_started":
       return {
@@ -349,6 +369,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
         overrides: state.previousPhase === "conflicts" ? {} : state.overrides,
+        securityDecisions: state.previousPhase === "conflicts" ? {} : state.securityDecisions,
         batch: undefined,
         analysisProgress: undefined,
         analysisStartedAt: undefined,
@@ -803,17 +824,34 @@ type: "failed",
     // W2-2：独立命名只对动作为 independent 的候选随 prepare/commit 透传；
     // 批内签名随处置一起携带（native 门面以提交期重跑的分析为准，mock
     // 门面据此演示组成变化的整批拒绝）。无批内分析时不携带处置。
-    const dispositions: ImportCommitDispositions | undefined = state.plan.batchAnalysis
-      ? {
-          runtimeNameOverrides: Object.fromEntries(
-            Object.entries(state.overrides).filter(
-              ([candidateId, name]) =>
-                state.actions[candidateId] === "independent" && name.trim().length > 0,
-            ),
+    // W3-1：危险级候选的安全决策随处置透传（skip=不导入按跳过落账；
+    // proceed=仍要导入进入预警状态）；只携带本计划候选的决策。
+    const securityDecisions = state.plan.security
+      ? Object.fromEntries(
+          Object.entries(state.securityDecisions).filter(([candidateId]) =>
+            state.plan!.candidates.some((candidate) => candidate.id === candidateId),
           ),
-          batchSignature: state.plan.batchAnalysis.signature,
-        }
-      : undefined;
+        )
+      : {};
+    const dispositions: ImportCommitDispositions | undefined =
+      state.plan.batchAnalysis || Object.keys(securityDecisions).length > 0
+        ? {
+            ...(state.plan.batchAnalysis
+              ? {
+                  runtimeNameOverrides: Object.fromEntries(
+                    Object.entries(state.overrides).filter(
+                      ([candidateId, name]) =>
+                        state.actions[candidateId] === "independent" && name.trim().length > 0,
+                    ),
+                  ),
+                  batchSignature: state.plan.batchAnalysis.signature,
+                }
+              : {}),
+            ...(Object.keys(securityDecisions).length > 0
+              ? { securityDecisions }
+              : {}),
+          }
+        : undefined;
     try {
       const outcome = await runTrackedOperation<ImportCommitOutcome>({
         tracker,
@@ -913,6 +951,15 @@ type: "failed",
         state.overrides,
       ).length
     : 0;
+  // W3-1：危险级候选未做安全决策（仍然导入/不导入）前，提交在 UI 层先行
+  // 拦截；与后端 import.security_decision_required 同口径。动作为跳过的
+  // 危险级候选走跳过落账，无需安全决策。
+  const pendingSecurityDecisionCount = (state.plan?.candidates ?? []).filter(
+    (candidate) =>
+      state.plan?.security?.[candidate.id]?.level === "danger"
+      && state.actions[candidate.id] !== "skip"
+      && !state.securityDecisions[candidate.id],
+  ).length;
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   // onboarding 页脚禁用判定只信任真实条目状态（未扫描/解析中）。
@@ -1012,7 +1059,12 @@ type: "failed",
       actions = {
         primary: [
           <Button
-            disabled={missingRequiredAction || pendingBatchDispositionCount > 0 || commitLockNotice}
+            disabled={
+              missingRequiredAction
+              || pendingBatchDispositionCount > 0
+              || pendingSecurityDecisionCount > 0
+              || commitLockNotice
+            }
             key="commit"
             onClick={() => void commit()}
             size="lg"
@@ -1214,12 +1266,23 @@ type: "failed",
             conflicts={state.plan.conflicts}
             onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
             onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
+            onSecurityDecision={(candidateId, decision) =>
+              dispatch({ type: "security_decision_selected", candidateId, decision })}
             overrides={state.overrides}
+            security={state.plan.security}
+            securityDecisions={state.securityDecisions}
           />
           {pendingBatchDispositionCount > 0 ? (
             <p aria-live="polite" role="alert" className="sh-import-source__notice">
               {t("importWorkflow.conflicts.batch.pendingAlert", {
                 count: pendingBatchDispositionCount,
+              })}
+            </p>
+          ) : null}
+          {pendingSecurityDecisionCount > 0 ? (
+            <p aria-live="polite" role="alert" className="sh-import-source__notice">
+              {t("importWorkflow.conflicts.security.pendingAlert", {
+                count: pendingSecurityDecisionCount,
               })}
             </p>
           ) : null}

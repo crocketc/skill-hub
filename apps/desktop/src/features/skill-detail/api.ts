@@ -1,4 +1,4 @@
-import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, SkillUpstreamLineage, SourceUpdatePreview, SourceUpdateStatus, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, ProductLevel, RelationshipOverview, RemovalImpactFact, SkillUpstreamLineage, SourceUpdatePreview, SourceUpdateStatus, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -26,6 +26,12 @@ export interface SkillDetailSummary {
   managedLinkCount?: number;
   /** G-16：独立副本数（活动且未跟随当前版本的副本型关系）；未知时缺省。 */
   independentCopyCount?: number;
+  /**
+   * W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态（get_skill 投影
+   * 原样透传）。null=放行或已完全信任；有值时状态栏显示预警徽标、头部提供
+   * 「安全处理」入口。详情读模型不比列表更薄。
+   */
+  securityAlert?: ProductLevel | null;
   /** P1-12：概览块是全页唯一的用途陈述（头部不再重复）。口径见 nativeApi.summaryOf：
    * 用户用途优先，回退译文、原文。 */
   purpose: string;

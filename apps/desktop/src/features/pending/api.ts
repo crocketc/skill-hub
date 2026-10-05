@@ -52,6 +52,11 @@ export interface PendingFacade {
   convert(item: PendingItem): Promise<void>;
   remove(item: PendingItem): Promise<void>;
   recover(item: PendingItem): Promise<void>;
+  /**
+   * W3-1（FB-003 裁决第 1 节）：完全信任一条安全预警待办——解除预警、恢复
+   * 可派发；决定由后端留痕（来源/时间）并绑定当前内容版本。仅 security_alert。
+   */
+  trust?(item: PendingItem): Promise<void>;
   /** 逐条创建暂缓忽略规则（defer_until = 今天 + days 的本地 YYYY-MM-DD）。 */
   defer(items: PendingItem[], days: number, reason: string): Promise<void>;
   /** 逐条创建永久忽略规则（defer_until = null）。 */
@@ -73,6 +78,7 @@ export const unavailablePendingFacade: PendingFacade = {
   convert: () => unavailable("pending_convert"),
   remove: () => unavailable("pending_remove"),
   recover: () => unavailable("pending_recover"),
+  trust: () => unavailable("trust_skill_security"),
   defer: () => unavailable("create_ignore_rule"),
   ignore: () => unavailable("create_ignore_rule"),
   listHandled: () => unavailable("list_ignore_rules"),
