@@ -1,6 +1,7 @@
 use skillhub_core::{
-    AppCommand, AppEvent, AppQuery, ImportAction, ImportCandidate, ImportDecision, OperationId,
-    OperationPhase, OperationProgress, SourceDescriptor, SourceKind, SourceLocator,
+    AppCommand, AppCommandResult, AppEvent, AppQuery, ImportAction, ImportCandidate,
+    ImportDecision, OperationId, OperationPhase, OperationProgress, SourceDescriptor, SourceKind,
+    SourceLocator,
 };
 
 #[test]
@@ -135,6 +136,29 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
         serde_json::to_value(cancel).unwrap()["type"],
         "cancel_import"
     );
+}
+
+/// W3-1（FB-003 裁决第 1 节）：待办"完全信任"命令的线上契约——
+/// type=trust_skill_security，payload 只含 skill_id。
+#[test]
+fn trust_skill_security_command_has_stable_wire_shape() {
+    let command = AppCommand::TrustSkillSecurity(skillhub_core::api::TrustSkillSecurity {
+        skill_id: skillhub_core::SkillId::new(),
+    });
+    let value = serde_json::to_value(command).unwrap();
+    assert_eq!(value["type"], "trust_skill_security");
+    assert!(value["payload"]["skill_id"].is_string());
+    let outcome = skillhub_core::api::TrustSkillSecurityOutcome {
+        skill_id: skillhub_core::SkillId::new(),
+        version_id: skillhub_core::VersionId::parse(
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .unwrap(),
+        decided_at: "1760000000".to_owned(),
+    };
+    let value = serde_json::to_value(AppCommandResult::TrustSkillSecurity(outcome)).unwrap();
+    assert_eq!(value["type"], "trust_skill_security");
+    assert_eq!(value["payload"]["decided_at"], "1760000000");
 }
 
 #[test]

@@ -54,8 +54,8 @@ pub use command::{
     ScanTargets, SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial,
     SetUiPreference, SetVersionLabel, TestLlmConnection, TranslateDescription,
-    TranslateDescriptionsBatch, UpdateCombination, UpdateCustomAgent, UpdateProject,
-    ValidateMarkdown, VerifyBackup, WriteSharedProjectConfig,
+    TranslateDescriptionsBatch, TrustSkillSecurity, TrustSkillSecurityOutcome, UpdateCombination,
+    UpdateCustomAgent, UpdateProject, ValidateMarkdown, VerifyBackup, WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{

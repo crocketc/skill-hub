@@ -8231,6 +8231,11 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::IgnoreSourceUpdate(request) => return self.ignore_source_update(request),
             AppCommand::SetMetadata(request) => return self.set_metadata(request),
+            AppCommand::TrustSkillSecurity(request) => {
+                return self
+                    .trust_skill_security(request)
+                    .map(AppCommandResult::TrustSkillSecurity);
+            }
             AppCommand::PatchSkillMetadata(request) => {
                 return self.patch_skill_metadata(request);
             }
@@ -9700,6 +9705,38 @@ impl LocalApplicationFacade {
             .map(AppCommandResult::DeploymentSummary)
     }
 
+    /// W3-1（FB-003 裁决第 1 节）：待办"完全信任"。解除该 Skill 当前内容
+    /// 版本的安全预警，恢复可派发；决定留痕（来源=trust、时间、绑定版本）。
+    /// 同版本重复信任幂等；警告级预警同样可以信任解除。"不信任（删除）"
+    /// 复用既有删除流程，"稍后处理"复用既有顺延，均不新增命令。
+    fn trust_skill_security(
+        &self,
+        request: skillhub_core::api::TrustSkillSecurity,
+    ) -> AppResult<skillhub_core::api::TrustSkillSecurityOutcome> {
+        self.with_database("execute.trust_skill_security", |database| {
+            let detail = database
+                .catalog_repository()?
+                .get_detail(request.skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                        .with_param("skill_id", request.skill_id.to_string())
+                })?;
+            // 决定绑定当前内容版本：尚无任何内容版本的记录没有可信任的对象。
+            let version = detail.current_version.ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_param("reason", "security_trust_requires_content_version")
+            })?;
+            database
+                .security_alert_repository()
+                .record_trust(request.skill_id, &version)?;
+            Ok(skillhub_core::api::TrustSkillSecurityOutcome {
+                skill_id: request.skill_id,
+                version_id: version,
+                decided_at: now_epoch_seconds().to_string(),
+            })
+        })
+    }
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
         // W3-1（FB-003 裁决第 1 节）：预警状态期间不可派发。计划查询与派发
         // commit 的 revalidate 共用同一判据；planner 的惰性 CheckRun 路径

@@ -130,16 +130,29 @@ impl<'a> SecurityAlertRepository<'a> {
     }
 
     /// 待办"完全信任"的留痕：解除预警、恢复可派发，记录来源/时间/绑定
-    /// 版本。同版本重复信任幂等（仍只有一行）。
+    /// 版本。留痕级别取它所关闭的导入预警级别；主动信任（无预警）按
+    /// 警告级记录。同版本重复信任幂等（仍只有一行）。
     pub fn record_trust(&self, skill_id: SkillId, version_id: &VersionId) -> AppResult<()> {
+        let level: String = self
+            .database
+            .connection
+            .query_row(
+                "SELECT level FROM security_alerts \
+                 WHERE skill_id=?1 AND version_id=?2 AND decision_source='import' LIMIT 1",
+                params![skill_id.to_string(), version_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(database_error)?
+            .unwrap_or_else(|| "warning".to_owned());
         self.database
             .connection
             .execute(
                 "INSERT INTO security_alerts(skill_id,version_id,level,state,decided_at,decision_source) \
-                 VALUES(?1,?2,'warning','trusted',?3,'trust') \
+                 VALUES(?1,?2,?3,'trusted',?4,'trust') \
                  ON CONFLICT(skill_id,version_id,decision_source) DO UPDATE SET \
                  state='trusted',decided_at=excluded.decided_at",
-                params![skill_id.to_string(), version_id.as_str(), now()],
+                params![skill_id.to_string(), version_id.as_str(), level, now()],
             )
             .map_err(database_error)?;
         Ok(())

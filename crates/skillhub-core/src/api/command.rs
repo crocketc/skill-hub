@@ -235,6 +235,28 @@ pub struct PatchSkillMetadata {
     pub skill_id: SkillId,
     pub patch: SkillMetadataPatch,
 }
+
+/// W3-1（FB-003 裁决第 1 节）：待办"完全信任"。解除该 Skill 当前内容版本
+/// 的安全预警，恢复可派发等操作；决定留痕（来源=trust、时间、绑定当前
+/// 内容版本）。同版本重复信任幂等；警告级预警同样可以信任解除。
+/// "不信任（删除）"复用既有删除流程（含影响确认），"稍后处理"复用既有
+/// 顺延，均不新增命令。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct TrustSkillSecurity {
+    pub skill_id: SkillId,
+}
+
+/// W3-1：完全信任决定的留痕事实。`decided_at` 是 Unix 秒的十进制字符串
+/// （Specta 不放行 64 位整数）。
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct TrustSkillSecurityOutcome {
+    pub skill_id: SkillId,
+    /// 信任绑定的当前内容版本；同版本不再重复预警。
+    pub version_id: VersionId,
+    pub decided_at: String,
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct SetTrial {
     pub skill_id: SkillId,
@@ -1372,6 +1394,8 @@ pub enum AppCommand {
     SetMetadata(SetMetadata),
     #[serde(rename = "patch_skill_metadata")]
     PatchSkillMetadata(PatchSkillMetadata),
+    #[serde(rename = "trust_skill_security")]
+    TrustSkillSecurity(TrustSkillSecurity),
     #[serde(rename = "set_trial")]
     SetTrial(SetTrial),
     #[serde(rename = "create_combination")]
@@ -1634,6 +1658,8 @@ pub enum AppCommandResult {
     ApplicationUpdateState(UpdateState),
     #[serde(rename = "operation_summary")]
     OperationSummary(OperationSummary),
+    #[serde(rename = "trust_skill_security")]
+    TrustSkillSecurity(TrustSkillSecurityOutcome),
     #[serde(rename = "initialization_status")]
     InitializationStatus(InitializationStatus),
     #[serde(rename = "discovery_snapshot")]
