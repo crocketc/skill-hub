@@ -182,8 +182,7 @@ export const nativeRemovalFacade = {
       unknownExternalReferences: impact.unknown_external_references ?? [],
       // W1-2：prepare_delete 返回随主体删除的未保存编辑草稿数量，
       // 旧载荷缺省按 0 归一（消费方仅在数量 > 0 时呈现草稿行与确认说明）。
-      // TODO(lead): remove cast after bindings regeneration
-      draftCount: (impact as { draft_count?: number } | undefined)?.draft_count ?? 0,
+      draftCount: impact.draft_count ?? 0,
     };
   },
 

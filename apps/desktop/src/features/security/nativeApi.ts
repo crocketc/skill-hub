@@ -7,12 +7,10 @@ import {
 } from "../../api/bindings";
 import type { SecurityCheck, SecurityCheckKind, SecurityFacade, SecurityFinding, SecurityPreferences } from "./api";
 
-function checkTrigger(payload: unknown): SecurityCheck["trigger"] {
-  // W1-3：wire 契约再生成前按桥接断言读取检查记录触发来源；
-  // 缺省（含 manual）不标注，UI 仅在 import 时显示「导入时检查」。
-  // TODO(lead): remove cast after bindings regeneration
-  const trigger = (payload as { trigger?: unknown } | null | undefined)?.trigger;
-  return trigger === "import" ? "import" : trigger === "manual" ? "manual" : undefined;
+function checkTrigger(payload: { trigger?: "manual" | "import" } | null | undefined): SecurityCheck["trigger"] {
+  // W1-3：检查记录触发来源；缺省（含 manual）不标注，UI 仅在 import 时显示「导入时检查」。
+  const trigger = payload?.trigger;
+  return trigger === "import" ? "import" : undefined;
 }
 
 function checkResult(result: AppQueryResult): SecurityCheck {
