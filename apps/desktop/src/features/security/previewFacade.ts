@@ -11,7 +11,11 @@ export function createPreviewSecurityFacade(now: () => Date = () => new Date()):
     if (!snapshot) {
       const fixture = separateCheckFixture();
       snapshot = {
-        checks: fixture.checks.map((check) => ({ ...check })),
+        // W1-3：预览里常驻的基础检查代表导入时登记的记录（trigger=import），
+        // 其余结果保持缺省；runCheck 产出的手动重跑不带来源标注，与真实语义一致。
+        checks: fixture.checks.map((check) =>
+          check.kind === "basic" ? { ...check, trigger: "import" as const } : { ...check },
+        ),
         findings: fixture.findings.map((finding) => ({ ...finding })),
       };
       snapshots.set(key, snapshot);

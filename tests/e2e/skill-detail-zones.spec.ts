@@ -66,6 +66,8 @@ test("full Skill details expose the shared security checks and finding dispositi
   await expect(security.getByText("High risk 1 · Pending 1")).toBeVisible();
   await expect(security.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
   await expect(security.getByText("prompt_injection")).toHaveCount(0);
+  // W1-3：预览门面常驻的基础检查代表导入时登记的记录——安全区如实标注来源。
+  await expect(security.getByText("Checked at import")).toBeVisible();
   await page.screenshot({
     animations: "disabled",
     path: testInfo.outputPath("skill-detail-security-1440x900.png"),
@@ -76,6 +78,8 @@ test("full Skill details expose the shared security checks and finding dispositi
   await runBasicCheck.click();
   await expect.poll(() => basicCheckTime.getAttribute("datetime")).not.toBe(previousBasicCheckTime);
   await expect(security.getByText("High risk 1 · Pending 1")).toBeVisible();
+  // 手动重跑产生的是本次手动记录：导入时标注如实撤下，不冒充导入检查。
+  await expect(security.getByText("Checked at import")).toHaveCount(0);
 
   const llmSection = security.locator("#llm-security-heading").locator("xpath=..");
   const llmCheckTime = llmSection.locator("time");

@@ -20,6 +20,7 @@ import {
   type SkillTablePreferences,
   type SkillTableRow,
 } from "./api";
+import { checkStateOf } from "../shared/checkState";
 
 function unavailableResult(): SkillLibraryUnavailableError {
   return new SkillLibraryUnavailableError();
@@ -30,11 +31,8 @@ function lifecycleOf(item: SkillListItem): SkillTableRow["lifecycle"] {
   return item.lifecycle === "Deprecated" ? "deprecated" : "active";
 }
 
-function checkStateOf(state: NativeCheckState): CheckState {
-  if (state === "not_checked") return "not_run";
-  if (state === "running") return "warning";
-  return state;
-}
+// 2026-10-05 枚举定稿：派生规则抽到 features/shared/checkState，
+// 列表与详情共用；字段命名各自保留（列表侧 not_run 即 not_checked 语义）。
 
 function nativeCheckStateOf(state: CheckState): NativeCheckState {
   if (state === "not_run") return "not_checked";

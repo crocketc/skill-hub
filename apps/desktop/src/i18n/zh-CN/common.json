@@ -2117,6 +2117,8 @@
       "filesModified": "修改",
       "filesNone": "没有文件级差异。",
       "confirmTakeUpstream": "确认采用上游版本",
+      "retryWithDecision": "按原决定重试",
+      "retryHint": "更新执行失败，预览仍有效；可直接重试，系统会先核验内容是否仍与预览一致。",
       "cancelCommit": "取消本次更新",
       "appliedUpstream": "已采用上游版本 {{version}}。",
       "keptLocal": "已保留本地版本。",

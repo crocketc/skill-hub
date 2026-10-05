@@ -3,7 +3,6 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tan
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
-  type CheckState,
   type SkillColumnId,
   type SkillLibraryQuery,
   type SkillPage,
@@ -20,6 +19,7 @@ import { InvocationBadge } from "./InvocationBadge";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
 import { RadioField } from "../../ui/RadioField";
 import { SkillPagination } from "./SkillPagination";
+import { CHECK_STATE_LABEL_KEYS, checkStateTone } from "../shared/checkState";
 
 export interface SkillTableProps {
   onOpenSkill: (skillId: string, rowElement: HTMLElement) => void;
@@ -69,14 +69,8 @@ const COLUMN_LABELS = {
   version: "skillLibrary.table.columns.version",
 } as const satisfies Record<SkillColumnId, string>;
 
-const CHECK_LABELS = {
-  failed: "skillLibrary.table.checkStates.failed",
-  not_run: "skillLibrary.table.checkStates.notRun",
-  passed: "skillLibrary.table.checkStates.passed",
-  unavailable: "skillLibrary.table.checkStates.unavailable",
-  warning: "skillLibrary.table.checkStates.warning",
-} as const satisfies Record<CheckState, string>;
-
+// 2026-10-05 枚举定稿：状态词与 tone 抽到 features/shared/checkState，
+// 与详情侧徽标共用同一映射，不各造一套。
 const LIFECYCLE_LABELS = {
   active: "skillLibrary.table.lifecycle.active",
   deprecated: "skillLibrary.table.lifecycle.deprecated",
@@ -126,22 +120,15 @@ function tagBadges(tags: string[]) {
   );
 }
 
-function checkTone(state: CheckState) {
-  if (state === "passed") return "success";
-  if (state === "warning") return "warning";
-  if (state === "failed") return "danger";
-  return "info";
-}
-
 function SecurityStatusCell({ row }: { row: SkillTableRow }) {
   const { t } = useTranslation();
   return (
     <div className="sh-skill-table__inline sh-skill-table__security">
-      <span className={`sh-status-badge sh-status-badge--${checkTone(row.basicCheck)}`}>
-        {t("skillLibrary.table.basicStatus", { state: t(CHECK_LABELS[row.basicCheck]) })}
+      <span className={`sh-status-badge sh-status-badge--${checkStateTone(row.basicCheck)}`}>
+        {t("skillLibrary.table.basicStatus", { state: t(CHECK_STATE_LABEL_KEYS[row.basicCheck]) })}
       </span>
-      <span className={`sh-status-badge sh-status-badge--${checkTone(row.aiCheck)}`}>
-        {t("skillLibrary.table.aiStatus", { state: t(CHECK_LABELS[row.aiCheck]) })}
+      <span className={`sh-status-badge sh-status-badge--${checkStateTone(row.aiCheck)}`}>
+        {t("skillLibrary.table.aiStatus", { state: t(CHECK_STATE_LABEL_KEYS[row.aiCheck]) })}
       </span>
     </div>
   );

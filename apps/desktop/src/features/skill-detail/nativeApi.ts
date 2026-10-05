@@ -16,6 +16,7 @@ import {
   type UpstreamCheckResult,
 } from "../../api/bindings";
 import { indexTargetsByAnyId } from "../deployment/targetProjection";
+import { checkStateOf } from "../shared/checkState";
 import { skillHubI18n } from "../../i18n";
 import { usableLlmProviderLabel } from "../settings/llmApi";
 import {
@@ -173,26 +174,25 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
   };
 }
 
-function checkStateOf(state: "not_checked" | "running" | "passed" | "failed"):
-  SkillDetailSummary["basicCheck"] {
-  if (state === "not_checked") return "not_run";
-  if (state === "running") return "warning";
-  return state;
-}
-
+// 2026-10-05 枚举定稿：与列表共用同一条派生规则（shared/checkState）；
+// 检查读模型失联时如实降级为 unavailable 徽标，不拖垮整个概要查询。
 async function checkState(
   skillId: string,
   versionId: string,
   kind: "basic" | "llm",
 ): Promise<SkillDetailSummary["basicCheck"]> {
-  const result = await queryApplication(
-    kind === "basic"
-      ? { type: "get_basic_check_result", payload: { skill_id: skillId, version_id: versionId } }
-      : { type: "get_llm_safety_check_result", payload: { skill_id: skillId, version_id: versionId } },
-  );
-  const expectedType = kind === "basic" ? "basic_check_result" : "llm_safety_check_result";
-  if (result.type !== expectedType) throw unavailableResult();
-  return checkStateOf(result.payload.state);
+  try {
+    const result = await queryApplication(
+      kind === "basic"
+        ? { type: "get_basic_check_result", payload: { skill_id: skillId, version_id: versionId } }
+        : { type: "get_llm_safety_check_result", payload: { skill_id: skillId, version_id: versionId } },
+    );
+    const expectedType = kind === "basic" ? "basic_check_result" : "llm_safety_check_result";
+    if (result.type !== expectedType) return "unavailable";
+    return checkStateOf(result.payload.state);
+  } catch {
+    return "unavailable";
+  }
 }
 
 /** Maps the persisted description translation (if any) to the UI contract. */

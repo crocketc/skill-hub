@@ -505,6 +505,126 @@ describe("native skill detail facade", () => {
     expect(queryApplication).toHaveBeenCalledTimes(3);
   });
 
+  it("derives a running check as the shared warning semantics", async () => {
+    vi.clearAllMocks();
+    // 2026-10-05 枚举定稿：详情与列表共用同一条派生规则——native running
+    // 在界面上是 warning，not_checked 是未运行；不各写一份。
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "skill",
+        payload: {
+          skill_id: "skill-1",
+          display_name: "PDF Reader",
+          runtime_name: "pdf-reader",
+          original_description: "Extract tables",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal" as const,
+          trial_due: null,
+          current_version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          current_version_label: "v3",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "basic_check_result",
+        payload: {
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          state: "running",
+          run_id: "basic-run",
+          ruleset_id: "rules-v1",
+          checked_at: "2026-08-29T00:00:00Z",
+          finding_count: 0,
+          actionable_count: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "llm_safety_check_result",
+        payload: {
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          state: "not_checked",
+          run_id: "llm-run",
+          model_id: "model-v1",
+          checked_at: null,
+          finding_count: 0,
+          actionable_count: 0,
+        },
+      });
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      basicCheck: "warning",
+      aiCheck: "not_run",
+    });
+  });
+
+  it("degrades an unanswered check read model to the unavailable state", async () => {
+    vi.clearAllMocks();
+    // 检查读模型失联（返回意外结果）只降级该检查为"不可用"徽标，
+    // 不拖垮整个详情概要；另一个检查仍如实映射。
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "skill",
+        payload: {
+          skill_id: "skill-1",
+          display_name: "PDF Reader",
+          runtime_name: "pdf-reader",
+          original_description: "Extract tables",
+          translated_description: null,
+          user_note: null,
+          user_purpose: null,
+          tags: [],
+          author: null,
+          license: null,
+          lifecycle: "Normal" as const,
+          trial_due: null,
+          current_version: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          current_version_label: "v3",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "bootstrap_snapshot",
+        payload: {
+          initialization_state: "initialized",
+          library_path: "C:\\Users\\Test\\SkillHub",
+          onboarding_skipped: false,
+          skill_count: 0,
+          project_count: 0,
+          agent_count: 0,
+          discovered_agent_count: 0,
+          deployed_count: 0,
+          deployment_categories: [],
+          tag_categories: [],
+          recent_operations: [],
+          pending: { total: 0, by_kind: {} },
+          last_scan_at: null,
+          recovery_state: "clean",
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "llm_safety_check_result",
+        payload: {
+          skill_id: "skill-1",
+          version_id: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          state: "passed",
+          run_id: "llm-run",
+          model_id: "model-v1",
+          checked_at: "2026-08-29T00:00:00Z",
+          finding_count: 0,
+          actionable_count: 0,
+        },
+      });
+
+    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+      basicCheck: "unavailable",
+      aiCheck: "passed",
+    });
+  });
+
   it("maps native deployment relations with their registered target labels and paths", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication)

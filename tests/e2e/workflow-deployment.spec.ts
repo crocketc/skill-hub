@@ -293,6 +293,12 @@ test.describe("removal confirmations", () => {
     await expect(dialog).toBeVisible();
     // 打开时焦点进入流程标题。
     await expect(dialog.getByRole("heading", { name: /Delete PDF Reader from the library/ })).toBeFocused();
+    // W1-2：影响载荷带未完成草稿（draft_count>0）——影响矩阵出现草稿维度，
+    // 确认说明区追加草稿级联说明；一次操作同时覆盖两个判据。
+    await expect(dialog.getByText("Unfinished edit drafts: 2")).toBeVisible();
+    await expect(
+      dialog.getByText("Deleting also removes the skill's unfinished edit drafts."),
+    ).toBeVisible();
     const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
     await expect(confirm).toBeDisabled();
     // DEV-97：单目标确认的选项可达名是「Target copy handling：规范化目标路径」。
