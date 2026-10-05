@@ -260,6 +260,46 @@ fn findings_carry_product_level_from_the_ruleset() {
     assert_eq!(credential.product_level, Some(ProductLevel::Warning));
 }
 
+/// W3-1 误报回归素材（rules/basic-v1-levels.md #9 复核注记）：Markdown
+/// 相对链接（`](../shared/x.md)`）是导航语法而不是路径穿越命令，不得把
+/// 完全良性的多文件文档判成 danger 级 security.path_traversal；命令与
+/// 裸路径中的 `../` 仍须照常命中，豁免不得扩大到非链接上下文。
+#[test]
+fn markdown_relative_links_are_not_path_traversal_findings() {
+    let findings = scan_fixture("benign-relative-links");
+    assert!(
+        findings.is_empty(),
+        "markdown links must not alert: {findings:#?}"
+    );
+
+    // 同一规则的命令形态仍须命中：豁免只覆盖链接目标。
+    let root = tempdir().expect("temporary root");
+    fs::write(root.path().join("SKILL.md"), "open ../../outside.txt\n")
+        .expect("write traversal fixture");
+    let command_findings = BasicScanner::default()
+        .scan_version(root.path())
+        .expect("scan");
+    assert!(
+        command_findings
+            .iter()
+            .any(|finding| finding.code == "security.path_traversal"),
+        "command-style traversal must stay flagged: {command_findings:#?}"
+    );
+}
+
+/// W3-1 误报回归素材：只"提到"上传的文档行（docs/upload.md、上传清单、
+/// curl 引用）不构成数据外发通道；带具体上传旗标（--upload-file／-T／
+/// --post-file／-Method Put）的真实上传语句仍由
+/// reports_common_upload_forms_and_tools 钉住，此处不再重复。
+#[test]
+fn prose_that_mentions_uploads_without_upload_flags_is_not_exfiltration() {
+    let findings = scan_fixture("benign-upload-prose");
+    assert!(
+        findings.is_empty(),
+        "prose mentioning uploads must not alert: {findings:#?}"
+    );
+}
+
 /// BasicScanReport 携带分级结果：危险/警告计数与逐条明细归属；无发现
 /// 即放行级。分级只由确定性规则决定，扫描输入相同则结果可复现。
 #[test]

@@ -187,7 +187,14 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
                 || lower.contains("--data")
                 || lower.contains(" -d ")
                 || lower.contains("-method post")
-                || lower.contains("upload"))
+                // W3-1 误报治理：裸词 "upload" 会把只提到上传的文档行
+                // （docs/upload.md、上传清单）误判为数据外发；改用具体
+                // 上传旗标，真实上传语句（--upload-file／-T／--post-file／
+                // -Method Put）仍然命中，upload-patterns 夹具保持全数检出。
+                || lower.contains("--upload")
+                || lower.contains("--post-file")
+                || lower.contains("-method put")
+                || lower.contains("curl ") && lower.contains(" -t "))
             && !example_line
         {
             codes.push("security.data_upload");
@@ -216,7 +223,12 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
         {
             codes.push("security.obfuscation");
         }
-        if lower.contains("../")
+        // W3-1 误报治理（rules/basic-v1-levels.md #9 复核注记）：Markdown
+        // 链接目标 `](../shared/x.md)` 是导航语法，不读取或写入文件，不再
+        // 触发路径穿越；命令与裸路径中的 `../`、以及 `..\`／编码形态仍按
+        // 原始行判断，豁免不得扩大到非链接上下文。
+        let outside_link_targets = strip_markdown_link_targets(&lower);
+        if outside_link_targets.contains("../")
             || lower.contains(r"..\")
             || lower.contains("%2e%2e")
             || lower.contains("..%2f")
@@ -265,6 +277,29 @@ fn scan_text(ruleset: &BasicRuleset, file: &str, text: &str, findings: &mut Vec<
             ));
         }
     }
+}
+
+/// W3-1 误报治理：移除 Markdown 内联链接/图片的链接目标段
+/// （`[text](target)` → `[text](`），用于豁免链接目标里的 `../`。
+/// 未闭合的 `](` 视为普通文本保守处理（不豁免其后内容）。
+fn strip_markdown_link_targets(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(start) = rest.find("](") {
+        let (before, after) = rest.split_at(start + 2);
+        result.push_str(before);
+        match after.find(')') {
+            Some(end) => {
+                rest = &after[end + 1..];
+            }
+            None => {
+                result.push_str(after);
+                rest = "";
+            }
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 fn is_example_line(lower: &str) -> bool {
