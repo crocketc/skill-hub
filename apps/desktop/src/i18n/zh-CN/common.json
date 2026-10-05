@@ -6,7 +6,9 @@
     "inputInvalid": "输入未通过校验，请检查填写内容后重试。",
     "sourceUpdate": {
       "noUpstreamConflict": "此 Skill 没有可采用的 upstream 来源，无法执行“采用上游版本”（{{code}}）。",
-      "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。"
+      "sourceUnavailable": "来源暂不可用，无法完成操作。请确认网络与来源记录后重试。",
+      "previewExpired": "更新预览已过期，请重新获取预览后再确认。",
+      "previewStale": "本地版本或上游内容已变化，更新预览已失效，请重新获取预览。"
     },
     "onboarding": {
       "libraryRootLocked": "集中库初始化完成后不能更换库根目录。如需移动集中库，请使用数据保护中的备份/迁移流程。",
@@ -2095,18 +2097,36 @@
       "check": "检查来源更新",
       "checking": "正在检查…",
       "recheck": "重新检查",
+      "preparing": "正在获取更新预览…",
       "upToDate": "已是最新：本地与上游版本一致。",
       "unavailable": "来源暂不可用，无法检查更新。",
       "authRequired": "来源需要认证，无法检查更新。",
       "available": "发现更新：本地 {{local}} → 上游 {{upstream}}。",
       "availableWithChanges": "发现更新（本地有修改，采用前请确认）：本地 {{local}} → 上游 {{upstream}}。",
+      "statusSeen": "上次检查发现可用更新：{{upstream}}。可点击“检查来源更新”复核。",
+      "statusIgnored": "当前更新候选已被忽略；上游发布新内容时会再次提醒。",
       "takeUpstream": "采用上游版本",
       "keepLocal": "保留本地版本",
-      "independent": "建独立分支",
+      "previewHeading": "更新预览",
+      "previewIntro": "上游 {{label}} 的更新内容；预览 {{expires}} 前有效。确认前请核对文件变化。",
+      "previewIntroUnlabeled": "上游最新内容的更新；预览 {{expires}} 前有效。确认前请核对文件变化。",
+      "candidateIdentity": "候选内容标识：{{identity}}",
+      "filesHeading": "文件变化",
+      "filesAdded": "新增",
+      "filesRemoved": "删除",
+      "filesModified": "修改",
+      "filesNone": "没有文件级差异。",
+      "confirmTakeUpstream": "确认采用上游版本",
+      "cancelCommit": "取消本次更新",
       "appliedUpstream": "已采用上游版本 {{version}}。",
       "keptLocal": "已保留本地版本。",
-      "appliedBranch": "已创建独立分支 {{version}}。",
+      "appliedCancelled": "已取消本次更新，内容未更改。",
       "appliedGeneric": "已应用所选决策。",
+      "previewInvalidated": "更新预览已失效：版本或上游内容在确认前发生了变化。请重新获取预览。",
+      "reprepare": "重新获取预览",
+      "ignore": "忽略本次更新",
+      "ignored": "已忽略本次更新；上游发布新内容时会再次提醒。",
+      "ignoreFailed": "忽略更新候选未完成",
       "reconcile": "存在需要重新同步的部署关系，请在批量添加页处理。",
       "failed": "来源更新操作失败：{{error}}",
       "failedGeneric": "操作失败（{{code}}）。请稍后重试；若持续出现请记录该错误码。",
@@ -2115,8 +2135,27 @@
     },
     "sourceRelink": {
       "ariaLabel": "来源重新关联",
-      "inputLabel": "新的来源",
-      "inputPlaceholder": "本地路径 / Git / HTTPS 地址",
+      "kindLabel": "来源类型",
+      "kind": {
+        "local": "本地目录",
+        "https": "HTTPS 地址",
+        "git": "Git 仓库"
+      },
+      "inputLabel": {
+        "local": "新的来源（本地目录）",
+        "https": "新的来源（HTTPS 地址）",
+        "git": "新的来源（Git 仓库）"
+      },
+      "inputPlaceholder": {
+        "local": "例如 C:\\Skills\\my-skill",
+        "https": "https://example.com/owner/repo",
+        "git": "git@github.com:owner/repo.git"
+      },
+      "shapeInvalid": {
+        "local": "输入内容与所选来源类型不符：本地目录需为本地路径；HTTPS 地址需以 https://开头，请改选“HTTPS 地址”类型。",
+        "https": "输入内容与所选来源类型不符：HTTPS 地址需以 https://开头，请改选“HTTPS 地址”类型。",
+        "git": "输入内容与所选来源类型不符：Git 地址通常以 git@ 或 ssh:// 开头，或以 .git 结尾。"
+      },
       "submit": "重新关联",
       "done": "已重新关联来源。",
       "failed": "重新关联失败：{{error}}",

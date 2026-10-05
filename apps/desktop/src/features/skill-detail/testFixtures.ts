@@ -3,6 +3,8 @@ import type {
   ConflictAnalysis,
   RelationshipOverview,
   RemovalImpactFact,
+  SourceUpdatePreview,
+  SourceUpdateStatus,
   UpdateDecision,
   UpstreamCheckResult,
 } from "../../api/bindings";
@@ -20,6 +22,7 @@ import type {
   SkillRollbackImpact,
   SkillVersionDiff,
   SkillVersionEntry,
+  SourceRelinkInput,
 } from "./api";
 import { SkillDetailNotFoundError } from "./api";
 
@@ -41,8 +44,13 @@ export interface SkillDetailFixture {
 }
 
 export interface MockSkillDetailCalls {
-  appliedSourceUpdates: Array<{ skillId: string; decision: UpdateDecision }>;
-  relinkSourceInputs: Array<{ skillId: string; sourceInput: string }>;
+  /** K6：采纳入口先取得预览；记录 prepare 调用。 */
+  preparedSourceUpdates: Array<{ skillId: string }>;
+  /** K6：确认后按 preview_id 提交决定。 */
+  committedSourceUpdates: Array<{ decision: UpdateDecision; previewId: string }>;
+  /** K6/D3：按候选身份忽略。 */
+  ignoredSourceUpdates: Array<{ candidateIdentity: string; skillId: string }>;
+  relinkSourceInputs: Array<{ skillId: string; source: SourceRelinkInput }>;
   checkedSourceUpdates: Array<{ skillId: string }>;
   committedRollbacks: Array<{ skillId: string; versionId: string }>;
   intents: SkillDetailIntent[];
@@ -340,7 +348,9 @@ export function createMockSkillDetailFacade(
 ): MockSkillDetailFacade {
   const fixture = detailFixture();
   const calls: MockSkillDetailCalls = {
-    appliedSourceUpdates: [],
+    preparedSourceUpdates: [],
+    committedSourceUpdates: [],
+    ignoredSourceUpdates: [],
     checkedSourceUpdates: [],
     relinkSourceInputs: [],
     committedRollbacks: [],
@@ -511,12 +521,45 @@ export function createMockSkillDetailFacade(
       if (options.sourceUpdateResult) return options.sourceUpdateResult;
       return { skill_id: skillId, state: "up_to_date", local_version: null, upstream_version: null };
     },
-    async applySourceUpdate(skillId, decision) {
-      calls.appliedSourceUpdates.push({ skillId, decision });
-      return { skill_id: skillId, decision, new_version: null, deployments_need_reconciliation: false };
+    async prepareSourceUpdate(skillId) {
+      calls.preparedSourceUpdates.push({ skillId });
+      const preview: SourceUpdatePreview = {
+        skill_id: skillId,
+        preview_id: "preview-1",
+        expires_at: "2026-12-31T00:00:00Z",
+        confirmation_fingerprint: "fp-mock",
+        current_version_id: null,
+        candidate_identity: "sha256:mockcandidate",
+        upstream_label: null,
+        files: [],
+      };
+      return preview;
     },
-    async relinkSource(skillId, sourceInput) {
-      calls.relinkSourceInputs.push({ skillId, sourceInput });
+    async commitSourceUpdate(previewId, decision) {
+      calls.committedSourceUpdates.push({ decision, previewId });
+      return {
+        skill_id: "skill-doc",
+        decision,
+        new_version: decision === "take_upstream" ? "sha256:newversion" : null,
+        deployments_need_reconciliation: false,
+      };
+    },
+    async ignoreSourceUpdate(skillId, candidateIdentity) {
+      calls.ignoredSourceUpdates.push({ candidateIdentity, skillId });
+    },
+    async getSourceUpdateStatus(skillId): Promise<SourceUpdateStatus> {
+      return {
+        skill_id: skillId,
+        state: null,
+        checked_at: null,
+        upstream_label: null,
+        candidate_identity: null,
+        ignored_candidates: [],
+        candidate_ignored: false,
+      };
+    },
+    async relinkSource(skillId, source) {
+      calls.relinkSourceInputs.push({ skillId, source });
       return { messageCode: "source.relinked" };
     },
         async setTrial(skillId, due) {

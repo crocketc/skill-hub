@@ -2,6 +2,7 @@ import {
   executeCommand,
   queryApplication,
   type AnalyzeConflictScope,
+  type AppliedSourceUpdate,
   type AppCommandResult,
   type AppQueryResult,
   type ConflictAnalysis,
@@ -9,6 +10,8 @@ import {
   type FindingDisposition,
   type SkillMetadataPatch as NativeSkillMetadataPatch,
   type SkillResult,
+  type SourceUpdatePreview,
+  type SourceUpdateStatus,
   type UpdateDecision,
   type UpstreamCheckResult,
 } from "../../api/bindings";
@@ -32,6 +35,7 @@ import {
   type SkillTranslation,
   type SkillVersionDiff,
   type SkillVersionEntry,
+  type SourceRelinkInput,
 } from "./api";
 
 // G-18：操作历史的 message_code 形如 `insights.operation.<类别>.<结果>`；
@@ -384,34 +388,70 @@ async function checkSourceUpdate(skillId: string): Promise<UpstreamCheckResult> 
   return result.payload;
 }
 
-async function applySourceUpdate(skillId: string, decision: UpdateDecision) {
+/** K6：取得来源更新候选预览（preview_id + 文件级变化）。 */
+async function prepareSourceUpdate(skillId: string): Promise<SourceUpdatePreview> {
   const result = await executeCommand({
-    type: "apply_source_update",
-    payload: { skill_id: skillId, decision },
+    type: "prepare_source_update",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "source_update_preview") throw unavailableResult();
+  return result.payload;
+}
+
+/** K6：提交用户决定；唯一合法采纳路径是 Preview→Commit 绑定。 */
+async function commitSourceUpdate(
+  previewId: string,
+  decision: UpdateDecision,
+): Promise<AppliedSourceUpdate> {
+  const result = await executeCommand({
+    type: "commit_source_update",
+    payload: { preview_id: previewId, decision },
   });
   if (result.type !== "applied_source_update") throw unavailableResult();
   return result.payload;
 }
 
-async function relinkSource(skillId: string, sourceInput: string) {
-  const trimmed = sourceInput.trim();
-  const locator = /^https:\/\//i.test(trimmed)
-    ? { https_url: trimmed }
-    : /\.git$/i.test(trimmed) || /^git@/i.test(trimmed)
-      ? { git_url: trimmed }
-      : { local_path: trimmed };
-  const kind = "https_url" in locator ? "https" : "git_url" in locator ? "git" : "local";
+/** K6/D3：按候选身份忽略当前候选；幂等命令，关闭界面绝不调用。 */
+async function ignoreSourceUpdate(skillId: string, candidateIdentity: string): Promise<void> {
+  const result = await executeCommand({
+    type: "ignore_source_update",
+    payload: { skill_id: skillId, candidate_identity: candidateIdentity },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+}
+
+/** K6：读取持久化的检查/忽略状态；从未检查过是 state=null 的诚实缺省。 */
+async function getSourceUpdateStatus(skillId: string): Promise<SourceUpdateStatus> {
+  const result = await queryApplication({
+    type: "get_source_update_status",
+    payload: { skill_id: skillId },
+  });
+  if (result.type !== "source_update_status") throw unavailableResult();
+  return result.payload;
+}
+
+/** G-15：来源类型由调用方（界面）显式选择，这里只做规范化与透传。 */
+async function relinkSource(skillId: string, sourceInput: SourceRelinkInput) {  const value = sourceInput.value.trim();
+  const locator = sourceInput.kind === "https"
+    ? { https_url: value }
+    : sourceInput.kind === "git"
+      ? { git_url: value }
+      : { local_path: value };
   const result = await executeCommand({
     type: "relink_source",
-    payload: { skill_id: skillId, source: { kind, locator } },
-  });  if (result.type !== "operation_summary") throw unavailableResult();
+    payload: { skill_id: skillId, source: { kind: sourceInput.kind, locator } },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
   return { messageCode: result.payload.message_code };
 }
 
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
   checkSourceUpdate,
-  applySourceUpdate,
+  prepareSourceUpdate,
+  commitSourceUpdate,
+  ignoreSourceUpdate,
+  getSourceUpdateStatus,
   relinkSource,
   analyzeSemanticDuplicates: analyzeNativeSemanticDuplicates,
   isAiAvailable: isNativeAiAvailable,

@@ -6,7 +6,9 @@
     "inputInvalid": "The input failed validation; please review it and try again.",
     "sourceUpdate": {
       "noUpstreamConflict": "This skill has no upstream source to take, so “Take upstream” cannot run ({{code}}).",
-      "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry."
+      "sourceUnavailable": "The source is currently unavailable. Check the network and the source record, then retry.",
+      "previewExpired": "The update preview expired; fetch a fresh preview and confirm again.",
+      "previewStale": "The local version or upstream content changed, so the update preview is no longer valid. Fetch a fresh preview."
     },
     "onboarding": {
       "libraryRootLocked": "The library root cannot change after initialization. To move the library, use the backup/migration flow under data protection.",
@@ -2095,18 +2097,36 @@
       "check": "Check source updates",
       "checking": "Checking…",
       "recheck": "Check again",
+      "preparing": "Fetching the update preview…",
       "upToDate": "Up to date: local and upstream versions match.",
       "unavailable": "The source is unavailable; cannot check for updates.",
       "authRequired": "The source requires authentication; cannot check for updates.",
       "available": "Update available: local {{local}} → upstream {{upstream}}.",
       "availableWithChanges": "Update available with local modifications (review before taking): local {{local}} → upstream {{upstream}}.",
+      "statusSeen": "The last check found an update: {{upstream}}. Run “Check source updates” to verify.",
+      "statusIgnored": "The current update candidate is ignored; you will be notified again when new upstream content is published.",
       "takeUpstream": "Take upstream",
       "keepLocal": "Keep local",
-      "independent": "Create independent branch",
+      "previewHeading": "Update preview",
+      "previewIntro": "Upstream {{label}} content; the preview is valid until {{expires}}. Review the file changes before confirming.",
+      "previewIntroUnlabeled": "Latest upstream content; the preview is valid until {{expires}}. Review the file changes before confirming.",
+      "candidateIdentity": "Candidate content identity: {{identity}}",
+      "filesHeading": "File changes",
+      "filesAdded": "Added",
+      "filesRemoved": "Removed",
+      "filesModified": "Modified",
+      "filesNone": "No file-level differences.",
+      "confirmTakeUpstream": "Confirm take upstream",
+      "cancelCommit": "Cancel this update",
       "appliedUpstream": "Took upstream version {{version}}.",
       "keptLocal": "Kept the local version.",
-      "appliedBranch": "Created independent branch {{version}}.",
+      "appliedCancelled": "Update cancelled; nothing changed.",
       "appliedGeneric": "Applied the selected decision.",
+      "previewInvalidated": "The update preview is no longer valid: the local version or upstream content changed before confirmation. Fetch a fresh preview.",
+      "reprepare": "Fetch a fresh preview",
+      "ignore": "Ignore this update",
+      "ignored": "Update ignored; you will be notified again when new upstream content is published.",
+      "ignoreFailed": "The update candidate was not ignored",
       "reconcile": "Some deployment relations need reconciliation; handle them on the batch add page.",
       "failed": "Source update failed: {{error}}",
       "failedGeneric": "The operation failed ({{code}}). Please retry; if it persists, note the error code.",
@@ -2115,8 +2135,27 @@
     },
     "sourceRelink": {
       "ariaLabel": "Source relinking",
-      "inputLabel": "New source",
-      "inputPlaceholder": "Local path / Git / HTTPS URL",
+      "kindLabel": "Source type",
+      "kind": {
+        "local": "Local directory",
+        "https": "HTTPS URL",
+        "git": "Git repository"
+      },
+      "inputLabel": {
+        "local": "New source (local directory)",
+        "https": "New source (HTTPS URL)",
+        "git": "New source (Git repository)"
+      },
+      "inputPlaceholder": {
+        "local": "e.g. C:\\Skills\\my-skill",
+        "https": "https://example.com/owner/repo",
+        "git": "git@github.com:owner/repo.git"
+      },
+      "shapeInvalid": {
+        "local": "The input does not match the selected type: a local directory needs a filesystem path; an HTTPS URL starts with https://; choose the HTTPS URL type instead.",
+        "https": "The input does not match the selected type: an HTTPS URL starts with https://; choose the HTTPS URL type instead.",
+        "git": "The input does not match the selected type: a Git URL usually starts with git@ or ssh://, or ends with .git."
+      },
       "submit": "Relink",
       "done": "The source was relinked.",
       "failed": "Relinking failed: {{error}}",

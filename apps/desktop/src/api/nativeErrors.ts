@@ -132,6 +132,11 @@ export function keyedMessage(
     if (reason === "export_plan_drift") return "dataProtection.export.errors.previewDrifted";
     if (reason === "no_upstream_source") return "errors.sourceUpdate.noUpstreamConflict";
     if (reason === "source_unavailable") return "errors.sourceUpdate.sourceUnavailable";
+    // K6 预览结算边界：过期/漂移/事实变化后旧预览不可再提交，唯一出路重新预览。
+    if (reason === "source_update_preview_expired") return "errors.sourceUpdate.previewExpired";
+    if (reason === "source_update_preview_drifted" || reason === "source_update_preview_facts_changed") {
+      return "errors.sourceUpdate.previewStale";
+    }
     if (reason === "library_not_ready") return "errors.onboarding.libraryNotReady";
     if (reason === "library_root_locked") return "errors.onboarding.libraryRootLocked";
     if (reason === "existing_library_manifest_missing") return "errors.onboarding.existingLibraryManifestMissing";

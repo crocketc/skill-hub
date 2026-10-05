@@ -7,6 +7,7 @@ import { createSkillHubI18n } from "../../i18n";
 import type {
   SourceUpdatePreview,
   SourceUpdateStatus,
+  UpdateDecision,
   UpstreamCheckResult,
 } from "../../api/bindings";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -189,7 +190,7 @@ it("treats an up-to-date prepare rejection as an honest status, not an error", a
 
 it("sends keep_local and cancel as explicit preview decisions", async () => {
   const user = userEvent.setup();
-  const commitSourceUpdate = vi.fn(async (decision: "keep_local" | "cancel") => ({
+  const commitSourceUpdate = vi.fn(async (_previewId: string, decision: UpdateDecision) => ({
     skill_id: "s1",
     decision,
     new_version: null,
@@ -245,15 +246,19 @@ it("offers no ignore and no command-sending dismissal when the candidate has no 
 it("ignores the current candidate without touching the main decisions", async () => {
   const user = userEvent.setup();
   const ignoreSourceUpdate = vi.fn(async () => undefined);
-  let statusCalls = 0;
+  let ignoreCalled = false;
   await renderPanel(makeFacade({
     ignoreSourceUpdate,
+    // 状态读取按"是否已忽略"回答：挂载与检查后的读取都先看到未忽略事实，
+    // 只有忽略命令成功触发缓存失效后的重读才看到已忽略。
     getSourceUpdateStatus: async () => {
-      statusCalls += 1;
-      // 首次是挂载读取；忽略成功触发缓存失效后的重读必须看到已忽略事实。
-      return statusCalls >= 2 ? statusIgnored : statusNeverChecked;
+      if (ignoreCalled) return statusIgnored;
+      return statusNeverChecked;
     },
   }));
+  ignoreSourceUpdate.mockImplementation(async () => {
+    ignoreCalled = true;
+  });
 
   await checkForUpdates(user);
   expect(await screen.findByText(/本地 v3/)).toBeVisible();

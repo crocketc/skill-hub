@@ -1164,6 +1164,13 @@ describe("native translation loop", () => {
 });
 
 describe("K6 source update preview bindings", () => {
+  // 与上方 describe 相同：mockReset 清掉 mockResolvedValueOnce 队列，
+  // 防止前一个测试未消费的"下一次结果"被本组第一条命令读走。
+  beforeEach(() => {
+    vi.mocked(queryApplication).mockReset();
+    vi.mocked(executeCommand).mockReset();
+  });
+
   it("prepares a source update preview through the typed command", async () => {
     vi.clearAllMocks();
     const previewPayload = {

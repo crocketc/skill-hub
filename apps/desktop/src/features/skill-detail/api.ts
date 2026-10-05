@@ -1,4 +1,4 @@
-import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, SkillUpstreamLineage, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
+import type { AppliedSourceUpdate, AnalyzeConflictScope, ConflictAnalysis, RelationshipOverview, RemovalImpactFact, SkillUpstreamLineage, SourceUpdatePreview, SourceUpdateStatus, UpdateDecision, UpstreamCheckResult } from "../../api/bindings";
 import type {
   BatchAction,
   CheckState,
@@ -257,6 +257,12 @@ export type SkillDetailIntent =
       type: "translate_description";
     };
 
+/** G-15：重新关联的来源输入——kind 是用户显式选择的，不从前端猜。 */
+export interface SourceRelinkInput {
+  kind: "local" | "https" | "git";
+  value: string;
+}
+
 export interface SkillDetailFacade {
   commitRollback(
     skillId: string,
@@ -293,11 +299,25 @@ export interface SkillDetailFacade {
   saveMetadata(skillId: string, patch: SkillMetadataPatch): Promise<void>;
   setTrial(skillId: string, due: string | null): Promise<void>;
   checkSourceUpdate(skillId: string): Promise<UpstreamCheckResult>;
-  applySourceUpdate(
-    skillId: string,
+  /**
+   * K6 预览绑定流：采纳入口先取得候选预览（preview_id + 文件级变化），
+   * 用户确认后经 commitSourceUpdate 消耗预览；直接采纳命令已移除。
+   */
+  prepareSourceUpdate(skillId: string): Promise<SourceUpdatePreview>;
+  /** K6：提交用户决定；过期/漂移由后端拒绝并要求重新预览。 */
+  commitSourceUpdate(
+    previewId: string,
     decision: UpdateDecision,
   ): Promise<AppliedSourceUpdate>;
-  relinkSource(skillId: string, sourceInput: string): Promise<{ messageCode: string }>;
+  /** K6/D3：忽略当前候选（按候选身份持久化）；关闭界面不发本命令。 */
+  ignoreSourceUpdate(skillId: string, candidateIdentity: string): Promise<void>;
+  /** K6：读取持久化的检查/忽略状态；从未检查过时 state 为 null（诚实缺省）。 */
+  getSourceUpdateStatus(skillId: string): Promise<SourceUpdateStatus>;
+  /** G-15：来源类型由用户显式选择，前端绝不按自由文本猜协议。 */
+  relinkSource(
+    skillId: string,
+    source: SourceRelinkInput,
+  ): Promise<{ messageCode: string }>;
   /** Optional AI layer over deterministic duplicate candidates (US-018). */
   analyzeSemanticDuplicates(skillId: string): Promise<SemanticDuplicateReport>;
   /** Task 8：AI 可用性真实信号——已配置并启用的供应商存在即为 true。 */
@@ -321,6 +341,9 @@ export const skillDetailKeys = {
     [...skillKey(skillId), "requirements"] as const,
   insights: (skillId: string) => [...skillKey(skillId), "insights"] as const,
   versions: (skillId: string) => [...skillKey(skillId), "versions"] as const,
+  /** K6：来源更新检查/忽略状态（get_source_update_status 只读投影）。 */
+  sourceUpdateStatus: (skillId: string) =>
+    [...skillKey(skillId), "source-update-status"] as const,
   versionDiff: (skillId: string, leftVersionId: string, rightVersionId: string) =>
     [...skillKey(skillId), "version-diff", leftVersionId, rightVersionId] as const,
   rollbackImpact: (skillId: string, versionId: string) =>
@@ -367,7 +390,10 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   getVersionDiff: unavailable,
   getVersions: unavailable,
   checkSourceUpdate: unavailable,
-  applySourceUpdate: unavailable,
+  prepareSourceUpdate: unavailable,
+  commitSourceUpdate: unavailable,
+  ignoreSourceUpdate: unavailable,
+  getSourceUpdateStatus: unavailable,
   relinkSource: unavailable,
   analyzeSemanticDuplicates: unavailable,
   isAiAvailable: async () => false,
