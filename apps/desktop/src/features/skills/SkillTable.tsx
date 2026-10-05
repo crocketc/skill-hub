@@ -3,7 +3,6 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tan
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
-  type CheckState,
   type SkillColumnId,
   type SkillLibraryQuery,
   type SkillPage,
