@@ -98,7 +98,9 @@ export function RemovalPreview() {
   return (
     <RemovalImpactDialog
       error={scenario === "impact-error" ? t("removal.commitError") : undefined}
-      impact={removalImpactFixture()}
+      // W1-2：预览影响载荷带未完成草稿（draft_count>0），级联草稿行与确认
+      // 说明在 DEV/E2E 可见；共享 fixture 保持无草稿缺省（删除断言各有归属）。
+      impact={{ ...removalImpactFixture(), draftCount: 2 }}
       onCancel={noop}
       onConfirm={noop}
     />
