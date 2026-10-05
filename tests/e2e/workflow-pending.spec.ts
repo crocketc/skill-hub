@@ -42,13 +42,13 @@ test("keeps work grouped by processing ownership with honest counts before expan
   await openPending(page);
 
   // 紧凑页头给出两种诚实的数量：底层事项数与需处理数/建议数。
-  await expect(page.getByText(/4 pending items/)).toBeVisible();
-  await expect(page.getByText(/4 items need action/)).toBeVisible();
+  // 固定 fixture 含 flagged-skill 安全预警后共 5 项，全部需处理、无建议项。
+  await expect(page.getByText("5 pending items · 5 items need action · 0 suggestions")).toBeVisible();
 
   // 分类导航带真实计数；历史入口锚点保持可达。
   const categories = page.getByRole("group", { name: "All" });
-  await expect(categories.getByRole("button", { name: "All 4" })).toBeVisible();
-  await expect(categories.getByRole("button", { name: "Skill review 3" })).toBeVisible();
+  await expect(categories.getByRole("button", { name: "All 5" })).toBeVisible();
+  await expect(categories.getByRole("button", { name: "Skill review 4" })).toBeVisible();
   await expect(categories.getByRole("button", { name: "Recovery 1" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Handled history/ })).toHaveAttribute("href", "#pending-history-heading");
 
@@ -56,15 +56,23 @@ test("keeps work grouped by processing ownership with honest counts before expan
   const securityGroup = page.locator(".sh-pending-group").filter({
     has: page.getByRole("button", { name: "Show item details: Security and basic checks" }),
   });
-  await expect(securityGroup.getByText("2 pending item(s)")).toBeVisible();
-  await expect(securityGroup.getByText("2 related object(s)")).toBeVisible();
+  await expect(securityGroup.getByText("3 pending item(s)")).toBeVisible();
+  await expect(securityGroup.getByText("3 related object(s)")).toBeVisible();
+  await expect(securityGroup.getByText("flagged-skill", { exact: true }).first()).toBeVisible();
   await expect(securityGroup.getByText("pdf-reader", { exact: true }).first()).toBeVisible();
   await expect(securityGroup.getByText("web-clipper", { exact: true })).toBeVisible();
+  await expect(securityGroup.getByText("Security alert")).toBeVisible();
   await expect(securityGroup.getByText("High risk")).toBeVisible();
-  // 高风险原因常显并携带精准深链，无需展开。
-  const reasons = securityGroup.getByRole("list", { name: "High-risk reasons (1)" });
+  // 高风险原因常显并携带精准深链，无需展开；预警与发现各占一条。
+  const reasons = securityGroup.getByRole("list", { name: "High-risk reasons (2)" });
+  await expect(reasons.getByText("flagged-skill")).toBeVisible();
   await expect(reasons.getByText("pdf-reader")).toBeVisible();
-  await expect(reasons.getByRole("link", { name: "Open task" })).toHaveAttribute("href", "/library/pdf-reader/security");
+  await expect(
+    reasons.getByRole("listitem").filter({ hasText: "flagged-skill" }).getByRole("link", { name: "Open task" }),
+  ).toHaveAttribute("href", "/library/flagged-skill/security");
+  await expect(
+    reasons.getByRole("listitem").filter({ hasText: "pdf-reader" }).getByRole("link", { name: "Open task" }),
+  ).toHaveAttribute("href", "/library/pdf-reader/security");
   // 未展开时逐项选择与操作不可达。
   await expect(securityGroup.getByRole("checkbox", { name: "Select pdf-reader" })).toHaveCount(0);
   await expectNoRootHorizontalOverflow(page);
@@ -182,7 +190,9 @@ test("batch ignore keeps its confirmation and cancel path", async ({ page }) => 
 
 test("merges Agent compatibility work into one shared-directory card with brand logos and type badges", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await openPending(page, "?items=20");
+  // 21 项固定循环里 agent_compatibility 落在 index 7 与 20，两者同属共享目录，
+  // 恰好覆盖“多个事项归并为一张卡”的场景（新增类型只允许追加在循环末尾）。
+  await openPending(page, "?items=21");
 
   await page.getByRole("button", { name: "Agent compatibility" }).click();
   // 共享目录是独立实体：成员事项归并为一张卡，不按品牌重复出卡。
@@ -190,7 +200,7 @@ test("merges Agent compatibility work into one shared-directory card with brand 
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   const group = page.locator(".sh-pending-group").filter({ has: toggle });
   await expect(group.getByText("2 pending item(s)")).toBeVisible();
-  await expect(group.getByText("1 related object(s)")).toBeVisible();
+  await expect(group.getByText("2 related object(s)")).toBeVisible();
 
   // 品牌 logo + 用户可理解展示类型徽标（统一 presenter，无技术标识）。
   const presentation = page.locator('[aria-label="Agent shared directory；Claude · Terminal；OpenAI · Desktop app"]');

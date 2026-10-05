@@ -75,7 +75,9 @@ function previewFlag(name: string): boolean {
 
 function longList(count: number): PendingItem[] {
   return Array.from({ length: count }, (_, index) => {
-    const kinds: PendingKind[] = ["security_finding", "security_alert", "basic_check", "trial_due", "source_update", "conflict", "governance", "governance_followup", "agent_compatibility", "recovery", "ai_setup", "backup_setup", "import_skills"];
+    // 顺序是承重约定：E2E 依赖按 index 落位的类型组合（如 ?items=21 的两个
+    // 共享目录 agent 事项），新增类型只能追加在末尾，不得插入中段。
+    const kinds: PendingKind[] = ["security_finding", "basic_check", "trial_due", "source_update", "conflict", "governance", "governance_followup", "agent_compatibility", "recovery", "ai_setup", "backup_setup", "import_skills", "security_alert"];
     const risks: Array<PendingItem["risk"]> = ["high", "medium", "low", null];
     const kind = kinds[index % kinds.length];
     const skillNumber = Math.floor(index / kinds.length) + 1;
