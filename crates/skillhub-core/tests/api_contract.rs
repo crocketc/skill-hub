@@ -98,6 +98,7 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
         candidate_key: None,
         runtime_name_override: None,
         batch_signature: None,
+        security_decision: None,
     });
     let cancel = AppCommand::CancelImport {
         prepared_import_id: prepared,
@@ -106,9 +107,29 @@ fn import_prepare_commit_and_cancel_have_stable_wire_shapes() {
         serde_json::to_value(prepare).unwrap()["type"],
         "prepare_import"
     );
+    // W3-1（FB-003）：危险级候选的安全决策走 commit 载荷，wire 命名稳定。
+    let commit_value = serde_json::to_value(&commit).unwrap();
+    assert_eq!(commit_value["type"], "commit_import");
     assert_eq!(
-        serde_json::to_value(commit).unwrap()["type"],
-        "commit_import"
+        commit_value["payload"]["security_decision"],
+        serde_json::Value::Null
+    );
+    let proceed = AppCommand::CommitImport(skillhub_core::CommitImport {
+        security_decision: Some(skillhub_core::application::ImportSecurityDecision::Proceed),
+        ..skillhub_core::CommitImport {
+            prepared_import_id: prepared,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision::default(),
+            batch_id: None,
+            candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
+            security_decision: None,
+        }
+    });
+    assert_eq!(
+        serde_json::to_value(proceed).unwrap()["payload"]["security_decision"],
+        "proceed"
     );
     assert_eq!(
         serde_json::to_value(cancel).unwrap()["type"],

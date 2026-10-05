@@ -72,6 +72,7 @@ async fn import_copy(
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import");
@@ -294,6 +295,7 @@ async fn batch_scope_selects_relations_created_inside_the_batch() {
             candidate_key: Some("acq|batched".to_owned()),
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit in batch");

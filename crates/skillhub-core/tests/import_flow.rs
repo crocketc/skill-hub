@@ -176,6 +176,7 @@ fn import_batch_contract_is_serde_stable_and_legacy_payloads_survive() {
         candidate_key: Some("acq|notes".into()),
         runtime_name_override: None,
         batch_signature: None,
+        security_decision: None,
     };
     let mut value = serde_json::to_value(&commit).expect("serialize commit");
     assert_eq!(value["batch_id"], "batch-1");

@@ -129,6 +129,7 @@ async fn commit_full(
             candidate_key: candidate_key.map(str::to_owned),
             runtime_name_override: runtime_name_override.map(str::to_owned),
             batch_signature: batch_signature.map(str::to_owned),
+            security_decision: None,
         }))
         .await;
     match committed {

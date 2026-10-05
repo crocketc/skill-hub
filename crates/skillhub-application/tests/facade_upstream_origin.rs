@@ -111,6 +111,7 @@ async fn commit_import_records_upstream_origin_as_long_term_git_source() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -180,6 +181,7 @@ async fn local_imports_without_upstream_do_not_record_git_sources() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");

@@ -396,6 +396,13 @@ pub struct CommitImport {
     /// 批内已有分析而提交签名缺失或不符 → 拒绝并要求重新分析。
     #[serde(default)]
     pub batch_signature: Option<String>,
+    /// W3-1（FB-003 裁决第 1 节 / §23）：危险级候选的用户安全决策。仅
+    /// 危险级候选必填：缺省时该候选 commit 被拒
+    /// （import.security_decision_required，批内其他候选不受影响）；
+    /// proceed=仍要导入（导入后进入预警状态、决定留痕）；skip=不导入
+    /// （不落库，按跳过落账）。警告级/放行级候选无需该字段。
+    #[serde(default)]
+    pub security_decision: Option<crate::application::ImportSecurityDecision>,
 }
 
 /// 打开一个导入批次；返回的 batch_id 由同一向导会话的所有提交共享。

@@ -2733,6 +2733,7 @@ async fn commit_import_copies_skill_into_the_central_library() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -2811,6 +2812,7 @@ async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -2890,14 +2892,18 @@ async fn commit_import_blocks_a_source_with_basic_security_findings_before_copyi
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
-        .expect_err("unsafe import must be blocked");
-    assert_eq!(error.code, ErrorCode::CheckBlocked);
+        .expect_err("danger-level import without an explicit decision must be rejected");
+    // W3-1（FB-003 裁决第 1 节 / §23）：门禁语义从 CheckBlocked 整批阻断
+    // 改为单 Skill 粒度决策——危险级候选缺 security_decision 时该候选被
+    // 拒（可补决策重试），不再使用 deployment.security_check_blocked。
+    assert_eq!(error.code, ErrorCode::ImportSecurityDecisionRequired);
     assert_eq!(
         error
             .params
-            .get("finding_count")
+            .get("danger_count")
             .and_then(|value| value.as_u64()),
         Some(1)
     );
@@ -2971,6 +2977,7 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3036,6 +3043,7 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3105,6 +3113,7 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3184,6 +3193,7 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3398,6 +3408,7 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect_err("malformed source descriptor should fail");

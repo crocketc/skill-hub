@@ -39,6 +39,17 @@ pub enum ImportCandidateCheckState {
     Unavailable,
 }
 
+/// W3-1（FB-003 裁决第 1 节 / §23）：用户对危险级候选的显式安全决策。
+/// 仅危险级候选必填：`Proceed` = 仍要导入（导入后进入预警状态、不可派发，
+/// 决定以 decision_source=import 留痕）；`Skip` = 不导入（不落库，按跳过
+/// 落账）。警告级/放行级无需该决策；一个候选的决策不牵连批内其他候选。
+#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSecurityDecision {
+    Proceed,
+    Skip,
+}
+
 /// 一条发现的分级明细归属：处置环节完整展示所需的稳定字段（内部
 /// finding id 不外露，展示名映射由客户端负责）。
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
@@ -140,6 +151,12 @@ pub struct PreparedImport {
     /// 已校验非空并以此名重跑库内冲突校验。提交必须携带同一覆盖名。
     #[serde(default)]
     pub runtime_name_override: Option<String>,
+    /// W3-1（FB-003）：prepare 阶段确定性扫描的分级摘要与基础检查状态。
+    /// 扫描失败时 check_state=unavailable，不假显示已检查。提交期的门禁
+    /// 决策依据同一份分级（完整发现由应用层留存，不随 wire 暴露内部
+    /// finding id）。
+    #[serde(default)]
+    pub security: ImportSecuritySummary,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize, specta::Type)]
@@ -241,6 +258,7 @@ where
             ),
             candidate,
             runtime_name_override: None,
+            security: ImportSecuritySummary::default(),
         };
         self.prepared
             .lock()

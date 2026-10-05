@@ -789,6 +789,7 @@ async fn import_copies_without_a_governance_confirmation_and_preserves_the_sourc
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("an import does not govern the source during commit");
@@ -850,6 +851,7 @@ async fn import_item_override_creates_a_queryable_governance_task_without_removi
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -931,6 +933,7 @@ async fn takeover_after_verify_copies_and_verifies_without_deleting_original() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("takeover committed");
@@ -3423,6 +3426,7 @@ async fn import_from_shared_directory_groups_members_with_affected_agents() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3514,6 +3518,7 @@ async fn same_name_conflict_todo_maps_to_classify_same_name_skill() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -3594,6 +3599,7 @@ async fn exact_duplicate_todo_maps_to_select_authoritative_version() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("committed import");
@@ -5097,6 +5103,7 @@ mod unified_and_history {
                 candidate_key: None,
                 runtime_name_override: None,
                 batch_signature: None,
+                security_decision: None,
             }))
             .await
             .expect("commit import");
@@ -5444,6 +5451,7 @@ mod retain_and_cleanup_prepare {
                 candidate_key: None,
                 runtime_name_override: None,
                 batch_signature: None,
+                security_decision: None,
             }))
             .await
             .expect("commit import");

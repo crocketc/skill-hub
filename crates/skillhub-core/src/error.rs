@@ -131,6 +131,8 @@ pub enum ErrorCode {
     ImportSameNameDispositionRequired,
     #[serde(rename = "import.batch_composition_changed")]
     ImportBatchCompositionChanged,
+    #[serde(rename = "import.security_decision_required")]
+    ImportSecurityDecisionRequired,
 }
 
 #[allow(non_upper_case_globals)]
@@ -208,6 +210,7 @@ impl ErrorCode {
             Self::ImportRuntimeNameConflict => "import.runtime_name_conflict",
             Self::ImportSameNameDispositionRequired => "import.same_name_disposition_required",
             Self::ImportBatchCompositionChanged => "import.batch_composition_changed",
+            Self::ImportSecurityDecisionRequired => "import.security_decision_required",
         }
     }
 }

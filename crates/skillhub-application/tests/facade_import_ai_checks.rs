@@ -196,6 +196,7 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
             candidate_key: None,
             runtime_name_override: None,
             batch_signature: None,
+            security_decision: None,
         }))
         .await
         .expect("commit import after ai findings");
