@@ -441,6 +441,11 @@ export function SkillDetailPage({
                 ...(libraryReturn ? { libraryReturn } : {}),
               },
             }) : undefined}
+            onSecurityHandling={!isPreviewRoute && summaryQuery.data.securityAlert
+              ? () => navigate(`/library/${encodeURIComponent(skillId)}/security`, {
+                  state: libraryReturn ? { libraryReturn } : undefined,
+                })
+              : undefined}
             summary={summaryQuery.data}
           />
           <section aria-labelledby="zone-identity-heading" className="sh-skill-detail__zone" id="zone-identity">
@@ -482,6 +487,7 @@ export function SkillDetailPage({
               {summaryQuery.data.currentVersionId ? (
                 <SecurityResults
                   facade={securityFacade}
+                  securityAlert={summaryQuery.data.securityAlert}
                   skillId={skillId}
                   variant="embedded"
                   versionId={summaryQuery.data.currentVersionId}

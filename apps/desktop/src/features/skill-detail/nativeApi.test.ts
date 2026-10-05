@@ -292,6 +292,34 @@ describe("native skill detail facade", () => {
     });
   });
 
+  // W3-1（FB-003 裁决第 1 节）：详情读模型不得比列表更薄——security_alert
+  // 随 get_skill 投影原样进入 summary（null=放行或已完全信任）。
+  it("carries the security alert projection into the detail summary", async () => {
+    vi.clearAllMocks();
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: {
+        skill_id: "skill-1",
+        display_name: "PDF Reader",
+        runtime_name: "pdf-reader",
+        original_description: "Extract tables",
+        translated_description: null,
+        user_note: null,
+        user_purpose: null,
+        tags: [],
+        author: null,
+        license: null,
+        lifecycle: "Normal" as const,
+        trial_due: null,
+        current_version: null,
+        security_alert: "warning",
+      },
+    });
+
+    const summary = await nativeSkillDetailFacade.getSummary("skill-1");
+    expect(summary.securityAlert).toBe("warning");
+  });
+
   it("sends only changed metadata fields through the native patch contract", async () => {
     vi.clearAllMocks();
     vi.mocked(queryApplication).mockResolvedValue({

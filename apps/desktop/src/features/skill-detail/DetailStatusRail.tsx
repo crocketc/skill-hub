@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { CHECK_STATE_LABEL_KEYS, checkStateTone } from "../shared/checkState";
 import type { SkillDetailSummary } from "./api";
 import type { SkillDetailFacade } from "./api";
@@ -44,6 +45,8 @@ export function DetailStatusRail({ deployments: deploymentsOverride, facade, ski
               state: t(CHECK_STATE_LABEL_KEYS[summary.basicCheck]),
             })}
       </StatusBadge>
+      {/* W3-1：与列表 security_status 单元格共用同一预警徽标与事实来源。 */}
+      {summary.securityAlert ? <SecurityAlertBadge level={summary.securityAlert} /> : null}
       <dl>
         <div>
           <dt>{t("skillDetail.statusRail.versionLabel")}</dt>

@@ -1882,7 +1882,8 @@
   "skillDetail": {
     "actions": {
       "label": "Skill actions",
-      "delete": "Delete from library"
+      "delete": "Delete from library",
+      "securityHandling": "Security handling"
     },
     "versions": {
       "exportSkill": "Export this skill (standard export)",
@@ -4239,5 +4240,11 @@
       "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
       "batchResult": "Succeeded {{succeeded}}, failed {{failed}}"
     }
+  },
+  "securityAlert": {
+    "badge": "Alert",
+    "blockedHint": "Dispatch is blocked until handled",
+    "recordLabel": "Security handling record",
+    "recordActive": "The current version is under a security alert: dispatch is blocked until it is handled."
   }
 }

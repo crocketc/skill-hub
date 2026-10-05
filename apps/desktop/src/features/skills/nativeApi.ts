@@ -107,6 +107,8 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     projectDeploymentCount: item.project_deployment_count,
     // M-21 #6：用途列按“用户设置用途优先，空则回退 Skill 原始描述”渲染。
     purpose: item.user_purpose || item.original_description,
+    // W3-1：security_alert 投影原样透传（null=放行或已完全信任），不另行推断。
+    securityAlert: item.security_alert ?? null,
     userPurpose: item.user_purpose ?? undefined,
     requirements: requirementLabels(item.declared_requirements),
     source: item.source_locator ?? item.source_kind ?? undefined,

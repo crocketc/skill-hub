@@ -46,3 +46,34 @@ describe("DetailStatusRail basic check badge", () => {
     });
   }
 });
+
+// W3-1（FB-003 裁决第 1 节）：详情状态栏与列表共用同一预警徽标事实
+// （security_alert 投影）；悬浮说明说明派发被拦，不裸露枚举值。
+describe("DetailStatusRail security alert badge", () => {
+  async function renderRailWithSummary(summary: SkillDetailSummary) {
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <I18nextProvider i18n={i18n}>
+          <DetailStatusRail
+            facade={unavailableSkillDetailFacade}
+            skillId="skill-pdf"
+            summary={summary}
+          />
+        </I18nextProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("renders the alert badge with the dispatch-blocked hint when the projection carries an alert", async () => {
+    await renderRailWithSummary({ ...detailFixture().summary, basicCheck: "passed", securityAlert: "warning" });
+    const badge = screen.getByText("预警");
+    expect(badge).toBeVisible();
+    expect(badge).toHaveAttribute("title", "处理前不可派发");
+  });
+
+  it("renders no alert badge when the summary carries no security alert", async () => {
+    await renderRailWithSummary({ ...detailFixture().summary, basicCheck: "passed", securityAlert: null });
+    expect(screen.queryByText("预警")).not.toBeInTheDocument();
+  });
+});

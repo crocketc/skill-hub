@@ -156,6 +156,8 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     // 界面显示"未知"而不是伪造 0。
     managedLinkCount: skill.managed_link_count,
     independentCopyCount: skill.independent_copy_count,
+    // W3-1：安全预警投影原样透传（null=放行或已完全信任），与列表同源不另行推断。
+    securityAlert: skill.security_alert ?? null,
     name: skill.display_name,
     pendingCount: skill.pending_count,
     projectDeploymentCount: skill.project_deployment_count,

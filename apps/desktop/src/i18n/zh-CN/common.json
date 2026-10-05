@@ -1882,7 +1882,8 @@
   "skillDetail": {
     "actions": {
       "label": "Skill 操作",
-      "delete": "从库中删除 Skill"
+      "delete": "从库中删除 Skill",
+      "securityHandling": "安全处理"
     },
     "versions": {
       "exportSkill": "导出此 Skill（标准导出）",
@@ -4239,5 +4240,11 @@
       "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
       "batchResult": "成功 {{succeeded}}、失败 {{failed}}"
     }
+  },
+  "securityAlert": {
+    "badge": "预警",
+    "blockedHint": "处理前不可派发",
+    "recordLabel": "安全处理记录",
+    "recordActive": "当前版本处于安全预警状态：处理前不可派发。请处理预警后再派发。"
   }
 }

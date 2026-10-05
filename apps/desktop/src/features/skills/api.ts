@@ -2,6 +2,7 @@ import type {
   CombinationResult,
   DeploymentRecord,
   DeploymentTarget,
+  ProductLevel,
   SkillLifecycleFilter as NativeSkillLifecycleFilter,
 } from "../../api/bindings";
 export type { CombinationResult, DeploymentRecord, DeploymentTarget };
@@ -88,6 +89,11 @@ export interface SkillTableRow {
   pendingCount: number;
   projectDeploymentCount: number;
   purpose: string;
+  /**
+   * W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态（security_alert
+   * 投影原样透传）。null=放行或已完全信任；有值时状态列显示预警徽标。
+   */
+  securityAlert?: ProductLevel | null;
   /** 用户独立撰写的“我的用途”；列表用途列按 用户用途→原始描述 回退（M-21）。 */
   userPurpose?: string;
   requirements: string[];

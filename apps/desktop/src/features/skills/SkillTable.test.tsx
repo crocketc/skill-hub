@@ -662,3 +662,24 @@ it("renders constrained sort columns as plain headers instead of unavailable que
   expect(purposeHeader).not.toHaveAttribute("aria-sort");
   expect(onQueryChange).not.toHaveBeenCalled();
 });
+
+// W3-1（FB-003 裁决第 1 节）：security_status 单元格的预警徽标来自
+// security_alert 投影；悬浮说明说明派发被拦，不裸露枚举值。
+it("renders the security alert badge with the dispatch-blocked hint in the security status cell", async () => {
+  const alertRows = rows.map((row, index) =>
+    index === 0 ? { ...row, securityAlert: "warning" as const } : row,
+  );
+  await renderTable({ page: { ...page, items: alertRows } });
+
+  const row = screen.getByText("PDF Reader").closest("tr");
+  if (!row) throw new Error("Expected the PDF Reader row");
+  const badge = within(row).getByText("Alert");
+  expect(badge).toBeVisible();
+  expect(badge).toHaveAttribute("title", "Dispatch is blocked until handled");
+});
+
+it("renders no security alert badge when the projection carries no alert", async () => {
+  await renderTable();
+
+  expect(screen.queryByText("Alert")).not.toBeInTheDocument();
+});

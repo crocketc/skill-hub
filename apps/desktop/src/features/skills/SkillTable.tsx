@@ -17,6 +17,7 @@ import {
 } from "./selection";
 import { InvocationBadge } from "./InvocationBadge";
 import { AgentDeploymentIcons } from "./AgentDeploymentIcons";
+import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { RadioField } from "../../ui/RadioField";
 import { SkillPagination } from "./SkillPagination";
 import { CHECK_STATE_LABEL_KEYS, checkStateTone } from "../shared/checkState";
@@ -130,6 +131,8 @@ function SecurityStatusCell({ row }: { row: SkillTableRow }) {
       <span className={`sh-status-badge sh-status-badge--${checkStateTone(row.aiCheck)}`}>
         {t("skillLibrary.table.aiStatus", { state: t(CHECK_STATE_LABEL_KEYS[row.aiCheck]) })}
       </span>
+      {/* W3-1：security_alert 投影有值时显示预警徽标（处理前不可派发）。 */}
+      {row.securityAlert ? <SecurityAlertBadge level={row.securityAlert} /> : null}
     </div>
   );
 }
