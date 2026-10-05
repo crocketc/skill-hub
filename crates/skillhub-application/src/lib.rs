@@ -2680,6 +2680,38 @@ impl LocalApplicationFacade {
         }
     }
 
+    /// W2-1 决定留痕：把用户当时的选择并入失败 journal 行的
+    /// `recovery_data.source_update_decision`（snake_case，如
+    /// `take_upstream`），保留既有载荷（如采用快照），重试审计可查
+    /// 「当时选了什么」。行不存在（流程尚未落 journal，如 preview 相位、
+    /// 过期与事实守卫失败）时忽略；任何失败都不掩盖原错误——本函数只
+    /// 服务审计留痕，不改变失败路径的调用方可见结果。
+    fn journal_note_source_update_decision(
+        &self,
+        operation_id: OperationId,
+        decision: skillhub_core::UpdateDecision,
+    ) {
+        let Ok(database) = self.database.lock() else {
+            return;
+        };
+        let repository = database.operation_repository();
+        let mut record = match repository.get_sync(operation_id) {
+            Ok(Some(record)) => record,
+            _ => return,
+        };
+        let decision = match serde_json::to_value(decision) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let mut payload = match record.recovery_data {
+            serde_json::Value::Object(map) => map,
+            _ => serde_json::Map::new(),
+        };
+        payload.insert("source_update_decision".to_owned(), decision);
+        record.recovery_data = serde_json::Value::Object(payload);
+        let _ = repository.update_sync(&record);
+    }
+
     /// Settles an import-flow record and carries the candidate runtime name
     /// as the user-readable object (`result.object_name`). The bootstrap
     /// snapshot projects it into `RecentOperationSummary::object_name` so an
@@ -5544,28 +5576,38 @@ impl LocalApplicationFacade {
                     &mut preview,
                     "operation.commit_source_update.facts_changed",
                 )?;
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         let snapshot_facts = match self.content_adoption_snapshot(&library, &skill, operation_id) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         if snapshot_facts.previous_version_id != snapshot.current_version_id {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_facts_changed")
                 .with_action(RecoveryAction::Retry);
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot_facts) {
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         let captured = match library.capture_with_status(skill_id, &remote_dir) {
             Ok(captured) => captured,
             Err(error) => {
-                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                self.journal_note_source_update_decision(operation_id, request.decision);
+                return Err(error);
             }
         };
         let version = captured.record;
@@ -5573,13 +5615,15 @@ impl LocalApplicationFacade {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_drifted")
                 .with_action(RecoveryAction::Retry);
-            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         let replacement =
             match self.adopt_captured_version(&library, &skill, &snapshot_facts, &version, false) {
                 Ok(replacement) => replacement,
                 Err((error, replacement)) => {
-                    return Err(self.settle_content_adoption_failure(
+                    let error = self.settle_content_adoption_failure(
                         &library,
                         &skill,
                         operation_id,
@@ -5589,7 +5633,9 @@ impl LocalApplicationFacade {
                         Some((&version, captured.created)),
                         false,
                         error,
-                    ));
+                    );
+                    self.journal_note_source_update_decision(operation_id, request.decision);
+                    return Err(error);
                 }
             };
         if let Err(error) = self.with_database("commit_source_update.persist", |database| {
@@ -5604,7 +5650,7 @@ impl LocalApplicationFacade {
             // D3：候选被采纳后忽略记录自动失效清除。
             source_repository.clear_ignored_updates(skill_id)
         }) {
-            return Err(self.settle_content_adoption_failure(
+            let error = self.settle_content_adoption_failure(
                 &library,
                 &skill,
                 operation_id,
@@ -5614,7 +5660,9 @@ impl LocalApplicationFacade {
                 Some((&version, captured.created)),
                 false,
                 error,
-            ));
+            );
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
         }
         self.journal_settle(operation_id, KIND, None);
         let _ = library
