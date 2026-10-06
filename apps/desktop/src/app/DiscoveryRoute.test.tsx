@@ -313,7 +313,8 @@ it("opens independent governance from the production import completion page", as
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
-  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  // 第 24 节：分析完成先进入安全检测步；无冲突路径在安全步直接提供提交入口。
+  await screen.findByRole("heading", { name: "安全检测结论" });
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
   await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
   expect(await screen.findByRole("heading", { name: "关系治理工作台" })).toBeVisible();
