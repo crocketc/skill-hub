@@ -62,27 +62,34 @@ test.describe("markdown workspace height bounds", () => {
     await expect(page.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();
     await page.getByRole("tab", { name: "Edit" }).click();
     await typeLongDocument(page);
-    await page.getByRole("button", { name: "Save and create version" }).click();
-    // P1-14：替换保存经过受控确认面板后完成（推荐副本为面板主操作）。
-    const dialog = page.getByRole("alertdialog");
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "Replace and save" }).click();
-    // 保存成功并重建文件查询后编辑器重挂载，脏状态退出按钮变成干净退出。
-    await expect(page.getByRole("button", { name: "Back to preview" })).toBeVisible();
-    await page.getByRole("button", { name: "Back to preview" }).click();
+    // P1-14：评审保存流——默认覆盖当前 Skill（旧版本保留在历史），
+    // 核对保存影响后确认；成功反馈出现在编辑器状态条。
+    await page.getByRole("button", { name: "保存…" }).click();
+    const saveDialog = page.getByRole("dialog");
+    await expect(saveDialog).toBeVisible();
+    await expect(saveDialog.getByText("覆盖当前 Skill（保留旧版本）")).toBeVisible();
+    await saveDialog.getByRole("button", { name: "查看保存影响" }).click();
+    await expect(saveDialog).toContainText("当前版本保留在历史中");
+    await saveDialog.getByRole("button", { name: "确认保存并创建版本" }).click();
+    await expect(page.getByText("内容已保存为新版本")).toBeVisible();
+    // 保存后切回阅读模式，长文档工作区仍受高度约束并在内部滚动。
+    await page.getByRole("tab", { name: "Read" }).click();
     await expect(page.getByRole("heading", { name: "Section 1", exact: true })).toBeVisible();
 
+    // 转正后阅读模式的内容收进带文件栏的舞台容器（--sh-md-stage）内滚动，
+    // 渲染器是舞台的子节点；高度上限与内部滚动断言移到舞台容器上。
     const bounds = await page.locator(".sh-markdown-workspace").evaluate((workspace) => {
-      const renderer = workspace.querySelector(":scope > .sh-markdown-renderer");
-      if (!renderer) return { found: false as const };
-      const style = getComputedStyle(renderer);
-      const rect = renderer.getBoundingClientRect();
+      const stage = workspace.querySelector<HTMLElement>(".sh-markdown-workspace__stage");
+      const renderer = workspace.querySelector<HTMLElement>(".sh-markdown-renderer");
+      if (!stage || !renderer) return { found: false as const };
+      const style = getComputedStyle(stage);
+      const rect = stage.getBoundingClientRect();
       return {
         found: true as const,
         height: rect.height,
         overflowY: style.overflowY,
         scrollHeight: renderer.scrollHeight,
-        clientHeight: renderer.clientHeight,
+        clientHeight: stage.clientHeight,
       };
     });
     expect(bounds.found).toBe(true);

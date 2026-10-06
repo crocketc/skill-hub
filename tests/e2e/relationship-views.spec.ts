@@ -56,18 +56,21 @@ test("agent detail shows the directory matrix with recognition and relation fact
   await expect(page.getByText("trae.code")).toHaveCount(0);
 });
 
-test("skill detail surfaces provenance sources, governed relations and removal impact", async ({
-  page,
-}) => {
+test("skill detail surfaces governed usage and removal impact", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
 
-  // 多来源/关系事实区：复制部署关系行与治理待办可追踪。
-  await expect(page.getByText("复制部署").first()).toBeVisible();
-  await expect(page.getByText(/convert_copy_to_managed_link|复制副本转管理链接/).first()).toBeVisible();
+  // 转正后使用去向区以卡片呈现每个使用位置的状态事实（待集中管理/已集中管理）。
+  const usage = page.locator("#review-usage-body");
+  await expect(usage.getByText("原位置仍是独立副本，当前内容尚未接管。")).toBeVisible();
+  await expect(
+    usage.getByText("受管链接跟随集中库当前版本；共享目录只计一个物理去向。"),
+  ).toBeVisible();
 
-  // 移除影响入口：打开后展示备份位置与最小影响动作，不假装成功。
-  const impact = page.getByRole("button", { name: /查看移除影响|移除影响/ }).first();
-  await impact.click();
-  await expect(page.getByText("移除影响预览")).toBeVisible();
-  await expect(page.getByText(/可回退；备份位置/)).toBeVisible();
+  // 移除影响入口：工具栏「删除」打开删除技能主体对话框，先展示影响预览，
+  // 并如实声明原型阶段不执行删除、不假装成功。
+  await page.getByRole("button", { name: "删除", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("删除前会先展示技能主体和当前使用关系影响");
+  await expect(dialog).toContainText("本次示例影响");
+  await expect(dialog).toContainText("按受管目标安全回收");
 });

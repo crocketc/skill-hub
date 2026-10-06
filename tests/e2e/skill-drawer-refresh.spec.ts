@@ -62,9 +62,10 @@ test("quick drawer keeps only its toolbar and name fixed while long content scro
       const scroll = root.querySelector<HTMLElement>('[data-testid="drawer-modules-scroll"]')!;
       const chrome = root.querySelector<HTMLElement>(".sh-skill-drawer__chrome")!;
       const identity = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
-      // 界面规范§4批注6：派发/导出/删除固定在技能名称附近顶栏，正文不再重复主体动作。
-      const actions = root.querySelector<HTMLElement>(".sh-skill-drawer__header-actions")!;
-      const risk = root.querySelector<HTMLElement>(".sh-skill-drawer__risk")!;
+      // 转正后主要操作（派发/导出/删除）固定在顶栏原型标题行，正文不重复；
+      // 风险摘要属于正文滚动区内的安全检查模块。
+      const actions = root.querySelector<HTMLElement>(".sh-skill-drawer__prototype-actions")!;
+      const risk = root.querySelector<HTMLElement>(".sh-skill-drawer__prototype-risk-summary")!;
       const description = root.querySelector<HTMLElement>(".sh-skill-drawer__description-block .sh-skill-drawer__field-value")!;
       const style = getComputedStyle(description);
       const lineHeight = Number.parseFloat(style.lineHeight);
@@ -157,14 +158,16 @@ test("quick drawer stays readable at the minimum viewport in a dark theme", asyn
     animations: "disabled",
     path: testInfo.outputPath("quick-drawer-security-dark-800x600.png"),
   });
-  // 发现项按已确认原型收纳在 <details> 披露区，先展开再断言可读。
-  const findingsDisclosure = drawer.locator(".sh-security-results__drawer-findings summary");
+  // 发现项收纳在各检查结果的 <details> 披露区，展开后断言可读；
+  // 待处理状态以「仍需处理」徽标呈现，替代旧的逐项确认按钮。
+  const findingsDisclosure = drawer.locator(".sh-skill-drawer__prototype-findings-disclosure summary").first();
   await findingsDisclosure.scrollIntoViewIfNeeded();
   await findingsDisclosure.click();
-  const finding = drawer.getByText("发现疑似凭据字符串，请先确认来源。");
+  // 风险消息与披露列表都会展示首条发现，取第一个匹配。
+  const finding = drawer.getByText("发现疑似凭据字符串，请先确认来源。").first();
   await finding.scrollIntoViewIfNeeded();
   await expect(finding).toBeInViewport();
-  await expect(drawer.getByRole("button", { name: "Acknowledge" })).toBeInViewport();
+  await expect(drawer.getByText("Needs attention").first()).toBeInViewport();
   await page.screenshot({
     animations: "disabled",
     path: testInfo.outputPath("quick-drawer-security-finding-dark-800x600.png"),
@@ -181,18 +184,22 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   const drawer = page.getByTestId("skill-quick-drawer");
   const panel = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
-  await expect(drawer.locator(".sh-skill-drawer__summary-item--lifecycle")).toContainText("Regular");
+  // 生命周期摘要槽位固定：试用态徽标 + 复核日期 + 调整入口（转正后控件化）。
+  const lifecycleItem = drawer.locator(".sh-skill-drawer__summary-item--lifecycle");
+  await expect(lifecycleItem).toContainText("Trial");
+  await expect(lifecycleItem.getByRole("button", { name: "Adjust review date" })).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--version")).toContainText("1.4.0");
   await expect(drawer.locator(".sh-skill-drawer__summary-item--agents")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--projects")).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Add to combination" })).toBeVisible();
+  // 关联关系模块：Agent 关系卡呈现治理状态（首张为受管样例）。
+  await expect(drawer.locator(".sh-skill-drawer__prototype-agent-card").first()).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Recheck" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "AI check" })).toBeVisible();
-  // 发现项按已确认原型收纳在 <details> 披露区，先展开再断言可读。
-  const findingsDisclosure = drawer.locator(".sh-security-results__drawer-findings summary");
+  // 发现项收纳在各检查结果的披露区，展开后断言可读。
+  const findingsDisclosure = drawer.locator(".sh-skill-drawer__prototype-findings-disclosure summary").first();
   await findingsDisclosure.scrollIntoViewIfNeeded();
   await findingsDisclosure.click();
-  await expect(drawer.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
+  await expect(drawer.getByText("发现疑似凭据字符串，请先确认来源。").first()).toBeVisible();
   await expect(drawer.getByRole("link", { name: "Open security checks" })).toHaveCount(0);
   const runBasicCheck = drawer.getByRole("button", { name: "Recheck" });
   await runBasicCheck.scrollIntoViewIfNeeded();
@@ -204,10 +211,11 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   await drawer.getByTestId("drawer-modules-scroll").evaluate((element) => { element.scrollTop = 0; });
   // 界面规范§4批注14：版本区经“查看更新”定位详情来源更新区，不再有重复的查看版本链接。
   await expect(drawer.getByRole("link", { name: "View update" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Delete from library" })).toBeVisible();
+  // 转正后主体动作收纳在顶栏主要操作（派发/导出/删除演示弹层）。
+  await expect(drawer.locator(".sh-skill-drawer__prototype-actions").getByRole("button", { name: "Delete", exact: true })).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();
   // 界面规范§5批注15/16：单一透明图标循环宽度档位，说明当前档与下一档。
-  const widthCycle = drawer.getByRole("button", { name: /Current width: .+ Next: .+/ });
+  const widthCycle = drawer.getByRole("button", { name: /Current: .+ click to switch to .+/ });
   await expect(widthCycle).toBeVisible();
   await expect(widthCycle.locator(".sh-skill-drawer__preset-icon")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-grid")).toBeInViewport();
@@ -246,8 +254,9 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     path: path.join(screenshotDirectory, "skill-drawer-900x600.png"),
   });
   const compactFacts = drawer.locator(".sh-skill-drawer__summary-item");
-  // 界面规范§4批注2/11：调用方式与运行要求并入画像紧凑行（原名/别名、标签、生命周期、版本、Agent/项目去向、调用方式、运行要求）。
-  await expect(compactFacts).toHaveCount(8);
+  // 转正后紧凑事实槽位：别名、标签、生命周期、版本、Agent 去向、项目去向；
+  // 调用方式与运行要求不再单独成槽位。
+  await expect(compactFacts).toHaveCount(6);
   await expect.poll(() => drawer.evaluate((root) => {
     const overview = root.querySelector<HTMLElement>(".sh-skill-drawer__overview")!;
     const viewport = overview.getBoundingClientRect();
@@ -296,13 +305,13 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     const factBounds = lastFact.getBoundingClientRect();
     return factBounds.top >= bodyBounds.top && factBounds.bottom <= bodyBounds.bottom + 1;
   })).toBe(true);
-  await expect(drawer.getByRole("button", { name: "Add to combination" })).toBeVisible();
+  await expect(drawer.locator(".sh-skill-drawer__prototype-agent-card").first()).toBeVisible();
   await expect(drawer.getByRole("region", { name: "Risk summary" })).toBeVisible();
 
-  // 界面规范§4批注6：主体动作固定在顶栏、不随正文滚动，正文内不再重复；
+  // 转正后主要操作固定在顶栏、不随正文滚动，正文内不再重复；
   // 风险摘要仍在正文滚动区内完整可见。
   for (const [section, selector] of [
-    [drawer.getByRole("region", { name: "Risk summary" }), ".sh-skill-drawer__risk"],
+    [drawer.getByRole("region", { name: "Risk summary" }), ".sh-skill-drawer__prototype-risk-summary"],
   ] as const) {
     await section.scrollIntoViewIfNeeded();
     const contentIsVisible = await drawer.evaluate((root, targetSelector) => {
@@ -314,12 +323,12 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
     }, selector);
     expect(contentIsVisible, selector).toBe(true);
   }
-  const headerActionsInBody = await drawer.evaluate((root) => {
+  const actionsInBody = await drawer.evaluate((root) => {
     const body = root.querySelector<HTMLElement>("[data-testid='drawer-modules-scroll']")!;
-    return body.contains(root.querySelector(".sh-skill-drawer__header-actions"));
+    return body.contains(root.querySelector(".sh-skill-drawer__prototype-actions"));
   });
-  expect(headerActionsInBody).toBe(false);
-  await expect(drawer.locator(".sh-skill-drawer__header-actions")).toBeVisible();
+  expect(actionsInBody).toBe(false);
+  await expect(drawer.locator(".sh-skill-drawer__prototype-actions")).toBeVisible();
 
   await drawer.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();

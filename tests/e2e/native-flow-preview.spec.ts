@@ -908,34 +908,47 @@ test("operations records link to a committed operation detail", async ({ page })
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "100");
 });
 
-test("native skill detail exposes metadata, relations, findings, and versions", async ({ page }) => {
+test("native skill detail surfaces review sections, source adoption, and versions", async ({ page }) => {
   await installNativePreview(page);
   await page.goto("/library/pdf-reader");
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  // T3-C：详情页导航已重组为五信息区，身份章节位于"Identity"分区。
-  await expect(page.getByRole("heading", { name: "Identity", exact: true })).toBeVisible();
+  // §9 裁决（2026-10-06）：评审原型即生产默认呈现。概览区呈现许可证等
+  // 主体事实；使用去向区以真实关系数据呈现治理状态（native 夹具：独立副本待接管）。
   await expect(page.getByText("MIT", { exact: true })).toBeVisible();
-  await expect(page.getByText("Codex CLI", { exact: true })).toBeVisible();
-  // T3-C：详情页导航已重组为五信息区，版本章节位于"Lifecycle"分区。
-  await page.getByRole("link", { name: "Lifecycle" }).click();
-  await expect(page).toHaveURL(/#zone-lifecycle$/);
-  await expect(page.getByRole("heading", { name: "v1", exact: true })).toBeVisible();
-  // K6 预览绑定流：检查命中候选后，采纳入口先 prepare 出更新预览，
-  // 「保留本地」等决定都在预览态经 commit 提交，不再有检查后的直连按钮。
-  await page.getByRole("button", { name: "Check source updates" }).click();
-  await expect(page.getByText(/Update available: local v1/)).toBeVisible();
-  await page.getByRole("button", { name: "Take upstream", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Update preview" })).toBeVisible();
-  await expect(page.getByText(/the preview is valid until/i)).toBeVisible();
-  await expect(page.getByRole("group", { name: "File changes" })).toContainText("SKILL.md");
-  await page.getByRole("button", { name: "Keep local", exact: true }).click();
-  await expect(page.getByText("Kept the local version.")).toBeVisible();
+  await expect(page.getByText("原位置仍是独立副本，当前内容尚未接管。")).toBeVisible();
+  // 来源更新区（演示流）：查找来源 → 只关联 → 自动只读检查 → 采用更新。
+  // 每一步都在影响预览对话框里显式确认，没有检查后的直连按钮。
+  await page.getByRole("button", { name: "查找更新来源" }).click();
+  const chooser = page.getByRole("dialog");
+  await expect(chooser).toContainText("选择网络更新来源");
+  await chooser.getByRole("button", { name: "查找来源" }).click();
+  await expect(chooser).toContainText("PDF Reader 官方维护仓库");
+  await chooser.getByRole("button", { name: "只关联来源" }).click();
+  const associateDialog = page.getByRole("dialog");
+  await expect(associateDialog).toContainText("关联影响预览");
+  await associateDialog.getByRole("button", { name: "确认关联" }).click();
+  await expect(page.getByText("已关联更新来源，并自动完成一次只读检查；未采用任何内容。")).toBeVisible();
+  await expect(page.getByText("发现可检查的上游更新")).toBeVisible();
+  await page.getByRole("button", { name: "预览采用影响" }).click();
+  const adoptDialog = page.getByRole("dialog");
+  await expect(adoptDialog).toContainText("采用网络更新影响预览");
+  await expect(adoptDialog).toContainText("2 个受管链接会继续跟随新当前版本");
+  await adoptDialog.getByRole("button", { name: "确认采用更新" }).click();
+  await expect(page.getByText("示例更新已采用；新版本已创建，安全发现与独立副本仍保留。")).toBeVisible();
+  // 版本历史区：对比两个版本后按评审流回滚，影响预览先行、确认创建恢复版本。
+  await page.getByRole("link", { name: "版本历史" }).click();
+  await expect(page).toHaveURL(/#review-versions$/);
+  await expect(page.locator("#review-versions .sh-version-timeline")).toBeVisible();
   await page.getByLabel("Select v1 for comparison").check();
   await page.getByLabel("Select v0 for comparison").check();
   await page.getByRole("button", { name: "Compare selected versions" }).click();
   await expect(page.getByRole("region", { name: "Changed file details" })).toContainText("SKILL.md");
-  await page.getByRole("button", { name: "Rollback to v0" }).click();
-  await expect(page.getByRole("heading", { name: "Rollback impact preview" })).toBeVisible();
-  await expect(page.getByText(/Codex CLI will update/)).toBeVisible();
+  await page.getByRole("button", { name: "恢复到 v0" }).click();
+  const rollbackPreview = page.locator("#review-versions").getByRole("region", { name: "恢复影响预览" });
+  await expect(rollbackPreview).toBeVisible();
+  // 评审态影响预览如实分列恢复结果。确认提交链路由 edit-recover.spec 在
+  // 预览路由覆盖；native 桩未实现 rollback 提交，这里断言到预览与确认入口为止。
+  await expect(rollbackPreview).toContainText("恢复会创建新的当前版本，原当前版本保留在历史中。");
+  await expect(rollbackPreview).toContainText("Codex CLI will update");
+  await expect(rollbackPreview.getByRole("button", { name: "确认创建恢复版本" })).toBeVisible();
 });
