@@ -2566,7 +2566,12 @@ export type MarkdownValidationResult = {
 /**  Ordered evidence used to compare a candidate with an existing Skill. */
 export type MatchBasis = "canonical_tree_hash" | "skill_hub_identity" | "runtime_name" | "source_locator" | "fts_bm25";
 
-export type MinimalImpactAction = "remove_current_agent_target" | "remove_current_relation_keep_shared_files" | "remove_current_shared_alias" | "convert_copy_to_managed_link" | "create_governance_task";
+export type MinimalImpactAction = "remove_current_agent_target" | "remove_current_relation_keep_shared_files" | "remove_current_shared_alias" | "convert_copy_to_managed_link" |
+/**
+ *  FB-④（2026-10-06）：只读原件的清理只结束关系记录（归档来源事实、
+ *  释放观察记录），绝不删除只读目录里的用户文件。
+ */
+"end_relation_record_only" | "create_governance_task";
 
 export type ModelCheckResult = {
 	ok: boolean,
@@ -3673,6 +3678,11 @@ export type RemovalImpactFact = {
 	backup: BackupRecoveryInfo,
 	governance_tasks: GovernanceTaskFact[],
 	permission_limited: boolean,
+	/**
+	 *  FB-④（2026-10-06）：关系处于软件的只读边界（Agent 内置等）内。
+	 *  只读目标不转换、不清理；清理动作只是结束关系记录。
+	 */
+	read_only_target?: boolean,
 };
 
 /**  单项目执行结果；`pending` 表示尚未执行（排在失败组之后或属于失败组）。 */

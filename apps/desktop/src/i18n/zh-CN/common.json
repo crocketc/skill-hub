@@ -2586,6 +2586,7 @@
       "remove_current_relation_keep_shared_files": "建议只移除该关系，保留共享文件",
       "remove_current_shared_alias": "建议只移除当前别名，共享目录本体与其他引用保持不变",
       "convert_copy_to_managed_link": "建议备份校验后转换为管理链接",
+      "end_relation_record_only": "建议只结束关系记录，保留只读原件",
       "create_governance_task": "建议先创建待办再处理"
     },
     "governanceTaskKind": {

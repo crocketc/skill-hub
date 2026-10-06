@@ -1406,4 +1406,93 @@ mod read_only_import_originals {
             RelationGovernanceClassification::Pending
         );
     }
+
+    /// W2-2（FB-④ 后端收口）：部署侧 ImportCopy 行。可写目录里的导入
+    /// 副本是可转换副本——不再打「不可转换」硬阻塞，给出转集中管理；
+    /// 只读目录里的导入原件（即使没有副本事实）按第七类改写呈现。
+    fn import_copy_deployment(relation_id: &'static str, path: &'static str) -> DeploymentRelationFact {
+        let mut relation =
+            RelationSpec::observed_copy(relation_id, path).build();
+        relation.relationship = RelationshipType::ImportCopy;
+        relation.match_state = ObservedMatchState::ContentVerified;
+        relation.origin = ObservedOrigin::Import;
+        relation.directory_node_id = Some(DIRECTORY.to_owned());
+        relation
+    }
+
+    #[test]
+    fn writable_import_copy_deployments_offer_centralizing() {
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::Deployment(import_copy_deployment(
+                "rel-import",
+                "C:/agents/trae/skills/notes",
+            ))],
+            &[],
+        );
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, false);
+        assert!(
+            !row.blockers
+                .iter()
+                .any(|blocker| *blocker == RelationGovernanceBlocker::RelationshipNotConvertible),
+            "writable import copies are convertible: {:?}",
+            row.blockers
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::CentralizeManagement);
+        assert_eq!(
+            row.readiness,
+            RelationGovernanceReadiness::EligibleToCentralize
+        );
+    }
+
+    #[test]
+    fn read_only_import_copy_deployments_present_as_retained_originals() {
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::Deployment(import_copy_deployment(
+                "rel-readonly",
+                "C:/agents/doubao/.skills/notes",
+            ))],
+            &["rel-readonly"],
+        );
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, true);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed
+        );
+        assert_eq!(
+            row.governance.decision,
+            RelationGovernanceDecision::RetainedIndependentCopy
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+        assert!(row.blockers.is_empty());
+        assert!(row.governance.action_conditions.is_empty());
+    }
+
+    #[test]
+    fn unhealthy_read_only_import_copy_deployments_offer_the_record_exit() {
+        let mut relation = import_copy_deployment(
+            "rel-readonly",
+            "C:/agents/doubao/.skills/notes",
+        );
+        relation.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::Deployment(relation)],
+            &["rel-readonly"],
+        );
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, true);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Pending
+        );
+        assert!(row.blockers.is_empty(), "health reasons carry the story");
+        let revalidate = condition_of(row, "revalidate");
+        assert!(revalidate.available);
+        let end = condition_of(row, "end_relationship");
+        assert!(end.available, "record exit stays available");
+        assert!(end.reasons.is_empty());
+    }
 }

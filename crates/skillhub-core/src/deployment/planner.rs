@@ -379,6 +379,9 @@ pub struct RelationConversionFacts {
     /// Other active relations that still consume the shared body this entry
     /// points at.
     pub other_shared_consumers: usize,
+    /// FB-④（2026-10-06）：目标目录是软件的只读边界（Agent 内置等）。
+    /// 只读目录里没有任何转换可执行落点：原件按已保留副本呈现。
+    pub target_read_only: bool,
 }
 
 /// The deterministic part of a conversion decision.  Filesystem effects,
@@ -403,6 +406,11 @@ pub struct RelationConversionPlan {
 pub fn plan_relation_conversion(
     facts: &RelationConversionFacts,
 ) -> AppResult<RelationConversionPlan> {
+    // 只读目标（Agent 内置等）软件不增删改：替换条目的每一步都需要写入
+    // 权限，先于关系形状拒绝，避免给出永远无法执行的转换计划。
+    if facts.target_read_only {
+        return Err(conversion_read_only_target());
+    }
     if !matches!(
         facts.relationship,
         RelationshipType::ObservedCopy
@@ -410,6 +418,9 @@ pub fn plan_relation_conversion(
             | RelationshipType::ObservedLink
             | RelationshipType::ManagedLink
             | RelationshipType::SharedDirectoryReference
+            // FB-④：导入原件在可写目录里就是一份普通副本，可以转换为
+            // 受管链接；只读目录已在上方拒绝。
+            | RelationshipType::ImportCopy
     ) {
         // A direct shared-directory read has no per-agent entry to replace,
         // and everything else is not a deployment entry at all.  Converting
@@ -454,6 +465,15 @@ fn conversion_not_convertible(relationship: RelationshipType) -> AppError {
                 "relationship type {:?} has no convertible entry; record a governance task instead",
                 relationship
             ),
+        )
+        .with_action(RecoveryAction::Acknowledge)
+}
+
+fn conversion_read_only_target() -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+        .with_param(
+            "detail",
+            "the original lives in a read-only directory; it stays as a retained independent copy and is never rewritten",
         )
         .with_action(RecoveryAction::Acknowledge)
 }

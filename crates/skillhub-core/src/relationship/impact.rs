@@ -12,6 +12,9 @@ pub enum MinimalImpactAction {
     RemoveCurrentRelationKeepSharedFiles,
     RemoveCurrentSharedAlias,
     ConvertCopyToManagedLink,
+    /// FB-④（2026-10-06）：只读原件的清理只结束关系记录（归档来源事实、
+    /// 释放观察记录），绝不删除只读目录里的用户文件。
+    EndRelationRecordOnly,
     CreateGovernanceTask,
 }
 
@@ -55,6 +58,10 @@ pub struct RemovalImpactFact {
     pub backup: BackupRecoveryInfo,
     pub governance_tasks: Vec<GovernanceTaskFact>,
     pub permission_limited: bool,
+    /// FB-④（2026-10-06）：关系处于软件的只读边界（Agent 内置等）内。
+    /// 只读目标不转换、不清理；清理动作只是结束关系记录。
+    #[serde(default)]
+    pub read_only_target: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -62,6 +69,9 @@ pub struct RemovalFacts {
     pub relations: Vec<DeploymentRelationFact>,
     pub directory_capabilities: Vec<AgentDirectoryCapabilityFact>,
     pub permission_limited: bool,
+    /// FB-④（2026-10-06）：处于软件只读边界（Agent 内置等）内的关系 id。
+    /// 由应用层从 Agent 发现快照解析；纯函数只消费结果。
+    pub read_only_relation_ids: std::collections::BTreeSet<String>,
 }
 
 impl RemovalFacts {
@@ -73,11 +83,20 @@ impl RemovalFacts {
             relations,
             directory_capabilities,
             permission_limited: false,
+            read_only_relation_ids: std::collections::BTreeSet::new(),
         }
     }
 
     pub fn with_permission_limited(mut self, value: bool) -> Self {
         self.permission_limited = value;
+        self
+    }
+
+    pub fn with_read_only_relation_ids(
+        mut self,
+        ids: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.read_only_relation_ids = ids.into_iter().map(Into::into).collect();
         self
     }
 }
@@ -237,7 +256,10 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
         }
     }
 
-    let backup = backup_info(relation.as_ref());
+    let read_only_target = facts
+        .read_only_relation_ids
+        .contains(relation_id);
+    let backup = backup_info(relation.as_ref(), read_only_target);
     let mut impact = RemovalImpactFact {
         relation_id: relation_id.to_owned(),
         relation,
@@ -249,12 +271,20 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
         backup,
         governance_tasks,
         permission_limited: facts.permission_limited,
+        read_only_target,
     };
     impact.minimal_action = recommend_removal_action(&impact);
     impact
 }
 
 pub fn recommend_removal_action(impact: &RemovalImpactFact) -> MinimalImpactAction {
+    // FB-④（2026-10-06）：只读原件的删除动作只有一个——结束关系记录
+    // （纯记录、不动文件）。关系表示未知或健康异常都不改变这一点：
+    // 记录出口不依赖文件系统访问，优先于治理任务兜底；受管条目不在
+    // 只读集合里，仍走验证移除流程。
+    if impact.read_only_target && impact.relation.is_some() {
+        return MinimalImpactAction::EndRelationRecordOnly;
+    }
     if !impact.governance_tasks.is_empty() || impact.permission_limited || impact.relation.is_none()
     {
         return MinimalImpactAction::CreateGovernanceTask;
@@ -268,20 +298,28 @@ pub fn recommend_removal_action(impact: &RemovalImpactFact) -> MinimalImpactActi
         RelationshipType::ObservedCopy | RelationshipType::ManagedCopy => {
             MinimalImpactAction::ConvertCopyToManagedLink
         }
-        RelationshipType::ManagedLink
-        | RelationshipType::ObservedLink
-        | RelationshipType::ImportCopy => MinimalImpactAction::RemoveCurrentAgentTarget,
+        // FB-④（2026-10-06）：可写原件随主体删除一并清理（显式确认并
+        // 备份）；只读原件在上方提前返回为纯记录出口。
+        RelationshipType::ImportCopy => MinimalImpactAction::RemoveCurrentAgentTarget,
+        RelationshipType::ManagedLink | RelationshipType::ObservedLink => {
+            MinimalImpactAction::RemoveCurrentAgentTarget
+        }
         RelationshipType::Unknown => MinimalImpactAction::CreateGovernanceTask,
     }
 }
 
-fn backup_info(relation: Option<&DeploymentRelationFact>) -> BackupRecoveryInfo {
-    let conversion = relation.is_some_and(|relation| {
-        matches!(
-            relation.relationship,
-            RelationshipType::ObservedCopy | RelationshipType::ManagedCopy
-        )
-    });
+fn backup_info(relation: Option<&DeploymentRelationFact>, read_only_target: bool) -> BackupRecoveryInfo {
+    // FB-④：可写导入原件的清理先备份（原件就是用户文件）；只读原件
+    // 只结束关系记录，没有文件变更，也就没有备份。
+    let conversion = !read_only_target
+        && relation.is_some_and(|relation| {
+            matches!(
+                relation.relationship,
+                RelationshipType::ObservedCopy
+                    | RelationshipType::ManagedCopy
+                    | RelationshipType::ImportCopy
+            )
+        });
     BackupRecoveryInfo {
         required: conversion,
         rollback_available: conversion,

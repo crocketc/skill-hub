@@ -116,13 +116,14 @@ impl LocalApplicationFacade {
         Ok(AppQueryResult::RelationGovernanceLedger(ledger))
     }
 
-    /// FB-④（2026-10-06）：只读来源副本集合。
+    /// FB-④（2026-10-06）：只读来源关系集合。
     ///
     /// Agent 快照中 `builtin` 且当前可用（exists && available）的内置目录
     /// 是只读观察目标（doubao 的 `.skills` 等）；来源副本原件落在这些目录
-    /// 下、且 Agent 归属一致时，其关系 id 进入集合。治理投影用该集合把
-    /// 只读原件改判为「导入自动保留/待复核」，结束关系出口用它放行仅
-    /// 清理记录的操作。快照缺失或没有可用内置目录时集合为空。
+    /// 下、且 Agent 归属一致时，其关系 id 进入集合。部署侧未受管的导入
+    /// 原件行（来源建档缺失的旧观察行）按同一只读边界识别。治理投影用
+    /// 该集合把只读原件改判为「导入自动保留/待复核」，结束关系出口用它
+    /// 放行仅清理记录的操作。快照缺失或没有可用内置目录时集合为空。
     pub(crate) fn read_only_source_relation_ids(
         database: &Database,
     ) -> AppResult<BTreeSet<String>> {
@@ -153,7 +154,46 @@ impl LocalApplicationFacade {
                 ids.insert(copy.relation_id.clone());
             }
         }
+        // W2-2（FB-④）：部署侧导入原件行——未受管、仍活跃、来源为导入
+        // （或类型为导入副本）且路径落在同 Agent 的可用内置目录下。
+        for relation in database.relationship_repository().list_relations()? {
+            let import_original = relation.origin == skillhub_core::ObservedOrigin::Import
+                || relation.relationship
+                    == skillhub_core::relationship::RelationshipType::ImportCopy;
+            if !import_original
+                || relation.ownership
+                    == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                || !relation.active
+            {
+                continue;
+            }
+            if read_only_roots.iter().any(|(client_id, root)| {
+                *client_id == relation.agent_client_id
+                    && skillhub_core::deployment::path_lives_under(&relation.path, root)
+            }) {
+                ids.insert(relation.relation_id.clone());
+            }
+        }
         Ok(ids)
+    }
+
+    /// FB-④（2026-10-06）：关系目标是否落在只读边界内。转换与清理的
+    /// 入口用它拒绝一切改写内置目录内容的操作——与关系类型无关，任何
+    /// 处于可用内置目录下的关系目标都视为只读。
+    pub(crate) fn relation_target_is_read_only(
+        database: &Database,
+        relation: &skillhub_core::relationship::DeploymentRelationFact,
+    ) -> AppResult<bool> {
+        let Some(snapshot) = database.agent_repository().load()? else {
+            return Ok(false);
+        };
+        Ok(snapshot.logical_targets.iter().any(|target| {
+            target.builtin
+                && target.exists
+                && target.available
+                && target.client_id == relation.agent_client_id
+                && skillhub_core::deployment::path_lives_under(&relation.path, &target.path)
+        }))
     }
 
     pub(crate) fn revoke_retention(&self, request: RevokeRetention) -> AppResult<AppCommandResult> {
@@ -322,15 +362,17 @@ impl LocalApplicationFacade {
                     .into_iter()
                     .filter(|copy| evidence.contains(&copy.relation_id))
                     .collect::<Vec<_>>();
-                if copies.is_empty() {
-                    return Ok(None);
-                }
                 let relations = database
                     .relationship_repository()
                     .list_relations()?
                     .into_iter()
                     .filter(|relation| evidence.contains(&relation.relation_id))
                     .collect::<Vec<_>>();
+                // W2-2（FB-④）：来源建档缺失的部署侧只读原件行只有部署
+                // 证据，同样可以走纯记录出口；两类证据都缺失才拒绝。
+                if copies.is_empty() && relations.is_empty() {
+                    return Ok(None);
+                }
                 if relations.iter().any(|relation| {
                     relation.ownership
                         == skillhub_core::relationship::OwnershipState::SkillhubManaged

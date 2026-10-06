@@ -2586,6 +2586,7 @@
       "remove_current_relation_keep_shared_files": "Recommended: remove only this relation, keep shared files",
       "remove_current_shared_alias": "Recommended: remove only this alias; the shared directory and other references stay",
       "convert_copy_to_managed_link": "Recommended: convert to a managed link after backup and verification",
+      "end_relation_record_only": "Recommended: end the relationship record only and keep the read-only original",
       "create_governance_task": "Recommended: create a governance todo first"
     },
     "governanceTaskKind": {

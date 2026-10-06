@@ -7482,6 +7482,11 @@ mod read_only_original_exit {
     //! 导入自动保留并呈现为已完成治理；异常原件提供「重新校验/结束关
     //! 系」两个出口——结束关系只归档来源事实并释放未受管观察记录，绝
     //! 不触碰只读目录里的用户文件；受管条目仍然拒绝直接结束关系。
+    //!
+    //! W2-2 补充边界：可写目录里的 ImportCopy 是可转换副本，照常走
+    //! 「转集中管理」；只读原件一律拒绝转换；删除影响对只读原件只给
+    //! 「结束关系记录」；来源建档缺失的部署侧导入原件行同样被只读边界
+    //! 识别，仍能走纯记录出口。
 
     use super::*;
     use super::retain_and_cleanup_prepare::{import_source_copy, relation_fact};
@@ -7803,5 +7808,237 @@ mod read_only_original_exit {
             relation_fact(&facade, &copy_id).await.active,
             "copy stays"
         );
+    }
+
+    /// 可写目录里的 ImportCopy 是可转换副本（FB-④ 2026-10-06）：「转集
+    /// 中管理」对它照常开放，转换语义由 core 的 planner 测试钉住。
+    #[tokio::test]
+    async fn writable_import_copies_still_convert_through_prepare() {
+        let fixture = fixture().await;
+        {
+            let database = fixture.facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            let mut relation = database
+                .relationship_repository()
+                .list_relations()
+                .expect("relations")
+                .into_iter()
+                .find(|relation| relation.relation_id == fixture.relation_id)
+                .expect("fixture relation");
+            relation.relationship = RelationshipType::ImportCopy;
+            relation.origin = ObservedOrigin::Import;
+            database
+                .relationship_repository()
+                .upsert_deployment_relation(&relation)
+                .expect("relabel the copy as an import original");
+        }
+        let prepared = fixture
+            .facade
+            .execute(AppCommand::PrepareRelationMigration(
+                PrepareRelationMigration {
+                    relation_id: fixture.relation_id.clone(),
+                    target_mode: RelationMigrationTargetMode::ManagedLink,
+                    backup_policy: RelationshipMigrationBackupPolicy::Required,
+                    confirmation_token: Some("confirmed".into()),
+                },
+            ))
+            .await
+            .expect("writable import copies convert like other copies");
+        assert!(matches!(
+            prepared,
+            AppCommandResult::PreparedRelationMigration(_)
+        ));
+    }
+
+    /// 只读原件一律拒绝转换：目录只读，不转换、不改写；错误如实说明
+    /// 只读边界，用户文件原样保留。
+    #[tokio::test]
+    async fn read_only_import_copies_refuse_conversion_and_stay_retained() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = builtin_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let copy_id = import_source_copy(&facade, &source, "Notes").await;
+        let copy = relation_fact(&facade, &copy_id).await;
+        let deployment_id = seed_observed_import_evidence(
+            &facade,
+            &copy,
+            &source,
+            OwnershipState::ObservedUnmanaged,
+            RelationshipType::ImportCopy,
+            ObservedMatchState::ContentVerified,
+        )
+        .await;
+
+        let error = facade
+            .execute(AppCommand::PrepareRelationMigration(
+                PrepareRelationMigration {
+                    relation_id: deployment_id.clone(),
+                    target_mode: RelationMigrationTargetMode::ManagedLink,
+                    backup_policy: RelationshipMigrationBackupPolicy::Required,
+                    confirmation_token: Some("confirmed".into()),
+                },
+            ))
+            .await
+            .expect_err("read-only originals are never rewritten");
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(
+            error
+                .params
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .is_some_and(|detail| detail.contains("read-only")),
+            "unexpected error: {error:?}"
+        );
+        assert!(
+            source.join("SKILL.md").is_file(),
+            "the original stays untouched"
+        );
+    }
+
+    /// 删除影响对只读原件只给「结束关系记录」：即使关系表示未知、健康
+    /// 异常待复核，纯记录出口也不依赖文件系统访问，优先于治理任务兜底。
+    #[tokio::test]
+    async fn removal_impact_offers_only_the_record_exit_for_read_only_originals() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = builtin_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let copy_id = import_source_copy(&facade, &source, "Notes").await;
+        let copy = relation_fact(&facade, &copy_id).await;
+        let deployment_id = seed_observed_import_evidence(
+            &facade,
+            &copy,
+            &source,
+            OwnershipState::ObservedUnmanaged,
+            RelationshipType::ImportCopy,
+            ObservedMatchState::ContentVerified,
+        )
+        .await;
+
+        let AppQueryResult::RelationshipRemovalImpact(impact) = facade
+            .query(AppQuery::GetRelationshipRemovalImpact(
+                GetRelationshipRemovalImpact {
+                    relation_id: deployment_id,
+                },
+            ))
+            .await
+            .expect("removal impact")
+        else {
+            panic!("expected relationship removal impact");
+        };
+        assert!(impact.read_only_target);
+        assert_eq!(
+            impact.minimal_action,
+            skillhub_core::relationship::MinimalImpactAction::EndRelationRecordOnly
+        );
+        assert!(!impact.backup.required, "record-only cleanup needs no backup");
+    }
+
+    /// 来源建档缺失的部署侧导入原件行（现场 150 条观察行的形状）同样
+    /// 被只读边界识别；异常行仍能走纯记录出口，文件不动。
+    #[tokio::test]
+    async fn deployment_only_read_only_originals_exit_through_the_record_path() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = builtin_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        facade
+            .execute(AppCommand::CreateSkill(CreateSkill {
+                name: "Notes".into(),
+                source_path: source.to_string_lossy().into_owned(),
+            }))
+            .await
+            .expect("create skill");
+        let AppQueryResult::SkillPage(page) = facade
+            .query(AppQuery::ListSkills(ListSkills {
+                text: "Notes".into(),
+                page: 1,
+                page_size: 10,
+                filters: Default::default(),
+                sort: Default::default(),
+            }))
+            .await
+            .expect("list skill")
+        else {
+            panic!("expected skill page");
+        };
+        let skill_id = page.items[0].skill_id;
+
+        let relation_id = "observed:agent.demo:notes".to_owned();
+        let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&source)
+            .expect("source fingerprint");
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_deployment_relation(&DeploymentRelationFact {
+                    relation_id: relation_id.clone(),
+                    skill_id: Some(skill_id),
+                    agent_client_id: CLIENT_ID.into(),
+                    path: source.to_string_lossy().into_owned(),
+                    path_key: String::new(),
+                    directory_node_id: Some("target-1".into()),
+                    relationship: RelationshipType::Unknown,
+                    file_representation: FileRepresentation::Unknown,
+                    ownership: OwnershipState::ObservedUnmanaged,
+                    link_target_path: None,
+                    link_target_path_key: None,
+                    link_target_directory_id: None,
+                    content_fingerprint: fingerprint,
+                    origin: ObservedOrigin::Import,
+                    match_state: ObservedMatchState::ContentVerified,
+                    health_reasons: Some(vec![
+                        skillhub_core::relationship::RelationHealthReason::ContentChanged,
+                    ]),
+                    active: true,
+                    observed_at: 1,
+                    released_at: None,
+                })
+                .expect("observed import evidence");
+        }
+
+        let pending = ledger(&facade).await;
+        assert_eq!(pending.rows.len(), 1, "deployment-only row is listed");
+        let row = &pending.rows[0];
+        assert!(row.source_read_only);
+        assert_eq!(
+            row.governance.governance_status,
+            skillhub_core::relationship::RelationGovernanceClassification::Pending
+        );
+        let end_condition = row
+            .governance
+            .action_conditions
+            .iter()
+            .find(|condition| condition.action == RelationGovernanceAction::EndRelationship)
+            .expect("record exit is offered without a source-copy fact");
+        assert!(end_condition.available);
+
+        facade
+            .execute(AppCommand::EndRelationship(
+                skillhub_core::api::EndRelationship {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: relation_id.clone(),
+                    expected_relationship_revision: pending.relationship_revision.clone(),
+                },
+            ))
+            .await
+            .expect("record exit ends the deployment-only original");
+        assert!(source.join("SKILL.md").is_file(), "user files stay");
+
+        let after = ledger(&facade).await;
+        assert!(after.rows.is_empty(), "ended edge leaves the ledger");
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        let released = database
+            .relationship_repository()
+            .list_relations()
+            .expect("relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .expect("deployment record stays queryable");
+        assert!(!released.active, "observed evidence is released");
+        assert!(released.released_at.is_some());
     }
 }

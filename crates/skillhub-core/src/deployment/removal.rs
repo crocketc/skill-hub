@@ -126,6 +126,8 @@ impl RemovalDecision {
                 Some(Self::KeepSharedDeployment)
             }
             MinimalImpactAction::RemoveCurrentSharedAlias => Some(Self::RemoveRelationOnly),
+            // FB-④：只读原件的记录出口同样只关闭关系记录，不触碰文件。
+            MinimalImpactAction::EndRelationRecordOnly => Some(Self::RemoveRelationOnly),
             MinimalImpactAction::ConvertCopyToManagedLink => None,
             MinimalImpactAction::CreateGovernanceTask => Some(Self::Cancel),
         }

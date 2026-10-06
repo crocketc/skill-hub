@@ -152,6 +152,7 @@ fn conversion_plan_selects_the_platform_link_mode_for_a_managed_copy() {
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
+        target_read_only: false,
     })
     .expect("managed copy converts to a managed link");
     assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
@@ -166,6 +167,7 @@ fn conversion_plan_never_degrades_to_a_copy_when_links_are_unavailable() {
         link_capabilities: link_capabilities(false, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
+        target_read_only: false,
     })
     .expect_err("link-unavailable conversion must fail instead of copying");
     assert_eq!(error.code, ErrorCode::SymlinkNotSupported);
@@ -178,6 +180,7 @@ fn conversion_plan_rejects_a_cross_volume_junction_instead_of_copying() {
         link_capabilities: link_capabilities(false, true),
         link_target_same_volume: false,
         other_shared_consumers: 0,
+        target_read_only: false,
     };
     let error = plan_relation_conversion(&cross_volume)
         .expect_err("a junction cannot span volumes; must fail instead of copying");
@@ -221,6 +224,7 @@ fn conversion_plan_rejects_a_shared_direct_read_as_a_governance_todo() {
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
+        target_read_only: false,
     })
     .expect_err("shared direct read needs a governance decision, not a conversion");
     assert_eq!(error.code, ErrorCode::OperationConflict);
@@ -228,15 +232,8 @@ fn conversion_plan_rejects_a_shared_direct_read_as_a_governance_todo() {
 
 #[test]
 fn conversion_plan_rejects_relations_without_a_convertible_entry() {
-    let error = plan_relation_conversion(&RelationConversionFacts {
-        relationship: RelationshipType::ImportCopy,
-        link_capabilities: link_capabilities(true, false),
-        link_target_same_volume: true,
-        other_shared_consumers: 0,
-    })
-    .expect_err("import copies are not deployment entries");
-    assert_eq!(error.code, ErrorCode::OperationConflict);
-
+    // FB-④（W2-2）：可写目录里的 ImportCopy 已按可转换副本放行，其计划
+    // 语义由 deployment_planner.rs 的用例钉住；这里保留 Unknown 的拒绝。
     let error = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::Unknown,
         ..relation_conversion_facts_for(RelationshipType::ImportCopy)
@@ -251,6 +248,7 @@ fn relation_conversion_facts_for(relationship: RelationshipType) -> RelationConv
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
+        target_read_only: false,
     }
 }
 

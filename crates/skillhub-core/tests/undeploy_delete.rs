@@ -673,6 +673,37 @@ fn removal_impact_for_shared_direct_read_lists_other_consumers() {
 }
 
 #[test]
+#[test]
+fn removal_impact_keeps_read_only_import_originals_record_only() {
+    // FB-④（2026-10-06）：可写原件随主体删除一并清理必须显式确认并备份；
+    // 只读原件只结束关系记录，不删除文件、无需备份。
+    let relation = RelationTargetFact::directory(
+        "agent",
+        "/home/ada/.agents/skills",
+        "codex",
+        DirectoryRole::AgentNative,
+    )
+    .with_relation("relation", RelationshipType::ImportCopy);
+    let facts = RemovalFacts::new(vec![relation.to_deployment_relation_fact()], vec![]);
+
+    let writable = calculate_removal_impact("relation", &facts);
+    assert_eq!(
+        recommend_removal_action(&writable),
+        MinimalImpactAction::RemoveCurrentAgentTarget
+    );
+    assert!(writable.backup.required, "writable cleanup requires a backup");
+
+    let read_only = calculate_removal_impact(
+        "relation",
+        &facts.clone().with_read_only_relation_ids(["relation"]),
+    );
+    assert_eq!(
+        recommend_removal_action(&read_only),
+        MinimalImpactAction::EndRelationRecordOnly
+    );
+    assert!(!read_only.backup.required, "record-only exits touch no files");
+}
+
 fn removal_impact_for_unknown_capability_is_a_governance_todo() {
     let relation = RelationTargetFact::directory(
         "shared",

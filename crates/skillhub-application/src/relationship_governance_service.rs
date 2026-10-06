@@ -521,7 +521,9 @@ impl LocalApplicationFacade {
                     snapshot.deployments.clone(),
                     snapshot.directory_capabilities.clone(),
                 )
-                .with_permission_limited(permission_limited),
+                .with_permission_limited(permission_limited)
+                // FB-④：只读原件的删除动作收窄为「结束关系记录」。
+                .with_read_only_relation_ids(Self::read_only_source_relation_ids(database)?),
             );
             if !impact.other_consumers.is_empty() {
                 push_task(
@@ -581,6 +583,20 @@ impl LocalApplicationFacade {
                         &request.relation_id,
                         GovernanceTaskKind::OperationFailureRecovery,
                         "directory junction migration is unsupported because its target cannot be verified safely".into(),
+                    ))?;
+                return Err(error);
+            }
+            // FB-④（2026-10-06）：只读边界预检。关系目标落在该 Agent 的
+            // 可用内置目录下时，任何转换都不会执行——原件按已保留副本
+            // 呈现，登记待办后如实拒绝。
+            if Self::relation_target_is_read_only(database, &relation)? {
+                let error = read_only_target_migration();
+                database
+                    .governance_task_repository()
+                    .create(&governance_task(
+                        &request.relation_id,
+                        conversion_todo_kind(relation.relationship),
+                        "relationships in read-only agent directories are never converted; the original stays as a retained independent copy".into(),
                     ))?;
                 return Err(error);
             }
@@ -650,6 +666,9 @@ impl LocalApplicationFacade {
                             &target_path,
                         ),
                         other_shared_consumers: impact.other_consumers.len(),
+                        // 只读目标在上方预检已拒绝；此字段保留给计划层
+                        // 的纵深防御（直接调用计划时同样拦截）。
+                        target_read_only: false,
                     },
                 );
             let conversion_plan = match conversion_plan {
@@ -1792,6 +1811,9 @@ fn validate_relation_for_prepare(relation: &DeploymentRelationFact) -> AppResult
             | RelationshipType::ManagedLink
             | RelationshipType::SharedDirectoryRead
             | RelationshipType::SharedDirectoryReference
+            // FB-④（2026-10-06）：可写目录里的导入副本是可转换副本；
+            // 只读目标由 prepare 的只读预检单独拒绝。
+            | RelationshipType::ImportCopy
     ) {
         return Err(invalid_relation_migration(
             "relationship type cannot be converted by this operation",
@@ -1962,6 +1984,17 @@ fn unsupported_junction_migration() -> AppError {
             "directory junction target cannot be verified safely by the current filesystem abstraction",
         )
         .with_action(RecoveryAction::OpenReadOnly)
+}
+
+/// FB-④（2026-10-06）：只读原件的转换拒绝——目录只读，不转换、不改
+/// 写；原件按已保留副本呈现。
+fn read_only_target_migration() -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+        .with_param(
+            "detail",
+            "the relationship lives in a read-only agent directory; it stays as a retained independent copy and is never rewritten",
+        )
+        .with_action(RecoveryAction::Acknowledge)
 }
 
 fn authorize_paths(

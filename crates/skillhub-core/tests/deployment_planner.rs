@@ -23,7 +23,7 @@ use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
     GovernanceTaskKind, RelationshipType,
 };
-use skillhub_core::{physical_id_for_path, AllowedRoot, PathPolicy, SkillId, VersionId};
+use skillhub_core::{physical_id_for_path, AllowedRoot, ErrorCode, PathPolicy, SkillId, VersionId};
 use tempfile::{tempdir, TempDir};
 
 fn capabilities(symlink: bool, junction: bool, copy: bool) -> DeploymentCapability {
@@ -1224,6 +1224,7 @@ fn shared_reference_with_other_consumers_requires_shared_impact_confirmation() {
         link_capabilities: capabilities(false, true, true),
         link_target_same_volume: true,
         other_shared_consumers: 1,
+        target_read_only: false,
     })
     .expect("a shared reference with a usable link form is plannable");
     assert_eq!(plan.mode, DeploymentMode::DirectoryJunction);
@@ -1237,10 +1238,62 @@ fn shared_reference_without_other_consumers_needs_no_confirmation() {
         link_capabilities: capabilities(true, true, true),
         link_target_same_volume: true,
         other_shared_consumers: 0,
+        target_read_only: false,
     })
     .expect("a solo shared reference is plannable");
     assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
     assert!(!plan.requires_shared_impact_confirmation);
+}
+
+// ---------------------------------------------------------------------------
+// FB-④（2026-10-06）：只读目标（Agent 内置等）软件不增删改。导入原件在
+// 可写目录里按可转换副本放行；只读目标一律拒绝——原件按第七类呈现为
+// 已保留副本，转换没有可执行落点。
+// ---------------------------------------------------------------------------
+
+#[test]
+fn import_copy_in_a_writable_directory_is_convertible() {
+    let plan = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ImportCopy,
+        link_capabilities: capabilities(true, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+        target_read_only: false,
+    })
+    .expect("a writable import copy converts into a managed link");
+    assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
+    assert!(!plan.requires_shared_impact_confirmation);
+}
+
+#[test]
+fn read_only_targets_refuse_conversion_and_keep_the_original() {
+    let import_copy = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ImportCopy,
+        link_capabilities: capabilities(true, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+        target_read_only: true,
+    })
+    .expect_err("read-only originals are retained, not converted");
+    assert_eq!(import_copy.code, ErrorCode::OperationConflict);
+    assert!(
+        import_copy.params["detail"]
+            .as_str()
+            .expect("detail")
+            .contains("read-only"),
+        "the refusal names the read-only directory: {}",
+        import_copy.params["detail"]
+    );
+    // 即使关系形状本身可转换，只读目录也没有可执行落点。
+    let observed_copy = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::ObservedCopy,
+        link_capabilities: capabilities(true, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 0,
+        target_read_only: true,
+    })
+    .expect_err("no conversion lands in a read-only directory");
+    assert_eq!(observed_copy.code, ErrorCode::OperationConflict);
 }
 
 // ---------------------------------------------------------------------------

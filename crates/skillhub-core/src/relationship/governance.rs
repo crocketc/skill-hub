@@ -1252,7 +1252,9 @@ fn apply_read_only_original_governance(
                 _ => None,
             })
             .collect::<Vec<_>>();
-        if evidence_copies.is_empty() {
+        // W2-2（FB-④）：部署侧 ImportCopy 行即使没有导入建档的副本事实
+        // （来源记录缺失的旧行），也按第七类只读原件呈现。
+        if evidence_copies.is_empty() && row.deployment().is_none() {
             continue;
         }
         row.source_read_only = true;
@@ -1474,9 +1476,10 @@ fn blockers_for(
     }
 
     // 2. Relationship type: which conversions actually exist.  This mirrors
-    //    `plan_relation_conversion`, which only accepts copies, links and a
-    //    shared-directory *reference* — a direct shared read has no per-agent
-    //    entry to replace and would have to rewrite the shared body.
+    //    `plan_relation_conversion`, which accepts copies, links, a
+    //    shared-directory *reference* and (FB-④, W2-2) import copies in
+    //    writable directories.  Read-only import originals are rewritten by
+    //    the read-only post-processor, so this blocker never reaches them.
     match relation.relationship {
         RelationshipType::SharedDirectoryRead => {
             blockers.push(RelationGovernanceBlocker::SharedBodyProtected);
@@ -1485,8 +1488,9 @@ fn blockers_for(
         | RelationshipType::ManagedCopy
         | RelationshipType::ObservedLink
         | RelationshipType::ManagedLink
-        | RelationshipType::SharedDirectoryReference => {}
-        RelationshipType::Unknown | RelationshipType::ImportCopy => {
+        | RelationshipType::SharedDirectoryReference
+        | RelationshipType::ImportCopy => {}
+        RelationshipType::Unknown => {
             blockers.push(RelationGovernanceBlocker::RelationshipNotConvertible);
         }
     }
