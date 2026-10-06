@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
-const storiesPath = path.join(repositoryRoot, "docs", "用户故事.md");
-const outputPath = path.join(repositoryRoot, "docs", "testing", "原子测试目录-v0.2.0.md");
+const storiesPath = path.join(repositoryRoot, "docs", "archive", "requirements", "用户故事.md");
+const outputPath = path.join(repositoryRoot, "docs", "archive", "testing", "原子测试目录-v0.2.0.md");
 
 const source = await readFile(storiesPath, "utf8");
 const lines = source.split(/\r?\n/);
@@ -123,7 +123,7 @@ const evidenceOverrides = new Map([
     version: "v0.2.0（仅边界说明）",
     automation: "边界说明：聊天、模型下载、训练微调、向量索引、多模型自动路由和复杂成本管理不在 v0.2.0 范围，命令契约与设置界面均无对应入口",
     result: "不适用（v0.2.0）",
-    evidence: "docs/llm/用户配置与隐私说明-2026-09-10.md",
+    evidence: "docs/archive/llm/archive/2026-09-13-供应商能力实现前/用户配置与隐私说明-2026-09-10.md",
   }],
   ["TC-GR-09", {
     automation: "tests/e2e/bilingual-core-flows.spec.ts：core flows in English/navigation and core pages render English copy 等 12 条（zh-CN 与 en-US 下侧栏导航与核心页面关键文案均正确渲染）；apps/desktop/src/i18n/i18n.test.ts 与 zh/en 键集 parity 测试（双语键完整）；tests/e2e/keyboard-accessibility.spec.ts：keyboard focus and reduced motion remain visible in the preview shell（焦点可见）；组件层状态均以文本标签呈现（如 fixtures.ts expectBasicCheck 断言 \"Basic: Passed\" 文本）。真实系统缩放、减少动效与原生键盘行为的视觉判断留在 TC-GR-09-M01～M05",

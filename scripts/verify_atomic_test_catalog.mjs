@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const catalogPath = path.join(repositoryRoot, "docs", "testing", "原子测试目录-v0.2.0.md");
+const catalogPath = path.join(repositoryRoot, "docs", "archive", "testing", "原子测试目录-v0.2.0.md");
 const catalog = await readFile(catalogPath, "utf8");
 const rows = catalog.split(/\r?\n/).filter((line) => /^\| TC-/.test(line));
 const ids = rows.map((line) => line.split("|")[1].trim());

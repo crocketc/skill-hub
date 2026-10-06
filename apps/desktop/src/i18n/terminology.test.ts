@@ -1,7 +1,7 @@
 import enUS from "./en-US/common.json";
 import zhCN from "./zh-CN/common.json";
 
-// 术语守护（任务 11，规则冻结于 docs/产品与交互设计.md §2.2 与实施计划任务 11）：
+// 术语守护（任务 11，规则冻结于 docs/archive/requirements/产品与交互设计.md §2.2 与实施计划任务 11）：
 // - 用户可见动作键（按钮、步骤名、状态转换、空态引导）一律用“添加到 Agent/项目”“从 Agent/项目移除”，
 //   批量用“添加到…”“添加 N 个 Skill”；这些键的中英文案都不得再出现「部署 / deploy」。
 // - 「部署」只允许以冻结的名词短语（链接部署/复制部署/部署关系）或技术详情/诊断术语存在；

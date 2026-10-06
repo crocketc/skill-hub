@@ -14,7 +14,7 @@
 
 ## 0.2.0 适配实现状态
 
-- 2026-09-29 规则补充：SkillHub 以 profile 声明的 Agent 根目录作为“已识别 Agent 目录”证据，不检测软件安装包、进程或注册表。根目录存在但 Skill 目录缺失时保留品牌卡并显示“待创建”；共享目录卡只展示已声明支持且本机根目录已识别的品牌。详细卡片归并与派发规则见 `docs/superpowers/specs/2026-09-28-agent-discovery-card-and-dispatch-design.md`。
+- 2026-09-29 规则补充：SkillHub 以 profile 声明的 Agent 根目录作为“已识别 Agent 目录”证据，不检测软件安装包、进程或注册表。根目录存在但 Skill 目录缺失时保留品牌卡并显示“待创建”；共享目录卡只展示已声明支持且本机根目录已识别的品牌。详细卡片归并与派发规则见 `docs/archive/decisions/specs/2026-09-28-agent-discovery-card-and-dispatch-design.md`。
 
 - 后端已内置 `pi.coding-agent`、`deepseek-harness.tui` 和 `deepseek-harness.web` 三个客户端目标，接入统一的发现、扫描、部署、解除部署和所有权保护流程；DeepSeek Harness 的 TUI/Web 仅作为两个客户端 profile，共享其本地 Skill 目录规则。
 - 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
