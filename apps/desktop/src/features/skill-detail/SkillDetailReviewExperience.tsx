@@ -231,7 +231,7 @@ export function SkillDetailReviewExperience({
               <h2>
                 <ReviewSectionToggle label="使用去向" onToggle={() => toggleSection("review-usage")} open={openSections["review-usage"]} sectionId="review-usage" />
               </h2>
-              <ReviewGraphEntry />
+              <ReviewGraphEntry skillId={skillId} />
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
@@ -403,29 +403,17 @@ function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname, libraryRet
   );
 }
 
-/** 图谱查阅入口（§16 查阅与定位）：详情提供定位跳转，图谱本身仍是权威事实来源。 */
-function ReviewGraphEntry() {
-  const [open, setOpen] = useState(false);
+/** 图谱查阅入口（§16 查阅与定位；FB-②）：携当前 Skill 身份真实跳转图谱页，
+ * 图谱仍是使用关系与复用修改的权威展示，详情页不复制图谱画布。 */
+function ReviewGraphEntry({ skillId }: { skillId: string }) {
   return (
-    <>
-      <Button className="sh-skill-detail-review__accent-action" onClick={() => setOpen(true)} size="sm" variant="ghost">
-        <Icon aria-hidden="true" name="relationships" size={16} />
-        在图谱中查看
-      </Button>
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="sh-dialog__overlay" />
-          <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>在技能图谱中查看</Dialog.Title>
-            <Dialog.Description>正式实现将携带此技能身份打开关系图谱，并定位它的使用关系边与“复用修改”追溯边。</Dialog.Description>
-            <p>原型阶段不进行页面跳转；图谱仍是使用关系与复用修改的权威展示，详情页不复制图谱画布。</p>
-            <div className="sh-dialog__actions">
-              <Button onClick={() => setOpen(false)} size="sm">返回技能详情</Button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </>
+    <Link
+      className="sh-button sh-button--ghost sh-button--sm sh-skill-detail-review__accent-action"
+      to={`/relationships?skillId=${encodeURIComponent(skillId)}`}
+    >
+      <Icon aria-hidden="true" name="relationships" size={16} />
+      在图谱中查看
+    </Link>
   );
 }
 

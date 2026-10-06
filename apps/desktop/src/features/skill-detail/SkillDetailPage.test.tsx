@@ -167,6 +167,16 @@ describe("SkillDetailPage shell", () => {
     ]);
   });
 
+  it("opens the relationship graph focused on the current Skill", async () => {
+    await renderDetail({ entry: "/library/skill-pdf" });
+
+    fireEvent.click(await screen.findByRole("link", { name: /在图谱中查看/ }));
+
+    expect(await screen.findByTestId("route-location")).toHaveTextContent(
+      "/relationships?skillId=skill-pdf",
+    );
+  });
+
   it("provides the same actionable security review from full details", async () => {
     const fixture = separateCheckFixture();
     const runBasicCheck = vi.fn(async () => undefined);
