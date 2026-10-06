@@ -128,8 +128,7 @@ const STATUS_ACTION_KEYS = [
   "skillLibrary.table.agentDeploymentSummary",
   "skillLibrary.table.columns.agentDeployments",
   "skillLibrary.table.columns.projectDeployments",
-  "skillDetail.statusRail.deployments_one",
-  "skillDetail.statusRail.deployments_other",
+  // §9 转正后旧状态栏（DetailStatusRail）已移除，其计数键随之删除。
   "agents.managedDeploymentCount",
   "agents.detail.managedDeployments",
   "projects.detail.managedDeployments.eyebrow",
@@ -141,14 +140,10 @@ const STATUS_ACTION_KEYS = [
 ];
 
 // 分片 4（关系与矩阵）：技能详情关系区入口、矩阵引导、来源与目标标签。
+// §9 转正后旧关系矩阵（RelationsPanel）、来源档案（ProvenancePanel）与轨迹面板
+// 已随旧布局移除，其键不再受本守护约束。
 const RELATION_ACTION_KEYS = [
-  "skillDetail.relations.undeploy",
-  "skillDetail.relations.undeployTarget",
   "skillLibrary.matrix.hint",
-  "skillDetail.provenance.heading",
-  "skillDetail.provenance.noObservedDeployments",
-  "skillDetail.trajectory.label",
-  "skillDetail.trajectory.deployments",
 ];
 
 // 名词键：统计、关系行与处置选项中的「部署」只以冻结短语形式出现。
@@ -170,15 +165,11 @@ const NOUN_KEYS = [
   "undeploy.choices.keepShared",
   "undeploy.choices.keepCopy",
   "undeploy.retained",
-  "skillDetail.relations.loadError",
-  "skillDetail.relations.governed.empty",
   "skillLibrary.matrix.ariaLabel",
   "skillLibrary.matrix.loading",
-  "skillDetail.navigation.sections.relations",
   "pending.impact",
   "skillLibrary.page.batch.removeTagsRetained",
   "skillLibrary.combinations.deleteBody",
-  "skillDetail.sourceUpdate.reconcile",
   "projects.assemblyPlan.detachNote",
   "dataProtection.restore.summary",
   "overview.chart.aria.agent",
@@ -219,7 +210,6 @@ const TECHNICAL_LOCKS: ReadonlyArray<readonly [key: string, zh: string, en?: Reg
   ["removal.choices.keep", "解除部署关系"],
   ["backup.uninstall.scenario", "解除全部部署", /undeploy everything/i],
   ["settings.library.healthScope", "部署一致性检查", /deployment consistency/i],
-  ["skillDetail.relations.governed.loadError", "部署与来源信息", /deployment and source details/i],
 ];
 
 it("locks the frozen action verbs verbatim", () => {

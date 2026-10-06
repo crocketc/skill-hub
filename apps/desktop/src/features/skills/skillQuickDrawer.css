@@ -89,13 +89,7 @@
   margin-bottom: 0;
 }
 
-.sh-skill-drawer .sh-skill-drawer__title-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
+
 
 .sh-skill-drawer .sh-skill-drawer__pinned-title {
   display: flex;
@@ -133,20 +127,9 @@
   min-height: 2rem;
 }
 
-.sh-skill-drawer .sh-skill-drawer__preset-cycle {
-  width: 2rem;
-  min-width: 2rem;
-  min-height: 2rem;
-  padding: 0;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ui-ink-muted);
-}
 
-.sh-skill-drawer .sh-skill-drawer__preset-cycle:hover:not(:disabled) {
-  background: var(--ui-surface-subtle);
-  color: var(--ui-accent-strong);
-}
+
+
 
 .sh-skill-drawer .sh-skill-drawer__presets {
   display: inline-flex;
@@ -215,12 +198,7 @@
   gap: var(--space-3);
 }
 
-.sh-skill-drawer .sh-skill-drawer__original-name {
-  display: block;
-  overflow-wrap: anywhere;
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
+
 
 .sh-skill-drawer .sh-skill-drawer__summary-stack {
   display: grid;
@@ -286,231 +264,61 @@
   font-size: var(--font-size-sm);
 }
 
-.sh-skill-drawer .sh-skill-drawer__lifecycle-value {
-  width: fit-content;
-  min-height: 1.75rem;
-  padding-inline: var(--space-2);
-  border-left: 2px solid var(--ui-accent);
-  background: var(--ui-surface-subtle);
-  font-weight: 580;
-}
 
-.sh-skill-drawer .sh-skill-drawer__lifecycle-row,
-.sh-skill-drawer .sh-skill-drawer__trial-controls {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-}
 
-.sh-skill-drawer .sh-skill-drawer__trial-date {
-  max-width: 9rem;
-  overflow: hidden;
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.sh-skill-drawer .sh-skill-drawer__trial-date-trigger {
-  width: 1.875rem;
-  min-width: 1.875rem;
-  min-height: 1.875rem;
-  padding: 0;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ui-ink-muted);
-}
 
-.sh-skill-drawer .sh-skill-drawer__trial-date-trigger:hover:not(:disabled) {
-  background: var(--ui-surface-subtle);
-  color: var(--ui-accent-strong);
-}
 
-.sh-skill-drawer .sh-skill-drawer__trial-convert {
-  min-height: 1.875rem;
-  padding-block: 0;
-}
 
-.sh-skill-drawer__trial-popover {
-  position: fixed;
-  z-index: 60;
-  width: min(22rem, calc(100vw - 24px));
-  overflow: auto;
-  padding: var(--space-4);
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--ui-surface);
-  color: var(--ui-ink);
-  box-shadow: var(--shadow-lg);
-}
 
-.sh-skill-drawer__trial-popover > h2 {
-  margin: 0 0 var(--space-3);
-  color: var(--ui-ink);
-  font-size: var(--font-size-md);
-  font-weight: 640;
-}
 
-.sh-skill-drawer__trial-input {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-sm);
-}
 
-.sh-skill-drawer__trial-input input {
-  min-height: 2.25rem;
-  padding-inline: var(--space-2);
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--ui-surface);
-  color: var(--ui-ink);
-  font: inherit;
-}
 
-.sh-skill-drawer__trial-popover-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 
-.sh-skill-drawer__trial-error {
-  margin: var(--space-2) 0 0;
-  color: var(--ui-danger-foreground);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
 
-.sh-skill-drawer .sh-skill-drawer__collections {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-  grid-column: 1 / -1;
-  padding-top: var(--space-1);
-  border-top: 1px solid var(--ui-border-subtle);
-}
 
-.sh-skill-drawer .sh-skill-drawer__collections-value {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-chips,
-.sh-skill-drawer__collection-options {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-chips {
-  display: flex;
-  flex-wrap: wrap;
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-chip {
-  display: inline-flex;
-  min-width: 0;
-  max-width: min(15rem, 100%);
-  align-items: center;
-  gap: 0.125rem;
-  padding: 0.125rem 0.125rem 0.125rem var(--space-2);
-  border: 1px solid var(--ui-selected-border);
-  border-radius: 999px;
-  background: var(--ui-selected-surface);
-  color: var(--ui-accent-strong);
-  font-size: var(--font-size-xs);
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-chip > span,
-.sh-skill-drawer__collection-options > li > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-remove,
-.sh-skill-drawer .sh-skill-drawer__collection-add {
-  min-width: 1.625rem;
-  min-height: 1.625rem;
-  padding: 0;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ui-ink-muted);
-}
 
-.sh-skill-drawer .sh-skill-drawer__collection-remove:hover:not(:disabled),
-.sh-skill-drawer .sh-skill-drawer__collection-add:hover:not(:disabled) {
-  background: var(--ui-hover-surface);
-  color: var(--ui-accent-strong);
-}
 
-.sh-skill-drawer__collections-popover {
-  position: fixed;
-  z-index: 60;
-  width: min(24rem, calc(100vw - 24px));
-  overflow: auto;
-  padding: var(--space-4);
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--ui-surface);
-  color: var(--ui-ink);
-  box-shadow: var(--shadow-lg);
-}
 
-.sh-skill-drawer__collections-popover > [data-radix-dialog-title] {
-  margin: 0 0 var(--space-3);
-  color: var(--ui-ink);
-  font-size: var(--font-size-md);
-  font-weight: 640;
-}
 
-.sh-skill-drawer__collection-options > li {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--ui-border-subtle);
-}
 
-.sh-skill-drawer__collection-options > li > span {
-  flex: 1 1 auto;
-}
 
-.sh-skill-drawer__collections-empty p {
-  margin: 0 0 var(--space-2);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-sm);
-}
 
-.sh-skill-drawer__collections-empty a {
-  color: var(--ui-accent-strong);
-  font-size: var(--font-size-sm);
-}
 
-.sh-skill-drawer__collections-close {
-  display: flex;
-  margin: var(--space-3) 0 0 auto;
-}
 
-.sh-skill-drawer .sh-skill-drawer__alert-inline {
-  margin: 0;
-  color: var(--ui-danger-foreground);
-  font-size: var(--font-size-xs);
-  overflow-wrap: anywhere;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .sh-skill-drawer .sh-skill-drawer__summary-value > span:first-child {
   min-width: 0;
@@ -568,82 +376,28 @@
   white-space: nowrap;
 }
 
-.sh-skill-drawer .sh-skill-drawer__tag-more {
-  display: inline-flex;
-  align-items: center;
-}
 
-.sh-skill-drawer .sh-skill-drawer__tag-more-button {
-  min-height: 1.75rem;
-  border-color: var(--ui-border-subtle);
-  padding-inline: var(--space-2);
-  font-size: var(--font-size-xs);
-  white-space: nowrap;
-}
+
+
 
 /* 标签浮层经 Portal 渲染在 body 末尾，不能用抽屉内祖先选择器限定。 */
-.sh-skill-drawer__tag-popover {
-  position: fixed;
-  z-index: 100;
-  width: min(20rem, calc(100vw - 1.5rem));
-  max-height: min(22rem, calc(100vh - 1.5rem));
-  overflow: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--ui-border-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-2);
-  background: var(--ui-surface);
-  box-shadow: var(--shadow-lg);
-  scrollbar-width: thin;
-}
 
-.sh-skill-drawer__tag-popover:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 
-.sh-skill-drawer__tag-popover-heading,
-.sh-skill-drawer__tag-popover li {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
 
-.sh-skill-drawer__tag-popover-heading {
-  position: sticky;
-  top: calc(-1 * var(--space-2));
-  z-index: 1;
-  padding: var(--space-1) 0;
-  background: var(--ui-surface);
-}
 
-.sh-skill-drawer__tag-popover-heading strong {
-  font-size: var(--font-size-sm);
-}
 
-.sh-skill-drawer__tag-popover ul {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.sh-skill-drawer__tag-popover li {
-  border-bottom: 1px solid var(--ui-border-subtle);
-  padding: var(--space-1) 0;
-}
 
-.sh-skill-drawer__tag-popover li > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
 
-.sh-skill-drawer__tag-popover .sh-button {
-  flex: 0 0 auto;
-}
+
+
+
+
+
+
+
+
+
 
 .sh-skill-drawer .sh-skill-drawer__description-block,
 .sh-skill-drawer .sh-skill-drawer__purpose-row,
@@ -767,47 +521,19 @@
   outline-offset: 2px;
 }
 
-.sh-skill-drawer .sh-skill-drawer__header-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1);
-  flex: 0 0 auto;
-}
 
-.sh-skill-drawer .sh-skill-drawer__header-actions .sh-button {
-  min-height: 2rem;
-  padding-inline: var(--space-2);
-  font-size: var(--font-size-xs);
-  text-decoration: none;
-}
 
-.sh-skill-drawer .sh-skill-drawer__header-actions .sh-skill-drawer__dispatch {
-  font-weight: 620;
-}
+
+
+
 
 .sh-skill-drawer .sh-skill-drawer__delete-action {
   flex: 0 0 auto;
 }
 
-.sh-skill-drawer .sh-skill-drawer__risk {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-4);
-  flex: 0 0 auto;
-  padding-inline-start: var(--space-3);
-  border-inline-start: 2px solid var(--ui-warning-border);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
 
-.sh-skill-drawer .sh-skill-drawer__risk strong {
-  color: var(--ui-ink);
-  font-weight: 620;
-}
+
+
 
 .sh-skill-drawer .sh-skill-drawer__alert,
 .sh-skill-drawer .sh-skill-drawer__state {
@@ -875,36 +601,15 @@
   color: var(--ui-ink-muted);
 }
 
-.sh-skill-drawer .sh-skill-drawer__facts {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-4);
-  margin: 0 0 var(--space-3);
-}
 
-.sh-skill-drawer .sh-skill-drawer__facts--stacked {
-  grid-template-columns: 1fr;
-}
 
-.sh-skill-drawer .sh-skill-drawer__facts > div {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-}
 
-.sh-skill-drawer .sh-skill-drawer__facts dt {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
 
-.sh-skill-drawer .sh-skill-drawer__facts dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--ui-ink);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
+
+
+
+
+
 
 .sh-skill-drawer .sh-skill-drawer__value-list,
 .sh-skill-drawer .sh-skill-drawer__project-list {
@@ -955,64 +660,21 @@
   overflow: hidden;
 }
 
-.sh-skill-drawer .sh-skill-drawer__relation-scroll {
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
 
-.sh-skill-drawer .sh-skill-drawer__relation-scroll::-webkit-scrollbar {
-  display: none;
-}
 
-.sh-skill-drawer .sh-skill-drawer__relation-scroll:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 
-.sh-skill-drawer .sh-skill-drawer__destination-list,
-.sh-skill-drawer .sh-skill-drawer__unresolved-list {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-2);
-  margin: var(--space-1) 0;
-  padding: 0;
-  list-style: none;
-}
 
-.sh-skill-drawer .sh-skill-drawer__destination-list > li,
-.sh-skill-drawer .sh-skill-drawer__unresolved-list > li {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--ui-border-subtle);
-}
 
-.sh-skill-drawer .sh-skill-drawer__destination-identity {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-1);
-}
 
-.sh-skill-drawer .sh-skill-drawer__destination-identity code,
-.sh-skill-drawer .sh-skill-drawer__unresolved-list code,
-.sh-skill-drawer .sh-skill-drawer__provenance-fact code {
-  min-width: 0;
-  color: var(--ui-ink-muted);
-  font-family: var(--font-ui, inherit);
-  font-size: var(--font-size-xs);
-  overflow-wrap: anywhere;
-}
 
-.sh-skill-drawer .sh-skill-drawer__destination-list .sh-button,
-.sh-skill-drawer .sh-skill-drawer__unresolved-list .sh-button {
-  justify-self: start;
-}
+
+
+
+
+
+
+
+
 
 .sh-skill-drawer .sh-skill-drawer__relation-heading {
   display: flex;
@@ -1035,63 +697,26 @@
   gap: var(--space-2);
 }
 
-.sh-skill-drawer .sh-skill-drawer__configuration {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3) 0 var(--space-4);
-  border-bottom: 1px solid var(--ui-border-subtle);
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggles legend {
-  margin-bottom: var(--space-2);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle {
-  min-width: 0;
-  padding: var(--space-2) 0;
-  border: 0;
-  border-bottom: 1px solid var(--ui-border-subtle);
-  background: transparent;
-  color: var(--ui-ink-muted);
-  font: inherit;
-  font-size: var(--font-size-sm);
-  text-align: start;
-  cursor: grab;
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle:active {
-  cursor: grabbing;
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle--visible {
-  color: var(--ui-ink);
-  font-weight: 580;
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle--locked {
-  cursor: default;
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle--target {
-  border-bottom-color: var(--ui-accent);
-  color: var(--ui-accent-strong);
-}
 
-.sh-skill-drawer .sh-skill-drawer__module-toggle:focus-visible,
+
+
+
+
+
+
+
+
+
 .sh-skill-drawer .sh-skill-drawer__resize:focus-visible,
-.sh-skill-drawer .sh-skill-drawer__summary-value .sh-button:focus-visible,
-.sh-skill-drawer .sh-skill-drawer__header-actions .sh-button:focus-visible {
+
+.sh-skill-drawer .sh-skill-drawer__summary-value .sh-button:focus-visible{
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
@@ -1144,9 +769,7 @@
     gap: 0.125rem;
   }
 
-  .sh-skill-drawer .sh-skill-drawer__risk {
-    padding-block: var(--space-1);
-  }
+
 
   .sh-skill-drawer .sh-skill-drawer__scroll {
     min-height: 0;
@@ -1172,24 +795,15 @@
     padding-inline: var(--space-4);
   }
 
-  .sh-skill-drawer .sh-skill-drawer__title-row {
-    align-items: flex-start;
-    gap: var(--space-1);
-  }
+
 
   .sh-skill-drawer .sh-skill-drawer__pinned-title h2 {
     font-size: var(--font-size-md);
   }
 
-  .sh-skill-drawer .sh-skill-drawer__header-actions {
-    gap: 0.125rem;
-  }
 
-  .sh-skill-drawer .sh-skill-drawer__header-actions .sh-button {
-    min-height: 2rem;
-    padding-inline: var(--space-1);
-    font-size: 0.7rem;
-  }
+
+
 
   .sh-skill-drawer .sh-skill-drawer__chrome {
     padding-inline: var(--space-3);
@@ -1198,9 +812,8 @@
 
 @media (max-width: 28rem) {
   .sh-skill-drawer .sh-skill-drawer__summary-grid,
-  .sh-skill-drawer .sh-skill-drawer__facts,
-  .sh-skill-drawer .sh-skill-drawer__relations-grid,
-  .sh-skill-drawer .sh-skill-drawer__module-toggles {
+
+  .sh-skill-drawer .sh-skill-drawer__relations-grid{
     grid-template-columns: 1fr;
   }
 
@@ -1247,63 +860,21 @@
 }
 .sh-skill-drawer .sh-skill-drawer__version-update > a { margin-left: auto; }
 
-.sh-skill-drawer .sh-skill-drawer__unresolved {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--ui-warning-border);
-  border-radius: var(--radius-md);
-  color: var(--ui-ink);
-  background: var(--ui-warning-background);
-}
 
-.sh-skill-drawer .sh-skill-drawer__unresolved > p {
-  flex: 1 1 14rem;
-  margin: 0;
-}
 
-.sh-skill-drawer .sh-skill-drawer__unresolved > a { margin-left: auto; }
 
-.sh-skill-drawer .sh-skill-drawer__unresolved-list {
-  flex: 1 1 100%;
-  margin: 0;
-}
 
-.sh-skill-drawer .sh-skill-drawer__query-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--ui-danger-border);
-  border-radius: var(--radius-md);
-  color: var(--ui-ink);
-  background: var(--ui-danger-background);
-}
 
-.sh-skill-drawer .sh-skill-drawer__query-error > p { flex: 1 1 16rem; margin: 0; }
 
-.sh-skill-drawer .sh-skill-drawer__provenance {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--ui-border-subtle);
-  font-size: var(--font-size-sm);
-}
 
-.sh-skill-drawer .sh-skill-drawer__provenance-fact {
-  display: flex;
-  flex: 1 1 16rem;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  min-width: 0;
-}
+
+
+
+
+
+
+
+
 
 /* DEV-only drawing board: the opt-in review route reuses the production Drawer
    and profile modules while keeping this surface isolated from normal library use. */
@@ -1494,9 +1065,7 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   margin: 0;
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__risk {
-  padding-block: var(--space-1);
-}
+
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-modules .sh-skill-drawer__module {
   gap: var(--space-1);
@@ -1664,11 +1233,7 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   }
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-preview-note {
-  margin: 0 0 var(--space-2);
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
+
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-description-row {
   display: grid;
@@ -2571,7 +2136,7 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-security-label,
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-security-meta,
+
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-security-scope {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);

@@ -568,25 +568,27 @@ it("localizes failed deletion impact preparation and keeps confirmation closed i
   }
 });
 
-it("offers the same safe deletion flow from a selected Skill's quick drawer", async () => {
+it("keeps the drawer's delete entry as a display-only preview without preparing deletion", async () => {
+    // §9 转正后抽屉动作均为预览（data-prototype-action），真实删除只保留在
+    // 表格勾选后的批量删除流程中；抽屉内不再触发 prepareDelete。
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
       prepareUndeploy: vi.fn(),
       commitUndeploy: vi.fn(),
-      prepareDelete: vi.fn().mockResolvedValue({
-        deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
-        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
-      }),
+      prepareDelete: vi.fn(),
       commitDelete: vi.fn(),
     };
     renderLibrary({ facade, removalFacade });
 
     await screen.findByText("PDF Reader");
     fireEvent.click(skillNameCell("PDF Reader"));
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
 
-    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
-    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+    const drawerDelete = await screen.findByRole("button", { name: "Delete" });
+    expect(drawerDelete).toHaveAttribute("data-prototype-action", "true");
+    fireEvent.click(drawerDelete);
+    expect(await screen.findByRole("dialog", { name: "Delete preview" })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
+    expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
   });
 
   it("keeps search visible while secondary filters collapse in the library", async () => {
@@ -1122,7 +1124,7 @@ it("offers the same safe deletion flow from a selected Skill's quick drawer", as
     // 保存失败时保留临时偏好并给出可见告警。
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Current width: Wide. Next: Near full screen",
+        name: "Current: Wide; click to switch to Near full screen",
       }),
     );
 
@@ -1733,7 +1735,7 @@ it("offers the same safe deletion flow from a selected Skill's quick drawer", as
     // 界面规范§5批注15/16：宽度档位合并为单一循环按钮。
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Current width: Wide. Next: Near full screen",
+        name: "Current: Wide; click to switch to Near full screen",
       }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(

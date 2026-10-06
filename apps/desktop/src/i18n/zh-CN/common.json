@@ -1438,16 +1438,8 @@
     },
     "drawer": {
       "actions": {
-        "addTags": "添加标签",
-        "delete": "从库中删除 Skill",
-        "deleteShort": "删除",
-        "dispatch": "派发",
-        "dispatchSkill": "派发 {{name}}",
-        "export": "导出",
-        "exportSkill": "导出 {{name}}",
-        "viewVersions": "查看版本"
+        "addTags": "添加标签"
       },
-      "configure": "配置快速抽屉",
       "description": "Skill 摘要与快捷操作。",
       "detail": {
         "empty": "选择一项 Skill 以查看详情",
@@ -1459,11 +1451,7 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
-      "allTags": "全部标签",
-      "moreTags_one": "其余 {{count}} 个标签",
-      "moreTags_other": "其余 {{count}} 个标签",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
-      "fullDetails": "查看完整详情",
       "prototype": {
         "cycleWidth": "当前：{{current}}；点击切换至{{next}}",
         "actionImpacts": {
@@ -1502,7 +1490,6 @@
         "openRelationContext": "打开关系上下文：{{target}}",
         "openSampleLocation": "打开样例位置",
         "openTargetSample": "模拟打开{{type}}详情",
-        "previewNote": "预览样例 · 所有改动只保存在当前页面，不会写入 SkillHub。",
         "popoverDescription": "仅展示预览操作；不会修改正式数据。",
         "projectTargets": "项目关系目标，共 {{count}} 项",
         "regular": "常规",
@@ -1560,7 +1547,6 @@
         "securityAccessibleRisk": "{{check}}发现风险 {{count}} 项，其中 {{actionable}} 项待处理。",
         "securityAccessibleClean": "{{check}}通过，当前版本未发现风险。",
         "securityAccessibleUnknown": "{{check}}：{{result}}。",
-        "securityVersionTime": "当前版本 {{version}} · {{time}}",
         "securityFindingsLabel": "检查发现",
         "securityNeedsAttention": "仍需处理",
         "securityDispositionRecorded": "已记录处理决定，原始发现仍保留",
@@ -1570,122 +1556,49 @@
         "sourceVersionTitle": "来源与版本"
       },
       "modules": {
-        "fullDetails": "完整详情",
-        "identity": "名称与说明",
         "primaryActions": "主要操作",
         "relations": "关联关系",
         "riskSummary": "风险摘要",
         "securityChecks": "安全检查",
-        "sourceVersion": "来源与版本",
-        "sourceLicense": "来源与许可证",
-        "usageEvidence": "使用证据",
-        "versions": "版本",
-        "dependenciesDuplicates": "依赖与重复项",
-        "externalChanges": "外部变更",
-        "invocationRequirements": "调用方式与运行要求"
+        "usageEvidence": "使用证据"
       },
-      "moduleVisibility": "抽屉模块",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
       "metadataFailure": "别名、用途或备注未保存，已恢复为已保存的内容。",
       "presets": {
-        "cycle": "当前宽度：{{current}}，下一档：{{next}}",
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",
         "standard": "标准宽度",
         "wide": "加宽"
       },
-      "reset": "恢复默认",
       "resize": "调整快速抽屉宽度",
       "risk": {
         "high": "{{count}} 个高风险项",
         "pending": "{{count}} 项待处理"
       },
-      "trial": {
-        "adjustDate": "调整复核日期",
-        "convert": "转为常规",
-        "converted": "此 Skill 已转为常规生命周期。",
-        "noDate": "未设置复核日期",
-        "reviewDate": "试用复核日期",
-        "reviewDateLabel": "复核日期",
-        "saveDate": "保存复核日期"
-      },
-      "collections": {
-        "add": "加入组合",
-        "addShort": "加入",
-        "addTo": "加入{{name}}",
-        "added": "已加入{{name}}。",
-        "dialogTitle": "将{{skill}}加入组合",
-        "empty": "尚未创建组合。",
-        "label": "所属组合",
-        "loadFailed": "无法读取组合，请重试后再管理成员。",
-        "manage": "管理组合",
-        "memberships": "包含此 Skill 的组合",
-        "none": "未加入组合",
-        "remove": "将{{skill}}从{{name}}移出",
-        "removeShort": "移出",
-        "removed": "已从{{name}}移出。"
-      },
       "title": "Skill 详情",
       "translation": {
-        "action": "翻译描述",
         "confirmLabel": "确认译文用途",
         "failed": "描述翻译未能完成。",
-        "inProgress": "正在翻译…",
         "saveFailed": "译文未能写入我的用途。",
         "useAsPurpose": "写入我的用途"
       },
-      "reviewRelationships": "查看关系治理",
-      "unresolvedTargets_one": "有 {{count}} 条关系的目标身份暂时无法确认，请查看此关系。",
-      "unresolvedTargets_other": "有 {{count}} 条关系的目标身份暂时无法确认，请查看这些关系。",
-      "relationships": {
-        "loading": "正在读取关系事实…",
-        "loadFailed": "无法读取目标关系。请重试，或前往治理页查看。",
-        "unavailableGroup": "当前无法读取目标事实。"
-      },
-      "provenance": {
-        "label": "导入存证",
-        "loadFailed": "无法读取导入存证。",
-        "none": "此 Skill 没有导入存证记录。",
-        "otherSource": "其他来源"
-      },
-      "reviewAgentRelationship": "查看 Agent 关系",
-      "reviewProjectRelationship": "查看项目关系",
-      "reviewUnresolvedRelationship": "查看未识别关系",
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
         "agentDestinations": "Agent 去向",
         "alias": "别名",
-        "knownDestinationCount": "已识别 {{count}} 个",
-        "currentVersion": "当前版本：{{version}}",
         "invocation": "调用方式：",
-        "requirements": "运行要求",
         "invocationCount": "{{count}} 次调用",
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
         "note": "我的备注",
         "originalDescription": "原始描述",
-        "originalName": "原名",
-        "ownership": "归属",
         "purpose": "我的用途",
         "projectDestinations": "项目去向",
-        "projectDirectory": "项目目录",
         "projects": "项目",
-        "noLinkedAgents": "没有关联的 Agent",
-        "noLinkedProjects": "没有关联的项目目录",
-        "unknownTarget": "目标路径不可用",
-        "unresolvedDestinationGroup": "部分去向暂时无法识别。",
-        "source": "来源",
         "tags": "标签",
         "translatedDescription": "描述译文",
-        "upToDate": "已是最新版本",
-        "updateAvailable": "有可用更新",
-        "dependencies": "依赖",
-        "duplicates": "可能的重复项"
-      },
-      "relations": {
-        "showFewerProjects": "收起项目",
-        "showMoreProjects": "展开另外 {{count}} 个项目"
+        "upToDate": "已是最新版本"
       }
     },
     "filters": {
@@ -1709,10 +1622,8 @@
       "lifecycle": "生命周期",
       "lifecycleOptions": {
         "active": "常规",
-        "deprecated": "已弃用",
         "trial": "试用"
       },
-      "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
       "searchPlaceholder": "输入 Skill 名称或别名",
       "selectedCount": "已选 {{count}} 项",
@@ -1743,8 +1654,6 @@
     },
     "table": {
       "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
-      "projectDeploymentSummary": "已添加到项目：{{count}} 个",
-      "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
       "basicStatus": "基础：{{state}}",
@@ -1786,9 +1695,6 @@
         "deprecated": "已弃用",
         "trial": "试用"
       },
-      "moveBefore": "将{{column}}移到{{before}}之前",
-      "moveUp": "上移{{column}}",
-      "moveDown": "下移{{column}}",
       "dragColumn": "可拖动列",
       "lockedColumn": "固定",
       "reorderLabel": "调整列顺序",
@@ -1802,8 +1708,6 @@
       "selectSkill": "选择 {{name}}",
       "sortBy": "按{{column}}排序",
       "updateAvailable": "有可用更新",
-      "agentDeployments_one": "{{count}} 个 Agent",
-      "agentDeployments_other": "{{count}} 个 Agent",
       "projectDeployments_one": "{{count}} 个项目",
       "projectDeployments_other": "{{count}} 个项目"
     },
@@ -1966,14 +1870,6 @@
         }
       }
     },
-    "provenance": {
-      "source": "来源：",
-      "sourceKinds": {
-        "local": "本地目录",
-        "https": "HTTPS 下载",
-        "git": "Git 仓库"
-      }
-    },
     "requirements": {
       "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",
       "empty": "未声明调用方式",
@@ -2021,12 +1917,6 @@
       "noCurrentVersionForSecurity": "当前没有可检查的版本，安全检查尚未运行。",
       "notFound": "本地 Skill 库中不存在此 Skill",
       "unavailable": "Skill 详情数据尚未接入"
-    },
-    "trial": {
-      "saveDate": "保存复核日期",
-      "saveError": "未能保存试用日期。",
-      "saved": "复核日期已保存为 {{date}}。",
-      "set": "设置试用复核"
     },
     "duplicates": {
       "deterministicHeading": "确定性重复候选",

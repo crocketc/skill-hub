@@ -1438,16 +1438,8 @@
     },
     "drawer": {
       "actions": {
-        "addTags": "Add tags",
-        "delete": "Delete from library",
-        "deleteShort": "Delete",
-        "dispatch": "Dispatch",
-        "dispatchSkill": "Dispatch {{name}}",
-        "export": "Export",
-        "exportSkill": "Export {{name}}",
-        "viewVersions": "View versions"
+        "addTags": "Add tags"
       },
-      "configure": "Configure quick drawer",
       "description": "Skill summary and quick actions.",
       "detail": {
         "empty": "Select a skill to view details",
@@ -1459,11 +1451,7 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
-      "allTags": "All tags",
-      "moreTags_one": "{{count}} more tag",
-      "moreTags_other": "{{count}} more tags",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
-      "fullDetails": "View full details",
       "prototype": {
         "cycleWidth": "Current: {{current}}; click to switch to {{next}}",
         "actionImpacts": {
@@ -1502,7 +1490,6 @@
         "openRelationContext": "Open relation context: {{target}}",
         "openSampleLocation": "Open sample location",
         "openTargetSample": "Preview {{type}} details",
-        "previewNote": "Preview sample · Changes stay on this page and are not written to SkillHub.",
         "popoverDescription": "Preview controls. No production data is changed.",
         "projectTargets": "Project relation targets, {{count}} total",
         "regular": "Regular",
@@ -1560,7 +1547,6 @@
         "securityAccessibleRisk": "{{check}} found {{count}} risks; {{actionable}} need attention.",
         "securityAccessibleClean": "{{check}} passed with no risks in the current version.",
         "securityAccessibleUnknown": "{{check}}: {{result}}.",
-        "securityVersionTime": "Current version {{version}} · {{time}}",
         "securityFindingsLabel": "Check findings",
         "securityNeedsAttention": "Needs attention",
         "securityDispositionRecorded": "A handling decision is recorded; the original finding remains",
@@ -1570,122 +1556,49 @@
         "sourceVersionTitle": "Source and version"
       },
       "modules": {
-        "fullDetails": "Full details",
-        "identity": "Identity",
         "primaryActions": "Primary actions",
         "relations": "Relations",
         "riskSummary": "Risk summary",
         "securityChecks": "Security checks",
-        "sourceVersion": "Source and version",
-        "sourceLicense": "Source and license",
-        "usageEvidence": "Usage evidence",
-        "versions": "Versions",
-        "dependenciesDuplicates": "Dependencies and duplicates",
-        "externalChanges": "External changes",
-        "invocationRequirements": "Invocation and requirements"
+        "usageEvidence": "Usage evidence"
       },
-      "moduleVisibility": "Drawer modules",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
       "metadataFailure": "Alias, purpose, or note was not saved. The last saved content was restored.",
       "presets": {
-        "cycle": "Current width: {{current}}. Next: {{next}}",
         "label": "Quick drawer width",
         "nearFull": "Near full screen",
         "standard": "Standard width",
         "wide": "Wide"
       },
-      "reset": "Reset to default",
       "resize": "Resize quick drawer",
       "risk": {
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
-      "trial": {
-        "adjustDate": "Adjust review date",
-        "convert": "Make regular",
-        "converted": "This Skill is now in the regular lifecycle.",
-        "noDate": "No review date set",
-        "reviewDate": "Trial review date",
-        "reviewDateLabel": "Review date",
-        "saveDate": "Save review date"
-      },
-      "collections": {
-        "add": "Add to combination",
-        "addShort": "Add",
-        "addTo": "Add to {{name}}",
-        "added": "Added to {{name}}.",
-        "dialogTitle": "Add {{skill}} to a combination",
-        "empty": "No combinations have been created yet.",
-        "label": "Combinations",
-        "loadFailed": "Could not load combinations. Retry to manage membership.",
-        "manage": "Manage combinations",
-        "memberships": "Combinations containing this Skill",
-        "none": "Not in a combination",
-        "remove": "Remove {{skill}} from {{name}}",
-        "removeShort": "Remove",
-        "removed": "Removed from {{name}}."
-      },
       "title": "Skill details",
       "translation": {
-        "action": "Translate description",
         "confirmLabel": "Confirm translated purpose",
         "failed": "The description could not be translated.",
-        "inProgress": "Translating…",
         "saveFailed": "The translation could not be saved as my purpose.",
         "useAsPurpose": "Use as my purpose"
       },
-      "reviewRelationships": "Review relationship governance",
-      "unresolvedTargets_one": "{{count}} relationship target could not be identified. Review its relationship.",
-      "unresolvedTargets_other": "{{count}} relationship targets could not be identified. Review their relationships.",
-      "relationships": {
-        "loading": "Loading relationship facts…",
-        "loadFailed": "Could not load destination relationships. Retry or open governance to review them.",
-        "unavailableGroup": "Destination facts are unavailable."
-      },
-      "provenance": {
-        "label": "Import provenance",
-        "loadFailed": "Could not load import provenance.",
-        "none": "No import provenance is recorded for this Skill.",
-        "otherSource": "Other source"
-      },
-      "reviewAgentRelationship": "Review Agent relationship",
-      "reviewProjectRelationship": "Review project relationship",
-      "reviewUnresolvedRelationship": "Review unresolved relationship",
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
         "agentDestinations": "Agent destinations",
         "alias": "Alias",
-        "knownDestinationCount": "Known destinations: {{count}}",
-        "currentVersion": "Current version: {{version}}",
         "invocation": "Invocation:",
-        "requirements": "Requirements",
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
         "note": "My note",
         "originalDescription": "Original description",
-        "originalName": "Original name",
-        "ownership": "Ownership",
         "purpose": "My purpose",
         "projectDestinations": "Project destinations",
-        "projectDirectory": "Project directory",
         "projects": "Projects",
-        "noLinkedAgents": "No linked Agents",
-        "noLinkedProjects": "No linked project directories",
-        "unknownTarget": "Target path unavailable",
-        "unresolvedDestinationGroup": "Some destinations could not be identified yet.",
-        "source": "Source",
         "tags": "Tags",
         "translatedDescription": "Translation",
-        "upToDate": "Up to date",
-        "updateAvailable": "Update available",
-        "dependencies": "Dependencies",
-        "duplicates": "Possible duplicates"
-      },
-      "relations": {
-        "showFewerProjects": "Show fewer projects",
-        "showMoreProjects": "Show {{count}} more projects"
+        "upToDate": "Up to date"
       }
     },
     "filters": {
@@ -1709,10 +1622,8 @@
       "lifecycle": "Lifecycle",
       "lifecycleOptions": {
         "active": "Regular",
-        "deprecated": "Deprecated",
         "trial": "Trial"
       },
-      "resultCount": "{{count}} results",
       "search": "Search skills",
       "searchPlaceholder": "Enter a Skill name or alias",
       "selectedCount": "{{count}} selected",
@@ -1743,8 +1654,6 @@
     },
     "table": {
       "agentDeploymentSummary": "Added to Agents: {{count}}",
-      "projectDeploymentSummary": "Added to projects: {{count}}",
-      "aliasLabel": "Alias",
       "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
@@ -1786,9 +1695,6 @@
         "deprecated": "Deprecated",
         "trial": "Trial"
       },
-      "moveBefore": "Move {{column}} before {{before}}",
-      "moveUp": "Move {{column}} up",
-      "moveDown": "Move {{column}} down",
       "dragColumn": "draggable column",
       "lockedColumn": "Locked",
       "reorderLabel": "Reorder columns",
@@ -1802,8 +1708,6 @@
       "selectSkill": "Select {{name}}",
       "sortBy": "Sort by {{column}}",
       "updateAvailable": "Update available",
-      "agentDeployments_one": "{{count}} agent",
-      "agentDeployments_other": "{{count}} agents",
       "projectDeployments_one": "{{count}} project",
       "projectDeployments_other": "{{count}} projects"
     },
@@ -1966,14 +1870,6 @@
         }
       }
     },
-    "provenance": {
-      "source": "Source:",
-      "sourceKinds": {
-        "local": "Local directory",
-        "https": "HTTPS download",
-        "git": "Git repository"
-      }
-    },
     "requirements": {
       "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",
       "empty": "No invocation declared",
@@ -2021,12 +1917,6 @@
       "noCurrentVersionForSecurity": "No version is available to check; security checks have not been run.",
       "notFound": "This Skill is not in the local library",
       "unavailable": "Skill detail data is not connected yet"
-    },
-    "trial": {
-      "saveDate": "Save review date",
-      "saveError": "Could not save the trial date.",
-      "saved": "Review date saved as {{date}}.",
-      "set": "Set trial review"
     },
     "duplicates": {
       "deterministicHeading": "Deterministic duplicate candidates",
