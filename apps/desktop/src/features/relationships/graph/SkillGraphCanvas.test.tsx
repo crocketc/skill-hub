@@ -8,9 +8,10 @@ import {
   CANVAS_SIZE,
   type GraphFactFilters,
   type GraphProjection,
+  type ProjectedEdge,
   projectGraph,
 } from "./graphProjection";
-import { SkillGraphCanvas, type GraphViewport } from "./SkillGraphCanvas";
+import { computeEdgeLabelPlacements, SkillGraphCanvas, type GraphViewport } from "./SkillGraphCanvas";
 import type { GraphLayoutSize } from "./forceLayout";
 import type { SkillRelationshipGraphResult } from "../api";
 
@@ -468,5 +469,77 @@ describe("SkillGraphCanvas interaction", () => {
     const node = screen.getByRole("button", { name: `Directory: ${normalized}` });
     expect(node).toHaveAttribute("title", normalized);
     expect(node).toHaveTextContent("…\\codex\\skills\\pdf-reader");
+  });
+});
+
+function projectedEdge(
+  edgeId: string,
+  coordinates: Pick<ProjectedEdge, "x1" | "y1" | "x2" | "y2">,
+  pair?: { from: string; to: string },
+): ProjectedEdge {
+  return {
+    edge: {
+      edge_id: edgeId,
+      from_node_id: pair?.from ?? "a",
+      to_node_id: pair?.to ?? "b",
+      kind: "related_skill",
+      relationship: "managed_copy",
+      relation_id: `rel-${edgeId}`,
+      provenance_id: null,
+      conflict_id: null,
+      match_state: "content_verified",
+      active: true,
+      last_verified_at: null,
+      governance: null,
+      target_identity: null,
+      evidence_relation_ids: [],
+    },
+    line: "solid",
+    state: "verified",
+    governanceRelationId: `rel-${edgeId}`,
+    ...coordinates,
+  };
+}
+
+describe("edge label placement (FB-③/D6-①)", () => {
+  it("rotates labels along steep edges and keeps leftward edges readable", () => {
+    const placements = computeEdgeLabelPlacements([
+      projectedEdge("e-right", { x1: 0, y1: 0, x2: 200, y2: 0 }, { from: "a", to: "b" }),
+      projectedEdge("e-steep", { x1: 0, y1: 0, x2: 0, y2: 200 }, { from: "c", to: "d" }),
+      projectedEdge("e-left", { x1: 200, y1: 0, x2: 0, y2: 0 }, { from: "e", to: "f" }),
+    ]);
+
+    expect(placements.get("e-right")).toEqual({ angle: 0, x: 100, y: 0 });
+    expect(placements.get("e-steep")?.angle).toBe(90);
+    // 左右向的边翻转 180°：文字仍从左往右读，不会倒置。
+    expect(placements.get("e-left")).toEqual({ angle: 0, x: 100, y: 0 });
+  });
+
+  it("spreads labels of parallel edges between the same node pair", () => {
+    const placements = computeEdgeLabelPlacements([
+      projectedEdge("e-1", { x1: 0, y1: 0, x2: 200, y2: 0 }, { from: "a", to: "b" }),
+      projectedEdge("e-2", { x1: 0, y1: 0, x2: 200, y2: 0 }, { from: "b", to: "a" }),
+      projectedEdge("e-3", { x1: 0, y1: 0, x2: 0, y2: 100 }, { from: "c", to: "d" }),
+      projectedEdge("e-4", { x1: 0, y1: 0, x2: 100, y2: 100 }, { from: "e", to: "f" }),
+    ]);
+
+    const first = placements.get("e-1");
+    const second = placements.get("e-2");
+    expect(first?.x).toBe(second?.x);
+    // 同源多边沿垂直方向错开一个固定步长（14px），互不压叠。
+    expect(Math.abs((second?.y ?? 0) - (first?.y ?? 0))).toBe(14);
+    // 不同节点对互不影响：单边标签仍在中点。
+    expect(placements.get("e-3")).toEqual({ angle: 90, x: 0, y: 50 });
+    expect(placements.get("e-4")).toEqual({ angle: 45, x: 50, y: 50 });
+  });
+
+  it("renders edge labels with rotated per-edge placement", async () => {
+    await renderCanvas({});
+
+    const labels = document.querySelectorAll("text[data-testid^='edge-label-']");
+    expect(labels.length).toBeGreaterThan(0);
+    labels.forEach((label) => {
+      expect(label.getAttribute("transform")).toMatch(/rotate\(/);
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
 import { presentRelationshipPath } from "../pathPresentation";
@@ -7,6 +7,7 @@ import {
   edgeStatusLabelKey,
   edgeTypeLabelKey,
   type GraphProjection,
+  type ProjectedEdge,
   type ProjectedNode,
 } from "./graphProjection";
 import type { GraphLayoutSize } from "./forceLayout";
@@ -49,6 +50,57 @@ export interface SkillGraphCanvasProps {
 
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 3;
+
+/** W1-7（FB-③/D6-①）：同源多边标签的垂直错位步长与文字离线的净距。 */
+const EDGE_LABEL_GAP = 14;
+const EDGE_LABEL_CLEARANCE = 7;
+
+export interface EdgeLabelPlacement {
+  angle: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * W1-7（FB-③/D6-①）：边标签沿边角度旋转，左右向的边翻转 180° 保证文字从左
+ * 往右读；同一对节点间的多条边（不分方向）按组内固定顺序沿垂直方向对称错位，
+ * 互不压叠。两点重合的退化边不旋转，避免 NaN 变换。
+ */
+export function computeEdgeLabelPlacements(
+  edges: ProjectedEdge[],
+): Map<string, EdgeLabelPlacement> {
+  const groups = new Map<string, ProjectedEdge[]>();
+  for (const projected of edges) {
+    const pairKey = [projected.edge.from_node_id, projected.edge.to_node_id].sort().join("\u0000");
+    const group = groups.get(pairKey);
+    if (group) group.push(projected);
+    else groups.set(pairKey, [projected]);
+  }
+  const placements = new Map<string, EdgeLabelPlacement>();
+  for (const group of groups.values()) {
+    const ordered = [...group].sort((a, b) => a.edge.edge_id.localeCompare(b.edge.edge_id));
+    ordered.forEach((projected, index) => {
+      const dx = projected.x2 - projected.x1;
+      const dy = projected.y2 - projected.y1;
+      const length = Math.hypot(dx, dy);
+      const mx = (projected.x1 + projected.x2) / 2;
+      const my = (projected.y1 + projected.y2) / 2;
+      if (length < 1) {
+        placements.set(projected.edge.edge_id, { angle: 0, x: mx, y: my });
+        return;
+      }
+      const rawAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const angle = rawAngle > 90 || rawAngle < -90 ? rawAngle - 180 : rawAngle;
+      const offset = (index - (ordered.length - 1) / 2) * EDGE_LABEL_GAP;
+      placements.set(projected.edge.edge_id, {
+        angle,
+        x: mx + (-dy / length) * offset,
+        y: my + (dx / length) * offset,
+      });
+    });
+  }
+  return placements;
+}
 
 type GraphViewportUpdate = GraphViewport | ((current: GraphViewport) => GraphViewport);
 
@@ -138,6 +190,12 @@ export function SkillGraphCanvas({
   const [isDragging, setIsDragging] = useState(false);
 
   viewportRef.current = viewport;
+
+  // W1-7（FB-③/D6-①）：边标签沿边旋转 + 同源多边错位避让；边集不变则不重算。
+  const edgeLabelPlacements = useMemo(
+    () => computeEdgeLabelPlacements(projection.edges),
+    [projection.edges],
+  );
 
   const commitViewport = useCallback((update: GraphViewportUpdate) => {
     const next = typeof update === "function" ? update(viewportRef.current) : update;
@@ -392,6 +450,7 @@ export function SkillGraphCanvas({
               const { edge } = projected;
               const mx = (projected.x1 + projected.x2) / 2;
               const my = (projected.y1 + projected.y2) / 2;
+              const placement = edgeLabelPlacements.get(edge.edge_id);
               const selected = edge.edge_id === selectedEdgeId;
               return (
                 <g
@@ -417,7 +476,14 @@ export function SkillGraphCanvas({
                     x2={projected.x2}
                     y2={projected.y2}
                   />
-                  <text className="sh-graph-edge__label" x={mx} y={my - 6} textAnchor="middle">
+                  <text
+                    className="sh-graph-edge__label"
+                    data-testid={`edge-label-${edge.edge_id}`}
+                    dominantBaseline="middle"
+                    textAnchor="middle"
+                    transform={`translate(${placement?.x ?? mx} ${placement?.y ?? my}) rotate(${placement?.angle ?? 0})`}
+                    y={-EDGE_LABEL_CLEARANCE}
+                  >
                     {t(edgeTypeLabelKey(edge))}
                   </text>
                 </g>
