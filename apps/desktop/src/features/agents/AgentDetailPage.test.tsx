@@ -310,6 +310,7 @@ function governanceLedgerRow(relationId: string): RelationGovernanceRow {
       ],
     },
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: [relationId],
   };
 }

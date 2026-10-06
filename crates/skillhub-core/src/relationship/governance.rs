@@ -324,6 +324,9 @@ pub struct RelationGovernanceRow {
     pub readiness: RelationGovernanceReadiness,
     pub primary_action: RelationGovernanceAction,
     pub blockers: Vec<RelationGovernanceBlocker>,
+    /// FB-④（2026-10-06）：行内证据包含只读内置目录导入原件（第 7 类）。
+    /// 前端据此渲染只读卡：无动作区、不参与勾选、不显示受阻原因。
+    pub source_read_only: bool,
     pub impact: RelationGovernanceImpact,
     /// New authoritative three-layer model. Legacy status/readiness fields
     /// remain during the frontend transition, but do not determine completion.
@@ -489,6 +492,7 @@ pub fn project_relation_governance_ledger_with_names(
         &facts,
         directory_capabilities,
         &BTreeSet::new(),
+        &BTreeSet::new(),
         names,
         relationship_revision,
         last_verified_at,
@@ -503,6 +507,7 @@ pub fn project_unified_governance_ledger(
     facts: &[GovernableRelationFact],
     directory_capabilities: &[AgentDirectoryCapabilityFact],
     batch_relation_ids: &BTreeSet<String>,
+    read_only_source_relation_ids: &BTreeSet<String>,
     names: &RelationGovernanceNames,
     relationship_revision: i64,
     last_verified_at: Option<i64>,
@@ -514,6 +519,7 @@ pub fn project_unified_governance_ledger(
         &[],
         &[],
         batch_relation_ids,
+        read_only_source_relation_ids,
         names,
         relationship_revision,
         last_verified_at,
@@ -524,6 +530,11 @@ pub fn project_unified_governance_ledger(
 /// directory, and explicit management-confirmation facts. The graph query uses
 /// these exact rows rather than rebuilding governance from `active` or
 /// `match_state`.
+///
+/// `read_only_source_relation_ids` carries the relation ids of source-copy
+/// originals that live under an Agent's read-only builtin directory (FB-④,
+/// 2026-10-06). Rows whose evidence includes one of these ids are classified
+/// from the read-only fact instead of the conversion blockers.
 #[allow(clippy::too_many_arguments)]
 pub fn project_unified_governance_ledger_with_context(
     filters: &RelationGovernanceFilters,
@@ -532,6 +543,7 @@ pub fn project_unified_governance_ledger_with_context(
     directory_nodes: &[DirectoryNodeFact],
     confirmations: &[RelationGovernanceConfirmationFact],
     batch_relation_ids: &BTreeSet<String>,
+    read_only_source_relation_ids: &BTreeSet<String>,
     names: &RelationGovernanceNames,
     relationship_revision: i64,
     last_verified_at: Option<i64>,
@@ -571,14 +583,22 @@ pub fn project_unified_governance_ledger_with_context(
             GovernableRelationFact::SourceCopy(copy) => {
                 let target_identity = target_identity_for_fact(fact, &directory_by_node_id);
                 let management_status = RelationManagementStatus::NotTakenOver;
-                let decision = match copy.decision {
-                    SourceCopyDecision::Pending => RelationGovernanceDecision::Undecided,
-                    SourceCopyDecision::Retained => {
-                        RelationGovernanceDecision::RetainedIndependentCopy
-                    }
+                // FB-④（2026-10-06）：核验健康的原件由导入自动记录保留决定，
+                // 呈现层不再给出待决策动作；旧行的显式保留决定沿用原映射。
+                let healthy_original = healthy_import_original(copy);
+                let decision = if healthy_original
+                    || copy.decision == SourceCopyDecision::Retained
+                {
+                    RelationGovernanceDecision::RetainedIndependentCopy
+                } else {
+                    RelationGovernanceDecision::Undecided
                 };
                 let readiness = RelationGovernanceReadiness::AlreadyCentralized;
-                let primary_action = source_copy_action(copy, status);
+                let primary_action = if healthy_original {
+                    RelationGovernanceAction::None
+                } else {
+                    source_copy_action(copy, status)
+                };
                 let governance =
                     governance_state(fact, management_status, decision, None, primary_action, &[]);
                 RelationGovernanceRow {
@@ -593,6 +613,7 @@ pub fn project_unified_governance_ledger_with_context(
                     readiness,
                     primary_action,
                     blockers: Vec::new(),
+                    source_read_only: false,
                     impact: RelationGovernanceImpact::default(),
                     governance,
                     target_identity,
@@ -633,6 +654,7 @@ pub fn project_unified_governance_ledger_with_context(
                     readiness,
                     primary_action,
                     blockers,
+                    source_read_only: false,
                     impact: RelationGovernanceImpact {
                         other_consumer_agent_ids: impact
                             .other_consumers
@@ -653,6 +675,7 @@ pub fn project_unified_governance_ledger_with_context(
         })
         .collect::<Vec<_>>();
     rows = merge_rows_for_same_target(rows);
+    apply_read_only_original_governance(&mut rows, facts, read_only_source_relation_ids);
     rows.sort_by(|left, right| left.relation_id().cmp(right.relation_id()));
 
     let counts = RelationGovernanceCounts {
@@ -1194,6 +1217,89 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
     }
     merged.sort_by(|left, right| left.relation_id().cmp(right.relation_id()));
     merged
+}
+
+/// FB-④（2026-10-06）：只读内置目录里的导入原件不是可转换的受管候选。
+///
+/// 命中只读集合的行改用只读事实分类：核验健康的原件视为已完成的保留；
+/// 仍有健康异常的原件回到待处理并提供重新校验与结束关系两个出口——
+/// 结束关系只清理观察记录，不删除只读目录里的用户文件，因此不受
+/// 「受管条目须先验证移除」约束。
+fn apply_read_only_original_governance(
+    rows: &mut Vec<RelationGovernanceRow>,
+    facts: &[GovernableRelationFact],
+    read_only_ids: &BTreeSet<String>,
+) {
+    if read_only_ids.is_empty() {
+        return;
+    }
+    for row in rows.iter_mut() {
+        let has_read_only_evidence = row
+            .evidence_relation_ids
+            .iter()
+            .any(|relation_id| read_only_ids.contains(relation_id));
+        if !has_read_only_evidence {
+            continue;
+        }
+        let evidence_copies = facts
+            .iter()
+            .filter_map(|fact| match fact {
+                GovernableRelationFact::SourceCopy(copy)
+                    if row.evidence_relation_ids.contains(&copy.relation_id) =>
+                {
+                    Some(copy)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if evidence_copies.is_empty() {
+            continue;
+        }
+        row.source_read_only = true;
+        let all_copies_healthy = evidence_copies
+            .iter()
+            .all(|copy| healthy_import_original(copy));
+        let healthy = all_copies_healthy && row.governance.health_reasons.is_empty();
+        if healthy {
+            row.blockers = Vec::new();
+            row.readiness = RelationGovernanceReadiness::AlreadyCentralized;
+            row.primary_action = RelationGovernanceAction::None;
+            row.governance.action_conditions = Vec::new();
+            row.governance.governance_status = RelationGovernanceClassification::Completed;
+            if row.governance.management_status != RelationManagementStatus::TakenOver {
+                row.status = GovernableRelationStatus::Retained;
+                row.governance.decision = RelationGovernanceDecision::RetainedIndependentCopy;
+            }
+        } else {
+            row.status = GovernableRelationStatus::NeedsValidation;
+            row.blockers = Vec::new();
+            row.readiness = RelationGovernanceReadiness::NeedsValidation;
+            row.primary_action = RelationGovernanceAction::Revalidate;
+            row.governance.governance_status = RelationGovernanceClassification::Pending;
+            row.governance.action_conditions = vec![
+                RelationGovernanceActionCondition {
+                    action: RelationGovernanceAction::Revalidate,
+                    available: true,
+                    reasons: Vec::new(),
+                },
+                RelationGovernanceActionCondition {
+                    action: RelationGovernanceAction::EndRelationship,
+                    available: true,
+                    reasons: Vec::new(),
+                },
+            ];
+        }
+    }
+}
+
+/// 健康原件判定：核验为 Normal 且没有任何健康异常（`None` 表示旧版
+/// 未核验事实，不算健康，维持原有待处理呈现）。
+fn healthy_import_original(copy: &SourceCopyRelationFact) -> bool {
+    copy.health == SourceCopyHealth::Normal
+        && copy
+            .health_reasons
+            .as_ref()
+            .is_some_and(|reasons| reasons.is_empty())
 }
 
 fn status_count(rows: &[RelationGovernanceRow], status: GovernableRelationStatus) -> u32 {

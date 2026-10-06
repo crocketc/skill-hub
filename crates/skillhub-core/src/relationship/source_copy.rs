@@ -95,7 +95,9 @@ impl SourceCopyRelationFact {
             agent_client_id: event.agent_client_id.clone(),
             expected_fingerprint: event.content_fingerprint.clone(),
             current_fingerprint: None,
-            decision: SourceCopyDecision::Pending,
+            // FB-④（2026-10-06）：导入即自动记录「保留独立副本」决定；撤销
+            // 与结束关系仍由用户显式执行。
+            decision: SourceCopyDecision::Retained,
             health: SourceCopyHealth::NeedsValidation,
             health_reasons: None,
             active: true,

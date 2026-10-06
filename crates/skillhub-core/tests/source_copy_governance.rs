@@ -74,7 +74,9 @@ fn same_physical_source_cannot_be_active_for_two_skills() {
 #[test]
 fn decision_and_health_are_orthogonal() {
     let mut copy = relation(SkillId::new(), "relation-a", "/source/a");
-    assert_eq!(copy.decision, SourceCopyDecision::Pending);
+    // FB-④：导入默认自动保留；决策与健康事实正交——保留决定不掩盖
+    // 内容异常。
+    assert_eq!(copy.decision, SourceCopyDecision::Retained);
     copy.decision = SourceCopyDecision::Retained;
     copy.health = SourceCopyHealth::ContentChanged;
     assert_eq!(
@@ -131,7 +133,8 @@ fn only_local_sources_are_governable_and_cache_is_acquisition_only() {
         let e = event(skill, class, Some("/source"));
         let copy =
             SourceCopyRelationFact::from_import_event("r", &e, "/source", "/source").unwrap();
-        assert_eq!(copy.decision, SourceCopyDecision::Pending);
+        // FB-④（2026-10-06）：导入即自动记录「保留独立副本」决定。
+        assert_eq!(copy.decision, SourceCopyDecision::Retained);
     }
     let cache = ImportAcquisitionContext {
         workspace_kind: AcquisitionWorkspaceKind::TemporaryCache,

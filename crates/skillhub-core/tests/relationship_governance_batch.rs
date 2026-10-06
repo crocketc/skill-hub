@@ -640,6 +640,7 @@ mod unified_ledger {
             &facts,
             &supported_capabilities(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
             &Vec::new(),
             7,
             None,
@@ -727,8 +728,10 @@ mod unified_ledger {
             ),
         ];
         for (health, expected) in cases {
+            // 健康映射与决策解耦：显式钉住 Pending（导入默认已改为自动
+            // 保留，Retained + Normal → Retained 单独在下方覆盖）。
             let projection = project_governable_relation(&GovernableRelationFact::SourceCopy(
-                source_copy("rel-copy", health),
+                source_copy_with_decision("rel-copy", health, SourceCopyDecision::Pending),
             ))
             .expect("active source copy projects");
             assert_eq!(projection.status, expected, "health {health:?}");
@@ -842,6 +845,7 @@ mod unified_ledger {
             &facts,
             &supported_capabilities(),
             &batch_ids,
+            &BTreeSet::new(),
             &Vec::new(),
             7,
             None,
@@ -917,6 +921,7 @@ mod unified_ledger {
             &[directory],
             &[confirmation],
             &BTreeSet::new(),
+            &BTreeSet::new(),
             &Vec::new(),
             7,
             None,
@@ -988,29 +993,48 @@ mod unified_ledger {
         assert_eq!(counts.all, 4);
         assert_eq!(counts.source_copies, 3);
         assert_eq!(counts.deployments, 1);
-        assert_eq!(counts.status_normal, 2);
+        // FB-④：导入的来源副本默认自动保留，rel-normal 计入 Retained。
+        assert_eq!(counts.status_normal, 1);
         assert_eq!(counts.status_needs_attention, 1);
         assert_eq!(counts.status_blocked, 1);
         assert_eq!(counts.status_needs_validation, 0);
-        assert_eq!(counts.status_retained, 0);
+        assert_eq!(counts.status_retained, 1);
     }
 
     #[test]
     fn action_eligibility_only_offers_actions_with_executable_implementations() {
-        // 来源副本：Pending 决策提供 KeepIndependentCopy（命令已存在）。
-        let pending = unified_of(
-            vec![GovernableRelationFact::SourceCopy(source_copy(
-                "rel-pending",
-                SourceCopyHealth::Normal,
-            ))],
+        // 来源副本：核验健康的原件由导入自动保留（FB-④），清单不再给
+        // 出待决策动作。
+        let mut imported_copy = source_copy("rel-imported", SourceCopyHealth::Normal);
+        imported_copy.health_reasons = Some(Vec::new());
+        let imported = unified_of(
+            vec![GovernableRelationFact::SourceCopy(imported_copy)],
+            RelationGovernanceFilters::default(),
+        );
+        assert_eq!(imported.rows[0].primary_action, RelationGovernanceAction::None);
+        assert_eq!(
+            imported.rows[0].governance.governance_status,
+            RelationGovernanceClassification::Completed
+        );
+        assert_eq!(
+            imported.rows[0].readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+
+        // 旧版未核验（health_reasons=None）且决策仍为 Pending 的行维持
+        // 原呈现：提供 KeepIndependentCopy（命令已存在）。
+        let mut legacy = source_copy("rel-legacy", SourceCopyHealth::Normal);
+        legacy.decision = SourceCopyDecision::Pending;
+        let legacy_ledger = unified_of(
+            vec![GovernableRelationFact::SourceCopy(legacy)],
             RelationGovernanceFilters::default(),
         );
         assert_eq!(
-            pending.rows[0].primary_action,
+            legacy_ledger.rows[0].primary_action,
             RelationGovernanceAction::KeepIndependentCopy
         );
         assert_eq!(
-            pending.rows[0].readiness,
+            legacy_ledger.rows[0].readiness,
             RelationGovernanceReadiness::AlreadyCentralized
         );
 
@@ -1122,6 +1146,264 @@ mod unified_ledger {
                 RelationGovernanceBucket::EligibleToCentralize
             ),
             vec![GovernableRelationStatus::Normal]
+        );
+    }
+}
+
+mod read_only_import_originals {
+    //! FB-④（2026-10-06 定稿）：只读内置目录里的导入原件是「权限边界内的
+    //! 正常终态」，不是待治理受阻态。健康原件（只读/可写）按已完成·已保
+    //! 留副本呈现；只读原件无动作区、不显示受阻原因；异常原件回到待处理
+    //! 并保证「重新核验 + 结束关系记录（只读记录出口）」。健康基线是导入
+    //! 存证指纹（expected vs current），本投影不改写它。
+
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use skillhub_core::import::ImportSourceClass;
+    use skillhub_core::relationship::{
+        project_unified_governance_ledger_with_context, DirectoryNodeFact, DirectoryRole,
+        GovernableRelationFact, RelationGovernanceAction, RelationGovernanceActionCondition,
+        RelationGovernanceClassification, RelationGovernanceDecision, RelationGovernanceReadiness,
+        RelationGovernanceReason, RelationGovernanceRow, SourceCopyDecision, SourceCopyHealth,
+        SourceCopyRelationFact,
+    };
+
+    fn read_only_copy(relation_id: &str, health: SourceCopyHealth) -> SourceCopyRelationFact {
+        let event = skillhub_core::import::ImportProvenanceEvent {
+            provenance_id: format!("prov-{relation_id}"),
+            batch_id: "batch-readonly".to_owned(),
+            skill_id: skill_id(SKILL),
+            source_class: ImportSourceClass::AgentLocal,
+            source: skillhub_core::SourceDescriptor::new(
+                skillhub_core::SourceKind::Local,
+                skillhub_core::SourceLocator::local_path("C:/agents/doubao/.skills/notes"),
+            ),
+            local_source_path: Some("C:/agents/doubao/.skills/notes".to_owned()),
+            source_container_id: Some(DIRECTORY.to_owned()),
+            physical_source_id: Some("fs:dev-1-ino-9".to_owned()),
+            agent_client_id: Some(AGENT.to_owned()),
+            content_fingerprint: "hash-original".to_owned(),
+            imported_at: 42,
+        };
+        let mut fact = SourceCopyRelationFact::from_import_event(
+            relation_id,
+            &event,
+            "c:/agents/doubao/.skills/notes",
+            "fs:dev-1-ino-9",
+        )
+        .expect("governable import original");
+        fact.directory_node_id = Some(DIRECTORY.to_owned());
+        fact.health = health;
+        fact.health_reasons = Some(Vec::new());
+        fact
+    }
+
+    /// 导入存证时自动建立的观察行：未受管、身份已核验、目录未注册、
+    /// 表示未知——正是现场 150 条 doubao 行的部署侧形状。
+    fn observed_import_deployment(relation_id: &'static str) -> DeploymentRelationFact {
+        let mut relation = RelationSpec::observed_copy(relation_id, "C:/agents/doubao/.skills/notes")
+            .build();
+        relation.relationship = RelationshipType::Unknown;
+        relation.file_representation = FileRepresentation::Unknown;
+        relation.match_state = ObservedMatchState::ContentVerified;
+        relation.origin = ObservedOrigin::Import;
+        relation.directory_node_id = Some(DIRECTORY.to_owned());
+        relation.path_key = "c:/agents/doubao/.skills/notes".to_owned();
+        relation
+    }
+
+    fn directory() -> DirectoryNodeFact {
+        DirectoryNodeFact {
+            node_id: DIRECTORY.to_owned(),
+            path: "C:/agents/doubao/.skills".to_owned(),
+            path_key: "c:/agents/doubao/.skills".to_owned(),
+            role: DirectoryRole::AgentNative,
+            profile_id: None,
+            agent_client_id: Some(AGENT.to_owned()),
+            exists: true,
+            observed_at: 1,
+            scan_source: Some("test".to_owned()),
+        }
+    }
+
+    fn ledger_with_read_only(
+        facts: Vec<GovernableRelationFact>,
+        read_only: &[&str],
+    ) -> skillhub_core::relationship::RelationGovernanceLedger {
+        project_unified_governance_ledger_with_context(
+            &RelationGovernanceFilters::default(),
+            &facts,
+            &supported_capabilities(),
+            &[directory()],
+            &[],
+            &BTreeSet::new(),
+            &read_only
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<BTreeSet<String>>(),
+            &Vec::new(),
+            7,
+            None,
+        )
+    }
+
+    fn condition_of<'a>(
+        row: &'a RelationGovernanceRow,
+        action: &str,
+    ) -> &'a RelationGovernanceActionCondition {
+        row.governance
+            .action_conditions
+            .iter()
+            .find(|condition| serde_json::to_value(condition.action).unwrap() == action)
+            .unwrap_or_else(|| panic!("condition {action} is explicit"))
+    }
+
+    #[test]
+    fn healthy_read_only_originals_complete_as_retained_read_only_copies() {
+        let ledger = ledger_with_read_only(
+            vec![
+                GovernableRelationFact::SourceCopy(read_only_copy("rel-copy", SourceCopyHealth::Normal)),
+                GovernableRelationFact::Deployment(observed_import_deployment("rel-observed")),
+            ],
+            &["rel-copy"],
+        );
+
+        assert_eq!(ledger.rows.len(), 1, "one physical original, one row");
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, true);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed
+        );
+        assert_eq!(
+            row.governance.decision,
+            RelationGovernanceDecision::RetainedIndependentCopy
+        );
+        assert!(row.blockers.is_empty(), "read-only cards show no blockers");
+        assert_eq!(
+            row.readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+        assert!(
+            row.governance.action_conditions.is_empty(),
+            "healthy read-only originals have no action area"
+        );
+    }
+
+    #[test]
+    fn healthy_read_only_copies_without_deployment_evidence_have_no_action_area() {
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::SourceCopy(read_only_copy(
+                "rel-copy",
+                SourceCopyHealth::Normal,
+            ))],
+            &["rel-copy"],
+        );
+
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, true);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed
+        );
+        assert!(row.governance.action_conditions.is_empty());
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+    }
+
+    #[test]
+    fn writable_import_originals_complete_but_keep_their_safety_rules() {
+        let mut copy = read_only_copy("rel-copy", SourceCopyHealth::Normal);
+        copy.source_path = "C:/agents/trae/skills/notes".to_owned();
+        copy.source_path_key = "c:/agents/trae/skills/notes".to_owned();
+        let mut deployment = observed_import_deployment("rel-observed");
+        deployment.path = "C:/agents/trae/skills/notes".to_owned();
+        deployment.path_key = "c:/agents/trae/skills/notes".to_owned();
+        let ledger = ledger_with_read_only(
+            vec![
+                GovernableRelationFact::SourceCopy(copy),
+                GovernableRelationFact::Deployment(deployment),
+            ],
+            &[],
+        );
+
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, false);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed,
+            "healthy writable originals are completed·已保留副本 too"
+        );
+        let end = condition_of(row, "end_relationship");
+        assert!(
+            !end.available,
+            "writable originals keep the verified-removal rule"
+        );
+        assert_eq!(
+            serde_json::to_value(&end.reasons).unwrap(),
+            serde_json::json!(["managed_entry_requires_verified_removal"])
+        );
+    }
+
+    #[test]
+    fn unhealthy_read_only_originals_return_to_pending_with_the_record_exit() {
+        let mut copy = read_only_copy("rel-copy", SourceCopyHealth::ContentChanged);
+        copy.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
+        let ledger = ledger_with_read_only(
+            vec![
+                GovernableRelationFact::SourceCopy(copy),
+                GovernableRelationFact::Deployment(observed_import_deployment("rel-observed")),
+            ],
+            &["rel-copy"],
+        );
+
+        let row = &ledger.rows[0];
+        assert_eq!(row.source_read_only, true);
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Pending
+        );
+        assert!(row.blockers.is_empty(), "health reasons carry the story");
+        let revalidate = condition_of(row, "revalidate");
+        assert!(revalidate.available);
+        let end = condition_of(row, "end_relationship");
+        assert!(
+            end.available,
+            "read-only originals end as a pure record operation"
+        );
+        assert!(end.reasons.is_empty());
+    }
+
+    #[test]
+    fn import_events_record_the_automatic_retention_decision() {
+        let copy = read_only_copy("rel-copy", SourceCopyHealth::Normal);
+        assert_eq!(
+            copy.decision,
+            SourceCopyDecision::Retained,
+            "保留由导入自动记录（FB-④）"
+        );
+    }
+
+    #[test]
+    fn read_only_health_reasons_still_surface_as_pending_reasons() {
+        let mut copy = read_only_copy("rel-copy", SourceCopyHealth::ContentChanged);
+        copy.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::SourceCopy(copy)],
+            &["rel-copy"],
+        );
+        assert!(ledger.rows[0]
+            .governance
+            .health_reasons
+            .contains(&RelationGovernanceReason::ContentChanged));
+        assert_eq!(
+            ledger.rows[0].governance.governance_status,
+            RelationGovernanceClassification::Pending
         );
     }
 }

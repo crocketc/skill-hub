@@ -60,6 +60,7 @@ const rows: RelationGovernanceRow[] = [
       { action: "revalidate", available: true, reasons: [] },
     ]),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:centralize-pdf"],
   },
   {
@@ -102,6 +103,7 @@ const rows: RelationGovernanceRow[] = [
       { action: "revalidate", available: true, reasons: [] },
     ]),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:verify-notes"],
   },
   {
@@ -144,6 +146,7 @@ const rows: RelationGovernanceRow[] = [
       { action: "revalidate", available: true, reasons: [] },
     ]),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:shared-attention"],
   },
   {
@@ -186,6 +189,7 @@ const rows: RelationGovernanceRow[] = [
       { action: "revalidate", available: false, reasons: ["relationship_not_convertible"] },
     ]),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:blocked-directory"],
   },
   {
@@ -228,6 +232,7 @@ const rows: RelationGovernanceRow[] = [
       { action: "revalidate", available: true, reasons: [] },
     ]),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:managed-link"],
   },
   {
@@ -267,6 +272,7 @@ const rows: RelationGovernanceRow[] = [
     },
     governance: governanceState("completed", "not_taken_over", "retained_independent_copy", [], []),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["preview:retained-source"],
   },
 ];

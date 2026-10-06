@@ -135,6 +135,7 @@ function makeRow(spec: RowSpec): RelationGovernanceRow {
     },
     governance: spec.governance ?? governanceFromRowSpec(spec),
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: [spec.relationId],
   };
 }
@@ -1331,6 +1332,7 @@ const SOURCE_ROW: RelationGovernanceRow = {
     ],
   },
   target_identity: null,
+  source_read_only: false,
   evidence_relation_ids: ["src-import-1"],
 };
 
@@ -1590,6 +1592,7 @@ function makeSourceRow(spec: SourceRowSpec): RelationGovernanceRow {
           : [],
     },
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: [spec.relationId],
   };
 }

@@ -12030,7 +12030,8 @@ impl LocalApplicationFacade {
             }));
         }
         // 目录节点先收集，Agent 逻辑目标后收集：同为最长匹配时目标自带
-        // client_id，优先作为归属证据。
+        // client_id，优先作为归属证据；节点 id 与 client id 是互补证据，
+        // 并存时合并且不互斥（节点 id 供治理身份合并使用）。
         let mut roots: Vec<(String, RootKind, Option<String>, Option<String>)> = Vec::new();
         if let Some(central) = central_root {
             roots.push((
@@ -12076,26 +12077,49 @@ impl LocalApplicationFacade {
             ));
         }
         let canonical = Self::canonical_path_string(resolved_root);
-        let matched = roots
+        let mut best: Option<(RootKind, Option<String>, Option<String>, (usize, usize))> = None;
+        for (root, kind, node_id, client_id) in roots
             .into_iter()
             .filter(|(root, _, _, _)| canonical == *root || path_lives_under(&canonical, root))
-            .max_by_key(|(root, kind, _, _)| (root.chars().count(), kind_rank(kind)));
+        {
+            let key = (root.chars().count(), kind_rank(&kind));
+            best = Some(match best {
+                None => (kind, node_id, client_id, key),
+                Some(previous) => {
+                    if key > previous.3 {
+                        (kind, node_id, client_id, key)
+                    } else if key == previous.3 {
+                        // 同一最深根上目录节点与逻辑目标并存：节点提供治理
+                        // 身份、目标提供归属 client，合并保留两份证据。
+                        (
+                            previous.0,
+                            previous.1.or(node_id),
+                            previous.2.or(client_id),
+                            previous.3,
+                        )
+                    } else {
+                        previous
+                    }
+                }
+            });
+        }
+        let Some((kind, node_id, client_id, _)) = best else {
+            return Ok(None);
+        };
         let physical = skillhub_core::physical_id_for_path(resolved_root);
-        Ok(
-            matched.map(|(_, kind, node_id, client_id)| ClassifiedImportSource {
-                source_class: match kind {
-                    RootKind::Central => skillhub_core::ImportSourceClass::CentralLibrary,
-                    RootKind::Project => skillhub_core::ImportSourceClass::RegisteredProject,
-                    RootKind::Agent => skillhub_core::ImportSourceClass::AgentLocal,
-                },
-                physical_source_id: match kind {
-                    RootKind::Central => None,
-                    _ => physical,
-                },
-                source_container_id: node_id,
-                agent_client_id: client_id,
-            }),
-        )
+        Ok(Some(ClassifiedImportSource {
+            source_class: match kind {
+                RootKind::Central => skillhub_core::ImportSourceClass::CentralLibrary,
+                RootKind::Project => skillhub_core::ImportSourceClass::RegisteredProject,
+                RootKind::Agent => skillhub_core::ImportSourceClass::AgentLocal,
+            },
+            physical_source_id: match kind {
+                RootKind::Central => None,
+                _ => physical,
+            },
+            source_container_id: node_id,
+            agent_client_id: client_id,
+        }))
     }
 
     /// 库内每个 Skill 当前版本的 (skill_id, content_hash)。

@@ -35,7 +35,8 @@ use skillhub_core::api::{
 };
 use skillhub_core::relationship::{
     project_unified_governance_ledger_with_context, GovernableRelationFact,
-    RelationGovernanceFilters, RelationGovernanceNames, RelationGovernanceRow, SourceCopyDecision,
+    RelationGovernanceAction, RelationGovernanceFilters, RelationGovernanceNames,
+    RelationGovernanceRow, SourceCopyDecision,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, OperationId, OperationPhase, OriginalMigrationState,
@@ -106,12 +107,53 @@ impl LocalApplicationFacade {
                 &database.directory_repository().list_nodes()?,
                 &relationship_repository.list_relation_governance_confirmations()?,
                 &batch_relation_ids,
+                &Self::read_only_source_relation_ids(database)?,
                 &names,
                 revision,
                 last_verified_at,
             ))
         })?;
         Ok(AppQueryResult::RelationGovernanceLedger(ledger))
+    }
+
+    /// FB-④（2026-10-06）：只读来源副本集合。
+    ///
+    /// Agent 快照中 `builtin` 且当前可用（exists && available）的内置目录
+    /// 是只读观察目标（doubao 的 `.skills` 等）；来源副本原件落在这些目录
+    /// 下、且 Agent 归属一致时，其关系 id 进入集合。治理投影用该集合把
+    /// 只读原件改判为「导入自动保留/待复核」，结束关系出口用它放行仅
+    /// 清理记录的操作。快照缺失或没有可用内置目录时集合为空。
+    pub(crate) fn read_only_source_relation_ids(
+        database: &Database,
+    ) -> AppResult<BTreeSet<String>> {
+        let Some(snapshot) = database.agent_repository().load()? else {
+            return Ok(BTreeSet::new());
+        };
+        let read_only_roots = snapshot
+            .logical_targets
+            .iter()
+            .filter(|target| target.builtin && target.exists && target.available)
+            .map(|target| (target.client_id.as_str(), target.path.as_str()))
+            .collect::<Vec<_>>();
+        if read_only_roots.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let mut ids = BTreeSet::new();
+        for copy in database
+            .relationship_repository()
+            .list_source_copy_relations(true)?
+        {
+            let Some(agent_client_id) = copy.agent_client_id.as_deref() else {
+                continue;
+            };
+            if read_only_roots.iter().any(|(client_id, root)| {
+                *client_id == agent_client_id
+                    && skillhub_core::deployment::path_lives_under(&copy.source_path, root)
+            }) {
+                ids.insert(copy.relation_id.clone());
+            }
+        }
+        Ok(ids)
     }
 
     pub(crate) fn revoke_retention(&self, request: RevokeRetention) -> AppResult<AppCommandResult> {
@@ -256,6 +298,49 @@ impl LocalApplicationFacade {
                 || row.evidence_relation_ids.contains(&request.relation_id)
         });
 
+        // FB-④（2026-10-06）只读记录出口预检：清单行给出可用的
+        // 「结束关系」（只读原件的异常分支才有）时，取行内证据里的来源
+        // 副本与部署边；部署证据必须全部是未受管观察，受管条目仍必须走
+        // 验证移除流程。修订版与回执在写事务内还会再次复核。
+        let read_only_exit = self.with_database(
+            "execute.end_relationship.resolve_read_only_evidence",
+            |database| {
+                let Some(row) = row.as_ref() else {
+                    return Ok(None);
+                };
+                let end_offered = row.governance.action_conditions.iter().any(|condition| {
+                    condition.action == RelationGovernanceAction::EndRelationship
+                        && condition.available
+                });
+                if !end_offered {
+                    return Ok(None);
+                }
+                let evidence = &row.evidence_relation_ids;
+                let copies = database
+                    .relationship_repository()
+                    .list_source_copy_relations(true)?
+                    .into_iter()
+                    .filter(|copy| evidence.contains(&copy.relation_id))
+                    .collect::<Vec<_>>();
+                if copies.is_empty() {
+                    return Ok(None);
+                }
+                let relations = database
+                    .relationship_repository()
+                    .list_relations()?
+                    .into_iter()
+                    .filter(|relation| evidence.contains(&relation.relation_id))
+                    .collect::<Vec<_>>();
+                if relations.iter().any(|relation| {
+                    relation.ownership
+                        == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                }) {
+                    return Ok(None);
+                }
+                Ok(Some((copies, relations)))
+            },
+        )?;
+
         let result = self.with_database("execute.end_relationship", |database| {
             let transaction = database.begin_transaction()?;
             if let Some(receipt) =
@@ -292,23 +377,48 @@ impl LocalApplicationFacade {
                     .with_action(skillhub_core::RecoveryAction::ChooseAnotherName)
             })?;
             if row.deployment().is_some() {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param("relation_id", request.relation_id.clone())
-                    .with_param("reason", "managed_entry_requires_verified_removal")
-                    .with_action(skillhub_core::RecoveryAction::InspectTarget));
-            }
-            let Some(source_copy) = row.source_copy() else {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                // 受管条目必须走验证移除流程；只有只读导入原件的记录出口
+                // （预检通过）可以在不动只读目录里用户文件的前提下结束
+                // 关系：归档来源副本事实并释放未受管观察记录。
+                let Some((copies, relations)) = read_only_exit.as_ref() else {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("relation_id", request.relation_id.clone())
+                        .with_param("reason", "managed_entry_requires_verified_removal")
+                        .with_action(skillhub_core::RecoveryAction::InspectTarget));
+                };
+                for copy in copies {
+                    RelationshipRepository::archive_source_copy_relation_tx(
+                        &transaction,
+                        &copy.relation_id,
+                        skillhub_core::relationship::SourceCopyArchiveReason::UserEnded,
+                        now_epoch_seconds(),
+                    )?;
+                }
+                for relation in relations {
+                    skillhub_storage::ProvenanceRepository::release_observed_deployment_tx(
+                        &transaction,
+                        &relation.agent_client_id,
+                        &relation.path,
+                        now_epoch_seconds(),
+                    )?;
+                }
+            } else {
+                let Some(source_copy) = row.source_copy() else {
+                    return Err(AppError::new(
+                        ErrorCode::OperationConflict,
+                        Severity::Error,
+                    )
                     .with_param("relation_id", request.relation_id.clone())
                     .with_param("reason", "relationship_cannot_be_ended_non_destructively")
                     .with_action(skillhub_core::RecoveryAction::Retry));
-            };
-            RelationshipRepository::archive_source_copy_relation_tx(
-                &transaction,
-                &source_copy.relation_id,
-                skillhub_core::relationship::SourceCopyArchiveReason::UserEnded,
-                now_epoch_seconds(),
-            )?;
+                };
+                RelationshipRepository::archive_source_copy_relation_tx(
+                    &transaction,
+                    &source_copy.relation_id,
+                    skillhub_core::relationship::SourceCopyArchiveReason::UserEnded,
+                    now_epoch_seconds(),
+                )?;
+            }
             GovernanceHistoryRepository::append_tx(
                 &transaction,
                 &relationship_history_event(
@@ -425,6 +535,7 @@ impl LocalApplicationFacade {
                 &database.directory_repository().list_nodes()?,
                 &relationship_repository.list_relation_governance_confirmations()?,
                 &std::collections::BTreeSet::new(),
+                &Self::read_only_source_relation_ids(database)?,
                 &relationship_names(database)?,
                 relationship_repository.relationship_revision()?,
                 relationship_repository.last_verified_at()?,

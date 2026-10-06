@@ -26,6 +26,7 @@ function row(overrides: Partial<RelationGovernanceRow["governance"]>): RelationG
       ...overrides,
     },
     target_identity: null,
+    source_read_only: false,
     evidence_relation_ids: ["rel"],
   };
 }

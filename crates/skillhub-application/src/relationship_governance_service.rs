@@ -243,6 +243,7 @@ impl LocalApplicationFacade {
                 &directory_nodes,
                 &relationship_repository.list_relation_governance_confirmations()?,
                 &std::collections::BTreeSet::new(),
+                &Self::read_only_source_relation_ids(database)?,
                 &Vec::new(),
                 revision,
                 last_verified_at,

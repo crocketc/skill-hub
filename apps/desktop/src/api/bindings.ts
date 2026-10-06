@@ -3418,6 +3418,11 @@ export type RelationGovernanceRow = {
 	readiness: RelationGovernanceReadiness,
 	primary_action: RelationGovernanceAction,
 	blockers: RelationGovernanceBlocker[],
+	/**
+	 *  FB-④（2026-10-06）：行内证据包含只读内置目录导入原件（第 7 类）。
+	 *  前端据此渲染只读卡：无动作区、不参与勾选、不显示受阻原因。
+	 */
+	source_read_only: boolean,
 	impact: RelationGovernanceImpact,
 	/**
 	 *  New authoritative three-layer model. Legacy status/readiness fields

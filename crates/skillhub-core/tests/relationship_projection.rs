@@ -212,6 +212,7 @@ fn shared_directory_use_has_one_governance_edge_and_structural_agent_links() {
         &[confirmation],
         &Default::default(),
         &Default::default(),
+        &Default::default(),
         1,
         None,
     );
@@ -309,6 +310,7 @@ fn shared_aliases_from_multiple_agents_merge_at_the_shared_physical_target() {
         &[],
         &directory_nodes,
         &[],
+        &Default::default(),
         &Default::default(),
         &Default::default(),
         1,

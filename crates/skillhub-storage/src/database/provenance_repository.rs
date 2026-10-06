@@ -785,26 +785,45 @@ impl<'a> ProvenanceRepository<'a> {
                     .connection
                     .unchecked_transaction()
                     .map_err(database_error)?;
-                transaction
-                    .execute(
-                        "UPDATE observed_deployments SET status='released', released_at=?1 \
-                     WHERE path_key=?2 AND status='active'",
-                        params![observed_at, observed_path_key(original_path)],
-                    )
-                    .map_err(database_error)?;
-                let relationship_changed = transaction
-                        .execute(
-                        "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1 AND ownership<>'skillhub_managed'",
-                        params![observed_at, client_id, observed_path_key(original_path)],
-                    )
-                    .map_err(database_error)?
-                    != 0;
-                if relationship_changed {
-                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
-                }
+                Self::release_observed_deployment_tx(
+                    &transaction,
+                    client_id,
+                    original_path,
+                    observed_at,
+                )?;
                 transaction.commit().map_err(database_error)
             }
         }
+    }
+
+    /// 释放一条未受管观察记录：observed_deployments 置为 released，对应
+    /// deployment_relations 停用。SQL 守卫 `ownership<>'skillhub_managed'`
+    /// 确保受管条目永远不可能从这里被释放；有变化时推进关系投影版本。
+    /// FB-④（2026-10-06）只读导入原件的结束关系出口复用同一条路径。
+    pub fn release_observed_deployment_tx(
+        transaction: &Transaction<'_>,
+        client_id: &str,
+        original_path: &str,
+        released_at: i64,
+    ) -> AppResult<bool> {
+        transaction
+            .execute(
+                "UPDATE observed_deployments SET status='released', released_at=?1 \
+                     WHERE path_key=?2 AND status='active'",
+                params![released_at, observed_path_key(original_path)],
+            )
+            .map_err(database_error)?;
+        let relationship_changed = transaction
+            .execute(
+                "UPDATE deployment_relations SET active=0, released_at=?1 WHERE agent_client_id=?2 AND path_key=?3 AND active=1 AND ownership<>'skillhub_managed'",
+                params![released_at, client_id, observed_path_key(original_path)],
+            )
+            .map_err(database_error)?
+            != 0;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(transaction)?;
+        }
+        Ok(relationship_changed)
     }
 
     pub fn insert_original_migration(&self, result: &OriginalMigrationResult) -> AppResult<()> {

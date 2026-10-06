@@ -5150,25 +5150,30 @@ mod unified_and_history {
         assert_eq!(ledger.counts.deployments, 1);
         assert!(ledger.counts.all >= 2);
 
-        // 五状态计数与行状态一致：来源副本导入后为 Normal。
-        assert!(ledger.counts.status_normal >= 1);
+        // 五状态计数与行状态一致：FB-④ 导入的来源副本自动保留为
+        // Retained（文件核验健康时治理已完成）。
         let copy_row = ledger
             .rows
             .iter()
             .find(|row| row.relation_id() == copy_relation_id)
             .expect("copy row");
-        assert_eq!(copy_row.status, GovernableRelationStatus::Normal);
+        assert_eq!(copy_row.status, GovernableRelationStatus::Retained);
+        assert_eq!(copy_row.source_read_only, false);
 
         // 状态过滤只命中对应行。
         let filters = RelationGovernanceFilters {
-            statuses: vec![GovernableRelationStatus::Normal],
+            statuses: vec![GovernableRelationStatus::Retained],
             ..RelationGovernanceFilters::default()
         };
         let filtered = governance_ledger(&fixture.facade, filters).await;
         assert!(filtered
             .rows
             .iter()
-            .all(|row| row.status == GovernableRelationStatus::Normal));
+            .all(|row| row.status == GovernableRelationStatus::Retained));
+        assert!(filtered
+            .rows
+            .iter()
+            .any(|row| row.relation_id() == copy_relation_id));
     }
 
     #[tokio::test]
@@ -5513,6 +5518,19 @@ mod retain_and_cleanup_prepare {
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
 
+        // FB-④：导入默认自动保留；保留契约针对仍是 Pending 的行（旧版
+        // 事实或撤销后的行），先把决策改回 Pending 再执行保留。
+        let mut pending = relation_fact(&facade, &relation_id).await;
+        pending.decision = SourceCopyDecision::Pending;
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&pending, "fs", 1)
+                .expect("reset decision to pending");
+        }
+
         let retained = facade
             .execute(AppCommand::RetainSourceCopy(
                 skillhub_core::api::RetainSourceCopy {
@@ -5572,6 +5590,19 @@ mod retain_and_cleanup_prepare {
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
 
+        // FB-④：导入默认自动保留；保留契约针对仍是 Pending 的行（旧版
+        // 事实或撤销后的行），先把决策改回 Pending 再执行保留。
+        let mut pending = relation_fact(&facade, &relation_id).await;
+        pending.decision = SourceCopyDecision::Pending;
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&pending, "fs", 1)
+                .expect("reset decision to pending");
+        }
+
         for _ in 0..2 {
             let retained = facade
                 .execute(AppCommand::RetainSourceCopy(
@@ -5596,15 +5627,8 @@ mod retain_and_cleanup_prepare {
         let source = agent_root.join("notes");
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
-        facade
-            .execute(AppCommand::RetainSourceCopy(
-                skillhub_core::api::RetainSourceCopy {
-                    source_relation_id: relation_id.clone(),
-                },
-            ))
-            .await
-            .expect("retain source copy");
 
+        // FB-④：导入即已自动保留，无需再显式调用 retain。
         let mut retained = relation_fact(&facade, &relation_id).await;
         retained.health = SourceCopyHealth::ContentChanged;
         retained.health_reasons = Some(vec![
@@ -5723,8 +5747,8 @@ mod retain_and_cleanup_prepare {
         );
         assert_eq!(
             retain_history_count(&facade, &relation_id).await,
-            1,
-            "revoke must not duplicate the prior retain history"
+            0,
+            "FB-④：导入自动保留不写治理历史；撤销也不得补写 retain 事件"
         );
         let AppQueryResult::GovernanceHistoryPage(history) = facade
             .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
@@ -6908,6 +6932,19 @@ mod source_copy_batches {
         let first_id = import_source_copy(&facade, &first, "RetainA").await;
         let second_id = import_source_copy(&facade, &second, "RetainB").await;
 
+        // FB-④：导入默认自动保留；retain 批次的对象是仍是 Pending 的
+        // 行，先把两行决策改回 Pending 再准备批次。
+        for relation_id in [&first_id, &second_id] {
+            let mut pending = relation_fact(&facade, relation_id).await;
+            pending.decision = SourceCopyDecision::Pending;
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&pending, "fs", 1)
+                .expect("reset decision to pending");
+        }
+
         let outcome = prepare_batch(
             &facade,
             RelationGovernanceBatchAction::RetainSourceCopy,
@@ -7105,7 +7142,8 @@ mod source_copy_batches {
         assert!(!first.exists(), "committed cleanup removed the source");
         assert!(second.exists(), "cancelled cleanup left the source alone");
         let second_fact = relation_fact(&facade, &second_id).await;
-        assert_eq!(second_fact.decision, SourceCopyDecision::Pending);
+        // FB-④：导入默认自动保留；取消的行原样保留该决定。
+        assert_eq!(second_fact.decision, SourceCopyDecision::Retained);
         let first_fact = relation_fact(&facade, &first_id).await;
         assert!(!first_fact.active, "committed row is archived");
         assert_eq!(
@@ -7283,7 +7321,8 @@ mod relink_history_restore {
 
         assert_ne!(fact.relation_id, old_relation, "always a new relation");
         assert!(fact.active);
-        assert_eq!(fact.decision, SourceCopyDecision::Pending);
+        // FB-④：重新关联同样是导入建档，自动记录保留决定。
+        assert_eq!(fact.decision, SourceCopyDecision::Retained);
         assert_eq!(
             fact.health,
             skillhub_core::relationship::SourceCopyHealth::Normal,
@@ -7435,5 +7474,334 @@ pub mod failing_deletion {
             }
             std::fs::remove_dir_all(path)
         }
+    }
+}
+
+mod read_only_original_exit {
+    //! FB-④（2026-10-06）：只读内置目录导入原件的治理收口。健康原件由
+    //! 导入自动保留并呈现为已完成治理；异常原件提供「重新校验/结束关
+    //! 系」两个出口——结束关系只归档来源事实并释放未受管观察记录，绝
+    //! 不触碰只读目录里的用户文件；受管条目仍然拒绝直接结束关系。
+
+    use super::*;
+    use super::retain_and_cleanup_prepare::{import_source_copy, relation_fact};
+    use skillhub_core::agent::{
+        ClientInstance, ClientKind, ClientPresence, DiscoverySnapshot, LogicalTarget,
+        OperatingSystem, TargetScope,
+    };
+    use skillhub_core::relationship::SourceCopyRelationFact;
+
+    const CLIENT_ID: &str = "agent.demo";
+
+    /// 内置（builtin）Agent 目录基座：快照里唯一的逻辑目标是只读观察
+    /// 目录，且已注册为目录节点，导入能把来源归属绑定到它。
+    fn builtin_facade(
+        workspace: &std::path::Path,
+    ) -> (LocalApplicationFacade, std::path::PathBuf) {
+        let agent_root = workspace.join("agents/demo/skills");
+        std::fs::create_dir_all(&agent_root).expect("agent root");
+        let database = Database::open(workspace.join("db.sqlite")).expect("database");
+        database
+            .agent_repository()
+            .replace(&DiscoverySnapshot {
+                generation: "1".into(),
+                observed_at: "2026-10-06T00:00:00Z".into(),
+                instances: vec![ClientInstance {
+                    profile_id: "demo".into(),
+                    client_id: CLIENT_ID.into(),
+                    kind: ClientKind::IdeExtension,
+                    display_name: "Demo IDE".into(),
+                    supported_os: vec![OperatingSystem::Windows],
+                    client_presence: ClientPresence::Unknown,
+                }],
+                logical_targets: vec![LogicalTarget {
+                    id: "target-1".into(),
+                    profile_id: "demo".into(),
+                    client_id: CLIENT_ID.into(),
+                    scope: TargetScope::Global,
+                    path: agent_root.to_string_lossy().into_owned(),
+                    agent_root_id: "fixture-root".into(),
+                    marker: "SKILL.md".into(),
+                    precedence: DirectoryPrecedence::Preferred,
+                    shared_reference: false,
+                    builtin: true,
+                    exists: true,
+                    readable: true,
+                    writable: true,
+                    available: true,
+                    physical_id: skillhub_core::physical_id_for_path(&agent_root)
+                        .expect("physical id"),
+                    status: DirectoryObservationStatus::Existing,
+                    physical_identity_verified: true,
+                }],
+                physical_targets: Vec::new(),
+                agent_roots: Vec::new(),
+            })
+            .expect("agent snapshot");
+        database
+            .directory_repository()
+            .upsert_node(&DirectoryNodeFact {
+                node_id: "target-1".into(),
+                path: agent_root.to_string_lossy().into_owned(),
+                path_key: String::new(),
+                role: DirectoryRole::AgentNative,
+                profile_id: Some("demo".into()),
+                agent_client_id: Some(CLIENT_ID.into()),
+                exists: true,
+                observed_at: 1,
+                scan_source: Some("fixture".into()),
+            })
+            .expect("directory node");
+        let library_root = workspace.join("library");
+        CentralLibrary::initialize(&library_root).expect("library");
+        let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+        (facade, agent_root)
+    }
+
+    async fn ledger(
+        facade: &LocalApplicationFacade,
+    ) -> skillhub_core::relationship::RelationGovernanceLedger {
+        match facade
+            .query(AppQuery::ListRelationGovernance(
+                ListRelationGovernance::default(),
+            ))
+            .await
+            .expect("governance ledger")
+        {
+            AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
+            other => panic!("expected relationship governance ledger, got {other:?}"),
+        }
+    }
+
+    async fn seed_observed_import_evidence(
+        facade: &LocalApplicationFacade,
+        copy: &SourceCopyRelationFact,
+        source: &std::path::Path,
+        ownership: OwnershipState,
+        relationship: RelationshipType,
+        match_state: ObservedMatchState,
+    ) -> String {
+        let relation_id = "observed:agent.demo:notes".to_owned();
+        let fingerprint = copy.current_fingerprint.clone().unwrap_or_else(|| {
+            skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(source)
+                .expect("source fingerprint")
+        });
+        let fact = DeploymentRelationFact {
+            relation_id: relation_id.clone(),
+            skill_id: Some(copy.skill_id),
+            agent_client_id: CLIENT_ID.into(),
+            path: source.to_string_lossy().into_owned(),
+            path_key: String::new(),
+            directory_node_id: Some("target-1".into()),
+            relationship,
+            file_representation: FileRepresentation::Unknown,
+            ownership,
+            link_target_path: None,
+            link_target_path_key: None,
+            link_target_directory_id: None,
+            content_fingerprint: fingerprint,
+            origin: ObservedOrigin::Import,
+            match_state,
+            health_reasons: Some(Vec::new()),
+            active: true,
+            observed_at: 1,
+            released_at: None,
+        };
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&fact)
+            .expect("observed import evidence");
+        relation_id
+    }
+
+    #[tokio::test]
+    async fn healthy_read_only_original_completes_and_unhealthy_exit_only_cleans_records() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = builtin_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let copy_id = import_source_copy(&facade, &source, "Notes").await;
+        let copy = relation_fact(&facade, &copy_id).await;
+        assert_eq!(
+            copy.decision,
+            skillhub_core::relationship::SourceCopyDecision::Retained
+        );
+        // 导入建档后来源核验通过：健康事实由真实核验流程写入，这里以
+        // 仓储 upsert 等价模拟（其余测试同款手法）。
+        let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&source)
+            .expect("source fingerprint");
+        let mut verified = copy.clone();
+        verified.health = skillhub_core::relationship::SourceCopyHealth::Normal;
+        verified.health_reasons = Some(Vec::new());
+        verified.current_fingerprint = Some(fingerprint.clone());
+        verified.last_verified_at = Some(1);
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&verified, "fs", 1)
+                .expect("record verified health");
+        }
+        let copy = verified;
+        let deployment_id = seed_observed_import_evidence(
+            &facade,
+            &copy,
+            &source,
+            OwnershipState::ObservedUnmanaged,
+            RelationshipType::Unknown,
+            ObservedMatchState::ContentVerified,
+        )
+        .await;
+
+        // 健康阶段：合并行按只读原件改判为已完成的自动保留，无动作区。
+        let healthy = ledger(&facade).await;
+        assert_eq!(healthy.rows.len(), 1, "copy and observation merge");
+        let row = &healthy.rows[0];
+        assert!(row.source_read_only);
+        assert_eq!(row.relation_id(), deployment_id);
+        assert_eq!(
+            row.governance.governance_status,
+            skillhub_core::relationship::RelationGovernanceClassification::Completed
+        );
+        assert_eq!(
+            row.governance.decision,
+            skillhub_core::relationship::RelationGovernanceDecision::RetainedIndependentCopy
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+        assert!(row.governance.action_conditions.is_empty());
+        assert!(row.blockers.is_empty());
+
+        // 健康只读行不接受结束关系：没有可用的结束条件。
+        let healthy_error = facade
+            .execute(AppCommand::EndRelationship(
+                skillhub_core::api::EndRelationship {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: deployment_id.clone(),
+                    expected_relationship_revision: healthy.relationship_revision.clone(),
+                },
+            ))
+            .await
+            .expect_err("healthy read-only original offers no ending action");
+        assert_eq!(healthy_error.code, ErrorCode::OperationConflict);
+
+        // 异常阶段：来源内容变化后回到待处理，给出两个出口。
+        let mut changed = copy.clone();
+        changed.health = skillhub_core::relationship::SourceCopyHealth::ContentChanged;
+        changed.health_reasons =
+            Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged]);
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&changed, "fs", 1)
+                .expect("record changed health");
+        }
+        let pending = ledger(&facade).await;
+        let row = &pending.rows[0];
+        assert!(row.source_read_only);
+        assert_eq!(
+            row.governance.governance_status,
+            skillhub_core::relationship::RelationGovernanceClassification::Pending
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::Revalidate);
+        assert!(row.blockers.is_empty());
+        let end_condition = row
+            .governance
+            .action_conditions
+            .iter()
+            .find(|condition| condition.action == RelationGovernanceAction::EndRelationship)
+            .expect("record exit is offered");
+        assert!(end_condition.available);
+        assert!(end_condition.reasons.is_empty());
+
+        // 结束关系：只归档来源事实并释放未受管观察记录。
+        facade
+            .execute(AppCommand::EndRelationship(
+                skillhub_core::api::EndRelationship {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: deployment_id.clone(),
+                    expected_relationship_revision: pending.relationship_revision.clone(),
+                },
+            ))
+            .await
+            .expect("record exit ends the read-only original relationship");
+        assert!(source.join("SKILL.md").is_file(), "user files stay");
+
+        let archived = relation_fact(&facade, &copy_id).await;
+        assert!(!archived.active, "source copy fact is archived");
+        assert_eq!(
+            archived.archive_reason,
+            Some(skillhub_core::relationship::SourceCopyArchiveReason::UserEnded)
+        );
+        let after = ledger(&facade).await;
+        assert!(after.rows.is_empty(), "ended edge leaves the ledger");
+        let database = facade.database_for_tests().clone();
+        let database = database.lock().expect("database lock");
+        let released = database
+            .relationship_repository()
+            .list_relations()
+            .expect("relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == deployment_id)
+            .expect("deployment record stays queryable");
+        assert!(!released.active, "observed evidence is released");
+        assert!(released.released_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn managed_entries_still_refuse_the_record_exit() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = builtin_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let copy_id = import_source_copy(&facade, &source, "Notes").await;
+        let mut copy = relation_fact(&facade, &copy_id).await;
+        copy.health = skillhub_core::relationship::SourceCopyHealth::ContentChanged;
+        copy.health_reasons =
+            Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged]);
+        {
+            let database = facade.database_for_tests().clone();
+            let database = database.lock().expect("database lock");
+            database
+                .relationship_repository()
+                .upsert_source_copy_relation(&copy, "fs", 1)
+                .expect("record changed health");
+        }
+        seed_observed_import_evidence(
+            &facade,
+            &copy,
+            &source,
+            OwnershipState::SkillhubManaged,
+            RelationshipType::ManagedLink,
+            ObservedMatchState::Diverged,
+        )
+        .await;
+
+        // 只读异常分支给出结束条件，但部署证据是受管条目：命令必须拒绝。
+        let pending = ledger(&facade).await;
+        let row = &pending.rows[0];
+        assert!(row.source_read_only);
+        assert!(row.governance.action_conditions.iter().any(|condition| {
+            condition.action == RelationGovernanceAction::EndRelationship && condition.available
+        }));
+        let error = facade
+            .execute(AppCommand::EndRelationship(
+                skillhub_core::api::EndRelationship {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: row.relation_id().to_owned(),
+                    expected_relationship_revision: pending.relationship_revision.clone(),
+                },
+            ))
+            .await
+            .expect_err("managed entries require verified removal");
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(
+            relation_fact(&facade, &copy_id).await.active,
+            "copy stays"
+        );
     }
 }

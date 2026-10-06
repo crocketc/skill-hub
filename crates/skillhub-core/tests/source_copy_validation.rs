@@ -264,6 +264,7 @@ fn missing_with_accessible_parent_stays_active_as_health_fact() {
         &[skillhub_core::relationship::GovernableRelationFact::SourceCopy(fact)],
         &[],
         &std::collections::BTreeSet::new(),
+        &std::collections::BTreeSet::new(),
         &Vec::new(),
         0,
         None,
