@@ -2252,3 +2252,13 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
     max-height: 10rem;
   }
 }
+
+/* FB-⑦：长描述/译文固定高度内省略，悬浮（title）展示完整内容；
+   DOM 始终保留全文，断行规则防止无空格长串撑破布局。 */
+.sh-skill-drawer--prototype .sh-skill-drawer__clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}

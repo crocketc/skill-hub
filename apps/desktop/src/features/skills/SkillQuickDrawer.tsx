@@ -1722,7 +1722,9 @@ function PrototypeIdentityRegion({
       <div className="sh-skill-drawer__field sh-skill-drawer__description-block">
         <div className="sh-skill-drawer__prototype-description-row">
           <span className="sh-skill-drawer__field-label">{t("skillLibrary.drawer.values.originalDescription")}:</span>
-          <span className="sh-skill-drawer__field-value">{view.originalDescription ?? <EmptyValue />}</span>
+          <span className="sh-skill-drawer__field-value sh-skill-drawer__clamp" title={view.originalDescription ?? undefined}>
+            {view.originalDescription ?? <EmptyValue />}
+          </span>
           <Button
             aria-label={t("skillLibrary.drawer.prototype.aiTranslate")}
             className="sh-skill-drawer__prototype-translate"
@@ -1764,7 +1766,7 @@ function PrototypeIdentityRegion({
           {translationEditing ? (
             <textarea aria-label={t("skillLibrary.drawer.prototype.editTranslation")} onChange={(event) => setTranslationEditDraft(event.currentTarget.value)} value={translationEditDraft} />
           ) : (
-            <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary">
+            <span className="sh-skill-drawer__field-value sh-skill-drawer__secondary sh-skill-drawer__clamp" title={prototypeTranslation}>
               {prototypeTranslation}
             </span>
           )}

@@ -1249,3 +1249,26 @@ describe("drawer AI availability and error reasons (FB-⑥)", () => {
     expect(await screen.findByText("No usable LLM provider is configured yet. Add and enable a provider first.")).toBeInTheDocument();
   });
 });
+
+describe("drawer long description clamping (FB-⑦)", () => {
+  const longText = "Extracts text from PDF files. ".repeat(40).trim();
+
+  it("clamps the original description to a fixed height and keeps full data on hover", async () => {
+    await renderDrawer({
+      facade: createMockSkillLibraryFacade({ quickView: { ...QUICK_VIEW, originalDescription: longText } }),
+    });
+    const value = await screen.findByTitle(longText);
+    expect(value).toHaveClass("sh-skill-drawer__clamp");
+    expect(value).toHaveTextContent(longText);
+  });
+
+  it("clamps the translated description the same way", async () => {
+    const longTranslation = "Reads PDF files. ".repeat(40).trim();
+    await renderDrawer({
+      facade: createMockSkillLibraryFacade({ quickView: { ...QUICK_VIEW, translatedDescription: longTranslation } }),
+    });
+    const value = await screen.findByTitle(longTranslation);
+    expect(value).toHaveClass("sh-skill-drawer__clamp");
+    expect(value).toHaveTextContent(longTranslation);
+  });
+});
