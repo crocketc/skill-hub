@@ -1963,3 +1963,69 @@ it("auto-skips the conflict step when the plan has no conflicts", async () => {
   await user.click(screen.getByRole("button", { name: "提交导入" }));
   expect(await screen.findByRole("heading", { name: "导入结果" })).toBeVisible();
 });
+
+it("discards conflict dispositions when a security decision changes the effective set", async () => {
+  // C：批内同名组中的一个危险级成员——回退改安全决策（proceed→skip）使
+  // 生效候选组成变化，旧冲突处置必须整体失效，不得沿用。
+  const facade = createMockImportFacade({
+    scenario: "batch-conflicts",
+    dangerCandidateIds: ["alpha-a"],
+  });
+  await renderWizard(facade);
+  const user = userEvent.setup();
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
+  for (const checkbox of [
+    ...screen.getAllByRole("checkbox", { name: "Notes Sync" }),
+    ...screen.getAllByRole("checkbox", { name: "Alpha" }),
+  ]) {
+    await user.click(checkbox);
+  }
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  // 危险级成员未决策：禁止进入冲突处置步。
+  const proceed = await screen.findByRole("button", { name: "继续处置冲突" });
+  expect(proceed).toBeDisabled();
+  await user.click(screen.getByRole("radio", { name: "仍然导入（导入后需处理预警才能派发）" }));
+  await user.click(proceed);
+
+  // 在冲突处置步完成批内同名处置。
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  const sameNameSection = screen.getByText("批内同名：内容不同").closest("section");
+  expect(sameNameSection).not.toBeNull();
+  const scope = within(sameNameSection as HTMLElement);
+  await user.click(scope.getAllByRole("radio", { name: "独立导入" })[0]);
+  await user.type(scope.getAllByLabelText("新名称")[0], "Alpha Prime");
+  await user.click(scope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
+  expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+
+  // 回退到安全检测步，把 alpha-a 的安全决策改为“不导入”。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  await user.click(await screen.findByRole("radio", { name: "不导入" }));
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
+
+  // 旧冲突处置不得沿用：同名组成员回到未处置状态，提交重新被拦。
+  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  const staleSection = screen.getByText("批内同名：内容不同").closest("section");
+  expect(staleSection).not.toBeNull();
+  const staleScope = within(staleSection as HTMLElement);
+  expect(staleScope.getAllByRole("radio", { name: "独立导入" })[0]).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    /还有 2 个同名不同内容的候选项未处置/,
+  );
+
+  // 重新逐项处置后门禁解除；提交携带的是新决策（skip）与新命名。
+  await user.click(staleScope.getAllByRole("radio", { name: "独立导入" })[0]);
+  await user.type(staleScope.getAllByLabelText("新名称")[0], "Alpha Prime");
+  await user.click(staleScope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
+  await user.click(screen.getByRole("button", { name: "提交导入" }));
+
+  expect(facade.calls.committedDispositions[0]?.securityDecisions).toEqual({
+    "alpha-a": "skip",
+  });
+  expect(facade.calls.committedDispositions[0]?.runtimeNameOverrides).toEqual({
+    "alpha-a": "Alpha Prime",
+  });
+});

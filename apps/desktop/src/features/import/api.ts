@@ -416,6 +416,13 @@ interface MockImportOptions {
   scenario: MockImportScenario;
   /** true 时分析计划携带确定性关系分组，走治理确认阶段（预览/E2E 用）。 */
   governance?: boolean;
+  /**
+   * 第 24 节：把指定候选标记为危险级（其余候选放行级），用于在同一场景
+   * 内同时覆盖安全决策与批内/库内处置的交互（如回退失效重验）。缺省时
+   * 非 security-danger 场景的计划携带全放行的安全分级，与 native 门面
+   * “prepare 成功即有分级”的同形语义一致。
+   */
+  dangerCandidateIds?: string[];
 }
 
 function clone<T>(value: T): T {
@@ -763,7 +770,7 @@ export function createMockImportFacade(
           : {}),
         ...(options.scenario === "security-danger"
           ? { security: fixtureSecurityPlan(selected) }
-          : { security: fixtureGradedSecurityPlan(selected, undefined) }),
+          : { security: fixtureGradedSecurityPlan(selected, options.dangerCandidateIds) }),
         ...(options.governance
           ? {
               governanceGroups: fixtureGovernanceGroups(selected),

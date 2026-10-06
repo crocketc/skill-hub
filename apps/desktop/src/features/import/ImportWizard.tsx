@@ -98,6 +98,12 @@ interface WizardState {
    * skip=不导入）。与 actions 同生命周期：新计划重置；提交时随处置透传。
    */
   securityDecisions: Record<string, ImportSecurityDecision>;
+  /**
+   * 第 24 节（C）：冲突处置形成时的生效候选集合（计划候选去掉安全 skip，
+   * 排序后比较）。安全决策使生效集变化时，冲突处置整体失效重验——与提交期
+   * batch_composition_changed 的整批语义同口径。
+   */
+  dispositionBaseline?: string[];
   commitProgress?: ImportProgress;
   results: ImportResult[];
   /** 任务 10：本次提交的批次上下文；治理深链参数的唯一来源。 */
@@ -172,6 +178,20 @@ function upsertSourceResult(
   );
 }
 
+/**
+ * 第 24 节（C）：生效候选 = 计划候选去掉安全决策为 skip 的成员，排序后
+ * 作为冲突处置的组成基线参与比较。
+ */
+function effectiveCandidateIds(
+  plan: ImportPlan,
+  securityDecisions: Record<string, ImportSecurityDecision>,
+): string[] {
+  return plan.candidates
+    .filter((candidate) => securityDecisions[candidate.id] !== "skip")
+    .map((candidate) => candidate.id)
+    .sort();
+}
+
 function reducer(state: WizardState, event: WizardEvent): WizardState {
   switch (event.type) {
     case "source_changed":
@@ -183,6 +203,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         error: undefined,
         overrides: {},
         securityDecisions: {},
+        dispositionBaseline: undefined,
         phase: "source",
         plan: undefined,
         commitProgress: undefined,
@@ -203,6 +224,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         error: undefined,
         overrides: {},
         securityDecisions: {},
+        dispositionBaseline: undefined,
         phase: "source",
         plan: undefined,
         selectedIds: [],
@@ -314,6 +336,8 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         actions: seededActions,
         // W3-1：新计划重置安全决策——旧计划的决策不冒充新计划的事实。
         securityDecisions: {},
+        // 第 24 节（C）：新计划的处置基线 = 全部候选（尚无安全 skip）。
+        dispositionBaseline: effectiveCandidateIds(event.plan, {}),
         error: undefined,
         // 第 24 节：分析完成进入安全检测步——先做内容风险决策，再处理
         // 存放碰撞（无冲突时该步直接提供提交入口）。
@@ -345,14 +369,42 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         ...state,
         overrides: { ...state.overrides, [event.candidateId]: event.name },
       };
-    case "security_decision_selected":
+    case "security_decision_selected": {
+      const securityDecisions = {
+        ...state.securityDecisions,
+        [event.candidateId]: event.decision,
+      };
+      if (!state.plan) return { ...state, securityDecisions };
+      // 第 24 节（C）：安全决策使生效候选组成变化（如把成员改为“不导入”）
+      // 时，已形成的冲突处置整体失效，不得沿用——与提交期
+      // batch_composition_changed 的整批拒绝同口径：建议按新组成重新播种，
+      // 独立命名清空，逐项处置重新确认。
+      const baseline = state.dispositionBaseline
+        ?? effectiveCandidateIds(state.plan, state.securityDecisions);
+      const effective = effectiveCandidateIds(state.plan, securityDecisions);
+      if (
+        effective.length === baseline.length
+        && effective.every((id, index) => id === baseline[index])
+      ) {
+        return { ...state, securityDecisions };
+      }
+      const suggestions = state.plan.batchAnalysis
+        ? batchSuggestionActions(state.plan.batchAnalysis, state.plan.conflicts)
+        : {};
+      const effectiveIds = new Set(effective);
+      const reseededActions: Record<string, ImportAction> = {};
+      for (const [candidateId, action] of Object.entries(suggestions)) {
+        // 安全 skip 的成员不再播种处置建议：skip 优先于任何导入动作。
+        if (action && effectiveIds.has(candidateId)) reseededActions[candidateId] = action;
+      }
       return {
         ...state,
-        securityDecisions: {
-          ...state.securityDecisions,
-          [event.candidateId]: event.decision,
-        },
+        actions: reseededActions,
+        overrides: {},
+        securityDecisions,
+        dispositionBaseline: effective,
       };
+    }
     case "commit_started":
       return {
         ...state,
@@ -382,6 +434,8 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
         overrides: state.previousPhase === "conflicts" ? {} : state.overrides,
         securityDecisions: state.previousPhase === "conflicts" ? {} : state.securityDecisions,
+        // 处置清空时组成基线一并作废；重新分析会建立新基线。
+        dispositionBaseline: state.previousPhase === "conflicts" ? undefined : state.dispositionBaseline,
         batch: undefined,
         analysisProgress: undefined,
         analysisStartedAt: undefined,
