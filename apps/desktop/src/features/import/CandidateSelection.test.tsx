@@ -82,3 +82,37 @@ it("supports selecting every discovered candidate in one explicit step", async (
 
   expect(onSelectAll).toHaveBeenCalledOnce();
 });
+
+// ---- 第 24 节：候选行安全分级徽标（数据存在时展示，按级别着色） ----
+
+it("shows a security grade badge on each graded candidate row", async () => {
+  await renderCandidateSelection({
+    securityLevels: {
+      "pdf-reader": { level: "danger", dangerCount: 1, warningCount: 0, findings: [] },
+      "browser-helper": { level: "pass", dangerCount: 0, warningCount: 0, findings: [] },
+    },
+  });
+
+  expect(screen.getByText("Danger")).toBeVisible();
+  expect(screen.getByText("Pass")).toBeVisible();
+});
+
+it("omits the security badge when the candidate has no grading data", async () => {
+  await renderCandidateSelection({
+    securityLevels: {
+      "pdf-reader": { level: "warning", dangerCount: 0, warningCount: 1, findings: [] },
+    },
+  });
+
+  expect(screen.getByText("Warning")).toBeVisible();
+  expect(screen.queryByText(/^Pass$/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Danger$/)).not.toBeInTheDocument();
+});
+
+it("shows no security badges at all when grading data is absent", async () => {
+  await renderCandidateSelection();
+
+  expect(screen.queryByText(/^Danger$/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Warning$/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Pass$/)).not.toBeInTheDocument();
+});

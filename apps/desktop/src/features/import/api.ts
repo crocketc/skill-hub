@@ -111,6 +111,9 @@ export interface ImportSecuritySummaryView {
 /** candidateId → 安全摘要；analyzeConflicts 阶段由 prepare_import 汇总。 */
 export type ImportSecurityPlan = Record<string, ImportSecuritySummaryView>;
 
+/** 后端安全分级（pass / warning / danger），候选行徽标与决策区共用。 */
+export type ImportSecurityLevel = import("../../api/bindings").ImportSecurityLevel;
+
 /**
  * W3-1：危险级候选的用户决策。proceed=仍然导入（导入后进入预警状态，
  * 处理前不可派发）；skip=不导入（后端按跳过落账，不落库）。
@@ -415,6 +418,13 @@ interface MockImportOptions {
   scenario: MockImportScenario;
   /** true 时分析计划携带确定性关系分组，走治理确认阶段（预览/E2E 用）。 */
   governance?: boolean;
+  /**
+   * 第 24 节：把指定候选标记为危险级（其余候选放行级），用于在同一场景
+   * 内同时覆盖安全决策与批内/库内处置的交互（如回退失效重验）。缺省时
+   * 非 security-danger 场景的计划携带全放行的安全分级，与 native 门面
+   * “prepare 成功即有分级”的同形语义一致。
+   */
+  dangerCandidateIds?: string[];
 }
 
 function clone<T>(value: T): T {
@@ -737,6 +747,44 @@ function fixtureSecurityPlan(
   return plan;
 }
 
+/**
+ * 第 24 节：其余场景的确定性安全分级——指定候选标记危险级（用于在同一
+ * 场景内覆盖安全决策与其他处置的交互），其余候选全部放行级。native 门面
+ * 的 prepare 成功即产出分级，mock 计划保持同形。
+ */
+function fixtureGradedSecurityPlan(
+  candidates: ImportCandidate[],
+  dangerCandidateIds: readonly string[] | undefined,
+): ImportSecurityPlan {
+  const dangerIds = new Set(dangerCandidateIds ?? []);
+  const plan: ImportSecurityPlan = {};
+  for (const candidate of candidates) {
+    plan[candidate.id] = dangerIds.has(candidate.id)
+      ? {
+          checkState: "failed",
+          dangerCount: 1,
+          findings: [
+            {
+              code: "security.destructive_command",
+              file: "scripts/run.sh",
+              lineStart: 3,
+              productLevel: "danger",
+            },
+          ],
+          level: "danger",
+          warningCount: 0,
+        }
+      : {
+          checkState: "passed",
+          dangerCount: 0,
+          findings: [],
+          level: "pass",
+          warningCount: 0,
+        };
+  }
+  return plan;
+}
+
 export function createMockImportFacade(
   options: MockImportOptions,
 ): MockImportFacade {
@@ -788,9 +836,12 @@ export function createMockImportFacade(
         ...(options.scenario === "batch-conflicts"
           ? { batchAnalysis: fixtureBatchAnalysis(selected) }
           : {}),
+        // §24（2026-10-06）：安全场景使用带场景差异的确定性 fixture（执行二）；
+        // 其余场景给出一套放行级为主的分级摘要，保证回退候选步时徽标可见
+        // （执行三）。
         ...(options.scenario === "security-danger" || options.scenario === "security-warning-duplicates"
           ? { security: fixtureSecurityPlan(options.scenario, selected) }
-          : {}),
+          : { security: fixtureGradedSecurityPlan(selected, options.dangerCandidateIds) }),
         ...(options.governance
           ? {
               governanceGroups: fixtureGovernanceGroups(selected),

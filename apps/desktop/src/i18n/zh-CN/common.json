@@ -250,6 +250,7 @@
       "acquiring": "正在读取候选项",
       "candidates": "选择候选项",
       "analyzing": "正在分析冲突",
+      "security": "安全检测",
       "conflicts": "处理冲突",
       "committing": "正在提交导入",
       "committingProgress": "正在提交导入（已完成 {{completed}}/{{total}}，当前：{{candidateId}}）",
@@ -259,6 +260,18 @@
       "committingBackgroundHint": "可以离开此页面；导入会在后台继续。请通过顶栏任务状态查看进度，完成后到通知中心查看结果。",
       "governance": "关系治理",
       "attention": "导入完成，有待处理事项"
+    },
+    "securityStep": {
+      "summaryHeading": "安全检测结论",
+      "summary": "危险 {{danger}}／警告 {{warning}}／放行 {{pass}}",
+      "summaryUnavailable": "本次导入未取得安全分级，提交时仍由确定性导入门把守。",
+      "proceed": "继续处置冲突"
+    },
+    "dispositionSummary": {
+      "heading": "处置汇总",
+      "summary": "导入 {{imported}}／跳过 {{skipped}}／预警 {{alerted}}。",
+      "alertNote": "预警＝导入后处于预警状态，处理安全提示前不可派发。",
+      "compositionCheck": "组成校验：批内组成签名随提交携带；提交期组成已变化时，旧处置作废并要求重新确认。"
     },
     "analysis": {
       "progressTitle": "冲突分析进度",
@@ -428,9 +441,10 @@
         "findingsDetailsToggle": "查看逐条位置",
         "dangerExtraWarnings_one": "另有警告级发现 {{count}} 处，导入后写入预警",
         "dangerExtraWarnings_other": "另有警告级发现 {{count}} 处，导入后写入预警",
-        "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再提交。",
+        "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再继续。",
         "level": {
           "danger": "危险级",
+          "pass": "放行级",
           "warning": "警告级"
         },
         "findings": {

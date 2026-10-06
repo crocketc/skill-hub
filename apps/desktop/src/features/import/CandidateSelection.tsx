@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
-import type { CandidateOwnership, ImportCandidate } from "./api";
+import type { CandidateOwnership, ImportCandidate, ImportSecurityLevel, ImportSecurityPlan } from "./api";
 import { displayPath } from "../../platform/displayPath";
 
 export interface CandidateSelectionProps {
@@ -9,6 +9,12 @@ export interface CandidateSelectionProps {
   selectedIds: string[];
   onToggle: (id: string) => void;
   onSelectAll?: () => void;
+  /**
+   * 第 24 节：candidateId → 安全分级摘要（analyze 阶段由 prepare 产出）。
+   * 缺省（尚未分析或环境未返回分级）时该候选行不显示安全徽标——未分级
+   * 不冒充“放行”，风险仍在安全检测步与确定性导入门把守。
+   */
+  securityLevels?: ImportSecurityPlan;
 }
 
 const ownershipTone: Record<CandidateOwnership, "neutral" | "warning" | "info"> = {
@@ -19,12 +25,20 @@ const ownershipTone: Record<CandidateOwnership, "neutral" | "warning" | "info"> 
   unknown: "neutral",
 };
 
+/** 第 24 节：安全分级徽标样式沿用全项目安全结果语义（绿=放行、黄/红=风险）。 */
+const securityTone: Record<ImportSecurityLevel, "success" | "warning" | "danger"> = {
+  danger: "danger",
+  pass: "success",
+  warning: "warning",
+};
+
 /** 候选审阅列表：批量选择与逐项勾选；返回/继续等流程动作在向导底部操作区。 */
 export function CandidateSelection({
   candidates,
   selectedIds,
   onToggle,
   onSelectAll,
+  securityLevels,
 }: CandidateSelectionProps) {
   const { t } = useTranslation();
 
@@ -63,6 +77,12 @@ export function CandidateSelection({
                     <StatusBadge tone={candidate.basicCheck === "passed" ? "success" : "neutral"}>
                       {t(`importWorkflow.candidates.basicCheck.${candidate.basicCheck}`)}
                     </StatusBadge>
+                    {/* 第 24 节：分级数据存在时展示安全徽标（选择时风险即可见）。 */}
+                    {securityLevels?.[candidate.id] ? (
+                      <StatusBadge tone={securityTone[securityLevels[candidate.id].level]}>
+                        {t(`importWorkflow.conflicts.security.level.${securityLevels[candidate.id].level}`)}
+                      </StatusBadge>
+                    ) : null}
                     <StatusBadge tone={ownershipTone[candidate.ownership]}>
                       {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
                     </StatusBadge>
