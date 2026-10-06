@@ -1,5 +1,5 @@
 import { relatedPendingHref } from "../pending/workspace";
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { useAppNotifications } from "../../ui/notifications";
@@ -7,6 +7,8 @@ import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { usableLlmProviderLabel } from "../settings/llmApi";
 import { ConflictResolution } from "./ConflictResolution";
+import { SecurityDecisionSection } from "./SecurityDecisionSection";
+import type { BatchCandidateLabel } from "./batchCandidateLabel";
 import {
   CandidateSelection,
   type CandidateSelectionProps,
@@ -940,6 +942,20 @@ type: "failed",
   const missingRequiredAction = (state.plan?.conflicts ?? []).some(
     (conflict) => conflict.required && !state.actions[conflict.candidateId],
   );
+  // 第 24 节：安全决策区块自 ConflictResolution 搬出，由向导直接渲染；
+  // 标签映射与批内区块同源（候选 id → 名称/路径）。
+  const securityLabels = useMemo(
+    () =>
+      new Map(
+        (state.plan?.candidates ?? []).map(
+          (candidate): [string, BatchCandidateLabel] => [
+            candidate.id,
+            { name: candidate.name, path: candidate.path },
+          ],
+        ),
+      ),
+    [state.plan?.candidates],
+  );
   // W2-2：同名不同内容组的成员未逐项处置（跳过或有效独立命名）前，
   // 提交在 UI 层先行拦截；与后端 import.same_name_disposition_required 同口径。
   const pendingBatchDispositionCount = state.plan?.batchAnalysis
@@ -1259,6 +1275,14 @@ type: "failed",
               })}
             </p>
           </section>
+          {/* 第 24 节：安全决策区块由向导直接渲染（自 ConflictResolution 搬出）。 */}
+          <SecurityDecisionSection
+            decisions={state.securityDecisions}
+            labels={securityLabels}
+            onSecurityDecision={(candidateId, decision) =>
+              dispatch({ type: "security_decision_selected", candidateId, decision })}
+            summaries={state.plan.security ?? {}}
+          />
           <ConflictResolution
             actions={state.actions}
             batchAnalysis={state.plan.batchAnalysis}
@@ -1266,11 +1290,7 @@ type: "failed",
             conflicts={state.plan.conflicts}
             onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
             onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
-            onSecurityDecision={(candidateId, decision) =>
-              dispatch({ type: "security_decision_selected", candidateId, decision })}
             overrides={state.overrides}
-            security={state.plan.security}
-            securityDecisions={state.securityDecisions}
           />
           {pendingBatchDispositionCount > 0 ? (
             <p aria-live="polite" role="alert" className="sh-import-source__notice">
