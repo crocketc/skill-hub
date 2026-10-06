@@ -96,14 +96,12 @@ test("quick drawer opens from card activation and the version section stays reac
 
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-  // T3-C：详情页导航已重组为五信息区，版本章节位于"生命周期"分区。
-  await page.getByRole("link", { name: "Lifecycle" }).click();
-  await expect(page).toHaveURL(/#zone-lifecycle$/);
-  // 46d7177d：预览路由（/__preview/**）无库上下文，DetailHeader 的
-  // dispatch/delete/export 操作位按既定规则收口隐藏；生命周期分区可达性
-  // 以该分区真实渲染的版本时间线及其交互元素为锚。
-  const lifecycle = page.locator("#zone-lifecycle");
-  await expect(lifecycle.getByRole("heading", { name: "Version history" })).toBeVisible();
-  await expect(lifecycle.locator(".sh-version-timeline")).toBeVisible();
-  await expect(lifecycle.getByRole("button", { name: "Compare selected versions" })).toBeVisible();
+  // 转正后详情页为六区评审布局，版本时间线位于「版本历史」分区。
+  await page.getByRole("link", { name: "版本历史" }).click();
+  await expect(page).toHaveURL(/#review-versions$/);
+  // 预览路由（/__preview/**）无库上下文；版本分区可达性以真实渲染的
+  // 版本时间线及其交互元素为锚。
+  const versions = page.locator("#review-versions");
+  await expect(versions.locator(".sh-version-timeline")).toBeVisible();
+  await expect(versions.getByRole("button", { name: "Compare selected versions" })).toBeVisible();
 });

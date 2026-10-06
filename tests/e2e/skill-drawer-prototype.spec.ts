@@ -109,14 +109,16 @@ test("drawer review prototype remains inside a narrow viewport", async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test("review layout only activates with the explicit development preview flag", async ({ page }) => {
+test("review layout is the only quick drawer layout without a preview flag", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
   await page.goto("/__preview/skill-library?skill=skill-pdf");
 
+  // §9 转正裁决：抽屉评审原型即唯一布局——无开发旗标时同样以原型评审
+  // 布局呈现，不再存在"原始抽屉"回退形态。
   const drawer = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
-  await expect(drawer).not.toHaveClass(/sh-skill-drawer--prototype/);
-  await expect(drawer.locator(".sh-skill-drawer__prototype-actions")).toHaveCount(0);
+  await expect(drawer).toHaveClass(/sh-skill-drawer--prototype/);
+  await expect(drawer.locator(".sh-skill-drawer__prototype-actions")).toHaveCount(1);
 });
 
 test("review date overlay stays fully inside the viewport", async ({ page }) => {
