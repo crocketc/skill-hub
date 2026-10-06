@@ -20,11 +20,7 @@ async function enterEditMode(page: import("@playwright/test").Page) {
 
 test.describe("markdown edit split layout", () => {
   for (const width of twoColumnWidths) {
-    // 已知缺陷（2026-10-06 评审布局转正后）：1024px 视口预览面板横向溢出
-    // （renderer 右缘 1204.19 > 1024.5），900–1024px 区间缺少一档响应式收窄。
-    // 修复前挂起该档，其余档位继续把守分栏不重叠。
-    const run = width === 1024 ? test.fixme : test;
-    run(`keeps source and preview side by side without overlap at ${width}px`, async ({ page }) => {
+    test(`keeps source and preview side by side without overlap at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       const split = await enterEditMode(page);
 
@@ -62,10 +58,7 @@ test.describe("markdown edit split layout", () => {
     });
   }
 
-  // 已知缺陷（2026-10-06 评审布局转正后）：560px 单列堆叠下源码编辑器
-  // 横向溢出（.cm-editor 右缘 616.19 > 560.5），单列断点未收窄编辑器宽度。
-  // 修复前挂起；宽视口分栏由上方循环把守。
-  test.fixme(`collapses to stacked panes at the small-window boundary (${singleColumnWidth}px)`, async ({ page }) => {
+  test(`collapses to stacked panes at the small-window boundary (${singleColumnWidth}px)`, async ({ page }) => {
     await page.setViewportSize({ width: singleColumnWidth, height: 900 });
     const split = await enterEditMode(page);
 
@@ -89,9 +82,7 @@ test.describe("markdown edit split layout", () => {
 
   // F9：堆叠单列下两侧不再并排滚动，联动开关隐藏；回到分屏宽度恢复显示
   //（持久化状态不受影响）。视口宽度是唯一变量，锁定两个断点态。
-  // 已知缺陷（2026-10-06 评审布局转正后）：560px 堆叠断点下 Sync scrolling
-  // 开关未隐藏。修复前挂起；分屏宽度下的开关行为由下方同步滚动用例把守。
-  test.fixme("hides the sync scroll toggle where panes stack and shows it side by side", async ({ page }) => {
+  test("hides the sync scroll toggle where panes stack and shows it side by side", async ({ page }) => {
     await page.setViewportSize({ width: singleColumnWidth, height: 900 });
     await page.goto("/__preview/skill-detail/skill-pdf#description");
     await expect(page.getByRole("heading", { name: "Markdown workspace" })).toBeVisible();

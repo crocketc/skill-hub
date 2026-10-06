@@ -5,7 +5,18 @@
   padding-top: var(--space-4);
   border-top: 1px solid var(--ui-border);
   content-visibility: auto;
-  contain-intrinsic-size: auto 36rem;
+  /* 宽度轴必须给 none：container-type 使工作区永久处于 inline-size
+     约束下，auto 宽度占位（last remembered size）会把上次渲染宽度
+     反喂父级轨道，形成自我强化的横向溢出。高度仍用 auto 36rem
+     缓解 content-visibility 跳动。 */
+  contain-intrinsic-size: none auto 36rem;
+  /* QA-011（2026-10-06 缺陷轮）：markdown 内部的 rail 分栏与堆叠断点必须
+     度量工作区实际可用宽度。此前沿用应用外壳的 workspace 容器，在详情
+     嵌入（同屏还有详情分区导航）时会误判富余：外壳 802px 已达 44rem，
+     工作区实际仅约 504px，两列 rail 挤掉编辑区宽度造成横向溢出。
+     工作区自身声明为 inline-size 容器，内部查询一律指向
+     markdown-workspace；全页形态下它近似旧外壳宽度，行为不变。 */
+  container: markdown-workspace / inline-size;
 }
 
 .sh-markdown-workspace__header,
@@ -340,6 +351,14 @@
   font-size: var(--font-size-xs);
 }
 
+/* QA-011：编辑器单列轨道与分栏面板同理锁 minmax(0,1fr)。编辑器的隐式
+   auto 轨道按子项 min-content 取基準——rail 形态的单行工具行（开关 +
+   页签 + 保存簇）min-content 约 533px，窄工作区里会把轨道连同分栏一起
+   撑出容器；显式锁轨后溢出只可能发生在子项内部滚动/换行，不再外溢。 */
+.sh-markdown-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sh-markdown-editor__split {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -497,8 +516,9 @@
   padding-inline: var(--space-1);
 }
 
-/* 侧栏与文件下拉按内容区宽度二选一：宽屏用侧栏，窄屏回落下拉。 */
-@container workspace (min-width: 44rem) {
+/* 侧栏与文件下拉按工作区实际宽度二选一（QA-011：容器改量
+   markdown-workspace，不再误用应用外壳宽度）：宽屏用侧栏，窄屏回落下拉。 */
+@container markdown-workspace (min-width: 44rem) {
   .sh-markdown-workspace--rail .sh-markdown-workspace__body {
     grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
   }
@@ -509,7 +529,7 @@
   }
 }
 
-@container workspace (max-width: 43.99rem) {
+@container markdown-workspace (max-width: 43.99rem) {
   .sh-markdown-workspace--rail .sh-markdown-workspace__rail {
     display: none;
   }
@@ -521,9 +541,14 @@
   max-height: calc(var(--sh-md-stage, 36rem) - 3.5rem);
 }
 
-/* 原型编辑头部压缩：工具行单行不换行，状态与保存说明超长省略。 */
-.sh-markdown-workspace--rail .sh-markdown-editor__toolbar {
-  flex-wrap: nowrap;
+/* 原型编辑头部压缩：工具行单行不换行，状态与保存说明超长省略。
+   QA-011：单行只在工作区确有富余（≥47rem，扣除 rail 侧栏后编辑器
+   仍容得下工具行 min-content）时保持；更窄容器回落换行，否则 nowrap
+   的 min-content 会把分栏轨道撑出工作区（1024/560px 溢出的根因）。 */
+@container markdown-workspace (min-width: 47rem) {
+  .sh-markdown-workspace--rail .sh-markdown-editor__toolbar {
+    flex-wrap: nowrap;
+  }
 }
 
 .sh-markdown-workspace--rail .sh-markdown-editor__save-status,
@@ -583,14 +608,21 @@
      断点（40rem）接管。 */
 }
 
-@media (max-width: 40rem) {
+/* QA-011：分栏是否堆叠取决于工作区实际可用宽度而非视口——详情嵌入下
+   视口 560px 时工作区仅约 283px，而视口 1024px 时也有约 504px。
+   30rem（480px）以下两栏各不足 240px，收敛为堆叠单列。 */
+@container markdown-workspace (max-width: 29.99rem) {
   .sh-markdown-editor__split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* 堆叠单列下两侧面板不再并排滚动，联动开关无从操作也无意义——
-     直接隐藏；持久化状态保留，回到分屏宽度后恢复显示。 */
-  .sh-markdown-editor__split-header {
+     直接隐藏；持久化状态保留，回到分屏宽度后恢复显示。开关在常规
+     布局渲染于分栏间独立行、在原型保存流渲染于工具行（QA-011 缺陷：
+     旧规则只隐藏前者，560px 堆叠下工具行开关仍然可见），按类隐藏
+     覆盖两种渲染位置。 */
+  .sh-markdown-editor__split-header,
+  .sh-markdown-editor__sync-toggle {
     display: none;
   }
 }
