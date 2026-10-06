@@ -305,9 +305,16 @@ export function rowIsBatchExecutableFor(
 
 /** 行按自身类别可执行：部署走 centralize 判定，来源副本要求健康可清理。 */
 export function rowIsNaturallyExecutable(row: RelationGovernanceRow): boolean {
+  // 只读导入原件是权限边界内的正常终态（§10）：不参与批量勾选。
+  if (isReadOnlySourceRelation(row)) return false;
   return row.relation.kind === "source_copy"
     ? rowCanRunBatchAction(row, "retain_source_copy")
     : rowIsBatchExecutable(row);
+}
+
+/** 只读目录导入原件：后端只读事实是唯一来源，前端据此收口动作与勾选。 */
+export function isReadOnlySourceRelation(row: RelationGovernanceRow): boolean {
+  return row.source_read_only;
 }
 
 /** 该行是否允许批量纳入集中库管理。 */

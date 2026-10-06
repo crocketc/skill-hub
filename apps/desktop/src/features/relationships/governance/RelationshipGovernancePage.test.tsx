@@ -765,6 +765,86 @@ describe("RelationshipGovernancePage 页签与细分桶（FB-④）", () => {
   });
 });
 
+// —— FB-④/D8（§10，2026-10-06）：只读导入原件是权限边界内的正常终态；
+// 待处理清空后给鼓励空态。 ——
+
+const READ_ONLY_ORIGINAL_ROW = makeSourceRow({
+  relationId: "src-readonly-original",
+  displayName: "只读原件 PDF",
+  decision: "retained",
+  health: "normal",
+  status: "retained",
+  readiness: "blocked",
+  primaryAction: "none",
+  sourceReadOnly: true,
+});
+
+describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/D8）", () => {
+  it("renders the read-only original as a terminal card without actions, selection or blockers", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?governance=completed"],
+      facade: createFacade(sourceLedger([READ_ONLY_ORIGINAL_ROW, RETAINED_SOURCE_ROW])),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    const retainedBucket = screen.getByTestId("governance-bucket-retained");
+    const readonlyCard = retainedBucket.querySelector('[data-readonly="true"]') as HTMLElement;
+    expect(readonlyCard).not.toBeNull();
+    // 状态徽标与来源说明直接可见。
+    expect(within(readonlyCard).getByTestId("governance-readonly-badge"))
+      .toHaveTextContent("已保留副本（只读）");
+    expect(within(readonlyCard).getByTestId("governance-readonly-note")).toHaveTextContent("只读");
+    // 仅保留「查看关系信息」展开：无动作按钮、无勾选、无受阻原因、无待集中管理徽标。
+    expect(within(readonlyCard).queryAllByRole("button")).toHaveLength(0);
+    expect(readonlyCard.querySelector("input[type='checkbox']")).toBeNull();
+    expect(within(readonlyCard).queryByTestId("governance-reasons-src-readonly-original")).toBeNull();
+    expect(within(readonlyCard).queryByText("待集中管理")).toBeNull();
+    expect(within(readonlyCard).getByTestId("governance-relation-details")).toBeInTheDocument();
+  });
+
+  it("keeps the read-only original out of batch selection at bucket and select-all level", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?governance=completed"],
+      facade: createFacade(sourceLedger([READ_ONLY_ORIGINAL_ROW])),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    const bucketSelect = screen.getByTestId("governance-bucket-select-retained") as HTMLInputElement;
+    expect(bucketSelect).toBeDisabled();
+    const selectAll = screen.getByTestId("governance-select-all") as HTMLInputElement;
+    expect(selectAll).toBeDisabled();
+  });
+
+  it("suppresses read-only actions and selection in the table view too", async () => {
+    await renderGovernanceApp({
+      entries: ["/relationships/governance?governance=completed&view=table"],
+      facade: createFacade(sourceLedger([READ_ONLY_ORIGINAL_ROW])),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    expect(screen.getByTestId("governance-readonly-badge")).toHaveTextContent("已保留副本（只读）");
+    expect(screen.queryByTestId("governance-action-src-readonly-original")).toBeNull();
+    expect(screen.queryByTestId("governance-select-src-readonly-original")).toBeNull();
+    expect(screen.queryByTestId("governance-reasons-src-readonly-original")).toBeNull();
+  });
+
+  it("shows the encouraging pending-done state when only completed rows remain", async () => {
+    await renderGovernanceApp({
+      facade: createFacade(sourceLedger([RETAINED_SOURCE_ROW])),
+    });
+    await screen.findByTestId("governance-empty-pending");
+    expect(screen.getByTestId("governance-empty-pending")).toHaveTextContent("已全部处理完");
+  });
+
+  it("keeps the neutral all-good state when the ledger has no rows at all", async () => {
+    await renderGovernanceApp({
+      facade: createFacade(sourceLedger([])),
+    });
+    await screen.findByTestId("governance-empty-state");
+    expect(screen.getByTestId("governance-empty-state")).toHaveTextContent("当前关系状态良好");
+  });
+});
+
 describe("RelationshipGovernancePage 单条治理", () => {
   it("runs single centralize as preview → confirm → run → verify → result", async () => {
     const { facade, tracker } = await renderGovernanceApp();
@@ -1632,6 +1712,8 @@ interface SourceRowSpec {
   primaryAction: RelationGovernanceRow["primary_action"];
   blockers?: RelationGovernanceRow["blockers"];
   governance?: RelationGovernanceRow["governance"];
+  /** FB-④：只读目录导入原件——权限边界内的正常终态。 */
+  sourceReadOnly?: boolean;
 }
 
 function makeSourceRow(spec: SourceRowSpec): RelationGovernanceRow {
@@ -1685,7 +1767,7 @@ function makeSourceRow(spec: SourceRowSpec): RelationGovernanceRow {
           : [],
     },
     target_identity: null,
-    source_read_only: false,
+    source_read_only: spec.sourceReadOnly ?? false,
     evidence_relation_ids: [spec.relationId],
   };
 }

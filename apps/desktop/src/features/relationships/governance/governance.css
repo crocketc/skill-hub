@@ -359,6 +359,14 @@
   margin: 0;
 }
 
+/* 只读导入原件的来源说明：正常终态说明，不按受阻样式呈现。 */
+.sh-governance__readonly-note {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  margin: 0;
+}
+
 .sh-governance__board-cards {
   display: grid;
   gap: var(--space-2);

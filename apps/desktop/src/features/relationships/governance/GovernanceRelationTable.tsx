@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import type { RefObject } from "react";
 import type { RelationGovernanceRow } from "../../../api/bindings";
 import {
+  isReadOnlySourceRelation,
   relationAgentIdOf,
   relationIdOf,
   relationPathOf,
@@ -109,14 +110,17 @@ export function GovernanceRelationTable({
           {rows.map((row) => {
             const relationId = relationIdOf(row.relation);
             const busy = busyRelationIds.has(relationId);
+            const readOnly = isReadOnlySourceRelation(row);
             return (
-              <tr data-testid="governance-row" key={relationId}>
+              <tr data-readonly={readOnly ? "true" : undefined} data-testid="governance-row" key={relationId}>
                 <td>
-                  <GovernanceRelationSelection
-                    onToggleRow={onToggleRow}
-                    row={row}
-                    selected={selectedIds.has(relationId)}
-                  />
+                  {!readOnly ? (
+                    <GovernanceRelationSelection
+                      onToggleRow={onToggleRow}
+                      row={row}
+                      selected={selectedIds.has(relationId)}
+                    />
+                  ) : null}
                 </td>
                 <td><GovernanceRelationIdentity row={row} /></td>
                 <td data-testid={`governance-source-${relationId}`}>
@@ -130,16 +134,18 @@ export function GovernanceRelationTable({
                 </td>
                 <td><GovernanceRelationVerification row={row} /></td>
                 <td className="sh-governance__actions">
-                  <GovernanceRelationActions
-                    busy={busy}
-                    onCentralize={onCentralize}
-                    onEndRelationship={onEndRelationship}
-                    onRevalidate={onRevalidate}
-                    onRetain={onRetain}
-                    onRevokeRetention={onRevokeRetention}
-                    onUndeploy={onUndeploy}
-                    row={row}
-                  />
+                  {!readOnly ? (
+                    <GovernanceRelationActions
+                      busy={busy}
+                      onCentralize={onCentralize}
+                      onEndRelationship={onEndRelationship}
+                      onRevalidate={onRevalidate}
+                      onRetain={onRetain}
+                      onRevokeRetention={onRevokeRetention}
+                      onUndeploy={onUndeploy}
+                      row={row}
+                    />
+                  ) : null}
                 </td>
               </tr>
             );
@@ -184,6 +190,28 @@ export function GovernanceRelationSelection({
 export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
+  // 只读导入原件（§10）：状态徽标 + 来源说明，不显示管理状态或受阻徽标。
+  if (isReadOnlySourceRelation(row)) {
+    return (
+      <div className="sh-governance__identity">
+        <strong
+          aria-label={governanceSkillDisplayName(row, t)}
+          tabIndex={0}
+          title={governanceSkillDisplayName(row, t)}
+        >
+          {governanceSkillDisplayName(row, t)}
+        </strong>
+        <StatusBadge tone="success">
+          <span data-testid="governance-readonly-badge">
+            {t("relationships.governance.readOnly.badge" as never)}
+          </span>
+        </StatusBadge>
+        <p className="sh-governance__readonly-note" data-testid="governance-readonly-note">
+          {t("relationships.governance.readOnly.note" as never)}
+        </p>
+      </div>
+    );
+  }
   const presentation = presentGovernanceRow(row);
   const managementMatchesSummary = (
     row.governance.management_status === "taken_over"
@@ -312,6 +340,8 @@ export function GovernanceRelationVerificationLabel({ row }: { row: RelationGove
 export function GovernanceRelationBlockers({ row }: { row: RelationGovernanceRow }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
+  // 只读原件不是受阻（§10）：即使后端附带原因也不按受阻呈现。
+  if (isReadOnlySourceRelation(row)) return null;
   const reasons = presentGovernanceRow(row).reasonKeys;
   return reasons.length > 0 ? (
     <ul className="sh-governance__reason-list" data-testid={`governance-reasons-${relationId}`}>
@@ -343,6 +373,8 @@ export function GovernanceRelationActions({
 }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
+  // 只读原件没有可用动作（§10）：动作按钮区整体不渲染。
+  if (isReadOnlySourceRelation(row)) return null;
   const actions = [
     {
       action: "centralize_management" as const,

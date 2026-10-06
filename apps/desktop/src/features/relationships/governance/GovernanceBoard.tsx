@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RelationGovernanceRow } from "../../../api/bindings";
-import { relationIdOf, rowIsNaturallyExecutable } from "./api";
+import { relationIdOf, rowIsNaturallyExecutable, isReadOnlySourceRelation } from "./api";
 import type { GovernanceClassificationFilter } from "./api";
 import { projectGovernanceBuckets, type GovernanceBucket } from "./governanceBuckets";
 import {
@@ -378,11 +378,19 @@ function GovernanceBoardCard({
 }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
+  // 只读导入原件（§10）：正常终态卡——无勾选、无受阻区、无动作按钮区。
+  const readOnly = isReadOnlySourceRelation(row);
   return (
     <li className="sh-governance__board-card-wrap">
-      <article className="sh-governance__board-card" data-testid="governance-row">
+      <article
+        className="sh-governance__board-card"
+        data-readonly={readOnly ? "true" : undefined}
+        data-testid="governance-row"
+      >
         <div className="sh-governance__board-card-heading">
-          <GovernanceRelationSelection onToggleRow={onToggleRow} row={row} selected={selected} />
+          {!readOnly ? (
+            <GovernanceRelationSelection onToggleRow={onToggleRow} row={row} selected={selected} />
+          ) : null}
           <GovernanceRelationIdentity row={row} />
         </div>
         <div className="sh-governance__board-target">
@@ -391,9 +399,11 @@ function GovernanceBoardCard({
           </span>
           <GovernanceRelationTargetSummary row={row} />
         </div>
-        <div className="sh-governance__board-issue" data-testid={`governance-verification-${relationId}`}>
-          <GovernanceRelationBlockers row={row} />
-        </div>
+        {!readOnly ? (
+          <div className="sh-governance__board-issue" data-testid={`governance-verification-${relationId}`}>
+            <GovernanceRelationBlockers row={row} />
+          </div>
+        ) : null}
         <details className="sh-governance__board-details" data-testid="governance-relation-details">
           <summary>{t("relationships.governance.board.relationInfo")}</summary>
           <div className="sh-governance__board-facts">
@@ -423,18 +433,20 @@ function GovernanceBoardCard({
             </div>
           </div>
         </details>
-        <div className="sh-governance__board-actions" data-testid={`governance-actions-${relationId}`}>
-          <GovernanceRelationActions
-            busy={busy}
-            onCentralize={onCentralize}
-            onEndRelationship={onEndRelationship}
-            onRevalidate={onRevalidate}
-            onRetain={onRetain}
-            onRevokeRetention={onRevokeRetention}
-            onUndeploy={onUndeploy}
-            row={row}
-          />
-        </div>
+        {!readOnly ? (
+          <div className="sh-governance__board-actions" data-testid={`governance-actions-${relationId}`}>
+            <GovernanceRelationActions
+              busy={busy}
+              onCentralize={onCentralize}
+              onEndRelationship={onEndRelationship}
+              onRevalidate={onRevalidate}
+              onRetain={onRetain}
+              onRevokeRetention={onRevokeRetention}
+              onUndeploy={onUndeploy}
+              row={row}
+            />
+          </div>
+        ) : null}
       </article>
     </li>
   );

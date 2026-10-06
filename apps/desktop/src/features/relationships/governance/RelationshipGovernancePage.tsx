@@ -172,6 +172,17 @@ export function RelationshipGovernancePage({
     pending: scopedRows.filter((row) => row.governance.governance_status === "pending").length,
     completed: scopedRows.filter((row) => row.governance.governance_status === "completed").length,
   }), [scopedRows]);
+  // D8（§10）：无隐藏过滤且清单仍有行时，待处理页签为空 = 已全部处理完；
+  // 深链隐藏过滤（scope/management）造成的空仍按「该筛选下没有关系」呈现。
+  const pendingDoneEmpty = deepLink.classification === "pending"
+    && deepLink.scope === "all"
+    && deepLink.management === null
+    && scopedRows.length > 0;
+  const allGoodEmpty = deepLink.classification === "all"
+    || (deepLink.classification === "pending"
+      && deepLink.scope === "all"
+      && deepLink.management === null
+      && scopedRows.length === 0);
   // 导入横幅的 N：本次批次映射的本地来源副本数（不受隐藏行过滤影响）。
   const sourceCopyCount = useMemo(
     () => rows.filter((row) => row.relation.kind === "source_copy").length,
@@ -979,10 +990,15 @@ export function RelationshipGovernancePage({
 
       {ledgerQuery.isSuccess ? (
         visibleRows.length === 0 ? (
-          <p role="status">
-            {deepLink.classification === "all"
+          <p
+            data-testid={pendingDoneEmpty ? "governance-empty-pending" : "governance-empty-state"}
+            role="status"
+          >
+            {allGoodEmpty
               ? t("relationships.governance.empty.all")
-              : t("relationships.governance.empty.filtered")}
+              : pendingDoneEmpty
+                ? t("relationships.governance.empty.pendingDone")
+                : t("relationships.governance.empty.filtered")}
           </p>
         ) : (
           <>
