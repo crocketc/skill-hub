@@ -30,7 +30,8 @@ it("ships user-facing copy for every classified error key the UI maps to", () =>
     "source.searchUnavailable",
     "skillDetail.duplicates.deterministicNote",
     "skillDetail.duplicates.failureUnknown",
-    "skillDetail.sourceRelink.failureUnknown",
+    // skillDetail.sourceRelink.failureUnknown 已随 §9 转正删除：
+    // 旧布局专属的 SourceRelinkPanel 移除后 UI 不再映射该分类键。
     "discovery.search.assistUnconfigured",
     "discovery.search.assistCancelled",
     "discovery.search.assistFailedFallback",

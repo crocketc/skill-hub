@@ -1465,16 +1465,8 @@
     },
     "drawer": {
       "actions": {
-        "addTags": "Add tags",
-        "delete": "Delete from library",
-        "deleteShort": "Delete",
-        "dispatch": "Dispatch",
-        "dispatchSkill": "Dispatch {{name}}",
-        "export": "Export",
-        "exportSkill": "Export {{name}}",
-        "viewVersions": "View versions"
+        "addTags": "Add tags"
       },
-      "configure": "Configure quick drawer",
       "description": "Skill summary and quick actions.",
       "detail": {
         "empty": "Select a skill to view details",
@@ -1486,11 +1478,7 @@
       "editNote": "Edit note",
       "editPurpose": "Edit purpose",
       "removeTag": "Remove tag {{tag}}",
-      "allTags": "All tags",
-      "moreTags_one": "{{count}} more tag",
-      "moreTags_other": "{{count}} more tags",
       "tagsFailure": "Tags were not saved; the saved tags were restored.",
-      "fullDetails": "View full details",
       "prototype": {
         "cycleWidth": "Current: {{current}}; click to switch to {{next}}",
         "actionImpacts": {
@@ -1529,7 +1517,6 @@
         "openRelationContext": "Open relation context: {{target}}",
         "openSampleLocation": "Open sample location",
         "openTargetSample": "Preview {{type}} details",
-        "previewNote": "Preview sample · Changes stay on this page and are not written to SkillHub.",
         "popoverDescription": "Preview controls. No production data is changed.",
         "projectTargets": "Project relation targets, {{count}} total",
         "regular": "Regular",
@@ -1587,7 +1574,6 @@
         "securityAccessibleRisk": "{{check}} found {{count}} risks; {{actionable}} need attention.",
         "securityAccessibleClean": "{{check}} passed with no risks in the current version.",
         "securityAccessibleUnknown": "{{check}}: {{result}}.",
-        "securityVersionTime": "Current version {{version}} · {{time}}",
         "securityFindingsLabel": "Check findings",
         "securityNeedsAttention": "Needs attention",
         "securityDispositionRecorded": "A handling decision is recorded; the original finding remains",
@@ -1597,122 +1583,49 @@
         "sourceVersionTitle": "Source and version"
       },
       "modules": {
-        "fullDetails": "Full details",
-        "identity": "Identity",
         "primaryActions": "Primary actions",
         "relations": "Relations",
         "riskSummary": "Risk summary",
         "securityChecks": "Security checks",
-        "sourceVersion": "Source and version",
-        "sourceLicense": "Source and license",
-        "usageEvidence": "Usage evidence",
-        "versions": "Versions",
-        "dependenciesDuplicates": "Dependencies and duplicates",
-        "externalChanges": "External changes",
-        "invocationRequirements": "Invocation and requirements"
+        "usageEvidence": "Usage evidence"
       },
-      "moduleVisibility": "Drawer modules",
       "preferenceFailure": "Preference was not saved. The temporary layout is still active.",
       "metadataFailure": "Alias, purpose, or note was not saved. The last saved content was restored.",
       "presets": {
-        "cycle": "Current width: {{current}}. Next: {{next}}",
         "label": "Quick drawer width",
         "nearFull": "Near full screen",
         "standard": "Standard width",
         "wide": "Wide"
       },
-      "reset": "Reset to default",
       "resize": "Resize quick drawer",
       "risk": {
         "high": "{{count}} high risk",
         "pending": "{{count}} pending"
       },
-      "trial": {
-        "adjustDate": "Adjust review date",
-        "convert": "Make regular",
-        "converted": "This Skill is now in the regular lifecycle.",
-        "noDate": "No review date set",
-        "reviewDate": "Trial review date",
-        "reviewDateLabel": "Review date",
-        "saveDate": "Save review date"
-      },
-      "collections": {
-        "add": "Add to combination",
-        "addShort": "Add",
-        "addTo": "Add to {{name}}",
-        "added": "Added to {{name}}.",
-        "dialogTitle": "Add {{skill}} to a combination",
-        "empty": "No combinations have been created yet.",
-        "label": "Combinations",
-        "loadFailed": "Could not load combinations. Retry to manage membership.",
-        "manage": "Manage combinations",
-        "memberships": "Combinations containing this Skill",
-        "none": "Not in a combination",
-        "remove": "Remove {{skill}} from {{name}}",
-        "removeShort": "Remove",
-        "removed": "Removed from {{name}}."
-      },
       "title": "Skill details",
       "translation": {
-        "action": "Translate description",
         "confirmLabel": "Confirm translated purpose",
         "failed": "The description could not be translated.",
-        "inProgress": "Translating…",
         "saveFailed": "The translation could not be saved as my purpose.",
         "useAsPurpose": "Use as my purpose"
       },
-      "reviewRelationships": "Review relationship governance",
-      "unresolvedTargets_one": "{{count}} relationship target could not be identified. Review its relationship.",
-      "unresolvedTargets_other": "{{count}} relationship targets could not be identified. Review their relationships.",
-      "relationships": {
-        "loading": "Loading relationship facts…",
-        "loadFailed": "Could not load destination relationships. Retry or open governance to review them.",
-        "unavailableGroup": "Destination facts are unavailable."
-      },
-      "provenance": {
-        "label": "Import provenance",
-        "loadFailed": "Could not load import provenance.",
-        "none": "No import provenance is recorded for this Skill.",
-        "otherSource": "Other source"
-      },
-      "reviewAgentRelationship": "Review Agent relationship",
-      "reviewProjectRelationship": "Review project relationship",
-      "reviewUnresolvedRelationship": "Review unresolved relationship",
       "viewUpdate": "View update",
       "values": {
         "agents": "Agents",
         "agentDestinations": "Agent destinations",
         "alias": "Alias",
-        "knownDestinationCount": "Known destinations: {{count}}",
-        "currentVersion": "Current version: {{version}}",
         "invocation": "Invocation:",
-        "requirements": "Requirements",
         "invocationCount": "{{count}} invocations",
         "lastUsed": "Last used: {{value}}",
         "license": "License",
         "note": "My note",
         "originalDescription": "Original description",
-        "originalName": "Original name",
-        "ownership": "Ownership",
         "purpose": "My purpose",
         "projectDestinations": "Project destinations",
-        "projectDirectory": "Project directory",
         "projects": "Projects",
-        "noLinkedAgents": "No linked Agents",
-        "noLinkedProjects": "No linked project directories",
-        "unknownTarget": "Target path unavailable",
-        "unresolvedDestinationGroup": "Some destinations could not be identified yet.",
-        "source": "Source",
         "tags": "Tags",
         "translatedDescription": "Translation",
-        "upToDate": "Up to date",
-        "updateAvailable": "Update available",
-        "dependencies": "Dependencies",
-        "duplicates": "Possible duplicates"
-      },
-      "relations": {
-        "showFewerProjects": "Show fewer projects",
-        "showMoreProjects": "Show {{count}} more projects"
+        "upToDate": "Up to date"
       }
     },
     "filters": {
@@ -1736,10 +1649,8 @@
       "lifecycle": "Lifecycle",
       "lifecycleOptions": {
         "active": "Regular",
-        "deprecated": "Deprecated",
         "trial": "Trial"
       },
-      "resultCount": "{{count}} results",
       "search": "Search skills",
       "searchPlaceholder": "Enter a Skill name or alias",
       "selectedCount": "{{count}} selected",
@@ -1770,8 +1681,6 @@
     },
     "table": {
       "agentDeploymentSummary": "Added to Agents: {{count}}",
-      "projectDeploymentSummary": "Added to projects: {{count}}",
-      "aliasLabel": "Alias",
       "originalNameLabel": "Original name",
       "aiStatus": "AI: {{state}}",
       "basicStatus": "Basic: {{state}}",
@@ -1813,9 +1722,6 @@
         "deprecated": "Deprecated",
         "trial": "Trial"
       },
-      "moveBefore": "Move {{column}} before {{before}}",
-      "moveUp": "Move {{column}} up",
-      "moveDown": "Move {{column}} down",
       "dragColumn": "draggable column",
       "lockedColumn": "Locked",
       "reorderLabel": "Reorder columns",
@@ -1829,8 +1735,6 @@
       "selectSkill": "Select {{name}}",
       "sortBy": "Sort by {{column}}",
       "updateAvailable": "Update available",
-      "agentDeployments_one": "{{count}} agent",
-      "agentDeployments_other": "{{count}} agents",
       "projectDeployments_one": "{{count}} project",
       "projectDeployments_other": "{{count}} projects"
     },
@@ -1908,12 +1812,9 @@
   },
   "skillDetail": {
     "actions": {
-      "label": "Skill actions",
-      "delete": "Delete from library",
       "securityHandling": "Security handling"
     },
     "versions": {
-      "exportSkill": "Export this skill (standard export)",
       "rename": "Rename version",
       "renameAria": "Rename version {{version}}",
       "labelLabel": "Version name",
@@ -1960,12 +1861,6 @@
       "viewUpdateDiff": "View update diff"
     },
     "insights": {
-      "connections": "Dependencies and combinations",
-      "invocations_one": "{{count}} recorded invocation",
-      "invocations_other": "{{count}} recorded invocations",
-      "none": "No established relationships",
-      "operationHistoryEmpty": "No operation journal entries yet.",
-      "operationHistoryLimitation": "The operation journal does not record a per-skill dimension yet; the entries below are the global journal.",
       "dependencyShapes": {
         "importCopy": "Import copy",
         "managedCopy": "Managed copy",
@@ -2000,91 +1895,12 @@
           "succeeded": "Completed",
           "unknown": "Status unavailable"
         }
-      },
-      "usageEvidence": "Usage evidence"
-    },
-    "relations": {
-      "loadError": "Relations could not be loaded. Other detail sections remain available.",
-      "loadErrorLabel": "Relations failed to load",
-      "physicalTarget": "Physical target:",
-      "pinned": "Pinned",
-      "retry": "Retry relations",
-      "undeploy": "Remove from target",
-      "undeployTarget": "Remove from {{target}}",
-      "governed": {
-        "heading": "Relationship types and removal impact",
-        "description": "Relationship types come from deterministic facts; removal impact is previewed before any confirmed change.",
-        "empty": "No deployment relationship facts are registered yet.",
-        "sharedAgent": "Target agent: {{agent}}",
-        "loadError": "Relationship facts are unavailable; deployment and source details may be incomplete."
-      },
-      "sourceEvents": {
-        "heading": "Recent source activity"
-      }
-    },
-    "provenance": {
-      "heading": "Provenance & observed target copies",
-      "source": "Source:",
-      "sourceKinds": {
-        "local": "Local directory",
-        "https": "HTTPS download",
-        "git": "Git repository"
-      },
-      "agent": "Agent form:",
-      "unknownAgent": "Unrecognized (no directory evidence; not guessed)",
-      "originalPath": "Original path:",
-      "importedAt": "Imported at (epoch seconds):",
-      "fingerprint": "Content fingerprint:",
-      "ownership": "Ownership:",
-      "ownerships": {
-        "unclassified": "Unclassified",
-        "central_library": "Central library",
-        "known_agent_target": "Known agent target",
-        "registered_project": "Registered project",
-        "read_only_builtin_or_plugin": "Read-only builtin/plugin",
-        "arbitrary_local_directory": "Arbitrary local directory",
-        "downloaded_source": "Downloaded source"
-      },
-      "absent": "This skill did not enter the library through a provenance-tracked import (for example created or collected); no origin is invented.",
-      "noObservedDeployments": "No added copies have been observed in any agent directory yet.",
-      "matchStates": {
-        "content_verified": "Content verified",
-        "name_only": "Name match only (not verified)",
-        "diverged": "Content diverged"
-      },
-      "statuses": {
-        "active": "Active",
-        "released": "Released"
-      },
-      "loadError": "Provenance could not be loaded. Other detail sections remain available.",
-      "loadErrorLabel": "Provenance failed to load",
-      "retry": "Retry provenance",
-      "sources": {
-        "heading": "Provenance sources",
-        "empty": "No source relations besides the current central copy are registered.",
-        "importedAt": "Imported at (epoch seconds): {{at}}"
-      },
-      "conflicts": {
-        "heading": "Conflicts & todos",
-        "empty": "No unresolved conflicts or governance todos.",
-        "memberPaths": "Involved paths: {{paths}}"
       }
     },
     "requirements": {
       "declaredOnly": "Declared by the Skill only; SkillHub has not installed or verified it.",
       "empty": "No invocation declared",
       "invocation": "Invocation"
-    },
-    "lifecycle": {
-      "active": "Regular",
-      "deprecated": "Deprecated",
-      "description": {
-        "active": "This Skill is in the regular lifecycle.",
-        "deprecated": "This Skill is marked as deprecated in the library.",
-        "trial": "This Skill has a review date for a later keep-or-remove decision."
-      },
-      "reviewDue": "Review on {{date}}",
-      "trial": "Trial"
     },
     "metadata": {
       "alias": "Alias",
@@ -2117,137 +1933,17 @@
       "userRevised": "User revised"
     },
     "navigation": {
-      "back": "Back to Skill library",
       "label": "Skill navigation",
       "next": "Next Skill",
       "position": "{{position}} of {{total}}",
-      "previous": "Previous Skill",
-      "skillIdentity": "Current Skill",
-      "sectionsLabel": "Detail sections",
-      "sections": {
-        "connections": "Related Skills",
-        "description": "Content description",
-        "external": "External changes",
-        "metadata": "Identity and source",
-        "overview": "Overview",
-        "relations": "Relations",
-        "requirements": "Requirements",
-        "security": "Security checks",
-        "versions": "Version history"
-      }
+      "previous": "Previous Skill"
     },
     "states": {
       "error": "Unable to load Skill details",
       "loading": "Loading Skill details",
-      "loadingMetadata": "Loading description and metadata",
-      "metadataError": "Description and metadata could not be loaded",
       "noCurrentVersionForSecurity": "No version is available to check; security checks have not been run.",
       "notFound": "This Skill is not in the local library",
       "unavailable": "Skill detail data is not connected yet"
-    },
-    "statusRail": {
-      "basicOther": "Basic check: {{state}}",
-      "basicPassed": "Basic check passed",
-      "deploymentLabel": "Deployment relations",
-      "deploymentsUnavailable": "Deployment count unavailable",
-      "deployments_one": "{{count}}",
-      "deployments_other": "{{count}}",
-      "relationLabel": "Relationships",
-      "relationsIndependent_one": "{{count}} independent copy",
-      "relationsIndependent_other": "{{count}} independent copies",
-      "relationsManaged_one": "{{count}} managed link",
-      "relationsManaged_other": "{{count}} managed links",
-      "relationsUnavailable": "Relationship mix unavailable",
-      "label": "Skill status",
-      "versionLabel": "Current version"
-    },
-    "trial": {
-      "abandon": "Abandon trial",
-      "abandonError": "The removal workflow could not be opened.",
-      "convert": "Add to managed library",
-      "converted": "Trial date removed; this Skill remains managed.",
-      "extend": "Extend trial",
-      "reviewDate": "Review date",
-      "saveDate": "Save review date",
-      "saveError": "Could not save the trial date.",
-      "saved": "Review date saved as {{date}}.",
-      "set": "Set trial review"
-    },
-    "sourceUpdate": {
-      "ariaLabel": "Source updates",
-      "check": "Check source updates",
-      "checking": "Checking…",
-      "recheck": "Check again",
-      "preparing": "Fetching the update preview…",
-      "upToDate": "Up to date: local and upstream versions match.",
-      "unavailable": "The source is unavailable; cannot check for updates.",
-      "authRequired": "The source requires authentication; cannot check for updates.",
-      "available": "Update available: local {{local}} → upstream {{upstream}}.",
-      "availableWithChanges": "Update available with local modifications (review before taking): local {{local}} → upstream {{upstream}}.",
-      "statusSeen": "The last check found an update: {{upstream}}. Run “Check source updates” to verify.",
-      "statusIgnored": "The current update candidate is ignored; you will be notified again when new upstream content is published.",
-      "takeUpstream": "Take upstream",
-      "keepLocal": "Keep local",
-      "previewHeading": "Update preview",
-      "previewIntro": "Upstream {{label}} content; the preview is valid until {{expires}}. Review the file changes before confirming.",
-      "previewIntroUnlabeled": "Latest upstream content; the preview is valid until {{expires}}. Review the file changes before confirming.",
-      "candidateIdentity": "Candidate content identity: {{identity}}",
-      "filesHeading": "File changes",
-      "filesAdded": "Added",
-      "filesRemoved": "Removed",
-      "filesModified": "Modified",
-      "filesNone": "No file-level differences.",
-      "confirmTakeUpstream": "Confirm take upstream",
-      "retryWithDecision": "Retry with original decision",
-      "retryHint": "The update failed to apply, but the preview is still valid. You can retry directly; the system will first verify the content still matches the preview.",
-      "cancelCommit": "Cancel this update",
-      "appliedUpstream": "Took upstream version {{version}}.",
-      "keptLocal": "Kept the local version.",
-      "appliedCancelled": "Update cancelled; nothing changed.",
-      "appliedGeneric": "Applied the selected decision.",
-      "previewInvalidated": "The update preview is no longer valid: the local version or upstream content changed before confirmation. Fetch a fresh preview.",
-      "reprepare": "Fetch a fresh preview",
-      "ignore": "Ignore this update",
-      "ignored": "Update ignored; you will be notified again when new upstream content is published.",
-      "ignoreFailed": "The update candidate was not ignored",
-      "reconcile": "Some deployment relations need reconciliation; handle them on the batch add page.",
-      "failed": "Source update failed: {{error}}",
-      "failedGeneric": "The operation failed ({{code}}). Please retry; if it persists, note the error code.",
-      "noUpstream": "This skill has no upstream source to check for updates (created locally or only a local directory is registered). Local file changes appear under health checks and external changes.",
-      "takeUpstreamBlocked": "There are local modifications: taking the upstream version would overwrite them. Choose “Keep local”, or back up first."
-    },
-    "sourceRelink": {
-      "ariaLabel": "Source relinking",
-      "kindLabel": "Source type",
-      "kind": {
-        "local": "Local directory",
-        "https": "HTTPS URL",
-        "git": "Git repository"
-      },
-      "inputLabel": {
-        "local": "New source (local directory)",
-        "https": "New source (HTTPS URL)",
-        "git": "New source (Git repository)"
-      },
-      "inputPlaceholder": {
-        "local": "e.g. C:\\Skills\\my-skill",
-        "https": "https://example.com/owner/repo",
-        "git": "git@github.com:owner/repo.git"
-      },
-      "shapeInvalid": {
-        "local": "The input does not match the selected type: a local directory needs a filesystem path; an HTTPS URL starts with https://; choose the HTTPS URL type instead.",
-        "https": "The input does not match the selected type: an HTTPS URL starts with https://; choose the HTTPS URL type instead.",
-        "git": "The input does not match the selected type: a Git URL usually starts with git@ or ssh://, or ends with .git."
-      },
-      "submit": "Relink",
-      "done": "The source was relinked.",
-      "failed": "Relinking failed: {{error}}",
-      "failureUnknown": "Relinking could not be completed ({{code}})."
-    },
-    "lineage": {
-      "title": "Reuse-modify source",
-      "sourceRemoved": "The source skill is no longer available.",
-      "registeredAt": "Recorded {{time}}"
     },
     "duplicates": {
       "deterministicHeading": "Deterministic duplicate candidates",
@@ -2268,37 +1964,18 @@
       "confirmationNote": "Results are advisory only; merging, deleting or archiving always requires your separate confirmation and is never done automatically.",
       "aiUnavailable": "No usable LLM provider is configured; AI actions are disabled and deterministic candidates remain available."
     },
-    "zones": {
-      "identity": "Identity",
-      "status": "Status",
-      "content": "Content",
-      "relations": "Relations",
-      "lifecycle": "Lifecycle"
-    },
-    "trajectory": {
-      "label": "Source, library, and addition targets",
-      "source": "Source",
-      "library": "Central library",
-      "deployments": "Addition targets"
-    },
     "tracker": {
       "metadataLabel": "Save skill information",
       "metadataSaved": "Skill information saved",
       "metadataFailed": "Failed to save the skill information",
       "translateLabel": "Re-translate the description",
       "translateFailed": "The translation did not complete",
-      "abandonTrialLabel": "Abandon the trial",
-      "abandonTrialFailed": "The trial could not be abandoned",
       "renameVersionLabel": "Name the version",
       "renameVersionSaved": "Version name saved",
       "renameVersionFailed": "The version name was not saved",
       "rollbackLabel": "Roll back the version",
       "rollbackSaved": "Rolled back to {{version}}",
       "rollbackFailed": "The rollback did not complete",
-      "relinkLabel": "Re-link the source",
-      "relinkFailed": "The source could not be re-linked",
-      "applyUpdateLabel": "Apply the source update",
-      "applyUpdateFailed": "The source update could not be applied",
       "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
       "aiAnalysisLabel": "AI semantic analysis",
       "duplicatesPhase": "Analyzing semantic duplicate candidates"

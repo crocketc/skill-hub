@@ -9,12 +9,11 @@ import {
   Routes,
   type InitialEntry,
 } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import "../../styles/base.css";
 import "./skill-detail.css";
 import baseCss from "../../styles/base.css?raw";
-import detailCss from "./skill-detail.css?raw";
 import type { SkillDetailFacade } from "./api";
 import type { MarkdownFacade } from "../markdown/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
@@ -23,13 +22,6 @@ import { createMockSkillDetailFacade } from "./testFixtures";
 import type { RemovalFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
-import type {
-  GovernanceHistoryEntry,
-  RelationGovernanceRow,
-  RelationTargetIdentity,
-} from "../../api/bindings";
-import type { RelationGovernanceFacade } from "../relationships/governance/api";
-import { governanceContextCheckStorageKey } from "../relationships/governance/useRelationshipContextCheck";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 
 interface RenderDetailOptions {
@@ -39,9 +31,7 @@ interface RenderDetailOptions {
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
   tracker?: OperationTracker;
-  governanceFacade?: RelationGovernanceFacade;
   securityFacade?: SecurityFacade;
-  reviewPrototype?: boolean;
 }
 
 function createTestSecurityFacade(): SecurityFacade {
@@ -63,9 +53,7 @@ async function renderDetail({
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
   tracker,
-  governanceFacade,
   securityFacade = createTestSecurityFacade(),
-  reviewPrototype = false,
 }: RenderDetailOptions = {}) {
   const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
@@ -78,16 +66,15 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} reviewPrototype={reviewPrototype} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} reviewPrototype={reviewPrototype} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
-            <Route element={<ExportProbe />} path="/settings/data-protection" />
-            <Route element={<GovernanceProbe />} path="/relationships/governance" />
+            <Route element={<SecurityProbe />} path="/library/:skillId/security" />
             <Route element={<p>Recovery route</p>} path="/recovery" />
           </Routes>
         </MemoryRouter>
@@ -97,23 +84,12 @@ async function renderDetail({
   return { client };
 }
 
-function ExportProbe() {
-  const location = useLocation();
-  const ids = (location.state as { exportSkillIds?: string[] } | null)?.exportSkillIds ?? [];
-  return (
-    <>
-      <p>export probe: {ids.join(",")}</p>
-      <output data-testid="export-state">{JSON.stringify(location.state)}</output>
-    </>
-  );
-}
-
-function GovernanceProbe() {
+function SecurityProbe() {
   const location = useLocation();
   return (
     <>
-      <p data-testid="governance-location">{`${location.pathname}${location.search}`}</p>
-      <output data-testid="governance-state">{JSON.stringify(location.state)}</output>
+      <p data-testid="security-location">{location.pathname}</p>
+      <output data-testid="security-state">{JSON.stringify(location.state)}</output>
     </>
   );
 }
@@ -140,7 +116,24 @@ describe("SkillDetailPage shell", () => {
   });
 
   afterEach(() => {
+    cleanup();
     document.body.innerHTML = "";
+  });
+
+  it("renders the review experience as the default detail presentation", async () => {
+    await renderDetail();
+
+    expect(await screen.findByTestId("skill-detail-review")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    const navigation = screen.getByRole("navigation", { name: "技能详情导航" });
+    expect(within(navigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "概览",
+      "内容与文件",
+      "安全检查",
+      "使用去向",
+      "来源更新",
+      "版本历史",
+    ]);
   });
 
   it("provides the same actionable security review from full details", async () => {
@@ -210,34 +203,40 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("button", { name: "Run AI check" })).not.toBeInTheDocument();
   });
 
-  it("shows unavailable counts and unverified upstream state instead of zero or no update", async () => {
-    const facade = createMockSkillDetailFacade({
-      failRelations: true,
-      summary: {
-        agentDeploymentCount: undefined,
-        projectDeploymentCount: undefined,
-        upgradeAvailable: undefined,
+  // 六裁决安全呈现（task C）：预警状态条 + 安全处理入口直达安全预警路由，
+  // 事实来自 summary.securityAlert（W3-1 同源投影），并且安全区块的检查
+  // 结果共享同一条预警记录。
+  it("shows the security alert record and routes Security handling to the security route", async () => {
+    const user = userEvent.setup();
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 8, scrollTop: 216 };
+    await renderDetail({
+      entry: {
+        pathname: "/library/skill-pdf",
+        search: "?q=pdf",
+        state: { libraryReturn },
       },
+      facade: createMockSkillDetailFacade({ summary: { securityAlert: "warning" } }),
     });
-    await renderDetail({ facade });
 
-    expect(await screen.findAllByText("Deployment count unavailable")).toHaveLength(2);
-    expect(screen.getByText("Upstream version has not been checked; update status is unknown.")).toBeVisible();
+    const alerts = await screen.findAllByRole("status", { name: "Security handling record" });
+    expect(alerts.length).toBeGreaterThanOrEqual(1);
+    expect(alerts[0]).toHaveTextContent("The current version is under a security alert");
+
+    await user.click(screen.getAllByRole("button", { name: "Security handling" })[0]);
+
+    expect(await screen.findByTestId("security-location")).toHaveTextContent("/library/skill-pdf/security");
+    expect(screen.getByTestId("security-state")).toHaveTextContent(JSON.stringify({ libraryReturn }));
   });
 
-  it("keeps the review prototype security fixture scoped to its concrete fixture version", async () => {
-    const getChecks = vi.fn(async () => separateCheckFixture().checks);
-    const securityFacade: SecurityFacade = {
-      ...createTestSecurityFacade(),
-      getChecks,
-    };
+  it("omits the security alert record when no alert is active", async () => {
+    await renderDetail();
 
-    await renderDetail({ reviewPrototype: true, securityFacade });
-
-    await waitFor(() => expect(getChecks).toHaveBeenCalledWith("skill-pdf", "version-241"));
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.queryByRole("status", { name: "Security handling record" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Security handling" })).not.toBeInTheDocument();
   });
 
-  it("loads deletion impact and returns to the library after confirmation", async () => {
+  it("loads deletion impact from the W3-1 removal request and returns to the library after confirmation", async () => {
     const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
       prepareUndeploy: vi.fn(),
@@ -251,11 +250,15 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };
-    const { client } = await renderDetail({ removalFacade, tracker });
+    const { client } = await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      removalFacade,
+      tracker,
+    });
     client.setQueryData(skillLibraryKeys.root, { cached: true });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
     fireEvent.click(screen.getByRole("button", { name: "Confirm deletion from library" }));
 
     await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
@@ -298,10 +301,13 @@ describe("SkillDetailPage shell", () => {
         ],
       }),
     };
-    const { client } = await renderDetail({ removalFacade, tracker });
+    const { client } = await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      removalFacade,
+      tracker,
+    });
     client.setQueryData(skillLibraryKeys.root, { cached: true });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(
       within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
@@ -354,9 +360,11 @@ describe("SkillDetailPage shell", () => {
         items: [{ deploymentId: "dep-1", status: "failed", errorCode: "operation_conflict" }],
       }),
     };
-    await renderDetail({ removalFacade });
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      removalFacade,
+    });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(
       within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
@@ -384,9 +392,11 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn(),
     };
-    await renderDetail({ removalFacade });
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      removalFacade,
+    });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -405,9 +415,10 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn(),
     };
-    await renderDetail({ removalFacade });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      removalFacade,
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Deployment target details could not be verified, so deletion was not prepared.",
@@ -431,9 +442,12 @@ describe("SkillDetailPage shell", () => {
       }),
       commitDelete: vi.fn(),
     };
-    await renderDetail({ removalFacade, locale: "zh-CN" });
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
+      locale: "zh-CN",
+      removalFacade,
+    });
 
-    fireEvent.click(await screen.findByRole("button", { name: "从库中删除 Skill" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "确认从库中删除" }));
 
@@ -441,48 +455,25 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
   });
 
-  it("names the destructive entries after their own removal objects in Chinese", async () => {
-    await renderDetail({ locale: "zh-CN" });
-
-    // P1-15：入口名与移除对象一一对应——详情页删除按钮指向“删除库中 Skill”，
-    // 关系区逐条入口指向“从目标移除”，不复用笼统的“移除”。
-    expect(await screen.findByRole("button", { name: "从库中删除 Skill" })).toBeVisible();
-    expect(await screen.findByRole("button", { name: "从 Codex CLI 移除" })).toBeVisible();
-  });
-
-  it("prepares and commits a shared-target undeploy from the relations section", async () => {
-    const tracker = createOperationTracker();
+  // W3-1（FB-003 裁决第 1 节）：只响应当前 Skill 的 removalRequest。
+  it("ignores a removal request addressed to another skill", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn().mockResolvedValue({
-        deploymentId: "relation-codex",
-        label: "Codex CLI",
-        operationId: "op-undeploy",
-        sharedTarget: true,
-      }),
-      commitUndeploy: vi.fn().mockResolvedValue(undefined),
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn(),
       commitDelete: vi.fn(),
     };
-    await renderDetail({ removalFacade, tracker });
-
-    fireEvent.click(await screen.findByRole("button", { name: "Remove from Codex CLI" }));
-    expect(await screen.findByRole("dialog", { name: "Remove from Codex CLI?" })).toBeVisible();
-    fireEvent.change(screen.getByRole("combobox", { name: "Removal handling" }), {
-      target: { value: "keep_shared_deployment" },
+    await renderDetail({
+      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-other" } } },
+      locale: "en-US",
+      removalFacade,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm removal from target" }));
 
-    await waitFor(() => expect(removalFacade.commitUndeploy).toHaveBeenCalledWith(
-      "op-undeploy",
-      "keep_shared_deployment",
-    ));
-    expect(tracker.getSnapshot()).toEqual([
-      expect.objectContaining({ operationId: "op-undeploy", status: "success" }),
-    ]);
-    expect(screen.queryByRole("dialog", { name: "Remove from Codex CLI?" })).not.toBeInTheDocument();
+    await screen.findByRole("heading", { level: 1, name: "PDF Reader" });
+    expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
   });
 
-  it("returns to the filtered Skill library with its scroll and focus context", async () => {
+  it("returns to the Skill library with the drawer reopen context carried in the search", async () => {
     await renderDetail({
       entry: {
         pathname: "/library/skill-pdf",
@@ -497,14 +488,37 @@ describe("SkillDetailPage shell", () => {
       },
     });
 
-    const back = await screen.findByRole("link", {
-      name: "Back to Skill library",
-    });
+    const back = await screen.findByRole("link", { name: "返回技能库" });
     expect(back).toHaveAttribute(
       "href",
-      "/library?q=pdf&sort=version%3Adesc",
+      "/library?q=pdf&sort=version%3Adesc&skill=skill-pdf",
     );
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+  });
+
+  it("returns to the preview Skill library instead of the unavailable production route", async () => {
+    await renderDetail({
+      entry: {
+        pathname: "/__preview/skill-detail/skill-pdf",
+        search: "?q=pdf",
+        state: {
+          libraryReturn: {
+            focusSkillId: "skill-pdf",
+            scrollLeft: 0,
+            scrollTop: 416,
+          },
+        },
+      },
+    });
+
+    expect(await screen.findByRole("link", { name: "返回技能库" })).toHaveAttribute(
+      "href",
+      "/__preview/skill-library?q=pdf&skill=skill-pdf",
+    );
+    expect(screen.getByRole("link", { name: "Next Skill" })).toHaveAttribute(
+      "href",
+      "/__preview/skill-detail/skill-sheet?q=pdf",
+    );
   });
 
   it("carries the library return context through an adjacent Skill", async () => {
@@ -523,31 +537,6 @@ describe("SkillDetailPage shell", () => {
     expect(await screen.findByRole("heading", { name: "Spreadsheet Reader" })).toBeVisible();
     expect(screen.getByTestId("route-location")).toHaveTextContent(
       `/library/skill-sheet?q=pdf&sort=name|${JSON.stringify({ libraryReturn })}`,
-    );
-  });
-
-  it("returns to the preview Skill library instead of the unavailable production route", async () => {
-    await renderDetail({
-      entry: {
-        pathname: "/__preview/skill-detail/skill-pdf",
-        search: "?q=pdf",
-        state: {
-          libraryReturn: {
-            focusSkillId: "skill-pdf",
-            scrollLeft: 0,
-            scrollTop: 416,
-          },
-        },
-      },
-    });
-
-    expect(await screen.findByRole("link", { name: "Back to Skill library" })).toHaveAttribute(
-      "href",
-      "/__preview/skill-library?q=pdf",
-    );
-    expect(screen.getByRole("link", { name: "Next Skill" })).toHaveAttribute(
-      "href",
-      "/__preview/skill-detail/skill-sheet?q=pdf",
     );
   });
 
@@ -600,10 +589,10 @@ describe("SkillDetailPage shell", () => {
     expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*flex-direction:\s*row/);
   });
 
-  it("places adjacent Skill controls at the bottom of the detail section rail", async () => {
+  it("places adjacent Skill controls after the review section navigation in the rail", async () => {
     await renderDetail({ entry: "/__preview/skill-detail/skill-pdf" });
 
-    const sections = await screen.findByRole("navigation", { name: "Detail sections" });
+    const sections = await screen.findByRole("navigation", { name: "技能详情导航" });
     const adjacent = await screen.findByRole("navigation", { name: "Skill navigation" });
     expect(sections.compareDocumentPosition(adjacent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(adjacent.parentElement).toBe(sections.parentElement);
@@ -629,243 +618,24 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("merges the status summary into the overview block of the status zone", async () => {
-    await renderDetail();
-
-    expect(await screen.findByRole("navigation", { name: "Detail sections" })).toBeVisible();
-    expect(document.getElementById("overview")?.closest("section")?.id).toBe("zone-status");
-    expect(screen.getByText("Basic check passed")).toBeVisible();
-    expect(screen.getAllByText("2")).toHaveLength(2);
-    expect(screen.getByRole("group", { name: "Skill status" })).toBeVisible();
-    expect(screen.queryByRole("complementary", { name: "Skill status" })).not.toBeInTheDocument();
-  });
-
-  it("surfaces the same update review entry beside the overview version", async () => {
-    await renderDetail({
-      facade: createMockSkillDetailFacade({
-        summary: { upgradeAvailable: true, upstreamVersion: "v2.5.0" },
-      }),
-    });
-
-    expect(await screen.findByRole("heading", { name: "Upstream update available" })).toBeVisible();
-    await waitFor(() => {
-      expect(screen.getAllByText("Current v2.4.1 → upstream v2.5.0")).toHaveLength(2);
-      expect(screen.getAllByRole("button", { name: "View update diff" })).toHaveLength(2);
-    });
-  });
-
-  it("exposes the five information zones in the detail navigation", async () => {
-    await renderDetail();
-
-    const navigation = await screen.findByRole("navigation", { name: "Detail sections" });
-    expect(await within(navigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "Identity",
-      "Status",
-      "Content",
-      "Relations",
-      "Lifecycle",
-    ]);
-  });
-
-  it("keeps every legacy section anchor reachable inside its zone", async () => {
-    await renderDetail();
-    await screen.findByRole("heading", { name: "PDF Reader" });
-
-    const zoneOf = (anchorId: string) =>
-      document.getElementById(anchorId)?.closest("section")?.id;
-    expect(zoneOf("metadata")).toBe("zone-identity");
-    expect(zoneOf("overview")).toBe("zone-status");
-    expect(zoneOf("security")).toBe("zone-status");
-    expect(zoneOf("description")).toBe("zone-content");
-    expect(zoneOf("relations")).toBe("zone-relations");
-    expect(zoneOf("requirements")).toBe("zone-relations");
-    expect(zoneOf("connections")).toBe("zone-relations");
-    expect(zoneOf("versions")).toBe("zone-lifecycle");
-    expect(zoneOf("external")).toBe("zone-lifecycle");
-  });
-
-  it("renders the identity header in the content column ahead of the identity zone", async () => {
-    await renderDetail();
-    const header = await screen.findByRole("heading", { name: "PDF Reader" });
-    const identityZone = screen
-      .getByRole("heading", { name: "Identity" })
-      .closest("section");
-    expect(identityZone).not.toBeNull();
-
-    // 头部与身份分区共享同一内容列容器，且头部位于分区之前。
-    const contentColumn = identityZone?.parentElement;
-    expect(contentColumn?.contains(header)).toBe(true);
-    expect(
-      header.compareDocumentPosition(identityZone as Node) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      contentColumn?.contains(screen.getByRole("button", { name: "Delete from library" })),
-    ).toBe(true);
-  });
-
-  it("keeps the header dispatch, export, and delete entries in one ordered action slot", async () => {
-    await renderDetail();
-    await screen.findByRole("heading", { name: "PDF Reader" });
-
-    const header = document.querySelector(".sh-skill-detail__header");
-    const actions = screen.getByRole("group", { name: "Skill actions" });
-    const dispatch = within(actions).getByRole("button", { name: "Dispatch PDF Reader" });
-    const exportSkill = within(actions).getByRole("button", { name: "Export PDF Reader" });
-    const deleteSkill = within(actions).getByRole("button", { name: "Delete from library" });
-
-    expect(header).toContainElement(actions);
-    expect(dispatch.compareDocumentPosition(exportSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(exportSkill.compareDocumentPosition(deleteSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(actions).toContainElement(dispatch);
-    expect(actions).toContainElement(exportSkill);
-    expect(actions).toContainElement(deleteSkill);
-  });
-
-  it("keeps header actions keyboard-ordered and wrapping at narrow widths", async () => {
+  it("highlights the review section selected from the section navigation", async () => {
     const user = userEvent.setup();
     await renderDetail();
-    await screen.findByRole("heading", { name: "PDF Reader" });
 
-    const actions = screen.getByRole("group", { name: "Skill actions" });
-    const dispatch = within(actions).getByRole("button", { name: "Dispatch PDF Reader" });
-    const exportSkill = within(actions).getByRole("button", { name: "Export PDF Reader" });
-    const deleteSkill = within(actions).getByRole("button", { name: "Delete from library" });
-    dispatch.focus();
-    expect(document.activeElement).toBe(dispatch);
-    await user.tab();
-    expect(document.activeElement).toBe(exportSkill);
-    await user.tab();
-    expect(document.activeElement).toBe(deleteSkill);
+    const navigation = await screen.findByRole("navigation", { name: "技能详情导航" });
+    const safetyLink = within(navigation).getByRole("link", { name: "安全检查" });
+    await user.click(safetyLink);
 
-    expect(actions).toHaveClass("sh-skill-detail__header-actions");
-    expect(detailCss).toMatch(/\.sh-skill-detail__header-actions\s*\{[\s\S]*display:\s*flex[\s\S]*flex-wrap:\s*wrap[\s\S]*max-width:\s*100%/);
-    expect(detailCss).toMatch(/@container\s+workspace\s*\(max-width:\s*44rem\)[\s\S]*\.sh-skill-detail__header-actions\s*\{[\s\S]*justify-content:\s*flex-start/);
+    expect(safetyLink).toHaveAttribute("aria-current", "location");
   });
 
-  it("hides production-only header actions on the review prototype route", async () => {
-    await renderDetail({ reviewPrototype: true });
-
-    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Dispatch PDF Reader" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Export PDF Reader" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Delete from library" })).not.toBeInTheDocument();
-  });
-
-  it("activates the containing zone for a legacy section hash", async () => {
-    await renderDetail({ entry: "/library/skill-pdf#versions" });
-
-    await screen.findByRole("navigation", { name: "Detail sections" });
-    expect(screen.getByRole("link", { name: "Lifecycle" })).toHaveAttribute(
-      "aria-current",
-      "location",
-    );
-  });
-
-  it("summarizes the source, library, and deployment trajectory in the relations zone", async () => {
+  it("loads the editable metadata panel in the overview section", async () => {
     await renderDetail();
-    await screen.findByRole("heading", { name: "PDF Reader" });
-
-    const trajectory = screen.getByRole("group", {
-      name: "Source, library, and addition targets",
-    });
-    expect(trajectory).toBeVisible();
-    expect(within(trajectory).getByText("github:example/pdf-reader")).toBeVisible();
-    expect(within(trajectory).getByText("2")).toBeVisible();
-  });
-
-  it("keeps the detail rail fixed while the content column scrolls", async () => {
-    await renderDetail();
-    await screen.findByRole("navigation", { name: "Detail sections" });
-
-    const rail = document.querySelector(".sh-skill-detail__rail");
-    const content = document.querySelector(".sh-skill-detail__content");
-    expect(rail).toBeInTheDocument();
-    const railIdentity = screen.getByRole("group", { name: "Current Skill" });
-    expect(railIdentity).toHaveTextContent("PDF 表格读取器");
-    expect(railIdentity).toHaveTextContent("PDF Reader");
-    expect(rail?.querySelector(".sh-skill-detail__rail-identity")).toBe(railIdentity);
-    expect(rail).toContainElement(screen.getByRole("navigation", { name: "Detail sections" }));
-    expect(content).toContainElement(document.querySelector(".sh-skill-detail__header"));
-    expect(content).toBeInTheDocument();
-
-    expect(baseCss).toMatch(/\.sh-skill-detail\s*\{[\s\S]*height:\s*100%/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*overflow-y:\s*auto/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__content\s*\{[\s\S]*display:\s*flex/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__section\s*\{[\s\S]*flex:\s*0\s+0\s+auto/);
-    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__layout\s*\{[\s\S]*gap:\s*var\(--space-4\)/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*hidden/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*height:\s*100%/);
-    expect(baseCss).toMatch(/@media\s*\(max-width:\s*110rem\)[\s\S]*\.sh-skill-detail__rail\s*\{[\s\S]*overflow-y:\s*auto/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__rail\s*\{[\s\S]*display:\s*flex/);
-    expect(baseCss).toMatch(/\.sh-skill-detail__adjacent\s*\{[\s\S]*margin-top:\s*auto/);
-  });
-
-  it("gives the content column the remaining width beside the fixed rail", async () => {
-    await renderDetail();
-    await screen.findByRole("navigation", { name: "Detail sections" });
-
-    expect(document.getElementById("overview")?.closest("section")).toHaveClass(
-      "sh-skill-detail__zone",
-    );
-    expect(baseCss).toMatch(/grid-template-columns:\s*minmax\(10rem,\s*12rem\)\s+minmax\(0,\s*1fr\)/);
-  });
-
-  it("highlights the zone selected from the detail navigation", async () => {
-    await renderDetail();
-
-    await screen.findByRole("navigation", { name: "Detail sections" });
-    const identityLink = screen.getByRole("link", { name: "Identity" });
-    fireEvent.click(identityLink);
-
-    expect(identityLink).toHaveAttribute("aria-current", "location");
-  });
-
-  it("restores the active zone from a detail hash", async () => {
-    await renderDetail({ entry: "/library/skill-pdf#versions" });
-
-    await screen.findByRole("navigation", { name: "Detail sections" });
-    expect(screen.getByRole("link", { name: "Lifecycle" })).toHaveAttribute(
-      "aria-current",
-      "location",
-    );
-  });
-
-  it("loads the description and editable metadata panel independently", async () => {
-    await renderDetail();
-    // P1-12：原文与译文收纳为次级展示，展开后才可见。
-    fireEvent.click(await screen.findByText("Original text and translation"));
+    // P1-12 + 评审呈现：原文与译文为次级展示，评审布局下默认展开。
+    await screen.findByText("Original text and translation");
     expect(screen.getByText("Original description")).toBeVisible();
     expect(screen.getByText("模型译文")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit My purpose" })).toBeVisible();
-  });
-
-  it("states the skill purpose exactly once in the overview block and never in the header", async () => {
-    await renderDetail({
-      facade: createMockSkillDetailFacade({
-        // getSummary 口径（译文回退链）与元数据用户用途刻意不同，便于统计出现次数。
-        summary: { purpose: "Summarized purpose from getSummary" },
-      }),
-    });
-
-    const purposes = await screen.findAllByText("Summarized purpose from getSummary");
-    expect(purposes).toHaveLength(1);
-    expect(document.getElementById("overview")?.contains(purposes[0])).toBe(true);
-    const header = document.querySelector(".sh-skill-detail__header");
-    expect(header?.contains(purposes[0])).toBe(false);
-  });
-
-  it("shows the alias in the header and its current value in the identity zone", async () => {
-    await renderDetail();
-
-    // DEV-16：头部展示别名（仅当与原名不同），身份区字段清单同时如实展示
-    // 别名当前值——详情页完整显示所有用户字段，不再把读值藏进编辑态。
-    expect(await screen.findAllByText("PDF 表格读取器")).toHaveLength(3);
-    const header = document.querySelector(".sh-skill-detail__header");
-    expect(header?.textContent).toContain("PDF 表格读取器");
-    expect(screen.getByRole("group", { name: "Current Skill" })).toHaveTextContent("PDF 表格读取器");
-    expect(screen.getByRole("button", { name: "Edit Alias" })).toBeVisible();
   });
 
   it("shows the read-only invocation policy and declared runtime requirements in the detail page", async () => {
@@ -875,453 +645,5 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByText("pdf-reader <file>")).not.toBeInTheDocument();
     expect(screen.getByText("Poppler")).toBeVisible();
     expect(screen.getByText("Executable used for PDF rendering")).toBeVisible();
-  });
-
-  it("keeps Markdown in Description and editable fields in Metadata", async () => {
-    await renderDetail();
-
-    const descriptionHeading = await screen.findByRole("heading", {
-      name: "Content description",
-    });
-    const workspaceHeading = await screen.findByRole("heading", {
-      name: "Markdown workspace",
-    });
-    const metadataSectionHeading = await screen.findByRole("heading", { name: "Identity and source" });
-    // P1-12：原文文本折叠为次级展示，展开后标题可见。
-    fireEvent.click(screen.getByText("Original text and translation"));
-    const metadataHeading = screen.getByRole("heading", { name: "Original source text" });
-
-    expect(
-      descriptionHeading.compareDocumentPosition(workspaceHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      metadataSectionHeading.compareDocumentPosition(workspaceHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      metadataSectionHeading.compareDocumentPosition(metadataHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      await screen.findByRole("heading", { name: "Extract PDF tables safely" }),
-    ).toBeVisible();
-  });
-});
-
-it("exports the current Skill from the header with its id and library return context carried over", async () => {
-  const user = userEvent.setup();
-  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
-  await renderDetail({
-    entry: {
-      pathname: "/library/skill-pdf",
-      search: "?q=pdf",
-      state: { libraryReturn },
-    },
-  });
-
-  const exportBtn = await screen.findByRole("button", { name: "Export PDF Reader" });
-  await user.click(exportBtn);
-  expect(await screen.findByText("export probe: skill-pdf")).toBeVisible();
-  expect(screen.getByTestId("export-state")).toHaveTextContent(
-    JSON.stringify({ exportSkillIds: ["skill-pdf"], libraryReturn }),
-  );
-});
-
-it("dispatches the exact Skill id and retains the filtered library return context", async () => {
-  const user = userEvent.setup();
-  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
-  await renderDetail({
-    entry: {
-      pathname: "/library/skill-pdf",
-      search: "?q=pdf&page=2",
-      state: { libraryReturn },
-    },
-  });
-
-  await user.click(await screen.findByRole("button", { name: "Dispatch PDF Reader" }));
-
-  expect(screen.getByTestId("route-location")).toHaveTextContent(
-    `/deploy?skill=skill-pdf|${JSON.stringify({ libraryReturn })}`,
-  );
-});
-
-describe("Task 7: governed relationship sections", () => {
-  // 本组测试会渲染真实治理 facade 并触发 12C 轻量检查，必须逐用例清理
-  // 挂载与 sessionStorage，避免上下文检查的会话记忆泄漏到后续测试组。
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-  });
-  const overview = {
-    scope: { type: "skill" as const, value: { skill_id: "skill-pdf" } },
-    directory_nodes: [],
-    agent_directory_capabilities: [],
-    source_relations: [
-      {
-        provenance_id: "prov-1",
-        skill_id: "skill-pdf",
-        directory_node_id: "node-native",
-        agent_client_id: "codex-cli",
-        source_path: "C:/Users/demo/.codex/skills/pdf-reader",
-        source_path_key: "pk-pdf",
-        relationship: "import_copy" as const,
-        file_representation: "directory" as const,
-        ownership: "observed_unmanaged" as const,
-        link_target_path: null,
-        link_target_directory_id: null,
-        content_fingerprint: "sha256:aa",
-        source: { kind: "local" as const, locator: { local_path: "C:/Users/demo/.codex/skills/pdf-reader" } },
-        imported_at: "2026-09-15T00:00:00Z",
-      },
-    ],
-    deployment_relations: [
-      {
-        relation_id: "rel-copy",
-        skill_id: "skill-pdf",
-        agent_client_id: "codex-cli",
-        path: "C:/Users/demo/.codex/skills/pdf-reader",
-        path_key: "pk-pdf",
-        directory_node_id: "node-native",
-        relationship: "managed_copy" as const,
-        file_representation: "copy" as const,
-        ownership: "skillhub_managed" as const,
-        link_target_path: null,
-        link_target_path_key: null,
-        link_target_directory_id: null,
-        content_fingerprint: "sha256:aa",
-        origin: "import" as const,
-        match_state: "content_verified" as const,
-        active: true,
-        observed_at: "2026-09-15T00:00:00Z",
-        released_at: null,
-      },
-    ],
-    conflict_cases: [],
-    pending_governance_tasks: [],
-    agent_execution_confirmed: false,
-  };
-
-  it("counts deployment relations on the status rail from the same facts as the relations block", async () => {
-    // DEV-22：状态页签的部署关系计数此前读 summary 的占位 0，与「关系」
-    // 区块（同一页有数据）矛盾；现与关系区块同源同值。
-    await renderDetail();
-
-    const rail = await screen.findByRole("group", { name: "Skill status" });
-    expect(within(rail).getByText("Deployment relations")).toBeVisible();
-    expect(within(rail).getByText("2")).toBeVisible();
-  });
-
-  it("shows the relationship mix from real summary counts", async () => {
-    // G-16：托管链接/独立副本计数来自 get_skill 真实读模型，不为零占位。
-    await renderDetail({
-      facade: createMockSkillDetailFacade({
-        summary: { independentCopyCount: 1, managedLinkCount: 2 },
-      }),
-    });
-
-    const rail = await screen.findByRole("group", { name: "Skill status" });
-    expect(within(rail).getByText("Relationships")).toBeVisible();
-    expect(within(rail).getByText("2 managed links · 1 independent copy")).toBeVisible();
-  });
-
-  it("shows a zero relationship mix as zero instead of hiding the facts", async () => {
-    await renderDetail({
-      facade: createMockSkillDetailFacade({
-        summary: { independentCopyCount: 0, managedLinkCount: 0 },
-      }),
-    });
-
-    const rail = await screen.findByRole("group", { name: "Skill status" });
-    expect(within(rail).getByText("0 managed links · 0 independent copies")).toBeVisible();
-  });
-
-  it("states the relationship mix is unknown when the summary carries no counts", async () => {
-    await renderDetail();
-
-    const rail = await screen.findByRole("group", { name: "Skill status" });
-    expect(within(rail).getByText("Relationship mix unavailable")).toBeVisible();
-  });
-
-  it("renders multi-source provenance and governed deployment relations on the page", async () => {
-    await renderDetail({
-      facade: createMockSkillDetailFacade({ relationshipOverview: overview }),
-      locale: "zh-CN",
-    });
-
-    expect(await screen.findByText("多来源存证")).toBeVisible();
-    expect(screen.getByText("C:\\Users\\demo\\.codex\\skills\\pdf-reader")).toBeVisible();
-    expect(screen.getByText("关系类型与移除影响")).toBeVisible();
-    expect(screen.getByTestId("governed-relation")).toBeVisible();
-    expect(screen.getByText("复制部署")).toBeVisible();
-    // 每个活动关系都有移除影响入口（本页不执行变更）。
-    expect(screen.getAllByRole("button", { name: "查看移除影响" }).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("deep-links the exact relation and verified target identity with a controlled return route", async () => {
-    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 16, scrollTop: 412 };
-    const targetIdentity: RelationTargetIdentity = {
-      skill_id: "skill-pdf",
-      target_kind: "agent",
-      directory_node_id: "node-codex",
-      entry_path_key: "c:/agents/codex/skills/pdf-reader",
-    };
-    const governanceFacade = governanceStub({
-      rows: [governanceLedgerRow("rel-copy", "deployment", targetIdentity)],
-    });
-    const user = userEvent.setup();
-    await renderDetail({
-      entry: {
-        pathname: "/library/skill-pdf",
-        search: "?q=pdf",
-        state: { libraryReturn },
-      },
-      facade: createMockSkillDetailFacade({ relationshipOverview: overview }),
-      governanceFacade,
-      locale: "zh-CN",
-    });
-
-    await user.click(await screen.findByRole("link", { name: "管理关系" }));
-
-    expect(await screen.findByTestId("governance-location")).toHaveTextContent(
-      "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-copy",
-    );
-    expect(screen.getByTestId("governance-state")).toHaveTextContent(JSON.stringify({
-      libraryReturn,
-      returnTo: "/library/skill-pdf?q=pdf",
-      targetIdentity,
-    }));
-  });
-
-  it("degrades honestly when the relationship overview is unavailable", async () => {
-    await renderDetail({
-      facade: {
-        ...createMockSkillDetailFacade(),
-        getRelationshipOverview: async () => {
-          throw new Error("overview unavailable");
-        },
-      },
-      locale: "zh-CN",
-    });
-
-    expect(await screen.findByText("关系事实暂不可用；部署与来源信息可能不完整。")).toBeVisible();
-    // 既有部署关系行与从目标移除入口不受影响，页面没有虚假的空事实声明。
-    expect(screen.getAllByTestId("physical-target").length).toBeGreaterThan(0);
-    expect(screen.queryByTestId("governed-relations")).not.toBeInTheDocument();
-  });
-});
-
-// —— 任务 12C（12.7/12.13）：详情页顶层一次 Light check + 最近来源事件摘要 ——
-
-function governanceLedgerRow(
-  relationId: string,
-  kind: "deployment" | "source_copy",
-  targetIdentity: RelationTargetIdentity | null = null,
-): RelationGovernanceRow {
-  return {
-    relation:
-      kind === "deployment"
-        ? {
-            kind: "deployment" as const,
-            fact: {
-              relation_id: relationId,
-              skill_id: "skill-pdf",
-              agent_client_id: "codex",
-              path: "C:/agents/codex/skills/pdf-reader",
-              path_key: "c:/agents/codex/skills/pdf-reader",
-              directory_node_id: null,
-              relationship: "managed_copy" as const,
-              file_representation: "copy" as const,
-              ownership: "skillhub_managed" as const,
-              link_target_path: null,
-              link_target_path_key: null,
-              link_target_directory_id: null,
-              content_fingerprint: "sha256:aaa",
-              origin: "import" as const,
-              match_state: "content_verified" as const,
-              active: true,
-              observed_at: "1737600000000",
-              released_at: null,
-            },
-          }
-        : {
-            kind: "source_copy" as const,
-            fact: {
-              relation_id: relationId,
-              skill_id: "skill-pdf",
-              latest_provenance_id: "prov-1",
-              source_class: "agent_local" as const,
-              source_path: "C:/agents/codex/skills/pdf-reader",
-              source_path_key: "c-agents-codex-skills-pdf-reader",
-              physical_source_id: "phys-1",
-              source_container_id: null,
-              directory_node_id: null,
-              agent_client_id: "codex",
-              expected_fingerprint: "sha256:aaa",
-              current_fingerprint: "sha256:aaa",
-              decision: "pending" as const,
-              health: "normal" as const,
-              active: true,
-              last_verified_at: null,
-              archived_at: null,
-              archive_reason: null,
-            },
-          },
-    skill_display_name: "PDF Reader",
-    status: "normal" as const,
-    readiness: "eligible_to_centralize" as const,
-    primary_action: "centralize_management" as const,
-    blockers: [],
-    impact: {
-      other_consumer_agent_ids: [],
-      other_skill_paths: [],
-      backup_required: true,
-      rollback_available: true,
-    },
-    governance: {
-      governance_status: "pending",
-      management_status: "not_taken_over",
-      decision: "undecided",
-      management_confirmed_at: null,
-      health_reasons: [],
-      action_conditions: [
-        {
-          action: kind === "source_copy" ? "keep_independent_copy" : "centralize_management",
-          available: true,
-          reasons: [],
-        },
-        { action: "revalidate", available: true, reasons: [] },
-      ],
-    },
-    target_identity: targetIdentity,
-    evidence_relation_ids: [relationId],
-  };
-}
-
-function governanceStub(options: {
-  rows: RelationGovernanceRow[];
-  history?: GovernanceHistoryEntry[];
-}): RelationGovernanceFacade {
-  return {
-    listGovernance: vi.fn(async () => ({
-      rows: options.rows,
-      counts: { all: options.rows.length, eligible_to_centralize: 0, needs_validation: 0, blocked: 0 },
-      bucket: "all" as const,
-      total: options.rows.length,
-      relationship_revision: "rev-1",
-      last_verified_at: null,
-    })),
-    revalidate: vi.fn(async () => ({ items: [], relationship_revision: "rev-2" })),
-    listHistory: vi.fn(async () => ({
-      items: options.history ?? [],
-      total: options.history?.length ?? 0,
-      page: 1,
-      page_size: 5,
-    })),
-  } as unknown as RelationGovernanceFacade;
-}
-
-describe("SkillDetailPage context check and source events (12C)", () => {
-  afterEach(() => {
-    cleanup();
-    sessionStorage.clear();
-    vi.restoreAllMocks();
-  });
-
-  it("runs one light context check for the current skill at the top level", async () => {
-    const governanceFacade = governanceStub({
-      rows: [
-        governanceLedgerRow("r-dep-1", "deployment"),
-        governanceLedgerRow("r-src-1", "source_copy"),
-      ],
-    });
-    await renderDetail({ governanceFacade });
-
-    expect(await screen.findByTestId("governed-relations")).toBeVisible();
-    await waitFor(() => expect(governanceFacade.revalidate).toHaveBeenCalledTimes(1));
-    expect(governanceFacade.revalidate).toHaveBeenCalledWith(
-      ["r-dep-1", "r-src-1"],
-      "light",
-    );
-    expect(
-      sessionStorage.getItem(governanceContextCheckStorageKey("skill:skill-pdf")),
-    ).toBe("1");
-  });
-
-  it("lists recent immutable source events with a view-all entry", async () => {
-    const governanceFacade = governanceStub({
-      rows: [governanceLedgerRow("r-dep-1", "deployment")],
-      history: [
-        {
-          relation_id: "r-dep-1",
-          skill_id: "skill-pdf",
-          skill_display_name: "PDF Reader",
-          agent: { client_id: "codex" },
-          path: "C:/agents/codex/skills/pdf-reader",
-          scope: "agent",
-          project_id: null,
-          action: "retain_source_copy",
-          result: "retained",
-          reason: null,
-          operation_id: "op-1",
-          occurred_at: "1727123456000",
-        },
-      ],
-    });
-    await renderDetail({ governanceFacade });
-
-    const section = await screen.findByTestId("source-events");
-    expect(within(section).getAllByTestId("source-event")).toHaveLength(1);
-    expect(within(section).getByTestId("source-event").textContent).toContain(
-      "Keep source copy",
-    );
-    expect(
-      within(section).getByRole("link", { name: "View governance history" }),
-    ).toHaveAttribute("href", "/relationships/governance/history");
-  });
-});
-
-// W3-1（FB-003 裁决第 1 节）：待办「不信任（删除）」经 removalRequest 状态
-// 直达既有删除影响确认——复用同一 prepareDelete→RemovalImpactDialog 流程，
-// 不新建第二套删除。
-describe("removal request entry", () => {
-  it("opens the existing removal confirmation when arriving with a matching removal request", async () => {
-    const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
-      prepareDelete: vi.fn().mockResolvedValue({
-        operationId: "op-delete",
-        skillId: "skill-pdf",
-        skillName: "PDF Reader",
-        deployments: [],
-        dependentProjects: [],
-      }),
-      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
-    };
-    await renderDetail({
-      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } },
-      locale: "en-US",
-      removalFacade,
-    });
-
-    expect(await screen.findByRole("dialog")).toBeVisible();
-    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
-  });
-
-  it("ignores a removal request addressed to another skill", async () => {
-    const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
-      prepareDelete: vi.fn(),
-      commitDelete: vi.fn(),
-    };
-    await renderDetail({
-      entry: { pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-other" } } },
-      locale: "en-US",
-      removalFacade,
-    });
-
-    await screen.findByRole("heading", { level: 1, name: "PDF Reader" });
-    expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
   });
 });

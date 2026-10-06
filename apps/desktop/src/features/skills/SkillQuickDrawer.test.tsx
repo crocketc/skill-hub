@@ -6,7 +6,6 @@ import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
-import type { RelationshipOverview } from "../../api/bindings";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import "../../styles/base.css";
@@ -27,114 +26,6 @@ import {
   reorderDrawerModule,
 } from "./drawerModules";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
-import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
-import type { SkillDetailFacade, SkillProvenance } from "../skill-detail/api";
-
-const RELATIONSHIP_OVERVIEW: RelationshipOverview = {
-  scope: { type: "skill", value: { skill_id: "skill-pdf" } },
-  directory_nodes: [
-    {
-      node_id: "node-agent",
-      path: "C:/Users/demo/.codex/skills",
-      path_key: "agent-path-key",
-      role: "agent_native",
-      profile_id: "openai",
-      agent_client_id: "openai.codex-cli",
-      exists: true,
-      observed_at: "2026-10-03T00:00:00Z",
-      scan_source: "profile",
-    },
-    {
-      node_id: "node-project",
-      path: "C:/workspace/project/.agents/skills",
-      path_key: "project-path-key",
-      role: "project",
-      profile_id: null,
-      agent_client_id: null,
-      exists: true,
-      observed_at: "2026-10-03T00:00:00Z",
-      scan_source: "project",
-    },
-  ],
-  agent_directory_capabilities: [],
-  source_relations: [],
-  deployment_relations: [
-    {
-      relation_id: "rel-agent",
-      skill_id: "skill-pdf",
-      agent_client_id: "openai.codex-cli",
-      path: "C:/Users/demo/.codex/skills/pdf-reader",
-      path_key: "agent-skill-path-key",
-      directory_node_id: "node-agent",
-      relationship: "managed_copy",
-      file_representation: "copy",
-      ownership: "skillhub_managed",
-      link_target_path: null,
-      link_target_path_key: null,
-      link_target_directory_id: null,
-      content_fingerprint: "sha256:do-not-render-this",
-      origin: "scan",
-      match_state: "content_verified",
-      active: true,
-      observed_at: "2026-10-03T00:00:00Z",
-      released_at: null,
-    },
-    {
-      relation_id: "rel-project",
-      skill_id: "skill-pdf",
-      agent_client_id: "",
-      path: "C:/workspace/project/.agents/skills/pdf-reader",
-      path_key: "project-skill-path-key",
-      directory_node_id: "node-project",
-      relationship: "managed_copy",
-      file_representation: "copy",
-      ownership: "skillhub_managed",
-      link_target_path: null,
-      link_target_path_key: null,
-      link_target_directory_id: null,
-      content_fingerprint: "sha256:do-not-render-this-either",
-      origin: "scan",
-      match_state: "content_verified",
-      active: true,
-      observed_at: "2026-10-03T00:00:00Z",
-      released_at: null,
-    },
-  ],
-  conflict_cases: [],
-  pending_governance_tasks: [],
-  agent_execution_confirmed: false,
-};
-
-const PROVENANCE: SkillProvenance = {
-  provenance: {
-    agentClientId: "openai.codex-cli",
-    contentFingerprint: "sha256:private-fingerprint",
-    importedAt: "1757808000",
-    originalPath: "C:/source/pdf-reader",
-    ownership: "known_agent_target",
-    sourceKind: "local",
-    sourceLocator: "C:/source/pdf-reader",
-  },
-  observedDeployments: [],
-};
-
-function createMockRelationshipFacade(options: {
-  failProvenance?: boolean;
-  failOverview?: boolean;
-  overview?: RelationshipOverview;
-  provenance?: SkillProvenance;
-} = {}): Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview"> {
-  return {
-    getProvenance: vi.fn(async () => {
-      if (options.failProvenance) throw new Error("provenance unavailable");
-      return options.provenance ?? PROVENANCE;
-    }),
-    getRelationshipOverview: vi.fn(async () => {
-      if (options.failOverview) throw new Error("relationship overview unavailable");
-      return options.overview ?? RELATIONSHIP_OVERVIEW;
-    }),
-  };
-}
 
 const QUICK_VIEW: SkillQuickView = {
   aiCheck: "unavailable",
@@ -177,10 +68,6 @@ interface MockOptions {
   ) => Promise<void>;
   saveSkillMetadata?: (patch: { alias?: string | null; note?: string | null; tags?: string[] }) => Promise<void>;
   usageEvidence?: SkillQuickView["usageEvidence"];
-}
-
-interface TrialFacade {
-  setTrial: (skillId: string, due: string | null) => Promise<void>;
 }
 
 interface MockFacade extends SkillLibraryFacade {
@@ -284,13 +171,9 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
 
 interface DrawerHarnessProps {
   detailSearch?: string;
-  drawerPrototype?: boolean;
   facade: SkillLibraryFacade;
-  libraryReturn?: SkillLibraryReturnState;
-  relationshipFacade?: Pick<SkillDetailFacade, "getProvenance" | "getRelationshipOverview">;
+  libraryReturn?: { focusSkillId: string; scrollLeft: number; scrollTop: number };
   onLocationChange?: (location: ReturnType<typeof useLocation>) => void;
-  onDelete?: (skillId: string, skillName: string) => void;
-  trialFacade?: TrialFacade;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
   refreshSnapshot?: () => Promise<void>;
@@ -300,21 +183,15 @@ interface DrawerHarnessProps {
 
 function DrawerHarness({
   detailSearch,
-  drawerPrototype = false,
   facade,
   libraryReturn,
-  onDelete,
-  trialFacade,
-  relationshipFacade,
   onLocationChange,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
   refreshSnapshot,
   securityFacade,
   skillId = "skill-pdf",
-}: DrawerHarnessProps & {
-  onDelete?: (skillId: string, skillName: string) => void;
-}) {
+}: DrawerHarnessProps) {
   const [controlledPreferences, setControlledPreferences] = useState(() =>
     clonePreferences(preferences),
   );
@@ -332,12 +209,8 @@ function DrawerHarness({
       </button>
       <SkillQuickDrawer
         detailSearch={detailSearch}
-        drawerPrototype={drawerPrototype}
         facade={facade}
         libraryReturn={libraryReturn}
-        relationshipFacade={relationshipFacade}
-        onDelete={onDelete}
-        trialFacade={trialFacade}
         onOpenChange={() => undefined}
         onPreferencesChange={setControlledPreferences}
         open={open}
@@ -457,7 +330,7 @@ it("starts wide, changes presets, and persists a clamped drag width", async () =
   expect(await screen.findByTestId("skill-quick-drawer")).toHaveStyle(
     "--skill-drawer-width: 680px",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Current width: Wide. Next: Near full screen" }));
+  fireEvent.click(screen.getByRole("button", { name: "Current: Wide; click to switch to Near full screen" }));
   await waitFor(() => {
     expect(facade.calls.saveDrawerPreferences).toHaveLength(1);
   });
@@ -566,8 +439,8 @@ it("serializes overlapping saves and ignores an older rejected result", async ()
   });
   await renderDrawer({ facade });
 
-  fireEvent.click(screen.getByRole("button", { name: "Current width: Wide. Next: Near full screen" }));
-  fireEvent.click(screen.getByRole("button", { name: "Current width: Near full screen. Next: Standard width" }));
+  fireEvent.click(screen.getByRole("button", { name: "Current: Wide; click to switch to Near full screen" }));
+  fireEvent.click(screen.getByRole("button", { name: "Current: Near full screen; click to switch to Standard width" }));
   await waitFor(() => {
     expect(facade.calls.saveDrawerPreferences).toHaveLength(1);
   });
@@ -590,7 +463,7 @@ it("serializes overlapping saves and ignores an older rejected result", async ()
 it("keeps temporary preferences visible when persistence fails", async () => {
   const facade = createMockSkillLibraryFacade({ failDrawerSave: true });
   await renderDrawer({ facade });
-  fireEvent.click(await screen.findByRole("button", { name: "Current width: Wide. Next: Near full screen" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Current: Wide; click to switch to Near full screen" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Preference was not saved",
   );
@@ -622,10 +495,10 @@ it("links available updates to the version review in full details", async () => 
   await renderDrawer({ detailSearch: "?text=pdf", facade: createMockSkillLibraryFacade() });
 
   const updateLink = await screen.findByRole("link", { name: "View update" });
-  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#source");
+  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#versions");
 });
 
-it("shows agent tags and project names with paths in the relations module", async () => {
+it("shows prototype agent cards and project relation targets with paths", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: {
       ...QUICK_VIEW,
@@ -641,19 +514,16 @@ it("shows agent tags and project names with paths in the relations module", asyn
   });
   await renderDrawer({ facade });
 
-  // Agent 呈现统一为「logo + 展示类型」：紧凑芯片不再渲染品牌文本，
-  // 名称经 title/aria-label 提供（AGENTS.md 呈现约定）。
-  const codex = await screen.findByTitle("OpenAI Codex");
-  expect(codex).toBeVisible();
-  expect(codex).toHaveAttribute("data-agent-id", "codex");
-  expect(screen.getByTitle("Claude Code")).toHaveAttribute("data-agent-id", "claude");
+  // 原型关系卡：已知客户端展示名收敛为品牌呈现，项目卡带路径。
+  expect(await screen.findByTitle("Codex CLI")).toBeVisible();
+  expect(screen.getByTitle("Claude Code")).toBeVisible();
   expect(screen.getByText("Document workflows")).toBeVisible();
   expect(screen.getByText("C:\\workspace\\docs")).toBeVisible();
   expect(screen.getByText("Operations")).toBeVisible();
   expect(screen.getByText("C:\\workspace\\ops")).toBeVisible();
 });
 
-it("bounds relation columns as fixed-height scroll regions", async () => {
+it("bounds prototype relation columns as fixed-height scroll regions", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: {
       ...QUICK_VIEW,
@@ -671,11 +541,11 @@ it("bounds relation columns as fixed-height scroll regions", async () => {
   });
   await renderDrawer({ facade });
 
-  // 界面规范§5批注12：Agent/项目内容区定高各自滚动，隐藏滚动条；
-  // 完整列表在滚动区域内键盘可达，不再用展开/收起按钮。
+  // 界面规范§5批注12：Agent/项目内容区定高各自滚动，完整列表在滚动区域内
+  // 键盘可达；原型不再提供展开/收起按钮。
   const agentRegion = await screen.findByRole("region", { name: "Added to Agents: 2" });
   expect(agentRegion).toHaveAttribute("tabindex", "0");
-  const projectRegion = screen.getByRole("region", { name: "Added to projects: 5" });
+  const projectRegion = screen.getByRole("region", { name: "Project relation targets, 5 total" });
   expect(projectRegion).toHaveAttribute("tabindex", "0");
   expect(within(projectRegion).getByText("Project 5")).toBeVisible();
   expect(within(projectRegion).getByText("C:\\workspace\\project-5")).toBeVisible();
@@ -684,7 +554,7 @@ it("bounds relation columns as fixed-height scroll regions", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("keeps the compact header, keyboard-scrollable content, and full-details route", async () => {
+it("keeps the prototype chrome with a single width cycle and the full-details route", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });
   const drawer = await screen.findByRole("dialog", { name: "PDF Reader" });
@@ -697,13 +567,9 @@ it("keeps the compact header, keyboard-scrollable content, and full-details rout
     "href",
     "/library/skill-pdf",
   );
-  expect(document.querySelector(".sh-skill-drawer__toolbar a")).toBe(
-    screen.getByRole("link", { name: "View full details" }),
-  );
   expect(screen.getByRole("link", { name: "View full details" })).toHaveClass(
-    "sh-button--primary",
+    "sh-skill-drawer__prototype-details",
   );
-  expect(screen.queryByRole("link", { name: "Open security checks" })).not.toBeInTheDocument();
   const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
   expect(toolbar?.firstElementChild).toContainElement(
     screen.getByRole("link", { name: "View full details" }),
@@ -711,57 +577,36 @@ it("keeps the compact header, keyboard-scrollable content, and full-details rout
   expect(toolbar?.lastElementChild).toContainElement(
     screen.getByRole("button", { name: "Close" }),
   );
-  const widthCycle = screen.getByRole("button", { name: "Current width: Wide. Next: Near full screen" });
-  expect(widthCycle).toHaveClass("sh-skill-drawer__preset-cycle");
+  const widthCycle = screen.getByRole("button", { name: "Current: Wide; click to switch to Near full screen" });
+  expect(widthCycle).toHaveClass("sh-skill-drawer__preset-icon-button");
   expect(toolbar?.lastElementChild).toContainElement(widthCycle);
   const chrome = drawer.querySelector<HTMLElement>(".sh-skill-drawer__chrome");
-  const titleRow = drawer.querySelector<HTMLElement>(".sh-skill-drawer__title-row");
-  expect(titleRow).toContainElement(within(titleRow!).getByRole("heading", { name: "PDF Reader" }));
-  expect(titleRow).toContainElement(screen.getByRole("button", { name: "Dispatch PDF Reader" }));
-  expect(titleRow).toContainElement(screen.getByRole("button", { name: "Export PDF Reader" }));
-  expect(chrome).toContainElement(titleRow);
+  const heading = drawer.querySelector<HTMLElement>(".sh-skill-drawer__prototype-heading");
+  expect(chrome).toContainElement(heading);
+  expect(heading).toContainElement(within(heading!).getByRole("heading", { name: "PDF Reader" }));
+  expect(heading).toContainElement(screen.getByRole("button", { name: "Dispatch" }));
+  expect(heading).toContainElement(screen.getByRole("button", { name: "Export" }));
+  expect(heading).toContainElement(screen.getByRole("button", { name: "Delete" }));
 });
 
-it("sets, adjusts, and converts the trial review date through the real trial contract", async () => {
-  const setTrial = vi.fn(async (_skillId: string, _due: string | null) => undefined);
-  const facade = createMockSkillLibraryFacade({
-    quickView: { ...QUICK_VIEW, lifecycle: "trial", trialDue: "2026-10-10" } as SkillQuickView,
-  });
-  await renderDrawer({ facade, trialFacade: { setTrial } });
-
-  expect(await screen.findByText(/2026-10-10/)).toBeVisible();
-  const user = userEvent2.setup();
-  const adjust = screen.getByRole("button", { name: "Adjust review date" });
-  await user.click(adjust);
-  const dialog = await screen.findByRole("dialog", { name: "Trial review date" });
-  const date = within(dialog).getByLabelText("Review date");
-  fireEvent.change(date, { target: { value: "2026-11-05" } });
-  await user.click(within(dialog).getByRole("button", { name: "Save review date" }));
-  await waitFor(() => expect(setTrial).toHaveBeenLastCalledWith("skill-pdf", "2026-11-05"));
-  expect(await screen.findByText("2026-11-05", { selector: ".sh-skill-drawer__trial-date" })).toBeVisible();
-
-  await user.click(screen.getByRole("button", { name: "Make regular" }));
-  await waitFor(() => expect(setTrial).toHaveBeenLastCalledWith("skill-pdf", null));
-  expect(screen.getByText("Regular")).toBeVisible();
-  expect(screen.queryByRole("button", { name: /abandon trial/i })).not.toBeInTheDocument();
-});
-
-it("adds the current Skill to a combination through the existing membership contract", async () => {
+it("edits collections through the bounded popover without touching combination contracts", async () => {
   const facade = createMockSkillLibraryFacade();
-  facade.listCombinations = vi.fn(async () => [
-    { name: "Writing tools", members: ["skill-existing"] },
-    { name: "Research kit", members: ["skill-other"] },
-  ]);
-  facade.updateCombination = vi.fn(async () => undefined);
   await renderDrawer({ facade });
 
-  const add = await screen.findByRole("button", { name: "Add to combination" });
-  await userEvent2.setup().click(add);
-  const dialog = await screen.findByRole("dialog", { name: "Add PDF Reader to a combination" });
-  await userEvent2.setup().click(within(dialog).getByRole("button", { name: "Add to Research kit" }));
+  expect(await screen.findByText("文档工具")).toBeVisible();
+  expect(screen.getByText("PDF 工作流")).toBeVisible();
+  expect(screen.queryByText("研发工具")).not.toBeInTheDocument();
 
-  await waitFor(() => expect(facade.updateCombination).toHaveBeenCalledWith("Research kit", ["skill-other", "skill-pdf"]));
-  await waitFor(() => expect(facade.listCombinations).toHaveBeenCalledTimes(2));
+  const user = userEvent2.setup();
+  await user.click(screen.getByRole("button", { name: "Edit collections" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit collections" });
+  await user.click(within(dialog).getByRole("checkbox", { name: "研发工具" }));
+  await user.click(within(dialog).getByRole("button", { name: "Save collection preview" }));
+
+  // 集合模块是原型预览：仅更新本地展示状态，不调用组合契约。
+  expect(screen.getByText("研发工具")).toBeVisible();
+  expect(facade.calls.emitBatchIntent).toHaveLength(0);
+  expect(facade.calls.saveSkillMetadata).toHaveLength(0);
 });
 
 it("carries the library query and return position into full details", async () => {
@@ -787,7 +632,7 @@ it("keeps preview full-detail links inside the development preview routes", asyn
   );
 });
 
-it("inherits reduced motion while using only wired single-skill actions", async () => {
+it("inherits reduced motion while action entries stay display-only", async () => {
   mockReducedMotion(true);
   const facade = createMockSkillLibraryFacade({ usageEvidence: undefined });
   await renderDrawer({ facade });
@@ -795,10 +640,10 @@ it("inherits reduced motion while using only wired single-skill actions", async 
     "data-reduced-motion",
     "true",
   );
-  expect(screen.getByRole("button", { name: "Dispatch PDF Reader" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Export PDF Reader" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Recheck" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "AI check" })).toBeVisible();
+  for (const name of ["Dispatch", "Export", "Delete", "Recheck", "AI check"]) {
+    expect(screen.getByRole("button", { name })).toBeVisible();
+  }
+  expect(document.querySelectorAll("[data-prototype-action='true']").length).toBeGreaterThan(0);
   expect(facade.calls.emitBatchIntent).toHaveLength(0);
   expect(screen.getByRole("heading", { name: "Usage evidence" })).toBeVisible();
   expect(screen.queryByText(/0 invocations/i)).not.toBeInTheDocument();
@@ -886,7 +731,7 @@ it("caps visible tags and exposes overflow through the bounded popover", async (
 
   // 标签超过可见上限时只保留上限数量的标签块，且每块携带完整值的悬浮说明。
   await screen.findByText("documents");
-  const tagList = document.querySelector(".sh-skill-drawer__tag-list");
+  const tagList = document.querySelector(".sh-skill-drawer__prototype-tag-list");
   expect(tagList?.querySelectorAll(".sh-skill-drawer__tag")).toHaveLength(4);
   expect(screen.getByTitle("urgent")).toBeInTheDocument();
   expect(screen.queryByText("r&d templates")).not.toBeInTheDocument();
@@ -904,7 +749,7 @@ it("caps visible tags and exposes overflow through the bounded popover", async (
   expect(within(panel).getAllByRole("button", { name: /^Remove tag/ })).toHaveLength(6);
   fireEvent.click(within(panel).getByRole("button", { name: "Remove tag windows" }));
   expect(within(panel).getAllByRole("button", { name: /^Remove tag/ })).toHaveLength(5);
-  expect(screen.getByRole("button", { name: "1 more tag" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "1 more tags" })).toBeVisible();
 
   // 关闭浮层后焦点返回触发按钮。
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
@@ -971,47 +816,6 @@ it("reports a failure instead of silently dropping tag edits when the facade can
   });
 });
 
-it("shows the runtime name beside the aliased display name in the identity region", async () => {
-  const facade = createMockSkillLibraryFacade({
-    quickView: { ...QUICK_VIEW, alias: "PDF Reader", originalName: "pdf-reader" },
-  });
-  await renderDrawer({ facade });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  const identity = drawer.querySelector(".sh-skill-drawer__identity");
-  if (!identity) throw new Error("Expected the drawer identity region");
-  expect(within(identity as HTMLElement).getByText("Original name:")).toBeVisible();
-  expect(within(identity as HTMLElement).getByText("pdf-reader")).toBeVisible();
-});
-
-it("keeps the runtime original name after saving a new alias (alias never renames)", async () => {
-  // M-21 双证据（前端组件侧）：别名编辑只更新别名，原名展示保持不变；
-  // runtime 原名不被改写的后端契约由 skillhub-core catalog_rules 覆盖。
-  const facade = createMockSkillLibraryFacade({
-    quickView: { ...QUICK_VIEW, alias: "PDF Reader", originalName: "pdf-reader" },
-  });
-  await renderDrawer({ facade });
-
-  fireEvent.click(await screen.findByRole("button", { name: "Edit alias" }));
-  const aliasInput = screen.getByRole("textbox", { name: "Alias" });
-  fireEvent.change(aliasInput, { target: { value: "PDF 阅读助手" } });
-  fireEvent.blur(aliasInput);
-
-  await waitFor(() => {
-    expect(facade.calls.saveSkillMetadata).toContainEqual({
-      skillId: "skill-pdf",
-      patch: { alias: "PDF 阅读助手" },
-    });
-  });
-  const drawer = screen.getByTestId("skill-quick-drawer");
-  const identity = drawer.querySelector(".sh-skill-drawer__identity");
-  if (!identity) throw new Error("Expected the drawer identity region");
-  // 别名已更新，原名（runtime_name）在抽屉身份区保持可见且未被改写。
-  expect(within(identity as HTMLElement).getByText("Original name:")).toBeVisible();
-  expect(within(identity as HTMLElement).getByText("pdf-reader")).toBeVisible();
-  expect(within(identity as HTMLElement).getByText("PDF 阅读助手")).toBeVisible();
-});
-
 it("edits my purpose in the drawer and saves it as independent metadata", async () => {
   // M-21 #6：“我的用途”在抽屉内获得编辑入口（与别名/备注同一编辑形态）。
   const facade = createMockSkillLibraryFacade();
@@ -1037,7 +841,7 @@ it("translates the original description and only writes the result to purpose af
   facade.translateDescription = vi.fn().mockResolvedValue({ text: "用于读取 PDF 文本" });
   await renderDrawer({ facade });
 
-  fireEvent.click(await screen.findByRole("button", { name: "Translate description" }));
+  fireEvent.click(await screen.findByRole("button", { name: "AI translation" }));
   expect(await screen.findByText("用于读取 PDF 文本")).toBeVisible();
   expect(facade.calls.saveSkillMetadata).toEqual([]);
 
@@ -1083,11 +887,11 @@ it("labels drawer identity fields in source-first and user-metadata order", asyn
   await renderDrawer({ facade });
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
-  const identity = within(drawer).getByRole("heading", { name: "PDF Reader" });
+  const heading = within(drawer).getByRole("heading", { name: "PDF Reader" });
   const region = drawer.querySelector(".sh-skill-drawer__identity");
   expect(region).toBeInTheDocument();
-  expect(drawer.querySelector(".sh-skill-drawer__chrome")).toContainElement(identity);
-  expect(region).not.toContainElement(identity);
+  expect(drawer.querySelector(".sh-skill-drawer__chrome")).toContainElement(heading);
+  expect(region).not.toContainElement(heading);
 
   const originalDescription = within(region as HTMLElement).getByText(/Original description/);
   const purpose = within(region as HTMLElement).getByText(/My purpose/);
@@ -1211,35 +1015,16 @@ it("runs security checks and shows findings directly in the drawer", async () =>
 
   expect(await screen.findByRole("button", { name: "Recheck" })).toBeVisible();
   expect(screen.getByRole("button", { name: "AI check" })).toBeVisible();
-  fireEvent.click(screen.getByText("Review 1 findings"));
-  expect(screen.getByText("发现疑似凭据字符串，请先确认来源。")).toBeVisible();
-  expect(screen.queryByRole("link", { name: "Open security checks" })).not.toBeInTheDocument();
+  // 第一条发现直接展示在模块内；完整清单经折叠面板可达（发现标题在模块与
+  // 默认展开的清单中各出现一次）。
+  expect((await screen.findAllByText("发现疑似凭据字符串，请先确认来源。")).length).toBeGreaterThan(0);
+  expect(screen.getByText("View all findings (1)")).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: "Recheck" }));
   await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
 });
 
-it("does not query or offer security checks when the drawer Skill has no current version", async () => {
-  const facade = createMockSkillLibraryFacade();
-  const getSkillQuickView = facade.getSkillQuickView.bind(facade);
-  vi.spyOn(facade, "getSkillQuickView").mockImplementation(async (skillId) =>
-    Object.assign(await getSkillQuickView(skillId), { currentVersionId: undefined }),
-  );
-  const getChecks = vi.fn(async () => separateCheckFixture().checks);
-  const securityFacade: SecurityFacade = {
-    ...createPreviewSecurityFacade(),
-    getChecks,
-  };
-
-  await renderDrawer({ facade, securityFacade });
-
-  expect(await screen.findByText("No version is available to check; security checks have not been run.")).toBeVisible();
-  expect(getChecks).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Recheck" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "AI check" })).not.toBeInTheDocument();
-});
-
-it("uses the exact fixture version for security checks in the review prototype", async () => {
+it("uses the exact fixture version for security checks", async () => {
   const getChecks = vi.fn(async () => separateCheckFixture().checks);
   const listFindings = vi.fn(async () => separateCheckFixture().findings);
   const runBasicCheck = vi.fn(async () => undefined);
@@ -1250,7 +1035,7 @@ it("uses the exact fixture version for security checks in the review prototype",
     runBasicCheck,
   };
 
-  await renderDrawer({ drawerPrototype: true, facade: createMockSkillLibraryFacade(), securityFacade });
+  await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
 
   await waitFor(() => expect(getChecks).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
   expect(listFindings).toHaveBeenCalledWith("skill-pdf", "fixture-version-1");
@@ -1258,7 +1043,7 @@ it("uses the exact fixture version for security checks in the review prototype",
   await waitFor(() => expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1"));
 });
 
-it("keeps prototype security checks unavailable when the preview fixture has no version identity", async () => {
+it("keeps security checks unavailable when the fixture has no version identity", async () => {
   const facade = createMockSkillLibraryFacade({
     quickView: { ...QUICK_VIEW, currentVersionId: undefined },
   });
@@ -1270,9 +1055,10 @@ it("keeps prototype security checks unavailable when the preview fixture has no 
     runBasicCheck,
   };
 
-  await renderDrawer({ drawerPrototype: true, facade, securityFacade });
+  await renderDrawer({ facade, securityFacade });
 
   expect(getChecks).not.toHaveBeenCalled();
+  expect((await screen.findAllByText("No version is available to check.")).length).toBeGreaterThan(0);
   expect(await screen.findByRole("button", { name: "Recheck" })).toBeDisabled();
   expect(await screen.findByRole("button", { name: "AI check" })).toBeDisabled();
   expect(runBasicCheck).not.toHaveBeenCalled();
@@ -1287,28 +1073,28 @@ it("closes with the shared close icon instead of a character glyph", async () =>
   expect(close.querySelector("svg")).not.toBeNull();
 });
 
-it("keeps the skill name and primary actions in one compact header with a single width cycle", async () => {
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    onDelete: vi.fn(),
-  });
+it("keeps the skill name and display-only actions in one compact header with a single width cycle", async () => {
+  await renderDrawer({ facade: createMockSkillLibraryFacade() });
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
   const chrome = drawer.querySelector<HTMLElement>(".sh-skill-drawer__chrome");
   const title = within(drawer).getByRole("heading", { name: "PDF Reader" });
-  const dispatch = within(drawer).getByRole("button", { name: "Dispatch PDF Reader" });
-  const exportSkill = within(drawer).getByRole("button", { name: "Export PDF Reader" });
-  const deleteSkill = within(drawer).getByRole("button", { name: "Delete from library" });
+  const dispatch = within(drawer).getByRole("button", { name: "Dispatch" });
+  const exportSkill = within(drawer).getByRole("button", { name: "Export" });
+  const deleteSkill = within(drawer).getByRole("button", { name: "Delete" });
 
   expect(chrome).toContainElement(title);
   expect(chrome).toContainElement(dispatch);
   expect(chrome).toContainElement(exportSkill);
   expect(chrome).toContainElement(deleteSkill);
-  expect(dispatch.compareDocumentPosition(exportSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(exportSkill.compareDocumentPosition(deleteSkill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const button of [dispatch, exportSkill, deleteSkill]) {
+    expect(button).toHaveAttribute("data-prototype-action", "true");
+  }
   expect(within(drawer).queryByRole("button", { name: "Configure quick drawer" })).not.toBeInTheDocument();
-  expect(within(drawer).queryByRole("group", { name: "Quick drawer width" })).not.toBeInTheDocument();
-  expect(within(drawer).getByRole("button", { name: "Current width: Wide. Next: Near full screen" })).toBeVisible();
+  // 原型保留单一宽度循环按钮（无档位单选组），aria group 仅包裹该按钮。
+  const widthGroup = within(drawer).getByRole("group", { name: "Quick drawer width" });
+  expect(within(widthGroup).getAllByRole("button")).toHaveLength(1);
+  expect(within(drawer).getByRole("button", { name: "Current: Wide; click to switch to Near full screen" })).toBeVisible();
 });
 
 it("keeps core drawer content visible when stored layout preferences hide or reorder modules", async () => {
@@ -1323,86 +1109,22 @@ it("keeps core drawer content visible when stored layout preferences hide or reo
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
   expect(within(drawer).getByText("Read and extract PDFs")).toBeVisible();
-  expect(within(drawer).getByRole("heading", { name: "Security checks" })).toBeVisible();
   expect(within(drawer).getByRole("heading", { name: "Relations" })).toBeVisible();
+  expect(within(drawer).getByRole("heading", { name: "Collections" })).toBeVisible();
+  expect(within(drawer).getByRole("heading", { name: "Skill body location" })).toBeVisible();
+  expect(within(drawer).getByRole("heading", { name: "Security checks" })).toBeVisible();
   expect(within(drawer).getByRole("heading", { name: "Source and version" })).toBeVisible();
+  // 使用证据是唯一跟随偏好的可选模块；隐藏后不渲染。
+  expect(within(drawer).queryByRole("heading", { name: "Usage evidence" })).not.toBeInTheDocument();
 
   const moduleHeadings = [...drawer.querySelectorAll(".sh-skill-drawer__module h3")]
     .map((heading) => heading.textContent?.trim());
-  expect(moduleHeadings.indexOf("Security checks")).toBeLessThan(moduleHeadings.indexOf("Relations"));
-  expect(moduleHeadings.indexOf("Relations")).toBeLessThan(moduleHeadings.indexOf("Source and version"));
+  expect(moduleHeadings[0]).toBe("Relations");
   expect(moduleHeadings.at(-1)).toBe("Source and version");
 });
 
-
-describe("drawer primary actions equivalence", () => {
-  it("keeps dispatch, export, and delete in the fixed title row without duplicate update actions", async () => {
-    await renderDrawer({ facade: createMockSkillLibraryFacade(), onDelete: vi.fn() });
-
-    expect(await screen.findByRole("button", { name: "Dispatch PDF Reader" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Export PDF Reader" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Delete from library" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Check source updates" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "View update" })).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "View versions" })).not.toBeInTheDocument();
-  });
-
-  it("navigates add-to and export entries with the single-skill contract", async () => {
-    const locations: Array<string> = [];
-    function LocationProbe() {
-      const location = useLocation();
-      locations.push(`${location.pathname}${location.search}#${JSON.stringify(location.state)}`);
-      return null;
-    }
-    // 复用 DrawerHarness 渲染，但追加一个路由探针。
-    const i18n = await createSkillHubI18n(["en-US"]);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    function Harness() {
-      const [controlledPreferences, setControlledPreferences] = useState(() => clonePreferences(DEFAULT_DRAWER_PREFERENCES));
-      const returnFocusRef = useRef<HTMLButtonElement>(null);
-      return (
-        <>
-          <LocationProbe />
-          <button ref={returnFocusRef} type="button">PDF Reader row</button>
-          <SkillQuickDrawer
-            facade={createMockSkillLibraryFacade()}
-            securityFacade={createPreviewSecurityFacade()}
-            onDelete={vi.fn()}
-            onOpenChange={() => undefined}
-            onPreferencesChange={setControlledPreferences}
-            open
-            preferences={controlledPreferences}
-            returnFocusRef={returnFocusRef}
-            skillId="skill-pdf"
-          />
-        </>
-      );
-    }
-    render(
-      <QueryClientProvider client={client}>
-        <I18nextProvider i18n={i18n}>
-          <MemoryRouter initialEntries={["/library"]}>
-            <Harness />
-          </MemoryRouter>
-        </I18nextProvider>
-      </QueryClientProvider>,
-    );
-
-    const user = userEvent2.setup();
-    await user.click(await screen.findByRole("button", { name: "Dispatch PDF Reader" }));
-    expect(locations.at(-1)).toContain("/deploy?skill=skill-pdf");
-
-    await user.click(screen.getByRole("button", { name: "Export PDF Reader" }));
-    expect(locations.at(-1)).toContain("/settings/data-protection");
-    expect(locations.at(-1)).toContain(JSON.stringify({ exportSkillIds: ["skill-pdf"] }));
-  });
-});
-
-it("keeps the overview in the scroll region and core actions in the fixed title row", async () => {
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    onDelete: vi.fn(),
-  });
+it("keeps the overview in the scroll region and display-only actions in the fixed heading", async () => {
+  await renderDrawer({ facade: createMockSkillLibraryFacade() });
 
   const drawer = await screen.findByTestId("skill-quick-drawer");
   const title = within(drawer).getByRole("heading", { name: "PDF Reader" });
@@ -1416,167 +1138,52 @@ it("keeps the overview in the scroll region and core actions in the fixed title 
   expect(overview).toContainElement(within(drawer).getByText("Extracts text from PDF files."));
   expect(overview).toContainElement(within(drawer).getByText("Read and extract PDFs"));
   expect(overview?.querySelector(".sh-skill-drawer__summary-grid")).not.toBeNull();
-  expect(overview?.querySelector(".sh-skill-drawer__summary-item--lifecycle")).toHaveTextContent("LifecycleRegular");
-  expect(overview?.querySelector(".sh-skill-drawer__summary-item--version")).toHaveTextContent("Version1.4.0");
-  expect(overview?.querySelector(".sh-skill-drawer__summary-item--agents")).toHaveTextContent("Agent destinations2");
-  expect(overview?.querySelector(".sh-skill-drawer__summary-item--projects")).toHaveTextContent("Project destinations3");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--version")).toHaveTextContent("1.4.0");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--agents")).toHaveTextContent("2");
+  expect(overview?.querySelector(".sh-skill-drawer__summary-item--projects")).toHaveTextContent("3");
 
-  const actions = drawer.querySelector<HTMLElement>(".sh-skill-drawer__header-actions");
-  expect(actions).toContainElement(within(drawer).getByRole("button", { name: "Dispatch PDF Reader" }));
+  const actions = drawer.querySelector<HTMLElement>(".sh-skill-drawer__prototype-actions");
+  expect(actions).toContainElement(within(drawer).getByRole("button", { name: "Dispatch" }));
   expect(chrome).toContainElement(actions);
   expect(body).not.toContainElement(actions);
-  expect(body).toContainElement(drawer.querySelector<HTMLElement>(".sh-skill-drawer__risk"));
   const modules = drawer.querySelector(".sh-skill-drawer__modules");
   expect(modules).not.toBeNull();
   expect(overview!.compareDocumentPosition(modules as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-it("does not show a delete action without a delete handler", async () => {
+it("opens display-only action previews without navigating", async () => {
+  const locations: Array<string> = [];
+  let currentLocation: ReturnType<typeof useLocation> | undefined;
   await renderDrawer({
     facade: createMockSkillLibraryFacade(),
+    onLocationChange: (location) => {
+      currentLocation = location;
+      locations.push(`${location.pathname}${location.search}`);
+    },
   });
 
-  await screen.findByTestId("skill-quick-drawer");
-  expect(screen.queryByRole("button", { name: "Delete from library" })).not.toBeInTheDocument();
-});
+  const user = userEvent2.setup();
+  await user.click(await screen.findByRole("button", { name: "Dispatch" }));
+  const dialog = await screen.findByRole("dialog", { name: "Dispatch preview" });
+  expect(within(dialog).getByText(
+    "For review of the entry point and impact only. Nothing is actually dispatched, exported, or deleted.",
+  )).toBeVisible();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel preview" }));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Dispatch preview" })).not.toBeInTheDocument();
+  });
 
+  await user.click(screen.getByRole("button", { name: "Delete" }));
+  expect(screen.getByRole("dialog", { name: "Delete preview" })).toBeVisible();
+  expect(currentLocation?.pathname).toBe("/library");
+  expect(locations.every((entry) => entry === "/library")).toBe(true);
+});
 
 it("combines source and version into one final overview with update navigation", async () => {
   await renderDrawer({ facade: createMockSkillLibraryFacade() });
   const title = await screen.findByRole("heading", { name: "Source and version" });
   const module = title.closest("section")!;
   expect(within(module).getByText("1.4.0")).toBeInTheDocument();
-  expect(within(module).getByText("Internal catalog")).toBeInTheDocument();
-  expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#source");
+  expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#versions");
   expect(screen.queryByRole("heading", { name: "Versions" })).not.toBeInTheDocument();
-});
-
-it("keeps unresolved targets distinct from empty Agent and project destinations", async () => {
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade({
-      quickView: {
-        ...QUICK_VIEW,
-        agentDeploymentCount: 0,
-        agentDeployments: [],
-        projectDeploymentCount: 0,
-        projectDeployments: [],
-        unresolvedDeploymentCount: 2,
-      },
-    }),
-    initialEntry: "/library?text=pdf",
-    libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 220 },
-  });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
-  expect(within(relations).getAllByText("Known destinations: 0")).toHaveLength(2);
-  expect(within(relations).getAllByText("Some destinations could not be identified yet.")).toHaveLength(2);
-  expect(within(relations).getByRole("status")).toHaveTextContent(
-    "2 relationship targets could not be identified.",
-  );
-  expect(within(relations).getByRole("link", { name: "Review relationship governance" })).toHaveAttribute(
-    "href",
-    "/relationships/governance?from=library&skillId=skill-pdf",
-  );
-});
-
-it("uses relationship facts for exact Agent and project destination links with library return context", async () => {
-  const relationshipFacade = createMockRelationshipFacade();
-  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 24, scrollTop: 416 };
-  let currentLocation: ReturnType<typeof useLocation> | undefined;
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    relationshipFacade,
-    libraryReturn,
-    onLocationChange: (location) => { currentLocation = location; },
-  });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  const agents = within(drawer).getByRole("region", { name: "Added to Agents: 1" });
-  const projects = within(drawer).getByRole("region", { name: "Added to projects: 1" });
-  const agentDetail = within(agents).getByRole("link", { name: /OpenAI/i });
-  expect(agentDetail).toHaveAttribute("href", "/agents/openai.codex-cli");
-  expect(within(agents).getByText("C:\\Users\\demo\\.codex\\skills\\pdf-reader")).toBeVisible();
-
-  const projectReview = within(projects).getByRole("link", { name: "Review project relationship" });
-  expect(projectReview).toHaveAttribute(
-    "href",
-    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-project",
-  );
-  expect(within(projects).getByText("C:\\workspace\\project\\.agents\\skills\\pdf-reader")).toBeVisible();
-  expect(within(projects).queryByRole("link", { name: /project detail|manage project/i })).not.toBeInTheDocument();
-  expect(relationshipFacade.getRelationshipOverview).toHaveBeenCalledWith("skill-pdf");
-  expect(relationshipFacade.getProvenance).toHaveBeenCalledWith("skill-pdf");
-
-  await userEvent2.setup().click(projectReview);
-  await waitFor(() => expect(currentLocation?.pathname).toBe("/relationships/governance"));
-  expect(currentLocation?.search).toBe("?from=library&skillId=skill-pdf&relationId=rel-project");
-  expect(currentLocation?.state).toEqual({ libraryReturn });
-
-  expect(within(drawer).getByText("Local directory")).toBeVisible();
-  expect(within(drawer).getByText("C:\\source\\pdf-reader")).toBeVisible();
-  expect(within(drawer).queryByText(/private-fingerprint|do-not-render-this/)).not.toBeInTheDocument();
-});
-
-it("shows unknown relationship targets separately from known Agent and project facts", async () => {
-  const overview: RelationshipOverview = {
-    ...RELATIONSHIP_OVERVIEW,
-    deployment_relations: [
-      ...RELATIONSHIP_OVERVIEW.deployment_relations,
-      {
-        ...RELATIONSHIP_OVERVIEW.deployment_relations[0]!,
-        relation_id: "rel-unresolved",
-        directory_node_id: "node-not-returned",
-        path: "C:/unknown-target/pdf-reader",
-        path_key: "unknown-key",
-      },
-    ],
-  };
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    relationshipFacade: createMockRelationshipFacade({ overview }),
-    initialEntry: "/library?text=pdf",
-    libraryReturn: { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 220 },
-  });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
-  expect(within(relations).getAllByText("Known destinations: 1")).toHaveLength(2);
-  expect(within(relations).getByRole("status")).toHaveTextContent("1 relationship target could not be identified.");
-  expect(within(relations).getByRole("link", { name: "Review unresolved relationship" })).toHaveAttribute(
-    "href",
-    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-unresolved",
-  );
-  expect(within(relations).queryByText("No linked Agents")).not.toBeInTheDocument();
-  expect(within(relations).queryByText("No linked project directories")).not.toBeInTheDocument();
-});
-
-it("reports relationship lookup failure without presenting stale aggregate counts as current facts", async () => {
-  const relationshipFacade = createMockRelationshipFacade({ failOverview: true });
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    relationshipFacade,
-  });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  expect(within(drawer).getByRole("alert")).toHaveTextContent("Could not load destination relationships.");
-  expect(within(drawer).queryByText("Agent destinations2")).not.toBeInTheDocument();
-  expect(within(drawer).queryByText("Project destinations3")).not.toBeInTheDocument();
-  expect(within(drawer).getByText("C:\\source\\pdf-reader")).toBeVisible();
-});
-
-it("reports provenance failure independently while keeping successfully loaded relationship targets", async () => {
-  const relationshipFacade = createMockRelationshipFacade({ failProvenance: true });
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    relationshipFacade,
-  });
-
-  const drawer = await screen.findByTestId("skill-quick-drawer");
-  const relations = within(drawer).getByRole("heading", { name: "Relations" }).closest("section")!;
-  expect(within(drawer).getByRole("alert")).toHaveTextContent("Could not load import provenance.");
-  expect(within(relations).getByRole("link", { name: "Review project relationship" })).toHaveAttribute(
-    "href",
-    "/relationships/governance?from=library&skillId=skill-pdf&relationId=rel-project",
-  );
 });

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
 import type { RemovalImpactFact } from "../../api/bindings";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
@@ -129,10 +128,9 @@ const previewRemovalImpact: RemovalImpactFact = {
 };
 
 export function SkillDetailPreview() {
-  const location = useLocation();
-  const reviewPrototype = new URLSearchParams(location.search).get("detailPrototype") === "review";
+  // §9 转正裁决：评审布局已是生产默认呈现；DEV 预览固定走内存评审门面。
   const [facade] = useState(() =>
-    (reviewPrototype ? createReviewFacade : (value: SkillDetailFacade) => value)(createMockSkillDetailFacade({
+    createReviewFacade(createMockSkillDetailFacade({
       relationshipOverview: previewRelationshipOverview,
       removalImpactFact: previewRemovalImpact,
     })),
@@ -143,7 +141,6 @@ export function SkillDetailPreview() {
     <SkillDetailPage
       facade={facade}
       markdownFacade={markdownFacade}
-      reviewPrototype={reviewPrototype}
       securityFacade={securityFacade}
     />
   );

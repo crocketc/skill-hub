@@ -1,12 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
-import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import type { SecurityFacade } from "../security/api";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
@@ -53,17 +52,6 @@ it("shows a target-fact error and keeps delete confirmation unavailable when imp
   } as never);
   vi.mocked(queryApplication).mockRejectedValue(new Error("deployment target lookup failed"));
 
-  const governanceFacade = {
-    listGovernance: vi.fn().mockResolvedValue({
-      rows: [],
-      counts: {},
-      bucket: "all",
-      total: 0,
-      relationship_revision: "r1",
-      last_verified_at: null,
-    }),
-    listHistory: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 5 }),
-  } as unknown as RelationGovernanceFacade;
   const securityFacade: SecurityFacade = {
     getChecks: async () => [],
     listFindings: async () => [],
@@ -79,13 +67,14 @@ it("shows a target-fact error and keeps delete confirmation unavailable when imp
   render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
-        <MemoryRouter initialEntries={["/library/skill-pdf"]}>
+        <MemoryRouter
+          initialEntries={[{ pathname: "/library/skill-pdf", state: { removalRequest: { skillId: "skill-pdf" } } }]}
+        >
           <Routes>
             <Route
               element={
                 <SkillDetailPage
                   facade={createMockSkillDetailFacade()}
-                  governanceFacade={governanceFacade}
                   markdownFacade={createMockMarkdownFacade()}
                   securityFacade={securityFacade}
                 />
@@ -97,8 +86,6 @@ it("shows a target-fact error and keeps delete confirmation unavailable when imp
       </I18nextProvider>
     </QueryClientProvider>,
   );
-
-  fireEvent.click(await screen.findByRole("button", { name: "Delete from library" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("Deployment target details could not be verified, so deletion was not prepared.");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

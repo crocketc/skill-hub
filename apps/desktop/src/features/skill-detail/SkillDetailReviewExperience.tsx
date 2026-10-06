@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { AgentPresentation, readableAgentIdName } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -12,6 +12,7 @@ import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import type { MarkdownFacade } from "../markdown/api";
 import { SecurityResults } from "../security/SecurityResults";
 import type { SecurityFacade } from "../security/api";
+import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { MetadataPanel } from "./MetadataPanel";
 import { RequirementsPanel } from "./RequirementsPanel";
 import { VersionTimeline } from "./VersionTimeline";
@@ -48,13 +49,19 @@ interface SkillDetailReviewExperienceProps {
   markdownFacade?: MarkdownFacade;
   metadata?: SkillMetadata;
   provenance?: SkillProvenance;
+  refreshSnapshot?: () => Promise<void>;
   requirements?: SkillRequirementFact[];
   securityFacade: SecurityFacade;
   skillId: string;
   summary: SkillDetailSummary;
 }
 
-/** DEV review layout; writes remain in the in-memory preview facade. */
+/**
+ * 技能详情评审布局（§9 裁决，2026-10-06）：生产默认呈现。
+ * 安全区块接入真实 SecurityFacade 与安全预警事实（task C，六裁决安全呈现）；
+ * 演示性操作（派发/导出/删除演示弹层、来源更新示例流、使用去向示例卡）保持
+ * 原型确认行为，接真实数据由后续任务裁决。
+ */
 export function SkillDetailReviewExperience({
   adjacent,
   backSearch,
@@ -66,12 +73,14 @@ export function SkillDetailReviewExperience({
   markdownFacade,
   metadata,
   provenance,
+  refreshSnapshot,
   requirements,
   securityFacade,
   skillId,
   summary,
 }: SkillDetailReviewExperienceProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
   // §关系治理：转为集中管理是演示状态；确认后头部入口隐藏、使用去向卡片联动为已集中管理。
   const [centralized, setCentralized] = useState(false);
@@ -92,10 +101,6 @@ export function SkillDetailReviewExperience({
     setActiveSection(id);
     setOpenSections((current) => (current[id] ? current : { ...current, [id]: true }));
   };
-  const reviewSecurityFacade = useMemo<SecurityFacade>(() => ({
-    ...securityFacade,
-    getPreferences: async () => ({ llmProvider: "", dataScope: "" }),
-  }), [securityFacade]);
   const safeMetadata: SkillMetadata = {
     alias: metadata?.alias,
     author: metadata?.author,
@@ -132,6 +137,26 @@ export function SkillDetailReviewExperience({
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
               <ReviewHeaderActions centralized={centralized} currentVersion={summary.currentVersion} onCentralize={() => setCentralized(true)} />
             </div>
+            {/* 六裁决安全呈现（task C）：预警状态条 + 安全处理入口直达安全预警路由。 */}
+            {summary.securityAlert ? (
+              <div
+                aria-label={t("securityAlert.recordLabel")}
+                className="sh-skill-detail-review__security-alert"
+                role="status"
+              >
+                <SecurityAlertBadge level={summary.securityAlert} />
+                <span>{t("securityAlert.recordActive")}</span>
+                <Button
+                  onClick={() => navigate(`/library/${encodeURIComponent(skillId)}/security`, {
+                    state: libraryReturn ? { libraryReturn } : undefined,
+                  })}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {t("skillDetail.actions.securityHandling")}
+                </Button>
+              </div>
+            ) : null}
             {centralized ? <p className="sh-skill-detail-review__inline-status" role="status">已转为集中管理（演示）：原位置已按受管链接跟随当前版本。</p> : null}
           </div>
           <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
@@ -147,7 +172,7 @@ export function SkillDetailReviewExperience({
               </a>
             ))}
           </nav>
-          <ReviewAdjacentSkills adjacent={adjacent} backSearch={backSearch} detailPathname={detailPathname} />
+          <ReviewAdjacentSkills adjacent={adjacent} backSearch={backSearch} detailPathname={detailPathname} libraryReturn={libraryReturn} />
         </aside>
         <main className="sh-skill-detail__content sh-skill-detail-review__main">
           <p className="sh-skill-detail-review__prototype-note" role="note">
@@ -160,7 +185,7 @@ export function SkillDetailReviewExperience({
             </h2>
             <div hidden={!openSections["review-overview"]} id="review-overview-body">
               <div className="sh-skill-detail-review__overview">
-                {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} skillId={skillId} reviewPresentation /> : (
+                {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} refreshSnapshot={refreshSnapshot} skillId={skillId} reviewPresentation /> : (
                   <p role="status">正在读取技能画像…</p>
                 )}
                 <div className="sh-skill-detail-review__facts">
@@ -186,7 +211,8 @@ export function SkillDetailReviewExperience({
             <div hidden={!openSections["review-safety"]} id="review-safety-body">
               {summary.currentVersionId ? (
                 <SecurityResults
-                  facade={reviewSecurityFacade}
+                  facade={securityFacade}
+                  securityAlert={summary.securityAlert}
                   skillId={skillId}
                   versionId={summary.currentVersionId}
                   variant="embedded"
@@ -332,14 +358,16 @@ function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
   );
 }
 
-/** 相邻技能切换（复用生产 getAdjacentContext 契约与 DetailSectionNav 交互）。 */
-function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname }: {
+/** 相邻技能切换（复用生产 getAdjacentContext 契约与相邻导航交互）。 */
+function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname, libraryReturn }: {
   adjacent?: AdjacentSkillContext;
   backSearch: string;
   detailPathname: string;
+  libraryReturn?: SkillLibraryReturnState;
 }) {
   const { t } = useTranslation();
   if (!adjacent) return null;
+  const navigationState = libraryReturn ? { libraryReturn } : undefined;
   return (
     <nav aria-label={String(t("skillDetail.navigation.label"))} className="sh-skill-detail__adjacent">
       <span>{String(t("skillDetail.navigation.position", { position: adjacent.position, total: adjacent.total }))}</span>
@@ -347,6 +375,7 @@ function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname }: {
         {adjacent.previous ? (
           <Link
             className="sh-button sh-button--ghost sh-button--sm"
+            state={navigationState}
             to={{ pathname: `${detailPathname}/${adjacent.previous.id}`, search: backSearch }}
           >
             {String(t("skillDetail.navigation.previous"))}
@@ -359,6 +388,7 @@ function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname }: {
         {adjacent.next ? (
           <Link
             className="sh-button sh-button--ghost sh-button--sm"
+            state={navigationState}
             to={{ pathname: `${detailPathname}/${adjacent.next.id}`, search: backSearch }}
           >
             {String(t("skillDetail.navigation.next"))}

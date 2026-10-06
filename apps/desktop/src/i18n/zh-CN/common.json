@@ -1465,16 +1465,8 @@
     },
     "drawer": {
       "actions": {
-        "addTags": "添加标签",
-        "delete": "从库中删除 Skill",
-        "deleteShort": "删除",
-        "dispatch": "派发",
-        "dispatchSkill": "派发 {{name}}",
-        "export": "导出",
-        "exportSkill": "导出 {{name}}",
-        "viewVersions": "查看版本"
+        "addTags": "添加标签"
       },
-      "configure": "配置快速抽屉",
       "description": "Skill 摘要与快捷操作。",
       "detail": {
         "empty": "选择一项 Skill 以查看详情",
@@ -1486,11 +1478,7 @@
       "editNote": "编辑备注",
       "editPurpose": "编辑用途",
       "removeTag": "移除标签 {{tag}}",
-      "allTags": "全部标签",
-      "moreTags_one": "其余 {{count}} 个标签",
-      "moreTags_other": "其余 {{count}} 个标签",
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
-      "fullDetails": "查看完整详情",
       "prototype": {
         "cycleWidth": "当前：{{current}}；点击切换至{{next}}",
         "actionImpacts": {
@@ -1529,7 +1517,6 @@
         "openRelationContext": "打开关系上下文：{{target}}",
         "openSampleLocation": "打开样例位置",
         "openTargetSample": "模拟打开{{type}}详情",
-        "previewNote": "预览样例 · 所有改动只保存在当前页面，不会写入 SkillHub。",
         "popoverDescription": "仅展示预览操作；不会修改正式数据。",
         "projectTargets": "项目关系目标，共 {{count}} 项",
         "regular": "常规",
@@ -1587,7 +1574,6 @@
         "securityAccessibleRisk": "{{check}}发现风险 {{count}} 项，其中 {{actionable}} 项待处理。",
         "securityAccessibleClean": "{{check}}通过，当前版本未发现风险。",
         "securityAccessibleUnknown": "{{check}}：{{result}}。",
-        "securityVersionTime": "当前版本 {{version}} · {{time}}",
         "securityFindingsLabel": "检查发现",
         "securityNeedsAttention": "仍需处理",
         "securityDispositionRecorded": "已记录处理决定，原始发现仍保留",
@@ -1597,122 +1583,49 @@
         "sourceVersionTitle": "来源与版本"
       },
       "modules": {
-        "fullDetails": "完整详情",
-        "identity": "名称与说明",
         "primaryActions": "主要操作",
         "relations": "关联关系",
         "riskSummary": "风险摘要",
         "securityChecks": "安全检查",
-        "sourceVersion": "来源与版本",
-        "sourceLicense": "来源与许可证",
-        "usageEvidence": "使用证据",
-        "versions": "版本",
-        "dependenciesDuplicates": "依赖与重复项",
-        "externalChanges": "外部变更",
-        "invocationRequirements": "调用方式与运行要求"
+        "usageEvidence": "使用证据"
       },
-      "moduleVisibility": "抽屉模块",
       "preferenceFailure": "偏好未保存，临时布局仍然有效。",
       "metadataFailure": "别名、用途或备注未保存，已恢复为已保存的内容。",
       "presets": {
-        "cycle": "当前宽度：{{current}}，下一档：{{next}}",
         "label": "快速抽屉宽度",
         "nearFull": "近全屏",
         "standard": "标准宽度",
         "wide": "加宽"
       },
-      "reset": "恢复默认",
       "resize": "调整快速抽屉宽度",
       "risk": {
         "high": "{{count}} 个高风险项",
         "pending": "{{count}} 项待处理"
       },
-      "trial": {
-        "adjustDate": "调整复核日期",
-        "convert": "转为常规",
-        "converted": "此 Skill 已转为常规生命周期。",
-        "noDate": "未设置复核日期",
-        "reviewDate": "试用复核日期",
-        "reviewDateLabel": "复核日期",
-        "saveDate": "保存复核日期"
-      },
-      "collections": {
-        "add": "加入组合",
-        "addShort": "加入",
-        "addTo": "加入{{name}}",
-        "added": "已加入{{name}}。",
-        "dialogTitle": "将{{skill}}加入组合",
-        "empty": "尚未创建组合。",
-        "label": "所属组合",
-        "loadFailed": "无法读取组合，请重试后再管理成员。",
-        "manage": "管理组合",
-        "memberships": "包含此 Skill 的组合",
-        "none": "未加入组合",
-        "remove": "将{{skill}}从{{name}}移出",
-        "removeShort": "移出",
-        "removed": "已从{{name}}移出。"
-      },
       "title": "Skill 详情",
       "translation": {
-        "action": "翻译描述",
         "confirmLabel": "确认译文用途",
         "failed": "描述翻译未能完成。",
-        "inProgress": "正在翻译…",
         "saveFailed": "译文未能写入我的用途。",
         "useAsPurpose": "写入我的用途"
       },
-      "reviewRelationships": "查看关系治理",
-      "unresolvedTargets_one": "有 {{count}} 条关系的目标身份暂时无法确认，请查看此关系。",
-      "unresolvedTargets_other": "有 {{count}} 条关系的目标身份暂时无法确认，请查看这些关系。",
-      "relationships": {
-        "loading": "正在读取关系事实…",
-        "loadFailed": "无法读取目标关系。请重试，或前往治理页查看。",
-        "unavailableGroup": "当前无法读取目标事实。"
-      },
-      "provenance": {
-        "label": "导入存证",
-        "loadFailed": "无法读取导入存证。",
-        "none": "此 Skill 没有导入存证记录。",
-        "otherSource": "其他来源"
-      },
-      "reviewAgentRelationship": "查看 Agent 关系",
-      "reviewProjectRelationship": "查看项目关系",
-      "reviewUnresolvedRelationship": "查看未识别关系",
       "viewUpdate": "查看更新",
       "values": {
         "agents": "Agent",
         "agentDestinations": "Agent 去向",
         "alias": "别名",
-        "knownDestinationCount": "已识别 {{count}} 个",
-        "currentVersion": "当前版本：{{version}}",
         "invocation": "调用方式：",
-        "requirements": "运行要求",
         "invocationCount": "{{count}} 次调用",
         "lastUsed": "最近使用：{{value}}",
         "license": "许可证",
         "note": "我的备注",
         "originalDescription": "原始描述",
-        "originalName": "原名",
-        "ownership": "归属",
         "purpose": "我的用途",
         "projectDestinations": "项目去向",
-        "projectDirectory": "项目目录",
         "projects": "项目",
-        "noLinkedAgents": "没有关联的 Agent",
-        "noLinkedProjects": "没有关联的项目目录",
-        "unknownTarget": "目标路径不可用",
-        "unresolvedDestinationGroup": "部分去向暂时无法识别。",
-        "source": "来源",
         "tags": "标签",
         "translatedDescription": "描述译文",
-        "upToDate": "已是最新版本",
-        "updateAvailable": "有可用更新",
-        "dependencies": "依赖",
-        "duplicates": "可能的重复项"
-      },
-      "relations": {
-        "showFewerProjects": "收起项目",
-        "showMoreProjects": "展开另外 {{count}} 个项目"
+        "upToDate": "已是最新版本"
       }
     },
     "filters": {
@@ -1736,10 +1649,8 @@
       "lifecycle": "生命周期",
       "lifecycleOptions": {
         "active": "常规",
-        "deprecated": "已弃用",
         "trial": "试用"
       },
-      "resultCount": "{{count}} 个结果",
       "search": "搜索 Skill",
       "searchPlaceholder": "输入 Skill 名称或别名",
       "selectedCount": "已选 {{count}} 项",
@@ -1770,8 +1681,6 @@
     },
     "table": {
       "agentDeploymentSummary": "已添加到 Agent：{{count}} 个",
-      "projectDeploymentSummary": "已添加到项目：{{count}} 个",
-      "aliasLabel": "别名",
       "originalNameLabel": "原名",
       "aiStatus": "AI：{{state}}",
       "basicStatus": "基础：{{state}}",
@@ -1813,9 +1722,6 @@
         "deprecated": "已弃用",
         "trial": "试用"
       },
-      "moveBefore": "将{{column}}移到{{before}}之前",
-      "moveUp": "上移{{column}}",
-      "moveDown": "下移{{column}}",
       "dragColumn": "可拖动列",
       "lockedColumn": "固定",
       "reorderLabel": "调整列顺序",
@@ -1829,8 +1735,6 @@
       "selectSkill": "选择 {{name}}",
       "sortBy": "按{{column}}排序",
       "updateAvailable": "有可用更新",
-      "agentDeployments_one": "{{count}} 个 Agent",
-      "agentDeployments_other": "{{count}} 个 Agent",
       "projectDeployments_one": "{{count}} 个项目",
       "projectDeployments_other": "{{count}} 个项目"
     },
@@ -1908,12 +1812,9 @@
   },
   "skillDetail": {
     "actions": {
-      "label": "Skill 操作",
-      "delete": "从库中删除 Skill",
       "securityHandling": "安全处理"
     },
     "versions": {
-      "exportSkill": "导出此 Skill（标准导出）",
       "rename": "命名版本",
       "renameAria": "命名版本 {{version}}",
       "labelLabel": "版本名称",
@@ -1960,12 +1861,6 @@
       "viewUpdateDiff": "查看更新差异"
     },
     "insights": {
-      "connections": "依赖与组合",
-      "invocations_one": "记录到 {{count}} 次调用",
-      "invocations_other": "记录到 {{count}} 次调用",
-      "none": "暂无已确认的关联",
-      "operationHistoryEmpty": "暂无操作日志记录。",
-      "operationHistoryLimitation": "操作日志暂未记录 Skill 维度，以下为全局日志记录。",
       "dependencyShapes": {
         "importCopy": "导入副本",
         "managedCopy": "托管副本",
@@ -2000,91 +1895,12 @@
           "succeeded": "已完成",
           "unknown": "状态不可用"
         }
-      },
-      "usageEvidence": "使用证据"
-    },
-    "relations": {
-      "loadError": "无法加载部署关系，其他详情仍可使用。",
-      "loadErrorLabel": "关系加载失败",
-      "physicalTarget": "物理目标：",
-      "pinned": "已固定版本",
-      "retry": "重试关系",
-      "undeploy": "从目标移除",
-      "undeployTarget": "从 {{target}} 移除",
-      "governed": {
-        "heading": "关系类型与移除影响",
-        "description": "关系类型由确定性事实给出；移除影响先预览，确认后才执行变更。",
-        "empty": "尚未登记部署关系事实。",
-        "sharedAgent": "目标 Agent：{{agent}}",
-        "loadError": "关系事实暂不可用；部署与来源信息可能不完整。"
-      },
-      "sourceEvents": {
-        "heading": "最近来源动态"
-      }
-    },
-    "provenance": {
-      "heading": "导入存证与已观察的目标副本",
-      "source": "来源：",
-      "sourceKinds": {
-        "local": "本地目录",
-        "https": "HTTPS 下载",
-        "git": "Git 仓库"
-      },
-      "agent": "Agent 形态：",
-      "unknownAgent": "未识别（无目录证据，不猜测）",
-      "originalPath": "原始路径：",
-      "importedAt": "导入时间（epoch 秒）：",
-      "fingerprint": "内容指纹：",
-      "ownership": "所有权：",
-      "ownerships": {
-        "unclassified": "未分类",
-        "central_library": "集中库",
-        "known_agent_target": "已知 Agent 目录",
-        "registered_project": "已注册项目",
-        "read_only_builtin_or_plugin": "只读内置/插件",
-        "arbitrary_local_directory": "任意本地目录",
-        "downloaded_source": "已下载来源"
-      },
-      "absent": "该 Skill 不是经由带存证的导入链路进入集中库（例如创建/收集），不编造来源。",
-      "noObservedDeployments": "尚未在任何 Agent 目录中观察到已添加的副本。",
-      "matchStates": {
-        "content_verified": "内容一致",
-        "name_only": "仅同名（未验证）",
-        "diverged": "内容已分叉"
-      },
-      "statuses": {
-        "active": "观察中",
-        "released": "已收回"
-      },
-      "loadError": "无法加载导入存证，其他详情仍可使用。",
-      "loadErrorLabel": "存证加载失败",
-      "retry": "重试存证",
-      "sources": {
-        "heading": "多来源存证",
-        "empty": "除当前集中库副本外，没有登记其他来源关系。",
-        "importedAt": "导入时间（epoch 秒）：{{at}}"
-      },
-      "conflicts": {
-        "heading": "冲突与待办",
-        "empty": "没有待处理的冲突或治理待办。",
-        "memberPaths": "涉及路径：{{paths}}"
       }
     },
     "requirements": {
       "declaredOnly": "仅来自 Skill 声明，SkillHub 未安装或验证",
       "empty": "未声明调用方式",
       "invocation": "调用方式"
-    },
-    "lifecycle": {
-      "active": "常规",
-      "deprecated": "已弃用",
-      "description": {
-        "active": "此 Skill 处于常规生命周期。",
-        "deprecated": "此 Skill 已在技能库中标记为弃用。",
-        "trial": "此 Skill 设有复核日期，届时再决定保留或移除。"
-      },
-      "reviewDue": "复核日期：{{date}}",
-      "trial": "试用中"
     },
     "metadata": {
       "alias": "别名",
@@ -2117,137 +1933,17 @@
       "userRevised": "用户已修订"
     },
     "navigation": {
-      "back": "返回 Skill 库",
       "label": "Skill 导航",
       "next": "下一个 Skill",
       "position": "第 {{position}} 个，共 {{total}} 个",
-      "previous": "上一个 Skill",
-      "skillIdentity": "当前 Skill",
-      "sectionsLabel": "详情章节",
-      "sections": {
-        "connections": "相关 Skill",
-        "description": "内容说明",
-        "external": "外部变更",
-        "metadata": "身份与来源",
-        "overview": "概览",
-        "relations": "部署关系",
-        "requirements": "运行要求",
-        "security": "安全检查",
-        "versions": "版本历史"
-      }
+      "previous": "上一个 Skill"
     },
     "states": {
       "error": "无法加载 Skill 详情",
       "loading": "正在加载 Skill 详情",
-      "loadingMetadata": "正在加载描述与元数据",
-      "metadataError": "无法加载描述与元数据",
       "noCurrentVersionForSecurity": "当前没有可检查的版本，安全检查尚未运行。",
       "notFound": "本地 Skill 库中不存在此 Skill",
       "unavailable": "Skill 详情数据尚未接入"
-    },
-    "statusRail": {
-      "basicOther": "基础检查：{{state}}",
-      "basicPassed": "基础检查已通过",
-      "deploymentLabel": "部署关系",
-      "deploymentsUnavailable": "部署关系数量暂不可用",
-      "deployments_one": "{{count}} 条",
-      "deployments_other": "{{count}} 条",
-      "relationLabel": "关系构成",
-      "relationsIndependent_one": "{{count}} 个独立副本",
-      "relationsIndependent_other": "{{count}} 个独立副本",
-      "relationsManaged_one": "{{count}} 条托管链接",
-      "relationsManaged_other": "{{count}} 条托管链接",
-      "relationsUnavailable": "关系构成未知",
-      "label": "Skill 状态",
-      "versionLabel": "当前版本"
-    },
-    "trial": {
-      "abandon": "放弃试用",
-      "abandonError": "未能进入后续移除流程。",
-      "convert": "正式纳入管理",
-      "converted": "已移除试用日期，此 Skill 仍由 SkillHub 管理。",
-      "extend": "延长试用",
-      "reviewDate": "复核日期",
-      "saveDate": "保存复核日期",
-      "saveError": "未能保存试用日期。",
-      "saved": "复核日期已保存为 {{date}}。",
-      "set": "设置试用复核"
-    },
-    "sourceUpdate": {
-      "ariaLabel": "来源更新",
-      "check": "检查来源更新",
-      "checking": "正在检查…",
-      "recheck": "重新检查",
-      "preparing": "正在获取更新预览…",
-      "upToDate": "已是最新：本地与上游版本一致。",
-      "unavailable": "来源暂不可用，无法检查更新。",
-      "authRequired": "来源需要认证，无法检查更新。",
-      "available": "发现更新：本地 {{local}} → 上游 {{upstream}}。",
-      "availableWithChanges": "发现更新（本地有修改，采用前请确认）：本地 {{local}} → 上游 {{upstream}}。",
-      "statusSeen": "上次检查发现可用更新：{{upstream}}。可点击“检查来源更新”复核。",
-      "statusIgnored": "当前更新候选已被忽略；上游发布新内容时会再次提醒。",
-      "takeUpstream": "采用上游版本",
-      "keepLocal": "保留本地版本",
-      "previewHeading": "更新预览",
-      "previewIntro": "上游 {{label}} 的更新内容；预览 {{expires}} 前有效。确认前请核对文件变化。",
-      "previewIntroUnlabeled": "上游最新内容的更新；预览 {{expires}} 前有效。确认前请核对文件变化。",
-      "candidateIdentity": "候选内容标识：{{identity}}",
-      "filesHeading": "文件变化",
-      "filesAdded": "新增",
-      "filesRemoved": "删除",
-      "filesModified": "修改",
-      "filesNone": "没有文件级差异。",
-      "confirmTakeUpstream": "确认采用上游版本",
-      "retryWithDecision": "按原决定重试",
-      "retryHint": "更新执行失败，预览仍有效；可直接重试，系统会先核验内容是否仍与预览一致。",
-      "cancelCommit": "取消本次更新",
-      "appliedUpstream": "已采用上游版本 {{version}}。",
-      "keptLocal": "已保留本地版本。",
-      "appliedCancelled": "已取消本次更新，内容未更改。",
-      "appliedGeneric": "已应用所选决策。",
-      "previewInvalidated": "更新预览已失效：版本或上游内容在确认前发生了变化。请重新获取预览。",
-      "reprepare": "重新获取预览",
-      "ignore": "忽略本次更新",
-      "ignored": "已忽略本次更新；上游发布新内容时会再次提醒。",
-      "ignoreFailed": "忽略更新候选未完成",
-      "reconcile": "存在需要重新同步的部署关系，请在批量添加页处理。",
-      "failed": "来源更新操作失败：{{error}}",
-      "failedGeneric": "操作失败（{{code}}）。请稍后重试；若持续出现请记录该错误码。",
-      "noUpstream": "此 Skill 没有可检查更新的上游来源（本地创建或仅登记了本地目录）。本地文件变化请在健康检查与外部变化中查看。",
-      "takeUpstreamBlocked": "本地已有修改：直接采用上游版本会覆盖这些修改。可选择“保留本地版本”，或先备份后处理。"
-    },
-    "sourceRelink": {
-      "ariaLabel": "来源重新关联",
-      "kindLabel": "来源类型",
-      "kind": {
-        "local": "本地目录",
-        "https": "HTTPS 地址",
-        "git": "Git 仓库"
-      },
-      "inputLabel": {
-        "local": "新的来源（本地目录）",
-        "https": "新的来源（HTTPS 地址）",
-        "git": "新的来源（Git 仓库）"
-      },
-      "inputPlaceholder": {
-        "local": "例如 C:\\Skills\\my-skill",
-        "https": "https://example.com/owner/repo",
-        "git": "git@github.com:owner/repo.git"
-      },
-      "shapeInvalid": {
-        "local": "输入内容与所选来源类型不符：本地目录需为本地路径；HTTPS 地址需以 https://开头，请改选“HTTPS 地址”类型。",
-        "https": "输入内容与所选来源类型不符：HTTPS 地址需以 https://开头，请改选“HTTPS 地址”类型。",
-        "git": "输入内容与所选来源类型不符：Git 地址通常以 git@ 或 ssh:// 开头，或以 .git 结尾。"
-      },
-      "submit": "重新关联",
-      "done": "已重新关联来源。",
-      "failed": "重新关联失败：{{error}}",
-      "failureUnknown": "重新关联未能完成（{{code}}）。"
-    },
-    "lineage": {
-      "title": "复用修改来源",
-      "sourceRemoved": "来源技能已不可用，名称无法解析。",
-      "registeredAt": "登记于 {{time}}"
     },
     "duplicates": {
       "deterministicHeading": "确定性重复候选",
@@ -2268,37 +1964,18 @@
       "confirmationNote": "分析结果仅供参考；合并、删除、归档等操作始终需要你另行确认，AI 不会自动执行。",
       "aiUnavailable": "尚未配置可用的 LLM 供应商；AI 分析按钮已停用，确定性候选照常展示。"
     },
-    "zones": {
-      "identity": "身份",
-      "status": "状态",
-      "content": "正文",
-      "relations": "关系",
-      "lifecycle": "生命周期"
-    },
-    "trajectory": {
-      "label": "来源、本地库与添加目标",
-      "source": "来源",
-      "library": "本地集中库",
-      "deployments": "添加目标"
-    },
     "tracker": {
       "metadataLabel": "保存 Skill 信息",
       "metadataSaved": "Skill 信息已保存",
       "metadataFailed": "Skill 信息未能保存",
       "translateLabel": "重新翻译描述",
       "translateFailed": "翻译未能完成",
-      "abandonTrialLabel": "放弃试用",
-      "abandonTrialFailed": "放弃试用未能完成",
       "renameVersionLabel": "命名版本",
       "renameVersionSaved": "版本命名已保存",
       "renameVersionFailed": "版本命名未能保存",
       "rollbackLabel": "回滚版本",
       "rollbackSaved": "已回滚到 {{version}}",
       "rollbackFailed": "回滚未能完成",
-      "relinkLabel": "重新关联来源",
-      "relinkFailed": "重新关联未能完成",
-      "applyUpdateLabel": "应用来源更新",
-      "applyUpdateFailed": "来源更新未能应用",
       "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
       "aiAnalysisLabel": "AI 语义分析",
       "duplicatesPhase": "分析语义重复候选"
