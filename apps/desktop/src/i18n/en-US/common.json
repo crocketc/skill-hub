@@ -1437,7 +1437,7 @@
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",
         "highRisk": "{{count}} high-risk findings",
-        "open": "View {{name}}",
+        "open": "View",
         "sourceLocal": "Local library",
         "deploymentCount_one": "Added to {{count}} agent",
         "deploymentCount_other": "Added to {{count}} agents"

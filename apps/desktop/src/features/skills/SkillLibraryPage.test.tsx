@@ -1790,7 +1790,9 @@ it("keeps the drawer's delete entry as a display-only preview without preparing 
     const card = await screen.findByTestId("skill-card-skill-pdf");
     expect(card).toBeVisible();
     expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
-    expect(screen.getByText("Internal catalog")).toBeVisible();
+    expect(within(card).getByText("Local library")).toBeVisible();
+    // FB-⑧：导入定位器进地址槽并保留悬浮完整内容。
+    expect(within(card).getByTitle("C:\imports\pdf-reader")).toBeVisible();
     expect(screen.getByText("Read and extract PDFs")).toBeVisible();
     // C1 收口：卡片事实行展示当前版本；PDF mock 有可升级版本与高风险发现
     expect(card).toHaveTextContent(/1\.4\.0/);
@@ -1801,7 +1803,9 @@ it("keeps the drawer's delete entry as a display-only preview without preparing 
     fireEvent.click(screen.getByRole("heading", { name: "PDF Reader" }));
     expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    fireEvent.click(screen.getByRole("button", { name: "View PDF Reader" }));
+    fireEvent.click(
+      within(screen.getByTestId("skill-card-skill-pdf")).getByRole("button", { name: "View" }),
+    );
     expect(await screen.findByText("Skill detail page")).toBeVisible();
     expect(router.state.location.pathname).toBe("/library/skill-pdf");
     await act(async () => {

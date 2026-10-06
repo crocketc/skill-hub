@@ -71,10 +71,16 @@
   font-size: var(--font-size-xs);
 }
 
+/* FB-⑧：地址单行省略，完整内容经 title 悬浮可达；长路径/URL 不再
+   换行撑破卡片，同一来源行在所有卡片中保持稳定高度。 */
 .sh-skill-card__source-address {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 设计规格 5.2：说明最多三行；完整文本经 title 提示可达，不靠裁切掩盖错误。 */

@@ -1267,7 +1267,10 @@ export function SkillLibraryPage({
           ? item.originalName
           : undefined,
       sourceType: "local",
-      sourceLabel: item.source ?? t("skillLibrary.page.card.sourceLocal"),
+      // FB-⑧：库内卡片来源行槽位统一——标签固定“本地集中库”，导入定位器
+      // 进地址槽（单行省略+悬浮），不再把整段路径当标签撑破布局。
+      sourceLabel: t("skillLibrary.page.card.sourceLocal"),
+      sourceAddress: item.sourceLocator ?? undefined,
       description:
         item.purpose || item.translatedDescription || item.originalDescription || undefined,
       metrics: [
@@ -1305,7 +1308,7 @@ export function SkillLibraryPage({
             }}
             variant="secondary"
           >
-            {t("skillLibrary.page.card.open", { name: item.name })}
+            {t("skillLibrary.page.card.open")}
           </Button>
         }
         secondaryAction={

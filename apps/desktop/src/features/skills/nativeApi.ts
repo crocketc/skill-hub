@@ -112,6 +112,8 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     userPurpose: item.user_purpose ?? undefined,
     requirements: requirementLabels(item.declared_requirements),
     source: item.source_locator ?? item.source_kind ?? undefined,
+    // FB-⑧：卡片地址槽只消费真实定位器，不把来源种类字符串当路径展示。
+    sourceLocator: item.source_locator ?? undefined,
     tags: item.tags,
     translatedDescription: item.translated_description ?? undefined,
     license: item.license ?? undefined,

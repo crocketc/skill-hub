@@ -81,6 +81,8 @@ export const MOCK_SKILL_PDF: SkillTableRow = {
   purpose: "Read and extract PDFs",
   requirements: ["Python 3.11"],
   source: "Internal catalog",
+  // FB-⑧：卡片地址槽消费定位器；标签固定“Local library”。
+  sourceLocator: "C:\imports\pdf-reader",
   tags: ["documents", "pdf"],
   translatedDescription: "Reads PDF files.",
   upgradeAvailable: true,

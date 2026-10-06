@@ -78,7 +78,10 @@ export function SkillCard({
       <p className="sh-skill-card__source">
         <span className="sh-skill-card__source-label">{skill.sourceLabel}</span>
         {skill.sourceAddress ? (
-          <span className="sh-skill-card__source-address">{skill.sourceAddress}</span>
+          // FB-⑧：地址单行省略，悬浮展示完整内容（长路径/URL 不再撑破卡片）。
+          <span className="sh-skill-card__source-address" title={skill.sourceAddress}>
+            {skill.sourceAddress}
+          </span>
         ) : null}
       </p>
       {skill.description ? (

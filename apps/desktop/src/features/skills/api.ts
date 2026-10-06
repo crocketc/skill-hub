@@ -98,6 +98,11 @@ export interface SkillTableRow {
   userPurpose?: string;
   requirements: string[];
   source?: string;
+  /**
+   * FB-⑧：来源定位器（路径/URL）；卡片地址槽专用。`source` 兼容旧行为
+   * （定位器缺失时回退来源种类），卡片不消费种类字符串。
+   */
+  sourceLocator?: string;
   tags: string[];
   translatedDescription?: string;
   upgradeAvailable: boolean;

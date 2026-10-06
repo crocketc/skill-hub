@@ -177,3 +177,11 @@ describe("heading level", () => {
     expect(screen.getByRole("heading", { name: "PDF Reader" }).tagName).toBe("H2");
   });
 });
+
+it("keeps the full source address reachable on hover while truncating it visually", () => {
+  render(<SkillCard skill={fullCard} />);
+
+  const address = screen.getByTitle(fullCard.sourceAddress!);
+  expect(address).toHaveClass("sh-skill-card__source-address");
+  expect(address).toHaveTextContent(fullCard.sourceAddress!);
+});

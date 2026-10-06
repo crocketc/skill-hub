@@ -1437,7 +1437,7 @@
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",
         "highRisk": "{{count}} 项高风险发现",
-        "open": "查看 {{name}}",
+        "open": "查看",
         "sourceLocal": "本地集中库",
         "deploymentCount_one": "已添加到 {{count}} 个 Agent",
         "deploymentCount_other": "已添加到 {{count}} 个 Agent"
