@@ -1,34 +1,37 @@
 import { expect, test } from "./fixtures";
 
-const reviewUrl = "/__preview/skill-detail/skill-pdf?detailPrototype=review";
+// 原型转正后不再有 detailPrototype/drawerPrototype 旗标参数（条件路径已删除）。
+const reviewUrl = "/__preview/skill-detail/skill-pdf";
 
 test.use({ locale: "zh-CN" });
 
-test("the confirmed drawer and full-detail prototype return to the same selected Skill", async ({ page }) => {
-  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review&text=pdf");
+test("the drawer and full detail return to the same selected Skill", async ({ page }) => {
+  await page.goto("/__preview/skill-library?skill=skill-pdf&text=pdf");
 
   const drawer = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
   await drawer.getByRole("link", { name: /查看完整详情/ }).click();
 
   await expect(page.getByTestId("skill-detail-review")).toBeVisible();
-  await expect(page).toHaveURL(/detailPrototype=review/);
-  await expect(page).toHaveURL(/drawerPrototype=review/);
+  // 往返上下文只靠库页 search 参数承载；原型形态已无旗标可断言。
+  await expect(page).toHaveURL(/skill-detail\/skill-pdf/);
   await expect(page).toHaveURL(/text=pdf/);
   await page.getByRole("link", { name: "返回技能库" }).click();
 
   await expect(page).toHaveURL(/__preview\/skill-library/);
-  await expect(page).toHaveURL(/drawerPrototype=review/);
   await expect(page).toHaveURL(/skill=skill-pdf/);
+  await expect(page).toHaveURL(/text=pdf/);
   await expect(page.getByTestId("drawer-panel")).toBeVisible();
   await expect(page.getByTestId("skill-quick-drawer")).toHaveAttribute("data-drawer-prototype", "review");
 });
 
-test("a DEV detail route without prototype parameters keeps the original detail experience", async ({ page }) => {
+test("a DEV detail route without prototype parameters renders the promoted review experience", async ({ page }) => {
+  // 原型转正裁决（界面呈现与操作入口 §9）：评审布局即生产默认形态，
+  // 不存在“无旗标回落旧布局”的分支可断言。
   await page.goto("/__preview/skill-detail/skill-pdf");
 
-  await expect(page.getByTestId("skill-detail-review")).toHaveCount(0);
-  await expect(page.getByText("原型示例 · 操作不会更改真实文件、网络来源或技能库数据。", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("skill-detail-review")).toBeVisible();
+  await expect(page.getByText("原型示例 · 操作不会更改真实文件、网络来源或技能库数据。", { exact: true })).toBeVisible();
   await expect(page.locator(".sh-skill-detail__layout")).toBeVisible();
 });
 
@@ -295,8 +298,9 @@ test("review profile edits cancel or save and translation actions remain explici
 test("review security preserves unresolved risk while exposing basic and AI run states", async ({ page }) => {
   await page.goto(reviewUrl);
   await page.getByRole("link", { name: "安全检查" }).click();
-  await expect(page.getByRole("button", { name: "运行 AI 检查" })).toBeDisabled();
-  await expect(page.getByText("未配置 LLM 提供商，AI 检查不可用", { exact: false })).toBeVisible();
+  // 转正后预览门面已配置 LLM 提供商，AI 检查在此路由可用；
+  // "未配置 LLM 提供商"的禁用态由 SecurityResults.test.tsx 单测把守。
+  await expect(page.getByRole("button", { name: "运行 AI 检查" })).toBeEnabled();
   await page.getByRole("button", { name: "运行基础检查" }).click();
   await expect(page.getByTestId("review-safety-summary")).toContainText("仍有高风险待处理");
 
