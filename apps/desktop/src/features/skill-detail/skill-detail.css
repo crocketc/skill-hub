@@ -418,6 +418,24 @@
   width: 100%;
 }
 
+/* 六裁决安全呈现（task C）：预警状态条——徽标 + 状态文案 + 安全处理入口。 */
+.sh-skill-detail-review__security-alert {
+  align-items: center;
+  background: var(--ui-surface-muted, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--ui-border-subtle, rgba(127, 127, 127, 0.24));
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-size-xs);
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.sh-skill-detail-review__security-alert > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sh-skill-detail-review__overview {
   display: block;
 }
