@@ -113,6 +113,13 @@ fn collect_files(root: &Path, files: &mut Vec<PathBuf>) -> AppResult<()> {
         if metadata.file_type().is_symlink() {
             continue;
         }
+        // §24（2026-10-06）：遍历口径与技能探测器（skill_detector
+        // walk_directory）对齐——点前缀目录（`.git`、`.system` 等）是平台
+        // 内置/版本控制的隐藏层，其中文件（如 `.git/hooks/*.sample`）不进
+        // 入扫描与分级；扫描根自身不在此过滤（与探测器根入口语义一致）。
+        if metadata.is_dir() && entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
         if metadata.is_dir() {
             collect_files(&path, files)?;
         } else if metadata.is_file() {
