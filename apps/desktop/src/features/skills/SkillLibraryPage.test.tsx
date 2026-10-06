@@ -784,7 +784,9 @@ it("keeps the drawer's delete entry as a display-only preview without preparing 
 
     await waitFor(() => expect(router.state.location.search).toBe(""));
     await screen.findByRole("table");
-    expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).not.toBeChecked();
+    // 表格节点跨渲染复用，findByRole 可能命中清理前的旧节点；行选择框须等待重渲染提交后再断言
+    const pdfRowCheckbox = await screen.findByRole("checkbox", { name: "Select PDF Reader" });
+    expect(pdfRowCheckbox).not.toBeChecked();
     expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
   });
 
