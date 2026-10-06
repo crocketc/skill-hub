@@ -49,6 +49,7 @@
 | eslint-visitor-keys | 3.4.3 | prepare | 上游构建准备脚本；仅作为锁定 ESLint 依赖，安装阶段禁用脚本。 |
 | globals | 14.0.0 | prepare | 上游构建准备脚本；仅作为锁定 ESLint 依赖，安装阶段禁用脚本。 |
 | i18next | 26.4.0 | prepare | 上游构建准备脚本；仅作为锁定本地化依赖，安装阶段禁用脚本。 |
+| katex | 0.18.11 | prepare | 上游 package.json 的 prepare 调用 husky，为维护者 checkout 配置 Git hooks；本项目经 mermaid 间接依赖并因 GHSA-238p-pmpm-9mq7 以 overrides 升级，安装统一使用 --ignore-scripts，不执行该维护脚本。 |
 | inline-style-parser | 0.2.7 | prepare | 上游构建准备脚本；仅作为锁定 Markdown 依赖，安装阶段禁用脚本。 |
 | jsdom | 26.1.0 | prepare | 上游构建准备脚本；仅作为锁定测试依赖，安装阶段禁用脚本。 |
 | keyv | 4.5.4 | prepare | 上游构建准备脚本；仅作为锁定测试依赖，安装阶段禁用脚本。 |
