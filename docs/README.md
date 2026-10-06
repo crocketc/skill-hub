@@ -1,10 +1,29 @@
-# SkillHub 项目文档索引
+# SkillHub 文档地图
 
-本页是 `docs/` 的路由入口，只维护指向，不在索引中复制状态或裁决。接手开发按根 [AGENTS.md](../AGENTS.md) 的文档路由执行；当前开发入口的阅读顺序为「开发状态 → 自动化测试说明 → 功能完成度与验收状态矩阵」，需要真机验证时再读「人工验收清单」。
+本页是 `docs/` 的唯一入口地图：先按五层口径定位层，再进对应目录。接手开发按根 [AGENTS.md](../AGENTS.md) 执行；阅读顺序：产品规范索引（按任务）→ 开发状态 → 自动化测试说明 → 功能完成度与验收状态矩阵，需要真机验证时再读人工验收清单。
 
-## 当前开发入口（development/）
+## 五层口径
 
-四份当前文档文件名固定为 2026-09-30，以正文标注的最新快照日期为准；历史原文按日期归档，不作为接手入口。
+| 层 | 位置 | 内容 |
+| --- | --- | --- |
+| 1 业务层 | [product/业务决策模型.md](product/业务决策模型.md) | 五个业务模型（技能、关系治理、Skill 操作、安全分级与预警、冲突治理）的场景、后端闭环操作、前端操作、结果与边界；开发遇待决策事项先查这里 |
+| 2 产品层 | [product/](product/README.md) 其余文件 | 产品规范索引、产品定位与模型边界、界面呈现与操作入口；产品行为与前后端交互的实施依据 |
+| 3 开发层 | [development/](development/) | 四份当前快照 + archive/ 开发归档；当前进度、测试与真机验收的唯一汇总 |
+| 4 项目整体规则层 | 仓库根 [AGENTS.md](../AGENTS.md)（不在 docs/ 内） | 通用开发规则、协作与安全约束、文档路由 |
+| 5 归档层 | [archive/](archive/) 与 development/archive/ | 已实现过时、历史讨论、原始验收证据；只用于追溯，不作为接手入口，不在其中维护"当前状态" |
+
+## 业务层与产品层（product/）
+
+| 文档 | 用途 |
+| --- | --- |
+| [业务决策模型](product/业务决策模型.md) | 五个业务模型的权威裁决内容，自包含；先查模型总览表再进对应决策卡 |
+| [产品规范索引](product/README.md) | 按任务路由到对应规范的产品文档入口 |
+| [产品定位与模型边界](product/产品定位与模型边界.md) | 产品定位、实体身份、主体/关系职责与命名边界 |
+| [界面呈现与操作入口](product/界面呈现与操作入口.md) | 前端展示、统一术语、图标、快捷抽屉/详情/列表操作分工与已确认样式 |
+
+## 开发层（development/ 与根目录现行文件）
+
+四份当前快照文件名固定为 2026-10-05，以正文标注的最新快照日期为准；历史原文归档，不作为接手入口。
 
 | 文档 | 用途 |
 | --- | --- |
@@ -13,40 +32,38 @@
 | [人工验收清单](development/人工验收清单-2026-10-05.md) | 真实桌面逐项验收的唯一执行入口，按完整操作流程编排 |
 | [功能完成度与验收状态矩阵](development/功能完成度与验收状态矩阵-2026-10-05.md) | 功能完成度、自动化／Windows／macOS 状态与发布阻塞项汇总 |
 
-历史快照与验收证据归档：[development/archive/](development/archive/)（各日期主题目录；实施准备前完整快照见 [2026-10-04-实施准备前快照](development/archive/2026-10-04-实施准备前快照/README.md)）。
+docs 根目录直接存放的现行流程与参考文档（其中前四项路径被发布/供应链脚本按字面引用，不得随意移动）：
 
-## 实施计划与交接（superpowers/plans/）
-
-- [技能功能缺口补全实施计划（2026-10-04）](superpowers/plans/2026-10-04-技能功能缺口补全实施计划.md)：下一轮实施入口，K0—K10 工作包、执行组织与完成标准。
-- [技能功能补全团队交接指令（2026-10-04）](superpowers/plans/2026-10-04-技能功能补全团队交接指令.md)：可直接交给下一轮主代理的执行交接。
-- [后续实施交接指令（2026-10-04）](superpowers/plans/2026-10-04-技能功能补全后续实施交接指令.md)：本轮接手进度与 A/B 首批 RED 分工。
-- [K0 契约与故障矩阵（2026-10-04）](superpowers/plans/2026-10-04-K0契约与故障矩阵.md)：真实生产缺口、预览／执行／恢复契约、实施裁决和故障覆盖依据。
-- [关系治理增量实施计划（2026-10-03）](superpowers/plans/2026-10-03-relationship-governance-incremental-implementation-plan.md)：仍有效的关系治理增量计划。
-- 被后续实施取代的旧计划归档于 [plans/archive/](superpowers/plans/archive/)，只用于追溯。
-
-## 链路审查与规范讨论（superpowers/specs/）
-
-- 2026-10-04 静态链路审查（生产缺口依据，均已纳入实施计划）：[抽屉详情技能链路](superpowers/specs/2026-10-04-抽屉详情技能链路审查.md)、[内容版本安全链路](superpowers/specs/2026-10-04-内容版本安全链路审查.md)、[画像来源导航链路](superpowers/specs/2026-10-04-画像来源导航链路审查.md)、[治理派发导出删除链路](superpowers/specs/2026-10-04-治理派发导出删除链路审查.md)。
-- 更早的产品裁决与设计讨论按文件名日期查阅同目录。
-
-## 产品规范（product/）
-
-产品行为与前后端交互的实施依据：[产品规范索引](product/README.md)、[产品定位与模型边界](product/产品定位与模型边界.md)、[界面呈现与操作入口](product/界面呈现与操作入口.md)。具体模块规则从索引进入，不在本索引复制。
-
-## 专题目录
-
-| 目录 | 内容 |
+| 文件 | 用途 |
 | --- | --- |
-| [architecture/](architecture/) | 架构资料；现行架构裁决以产品规范与实施计划为准，旧方案在 [architecture/archive/](architecture/archive/) |
-| [install/](install/) | Windows／macOS 未签名构建安装说明 |
-| [llm/](llm/) | LLM 供应商兼容矩阵、架构决策与用户配置隐私说明；历史归档在 llm/archive/ |
-| [research/](research/) | 调研资料；归档在 research/archive/ |
-| [testing/](testing/) | 原子测试目录（v0.2.0）说明 |
+| [发布流程](release-process.md) | Windows/macOS 早期发布流程；发布工作流以其为发布说明文件 |
+| [发布检查清单](release-checklist.md) | 每个候选发布提交的检查清单；发布就绪脚本按路径校验 |
+| [依赖与供应链策略](dependency-policy.md) | 依赖安装脚本审阅记录；生命周期检查脚本按路径读取 |
+| [本地CI使用](本地CI使用.md) | 本地 CI 的环境与命令说明 |
+| [Agent平台兼容性调研](Agent平台兼容性调研.md) | Agent 平台兼容性调研，后续随平台支持更新 |
+| [Skill使用痛点与SkillHub解决方案](Skill使用痛点与SkillHub解决方案.md) | 产品痛点与方案定位，产品营销参考 |
 
-## 根级资料
+[install/](install/)：Windows/macOS 未签名构建安装说明；发布就绪脚本按路径校验，随安装方式演进更新。
 
-[需求文档](需求文档.md)、[产品与交互设计](产品与交互设计.md)、[技术架构设计](技术架构设计.md)、[用户故事](用户故事.md)、[Agent平台兼容性调研](Agent平台兼容性调研.md)、[Skill使用痛点与SkillHub解决方案](Skill使用痛点与SkillHub解决方案.md)、[本地CI使用](本地CI使用.md)、[发布流程](release-process.md)、[发布检查清单](release-checklist.md)、[依赖策略](dependency-policy.md)。
+## 归档层（archive/ 与 development/archive/）
 
-## 归档规则
+[archive/](archive/) 按主题组织，只用于追溯：
 
-归档目录只用于追溯历史待办、验收证据与被取代计划，不作为当前接手入口，也不在其中继续维护"当前状态"。形成新当前快照时的移动与命名规则见根 [AGENTS.md](../AGENTS.md)。
+| 子目录 | 内容 |
+| --- | --- |
+| [archive/decisions/specs/](archive/decisions/specs/) | 历史裁决与设计讨论文档（原 docs/superpowers/specs） |
+| [archive/decisions/plans/](archive/decisions/plans/) | 配套实施计划与交接指令（原 docs/superpowers/plans，含被取代的 plans/archive/） |
+| [archive/requirements/](archive/requirements/) | 立项期需求文档、用户故事、产品与交互设计、技术架构设计与场景梳理材料 |
+| [archive/llm/](archive/llm/) | LLM 供应商兼容矩阵、架构决策、用户配置与隐私说明及历史归档 |
+| [archive/research/](archive/research/) | 调研资料（cc-switch 调研等） |
+| [archive/architecture/](archive/architecture/) | 旧架构方案（已被产品规范与实施计划取代） |
+| [archive/testing/](archive/testing/) | 原子测试目录（v0.2.0），历史编号与追踪关系 |
+
+[development/archive/](development/archive/) 按日期主题存放旧当前快照、验收证据与交接指令，内部结构不再调整。`.superpowers/` 是本地实施进度台账（不入库），由开发快照按相对路径引用，不属于本文档体系。
+
+## 新文档存放规则
+
+- **新的产品裁决**：直接写入 product/ 对应规范——模型级裁决进[业务决策模型](product/业务决策模型.md)，界面/入口/文案类进[界面呈现与操作入口](product/界面呈现与操作入口.md)；不另建新文件。
+- **讨论过程文档**：出生即放 `docs/archive/decisions/`（讨论稿进 specs/，配套实施计划进 plans/，命名 `<日期>-<主题>`）；讨论项不等于已确认规则，实施依据以 product/ 为准。
+- **开发快照轮换**：沿用 development/ 现有规则——形成新的中文主题 + `YYYY-MM-DD` 快照、更新所有引用后，把旧当前文档移入 `development/archive/<日期>-<主题>/`。
+- 归档目录只用于追溯，不在其中继续维护"当前状态"；不删除历史证据。
