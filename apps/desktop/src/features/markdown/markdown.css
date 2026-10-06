@@ -608,10 +608,13 @@
      断点（40rem）接管。 */
 }
 
-/* QA-011：分栏是否堆叠取决于工作区实际可用宽度而非视口——详情嵌入下
-   视口 560px 时工作区仅约 283px，而视口 1024px 时也有约 504px。
-   30rem（480px）以下两栏各不足 240px，收敛为堆叠单列。 */
-@container markdown-workspace (max-width: 29.99rem) {
+/* 堆叠临界保持 AR-018 既定的视口 40rem 契约（全页形态 640px 收堆叠、
+   648px 保持分栏；markdown-workspace-preview 固化该边界）。改用工作区
+   容器度量会把临界搬到 480px，破坏该契约——已验证不可行：全页 640px
+   的工作区约 620px，而详情嵌入 1024px 的工作区约 504px 且契约要求
+   保持分栏，两者对同一容器阈值无解。QA-011 的真实缺陷只是选择器覆盖，
+   见下。 */
+@media (max-width: 40rem) {
   .sh-markdown-editor__split {
     grid-template-columns: minmax(0, 1fr);
   }
