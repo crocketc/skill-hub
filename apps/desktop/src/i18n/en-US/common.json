@@ -418,6 +418,7 @@
         "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one, then commit.",
         "level": {
           "danger": "Danger",
+          "pass": "Pass",
           "warning": "Warning"
         },
         "findings": {

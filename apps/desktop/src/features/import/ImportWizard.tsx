@@ -1233,6 +1233,7 @@ type: "failed",
             onSelectAll={() => dispatch({ type: "candidates_selected", ids: state.candidates.map(({ id }) => id) })}
             onToggle={(id) => dispatch({ type: "candidates_selected", ids: state.selectedIds.includes(id) ? state.selectedIds.filter((selectedId) => selectedId !== id) : [...state.selectedIds, id] })}
             selectedIds={state.selectedIds}
+            securityLevels={state.plan?.security}
           />
         </>
       ) : null}

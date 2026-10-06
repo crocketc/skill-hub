@@ -418,6 +418,7 @@
         "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再提交。",
         "level": {
           "danger": "危险级",
+          "pass": "放行级",
           "warning": "警告级"
         },
         "findings": {
