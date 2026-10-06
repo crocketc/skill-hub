@@ -75,7 +75,7 @@
   margin: 0;
 }
 
-/* 筛选工具条：快捷分类在左，搜索与视图切换靠右；展开筛选浮层不占行高。 */
+/* 筛选工具条：页签与搜索、视图切换同排常驻内联（§10），无浮层。 */
 .sh-governance__filters {
   align-items: start;
   display: grid;
@@ -93,27 +93,17 @@
   min-width: 0;
 }
 
+/* FB-④（§10）：页签组「待处理/已完成/全部」，固定顺序、计数内联。 */
 .sh-governance__buckets {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
   min-width: 0;
 }
 
-.sh-governance__chip-group {
-  align-items: center;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-1);
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.sh-governance__chip-label {
-  color: var(--ui-ink-muted);
-  flex: 0 0 auto;
-  font-size: var(--font-size-xs);
-  margin-right: var(--space-1);
+.sh-governance__bucket-tab {
+  white-space: nowrap;
 }
 
 .sh-governance__search {
@@ -140,80 +130,6 @@
   white-space: nowrap;
 }
 
-.sh-governance__secondary-filters {
-  min-width: 0;
-  position: relative;
-  z-index: 5;
-}
-
-.sh-governance__secondary-filter-trigger {
-  align-items: center;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-1) var(--space-2);
-  max-width: 100%;
-}
-
-.sh-governance__active-filter-count {
-  color: var(--ui-accent-strong);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.sh-governance__active-filter-summary {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-  max-width: 28rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sh-governance__secondary-filter-popover {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--space-2);
-  box-shadow: var(--shadow-lg);
-  left: 0;
-  max-height: min(60vh, 28rem);
-  max-width: min(38rem, calc(100vw - 2rem));
-  min-width: min(24rem, calc(100vw - 2rem));
-  overflow: auto;
-  padding: var(--space-3);
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  z-index: 30;
-}
-
-.sh-governance__secondary-filter-heading {
-  font-size: var(--font-size-sm);
-  margin: 0 0 var(--space-3);
-}
-
-.sh-governance__secondary-filter-controls {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.sh-governance__secondary-filter-section {
-  display: grid;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.sh-governance__scope-explainer {
-  color: var(--ui-ink-muted);
-  display: grid;
-  font-size: var(--font-size-xs);
-  gap: var(--space-1);
-  line-height: 1.45;
-  margin: 0;
-}
-
-.sh-governance__clear-secondary {
-  justify-self: start;
-}
-
 .sh-governance__filter-tools {
   display: flex;
   flex: 0 0 auto;
@@ -221,13 +137,6 @@
   justify-content: flex-end;
   gap: var(--space-1);
   min-width: 0;
-}
-
-.sh-governance__filter-note {
-  color: var(--ui-ink-muted);
-  grid-column: 1 / -1;
-  font-size: var(--font-size-xs);
-  margin: 0;
 }
 
 /* 表格保留单一清单滚动区；看板自身横向滚动，每列内部独立纵向滚动。 */
@@ -266,6 +175,11 @@
   min-height: 0;
   min-width: 0;
   padding: 0 0 var(--space-2);
+}
+
+/* 单页签视图（待处理或已完成）占满整行，不再留空列。 */
+.sh-governance__board[data-single-column="true"] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .sh-governance__board-column {
@@ -385,12 +299,72 @@
   outline-offset: -2px;
 }
 
+/* FB-④（§10）：列内细分桶——一类关系一桶；桶头勾选整桶可执行行，
+   桶间用上边框分隔，受限桶附「原因+如何解除」说明行。 */
+.sh-governance__bucket {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.sh-governance__bucket + .sh-governance__bucket {
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+.sh-governance__bucket-head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-governance__bucket-title {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+  gap: var(--space-1);
+  justify-content: space-between;
+  margin: 0;
+  min-width: 0;
+}
+
+.sh-governance__bucket-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-governance__bucket-count {
+  align-items: center;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  color: var(--ui-ink-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: var(--font-size-xs);
+  height: 1.5rem;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 var(--space-1);
+}
+
+.sh-governance__bucket-note {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  margin: 0;
+}
+
 .sh-governance__board-cards {
   display: grid;
   gap: var(--space-2);
   list-style: none;
   margin: 0;
-  padding: var(--space-2);
+  padding: 0;
 }
 
 .sh-governance__board-empty {
@@ -765,24 +739,12 @@
   }
 
   .sh-governance__filters-primary,
-  .sh-governance__filter-tools,
-  .sh-governance__filter-note {
+  .sh-governance__filter-tools {
     grid-column: 1;
   }
 
   .sh-governance__filter-tools {
     margin-inline-start: auto;
-  }
-
-  .sh-governance__secondary-filters {
-    position: static;
-  }
-
-  .sh-governance__secondary-filter-popover {
-    left: 0;
-    max-width: none;
-    min-width: 0;
-    right: 0;
   }
 }
 

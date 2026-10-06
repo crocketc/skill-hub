@@ -74,9 +74,7 @@ it("ships readable copy for every governance workbench vocabulary the UI maps to
   // source.${x} / fingerprint.${x}）；任一缺失都会让 i18next 把键名直接
   // 渲染给用户（2026-09-25 验收缺陷）。
   const requiredKeys = [
-    "relationships.governance.scope.all",
     "relationships.governance.scope.source_copy",
-    "relationships.governance.scope.deployment",
     "relationships.governance.statusFilter.normal",
     "relationships.governance.statusFilter.retained",
     "relationships.governance.statusFilter.needs_validation",

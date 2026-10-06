@@ -19,8 +19,11 @@ import type {
 } from "../../../api/bindings";
 import type { RelationshipGovernanceParams } from "../api";
 
-/** Top-level governance filter. Action readiness remains a separate fact. */
-export const GOVERNANCE_CLASSIFICATIONS = ["all", "pending", "completed"] as const;
+/**
+ * Top-level governance filter. Action readiness remains a separate fact.
+ * FB-④（2026-10-06 §10）：进页默认「待处理」，页签顺序待处理、已完成、全部。
+ */
+export const GOVERNANCE_CLASSIFICATIONS = ["pending", "completed", "all"] as const;
 export type GovernanceClassificationFilter = (typeof GOVERNANCE_CLASSIFICATIONS)[number];
 
 export const GOVERNANCE_MANAGEMENT_FILTERS = ["not_taken_over", "taken_over"] as const;
@@ -199,16 +202,22 @@ const SHARED_IMPACT_BLOCKER: RelationGovernanceBlocker = "shared_impact_confirma
 /**
  * 行过滤参数只透传已提交的事实；未知来源/桶/scope/状态回退为“不过滤”，
  * 不让恶意或过期的 URL 制造查询错误。
+ * FB-④（§10）：?governance=/?scope=/?management= 保留解析兼容——页签缺省
+ * 时旧管理状态深链映射到对应页签（taken_over→已完成、not_taken_over→待
+ * 处理），缺省进页直接看待处理。
  */
 export function parseGovernanceSearchParams(searchParams: URLSearchParams): GovernanceDeepLink {
   const classificationParam = searchParams.get("governance");
   const managementParam = searchParams.get("management");
   const fromParam = searchParams.get("from");
   const scopeParam = searchParams.get("scope");
+  const management = GOVERNANCE_MANAGEMENT_FILTERS.find((candidate) => candidate === managementParam) ?? null;
+  const classification = GOVERNANCE_CLASSIFICATIONS.find((candidate) => candidate === classificationParam)
+    ?? (management === "taken_over" ? "completed" : "pending");
   return {
     from: GOVERNANCE_SOURCES.find((candidate) => candidate === fromParam) ?? null,
-    classification: GOVERNANCE_CLASSIFICATIONS.find((candidate) => candidate === classificationParam) ?? "all",
-    management: GOVERNANCE_MANAGEMENT_FILTERS.find((candidate) => candidate === managementParam) ?? null,
+    classification,
+    management,
     text: searchParams.get("text") ?? "",
     skillId: searchParams.get("skillId"),
     agentClientId: searchParams.get("agent"),

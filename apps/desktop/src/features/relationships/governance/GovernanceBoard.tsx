@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RelationGovernanceRow } from "../../../api/bindings";
 import { relationIdOf, rowIsNaturallyExecutable } from "./api";
-import { projectGovernanceBoard, type GovernanceBoardColumn } from "./governanceProjection";
+import type { GovernanceClassificationFilter } from "./api";
+import { projectGovernanceBuckets, type GovernanceBucket } from "./governanceBuckets";
 import {
   GovernanceRelationActions,
   GovernanceRelationBlockers,
@@ -16,8 +17,9 @@ import {
   type GovernanceRelationTableProps,
 } from "./GovernanceRelationTable";
 
+/** FB-④（§10）：全部视图拆双桶并排，列序固定——待处理在左、已完成在右。 */
 const BOARD_COLUMNS: readonly {
-  key: GovernanceBoardColumn;
+  key: "pending" | "completed";
   labelKey: string;
   testId: string;
 }[] = [
@@ -34,21 +36,28 @@ const BOARD_COLUMNS: readonly {
 ];
 
 export interface GovernanceBoardProps extends Omit<GovernanceRelationTableProps, "listRef" | "onListScroll"> {
+  /** 当前治理页签：决定看板呈现单桶还是固定双桶。 */
+  classification: GovernanceClassificationFilter;
+  /** 整桶勾选：只携带桶内可批量执行的关系行。 */
+  onToggleBucket: (rows: readonly RelationGovernanceRow[], checked: boolean) => void;
   scrollResetKey?: string;
 }
 
 /**
  * One-card-per-edge board. It consumes the same presenters and action
- * availability as the dense table view; only the layout changes.
+ * availability as the dense table view; only the layout changes. Columns
+ * keep a fixed order and subdivide into category buckets (§10).
  */
 export function GovernanceBoard({
   busyRelationIds,
+  classification,
   onCentralize,
   onEndRelationship,
   onRevalidate,
   onRetain,
   onRevokeRetention,
   onToggleAll,
+  onToggleBucket,
   onToggleRow,
   onUndeploy,
   rows,
@@ -56,10 +65,13 @@ export function GovernanceBoard({
   selectedIds,
 }: GovernanceBoardProps) {
   const { t } = useTranslation();
-  const projection = projectGovernanceBoard(rows);
+  const projection = projectGovernanceBuckets(rows);
   const selectableRows = rows.filter(rowIsNaturallyExecutable);
   const allSelectableChecked = selectableRows.length > 0
     && selectableRows.every((row) => selectedIds.has(relationIdOf(row.relation)));
+  const columns = classification === "all"
+    ? BOARD_COLUMNS
+    : BOARD_COLUMNS.filter((column) => column.key === classification);
 
   return (
     <div
@@ -78,29 +90,35 @@ export function GovernanceBoard({
         />
         <span>{t("relationships.governance.table.selectAll")}</span>
       </div>
-      <div className="sh-governance__board" data-testid="governance-board">
-        {BOARD_COLUMNS
-          .map((column, order) => ({ ...column, order, count: projection[column.key].length }))
-          .sort((left, right) => right.count - left.count || left.order - right.order)
-          .map(({ key, labelKey, testId }) => (
-            <GovernanceBoardColumnView
-              busyRelationIds={busyRelationIds}
-              column={key}
-              key={key}
-              labelKey={labelKey}
-              onCentralize={onCentralize}
-              onEndRelationship={onEndRelationship}
-              onRevalidate={onRevalidate}
-              onRetain={onRetain}
-              onRevokeRetention={onRevokeRetention}
-              onToggleRow={onToggleRow}
-              onUndeploy={onUndeploy}
-              rows={projection[key]}
-              scrollResetKey={scrollResetKey}
-              selectedIds={selectedIds}
-              testId={testId}
-            />
-          ))}
+      <div
+        className="sh-governance__board"
+        data-single-column={columns.length === 1 ? "true" : undefined}
+        data-testid="governance-board"
+      >
+        {columns.map(({ key, labelKey, testId }) => (
+          <GovernanceBoardColumnView
+            busyRelationIds={busyRelationIds}
+            buckets={projection[key]}
+            column={key}
+            key={key}
+            labelKey={labelKey}
+            onCentralize={onCentralize}
+            onEndRelationship={onEndRelationship}
+            onRevalidate={onRevalidate}
+            onRetain={onRetain}
+            onRevokeRetention={onRevokeRetention}
+            onToggleBucket={onToggleBucket}
+            onToggleRow={onToggleRow}
+            onUndeploy={onUndeploy}
+            rows={projection[key].reduce<RelationGovernanceRow[]>(
+              (all, bucket) => [...all, ...bucket.rows],
+              [],
+            )}
+            scrollResetKey={scrollResetKey}
+            selectedIds={selectedIds}
+            testId={testId}
+          />
+        ))}
       </div>
     </div>
   );
@@ -108,6 +126,7 @@ export function GovernanceBoard({
 
 function GovernanceBoardColumnView({
   busyRelationIds,
+  buckets,
   column,
   labelKey,
   onCentralize,
@@ -115,6 +134,7 @@ function GovernanceBoardColumnView({
   onRevalidate,
   onRetain,
   onRevokeRetention,
+  onToggleBucket,
   onToggleRow,
   onUndeploy,
   rows,
@@ -123,13 +143,15 @@ function GovernanceBoardColumnView({
   testId,
 }: {
   busyRelationIds: ReadonlySet<string>;
-  column: GovernanceBoardColumn;
+  buckets: readonly GovernanceBucket[];
+  column: "pending" | "completed";
   labelKey: string;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
   onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onRetain: GovernanceRelationTableProps["onRetain"];
   onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
+  onToggleBucket: GovernanceBoardProps["onToggleBucket"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
   rows: readonly RelationGovernanceRow[];
@@ -215,25 +237,107 @@ function GovernanceBoardColumnView({
             {t("relationships.governance.board.emptyColumn")}
           </p>
         ) : (
-          <ul className="sh-governance__board-cards">
-            {rows.map((row) => (
-              <GovernanceBoardCard
-                busy={busyRelationIds.has(relationIdOf(row.relation))}
-                key={relationIdOf(row.relation)}
-                onCentralize={onCentralize}
-                onEndRelationship={onEndRelationship}
-                onRevalidate={onRevalidate}
-                onRetain={onRetain}
-                onRevokeRetention={onRevokeRetention}
-                onToggleRow={onToggleRow}
-                onUndeploy={onUndeploy}
-                row={row}
-                selected={selectedIds.has(relationIdOf(row.relation))}
-              />
-            ))}
-          </ul>
+          buckets.map((bucket) => (
+            <GovernanceBucketSection
+              bucket={bucket}
+              busyRelationIds={busyRelationIds}
+              key={bucket.key}
+              onCentralize={onCentralize}
+              onEndRelationship={onEndRelationship}
+              onRevalidate={onRevalidate}
+              onRetain={onRetain}
+              onRevokeRetention={onRevokeRetention}
+              onToggleBucket={onToggleBucket}
+              onToggleRow={onToggleRow}
+              onUndeploy={onUndeploy}
+              selectedIds={selectedIds}
+            />
+          ))
         )}
       </div>
+    </section>
+  );
+}
+
+/** 细分桶：一类关系一桶；桶头计数与页签同口径，整桶勾选只覆盖可执行行。 */
+function GovernanceBucketSection({
+  bucket,
+  busyRelationIds,
+  onCentralize,
+  onEndRelationship,
+  onRevalidate,
+  onRetain,
+  onRevokeRetention,
+  onToggleBucket,
+  onToggleRow,
+  onUndeploy,
+  selectedIds,
+}: {
+  bucket: GovernanceBucket;
+  busyRelationIds: ReadonlySet<string>;
+  onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
+  onRevalidate: GovernanceRelationTableProps["onRevalidate"];
+  onRetain: GovernanceRelationTableProps["onRetain"];
+  onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
+  onToggleBucket: GovernanceBoardProps["onToggleBucket"];
+  onToggleRow: GovernanceRelationTableProps["onToggleRow"];
+  onUndeploy: GovernanceRelationTableProps["onUndeploy"];
+  selectedIds: ReadonlySet<string>;
+}) {
+  const { t } = useTranslation();
+  const label = String(t(`relationships.governance.buckets.${bucket.key}` as never));
+  const executableRows = bucket.rows.filter(rowIsNaturallyExecutable);
+  const allExecutableChecked = executableRows.length > 0
+    && executableRows.every((row) => selectedIds.has(relationIdOf(row.relation)));
+
+  return (
+    <section
+      aria-label={`${label} ${t("relationships.governance.board.relationshipCount", { count: bucket.rows.length })}`}
+      className="sh-governance__bucket"
+      data-testid={`governance-bucket-${bucket.key}`}
+    >
+      <header className="sh-governance__bucket-head">
+        <input
+          aria-label={t("relationships.governance.buckets.selectBucket", { label })}
+          checked={allExecutableChecked}
+          data-testid={`governance-bucket-select-${bucket.key}`}
+          disabled={executableRows.length === 0}
+          onChange={(event) => onToggleBucket(executableRows, event.target.checked)}
+          type="checkbox"
+        />
+        <h3 className="sh-governance__bucket-title">
+          <span className="sh-governance__bucket-label">{label}</span>
+          <span
+            className="sh-governance__bucket-count"
+            data-testid={`governance-bucket-${bucket.key}-count`}
+          >
+            {bucket.rows.length}
+          </span>
+        </h3>
+      </header>
+      {bucket.key === "restricted" ? (
+        <p className="sh-governance__bucket-note" data-testid="governance-bucket-restricted-note">
+          {t("relationships.governance.buckets.restrictedNote")}
+        </p>
+      ) : null}
+      <ul className="sh-governance__board-cards">
+        {bucket.rows.map((row) => (
+          <GovernanceBoardCard
+            busy={busyRelationIds.has(relationIdOf(row.relation))}
+            key={relationIdOf(row.relation)}
+            onCentralize={onCentralize}
+            onEndRelationship={onEndRelationship}
+            onRevalidate={onRevalidate}
+            onRetain={onRetain}
+            onRevokeRetention={onRevokeRetention}
+            onToggleRow={onToggleRow}
+            onUndeploy={onUndeploy}
+            row={row}
+            selected={selectedIds.has(relationIdOf(row.relation))}
+          />
+        ))}
+      </ul>
     </section>
   );
 }

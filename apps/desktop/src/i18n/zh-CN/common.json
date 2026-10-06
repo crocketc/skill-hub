@@ -2915,8 +2915,7 @@
         "emptyColumn": "暂无符合条件的关系",
         "relationshipCount": "{{count}} 条关系",
         "columnScrollRegion": "{{label}}列，{{count}} 条关系",
-        "scrollToTop": "返回“{{label}}”列顶部",
-        "countScope": "列数按当前筛选结果统计；快捷筛选数字按全部关系统计。"
+        "scrollToTop": "返回“{{label}}”列顶部"
       },
       "loading": "正在加载关系治理清单…",
       "loadError": "关系治理清单暂不可用。",
@@ -2938,22 +2937,25 @@
       },
       "filters": {
         "label": "快捷筛选",
-        "secondaryLabel": "筛选",
-        "activeCount": "已选 {{count}} 项",
-        "clearSecondary": "清除筛选",
-        "all": "全部",
-        "eligible_to_centralize": "可纳入集中库管理",
-        "needs_validation": "待校验",
-        "blocked": "受阻",
-        "withCount": "{{label}}（{{count}}）",
-        "scopeLabel": "类别",
-        "statusLabel": "状态",
-        "managementLabel": "集中库管理"
+        "withCount": "{{label}}（{{count}}）"
       },
       "classification": {
         "all": "全部",
         "pending": "待处理",
         "completed": "已完成"
+      },
+      "buckets": {
+        "undecided": "尚未作决定",
+        "content_changed": "两边内容不同",
+        "source_missing": "原文件缺失",
+        "link_issue": "使用链接异常",
+        "needs_review": "待重新核验",
+        "operation_failed": "上次操作失败",
+        "restricted": "权限受限",
+        "restrictedNote": "受限关系需先解除限制：按各条原因处理后重新核验，关系会回到对应桶等待决定。",
+        "managed_link": "正常受管链接",
+        "retained": "已保留独立副本",
+        "selectBucket": "勾选{{label}}桶中的全部可执行关系"
       },
       "management": {
         "not_taken_over": "待集中管理",
@@ -3209,11 +3211,7 @@
       },
       "manageRelations": "管理关系",
       "scope": {
-        "all": "全部类别",
-        "source_copy": "导入来源",
-        "source_copyDescription": "复制进集中库后仍留在原位置的文件。",
-        "deployment": "派发关系",
-        "deploymentDescription": "集中库 Skill 与 Agent/项目目录之间的使用关系。"
+        "source_copy": "导入来源"
       },
       "statusFilter": {
         "normal": "正常",

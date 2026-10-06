@@ -2915,8 +2915,7 @@
         "emptyColumn": "No relationships match this column",
         "relationshipCount": "{{count}} relationships",
         "columnScrollRegion": "{{label}} column, {{count}} relationships",
-        "scrollToTop": "Back to top of the {{label}} column",
-        "countScope": "Column counts follow the current filters; quick-filter counts cover all relationships."
+        "scrollToTop": "Back to top of the {{label}} column"
       },
       "loading": "Loading the relationship governance ledger…",
       "loadError": "The relationship governance ledger is unavailable.",
@@ -2938,22 +2937,25 @@
       },
       "filters": {
         "label": "Quick filters",
-        "secondaryLabel": "Filters",
-        "activeCount": "{{count}} selected",
-        "clearSecondary": "Clear filters",
-        "all": "All",
-        "eligible_to_centralize": "Ready to centralize",
-        "needs_validation": "Needs validation",
-        "blocked": "Blocked",
-        "withCount": "{{label}} ({{count}})",
-        "scopeLabel": "Type",
-        "statusLabel": "Status",
-        "managementLabel": "Central library management"
+        "withCount": "{{label}} ({{count}})"
       },
       "classification": {
         "all": "All",
         "pending": "Pending",
         "completed": "Completed"
+      },
+      "buckets": {
+        "undecided": "No decision yet",
+        "content_changed": "Contents differ",
+        "source_missing": "Original missing",
+        "link_issue": "Link not working",
+        "needs_review": "Re-verification needed",
+        "operation_failed": "Last operation failed",
+        "restricted": "Permission limited",
+        "restrictedNote": "Restricted relationships need the limitation resolved first: handle each reason below, then re-verify — the relationship returns to the matching bucket for a decision.",
+        "managed_link": "Managed links",
+        "retained": "Retained independent copies",
+        "selectBucket": "Select all executable relationships in the {{label}} bucket"
       },
       "management": {
         "not_taken_over": "Not centrally managed",
@@ -3209,11 +3211,7 @@
       },
       "manageRelations": "Manage relations",
       "scope": {
-        "all": "All types",
-        "source_copy": "Import sources",
-        "source_copyDescription": "Files copied into the central library that remain at their original locations.",
-        "deployment": "Dispatch relationships",
-        "deploymentDescription": "Usage relationships between central-library Skills and Agent or project directories."
+        "source_copy": "Import sources"
       },
       "statusFilter": {
         "normal": "Normal",
