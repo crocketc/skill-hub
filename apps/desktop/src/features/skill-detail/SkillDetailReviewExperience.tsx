@@ -59,7 +59,8 @@ interface SkillDetailReviewExperienceProps {
 /**
  * 技能详情评审布局（§9 裁决，2026-10-06）：生产默认呈现。
  * 安全区块接入真实 SecurityFacade 与安全预警事实（task C，六裁决安全呈现）；
- * 演示性操作（派发/导出/删除演示弹层、来源更新示例流、使用去向示例卡）保持
+ * 派发接真实部署对话框路由（W3-1，§10 统一操作入口）；
+ * 演示性操作（导出/删除演示弹层、来源更新示例流、使用去向示例卡）保持
  * 原型确认行为，接真实数据由后续任务裁决。
  */
 export function SkillDetailReviewExperience({
@@ -135,7 +136,7 @@ export function SkillDetailReviewExperience({
               <p>当前版本 · {summary.currentVersion}</p>
             </div>
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
-              <ReviewHeaderActions centralized={centralized} currentVersion={summary.currentVersion} onCentralize={() => setCentralized(true)} />
+              <ReviewHeaderActions centralized={centralized} currentVersion={summary.currentVersion} onCentralize={() => setCentralized(true)} onDispatch={() => navigate(`/library/${skillId}/deploy`)} />
             </div>
             {/* 六裁决安全呈现（task C）：预警状态条 + 安全处理入口直达安全预警路由。 */}
             {summary.securityAlert ? (

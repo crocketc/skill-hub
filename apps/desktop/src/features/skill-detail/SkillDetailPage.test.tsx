@@ -106,6 +106,7 @@ async function renderDetail({
             />
             <Route element={<p>Library route</p>} path="/library" />
             <Route element={<SecurityProbe />} path="/library/:skillId/security" />
+            <Route element={<DeploymentProbe />} path="/library/:skillId/deploy" />
             <Route element={<p>Recovery route</p>} path="/recovery" />
           </Routes>
         </MemoryRouter>
@@ -123,6 +124,11 @@ function SecurityProbe() {
       <output data-testid="security-state">{JSON.stringify(location.state)}</output>
     </>
   );
+}
+
+function DeploymentProbe() {
+  const location = useLocation();
+  return <p data-testid="deployment-location">{location.pathname}</p>;
 }
 
 function LocationProbe() {
@@ -175,6 +181,17 @@ describe("SkillDetailPage shell", () => {
     expect(await screen.findByTestId("route-location")).toHaveTextContent(
       "/relationships?skillId=skill-pdf",
     );
+  });
+
+  it("routes the header dispatch action to the real deployment dialog instead of the demo flow", async () => {
+    await renderDetail({ entry: "/library/skill-pdf" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "派发" }));
+
+    expect(await screen.findByTestId("deployment-location")).toHaveTextContent(
+      "/library/skill-pdf/deploy",
+    );
+    expect(screen.queryByText("选择派发目标")).not.toBeInTheDocument();
   });
 
   it("provides the same actionable security review from full details", async () => {

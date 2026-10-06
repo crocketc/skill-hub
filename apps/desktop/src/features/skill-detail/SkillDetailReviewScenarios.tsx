@@ -2,7 +2,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatTimestamp } from "../../i18n";
-import { AgentPresentation } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import type { SkillDetailSummary } from "./api";
 
@@ -101,32 +100,29 @@ export function ReviewSubjectLocation() {
   );
 }
 
-export function ReviewHeaderActions({ centralized, currentVersion, onCentralize }: {
+export function ReviewHeaderActions({ centralized, currentVersion, onCentralize, onDispatch }: {
   centralized: boolean;
   currentVersion: string;
   onCentralize: () => void;
+  /** 派发接真实部署流程（§10）：跳转部署对话框路由，演示弹层已移除。 */
+  onDispatch: () => void;
 }) {
-  const [action, setAction] = useState<"dispatch" | "export" | "delete">();
-  const [step, setStep] = useState<"choose" | "impact" | "done">("choose");
-  const [targets, setTargets] = useState<string[]>(["Codex CLI"]);
-  const [conflictDemo, setConflictDemo] = useState(false);
-  const [conflictChoice, setConflictChoice] = useState<"keep" | "replace">("keep");
+  const [action, setAction] = useState<"export" | "delete">();
+  const [step, setStep] = useState<"choose" | "done">("choose");
   const [exportFormat, setExportFormat] = useState("标准 Skill ZIP");
   const [exportLocation, setExportLocation] = useState("下载文件夹");
   // §关系治理：转为集中管理单步确认；确认后由父级隐藏入口并联动使用去向。
   const [centralizeOpen, setCentralizeOpen] = useState(false);
   const [centralizeBasis, setCentralizeBasis] = useState<"library" | "original">("library");
-  const close = () => { setAction(undefined); setStep("choose"); setConflictDemo(false); setConflictChoice("keep"); };
-  const open = (next: "dispatch" | "export" | "delete") => { setAction(next); setStep("choose"); };
-  const title = action === "dispatch" ? "派发到 Agent 或项目"
-    : action === "export" ? "导出技能"
-      : "删除技能主体";
+  const close = () => { setAction(undefined); setStep("choose"); };
+  const open = (next: "export" | "delete") => { setAction(next); setStep("choose"); };
+  const title = action === "export" ? "导出技能" : "删除技能主体";
   return (
     <>
       {centralized ? null : (
         <Button className="sh-skill-detail-review__warning-action" onClick={() => { setCentralizeBasis("library"); setCentralizeOpen(true); }} size="sm" variant="ghost">转为集中管理</Button>
       )}
-      <Button onClick={() => open("dispatch")} size="sm">派发</Button>
+      <Button onClick={onDispatch} size="sm">派发</Button>
       <Button onClick={() => open("export")} size="sm" variant="secondary">导出</Button>
       <Button onClick={() => open("delete")} size="sm" variant="danger">删除</Button>
       <Dialog.Root open={centralizeOpen} onOpenChange={setCentralizeOpen}>
@@ -162,22 +158,8 @@ export function ReviewHeaderActions({ centralized, currentVersion, onCentralize 
           <Dialog.Description>
             {step === "done" ? "原型操作已在本地演示，没有写入真实技能库或目标目录。"
               : action === "delete" ? "删除前会先展示技能主体和当前使用关系影响；本次仅演示预览，不会执行删除。"
-                : action === "dispatch" ? "选择目标后查看关系影响，再确认是否派发。"
-                  : "选择导出格式并查看文件内容范围。"}
+                : "选择导出格式并查看文件内容范围。"}
           </Dialog.Description>
-          {action === "dispatch" && step === "choose" ? (
-            <>
-              <fieldset className="sh-skill-detail-review__choice-list"><legend>选择派发目标</legend>
-                <label><input checked={targets.includes("Codex CLI")} onChange={() => setTargets((current) => current.includes("Codex CLI") ? current.filter((item) => item !== "Codex CLI") : [...current, "Codex CLI"])} type="checkbox" /><AgentPresentation agentId="openai.codex-cli" /><span>Agent</span></label>
-                <label><input checked={targets.includes("CodeBuddy")} onChange={() => setTargets((current) => current.includes("CodeBuddy") ? current.filter((item) => item !== "CodeBuddy") : [...current, "CodeBuddy"])} type="checkbox" /><AgentPresentation agentId="codebuddy.code" /><span>Agent</span></label>
-                <label><input checked={targets.includes("文档协作项目")} onChange={() => setTargets((current) => current.includes("文档协作项目") ? current.filter((item) => item !== "文档协作项目") : [...current, "文档协作项目"])} type="checkbox" /><span>文档协作项目 · 项目</span></label>
-              </fieldset>
-              <label className="sh-skill-detail-review__dev-toggle">
-                <input checked={conflictDemo} onChange={(event) => setConflictDemo(event.currentTarget.checked)} type="checkbox" />
-                演示：目标已有同名技能
-              </label>
-            </>
-          ) : null}
           {action === "export" && step === "choose" ? (
             <div className="sh-skill-detail-review__export-fields">
               <label className="sh-skill-detail-review__dialog-field">导出格式<select onChange={(event) => setExportFormat(event.currentTarget.value)} value={exportFormat}><option>标准 Skill ZIP</option><option>Markdown 文件夹</option></select></label>
@@ -185,27 +167,11 @@ export function ReviewHeaderActions({ centralized, currentVersion, onCentralize 
               <p>导出当前版本 {currentVersion} 的内容与元数据；Agent、项目使用目标和本地数据库不会包含在导出包中。</p>
             </div>
           ) : null}
-          {step === "impact" ? (
-            <div className="sh-skill-detail-review__action-impact">
-              {action === "dispatch" ? <><strong>将影响 {targets.length} 个目标</strong><p>{targets.join("、") || "未选择目标"}</p><p>现有使用关系会保留，并按已确认的关系模型处理。</p></> : null}
-              {action === "export" ? <><strong>{exportFormat}</strong><p>导出到：{exportLocation}</p></> : null}
-            </div>
-          ) : null}
-          {action === "dispatch" && step === "impact" && conflictDemo ? (
-            <div className="sh-skill-detail-review__action-impact sh-skill-detail-review__conflict">
-              <strong>文档协作项目 · 目标已有同名技能</strong>
-              <p>该位置已被另一 Skill 的受管入口占用；每个物理目标只使用一个主体。</p>
-              <label><input checked={conflictChoice === "keep"} name="review-conflict-choice" onChange={() => setConflictChoice("keep")} type="radio" /> 保留现有并跳过此目标</label>
-              <label><input checked={conflictChoice === "replace"} name="review-conflict-choice" onChange={() => setConflictChoice("replace")} type="radio" /> 替换为本次技能（核验后结束旧使用关系）</label>
-            </div>
-          ) : null}
           {action === "delete" && step === "choose" ? <div className="sh-skill-detail-review__action-impact"><strong>本次示例影响</strong><ul><li>技能库主体：1 个，将从技能库移除</li><li>已集中管理链接：2 个，按受管目标安全回收</li><li>独立副本：1 个，保留在原位置</li></ul><p>正式执行前会按真实目录身份重新核验；此原型不会删除文件。</p></div> : null}
-          {step === "done" ? <p role="status">{action === "delete" ? "已完成删除影响演示；没有删除任何主体或目标。" : action === "dispatch" ? `派发结果已演示；未创建真实关系。${conflictDemo ? (conflictChoice === "keep" ? "同名目标按“保留现有并跳过”处理。" : "同名目标按“替换为本次技能”处理。") : ""}` : "导出结果已演示；未生成或保存文件。"}</p> : null}
+          {step === "done" ? <p role="status">{action === "delete" ? "已完成删除影响演示；没有删除任何主体或目标。" : "导出结果已演示；未生成或保存文件。"}</p> : null}
           <div className="sh-dialog__actions">
             <Button onClick={close} size="sm" variant="ghost">{step === "done" ? "返回技能详情" : "取消"}</Button>
-            {action === "dispatch" && step === "choose" ? <Button disabled={!targets.length} onClick={() => setStep("impact")} size="sm">查看派发影响</Button> : null}
             {action === "export" && step === "choose" ? <Button onClick={() => setStep("done")} size="sm">导出</Button> : null}
-            {step === "impact" ? <Button onClick={() => setStep("done")} size="sm">{action === "dispatch" ? "确认派发" : "确认导出"}</Button> : null}
             {action === "delete" && step === "choose" ? <Button onClick={() => setStep("done")} size="sm" variant="danger">确认删除</Button> : null}
           </div>
         </Dialog.Content></Dialog.Portal>
