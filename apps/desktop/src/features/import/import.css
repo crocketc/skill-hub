@@ -264,6 +264,24 @@ section.sh-import-wizard {
   margin-block: var(--space-2) 0;
 }
 
+/* —— §24（2026-10-06）安全明细聚合：规则行 + 逐行位置次级视图 —— */
+
+.sh-import-conflicts__finding-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-import-conflicts__finding-locations {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  list-style: none;
+}
+
 /* —— M-29 已选来源列表：分层展示选中目录及其扫描状态 —— */
 
 .sh-import-source__selected {

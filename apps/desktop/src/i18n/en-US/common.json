@@ -414,7 +414,18 @@
         "proceedLabel": "Import anyway (the alert must be handled before dispatch)",
         "skipLabel": "Do not import",
         "warningTitle": "Warning-level security notices",
-        "warningSummary": "The following {{count}} skills have warning-level findings. They will be imported normally and enter alert state (cannot be dispatched until handled).",
+        "warningSummary": "The following {{count}} skills have warning-level findings. They are imported by default and enter alert state (cannot be dispatched until handled); continue with all, skip all, or adjust them individually.",
+        "warningTierLabel": "Warning handling",
+        "warningTier": {
+          "continue": "Import all (default; imports and records alerts)",
+          "skip": "Skip all",
+          "individual": "Adjust individually"
+        },
+        "warningSourceCount_one": "{{count}} source",
+        "warningSourceCount_other": "{{count}} sources",
+        "findingsHitCount_one": "{{count}} match",
+        "findingsHitCount_other": "{{count}} matches",
+        "findingsDetailsToggle": "View each location",
         "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one, then commit.",
         "level": {
           "danger": "Danger",
