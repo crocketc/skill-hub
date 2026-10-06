@@ -6,7 +6,9 @@ import { expect, test } from "@playwright/test";
  * 1. 批内冲突链路（?scenario=batch-conflicts）：同内容建议保留/跳过、
  *    同名独立命名（含即时重名反馈）、未处置提交在 UI 层被拦。
  * 2. 危险级候选决策链路（?scenario=security-danger）：置顶决策区块 →
- *    仍然导入 → 完成导入。
+ *    仍然导入 → 完成导入；警告级按 §24 默认导入并给出三档批量语义。
+ * 2.5 警告级多来源去重（?scenario=security-warning-duplicates）：同身份
+ *    条目合并为一条并显示来源数，整体跳过作用于全部来源条目。
  * 3. 待办预警三选链路（/__preview/pending）：完全信任确认留痕后条目经
  *    真实重读消失；不信任跳转既有删除流；稍后处理只有静态说明。
  * 4. 派发安全拦截引导（?scenario=security-alert-blocked）：结构化错误码
@@ -84,11 +86,14 @@ test("security danger: pinned decision block gates commit until every candidate 
   await expect(riskyRow.getByRole("radio", { name: "仍然导入（导入后需处理预警才能派发）" })).not.toBeChecked();
   await expect(riskyRow.getByRole("radio", { name: "不导入" })).not.toBeChecked();
 
-  // 警告级只聚合提示，正常导入并进入预警状态。
+  // 警告级按 §24 收口：默认导入并写入预警，三档批量语义（非逐条门禁）。
   const warning = page.getByRole("region", { name: "警告级安全提示" });
   await expect(warning).toBeVisible();
-  await expect(warning).toContainText("以下 1 个技能存在警告级提示，将正常导入并进入预警状态（处理前不可派发）。");
+  await expect(warning).toContainText(
+    "以下 1 个技能存在警告级提示，默认导入并写入预警（处理前不可派发）；可整体继续、整体跳过或逐个调整。",
+  );
   await expect(warning).toContainText("Suspicious Fetch");
+  await expect(warning.getByRole("radio", { name: "全部继续导入（默认，导入并写入预警）" })).toBeChecked();
 
   // 未决策提交被拦；逐个决策后解除。
   const commit = page.getByRole("button", { name: "提交导入" });
@@ -100,6 +105,30 @@ test("security danger: pinned decision block gates commit until every candidate 
   await commit.click();
   await expect(page.getByRole("button", { name: "打开 Skill 库" })).toBeVisible();
   // 仍要导入的候选按导入落账；摘要只陈述结果，不夸大为无风险。
+  await expect(page.getByText("所有选中的候选项都已完成处理。")).toBeVisible();
+});
+
+test("security warning duplicates: dedupes entries by identity and applies the bulk skip to every source", async ({ page }) => {
+  await reachConflictStep(page, "security-warning-duplicates", "C:/skills/warning-duplicates-preview");
+
+  // §24：同一 Skill 的两个来源条目合并为一条并显示来源数；计数按去重口径。
+  const warning = page.getByRole("region", { name: "警告级安全提示" });
+  await expect(warning).toBeVisible();
+  await expect(warning.getByText("Suspicious Fetch")).toHaveCount(1);
+  await expect(warning.getByText("2 个来源")).toBeVisible();
+  await expect(warning).toContainText(/以下 1 个技能存在警告级提示/);
+  // 未进入“逐个调整”前没有逐条决策项（警告级不是逐条确认门禁）。
+  await expect(warning.getByRole("radio", { name: "仍然导入（导入后需处理预警才能派发）" })).toHaveCount(0);
+
+  // 整体跳过作用于该身份组的全部来源条目：提交后两行都按跳过落账。
+  await warning.getByRole("radio", { name: "全部不导入" }).check();
+  const commit = page.getByRole("button", { name: "提交导入" });
+  await expect(commit).toBeEnabled();
+  await commit.click();
+  await expect(page.getByRole("button", { name: "打开 Skill 库" })).toBeVisible();
+  await page.getByRole("button", { name: "查看成功和跳过明细" }).click();
+  await expect(page.getByText("已按你的选择跳过（不导入）")).toHaveCount(2);
+  // 放行级候选照常导入，摘要不夸大也不遗漏。
   await expect(page.getByText("所有选中的候选项都已完成处理。")).toBeVisible();
 });
 

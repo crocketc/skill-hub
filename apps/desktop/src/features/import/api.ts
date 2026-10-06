@@ -387,6 +387,8 @@ export type MockImportScenario =
   | "batch-conflicts"
   /** W3-1：危险级候选（需逐个安全决策）+ 警告级候选 + 放行级候选。 */
   | "security-danger"
+  /** §24：同一 Skill 多来源的警告级候选——名单按身份去重与三档批量语义。 */
+  | "security-warning-duplicates"
   | "cancelled";
 
 export interface MockImportCalls {
@@ -531,6 +533,38 @@ function fixtureCandidates(
     ].map((candidate) => ({ ...candidate, source }));
   }
 
+  if (scenario === "security-warning-duplicates") {
+    // §24（2026-10-06）：同一 Skill 的两个来源条目（同名候选）加一个放行
+    // 级候选；候选按来源条目计会把同一 Skill 计两次，警告名单须按身份
+    // 去重并显示来源数。
+    return [
+      {
+        basicCheck: "warning" as const,
+        id: "fetch-a",
+        name: "Suspicious Fetch",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/suspicious-fetch`,
+        relativeRoot: "suspicious-fetch",
+      },
+      {
+        basicCheck: "warning" as const,
+        id: "fetch-b",
+        name: "Suspicious Fetch",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/backup/suspicious-fetch`,
+        relativeRoot: "backup/suspicious-fetch",
+      },
+      {
+        basicCheck: "passed" as const,
+        id: "safe-notes",
+        name: "Safe Notes",
+        ownership: "unknown" as const,
+        path: `${source.displayTarget}/safe-notes`,
+        relativeRoot: "safe-notes",
+      },
+    ].map((candidate) => ({ ...candidate, source }));
+  }
+
   const base = [
     {
       basicCheck: "passed" as const,
@@ -612,11 +646,45 @@ function fixtureBatchAnalysis(candidates: ImportCandidate[]): ImportBatchAnalysi
 }
 
 /**
- * W3-1：security-danger 场景的确定性安全分级（id 跟随实际候选）。字段
- * 结构与 bindings 的 ImportSecuritySummary 一致（含 check_state），保证
- * mock 契约与真实门面同形。
+ * W3-1：security-danger / §24 security-warning-duplicates 场景的确定性
+ * 安全分级（id 跟随实际候选）。字段结构与 bindings 的 ImportSecuritySummary
+ * 一致（含 check_state），保证 mock 契约与真实门面同形。
  */
-function fixtureSecurityPlan(candidates: ImportCandidate[]): ImportSecurityPlan {
+function fixtureSecurityPlan(
+  scenario: MockImportScenario,
+  candidates: ImportCandidate[],
+): ImportSecurityPlan {
+  if (scenario === "security-warning-duplicates") {
+    const [fetchA, fetchB, safe] = candidates;
+    const plan: ImportSecurityPlan = {};
+    for (const candidate of [fetchA, fetchB]) {
+      if (!candidate) continue;
+      plan[candidate.id] = {
+        checkState: "warning",
+        dangerCount: 0,
+        findings: [
+          {
+            code: "security.possible_plaintext_credential",
+            file: "SKILL.md",
+            lineStart: 18,
+            productLevel: "warning",
+          },
+        ],
+        level: "warning",
+        warningCount: 1,
+      };
+    }
+    if (safe) {
+      plan[safe.id] = {
+        checkState: "passed",
+        dangerCount: 0,
+        findings: [],
+        level: "pass",
+        warningCount: 0,
+      };
+    }
+    return plan;
+  }
   const [risky, warn, safe] = candidates;
   const plan: ImportSecurityPlan = {};
   if (risky) {
@@ -720,8 +788,8 @@ export function createMockImportFacade(
         ...(options.scenario === "batch-conflicts"
           ? { batchAnalysis: fixtureBatchAnalysis(selected) }
           : {}),
-        ...(options.scenario === "security-danger"
-          ? { security: fixtureSecurityPlan(selected) }
+        ...(options.scenario === "security-danger" || options.scenario === "security-warning-duplicates"
+          ? { security: fixtureSecurityPlan(options.scenario, selected) }
           : {}),
         ...(options.governance
           ? {
@@ -776,28 +844,28 @@ export function createMockImportFacade(
           };
         }
         // W3-1 提交期守卫（与后端 import.security_decision_required 同口径）：
-        // 危险级候选必须显式决策——skip（不导入，按跳过落账）或 proceed
-        // （仍要导入，进入预警状态）；缺决策时该行失败，其余行照常。
-        if (plan.security?.[candidate.id]?.level === "danger") {
-          const securityDecision = dispositions?.securityDecisions?.[candidate.id];
-          if (securityDecision === "skip") {
-            return {
-              action,
-              candidateId: candidate.id,
-              message: "importWorkflow.commitMessages.skippedBySecurityDecision",
-              reasonCode: "import.skipped_by_security_decision",
-              status: "skipped",
-            };
-          }
-          if (!securityDecision) {
-            return {
-              action,
-              candidateId: candidate.id,
-              message: "importWorkflow.errors.securityDecisionRequired",
-              reasonCode: "import.security_decision_required",
-              status: "failed",
-            };
-          }
+        // security_decision=skip 对任何候选生效（后端按跳过落账，不落库，
+        // §24 警告级"全部不导入"同走此路径）；危险级候选另须显式决策——
+        // skip 或 proceed（仍要导入，进入预警状态），缺决策时该行失败，
+        // 其余行照常。
+        const securityDecision = dispositions?.securityDecisions?.[candidate.id];
+        if (securityDecision === "skip") {
+          return {
+            action,
+            candidateId: candidate.id,
+            message: "importWorkflow.commitMessages.skippedBySecurityDecision",
+            reasonCode: "import.skipped_by_security_decision",
+            status: "skipped",
+          };
+        }
+        if (plan.security?.[candidate.id]?.level === "danger" && !securityDecision) {
+          return {
+            action,
+            candidateId: candidate.id,
+            message: "importWorkflow.errors.securityDecisionRequired",
+            reasonCode: "import.security_decision_required",
+            status: "failed",
+          };
         }
         const group = sameNameMembers.get(candidate.id);
         if (group) {
