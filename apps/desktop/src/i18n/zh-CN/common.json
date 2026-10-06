@@ -478,7 +478,7 @@
       "originalsPreserved": "原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
       "governanceNextLabel": "后续整理",
       "governanceNextDescription": "这些 Skill 已集中保存到集中库，统一更新、多端复用。删除原入口后，Agent 将不再从原来的位置读取它们；之后你可以随时在关系治理里从集中库为各 Agent 重新建立链接或复制。",
-      "organizeNow": "整理来源副本",
+      "goHandle": "去处理",
       "organizeLater": "稍后处理",
       "retryFailed": "重试失败项",
       "governanceTasksLabel": "关系治理待办",

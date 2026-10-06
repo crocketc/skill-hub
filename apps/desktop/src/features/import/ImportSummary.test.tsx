@@ -273,7 +273,7 @@ it("offers relationship governance only after a successful import", async () => 
     </I18nextProvider>,
   );
 
-  await userEvent.click(screen.getByRole("button", { name: "整理来源副本" }));
+  await userEvent.click(screen.getByRole("button", { name: "去处理" }));
   expect(onOpenGovernance).toHaveBeenCalledOnce();
   expect(screen.getByRole("button", { name: "稍后处理" })).toBeVisible();
 });
@@ -311,7 +311,7 @@ it("makes retry the primary action with failures and organizes source copies sec
   // 有失败时主按钮是重试失败项；来源整理退为次按钮，不与恢复操作争夺主次。
   const retry = screen.getByRole("button", { name: "重试失败项" });
   expect(retry).toHaveClass("sh-button--primary");
-  const organize = screen.getByRole("button", { name: "整理来源副本" });
+  const organize = screen.getByRole("button", { name: "去处理" });
   expect(organize).toHaveClass("sh-button--secondary");
   await userEvent.click(retry);
   expect(onRetryFailed).toHaveBeenCalledOnce();
@@ -328,7 +328,7 @@ it("makes organizing source copies the primary action after a clean import", asy
     onContinueLater,
   });
 
-  const organize = screen.getByRole("button", { name: "整理来源副本" });
+  const organize = screen.getByRole("button", { name: "去处理" });
   expect(organize).toHaveClass("sh-button--primary");
   expect(screen.getByRole("button", { name: "稍后处理" })).toBeVisible();
   // 说明文案讲清收益与后果：集中保存、删除原入口后 Agent 不再从原位置读取、
@@ -343,7 +343,7 @@ it("makes organizing source copies the primary action after a clean import", asy
 it("hides the organize entry when no source copies are manageable (online-only)", async () => {
   await renderSummary({ results: cleanResults, manageableSourceCount: 0 });
 
-  expect(screen.queryByRole("button", { name: "整理来源副本" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "去处理" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "稍后处理" })).not.toBeInTheDocument();
   expect(screen.queryByText(/集中保存/)).not.toBeInTheDocument();
 });
@@ -357,7 +357,7 @@ it("keeps retry as the only next step when failures come from an online-only imp
   });
 
   expect(screen.getByRole("button", { name: "重试失败项" })).toBeVisible();
-  expect(screen.queryByRole("button", { name: "整理来源副本" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "去处理" })).not.toBeInTheDocument();
 });
 
 it("shows the online source locator instead of the cache path", async () => {

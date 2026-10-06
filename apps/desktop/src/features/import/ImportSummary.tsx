@@ -92,13 +92,16 @@ export function ImportSummary({
                 {t("importWorkflow.summary.retryFailed")}
               </Button>
             ) : (
+              // D9-C（§10）：按批次健康决定入口——批内仍有活动来源副本
+              // （manageableSourceCount>0）时显示「去处理」，深链到治理页
+              // 本批次待处理视图；无来源关系的导入不显示该入口。
               <Button onClick={onOpenGovernance} disabled={!onOpenGovernance}>
-                {t("importWorkflow.summary.organizeNow")}
+                {t("importWorkflow.summary.goHandle")}
               </Button>
             )}
             {hasAttention && manageableCount > 0 ? (
               <Button onClick={onOpenGovernance} disabled={!onOpenGovernance} variant="secondary">
-                {t("importWorkflow.summary.organizeNow")}
+                {t("importWorkflow.summary.goHandle")}
               </Button>
             ) : null}
             {!hasAttention && manageableCount > 0 ? (

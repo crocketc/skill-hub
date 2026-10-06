@@ -1722,7 +1722,7 @@ it("hands the exact batch context to the governance entry without showing the ba
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
   // 深链上下文整对象传出：稳定 batch id 与后端计数是 URL 参数的唯一来源。
-  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
+  await user.click(await screen.findByRole("button", { name: "去处理" }));
   expect(onOpenGovernance).toHaveBeenCalledTimes(1);
   expect(onOpenGovernance).toHaveBeenCalledWith({
     batchId: "batch-e2e-42",

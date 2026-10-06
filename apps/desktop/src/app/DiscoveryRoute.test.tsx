@@ -316,7 +316,7 @@ it("opens independent governance from the production import completion page", as
   // 第 24 节：分析完成先进入安全检测步；无冲突路径在安全步直接提供提交入口。
   await screen.findByRole("heading", { name: "安全检测结论" });
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
-  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
+  await user.click(await screen.findByRole("button", { name: "去处理" }));
   expect(await screen.findByRole("heading", { name: "关系治理工作台" })).toBeVisible();
   query.mockRestore();
 });
@@ -369,7 +369,7 @@ it("opens governance scoped to this import's source copies via the batch deep li
   });
   await renderDiscoveryRoute(facade);
 
-  // 走完整导入链路：提交成功后完成页提供「整理来源副本」入口。
+  // 走完整导入链路：提交成功后完成页提供「去处理」入口。
   await user.click(screen.getAllByRole("button", { name: "导入 Skill" })[0]);
   await user.type(screen.getByLabelText("来源"), "C:/Skills");
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
@@ -379,7 +379,7 @@ it("opens governance scoped to this import's source copies via the batch deep li
   await user.click(await screen.findByRole("button", { name: "提交导入" }));
 
   // 完成页真实导航到治理路由，由当前 URL presenter 消费分类、范围与批次。
-  await user.click(await screen.findByRole("button", { name: "整理来源副本" }));
+  await user.click(await screen.findByRole("button", { name: "去处理" }));
 
   const location = await screen.findByTestId("governance-location");
   expect(location.textContent).toBe(

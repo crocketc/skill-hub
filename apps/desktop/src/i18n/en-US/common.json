@@ -478,7 +478,7 @@
       "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
       "governanceNextLabel": "Next steps",
       "governanceNextDescription": "These Skills are now stored centrally in the library — update once, reuse everywhere. Once the original entry is removed, agents no longer read from their old location; you can later link or copy from the central library to any agent.",
-      "organizeNow": "Organize source copies",
+      "goHandle": "Go handle",
       "organizeLater": "Handle later",
       "retryFailed": "Retry failed items",
       "governanceTasksLabel": "Relationship governance tasks",
