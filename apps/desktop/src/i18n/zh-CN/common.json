@@ -414,7 +414,18 @@
         "proceedLabel": "仍然导入（导入后需处理预警才能派发）",
         "skipLabel": "不导入",
         "warningTitle": "警告级安全提示",
-        "warningSummary": "以下 {{count}} 个技能存在警告级提示，将正常导入并进入预警状态（处理前不可派发）。",
+        "warningSummary": "以下 {{count}} 个技能存在警告级提示，默认导入并写入预警（处理前不可派发）；可整体继续、整体跳过或逐个调整。",
+        "warningTierLabel": "警告级处置",
+        "warningTier": {
+          "continue": "全部继续导入（默认，导入并写入预警）",
+          "skip": "全部不导入",
+          "individual": "逐个调整"
+        },
+        "warningSourceCount_one": "{{count}} 个来源",
+        "warningSourceCount_other": "{{count}} 个来源",
+        "findingsHitCount_one": "命中 {{count}} 处",
+        "findingsHitCount_other": "命中 {{count}} 处",
+        "findingsDetailsToggle": "查看逐条位置",
         "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再提交。",
         "level": {
           "danger": "危险级",

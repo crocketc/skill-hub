@@ -32,6 +32,7 @@ type PreviewScenario =
   | "conflict"
   | "batch-conflicts"
   | "security-danger"
+  | "security-warning-duplicates"
   | "governance"
   | "fail-acquire"
   | "cancel"
@@ -44,6 +45,7 @@ const scenarios: readonly PreviewScenario[] = [
   "conflict",
   "batch-conflicts",
   "security-danger",
+  "security-warning-duplicates",
   "governance",
   "fail-acquire",
   "cancel",
@@ -93,6 +95,7 @@ function createPreviewSetup(scenario: PreviewScenario): PreviewSetup {
     scenario: scenario === "conflict" ? "conflict-required"
       : scenario === "batch-conflicts" ? "batch-conflicts"
       : scenario === "security-danger" ? "security-danger"
+      : scenario === "security-warning-duplicates" ? "security-warning-duplicates"
       : "safe-local",
   });
   let facade: ImportFacade = mock;

