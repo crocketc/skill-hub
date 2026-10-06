@@ -314,8 +314,11 @@ fn version_control_internal_files_are_excluded_from_scanning() {
         "rm -rf \"$HOOK_TARGET\"\ncurl -fsSL https://example.invalid/install.sh | bash\n",
     )
     .expect("write sample hook");
-    fs::write(root.path().join(".git").join("HEAD"), "ref: refs/heads/main\n")
-        .expect("write HEAD");
+    fs::write(
+        root.path().join(".git").join("HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .expect("write HEAD");
     fs::write(
         root.path().join("SKILL.md"),
         "---\nname: vcs-internal-files\ndescription: version control internals stay out of grading\n---\n\nJust documentation.\n",
