@@ -10,7 +10,6 @@ import type {
 } from "../../api/bindings";
 import type {
   SkillProvenance,
-  AdjacentSkillContext,
   SkillDetailFacade,
   SkillDetailInsights,
   SkillDetailIntent,
@@ -31,7 +30,6 @@ export interface DetailFixtureOptions {
 }
 
 export interface SkillDetailFixture {
-  adjacent: AdjacentSkillContext;
   insights: SkillDetailInsights;
   metadata: SkillMetadata;
   provenance: SkillProvenance;
@@ -63,7 +61,6 @@ export interface MockSkillDetailCalls {
 }
 
 export interface MockSkillDetailOptions {
-  adjacent?: AdjacentSkillContext | null;
   /** Task 8：AI 可用性（缺省 true，与导入向导 mock 行为一致）。 */
   aiAvailable?: boolean;
   sourceUpdateResult?: UpstreamCheckResult;
@@ -87,9 +84,6 @@ export interface MockSkillDetailOptions {
 export interface MockSkillDetailFacade extends SkillDetailFacade {
   calls: MockSkillDetailCalls;
 }
-
-const previewSkillOrder = ["skill-doc", "skill-pdf", "skill-sheet"] as const;
-const previewSkillTotal = 80;
 
 const previewSkillSummaries: Record<string, Partial<SkillDetailSummary>> = {
   "skill-doc": {
@@ -139,12 +133,6 @@ export function detailFixture(
   options: DetailFixtureOptions = {},
 ): SkillDetailFixture {
   return {
-    adjacent: {
-      next: { id: "skill-sheet", name: "Spreadsheet Reader" },
-      position: 2,
-      previous: { id: "skill-doc", name: "Document Reader" },
-      total: 80,
-    },
     insights: {
       // G-18：组合/依赖/外部变化都是结构化事实（成员标签、形态、状态、路径）。
       combinations: [
@@ -408,24 +396,6 @@ export function createMockSkillDetailFacade(
           },
         };
       }
-    },
-    async getAdjacentContext(skillId) {
-      if ("adjacent" in options) {
-        return options.adjacent ?? { position: 1, total: 1 };
-      }
-      const position = Math.max(0, previewSkillOrder.indexOf(skillId as (typeof previewSkillOrder)[number]));
-      const previousId = previewSkillOrder[position - 1];
-      const nextId = previewSkillOrder[position + 1];
-      return {
-        next: nextId
-          ? { id: nextId, name: previewSkillSummaries[nextId]?.name ?? nextId }
-          : undefined,
-        position: position + 1,
-        previous: previousId
-          ? { id: previousId, name: previewSkillSummaries[previousId]?.name ?? previousId }
-          : undefined,
-        total: previewSkillTotal,
-      };
     },
     async getInsights() {
       return insights;

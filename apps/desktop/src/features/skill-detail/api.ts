@@ -3,6 +3,7 @@ import type {
   BatchAction,
   CheckState,
   InvocationPolicy,
+  SkillLibraryFacade,
   SkillLibraryQuery,
   SkillLifecycle,
 } from "../skills/api";
@@ -253,6 +254,41 @@ export interface AdjacentSkillContext {
   total: number;
 }
 
+/**
+ * W1-5（FB-①/D7-A，2026-10-06）：相邻技能由前端按库列表（同筛选/排序）推导，
+ * 原生详情门面不再提供 getAdjacentContext 命令。分页取全量有序结果后定位当前
+ * Skill；不在结果中时返回 null（界面隐藏控件，不伪造相邻）。
+ */
+export async function deriveAdjacentSkills(
+  listSkills: SkillLibraryFacade["listSkills"],
+  skillId: string,
+  query: SkillLibraryQuery,
+): Promise<AdjacentSkillContext | null> {
+  const pageSize = 100;
+  const maxPages = 10;
+  let total = 0;
+  const entries: Array<{ id: string; name: string }> = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const result = await listSkills({ ...query, page, pageSize });
+    total = result.total;
+    for (const item of result.items) {
+      entries.push({ id: item.id, name: item.name });
+    }
+    const index = entries.findIndex((entry) => entry.id === skillId);
+    // 已定位且能确定下一条（或已到列表末尾）时提前停止翻页。
+    if (index >= 0 && (index + 1 < entries.length || entries.length >= total)) break;
+    if (result.items.length < pageSize || entries.length >= total) break;
+  }
+  const index = entries.findIndex((entry) => entry.id === skillId);
+  if (index < 0) return null;
+  return {
+    next: index + 1 < entries.length ? entries[index + 1] : undefined,
+    position: index + 1,
+    previous: index > 0 ? entries[index - 1] : undefined,
+    total,
+  };
+}
+
 export type SkillDetailIntent =
   | { action: BatchAction; skillId: string; type: "batch" }
   | { skillId: string; type: "abandon_trial" }
@@ -277,10 +313,6 @@ export interface SkillDetailFacade {
   /** AR-021：为版本设置用户可读名称。 */
   setVersionLabel(skillId: string, versionId: string, label: string): Promise<void>;
   emitIntent(intent: SkillDetailIntent): Promise<{ text: string } | void>;
-  getAdjacentContext(
-    skillId: string,
-    query: SkillLibraryQuery,
-  ): Promise<AdjacentSkillContext>;
   getInsights(skillId: string): Promise<SkillDetailInsights>;
   getMetadata(skillId: string): Promise<SkillMetadata>;
   getRelations(skillId: string): Promise<SkillRelation[]>;
@@ -383,7 +415,6 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   commitRollback: unavailable,
   setVersionLabel: unavailable,
   emitIntent: unavailable,
-  getAdjacentContext: unavailable,
   getInsights: unavailable,
   getMetadata: unavailable,
   getRelations: unavailable,

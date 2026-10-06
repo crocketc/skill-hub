@@ -358,7 +358,7 @@ function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
   );
 }
 
-/** 相邻技能切换（复用生产 getAdjacentContext 契约与相邻导航交互）。 */
+/** 相邻技能切换（W1-5/D7-A：上下文由库列表前端推导，本组件只消费契约结果）。 */
 function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname, libraryReturn }: {
   adjacent?: AdjacentSkillContext;
   backSearch: string;

@@ -8,8 +8,10 @@ import type { MarkdownFacade } from "../markdown/api";
 import { nativeMarkdownFacade } from "../markdown/nativeApi";
 import { parseSkillLibrarySearchParams } from "../skills/queryState";
 import { skillLibraryKeys } from "../skills/api";
+import type { SkillLibraryFacade } from "../skills/api";
 import type { SkillDetailFacade } from "./api";
 import {
+  deriveAdjacentSkills,
   SkillDetailNotFoundError,
   SkillDetailUnavailableError,
   skillDetailKeys,
@@ -35,6 +37,8 @@ import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
+  /** W1-5（FB-①/D7-A）：相邻技能由库列表（同筛选/排序）前端推导所需的只读能力。 */
+  libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
   securityFacade: SecurityFacade;
@@ -49,6 +53,7 @@ interface SkillDetailPageProps {
  */
 export function SkillDetailPage({
   facade,
+  libraryFacade,
   markdownFacade = nativeMarkdownFacade,
   removalFacade,
   securityFacade,
@@ -74,9 +79,14 @@ export function SkillDetailPage({
     queryKey: skillDetailKeys.summary(skillId),
     retry: false,
   });
+  // W1-5（FB-①/D7-A）：相邻技能由库列表（同筛选/排序）前端推导；无库上下文
+  // 或未接库门面时隐藏控件，不伪造相邻。找不到当前 Skill 时返回 null 同样隐藏。
   const adjacentQuery = useQuery({
-    enabled: isPreviewRoute || hasLibraryContext,
-    queryFn: () => facade.getAdjacentContext(skillId, libraryQuery),
+    enabled: (isPreviewRoute || hasLibraryContext) && libraryFacade !== undefined,
+    queryFn: async () => {
+      if (!libraryFacade) return null;
+      return deriveAdjacentSkills(libraryFacade.listSkills, skillId, libraryQuery);
+    },
     queryKey: skillDetailKeys.adjacent(skillId, libraryQuery),
   });
   const metadataQuery = useQuery({
@@ -244,7 +254,7 @@ export function SkillDetailPage({
   return (
     <>
       <SkillDetailReviewExperience
-        adjacent={adjacentQuery.data}
+        adjacent={adjacentQuery.data ?? undefined}
         backSearch={backSearch}
         detailPathname={detailPathname}
         facade={facade}

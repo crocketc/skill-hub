@@ -23,10 +23,13 @@ import type { RemovalFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
+import type { SkillLibraryFacade, SkillLibraryQuery, SkillTableRow } from "../skills/api";
+import { MOCK_SKILL_BROWSER, MOCK_SKILL_DOCX, MOCK_SKILL_PDF } from "../skills/testFixtures";
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
   facade?: SkillDetailFacade;
+  libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   locale?: "en-US" | "zh-CN";
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
@@ -46,9 +49,37 @@ function createTestSecurityFacade(): SecurityFacade {
   };
 }
 
+/** W1-5（FB-①/D7-A）：相邻技能改由库列表前端推导，测试用有序库夹具承载顺序。 */
+function createTestLibraryFacade(rows?: SkillTableRow[]) {
+  const libraryRows =
+    rows ??
+    ([
+      { ...MOCK_SKILL_DOCX, id: "skill-doc", name: "DOCX Writer" },
+      MOCK_SKILL_PDF,
+      { ...MOCK_SKILL_BROWSER, id: "skill-sheet", name: "Spreadsheet Reader" },
+    ] satisfies SkillTableRow[]);
+  const queries: SkillLibraryQuery[] = [];
+  return {
+    facade: {
+      listSkills: async (query: SkillLibraryQuery) => {
+        queries.push(query);
+        return {
+          facets: { tags: [] },
+          items: libraryRows,
+          page: query.page,
+          pageSize: query.pageSize,
+          total: libraryRows.length,
+        };
+      },
+    },
+    queries,
+  };
+}
+
 async function renderDetail({
   entry = "/library/skill-pdf",
   facade = createMockSkillDetailFacade(),
+  libraryFacade = createTestLibraryFacade().facade,
   locale = "en-US",
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
@@ -66,11 +97,11 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -541,9 +572,7 @@ describe("SkillDetailPage shell", () => {
   });
 
   it("omits fabricated previous and next controls on direct entry", async () => {
-    await renderDetail({
-      facade: createMockSkillDetailFacade({ adjacent: null }),
-    });
+    await renderDetail();
 
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
     expect(
@@ -565,6 +594,50 @@ describe("SkillDetailPage shell", () => {
       "href",
       "/library/skill-sheet?q=pdf&sort=version%3Adesc",
     );
+  });
+
+  it("derives adjacent order from the library list results", async () => {
+    const library = createTestLibraryFacade([
+      { ...MOCK_SKILL_DOCX, id: "skill-sheet", name: "Spreadsheet Reader" },
+      MOCK_SKILL_PDF,
+      { ...MOCK_SKILL_BROWSER, id: "skill-doc", name: "DOCX Writer" },
+    ]);
+    await renderDetail({
+      entry: "/library/skill-pdf?q=pdf&sort=name:desc",
+      libraryFacade: library.facade,
+    });
+
+    expect(await screen.findByRole("link", { name: "Previous Skill" })).toHaveAttribute(
+      "href",
+      "/library/skill-sheet?q=pdf&sort=name%3Adesc",
+    );
+    expect(screen.getByRole("link", { name: "Next Skill" })).toHaveAttribute(
+      "href",
+      "/library/skill-doc?q=pdf&sort=name%3Adesc",
+    );
+    // 推导必须沿用库查询上下文（筛选/排序），分页取全量有序结果，不另造第二套排序。
+    expect(library.queries[0]).toMatchObject({
+      page: 1,
+      pageSize: 100,
+      sort: { column: "name", direction: "desc" },
+      text: "pdf",
+    });
+  });
+
+  it("hides adjacent controls when the Skill is absent from the library results", async () => {
+    const library = createTestLibraryFacade([{ ...MOCK_SKILL_DOCX, id: "skill-doc" }]);
+    await renderDetail({
+      entry: "/library/skill-pdf?q=pdf",
+      libraryFacade: library.facade,
+    });
+
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "Previous Skill" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Next Skill" }),
+    ).not.toBeInTheDocument();
   });
 
   it("updates the preview detail and keeps adjacent controls after navigation", async () => {

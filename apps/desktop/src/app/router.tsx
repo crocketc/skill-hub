@@ -214,7 +214,8 @@ function SkillDetailRoute() {
     {/* K4-B 离开保护必须挂在数据路由上下文中（useBlocker 依赖）；工作区所在
         路由统一装配，编辑器经 draftGuardStore 上报 armed 状态。 */}
     <MarkdownRouteGuard />
-    <SkillDetailPage facade={nativeSkillDetailFacade} refreshSnapshot={refreshSnapshot} securityFacade={nativeSecurityFacade} />
+    {/* W1-5（FB-①/D7-A）：相邻技能由库列表前端推导，注入库门面只读能力。 */}
+    <SkillDetailPage facade={nativeSkillDetailFacade} libraryFacade={nativeSkillLibraryFacade} refreshSnapshot={refreshSnapshot} securityFacade={nativeSecurityFacade} />
   </></RouteSuspense>;
 }
 
