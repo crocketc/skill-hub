@@ -166,6 +166,9 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
     async saveView(view) {
       return { builtIn: false, id: "saved", ...view };
     },
+    async translateDescription() {
+      return { text: "Translated description." };
+    },
   };
 }
 
@@ -1186,4 +1189,63 @@ it("combines source and version into one final overview with update navigation",
   expect(within(module).getByText("1.4.0")).toBeInTheDocument();
   expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#review-versions");
   expect(screen.queryByRole("heading", { name: "Versions" })).not.toBeInTheDocument();
+});
+
+describe("drawer AI availability and error reasons (FB-⑥)", () => {
+  const structuredLlmError = {
+    code: "llm.not_configured",
+    severity: "error",
+    params: {},
+    actions: [],
+  };
+
+  it("disables AI translation and shows the configure entry when no LLM provider is set", async () => {
+    const securityFacade = createPreviewSecurityFacade();
+    securityFacade.getPreferences = async () => ({ llmProvider: "", dataScope: "explicit_selection" });
+    await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+
+    expect(await screen.findByRole("button", { name: "AI translation" })).toBeDisabled();
+    expect(await screen.findByText("AI translation is not configured")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Configure AI translation" })).toHaveAttribute(
+      "href",
+      "/settings?section=networkAi",
+    );
+  });
+
+  it("surfaces the structured LLM error reason when translation fails", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.translateDescription = vi.fn().mockRejectedValue(structuredLlmError);
+    await renderDrawer({ facade });
+
+    const user = userEvent2.setup();
+    await user.click(await screen.findByRole("button", { name: "AI translation" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No usable LLM provider is configured yet. Add and enable a provider first.",
+    );
+  });
+
+  it("disables the AI security check and shows the configure entry when no LLM provider is set", async () => {
+    const securityFacade = createPreviewSecurityFacade();
+    securityFacade.getPreferences = async () => ({ llmProvider: "", dataScope: "explicit_selection" });
+    await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+
+    expect(await screen.findByRole("button", { name: "AI check" })).toBeDisabled();
+    expect(
+      await screen.findByText("No LLM provider is configured; AI checks are unavailable."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Configure AI settings" })).toHaveAttribute(
+      "href",
+      "/settings?section=networkAi",
+    );
+  });
+
+  it("surfaces the structured failure reason when the AI security check fails", async () => {
+    const securityFacade = createPreviewSecurityFacade();
+    securityFacade.runLlmCheck = vi.fn().mockRejectedValue(structuredLlmError);
+    await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+
+    const user = userEvent2.setup();
+    await user.click(await screen.findByRole("button", { name: "AI check" }));
+    expect(await screen.findByText("No usable LLM provider is configured yet. Add and enable a provider first.")).toBeInTheDocument();
+  });
 });

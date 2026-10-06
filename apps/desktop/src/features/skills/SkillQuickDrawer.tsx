@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { displayPath } from "../../platform/displayPath";
+import { describeNativeError } from "../../api/nativeErrors";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -404,6 +405,18 @@ export function SkillQuickDrawer({
   }, [detailQuery.data]);
 
   const view = localView ?? detailQuery.data;
+  // FB-⑥：AI 可用性事实源与 SecurityResults 一致（llmProvider 非空即视为已配置；
+  // 能力开关的细粒度合成由 D3-A 统一收口）。读取失败按未知处理：不禁用，
+  // 点击后由真实错误路径给出原因，避免误伤已配置用户。
+  const llmPreferencesQuery = useQuery({
+    enabled: open,
+    queryFn: async () => (await securityFacade.getPreferences?.()) ?? null,
+    queryKey: ["skill-drawer-llm-preferences"],
+    staleTime: 60_000,
+  });
+  const llmConfigured = llmPreferencesQuery.data
+    ? llmPreferencesQuery.data.llmProvider.trim().length > 0
+    : true;
   const versionsHref = skillId
     ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#review-versions`
     : undefined;
@@ -476,8 +489,15 @@ export function SkillQuickDrawer({
         setTranslationDraft(result.text);
         setTranslationLoading(false);
       },
-      () => {
-        setTranslationError(t("skillLibrary.drawer.translation.failed"));
+      (reason: unknown) => {
+        // FB-⑥：失败必须给出真实原因（结构化错误码走映射文案），不再吞成通用句。
+        setTranslationError(
+          describeNativeError(
+            reason,
+            (key, options) => String(t(key as never, options as never)),
+            "skillLibrary.drawer.translation.failed",
+          ),
+        );
         setTranslationLoading(false);
       },
     );
@@ -667,6 +687,7 @@ export function SkillQuickDrawer({
               <PrototypeIdentityRegion
                 editingField={editingField}
                 editingValue={editingValue}
+                llmConfigured={llmConfigured}
                 onAddTags={() => setTagAction("add_tag")}
                 onBeginEdit={beginEdit}
                 onChange={setEditingValue}
@@ -692,7 +713,7 @@ export function SkillQuickDrawer({
               <PrototypeCollectionsModule />
               {normalizedPreferences.visibleModules.includes("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
               <PrototypeSubjectLocationModule />
-              <PrototypeSecurityChecksModule securityFacade={securityFacade} view={view} />
+              <PrototypeSecurityChecksModule llmConfigured={llmConfigured} securityFacade={securityFacade} view={view} />
               <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
             </div>
           ) : null}
@@ -1253,10 +1274,12 @@ function PrototypeSecurityRiskIcon({ description, label, title }: { description:
 }
 
 
-function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererProps) {
+function PrototypeSecurityChecksModule({ llmConfigured = true, securityFacade, view }: ModuleRendererProps & { llmConfigured?: boolean }) {
   const { t } = useTranslation();
   const [runningKinds, setRunningKinds] = useState<Set<SecurityCheckKind>>(() => new Set());
-  const [runErrors, setRunErrors] = useState<Partial<Record<SecurityCheckKind, boolean>>>({});
+  // FB-⑥：失败原因存结构化错误的可读文本（对齐 SecurityResults），不再只存布尔
+  // 而把真实原因吞成通用句。
+  const [runErrors, setRunErrors] = useState<Partial<Record<SecurityCheckKind, string>>>({});
   const versionId = view.currentVersionId;
   const resultQuery = useQuery({
     enabled: Boolean(versionId),
@@ -1273,14 +1296,25 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
   const executeCheck = async (kind: SecurityCheckKind) => {
     const run = kind === "basic" ? securityFacade.runBasicCheck : securityFacade.runLlmCheck;
     if (!versionId || !run || runningKinds.has(kind)) return;
-    setRunErrors((current) => ({ ...current, [kind]: false }));
+    setRunErrors((current) => {
+      const next = { ...current };
+      delete next[kind];
+      return next;
+    });
     setRunningKinds((current) => new Set(current).add(kind));
     try {
       if (kind === "basic") await securityFacade.runBasicCheck?.(view.id, versionId);
       else await securityFacade.runLlmCheck?.(view.id, versionId);
       await resultQuery.refetch();
-    } catch {
-      setRunErrors((current) => ({ ...current, [kind]: true }));
+    } catch (reason: unknown) {
+      setRunErrors((current) => ({
+        ...current,
+        [kind]: describeNativeError(
+          reason,
+          (key, options) => String(t(key as never, options as never)),
+          "skillLibrary.drawer.prototype.securityFailureDetail",
+        ),
+      }));
     } finally {
       setRunningKinds((current) => {
         const next = new Set(current);
@@ -1301,7 +1335,7 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
     const count = Math.max(check?.findingCount ?? 0, currentFindings.length);
     const actionable = Math.max(check?.actionableCount ?? 0, currentFindings.filter((item) => item.disposition === "actionable").length);
     const running = runningKinds.has(kind);
-    const failed = check?.state === "failed" || runErrors[kind] === true || resultQuery.isError;
+    const failed = check?.state === "failed" || runErrors[kind] !== undefined || resultQuery.isError;
     const hasRisk = count > 0;
     const clean = check?.state === "passed" && !hasRisk;
     const stateText = !versionId
@@ -1381,7 +1415,12 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
             </ul>
           </details>
         ) : null}
-        {failed ? <p className="sh-skill-drawer__prototype-security-error" role="status">{t("skillLibrary.drawer.prototype.securityFailureDetail")}</p> : null}
+        {failed ? (
+          // FB-⑥：优先展示本次失败的真实原因；配置入口由下方未配置提示统一承载。
+          <p className="sh-skill-drawer__prototype-security-error" role="status">
+            {runErrors[kind] ?? t("skillLibrary.drawer.prototype.securityFailureDetail")}
+          </p>
+        ) : null}
       </div>
     );
   };
@@ -1401,10 +1440,16 @@ function PrototypeSecurityChecksModule({ securityFacade, view }: ModuleRendererP
         <Button disabled={!versionId || !securityFacade.runBasicCheck || runningKinds.has("basic")} loading={runningKinds.has("basic")} onClick={() => void executeCheck("basic")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.recheck")}
         </Button>
-        <Button disabled={!versionId || !securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
+        <Button disabled={!versionId || !llmConfigured || !securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.aiCheck")}
         </Button>
       </div>
+      {!llmConfigured ? (
+        <p className="sh-skill-drawer__prototype-security-error" role="status">
+          {t("security.llm.providerMissing")}{" "}
+          <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>
+        </p>
+      ) : null}
     </ModuleCard>
   );
 }
@@ -1465,6 +1510,8 @@ interface PrototypeIdentityRegionProps extends ModuleProps {
   purposeOverride?: string;
   editingField?: "alias" | "note" | "purpose";
   editingValue: string;
+  /** FB-⑥：LLM 未配置时禁用 AI 翻译并给出设置入口；缺省按已配置处理。 */
+  llmConfigured?: boolean;
   onAddTags: () => void;
   onBeginEdit: (field: "alias" | "note" | "purpose") => void;
   onChange: (value: string) => void;
@@ -1483,6 +1530,7 @@ interface PrototypeIdentityRegionProps extends ModuleProps {
 function PrototypeIdentityRegion({
   editingField,
   editingValue,
+  llmConfigured = true,
   onAddTags,
   onBeginEdit,
   onChange,
@@ -1679,7 +1727,7 @@ function PrototypeIdentityRegion({
             aria-label={t("skillLibrary.drawer.prototype.aiTranslate")}
             className="sh-skill-drawer__prototype-translate"
             data-tooltip={t("skillLibrary.drawer.prototype.aiTranslate")}
-            disabled={translationLoading || !onTranslateDescription}
+            disabled={translationLoading || !onTranslateDescription || !llmConfigured}
             onClick={onTranslateDescription}
             size="sm"
             variant="ghost"
@@ -1688,7 +1736,7 @@ function PrototypeIdentityRegion({
             {translationLoading ? <span className="sh-skill-drawer__prototype-translate-loading" aria-hidden="true" /> : <PrototypeTranslationIcon />}
           </Button>
         </div>
-        {!onTranslateDescription ? (
+        {!onTranslateDescription || !llmConfigured ? (
           <span className="sh-skill-drawer__prototype-translation-unavailable">
             <span>{t("skillLibrary.drawer.prototype.translationUnavailable")}</span>
             <Link to="/settings?section=networkAi">{t("skillLibrary.drawer.prototype.configureTranslation")}</Link>
