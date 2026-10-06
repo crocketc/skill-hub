@@ -426,6 +426,8 @@
         "findingsHitCount_one": "{{count}} match",
         "findingsHitCount_other": "{{count}} matches",
         "findingsDetailsToggle": "View each location",
+        "dangerExtraWarnings_one": "Also {{count}} warning-level finding, recorded as an alert after import",
+        "dangerExtraWarnings_other": "Also {{count}} warning-level findings, recorded as alerts after import",
         "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one, then commit.",
         "level": {
           "danger": "Danger",

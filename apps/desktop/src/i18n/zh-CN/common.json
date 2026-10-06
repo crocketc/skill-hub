@@ -426,6 +426,8 @@
         "findingsHitCount_one": "命中 {{count}} 处",
         "findingsHitCount_other": "命中 {{count}} 处",
         "findingsDetailsToggle": "查看逐条位置",
+        "dangerExtraWarnings_one": "另有警告级发现 {{count}} 处，导入后写入预警",
+        "dangerExtraWarnings_other": "另有警告级发现 {{count}} 处，导入后写入预警",
         "pendingAlert": "还有 {{count}} 个危险级技能未做安全决策，请逐个选择“仍然导入”或“不导入”后再提交。",
         "level": {
           "danger": "危险级",

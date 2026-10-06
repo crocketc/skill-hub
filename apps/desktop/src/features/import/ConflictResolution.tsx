@@ -416,6 +416,11 @@ function SecurityDecisionSection({
               const label = labels.get(candidateId);
               // §24：只渲染危险级发现；警告级发现不进入危险级决策列表。
               const ruleGroups = groupDangerFindingsByRule(summary.findings);
+              // §24 裁决③（2026-10-06）：警告级发现不静默消失——卡内汇总计数，
+              // 导入"仍然导入"后照常写入预警。
+              const warningCount = summary.findings.filter(
+                (finding) => finding.productLevel === "warning",
+              ).length;
               return (
                 <li className="sh-import-conflicts__item" key={candidateId}>
                   <div className="sh-import-conflicts__summary">
@@ -472,6 +477,13 @@ function SecurityDecisionSection({
                           })}
                         </ul>
                       </>
+                    ) : null}
+                    {warningCount ? (
+                      <p className="sh-import-conflicts__danger-warnings-note">
+                        {t("importWorkflow.conflicts.security.dangerExtraWarnings", {
+                          count: warningCount,
+                        })}
+                      </p>
                     ) : null}
                   </div>
                   <fieldset>

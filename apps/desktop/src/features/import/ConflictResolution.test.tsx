@@ -638,6 +638,12 @@ it("renders the danger security block above conflicts with rule-aggregated findi
     within(riskyRow).queryByText("命令字符串拼接，可能被注入额外命令"),
   ).not.toBeInTheDocument();
 
+  // §24 裁决③（2026-10-06）：警告级发现不静默消失——危险卡内给出汇总提示，
+  // 计数按 productLevel 口径，导入后照常写入预警。
+  expect(
+    within(riskyRow).getByText("另有警告级发现 1 处，导入后写入预警"),
+  ).toBeVisible();
+
   // 多处命中提供逐行位置的次级视图；单处命中不显示无意义的入口。
   expect(within(riskyRow).getAllByText("查看逐条位置")).toHaveLength(1);
   const details = within(riskyRow).getByText("查看逐条位置").closest("details");
@@ -657,6 +663,37 @@ it("renders the danger security block above conflicts with rule-aggregated findi
 
   await user.click(proceed);
   expect(onSecurityDecision).toHaveBeenLastCalledWith("risky-1", "proceed");
+});
+
+it("omits the danger-card warning note when the candidate carries no warning-level findings", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const dangerousOnlyFindings = securityPlan["risky-1"].findings.filter(
+    (finding) => finding.productLevel === "danger",
+  );
+  const plan: ImportSecurityPlan = {
+    ...securityPlan,
+    "risky-1": {
+      ...securityPlan["risky-1"],
+      findings: dangerousOnlyFindings,
+      warningCount: 0,
+    },
+  };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ConflictResolution
+        actions={{}}
+        candidates={securityCandidates}
+        conflicts={[sameNameA]}
+        onAction={vi.fn()}
+        onSecurityDecision={vi.fn()}
+        security={plan}
+        securityDecisions={{}}
+      />
+    </I18nextProvider>,
+  );
+
+  const riskyRow = screen.getByText("Risky Deploy").closest("li") as HTMLElement;
+  expect(within(riskyRow).queryByText(/另有警告级发现/)).not.toBeInTheDocument();
 });
 
 it("reflects the controlled security decision and switches between proceed and skip", async () => {

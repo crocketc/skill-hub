@@ -282,6 +282,13 @@ section.sh-import-wizard {
   list-style: none;
 }
 
+/* §24 裁决③：危险卡内的警告级汇总提示——次级信息用 muted 色 */
+.sh-import-conflicts__danger-warnings-note {
+  margin: var(--space-2) 0 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
 /* —— M-29 已选来源列表：分层展示选中目录及其扫描状态 —— */
 
 .sh-import-source__selected {
