@@ -1,38 +1,45 @@
 import { expect, test } from "./fixtures";
 
 test("the saved-translation loop retranslates the description on demand", async ({ page }) => {
-  await page.goto("/__preview/skill-detail/skill-pdf#metadata");
+  await page.goto("/__preview/skill-detail/skill-pdf");
 
-  // P1-12：原文与译文收纳为次级展示，展开后可见出处事实与译文。
-  await page.getByText("Original text and translation").click();
-
-  // 库内已保存的模型译文与出处事实可见；原文与译文分开展示。
-  const translationField = page.locator("section.sh-metadata-panel__editable", {
+  // 转正后原文与译文收纳进「概览」元数据面板的次级展示，评审布局默认展开。
+  const panel = page.locator(".sh-metadata-panel");
+  const translationField = panel.locator("section.sh-metadata-panel__editable", {
     has: page.getByRole("heading", { name: "Translation text" }),
   });
-  await expect(translationField.locator("p")).toHaveText("模型译文");
-  await expect(page.getByText("local-fixture")).toBeVisible();
 
-  // 用户主动重新翻译后，元数据刷新为新生成的译文。
-  await page.getByRole("button", { name: "Translate description again" }).click();
-  await expect(translationField.locator("p")).toHaveText("Retranslated description (zh-CN)");
-  await expect(page.getByText("preview-model")).toBeVisible();
+  // 库内已保存的模型译文与出处事实可见；原文与译文分开展示。
+  // 出处事实经评审态 presenter 映射为用户可读措辞，不裸露内部模型标识。
+  await expect(translationField.locator("p")).toHaveText("模型译文");
+  await expect(page.getByText("示例译文")).toBeVisible();
+  await expect(page.getByText("当前内容", { exact: true })).toBeVisible();
+
+  // 用户主动重翻译：评审原型未接 AI 服务，入口打开数据范围说明框且不发送
+  // 内容；按需重翻译的完整链路（夹具 preview-model 刷新路径）由组件层测试
+  // 覆盖，待 AI 接线后回到 E2E。
+  await panel.getByRole("button", { name: "Translate description again" }).click();
+  const aiNotice = page.getByRole("dialog");
+  await expect(aiNotice).toContainText("此原型未配置 AI 服务");
+  await aiNotice.getByRole("button", { name: "关闭" }).click();
 });
 
 test("the semantic duplicate analysis reports AI candidates as advisory", async ({ page }) => {
-  await page.goto("/__preview/skill-detail/skill-pdf#connections");
+  await page.goto("/__preview/skill-detail/skill-pdf");
+  await page.getByRole("link", { name: "使用去向" }).click();
 
-  // P1-12：确定性候选常显，AI 分析是可选增强层。
+  // 转正后确定性候选与可选 AI 分析收纳进「使用去向」的补充面板：
+  // 确定性候选常显，AI 层是可选增强且只做提示。
+  const duplicates = page.locator("#review-usage-body");
+  await expect(duplicates.getByRole("heading", { name: "可能重复的技能" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Deterministic duplicate candidates" }),
+    duplicates.getByText("PDF Text Extractor · 内容比对候选，尚未确认重复。"),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Optional AI semantic analysis" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Run analysis" }).click();
-  await expect(page.getByText("Source: deterministic candidates + AI semantic analysis")).toBeVisible();
-  await expect(page.getByText("PDF Text Extractor")).toBeVisible();
-  // AI 结果只做提示：合并/删除/归档始终需要用户另行确认。
-  await expect(page.getByText(/merging, deleting or archiving always requires your separate confirmation/)).toBeVisible();
+  // 已知缺口（评审原型）：AI 相似性分析未接入提供商配置，按钮如实禁用；
+  // "AI 结果仅辅助证据、合并/删除/归档需另行确认"的结果提示语义待真实
+  // AI 接线后在 E2E 恢复（组件层测试先行覆盖）。
+  await expect(duplicates.getByRole("button", { name: "AI 相似性分析" })).toBeDisabled();
 });
 
 test("the LLM security check runs on demand and surfaces AI findings", async ({ page }) => {
