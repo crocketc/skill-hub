@@ -405,7 +405,7 @@ export function SkillQuickDrawer({
 
   const view = localView ?? detailQuery.data;
   const versionsHref = skillId
-    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#versions`
+    ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#review-versions`
     : undefined;
   const versionsState = libraryReturn ? { libraryReturn } : undefined;
 

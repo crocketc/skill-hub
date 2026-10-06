@@ -629,6 +629,47 @@ describe("SkillDetailPage shell", () => {
     expect(safetyLink).toHaveAttribute("aria-current", "location");
   });
 
+  // jsdom 未实现 scrollIntoView：直接替换原型方法并在结束后移除。
+  function stubScrollIntoView(): { calls: Element[]; restore: () => void } {
+    const calls: Element[] = [];
+    const mock = vi.fn(function (this: Element) {
+      calls.push(this);
+    });
+    Element.prototype.scrollIntoView = mock as unknown as typeof Element.prototype.scrollIntoView;
+    return {
+      calls,
+      restore: () => {
+        delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+      },
+    };
+  }
+
+  it("lands review-section deep links by scrolling the hashed zone into view", async () => {
+    const stub = stubScrollIntoView();
+    try {
+      await renderDetail({ entry: "/library/skill-pdf#review-versions" });
+
+      // 分区内容渲染完成后深链才落位；被滚动到视口的正是版本历史分区。
+      await waitFor(() => {
+        expect(stub.calls.some((element) => element.id === "review-versions")).toBe(true);
+      });
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("does not scroll for hashes outside the review sections", async () => {
+    const stub = stubScrollIntoView();
+    try {
+      await renderDetail({ entry: "/library/skill-pdf#description" });
+
+      await screen.findByRole("heading", { name: "PDF Reader" });
+      expect(stub.calls).toHaveLength(0);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it("loads the editable metadata panel in the overview section", async () => {
     await renderDetail();
     // P1-12 + 评审呈现：原文与译文为次级展示，评审布局下默认展开。

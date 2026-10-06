@@ -144,8 +144,8 @@ test("keeps review-section hashes working for deep links", async ({ page }) => {
     page.locator("#review-versions").getByRole("button", { name: "Compare selected versions" }),
   ).toBeVisible();
 
-  // 已知缺陷（见任务报告）：旧 #versions 锚点随布局转正移除后，快速抽屉
-  // “查看更新”深链指向 #versions 已落空；本页不再提供该锚点。
+  // 旧 #versions 锚点随布局转正移除；抽屉/待办/关系图深链已统一指向
+  // #review-versions。本页不再提供旧锚点，防止任何深链静默落空。
   expect(await page.locator("#versions").count()).toBe(0);
 });
 

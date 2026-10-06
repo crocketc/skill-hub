@@ -289,7 +289,7 @@ export function GraphDetailsPanel({
             {selectedEdge.edge.kind === "source" ? (
               <Link
                 className="sh-button sh-button--secondary sh-button--sm"
-                to={`/library/${encodeURIComponent(centerSkillId)}#versions`}
+                to={`/library/${encodeURIComponent(centerSkillId)}#review-versions`}
                 onClick={onBeforeNavigate}
               >
                 {t("relationships.graph.openSourceLifecycle")}
@@ -339,7 +339,7 @@ export function GraphDetailsPanel({
               {selectedNodeEntry.node.kind === "source" ? (
                 <Link
                   className="sh-button sh-button--secondary sh-button--sm"
-                  to={`/library/${encodeURIComponent(centerSkillId)}#versions`}
+                  to={`/library/${encodeURIComponent(centerSkillId)}#review-versions`}
                   onClick={onBeforeNavigate}
                 >
                   {t("relationships.graph.openSourceLifecycle")}

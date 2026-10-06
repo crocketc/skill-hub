@@ -495,7 +495,7 @@ it("links available updates to the version review in full details", async () => 
   await renderDrawer({ detailSearch: "?text=pdf", facade: createMockSkillLibraryFacade() });
 
   const updateLink = await screen.findByRole("link", { name: "View update" });
-  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#versions");
+  expect(updateLink).toHaveAttribute("href", "/library/skill-pdf?text=pdf#review-versions");
 });
 
 it("shows prototype agent cards and project relation targets with paths", async () => {
@@ -1184,6 +1184,6 @@ it("combines source and version into one final overview with update navigation",
   const title = await screen.findByRole("heading", { name: "Source and version" });
   const module = title.closest("section")!;
   expect(within(module).getByText("1.4.0")).toBeInTheDocument();
-  expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#versions");
+  expect(within(module).getByRole("link", { name: "View update" })).toHaveAttribute("href", "/library/skill-pdf#review-versions");
   expect(screen.queryByRole("heading", { name: "Versions" })).not.toBeInTheDocument();
 });

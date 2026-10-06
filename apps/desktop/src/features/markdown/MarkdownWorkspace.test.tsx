@@ -163,7 +163,7 @@ describe("MarkdownWorkspace", () => {
     ).toBeVisible();
     expect(screen.queryByRole("tab", { name: "Edit" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
 
     // K9：接管跳既有身份/共享/权限预览流程（本地发现的导入预览流），
     // 来源路径用真实可见树根预填，不以 mock 状态宣称已接管。
@@ -181,7 +181,7 @@ describe("MarkdownWorkspace", () => {
     );
     await screen.findByRole("heading", { name: "Extract PDF tables safely" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy into SkillHub" }));
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
 
     // root_path 缺失（可见树未物化）时诚实降级：仍可去本地发现手动选来源，
     // 绝不编造一个路径。

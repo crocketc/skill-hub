@@ -175,7 +175,7 @@ export function pendingDestination(item: PendingItem): string {
     case "import_skills": return "/discovery/local";
     case "ai_setup": return "/settings?section=networkAi";
     case "backup_setup": return "/settings?section=dataProtection";
-    case "source_update": return `/library/${subject}#versions`;
+    case "source_update": return `/library/${subject}#review-versions`;
     default: return `/library/${subject}`;
   }
 }

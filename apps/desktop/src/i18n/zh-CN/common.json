@@ -210,7 +210,7 @@
         "permission": "当前用户没有写入权限，因此此文件为只读。",
         "plugin": "此文件属于插件，因此为只读。"
       },
-      "takeover": "复制到 SkillHub",
+      "takeover": "纳入管理",
       "title": "Markdown 工作区",
       "unavailable": "Markdown 内容尚未接入。"
     }
@@ -391,7 +391,7 @@
       "impacts": {
         "reuse": "复用：不导入新内容，直接以库内已有 Skill 为准",
         "copy": "复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标副本不会被覆盖",
-        "takeover": "保留原位置并纳入管理：候选目录留在原处，内容核对后由 SkillHub 管理",
+        "takeover": "保留当前位置并纳入管理：候选目录留在原处，内容核对后由 SkillHub 管理",
         "independent": "独立导入：以新身份存入库中，不覆盖已有 Skill",
         "skip": "跳过：不导入该候选"
       },

@@ -445,7 +445,7 @@ describe("GraphDetailsPanel governance entries", () => {
     });
 
     expect(screen.getByRole("link", { name: "View source lifecycle" })).toHaveAttribute(
-      "href", "/library/pdf-reader#versions",
+      "href", "/library/pdf-reader#review-versions",
     );
     expect(screen.queryByRole("link", { name: "Manage in relationship governance" })).not
       .toBeInTheDocument();
@@ -455,7 +455,7 @@ describe("GraphDetailsPanel governance entries", () => {
     await renderSelection({ selectedEdgeId: "e-src-online" });
 
     expect(screen.getByRole("link", { name: "View source lifecycle" })).toHaveAttribute(
-      "href", "/library/pdf-reader#versions",
+      "href", "/library/pdf-reader#review-versions",
     );
   });
 

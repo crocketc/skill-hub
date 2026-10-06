@@ -210,7 +210,7 @@
         "permission": "This file is read-only because the current user cannot write it.",
         "plugin": "This file is read-only because it belongs to a plugin."
       },
-      "takeover": "Copy into SkillHub",
+      "takeover": "Take over",
       "title": "Markdown workspace",
       "unavailable": "Markdown content is not connected yet."
     }

@@ -57,7 +57,7 @@ test("drawer review prototype stays isolated and fits a compact desktop viewport
   await expect(widthCycle).toHaveAttribute("title", await widthCycle.getAttribute("aria-label") ?? "");
   const updateLink = drawer.locator(".sh-skill-drawer__prototype-update a");
   await expect(updateLink).toBeVisible();
-  await expect(updateLink).toHaveAttribute("href", /#versions$/);
+  await expect(updateLink).toHaveAttribute("href", /#review-versions$/);
   await expect(drawer.getByRole("heading", { name: "依赖与重复项" })).toHaveCount(0);
   await expect(drawer.getByRole("heading", { name: "外部变更" })).toHaveCount(0);
   const agentCards = drawer.locator(".sh-skill-drawer__prototype-agent-card .sh-agent-presentation");
@@ -68,6 +68,11 @@ test("drawer review prototype stays isolated and fits a compact desktop viewport
 
   const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(pageWidth).toBeLessThanOrEqual(750);
+
+  // 深链落位：点击“查看更新”是 SPA 客户端导航，浏览器不会触发原生锚点
+  // 滚动；详情页必须在内容渲染后把 #review-versions 分区滚入视口。
+  await updateLink.click();
+  await expect(page.locator("#review-versions")).toBeInViewport();
 });
 
 test("drawer review prototype remains inside a narrow viewport", async ({ page }) => {

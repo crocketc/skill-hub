@@ -188,6 +188,33 @@ export function SkillDetailPage({
     // startRemoval 只依赖 skillId 与 summary 名称；挂载期一次性触发。
   }, [isPreviewRoute, removalRequest, skillId, summaryReady]);
 
+  // 评审详情分区锚点（review-*）深链落位：SPA 客户端导航不触发浏览器原生
+  // 锚点滚动，快速抽屉「查看更新」等入口依赖这里把目标分区滚入视口。
+  const sectionHash = /^#review-[a-z-]+$/.exec(location.hash)?.[0].slice(1);
+  useEffect(() => {
+    if (!sectionHash || !summaryReady) return;
+    // 分区内容随查询数据异步渲染：有界重试直到分区出现或放弃（约 0.5s），
+    // 不做无限轮询，也不给不存在的锚点保留滚动位置。
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (remaining: number) => {
+      if (cancelled) return;
+      const target = document.getElementById(sectionHash);
+      if (target) {
+        target.scrollIntoView({ block: "start" });
+        return;
+      }
+      if (remaining > 0) {
+        timer = setTimeout(() => attempt(remaining - 1), 50);
+      }
+    };
+    attempt(10);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [sectionHash, summaryReady]);
+
   if (summaryQuery.isPending) {
     return <DataState state="loading" message={t("skillDetail.states.loading")} />;
   }
