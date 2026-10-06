@@ -107,6 +107,7 @@ async function renderDetail({
             <Route element={<p>Library route</p>} path="/library" />
             <Route element={<SecurityProbe />} path="/library/:skillId/security" />
             <Route element={<DeploymentProbe />} path="/library/:skillId/deploy" />
+            <Route element={<ExportProbe />} path="/settings/data-protection" />
             <Route element={<p>Recovery route</p>} path="/recovery" />
           </Routes>
         </MemoryRouter>
@@ -129,6 +130,16 @@ function SecurityProbe() {
 function DeploymentProbe() {
   const location = useLocation();
   return <p data-testid="deployment-location">{location.pathname}</p>;
+}
+
+function ExportProbe() {
+  const location = useLocation();
+  return (
+    <>
+      <p data-testid="export-location">{location.pathname}</p>
+      <output data-testid="export-state">{JSON.stringify(location.state)}</output>
+    </>
+  );
 }
 
 function LocationProbe() {
@@ -192,6 +203,43 @@ describe("SkillDetailPage shell", () => {
       "/library/skill-pdf/deploy",
     );
     expect(screen.queryByText("选择派发目标")).not.toBeInTheDocument();
+  });
+
+  it("routes the header export action to the real standard export flow", async () => {
+    await renderDetail({ entry: "/library/skill-pdf" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出" }));
+
+    expect(await screen.findByTestId("export-location")).toHaveTextContent(
+      "/settings/data-protection",
+    );
+    expect(screen.getByTestId("export-state")).toHaveTextContent(
+      JSON.stringify({ exportSkillIds: ["skill-pdf"] }),
+    );
+    expect(screen.queryByText("标准 Skill ZIP")).not.toBeInTheDocument();
+  });
+
+  it("opens the real removal confirmation from the header delete action", async () => {
+    const removalFacade: RemovalFacade = {
+      prepareUndeploy: vi.fn(),
+      commitUndeploy: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        operationId: "op-delete",
+        skillId: "skill-pdf",
+        skillName: "PDF Reader",
+        deployments: [],
+        dependentProjects: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    await renderDetail({ removalFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+
+    expect(await screen.findByRole("button", { name: "Confirm deletion from library" })).toBeVisible();
+    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+    expect(screen.queryByText("本次示例影响")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
   });
 
   it("provides the same actionable security review from full details", async () => {

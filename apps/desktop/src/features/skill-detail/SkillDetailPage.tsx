@@ -261,6 +261,7 @@ export function SkillDetailPage({
         insights={insightsQuery.data}
         markdownFacade={markdownFacade}
         metadata={metadataQuery.data}
+        onDelete={() => void startRemoval()}
         provenance={provenanceQuery.data}
         refreshSnapshot={refreshSnapshot}
         requirements={requirementsQuery.data}

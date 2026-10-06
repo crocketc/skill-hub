@@ -100,31 +100,27 @@ export function ReviewSubjectLocation() {
   );
 }
 
-export function ReviewHeaderActions({ centralized, currentVersion, onCentralize, onDispatch }: {
+export function ReviewHeaderActions({ centralized, onCentralize, onDispatch, onExport, onDelete }: {
   centralized: boolean;
-  currentVersion: string;
   onCentralize: () => void;
   /** 派发接真实部署流程（§10）：跳转部署对话框路由，演示弹层已移除。 */
   onDispatch: () => void;
+  /** 导出接标准导出（W3-2）：跳转数据保护页并携带本 Skill，复用同一条导出流。 */
+  onExport: () => void;
+  /** 删除接统一确认（W3-2/K2 两段式）：触发详情页既有的删除影响确认流程。 */
+  onDelete: () => void;
 }) {
-  const [action, setAction] = useState<"export" | "delete">();
-  const [step, setStep] = useState<"choose" | "done">("choose");
-  const [exportFormat, setExportFormat] = useState("标准 Skill ZIP");
-  const [exportLocation, setExportLocation] = useState("下载文件夹");
   // §关系治理：转为集中管理单步确认；确认后由父级隐藏入口并联动使用去向。
   const [centralizeOpen, setCentralizeOpen] = useState(false);
   const [centralizeBasis, setCentralizeBasis] = useState<"library" | "original">("library");
-  const close = () => { setAction(undefined); setStep("choose"); };
-  const open = (next: "export" | "delete") => { setAction(next); setStep("choose"); };
-  const title = action === "export" ? "导出技能" : "删除技能主体";
   return (
     <>
       {centralized ? null : (
         <Button className="sh-skill-detail-review__warning-action" onClick={() => { setCentralizeBasis("library"); setCentralizeOpen(true); }} size="sm" variant="ghost">转为集中管理</Button>
       )}
       <Button onClick={onDispatch} size="sm">派发</Button>
-      <Button onClick={() => open("export")} size="sm" variant="secondary">导出</Button>
-      <Button onClick={() => open("delete")} size="sm" variant="danger">删除</Button>
+      <Button onClick={onExport} size="sm" variant="secondary">导出</Button>
+      <Button onClick={onDelete} size="sm" variant="danger">删除</Button>
       <Dialog.Root open={centralizeOpen} onOpenChange={setCentralizeOpen}>
         <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
           <Dialog.Title>转为集中管理</Dialog.Title>
@@ -149,30 +145,6 @@ export function ReviewHeaderActions({ centralized, currentVersion, onCentralize,
           <div className="sh-dialog__actions">
             <Button onClick={() => setCentralizeOpen(false)} size="sm" variant="ghost">取消</Button>
             <Button onClick={() => { setCentralizeOpen(false); onCentralize(); }} size="sm">确认转为集中管理</Button>
-          </div>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
-      <Dialog.Root open={Boolean(action)} onOpenChange={(isOpen) => { if (!isOpen) close(); }}>
-        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>{title}</Dialog.Title>
-          <Dialog.Description>
-            {step === "done" ? "原型操作已在本地演示，没有写入真实技能库或目标目录。"
-              : action === "delete" ? "删除前会先展示技能主体和当前使用关系影响；本次仅演示预览，不会执行删除。"
-                : "选择导出格式并查看文件内容范围。"}
-          </Dialog.Description>
-          {action === "export" && step === "choose" ? (
-            <div className="sh-skill-detail-review__export-fields">
-              <label className="sh-skill-detail-review__dialog-field">导出格式<select onChange={(event) => setExportFormat(event.currentTarget.value)} value={exportFormat}><option>标准 Skill ZIP</option><option>Markdown 文件夹</option></select></label>
-              <label className="sh-skill-detail-review__dialog-field">导出位置<input onChange={(event) => setExportLocation(event.currentTarget.value)} value={exportLocation} /></label>
-              <p>导出当前版本 {currentVersion} 的内容与元数据；Agent、项目使用目标和本地数据库不会包含在导出包中。</p>
-            </div>
-          ) : null}
-          {action === "delete" && step === "choose" ? <div className="sh-skill-detail-review__action-impact"><strong>本次示例影响</strong><ul><li>技能库主体：1 个，将从技能库移除</li><li>已集中管理链接：2 个，按受管目标安全回收</li><li>独立副本：1 个，保留在原位置</li></ul><p>正式执行前会按真实目录身份重新核验；此原型不会删除文件。</p></div> : null}
-          {step === "done" ? <p role="status">{action === "delete" ? "已完成删除影响演示；没有删除任何主体或目标。" : "导出结果已演示；未生成或保存文件。"}</p> : null}
-          <div className="sh-dialog__actions">
-            <Button onClick={close} size="sm" variant="ghost">{step === "done" ? "返回技能详情" : "取消"}</Button>
-            {action === "export" && step === "choose" ? <Button onClick={() => setStep("done")} size="sm">导出</Button> : null}
-            {action === "delete" && step === "choose" ? <Button onClick={() => setStep("done")} size="sm" variant="danger">确认删除</Button> : null}
           </div>
         </Dialog.Content></Dialog.Portal>
       </Dialog.Root>
