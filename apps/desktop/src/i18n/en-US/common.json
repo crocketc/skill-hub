@@ -250,6 +250,7 @@
       "acquiring": "Reading candidates",
       "candidates": "Choose candidates",
       "analyzing": "Analyzing conflicts",
+      "security": "Security check",
       "conflicts": "Resolve conflicts",
       "committing": "Committing import",
       "committingProgress": "Committing import ({{completed}}/{{total}} candidates complete, current: {{candidateId}})",
@@ -259,6 +260,18 @@
       "committingBackgroundHint": "You can leave this page; the import keeps running in the background. Follow progress in the top-bar task status and view the result in Notifications when it finishes.",
       "governance": "Relationship governance",
       "attention": "Import finished with pending items"
+    },
+    "securityStep": {
+      "summaryHeading": "Security check summary",
+      "summary": "Danger {{danger}} | Warning {{warning}} | Pass {{pass}}",
+      "summaryUnavailable": "No security grading came back for this import; the deterministic import gate still guards the commit.",
+      "proceed": "Continue to conflict resolution"
+    },
+    "dispositionSummary": {
+      "heading": "Disposition summary",
+      "summary": "Import {{imported}} | Skip {{skipped}} | Alerted {{alerted}}.",
+      "alertNote": "Alerted means the skill is imported into alert state and cannot be dispatched until the security notices are handled.",
+      "compositionCheck": "Composition check: the batch signature travels with the commit; if the composition changed by commit time, stale dispositions are discarded and must be reconfirmed."
     },
     "analysis": {
       "progressTitle": "Conflict analysis progress",
@@ -415,7 +428,7 @@
         "skipLabel": "Do not import",
         "warningTitle": "Warning-level security notices",
         "warningSummary": "The following {{count}} skills have warning-level findings. They will be imported normally and enter alert state (cannot be dispatched until handled).",
-        "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one, then commit.",
+        "pendingAlert": "{{count}} danger-level skills have no security decision yet. Choose \"Import anyway\" or \"Do not import\" for each one before continuing.",
         "level": {
           "danger": "Danger",
           "pass": "Pass",

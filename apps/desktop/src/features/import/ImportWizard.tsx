@@ -57,6 +57,7 @@ type WizardPhase =
   | "acquiring"
   | "candidates"
   | "analyzing"
+  | "security"
   | "conflicts"
   | "committing"
   | "summary"
@@ -130,6 +131,8 @@ type WizardEvent =
   | { type: "analysis_progress"; progress: ImportProgress }
   | { type: "analysis_succeeded"; plan: ImportPlan }
   | { type: "analysis_cancelled" }
+  | { type: "proceed_to_conflicts" }
+  | { type: "back_to_security" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
   | { type: "override_changed"; candidateId: string; name: string }
   | { type: "security_decision_selected"; candidateId: string; decision: ImportSecurityDecision }
@@ -312,9 +315,9 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         // W3-1：新计划重置安全决策——旧计划的决策不冒充新计划的事实。
         securityDecisions: {},
         error: undefined,
-        // 内容/名称冲突是导入前必须先解决的事实；关系影响只在冲突决定
-        // 之后按需确认，避免用户在尚未知道 Skill 决定时先处理另一类关系。
-        phase: "conflicts",
+        // 第 24 节：分析完成进入安全检测步——先做内容风险决策，再处理
+        // 存放碰撞（无冲突时该步直接提供提交入口）。
+        phase: "security",
         plan: event.plan,
       };
     }
@@ -328,6 +331,13 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         analysisTotal: undefined,
         phase: "candidates",
       };
+    case "proceed_to_conflicts":
+      // 第 24 节：安全检测步的主操作——危险级未决策时入口在页脚禁用，
+      // 走到这里的点击都带完整决策上下文。
+      return { ...state, phase: "conflicts" };
+    case "back_to_security":
+      // 第 24 节：冲突处置步回退——计划与全部决策上下文原样保留。
+      return { ...state, phase: "security" };
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
     case "override_changed":
@@ -385,26 +395,36 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
   }
 }
 
-/** 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。 */
+/**
+ * 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。
+ * 第 24 节：步骤条含安全检测步；冲突处置步只在计划携带冲突/批内分组时
+ * 存在（无冲突自动跳过），其后的下标随之整体前移。
+ */
 function flowStepIndex(
   phase: WizardPhase,
   previousPhase: WizardPhase | undefined,
+  hasConflictStep: boolean,
 ): number {
+  const conflictsIndex = 3;
   switch (phase) {
     case "candidates":
     case "analyzing":
       return 1;
+    case "security":
+      return 2;
     case "conflicts":
     case "committing":
-      return 2;
+      return hasConflictStep ? conflictsIndex : 2;
     case "summary":
-      return 3;
+      return hasConflictStep ? conflictsIndex + 1 : conflictsIndex;
     case "failed":
       return previousPhase === "conflicts" || previousPhase === "committing"
-        ? 2
-        : previousPhase === "candidates" || previousPhase === "analyzing"
-          ? 1
-          : 0;
+        ? conflictsIndex
+        : previousPhase === "security"
+          ? 2
+          : previousPhase === "candidates" || previousPhase === "analyzing"
+            ? 1
+            : 0;
     default:
       return 0;
   }
@@ -899,7 +919,9 @@ type: "failed",
     } catch (error) {
       const commitError = describeNativeError(error, (key, options) => String(t(key as never, options as never)), "importWorkflow.errors.generic");
       if (operation === operationRef.current) {
-        dispatch({ type: "failed", error: commitError, previousPhase: "conflicts" });
+        // 第 24 节：提交可从安全检测步（无冲突路径）或冲突处置步发起；
+        // 失败态回到触发提交的那一步。
+        dispatch({ type: "failed", error: commitError, previousPhase: state.phase });
       }
     }
   };
@@ -921,13 +943,23 @@ type: "failed",
   const hasFailure = state.results.some((result) => result.status === "failed");
   const hasTodo = state.results.some((result) => result.status === "todo");
   const hasAttention = hasFailure || hasTodo;
-  const stepIndex = flowStepIndex(state.phase, state.previousPhase);
-  const flowSteps: ImportStep[] = ["source", "candidates", "conflicts", "summary"].map(
-    (key, index) => ({
-      label: String(t(`importWorkflow.phases.${key}` as never)),
-      state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
-    }),
+  // 第 24 节：计划携带库内冲突或批内分组时才有冲突处置步；否则该步自动
+  // 跳过，安全检测步直接提供提交入口（常见路径步数不增）。
+  const hasConflictStep = Boolean(
+    state.plan && (
+      state.plan.conflicts.length > 0
+      || (state.plan.batchAnalysis
+        && state.plan.batchAnalysis.sameContentGroups.length + state.plan.batchAnalysis.sameNameGroups.length > 0)
+    ),
   );
+  const stepIndex = flowStepIndex(state.phase, state.previousPhase, hasConflictStep);
+  const flowSteps: ImportStep[] = (hasConflictStep
+    ? ["source", "candidates", "security", "conflicts", "summary"]
+    : ["source", "candidates", "security", "summary"]
+  ).map((key, index) => ({
+    label: String(t(`importWorkflow.phases.${key}` as never)),
+    state: index < stepIndex ? "complete" : index === stepIndex ? "current" : "upcoming",
+  }));
   const statusText = String(t(`importWorkflow.phases.${state.phase}` as never));
   const status: ImportStatus =
     state.phase === "summary"
@@ -967,15 +999,41 @@ type: "failed",
         state.overrides,
       ).length
     : 0;
-  // W3-1：危险级候选未做安全决策（仍然导入/不导入）前，提交在 UI 层先行
-  // 拦截；与后端 import.security_decision_required 同口径。动作为跳过的
-  // 危险级候选走跳过落账，无需安全决策。
+  // W3-1 + 第 24 节：危险级候选未做安全决策（仍然导入/不导入）前，禁止
+  // 进入冲突处置步（无冲突步时禁止提交）；与后端
+  // import.security_decision_required 同口径。动作为跳过的危险级候选走
+  // 跳过落账，无需安全决策。
   const pendingSecurityDecisionCount = (state.plan?.candidates ?? []).filter(
     (candidate) =>
       state.plan?.security?.[candidate.id]?.level === "danger"
       && state.actions[candidate.id] !== "skip"
       && !state.securityDecisions[candidate.id],
   ).length;
+  // 第 24 节：安全检测步的分级摘要一行——计数按 plan.security 的分级
+  // 口径（危险/警告/放行），未取得分级时诚实呈现，不伪造零风险。
+  const securityCounts = (() => {
+    const counts = { danger: 0, warning: 0, pass: 0 };
+    for (const summary of Object.values(state.plan?.security ?? {})) {
+      if (summary.level === "danger") counts.danger += 1;
+      else if (summary.level === "warning") counts.warning += 1;
+      else counts.pass += 1;
+    }
+    return counts;
+  })();
+  // 第 24 节：冲突处置步底部的决策汇总——跳过＝批内动作或安全决策为跳过；
+  // 预警＝将导入且分级为危险（仍要导入）或警告的候选。
+  const dispositionCounts = (() => {
+    const candidates = state.plan?.candidates ?? [];
+    const isSkipped = (candidateId: string) =>
+      state.actions[candidateId] === "skip" || state.securityDecisions[candidateId] === "skip";
+    const skipped = candidates.filter((candidate) => isSkipped(candidate.id)).length;
+    const alerted = candidates.filter((candidate) => {
+      if (isSkipped(candidate.id)) return false;
+      const level = state.plan?.security?.[candidate.id]?.level;
+      return level === "danger" || level === "warning";
+    }).length;
+    return { imported: candidates.length - skipped, alerted, skipped };
+  })();
   const canParse = state.phase === "source"
     && (state.sourceText.trim().length > 0 || selectedSources.length > 0);
   // onboarding 页脚禁用判定只信任真实条目状态（未扫描/解析中）。
@@ -1071,14 +1129,51 @@ type: "failed",
         ],
       };
       break;
+    case "security":
+      // 第 24 节：安全检测步——有冲突处置步时主操作是“继续处置冲突”，
+      // 否则直接提供提交入口（常见路径步数不增）。危险级未决策时两者都被拦。
+      actions = {
+        primary: [
+          hasConflictStep ? (
+            <Button
+              disabled={pendingSecurityDecisionCount > 0}
+              key="proceed"
+              onClick={() => dispatch({ type: "proceed_to_conflicts" })}
+              size="lg"
+            >
+              {t("importWorkflow.securityStep.proceed")}
+            </Button>
+          ) : (
+            <Button
+              disabled={pendingSecurityDecisionCount > 0 || commitLockNotice}
+              key="commit"
+              onClick={() => void commit()}
+              size="lg"
+            >
+              {t("importWorkflow.conflicts.commit")}
+            </Button>
+          ),
+        ],
+        secondary: [
+          <Button
+            key="back"
+            onClick={() => dispatch({ type: "show_candidates" })}
+            variant="ghost"
+          >
+            {t("actions.back")}
+          </Button>,
+        ],
+      };
+      break;
     case "conflicts":
+      // 第 24 节：提交门禁保留在冲突处置步（必选冲突＋批内同名处置）；
+      // 安全门禁已在进入本步前把守。
       actions = {
         primary: [
           <Button
             disabled={
               missingRequiredAction
               || pendingBatchDispositionCount > 0
-              || pendingSecurityDecisionCount > 0
               || commitLockNotice
             }
             key="commit"
@@ -1091,7 +1186,7 @@ type: "failed",
         secondary: [
           <Button
             key="back"
-            onClick={() => dispatch({ type: "show_candidates" })}
+            onClick={() => dispatch({ type: "back_to_security" })}
             variant="ghost"
           >
             {t("actions.back")}
@@ -1158,7 +1253,7 @@ type: "failed",
     >
       {importGuide ? <p aria-live="polite" className="sh-import-wizard__guide">{importGuide}</p> : null}
       {pickerError ? <p aria-live="polite" className="sh-import-source__notice">{pickerError}</p> : null}
-      {commitLockNotice && state.phase === "conflicts" ? (
+      {commitLockNotice && (state.phase === "conflicts" || (state.phase === "security" && !hasConflictStep)) ? (
         <p aria-live="polite" role="alert" className="sh-import-source__notice">
           {t("importWorkflow.commit.locked")}
         </p>
@@ -1264,19 +1359,25 @@ type: "failed",
         </section>
       ) : null}
 
-      {state.phase === "conflicts" && state.plan ? (
+      {state.phase === "security" && state.plan ? (
         <>
-          {/* DEV-20：冲突步首屏结论区——多少处冲突、几处必须选择。 */}
-          <section aria-label={t("importWorkflow.conflicts.summaryHeading")} className="sh-import-wizard__summary" role="status">
-            <h2 id="import-conflicts-summary-heading">{t("importWorkflow.conflicts.summaryHeading")}</h2>
-            <p>
-              {t("importWorkflow.conflicts.summary", {
-                conflicts: state.plan.conflicts.length,
-                required: state.plan.conflicts.filter((conflict) => conflict.required).length,
-              })}
-            </p>
+          {/* 第 24 节：安全检测步——分级摘要一行（危险 N／警告 M／放行 K）；
+              未取得分级时诚实呈现，不伪造零风险。 */}
+          <section aria-label={t("importWorkflow.securityStep.summaryHeading")} className="sh-import-wizard__summary" role="status">
+            <h2 id="import-security-summary-heading">{t("importWorkflow.securityStep.summaryHeading")}</h2>
+            {state.plan.security ? (
+              <p>
+                {t("importWorkflow.securityStep.summary", {
+                  danger: securityCounts.danger,
+                  pass: securityCounts.pass,
+                  warning: securityCounts.warning,
+                })}
+              </p>
+            ) : (
+              <p>{t("importWorkflow.securityStep.summaryUnavailable")}</p>
+            )}
           </section>
-          {/* 第 24 节：安全决策区块由向导直接渲染（自 ConflictResolution 搬出）。 */}
+          {/* 危险/警告决策区块（自 ConflictResolution 原样搬迁，内部逻辑不变）。 */}
           <SecurityDecisionSection
             decisions={state.securityDecisions}
             labels={securityLabels}
@@ -1284,22 +1385,7 @@ type: "failed",
               dispatch({ type: "security_decision_selected", candidateId, decision })}
             summaries={state.plan.security ?? {}}
           />
-          <ConflictResolution
-            actions={state.actions}
-            batchAnalysis={state.plan.batchAnalysis}
-            candidates={state.plan.candidates}
-            conflicts={state.plan.conflicts}
-            onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
-            onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
-            overrides={state.overrides}
-          />
-          {pendingBatchDispositionCount > 0 ? (
-            <p aria-live="polite" role="alert" className="sh-import-source__notice">
-              {t("importWorkflow.conflicts.batch.pendingAlert", {
-                count: pendingBatchDispositionCount,
-              })}
-            </p>
-          ) : null}
+          {/* 危险级未决策：禁止进入冲突处置步（无冲突步时禁止提交）。 */}
           {pendingSecurityDecisionCount > 0 ? (
             <p aria-live="polite" role="alert" className="sh-import-source__notice">
               {t("importWorkflow.conflicts.security.pendingAlert", {
@@ -1307,6 +1393,8 @@ type: "failed",
               })}
             </p>
           ) : null}
+          {/* US-016：AI 预检入口置于安全检测步尾部——用户主动发起，
+              跳过不影响确定性导入门。 */}
           <section aria-labelledby="import-ai-precheck-heading" className="sh-import-wizard__gate">
             <h2 id="import-ai-precheck-heading">{t("importWorkflow.aiPreCheck.heading")}</h2>
             <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.description")}</p>
@@ -1380,6 +1468,52 @@ type: "failed",
                 </ul>
                 <p className="sh-settings-local-note">{t("importWorkflow.aiPreCheck.gatesNote")}</p>
               </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+
+      {state.phase === "conflicts" && state.plan ? (
+        <>
+          {/* DEV-20：冲突步首屏结论区——多少处冲突、几处必须选择。 */}
+          <section aria-label={t("importWorkflow.conflicts.summaryHeading")} className="sh-import-wizard__summary" role="status">
+            <h2 id="import-conflicts-summary-heading">{t("importWorkflow.conflicts.summaryHeading")}</h2>
+            <p>
+              {t("importWorkflow.conflicts.summary", {
+                conflicts: state.plan.conflicts.length,
+                required: state.plan.conflicts.filter((conflict) => conflict.required).length,
+              })}
+            </p>
+          </section>
+          <ConflictResolution
+            actions={state.actions}
+            batchAnalysis={state.plan.batchAnalysis}
+            candidates={state.plan.candidates}
+            conflicts={state.plan.conflicts}
+            onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
+            onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
+            overrides={state.overrides}
+          />
+          {pendingBatchDispositionCount > 0 ? (
+            <p aria-live="polite" role="alert" className="sh-import-source__notice">
+              {t("importWorkflow.conflicts.batch.pendingAlert", {
+                count: pendingBatchDispositionCount,
+              })}
+            </p>
+          ) : null}
+          {/* 第 24 节：步内底部决策汇总——导入/跳过/预警计数与组成校验。 */}
+          <section aria-label={t("importWorkflow.dispositionSummary.heading")} className="sh-import-wizard__summary" role="status">
+            <h2 id="import-disposition-summary-heading">{t("importWorkflow.dispositionSummary.heading")}</h2>
+            <p>
+              {t("importWorkflow.dispositionSummary.summary", {
+                alerted: dispositionCounts.alerted,
+                imported: dispositionCounts.imported,
+                skipped: dispositionCounts.skipped,
+              })}
+            </p>
+            <p className="sh-settings-local-note">{t("importWorkflow.dispositionSummary.alertNote")}</p>
+            {state.plan.batchAnalysis ? (
+              <p className="sh-settings-local-note">{t("importWorkflow.dispositionSummary.compositionCheck")}</p>
             ) : null}
           </section>
         </>

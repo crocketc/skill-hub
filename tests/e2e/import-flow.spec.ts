@@ -260,6 +260,9 @@ test("requires an explicit conflict decision before the footer commit unlocks", 
   await page.getByRole("button", { name: "全选可导入候选" }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();
 
+  // 第 24 节：分析后先到安全检测步（该场景全放行），继续进入冲突处置步。
+  await page.getByRole("button", { name: "继续处置冲突" }).click();
+
   const commit = page.getByRole("button", { name: "提交导入" });
   await expect(commit).toBeDisabled();
   await page.getByRole("radio", { name: "独立导入" }).click();

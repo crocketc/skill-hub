@@ -111,6 +111,9 @@ export interface ImportSecuritySummaryView {
 /** candidateId → 安全摘要；analyzeConflicts 阶段由 prepare_import 汇总。 */
 export type ImportSecurityPlan = Record<string, ImportSecuritySummaryView>;
 
+/** 后端安全分级（pass / warning / danger），候选行徽标与决策区共用。 */
+export type ImportSecurityLevel = import("../../api/bindings").ImportSecurityLevel;
+
 /**
  * W3-1：危险级候选的用户决策。proceed=仍然导入（导入后进入预警状态，
  * 处理前不可派发）；skip=不导入（后端按跳过落账，不落库）。
@@ -669,6 +672,44 @@ function fixtureSecurityPlan(candidates: ImportCandidate[]): ImportSecurityPlan 
   return plan;
 }
 
+/**
+ * 第 24 节：其余场景的确定性安全分级——指定候选标记危险级（用于在同一
+ * 场景内覆盖安全决策与其他处置的交互），其余候选全部放行级。native 门面
+ * 的 prepare 成功即产出分级，mock 计划保持同形。
+ */
+function fixtureGradedSecurityPlan(
+  candidates: ImportCandidate[],
+  dangerCandidateIds: readonly string[] | undefined,
+): ImportSecurityPlan {
+  const dangerIds = new Set(dangerCandidateIds ?? []);
+  const plan: ImportSecurityPlan = {};
+  for (const candidate of candidates) {
+    plan[candidate.id] = dangerIds.has(candidate.id)
+      ? {
+          checkState: "failed",
+          dangerCount: 1,
+          findings: [
+            {
+              code: "security.destructive_command",
+              file: "scripts/run.sh",
+              lineStart: 3,
+              productLevel: "danger",
+            },
+          ],
+          level: "danger",
+          warningCount: 0,
+        }
+      : {
+          checkState: "passed",
+          dangerCount: 0,
+          findings: [],
+          level: "pass",
+          warningCount: 0,
+        };
+  }
+  return plan;
+}
+
 export function createMockImportFacade(
   options: MockImportOptions,
 ): MockImportFacade {
@@ -722,7 +763,7 @@ export function createMockImportFacade(
           : {}),
         ...(options.scenario === "security-danger"
           ? { security: fixtureSecurityPlan(selected) }
-          : {}),
+          : { security: fixtureGradedSecurityPlan(selected, undefined) }),
         ...(options.governance
           ? {
               governanceGroups: fixtureGovernanceGroups(selected),

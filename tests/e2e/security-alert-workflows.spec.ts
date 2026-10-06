@@ -24,6 +24,12 @@ async function reachConflictStep(page: import("@playwright/test").Page, scenario
   await page.getByRole("button", { name: "读取该来源的候选" }).click();
   await page.getByRole("button", { name: "全选可导入候选" }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();
+  // 第 24 节：分析后先落在安全检测步；带冲突处置步的场景再显式继续。
+  await expect(page.getByRole("status", { name: "安全检测结论" })).toBeVisible();
+  const proceed = page.getByRole("button", { name: "继续处置冲突" });
+  if (await proceed.isVisible()) {
+    await proceed.click();
+  }
   await expect(page.getByRole("button", { name: "提交导入" })).toBeVisible();
 }
 

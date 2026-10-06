@@ -428,6 +428,9 @@ it("suggests takeover for Agent-owned candidates and requires explicit selection
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
+  // 第 24 节：分析后先到安全检测步（该场景全放行），继续进入冲突处置步。
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
+
   expect(await screen.findByRole("radio", { name: "保留当前位置并纳入管理" })).not.toBeChecked();
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
 });
@@ -441,6 +444,9 @@ it("leads the governance and conflicts steps with a readable summary strip (DEV-
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  // 第 24 节：分析后先到安全检测步，继续进入冲突处置步。
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
 
   // 冲突步首屏：结论区先行播报冲突总数与必须决策数。
   const conflictsSummary = await screen.findByRole("status", { name: "本次导入的冲突结论" });
@@ -474,6 +480,9 @@ it("keeps commit disabled until every required conflict has an explicit decision
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+
+  // 第 24 节：分析后先到安全检测步，继续进入冲突处置步。
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
 
   const commit = await screen.findByRole("button", { name: "提交导入" });
   expect(commit).toBeDisabled();
@@ -969,20 +978,25 @@ it("requires a fresh conflict decision when retrying an import", async () => {
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  // 第 24 节：分析后先到安全检测步，继续进入冲突处置步。
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
   await user.click(await screen.findByRole("radio", { name: "独立导入" }));
+  // 冲突处置步 → 安全检测步 → 候选步 → 来源步：逐级回退保留上下文。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
 
   expect(screen.getByRole("button", { name: "提交导入" })).toBeDisabled();
   await user.click(screen.getByRole("radio", { name: "跳过此候选项" }));
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
 });
 
-it("submits directly after conflicts even when analysis reports relationship groups", async () => {
+it("submits directly after the security check even when analysis reports relationship groups", async () => {
   const user = userEvent.setup();
   const facade = createMockImportFacade({ scenario: "safe-local" });
   const originalAnalyze = facade.analyzeConflicts.bind(facade);
@@ -1033,7 +1047,9 @@ it("submits directly after conflicts even when analysis reports relationship gro
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
-  expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+  // 第 24 节：无冲突 → 冲突处置步自动跳过，安全检测步直接提供提交；
+  // 关系分组仍不生成独立的治理步骤。
+  expect(await screen.findByRole("heading", { name: "安全检测结论" })).toBeVisible();
   expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "提交导入" }));
 
@@ -1067,13 +1083,14 @@ it("does not add a governance step after returning to candidates and reanalyzing
   await screen.findByRole("button", { name: "分析冲突" });
   await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
-  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  // 第 24 节：无冲突 → 安全检测步直达；关系分组不生成独立治理步骤。
+  await screen.findByRole("heading", { name: "安全检测结论" });
   expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
-  await screen.findByRole("heading", { name: "处理需要确认的冲突" });
+  await screen.findByRole("heading", { name: "安全检测结论" });
   expect(screen.queryByRole("heading", { name: "确认导入后的关系处理" })).not.toBeInTheDocument();
 });
 
@@ -1648,7 +1665,8 @@ describe("AI import pre-check", () => {
     await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
-    expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+    // 第 24 节：AI 预检入口在安全检测步尾部。
+    expect(await screen.findByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
     expect(facade.listLlmProviders).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "运行 AI 预检" })).not.toBeInTheDocument();
     expect(
@@ -1667,7 +1685,8 @@ describe("AI import pre-check", () => {
     await screen.findByRole("button", { name: "分析冲突" });
     await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
     await user.click(screen.getByRole("button", { name: "分析冲突" }));
-    expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+    // 第 24 节：AI 预检入口在安全检测步尾部。
+    expect(await screen.findByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
     expect(
       await screen.findByRole("button", { name: "运行 AI 预检" }),
     ).toBeVisible();
@@ -1759,6 +1778,9 @@ it("seeds the merge suggestion and gates commit until every batch same-name memb
   }
   await user.click(screen.getByRole("button", { name: "分析冲突" }));
 
+  // 第 24 节：分析后先到安全检测步，继续进入冲突处置步。
+  await user.click(await screen.findByRole("button", { name: "继续处置冲突" }));
+
   // 同内容组先给出合并建议：保留项预选“复制”，其余预选“跳过”。
   expect(await screen.findByText("批内重复：内容与来源相同")).toBeVisible();
   const copyRadios = screen.getAllByRole("radio", { name: "复制到 SkillHub" });
@@ -1847,4 +1869,97 @@ it("passes explicit security decisions to commit and shows the skip row honestly
   expect(skipRow).toHaveTextContent("已跳过");
   const summaryList = skipRow!.closest("ul");
   expect(within(summaryList as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
+});
+
+// ---- 第 24 节：导入向导流程重组（安全检测步与冲突处置步分离） ----
+
+/** 分析完成后向导应停在安全检测步；返回已就绪的 user 供继续操作。 */
+async function analyzeToSecurityStep(
+  facade: ReturnType<typeof createMockImportFacade>,
+) {
+  const user = userEvent.setup();
+  await renderWizard(facade);
+  await user.type(screen.getByLabelText("来源"), "C:/incoming");
+  await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
+  await screen.findByRole("button", { name: "分析冲突" });
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  return user;
+}
+
+it("presents security detection as its own step with the grade summary and the AI pre-check", async () => {
+  const facade = createMockImportFacade({ scenario: "security-danger" });
+  const user = await analyzeToSecurityStep(facade);
+
+  // 步骤条：分析后进入安全检测步；该场景无冲突，冲突处置步不出现（共 4 步）。
+  const rail = screen.getByRole("list", { name: "导入步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(4);
+  expect(steps[2]).toHaveAttribute("aria-current", "step");
+  expect(steps[2]).toHaveTextContent("安全检测");
+  expect(steps.map((step) => step.textContent)).not.toContain("处理冲突");
+
+  // 分级摘要一行：危险 1／警告 1／放行 1。
+  const summary = screen.getByRole("status", { name: "安全检测结论" });
+  expect(summary).toHaveTextContent(/危险 1/);
+  expect(summary).toHaveTextContent(/警告 1/);
+  expect(summary).toHaveTextContent(/放行 1/);
+
+  // 危险决策区与 AI 预检区（置于本步尾部）都在安全检测步。
+  expect(screen.getByRole("heading", { name: "危险级安全风险（需要逐个决策）" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
+
+  // 危险级未决策：无冲突路径的提交入口被安全门禁拦住。
+  const commit = screen.getByRole("button", { name: "提交导入" });
+  expect(commit).toBeDisabled();
+  expect(screen.getByRole("alert")).toHaveTextContent(/还有 1 个危险级技能未做安全决策/);
+
+  await user.click(screen.getByRole("radio", { name: "仍然导入（导入后需处理预警才能派发）" }));
+  expect(commit).toBeEnabled();
+  await user.click(commit);
+  expect(await screen.findByRole("heading", { name: "导入结果" })).toBeVisible();
+});
+
+it("moves conflict disposition to its own step after security detection", async () => {
+  const facade = createMockImportFacade({ scenario: "conflict-required" });
+  const user = await analyzeToSecurityStep(facade);
+
+  // 安全检测步：无危险级待决策，主操作是“继续处置冲突”而非提交。
+  expect(screen.queryByRole("button", { name: "提交导入" })).not.toBeInTheDocument();
+  const proceed = await screen.findByRole("button", { name: "继续处置冲突" });
+  expect(proceed).toBeEnabled();
+
+  await user.click(proceed);
+
+  // 冲突处置步：冲突决策区 + 步内底部决策汇总；步骤条扩为 5 步且冲突步当前。
+  expect(await screen.findByRole("heading", { name: "处理需要确认的冲突" })).toBeVisible();
+  const rail = screen.getByRole("list", { name: "导入步骤" });
+  const steps = within(rail).getAllByRole("listitem");
+  expect(steps).toHaveLength(5);
+  expect(steps[3]).toHaveAttribute("aria-current", "step");
+  expect(steps[3]).toHaveTextContent("处理冲突");
+  expect(screen.getByRole("status", { name: "处置汇总" })).toBeVisible();
+
+  // 提交门禁保留在冲突处置步：必选冲突未决策时提交禁用。
+  const commit = screen.getByRole("button", { name: "提交导入" });
+  expect(commit).toBeDisabled();
+  await user.click(screen.getByRole("radio", { name: "独立导入" }));
+  expect(commit).toBeEnabled();
+
+  // 回退按钮回到安全检测步，保留计划与决策上下文。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  expect(await screen.getByRole("heading", { name: "安全检测结论" })).toBeVisible();
+});
+
+it("auto-skips the conflict step when the plan has no conflicts", async () => {
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const user = await analyzeToSecurityStep(facade);
+
+  // 常见路径步数不增：步骤条仍 4 步，安全检测步直接提供提交入口。
+  const rail = screen.getByRole("list", { name: "导入步骤" });
+  expect(within(rail).getAllByRole("listitem")).toHaveLength(4);
+  expect(screen.queryByRole("button", { name: "继续处置冲突" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "提交导入" }));
+  expect(await screen.findByRole("heading", { name: "导入结果" })).toBeVisible();
 });

@@ -28,9 +28,10 @@ test("lands the import on a summary with the governance task deep link and organ
   await page.getByRole("checkbox", { name: /Browser Helper/ }).click();
   await page.getByRole("button", { name: "分析冲突" }).click();
 
-  // 冲突步首屏：结论区先行播报；AI 不可用是真实信号，提示诚实且可继续。
+  // 第 24 节：分析后先到安全检测步（本场景无冲突，冲突处置步自动跳过，
+  // 提交入口直接可用）；AI 不可用是真实信号，提示诚实且可继续。
   await expect(
-    page.getByRole("status", { name: "本次导入的冲突结论" }),
+    page.getByRole("status", { name: "安全检测结论" }),
   ).toBeVisible({ timeout: 10_000 });
   await expect(
     page.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
