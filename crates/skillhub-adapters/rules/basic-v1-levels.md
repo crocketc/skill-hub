@@ -27,6 +27,7 @@
 - **path_traversal（#9）**：检测子串 `../`／`..\`／`%2e%2e` 在合法 Markdown 相对链接与路径示例中高频出现，是规则集内已知的误报面候选（回归素材见 `fixtures/skills/security/`）。本次复核结论：保持 §23 的 error→danger 主映射不变（该规则同时覆盖真实路径穿越写法，降级会让真实攻击面只得到警告），误报治理走扫描规则的豁免/素材路线，不在产品级映射里开例外。导入体验上，危险级命中走"展示明细＋用户显式决策"，不硬拦。W3-1 实施收口：豁免已落地——扫描器只对 Markdown 链接目标（`](…)`）内的 `../` 豁免（`benign-relative-links` 素材钉住），命令与裸路径中的 `../` 及 `..\`／编码形态仍照常命中（`all-rule-categories` 素材钉住）。
 - **data_upload（#6）**：误报治理同走扫描规则路线——裸词 `upload` 标记会命中只提到上传的文档行（docs/upload.md、上传清单），已替换为具体上传旗标（`--upload-file`／`-T`／`--post-file`／`-Method Put`）；真实上传语句由 `upload-patterns` 素材保持全数检出，纯提及时的放行由 `benign-upload-prose` 素材钉住。
 - 其余 11 条复核均无内容与级别错配：无"纯风格类内容误配 error"的规则（7/8/10/11/12 本就是 warning）；warning 类中也无需要升为危险级的规则（均不直接执行破坏性动作）。
+- **2026-10-06 复核（依据操作模型规范 §24）**：①警告级维持"可疑但非危害证据"的窄口径，不扩编；新增警告规则须逐条论证独立价值，同类规则不得堆叠，本表 12 条映射本次全部维持不变。②扫描遍历口径已与技能探测器（`skill_detector.rs` walk_directory）对齐：跳过 symlink 并排除点前缀目录（`.git` 等），版本控制内部文件（如 `.git/hooks/*.sample`）不再进入扫描与分级；该口径属于检测输入范围治理，不改变任何规则的 `product_level`（判据见 `basic_security.rs` 的 `version_control_internal_files_are_excluded_from_scanning`）。
 
 ## 变更纪律
 
