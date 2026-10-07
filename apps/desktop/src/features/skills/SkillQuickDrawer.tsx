@@ -692,6 +692,7 @@ export function SkillQuickDrawer({
               <PrototypeIdentityRegion
                 editingField={editingField}
                 editingValue={editingValue}
+                facade={facade}
                 llmConfigured={llmConfigured}
                 onAddTags={() => setTagAction("add_tag")}
                 onBeginEdit={beginEdit}
@@ -704,6 +705,7 @@ export function SkillQuickDrawer({
                 }}
                 onConfirmTranslation={confirmTranslation}
                 onTranslateDescription={facade.translateDescription ? translateDescription : undefined}
+                refreshSnapshot={refreshSnapshot}
                 translationDraft={translationDraft}
                 translationError={translationError}
                 translationLoading={translationLoading}
@@ -715,7 +717,7 @@ export function SkillQuickDrawer({
           {view ? (
             <div className="sh-skill-drawer__modules sh-skill-drawer__prototype-modules">
               <PrototypeRelationsModule detailSearch={detailSearch} skillId={skillId} view={view} />
-              <PrototypeCollectionsModule />
+              <PrototypeCollectionsModule facade={facade} skillId={view.id} />
               {normalizedPreferences.visibleModules.includes("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
               <PrototypeSubjectLocationModule directoryOpener={directoryOpener} view={view} />
               <PrototypeSecurityChecksModule llmConfigured={llmConfigured} securityFacade={securityFacade} view={view} />
@@ -899,34 +901,67 @@ function PrototypePopover({
 }
 
 
-function PrototypeLifecycleControl() {
+// W3-7：生命周期控制读真实派生态（view.lifecycle/view.trialDue，试用是
+// trial_due 的派生桶）；保存复核日期与转常规都走 set_trial 命令，成功后
+// 重读 quick view；门面未提供 setTrial 时如实只读，不渲染编辑入口。
+function PrototypeLifecycleControl({ facade, refreshSnapshot, skillId, view }: {
+  facade: SkillLibraryFacade;
+  refreshSnapshot?: () => Promise<void>;
+  skillId: string;
+  view: SkillQuickView;
+}) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const reviewPopover = useBoundedPrototypePopover();
-  const [isTrial, setIsTrial] = useState(true);
-  const [reviewDate, setReviewDate] = useState("2026-10-17");
-  const [draftDate, setDraftDate] = useState(reviewDate);
+  const [draftDate, setDraftDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string>();
+  const setTrial = facade.setTrial;
+  const isTrial = view.lifecycle === "trial";
+  const reviewDate = view.trialDue ?? "";
   const openDateEditor = (event: ReactMouseEvent<HTMLButtonElement>) => {
     reviewPopover.triggerRef.current = event.currentTarget;
     setDraftDate(reviewDate);
+    setSaveError(undefined);
     reviewPopover.setOpen(true);
   };
+  const save = async (due: string | null) => {
+    if (!setTrial || saving) return;
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      await setTrial(skillId, due);
+      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.quickView(skillId) });
+      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root });
+      void refreshSnapshot?.();
+      reviewPopover.close(true);
+    } catch (error) {
+      setSaveError(describeNativeError(error, (key, options) => String(t(key as never, options as never)), "skillLibrary.drawer.prototype.trialSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (!setTrial) {
+    return (
+      <div className="sh-skill-drawer__prototype-lifecycle">
+        <span className={`sh-skill-drawer__prototype-lifecycle-state${isTrial ? " is-trial" : ""}`}>
+          {isTrial ? t("skillLibrary.drawer.prototype.trial") : t("skillLibrary.drawer.prototype.regular")}
+        </span>
+        {isTrial && reviewDate ? <time dateTime={reviewDate}>{reviewDate}</time> : null}
+      </div>
+    );
+  }
   return (
     <div className="sh-skill-drawer__prototype-lifecycle">
       <span className={`sh-skill-drawer__prototype-lifecycle-state${isTrial ? " is-trial" : ""}`}>
         {isTrial ? t("skillLibrary.drawer.prototype.trial") : t("skillLibrary.drawer.prototype.regular")}
       </span>
-      {isTrial ? <time dateTime={reviewDate}>{reviewDate}</time> : null}
+      {isTrial && reviewDate ? <time dateTime={reviewDate}>{reviewDate}</time> : null}
+      <Button aria-expanded={reviewPopover.open} aria-haspopup="dialog" aria-label={isTrial ? t("skillLibrary.drawer.prototype.adjustReviewDate") : t("skillLibrary.drawer.prototype.setTrial")} className="sh-skill-drawer__prototype-calendar" data-tooltip={isTrial ? t("skillLibrary.drawer.prototype.adjustReviewDate") : t("skillLibrary.drawer.prototype.setTrial")} onClick={openDateEditor} size="sm" title={isTrial ? t("skillLibrary.drawer.prototype.adjustReviewDate") : t("skillLibrary.drawer.prototype.setTrial")} variant="ghost">
+        <PrototypeCalendarIcon />
+      </Button>
       {isTrial ? (
-        <Button aria-expanded={reviewPopover.open} aria-haspopup="dialog" aria-label={t("skillLibrary.drawer.prototype.adjustReviewDate")} className="sh-skill-drawer__prototype-calendar" data-tooltip={t("skillLibrary.drawer.prototype.adjustReviewDate")} onClick={openDateEditor} size="sm" title={t("skillLibrary.drawer.prototype.adjustReviewDate")} variant="ghost">
-          <PrototypeCalendarIcon />
-        </Button>
-      ) : (
-        <Button aria-expanded={reviewPopover.open} aria-haspopup="dialog" aria-label={t("skillLibrary.drawer.prototype.setTrial")} className="sh-skill-drawer__prototype-calendar" data-tooltip={t("skillLibrary.drawer.prototype.setTrial")} onClick={openDateEditor} size="sm" title={t("skillLibrary.drawer.prototype.setTrial")} variant="ghost">
-          <PrototypeCalendarIcon />
-        </Button>
-      )}
-      {isTrial ? (
-        <Button className="sh-skill-drawer__prototype-convert-regular" onClick={() => setIsTrial(false)} size="sm" variant="secondary">
+        <Button className="sh-skill-drawer__prototype-convert-regular" disabled={saving} onClick={() => void save(null)} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.convertRegular")}
         </Button>
       ) : null}
@@ -946,9 +981,10 @@ function PrototypeLifecycleControl() {
             {t("skillLibrary.drawer.prototype.reviewDate")}
             <input aria-label={t("skillLibrary.drawer.prototype.reviewDate")} onChange={(event) => setDraftDate(event.currentTarget.value)} type="date" value={draftDate} />
           </label>
+          {saveError ? <span className="sh-skill-drawer__prototype-copy-status is-error" role="alert">{saveError}</span> : null}
           <div className="sh-skill-drawer__prototype-popover-actions">
-            <Button onClick={() => { setReviewDate(draftDate); setIsTrial(true); reviewPopover.close(true); }} size="sm">
-              {t("skillLibrary.drawer.prototype.saveDatePreview")}
+            <Button disabled={saving || !draftDate} onClick={() => void save(draftDate)} size="sm">
+              {t("skillLibrary.drawer.prototype.saveReviewDate")}
             </Button>
             <Button onClick={() => reviewPopover.close(true)} size="sm" variant="ghost">
               {t("actions.cancel")}
@@ -961,18 +997,34 @@ function PrototypeLifecycleControl() {
 }
 
 
-const PROTOTYPE_COLLECTIONS = ["文档工具", "PDF 工作流", "研发工具"];
-
-
-function PrototypeCollectionsModule() {
+// W3-7：所属组合读真实组合清单（list_combinations），成员变更逐个调用
+// update_combination；技能未加入任何组合时如实呈现空态，不渲染样例组合。
+function PrototypeCollectionsModule({ facade, skillId }: {
+  facade: SkillLibraryFacade;
+  skillId: string;
+}) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const collectionPopover = useBoundedPrototypePopover();
-  const [selected, setSelected] = useState<string[]>(PROTOTYPE_COLLECTIONS.slice(0, 2));
-  const [draft, setDraft] = useState<string[]>(selected);
+  const [draft, setDraft] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string>();
+  const listCombinations = facade.listCombinations;
+  const updateCombination = facade.updateCombination;
+  const combinationsQuery = useQuery({
+    enabled: Boolean(listCombinations),
+    queryFn: () => listCombinations!(),
+    queryKey: skillLibraryKeys.combinations(),
+  });
+  const combinations = combinationsQuery.data ?? [];
+  const selected = combinations
+    .filter((combination) => combination.members.includes(skillId))
+    .map((combination) => combination.name);
   const collectionLabelId = useId();
   const openEditor = (event: ReactMouseEvent<HTMLButtonElement>, next = selected) => {
     collectionPopover.triggerRef.current = event.currentTarget;
     setDraft([...next]);
+    setSaveError(undefined);
     collectionPopover.setOpen(true);
   };
   const toggleCollection = (collection: string) => {
@@ -980,23 +1032,56 @@ function PrototypeCollectionsModule() {
       ? current.filter((item) => item !== collection)
       : [...current, collection]);
   };
+  const save = async () => {
+    if (!updateCombination || saving) return;
+    setSaving(true);
+    setSaveError(undefined);
+    try {
+      for (const combination of combinations) {
+        const wanted = draft.includes(combination.name);
+        const isMember = combination.members.includes(skillId);
+        if (wanted === isMember) continue;
+        const members = wanted
+          ? [...combination.members, skillId]
+          : combination.members.filter((member) => member !== skillId);
+        await updateCombination(combination.name, members);
+      }
+      void queryClient.invalidateQueries({ queryKey: skillLibraryKeys.combinations() });
+      collectionPopover.close(true);
+    } catch (error) {
+      setSaveError(describeNativeError(error, (key, options) => String(t(key as never, options as never)), "skillLibrary.drawer.prototype.collectionsSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const editable = Boolean(listCombinations && updateCombination) && combinations.length > 0;
   return (
     <ModuleCard title={t("skillLibrary.drawer.prototype.collectionsTitle")}>
-      <div className="sh-skill-drawer__prototype-collections">
-        <div aria-label={t("skillLibrary.drawer.prototype.collectionsTitle")} className="sh-skill-drawer__prototype-collection-chips" role="list">
-          {selected.map((collection) => (
-            <span className="sh-skill-drawer__prototype-collection-chip" key={collection} role="listitem">
-              {collection}
-              <Button aria-label={t("skillLibrary.drawer.prototype.removeCollection", { name: collection })} onClick={(event) => openEditor(event, selected.filter((item) => item !== collection))} size="sm" variant="ghost">
-                <Icon name="close" size={14} />
-              </Button>
-            </span>
-          ))}
+      {selected.length ? (
+        <div className="sh-skill-drawer__prototype-collections">
+          <div aria-label={t("skillLibrary.drawer.prototype.collectionsTitle")} className="sh-skill-drawer__prototype-collection-chips" role="list">
+            {selected.map((collection) => (
+              <span className="sh-skill-drawer__prototype-collection-chip" key={collection} role="listitem">
+                {collection}
+                {editable ? (
+                  <Button aria-label={t("skillLibrary.drawer.prototype.removeCollection", { name: collection })} onClick={(event) => openEditor(event, selected.filter((item) => item !== collection))} size="sm" variant="ghost">
+                    <Icon name="close" size={14} />
+                  </Button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+          {editable ? (
+            <Button aria-label={t("skillLibrary.drawer.prototype.editCollections")} className="sh-skill-drawer__prototype-collection-add" onClick={(event) => openEditor(event)} size="sm" variant="ghost">
+              <PrototypePlusIcon />
+            </Button>
+          ) : null}
         </div>
-        <Button aria-label={t("skillLibrary.drawer.prototype.editCollections")} className="sh-skill-drawer__prototype-collection-add" onClick={(event) => openEditor(event)} size="sm" variant="ghost">
-          <PrototypePlusIcon />
-        </Button>
-      </div>
+      ) : combinationsQuery.isError ? (
+        <span role="alert">{describeNativeError(combinationsQuery.error, (key, options) => String(t(key as never, options as never)), "skillLibrary.drawer.prototype.collectionsLoadFailed")}</span>
+      ) : (
+        <p>{t("skillLibrary.drawer.prototype.noCollections")}</p>
+      )}
       {collectionPopover.open ? (
         <PrototypePopover
           ariaLabel={t("skillLibrary.drawer.prototype.collectionsDialog")}
@@ -1012,15 +1097,16 @@ function PrototypeCollectionsModule() {
           <strong id={collectionLabelId}>{t("skillLibrary.drawer.prototype.collectionsDialog")}</strong>
           <fieldset>
             <legend>{t("skillLibrary.drawer.prototype.collectionsHelp")}</legend>
-            {PROTOTYPE_COLLECTIONS.map((collection) => (
-              <label key={collection}>
-                <input checked={draft.includes(collection)} onChange={() => toggleCollection(collection)} type="checkbox" />
-                <span>{collection}</span>
+            {combinations.map((combination) => (
+              <label key={combination.name}>
+                <input checked={draft.includes(combination.name)} onChange={() => toggleCollection(combination.name)} type="checkbox" />
+                <span>{combination.name}</span>
               </label>
             ))}
           </fieldset>
+          {saveError ? <span className="sh-skill-drawer__prototype-copy-status is-error" role="alert">{saveError}</span> : null}
           <div className="sh-skill-drawer__prototype-popover-actions">
-            <Button onClick={() => { setSelected(draft); collectionPopover.close(true); }} size="sm">
+            <Button disabled={saving} onClick={() => void save()} size="sm">
               {t("skillLibrary.drawer.prototype.saveCollections")}
             </Button>
             <Button onClick={() => collectionPopover.close(true)} size="sm" variant="ghost">
@@ -1539,6 +1625,9 @@ interface PrototypeIdentityRegionProps extends ModuleProps {
   purposeOverride?: string;
   editingField?: "alias" | "note" | "purpose";
   editingValue: string;
+  /** W3-7：生命周期控制读写真实 set_trial 命令所需门面与快照刷新。 */
+  facade: SkillLibraryFacade;
+  refreshSnapshot?: () => Promise<void>;
   /** FB-⑥：LLM 未配置时禁用 AI 翻译并给出设置入口；缺省按已配置处理。 */
   llmConfigured?: boolean;
   onAddTags: () => void;
@@ -1559,6 +1648,7 @@ interface PrototypeIdentityRegionProps extends ModuleProps {
 function PrototypeIdentityRegion({
   editingField,
   editingValue,
+  facade,
   llmConfigured = true,
   onAddTags,
   onBeginEdit,
@@ -1570,6 +1660,7 @@ function PrototypeIdentityRegion({
   onUseExistingTranslation,
   onTranslateDescription,
   purposeOverride,
+  refreshSnapshot,
   translationDraft,
   translationError,
   translationLoading = false,
@@ -1726,7 +1817,7 @@ function PrototypeIdentityRegion({
             <span className="sh-skill-drawer__field-label">
               {t("skillLibrary.filters.lifecycle")}
             </span>
-            <PrototypeLifecycleControl />
+            <PrototypeLifecycleControl facade={facade} refreshSnapshot={refreshSnapshot} skillId={view.id} view={view} />
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--version">
             <span className="sh-skill-drawer__field-label">

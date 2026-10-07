@@ -111,6 +111,7 @@ export function SkillDetailReviewExperience({
 }: SkillDetailReviewExperienceProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
   // §分区折叠：默认全部展开；折叠用 hidden 隐藏 body，不卸载组件（保留编辑草稿等状态）。
   const [openSections, setOpenSections] = useState<Record<ReviewSectionId, boolean>>({
@@ -221,7 +222,13 @@ export function SkillDetailReviewExperience({
                   <p role="status">正在读取技能画像…</p>
                 )}
                 <div className="sh-skill-detail-review__facts">
-                  <ReviewOverviewStatus summary={summary} />
+                  <ReviewOverviewStatus
+                    combinations={insights?.combinations}
+                    facade={facade}
+                    onSummarySaved={() => { void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) }); }}
+                    skillId={skillId}
+                    summary={summary}
+                  />
                   <ReviewSubjectLocation directoryOpener={directoryOpener} rootPath={summary.rootPath} />
                   <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
                 </div>

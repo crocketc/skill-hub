@@ -1,5 +1,5 @@
 import userEvent2 from "@testing-library/user-event";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { I18nextProvider } from "react-i18next";
@@ -14,6 +14,7 @@ import {
   DEFAULT_SKILL_QUERY,
   DEFAULT_TABLE_PREFERENCES,
   skillLibraryKeys,
+  type CombinationResult,
   type SkillBatchIntent,
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
@@ -58,8 +59,10 @@ const QUICK_VIEW: SkillQuickView = {
 };
 
 interface MockOptions {
+  combinations?: CombinationResult[];
   failDrawerSave?: boolean;
   failQuickView?: boolean;
+  failSetTrial?: boolean;
   quickView?: SkillQuickView;
   quickViewPromise?: Promise<SkillQuickView>;
   saveDrawerPreference?: (
@@ -78,6 +81,8 @@ interface MockFacade extends SkillLibraryFacade {
     listSkills: number;
     saveDrawerPreferences: SkillDrawerPreferences[];
     saveSkillMetadata: Array<{ skillId: string; patch: { alias?: string | null; note?: string | null; tags?: string[] } }>;
+    setTrial: Array<{ skillId: string; due: string | null }>;
+    updateCombination: Array<{ name: string; members: string[] }>;
   };
 }
 
@@ -99,7 +104,19 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
     listSkills: 0,
     saveDrawerPreferences: [],
     saveSkillMetadata: [],
+    setTrial: [],
+    updateCombination: [],
   };
+  // W3-7：setTrial/updateCombination 直接改写可变夹具状态，重读 quick view
+  // 与组合清单时能看到真实生效结果（与原生命令的可见效果一致）。
+  let currentQuickView: SkillQuickView = options.quickView ?? {
+    ...QUICK_VIEW,
+    usageEvidence:
+      "usageEvidence" in options
+        ? options.usageEvidence
+        : QUICK_VIEW.usageEvidence,
+  };
+  let combinations: CombinationResult[] = options.combinations ?? [];
   return {
     calls,
     async emitBatchIntent(intent) {
@@ -113,15 +130,26 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
       if (options.quickViewPromise) {
         return options.quickViewPromise;
       }
-      if (options.quickView) {
-        return options.quickView;
+      return currentQuickView;
+    },
+    async listCombinations() {
+      return combinations;
+    },
+    async updateCombination(name, members) {
+      combinations = combinations.map((combination) =>
+        combination.name === name ? { ...combination, members: [...members] } : combination,
+      );
+      calls.updateCombination.push({ members: [...members], name });
+    },
+    async setTrial(skillId, due) {
+      calls.setTrial.push({ due, skillId });
+      if (options.failSetTrial) {
+        throw new Error("trial save failed");
       }
-      return {
-        ...QUICK_VIEW,
-        usageEvidence:
-          "usageEvidence" in options
-            ? options.usageEvidence
-            : QUICK_VIEW.usageEvidence,
+      currentQuickView = {
+        ...currentQuickView,
+        lifecycle: due ? "trial" : "active",
+        trialDue: due ?? undefined,
       };
     },
     async listSavedViews() {
@@ -639,26 +667,6 @@ it("keeps the prototype chrome with a single width cycle and the full-details ro
   expect(heading).toContainElement(screen.getByRole("button", { name: "Dispatch" }));
   expect(heading).toContainElement(screen.getByRole("button", { name: "Export" }));
   expect(heading).toContainElement(screen.getByRole("button", { name: "Delete" }));
-});
-
-it("edits collections through the bounded popover without touching combination contracts", async () => {
-  const facade = createMockSkillLibraryFacade();
-  await renderDrawer({ facade });
-
-  expect(await screen.findByText("文档工具")).toBeVisible();
-  expect(screen.getByText("PDF 工作流")).toBeVisible();
-  expect(screen.queryByText("研发工具")).not.toBeInTheDocument();
-
-  const user = userEvent2.setup();
-  await user.click(screen.getByRole("button", { name: "Edit collections" }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit collections" });
-  await user.click(within(dialog).getByRole("checkbox", { name: "研发工具" }));
-  await user.click(within(dialog).getByRole("button", { name: "Save collection preview" }));
-
-  // 集合模块是原型预览：仅更新本地展示状态，不调用组合契约。
-  expect(screen.getByText("研发工具")).toBeVisible();
-  expect(facade.calls.emitBatchIntent).toHaveLength(0);
-  expect(facade.calls.saveSkillMetadata).toHaveLength(0);
 });
 
 it("carries the library query and return position into full details", async () => {
@@ -1359,5 +1367,85 @@ describe("drawer long description clamping (FB-⑦)", () => {
     expect(await screen.findByText("The subject directory is not materialized or unknown.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Open location" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy subject location path" })).not.toBeInTheDocument();
+  });
+});
+
+// W3-7：生命周期与所属组合接真实命令——试用复核日期与转常规走 set_trial，
+// 组合成员走 list/update combination；不再保存任何样例状态。
+describe("drawer lifecycle and collections (W3-7)", () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("saves the trial review date through the real setTrial command", async () => {
+    const facade = createMockSkillLibraryFacade({
+      quickView: { ...QUICK_VIEW, lifecycle: "trial", trialDue: "2026-11-03" } as SkillQuickView,
+    });
+    await renderDrawer({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Adjust review date" }));
+    fireEvent.change(await screen.findByLabelText("Review date"), { target: { value: "2026-12-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save review date" }));
+
+    await waitFor(() => expect(facade.calls.setTrial).toEqual([{ skillId: "skill-pdf", due: "2026-12-01" }]));
+    expect(await screen.findByText("2026-12-01")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("reports a readable failure when the trial save rejects", async () => {
+    const facade = createMockSkillLibraryFacade({
+      failSetTrial: true,
+      quickView: { ...QUICK_VIEW, lifecycle: "trial", trialDue: "2026-11-03" } as SkillQuickView,
+    });
+    await renderDrawer({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Adjust review date" }));
+    fireEvent.change(await screen.findByLabelText("Review date"), { target: { value: "2026-12-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save review date" }));
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(facade.calls.setTrial).toHaveLength(1);
+  });
+
+  it("returns a trial skill to regular without a review date", async () => {
+    const facade = createMockSkillLibraryFacade({
+      quickView: { ...QUICK_VIEW, lifecycle: "trial", trialDue: "2026-11-03" } as SkillQuickView,
+    });
+    await renderDrawer({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Convert to regular" }));
+
+    await waitFor(() => expect(facade.calls.setTrial).toEqual([{ skillId: "skill-pdf", due: null }]));
+    expect(await screen.findByText("Regular")).toBeVisible();
+  });
+
+  it("edits combination membership through the real combination commands", async () => {
+    const facade = createMockSkillLibraryFacade({
+      combinations: [
+        { name: "Documents", members: ["skill-pdf"] },
+        { name: "Research", members: [] },
+      ],
+    });
+    await renderDrawer({ facade });
+
+    expect(await screen.findByText("Documents")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Edit collections" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save collection changes" }));
+
+    await waitFor(() => expect(facade.calls.updateCombination).toEqual([
+      { name: "Research", members: ["skill-pdf"] },
+    ]));
+    // 保存后重读组合清单：新成员关系的 chip 同步出现。
+    expect(await screen.findByText("Research")).toBeVisible();
+  });
+
+  it("shows an honest empty state when the skill is in no collections", async () => {
+    const facade = createMockSkillLibraryFacade({ combinations: [] });
+    await renderDrawer({ facade });
+
+    expect(await screen.findByText("Not in any collections")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Edit collections" })).not.toBeInTheDocument();
   });
 });

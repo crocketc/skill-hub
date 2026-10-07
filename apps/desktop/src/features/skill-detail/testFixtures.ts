@@ -354,7 +354,9 @@ export function createMockSkillDetailFacade(
     analyzedConflictScopes: [],
   };
   let metadata = fixture.metadata;
-  let summary = fixture.summary;
+  // W3-7：options.summary 只作为初始读数合并一次；setTrial 等写入改可变
+  // summary 后，后续 getSummary 必须能看到生效结果（与真实目录一致）。
+  let summary = { ...fixture.summary, ...options.summary };
   let summaryFailures = options.failSummaryOnce ? 1 : 0;
   let relationFailures = options.failRelationsOnce ? 1 : 0;
 
@@ -460,7 +462,6 @@ export function createMockSkillDetailFacade(
       }
       return {
         ...summary,
-        ...options.summary,
         ...previewSkillSummaries[skillId],
         id: skillId,
       };
@@ -543,7 +544,8 @@ export function createMockSkillDetailFacade(
         async setTrial(skillId, due) {
       calls.trials.push({ due, skillId });
       if (options.failTrialSave) throw new Error("trial save failed");
-      summary = { ...summary, trialDue: due ?? undefined };
+      // W3-7：与原生 set_trial 派生规则一致——试用是 trial_due 的派生态。
+      summary = { ...summary, lifecycle: due ? "trial" : "active", trialDue: due ?? undefined };
     },
     async analyzeSemanticDuplicates(skillId) {
       calls.analyzedDuplicateSkills.push(skillId);

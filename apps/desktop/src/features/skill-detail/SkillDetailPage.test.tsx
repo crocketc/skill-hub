@@ -1439,3 +1439,57 @@ describe("SkillDetailPage subject location (W3-6)", () => {
     expect(screen.queryByText("~/SkillHub/skills/pdf-reader")).not.toBeInTheDocument();
   });
 });
+
+// W3-7：概览生命周期与组合接真实事实——复核日期与转常规走 setTrial 命令，
+// 组合行显示 insights 组合事实并链接组合管理页；DEV 场景按钮与样例保存
+// 文案移除。
+describe("SkillDetailPage lifecycle and combinations (W3-7)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "IntersectionObserver", {
+      configurable: true,
+      value: class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("saves the trial review date through the real setTrial command", async () => {
+    const facade = createMockSkillDetailFacade({ summary: { lifecycle: "trial", trialDue: "2026-11-03" } });
+    await renderDetail({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "调整复核日期" }));
+    fireEvent.change(await screen.findByLabelText("复核日期"), { target: { value: "2026-12-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存复核日期" }));
+
+    await waitFor(() => expect(facade.calls.trials).toEqual([{ skillId: "skill-pdf", due: "2026-12-01" }]));
+    expect(screen.queryByText("试用复核设置")).not.toBeInTheDocument();
+    expect(screen.queryByText("切换到试用复核场景")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("returns a trial skill to regular through the review dialog", async () => {
+    const facade = createMockSkillDetailFacade({ summary: { lifecycle: "trial", trialDue: "2026-11-03" } });
+    await renderDetail({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "调整复核日期" }));
+    fireEvent.click(await screen.findByRole("button", { name: "转为常规" }));
+
+    await waitFor(() => expect(facade.calls.trials).toEqual([{ skillId: "skill-pdf", due: null }]));
+    expect(await screen.findAllByText("常规").then((nodes) => nodes.length)).toBeGreaterThan(0);
+  });
+
+  it("shows real combination facts and links to the combination manager", async () => {
+    await renderDetail();
+
+    expect(await screen.findByText("Document toolkit")).toBeVisible();
+    expect(screen.getByRole("link", { name: "管理组合" })).toHaveAttribute("href", "/library/combinations");
+    expect(screen.queryByText("组合成员变更已保存到当前原型示例。")).not.toBeInTheDocument();
+  });
+});

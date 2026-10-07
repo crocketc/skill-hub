@@ -1498,7 +1498,9 @@
         "cancelActionPreview": "Cancel preview",
         "closeRelationPreview": "Close relation preview",
         "collectionsDialog": "Edit collections",
-        "collectionsHelp": "Select collections to preview adding or removing",
+        "collectionsHelp": "Select collections to add or remove this skill",
+        "collectionsLoadFailed": "Failed to load collections.",
+        "collectionsSaveFailed": "Failed to save collection changes.",
         "collectionsTitle": "Collections",
         "convertRegular": "Convert to regular",
         "copySubjectPath": "Copy subject location path",
@@ -1511,6 +1513,7 @@
         "importReceiptSample": "Copied into the central library; the file remains at its original location",
         "networkUpdateSource": "Network update source",
         "networkUpdateSourceSample": "GitHub · PDF Toolkit · v2.4.0 (sample)",
+        "noCollections": "Not in any collections",
         "openGovernanceSample": "Open relationship governance",
         "openLocation": "Open location",
         "openLocationFailed": "Could not open the subject directory.",
@@ -1533,8 +1536,8 @@
         "sampleManagedReason": "The sample relation has a central library body and a verified target entry.",
         "samplePending": "Preview sample · Central management pending",
         "samplePendingReason": "The sample target still has an independent copy; it needs verification and central management.",
-        "saveCollections": "Save collection preview",
-        "saveDatePreview": "Save date preview",
+        "saveCollections": "Save collection changes",
+        "saveReviewDate": "Save review date",
         "saveTranslationPreview": "Save translation preview",
         "securityCompactFindings": "{{count}} risks · {{actionable}} need attention",
         "setTranslationAsPurpose": "Set as purpose",
@@ -1542,6 +1545,7 @@
         "subjectLocationTitle": "Skill body location",
         "targetContextSample": "This opens a read-only sample context for {{name}}; related Skill: {{skill}}.",
         "trial": "Trial",
+        "trialSaveFailed": "Failed to save the review date.",
         "updateAvailable": "Update available",
         "export": "Export",
         "fullDetails": "View full details",
@@ -1807,6 +1811,7 @@
     }
   },
   "skillDetail": {
+    "trialSaveFailed": "Failed to save the review date.",
     "actions": {
       "securityHandling": "Security handling"
     },

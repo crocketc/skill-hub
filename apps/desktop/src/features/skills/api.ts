@@ -249,6 +249,11 @@ export interface SkillLibraryFacade {
   renameCombination?: (fromName: string, toName: string) => Promise<CombinationResult>;
   /** 组合标准导出（文件夹/ZIP 由偏好决定），失败时如实抛错。 */
   exportCombination?: (name: string) => Promise<{ path: string }>;
+  /**
+   * W3-7：设置或清除试用复核日期（set_trial 命令）；`null` 清除日期并退出
+   * 试用态（试用是 trial_due 的派生态）。未提供时抽屉隐藏生命周期编辑入口。
+   */
+  setTrial?: (skillId: string, due: string | null) => Promise<void>;
   /** N8 批量来源更新检查：未提供时页面不渲染入口（预览 facade 诚实缺省）。 */
   checkSourceUpdates?: (skillIds: string[]) => Promise<SourceUpdateCheckEntry[]>;
 }
@@ -382,6 +387,7 @@ export const BUILT_IN_SAVED_VIEWS = freeze<SavedSkillView[]>([
 
 export const skillLibraryKeys = {
   root: ["skill-library"] as const,
+  combinations: () => ["skill-library", "combinations"] as const,
   page: (query: SkillLibraryQuery) => ["skill-library", "page", query] as const,
   savedViews: () => ["skill-library", "saved-views"] as const,
   tablePreferences: () => ["skill-library", "table-preferences"] as const,

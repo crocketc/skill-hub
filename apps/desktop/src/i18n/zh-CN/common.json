@@ -1498,7 +1498,9 @@
         "cancelActionPreview": "取消预览",
         "closeRelationPreview": "关闭关系预览",
         "collectionsDialog": "编辑所属组合",
-        "collectionsHelp": "勾选组合以预览加入或移出",
+        "collectionsHelp": "勾选组合以加入或移出本技能",
+        "collectionsLoadFailed": "组合列表加载失败。",
+        "collectionsSaveFailed": "组合变更保存失败。",
         "collectionsTitle": "所属组合",
         "convertRegular": "转为常规",
         "copySubjectPath": "复制主体位置路径",
@@ -1511,6 +1513,7 @@
         "importReceiptSample": "从原位置复制进入集中库；原位置文件仍保留",
         "networkUpdateSource": "网络更新来源",
         "networkUpdateSourceSample": "GitHub · PDF Toolkit · v2.4.0（样例）",
+        "noCollections": "未加入任何组合",
         "openGovernanceSample": "打开关系治理",
         "openLocation": "打开位置",
         "openLocationFailed": "无法打开主体目录。",
@@ -1533,8 +1536,8 @@
         "sampleManagedReason": "样例关系已有集中库主体，并已验证目标入口。",
         "samplePending": "预览样例 · 待集中管理",
         "samplePendingReason": "样例目标仍保留独立副本，需后续核验与集中管理。",
-        "saveCollections": "保存组合预览",
-        "saveDatePreview": "保存日期预览",
+        "saveCollections": "保存组合变更",
+        "saveReviewDate": "保存复核日期",
         "saveTranslationPreview": "保存译文预览",
         "securityCompactFindings": "{{count}} 项风险 · {{actionable}} 项待处理",
         "setTranslationAsPurpose": "设为用途",
@@ -1542,6 +1545,7 @@
         "subjectLocationTitle": "主体位置",
         "targetContextSample": "此处将打开 {{name}} 的只读样例上下文；当前关联 Skill：{{skill}}。",
         "trial": "试用",
+        "trialSaveFailed": "复核日期保存失败。",
         "updateAvailable": "有可用更新",
         "export": "导出",
         "fullDetails": "查看完整详情",
@@ -1807,6 +1811,7 @@
     }
   },
   "skillDetail": {
+    "trialSaveFailed": "复核日期保存失败。",
     "actions": {
       "securityHandling": "安全处理"
     },

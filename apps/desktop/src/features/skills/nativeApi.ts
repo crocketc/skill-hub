@@ -21,6 +21,8 @@ import {
   type SkillTableRow,
 } from "./api";
 import { checkStateOf } from "../shared/checkState";
+// W3-7：抽屉生命周期编辑复用详情侧 set_trial 原生写入（同一命令，同一解析）。
+import { setNativeTrial } from "../skill-detail/nativeApi";
 
 function unavailableResult(): SkillLibraryUnavailableError {
   return new SkillLibraryUnavailableError();
@@ -486,6 +488,9 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
     if (export_.type !== "export_result") throw unavailableResult();
     return { path: export_.payload.path };
   },
+
+  // W3-7：抽屉试用复核日期/转常规与详情页共用 set_trial 写入。
+  setTrial: setNativeTrial,
 
   // N8 批量来源更新检查：单条失败由后端按项降级为 source_unavailable。
   async checkSourceUpdates(skillIds) {
