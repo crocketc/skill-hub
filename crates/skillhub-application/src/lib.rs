@@ -527,12 +527,11 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        // Link deployments pin the proof to the link itself, so the
-        // reconstruction must use the same identity the adapters captured at
-        // apply time (`ownership_identity`): junctions are reparse points and
-        // must NOT resolve to the staged directory they point at, or every
-        // junction removal fails with a self-inflicted ownership mismatch
-        // (#12 boundary: 链接部署链接文件被删).
+        // Physical identity stays meaningful for copy deployments.  Link
+        // deployments are verified against `link_anchor_paths` instead: a
+        // link's own file identity is minted fresh with every replacement and
+        // was never persisted, so it cannot prove ownership (#12 boundary:
+        // 链接部署链接文件被删；被替换的链接必须 fail closed，自己的链接必须可删).
         let identity_for_mode = |path: &std::path::Path| match deployment.mode {
             DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
             DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
@@ -549,12 +548,18 @@ impl LocalDeploymentBackend {
             .join("versions")
             .join(deployment.skill_id.to_string())
             .join(deployment.version_id.as_str());
+        let link_anchor_paths = if deployment.mode.is_directory_link() {
+            deployed_link_anchor_paths(&library, deployment)?
+        } else {
+            Vec::new()
+        };
         Ok(OwnershipProof {
             mode: deployment.mode,
             destination_path,
             source_path,
             expected_hash: deployment.expected_hash.clone(),
             target_identity,
+            link_anchor_paths,
             skill_id: deployment.skill_id,
             version_id: deployment.version_id.clone(),
             runtime_name: deployment.runtime_name.clone(),
@@ -634,6 +639,43 @@ impl LocalDeploymentBackend {
         }
         Ok(("skillhub".to_owned(), "global", None))
     }
+}
+
+/// Managed locations a deployed link may resolve to.  The apply-time choice
+/// (`materialized_source`) depends on library state at deploy time — the
+/// visible current tree, the version tree or the deployment staging tree —
+/// so a rebuilt proof accepts any current candidate instead of guessing one
+/// path.  A link resolving anywhere else was not deployed by us and must
+/// fail closed.
+fn deployed_link_anchor_paths(
+    library: &library_runtime::LibraryContext,
+    deployment: &DeploymentRecord,
+) -> AppResult<Vec<PathBuf>> {
+    let paths = LibraryPaths::from_root(library.root.clone());
+    let mut anchors = vec![
+        library
+            .root
+            .join("versions")
+            .join(deployment.skill_id.to_string())
+            .join(deployment.version_id.as_str()),
+        paths
+            .management_dir
+            .join("deployment-trees")
+            .join(deployment.skill_id.to_string())
+            .join(skillhub_core::deployment::deployment_tree_dir_name(
+                &deployment.version_id,
+            )),
+    ];
+    if let Some((record, current)) = library.central.load_portable_skill(deployment.skill_id)? {
+        if current.as_ref() == Some(&deployment.version_id) {
+            anchors.push(
+                library
+                    .central
+                    .visible_skill_path_for_runtime(deployment.skill_id, &record.runtime_name),
+            );
+        }
+    }
+    Ok(anchors)
 }
 
 /// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
@@ -7460,9 +7502,9 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        // 与 deployment_proof 同一约定：恢复路径的证明重建必须复用 adapters
-        // 在 apply 时捕获的身份口径（junction 取 reparse 点自身，不得解析到
-        // 暂存目录），否则恢复续作必然自报归属不匹配。
+        // 与 deployment_proof 同一约定：链接部署的归属锚点是 `link_anchor_paths`
+        // （链接解析到的受管来源），链接自身的文件身份每次重建都会变化，
+        // 不能作为归属证明。
         let identity_for_mode = |path: &std::path::Path| match deployment.mode {
             DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
             DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
@@ -7479,12 +7521,18 @@ impl LocalApplicationFacade {
             .join("versions")
             .join(deployment.skill_id.to_string())
             .join(deployment.version_id.as_str());
+        let link_anchor_paths = if deployment.mode.is_directory_link() {
+            deployed_link_anchor_paths(&library, deployment)?
+        } else {
+            Vec::new()
+        };
         Ok(OwnershipProof {
             mode: deployment.mode,
             destination_path,
             source_path,
             expected_hash: deployment.expected_hash.clone(),
             target_identity,
+            link_anchor_paths,
             skill_id: deployment.skill_id,
             version_id: deployment.version_id.clone(),
             runtime_name: deployment.runtime_name.clone(),

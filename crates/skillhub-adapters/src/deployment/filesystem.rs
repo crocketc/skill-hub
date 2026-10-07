@@ -38,6 +38,13 @@ pub struct OwnershipProof {
     pub source_path: PathBuf,
     pub expected_hash: String,
     pub target_identity: String,
+    /// Managed locations a deployed link may resolve to.  A link's own file
+    /// identity is minted fresh with every replacement and was never
+    /// persisted, so link ownership is anchored to where the link points:
+    /// a proof for a link deployment lists every source location the apply
+    /// flow could have chosen; the adapters refuse a link that resolves
+    /// anywhere else.  Empty for non-link modes.
+    pub link_anchor_paths: Vec<PathBuf>,
     pub skill_id: SkillId,
     pub version_id: VersionId,
     pub runtime_name: String,
@@ -272,6 +279,7 @@ impl DeploymentFilesystem {
         let ownership = OwnershipProof {
             mode: prepared.mode,
             destination_path: prepared.destination_path,
+            link_anchor_paths: vec![prepared.source_path.clone()],
             source_path: prepared.source_path,
             expected_hash: prepared.expected_tree_hash,
             target_identity,
@@ -387,11 +395,44 @@ fn verify_identity(proof: &OwnershipProof) -> AppResult<()> {
     if !destination.exists() {
         return Err(ownership_mismatch(destination));
     }
+    if proof.mode.is_directory_link() {
+        return verify_link_identity(proof);
+    }
     let current_identity = ownership_identity(proof.mode, destination)?;
     if current_identity != proof.target_identity {
         return Err(ownership_mismatch(destination));
     }
     Ok(())
+}
+
+/// Link deployments are owned as links, but a link's own file identity is a
+/// fresh file record for every creation (a replacement link never reuses the
+/// old one) and was never persisted.  Recomputing that identity at removal
+/// time and comparing it with the same recomputation would bless any
+/// replacement entry, so the durable anchor is where the link resolves: the
+/// entry must still be a link and must resolve to one of the managed source
+/// locations recorded in the proof.
+fn verify_link_identity(proof: &OwnershipProof) -> AppResult<()> {
+    let destination = &proof.destination_path;
+    if !is_directory_link_entry(destination) {
+        return Err(ownership_mismatch(destination));
+    }
+    let Ok(resolved) = fs::canonicalize(destination) else {
+        return Err(ownership_mismatch(destination));
+    };
+    let anchored = proof.link_anchor_paths.iter().any(|anchor| {
+        fs::canonicalize(anchor).is_ok_and(|canonical_anchor| canonical_anchor == resolved)
+    });
+    if !anchored {
+        return Err(ownership_mismatch(destination));
+    }
+    Ok(())
+}
+
+/// Whether the entry itself is a directory link (reparse point, or a symlink
+/// where reparse points do not exist), without following it.
+fn is_directory_link_entry(path: &Path) -> bool {
+    junction_windows::is_reparse_point(path)
 }
 
 fn tree_hash(root: &Path) -> AppResult<String> {
