@@ -205,6 +205,10 @@ interface DrawerHarnessProps {
   directoryOpener?: { openDirectory: (path: string) => Promise<void> };
   facade: SkillLibraryFacade;
   libraryReturn?: { focusSkillId: string; scrollLeft: number; scrollTop: number };
+  /** W4-2：抽屉主操作接宿主真实流程（派发路由/标准导出/统一移除）。 */
+  onDelete?: (skill: { id: string; name: string }) => void;
+  onDispatch?: (skillId: string) => void;
+  onExport?: (skillId: string) => void;
   onLocationChange?: (location: ReturnType<typeof useLocation>) => void;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
@@ -218,6 +222,9 @@ function DrawerHarness({
   directoryOpener,
   facade,
   libraryReturn,
+  onDelete,
+  onDispatch,
+  onExport,
   onLocationChange,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
@@ -245,6 +252,11 @@ function DrawerHarness({
         directoryOpener={directoryOpener}
         facade={facade}
         libraryReturn={libraryReturn}
+        // 主操作在抽屉里是必选真实流程；未断言动作的测试给空实现，
+        // 需要断言的测试显式传入 spy（见 "drawer primary actions" describe）。
+        onDelete={onDelete ?? (() => undefined)}
+        onDispatch={onDispatch ?? (() => undefined)}
+        onExport={onExport ?? (() => undefined)}
         onOpenChange={() => undefined}
         onPreferencesChange={setControlledPreferences}
         open={open}
@@ -1211,33 +1223,8 @@ it("keeps the overview in the scroll region and display-only actions in the fixe
   expect(overview!.compareDocumentPosition(modules as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-it("opens display-only action previews without navigating", async () => {
-  const locations: Array<string> = [];
-  let currentLocation: ReturnType<typeof useLocation> | undefined;
-  await renderDrawer({
-    facade: createMockSkillLibraryFacade(),
-    onLocationChange: (location) => {
-      currentLocation = location;
-      locations.push(`${location.pathname}${location.search}`);
-    },
-  });
-
-  const user = userEvent2.setup();
-  await user.click(await screen.findByRole("button", { name: "Dispatch" }));
-  const dialog = await screen.findByRole("dialog", { name: "Dispatch preview" });
-  expect(within(dialog).getByText(
-    "For review of the entry point and impact only. Nothing is actually dispatched, exported, or deleted.",
-  )).toBeVisible();
-  await user.click(within(dialog).getByRole("button", { name: "Cancel preview" }));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Dispatch preview" })).not.toBeInTheDocument();
-  });
-
-  await user.click(screen.getByRole("button", { name: "Delete" }));
-  expect(screen.getByRole("dialog", { name: "Delete preview" })).toBeVisible();
-  expect(currentLocation?.pathname).toBe("/library");
-  expect(locations.every((entry) => entry === "/library")).toBe(true);
-});
+// 旧“仅展示动作预览”测试已由 "drawer primary actions wired to real flows"
+// describe 取代：W4-2 裁决抽屉主操作直接进入宿主真实流程，不再有预览浮层。
 
 it("combines source and version into one final overview with update navigation", async () => {
   await renderDrawer({ facade: createMockSkillLibraryFacade() });
@@ -1447,5 +1434,38 @@ describe("drawer lifecycle and collections (W3-7)", () => {
 
     expect(await screen.findByText("Not in any collections")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Edit collections" })).not.toBeInTheDocument();
+  });
+});
+
+// W4-2：抽屉主操作不再提供“仅展示”的预览浮层——派发/导出/删除直接交给
+// 宿主页面的真实流程（§10 统一操作入口：多入口共用同一条真实链路）。
+describe("drawer primary actions wired to real flows", () => {
+  it("hands dispatch to the host handler instead of a preview popover", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const onDispatch = vi.fn();
+    await renderDrawer({ facade, onDispatch });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dispatch" }));
+    expect(onDispatch).toHaveBeenCalledWith("skill-pdf");
+    expect(screen.queryByText(/Nothing is actually dispatched/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel preview" })).not.toBeInTheDocument();
+  });
+
+  it("hands export to the host standard export flow", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const onExport = vi.fn();
+    await renderDrawer({ facade, onExport });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export" }));
+    expect(onExport).toHaveBeenCalledWith("skill-pdf");
+  });
+
+  it("hands delete to the unified removal flow with the skill identity", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const onDelete = vi.fn();
+    await renderDrawer({ facade, onDelete });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(onDelete).toHaveBeenCalledWith({ id: "skill-pdf", name: "PDF Reader" });
   });
 });

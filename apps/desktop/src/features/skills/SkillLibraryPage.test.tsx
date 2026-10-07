@@ -568,14 +568,18 @@ it("localizes failed deletion impact preparation and keeps confirmation closed i
   }
 });
 
-it("keeps the drawer's delete entry as a display-only preview without preparing deletion", async () => {
-    // §9 转正后抽屉动作均为预览（data-prototype-action），真实删除只保留在
-    // 表格勾选后的批量删除流程中；抽屉内不再触发 prepareDelete。
+it("routes the drawer's delete entry into the unified removal flow", async () => {
+    // W4-2：抽屉删除与批量删除共用 prepare_delete 影响确认（§10 统一操作入口），
+    // 不再有“仅展示”预览浮层。
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
       prepareUndeploy: vi.fn(),
       commitUndeploy: vi.fn(),
-      prepareDelete: vi.fn(),
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [{ id: "dep-1", label: "Codex CLI", path: "C:/codex", physicalId: "codex" }],
+        dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
       commitDelete: vi.fn(),
     };
     renderLibrary({ facade, removalFacade });
@@ -583,12 +587,9 @@ it("keeps the drawer's delete entry as a display-only preview without preparing 
     await screen.findByText("PDF Reader");
     fireEvent.click(skillNameCell("PDF Reader"));
 
-    const drawerDelete = await screen.findByRole("button", { name: "Delete" });
-    expect(drawerDelete).toHaveAttribute("data-prototype-action", "true");
-    fireEvent.click(drawerDelete);
-    expect(await screen.findByRole("dialog", { name: "Delete preview" })).toBeVisible();
-    expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
-    expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
+    expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
   });
 
   it("keeps search visible while secondary filters collapse in the library", async () => {

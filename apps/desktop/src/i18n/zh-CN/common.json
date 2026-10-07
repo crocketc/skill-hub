@@ -1481,21 +1481,9 @@
       "tagsFailure": "标签未保存，已恢复为已保存的内容。",
       "prototype": {
         "cycleWidth": "当前：{{current}}；点击切换至{{next}}",
-        "actionImpacts": {
-          "dispatch": "示例范围：将 {{skill}} 关联到选定 Agent 或项目；执行前仍需核验目标与影响。",
-          "export": "示例范围：导出 {{skill}} 的 Skill 主体与所选元数据；保存位置尚未选择。",
-          "delete": "示例范围：删除 {{skill}} 主体及经核验的受管链接；此原型不会删除任何内容。"
-        },
-        "actionNoExecution": "仅用于评审入口与影响说明，不会真实派发、导出或删除。",
-        "actionTitles": {
-          "dispatch": "派发预览",
-          "export": "导出预览",
-          "delete": "删除预览"
-        },
         "adjustReviewDate": "调整复核日期",
         "allFindings": "查看全部发现（{{count}}）",
         "backToRelationSummary": "返回关系摘要",
-        "cancelActionPreview": "取消预览",
         "closeRelationPreview": "关闭关系预览",
         "collectionsDialog": "编辑所属组合",
         "collectionsHelp": "勾选组合以加入或移出本技能",
@@ -1531,7 +1519,6 @@
         "reviewDate": "复核日期",
         "reviewDateDialog": "设置复核日期",
         "rootNotMaterialized": "主体目录未物化或未知。",
-        "sampleImpactLabel": "示例影响",
         "sampleManaged": "预览样例 · 已集中管理",
         "sampleManagedReason": "样例关系已有集中库主体，并已验证目标入口。",
         "samplePending": "预览样例 · 待集中管理",
@@ -1578,7 +1565,6 @@
         "securityNeedsAttention": "仍需处理",
         "securityDispositionRecorded": "已记录处理决定，原始发现仍保留",
         "securityFailureDetail": "本次检查未能完成，请稍后重试。",
-        "previewOnly": "布局预览；操作按钮仅展示，不执行",
         "requirements": "运行要求",
         "sourceVersionTitle": "来源与版本"
       },

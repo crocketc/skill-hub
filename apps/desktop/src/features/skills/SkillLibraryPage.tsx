@@ -1656,6 +1656,13 @@ export function SkillLibraryPage({
               }
             : undefined
         }
+        // W4-2：抽屉主操作与详情页共用同一条真实链路（§10 统一操作入口）。
+        onDelete={(skill) => {
+          closeDrawer();
+          void startBatchRemoval(skill);
+        }}
+        onDispatch={(id) => navigate(`/library/${id}/deploy`)}
+        onExport={(id) => navigate("/settings/data-protection", { state: { exportSkillIds: [id] } })}
         onOpenChange={(open) => {
           if (!open) closeDrawer();
         }}

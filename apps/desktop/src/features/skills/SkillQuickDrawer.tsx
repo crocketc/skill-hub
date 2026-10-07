@@ -49,6 +49,12 @@ export interface SkillQuickDrawerProps {
   directoryOpener?: DirectoryOpener;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
+  /** W4-2：删除交给宿主的统一移除流程（prepare_delete 影响确认）。 */
+  onDelete: (skill: { id: string; name: string }) => void;
+  /** W4-2：派发交给宿主路由到统一部署对话框。 */
+  onDispatch: (skillId: string) => void;
+  /** W4-2：导出交给宿主的标准导出流（数据保护页）。 */
+  onExport: (skillId: string) => void;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
@@ -177,6 +183,9 @@ export function SkillQuickDrawer({
   directoryOpener,
   facade,
   libraryReturn,
+  onDelete,
+  onDispatch,
+  onExport,
   onOpenChange,
   onPreferencesChange,
   open,
@@ -644,7 +653,7 @@ export function SkillQuickDrawer({
           {view ? (
             <div className="sh-skill-drawer__prototype-heading">
               <PinnedDrawerTitle name={view.name} />
-              <PrototypePrimaryActions view={view} />
+              <PrototypePrimaryActions onDelete={onDelete} onDispatch={onDispatch} onExport={onExport} view={view} />
             </div>
           ) : null}
         </div>
@@ -739,20 +748,6 @@ export function SkillQuickDrawer({
   );
 }
 
-
-
-const PROTOTYPE_ACTION_TITLE_KEYS = {
-  dispatch: "skillLibrary.drawer.prototype.actionTitles.dispatch",
-  export: "skillLibrary.drawer.prototype.actionTitles.export",
-  delete: "skillLibrary.drawer.prototype.actionTitles.delete",
-} as const;
-
-
-const PROTOTYPE_ACTION_IMPACT_KEYS = {
-  dispatch: "skillLibrary.drawer.prototype.actionImpacts.dispatch",
-  export: "skillLibrary.drawer.prototype.actionImpacts.export",
-  delete: "skillLibrary.drawer.prototype.actionImpacts.delete",
-} as const;
 
 
 const MAX_PROTOTYPE_VISIBLE_TAGS = 4;
@@ -2001,63 +1996,36 @@ function PrototypeIdentityRegion({
 
 
 interface PrototypePrimaryActionsProps extends ModuleProps {
-  /** 单技能来源更新检查；由宿主页面提供（与批量栏同一 facade 契约）。 */
-  onCheckUpdates?: (skillId: string, skillName: string) => void;
+  /** W4-2：删除交给宿主的统一移除流程；抽屉不再提供“仅展示”预览。 */
+  onDelete: (skill: { id: string; name: string }) => void;
+  /** W4-2：派发交给宿主路由到统一部署对话框。 */
+  onDispatch: (skillId: string) => void;
+  /** W4-2：导出交给宿主的标准导出流（数据保护页）。 */
+  onExport: (skillId: string) => void;
 }
 
 
 function PrototypePrimaryActions({
+  onDelete,
+  onDispatch,
+  onExport,
   view,
 }: PrototypePrimaryActionsProps) {
   const { t } = useTranslation();
-  const prototypeActionNoteId = useId();
-  const prototypeActionPopover = useBoundedPrototypePopover();
-  const [prototypeAction, setPrototypeAction] = useState<"dispatch" | "export" | "delete">("dispatch");
-  const showPrototypeAction = (event: ReactMouseEvent<HTMLButtonElement>, action: "dispatch" | "export" | "delete") => {
-    prototypeActionPopover.triggerRef.current = event.currentTarget;
-    setPrototypeAction(action);
-    prototypeActionPopover.setOpen(true);
-  };
   return (
-    <>
-      <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions sh-skill-drawer__prototype-actions">
-        <div className="sh-skill-drawer__actions-main">
-          <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__dispatch" data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "dispatch")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="primary">
-            {t("skillLibrary.drawer.prototype.dispatch")}
-          </Button>
-          <Button aria-describedby={prototypeActionNoteId} data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "export")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="secondary">
-            {t("skillLibrary.drawer.prototype.export")}
-          </Button>
-        </div>
-        <Button aria-describedby={prototypeActionNoteId} className="sh-skill-drawer__delete-action" data-prototype-action="true" onClick={(event) => showPrototypeAction(event, "delete")} size="sm" title={t("skillLibrary.drawer.prototype.previewOnly")} variant="danger">
-          {t("skillLibrary.drawer.prototype.delete")}
+    <section aria-label={t(MODULE_LABEL_KEYS.primary_actions)} className="sh-skill-drawer__actions sh-skill-drawer__prototype-actions">
+      <div className="sh-skill-drawer__actions-main">
+        <Button className="sh-skill-drawer__dispatch" data-prototype-action="true" onClick={() => onDispatch(view.id)} size="sm" variant="primary">
+          {t("skillLibrary.drawer.prototype.dispatch")}
         </Button>
-        <p className="sh-visually-hidden" id={prototypeActionNoteId}>{t("skillLibrary.drawer.prototype.previewOnly")}</p>
-      </section>
-      {prototypeActionPopover.open ? (
-        <PrototypePopover
-          ariaLabel={t(PROTOTYPE_ACTION_TITLE_KEYS[prototypeAction])}
-          className={`sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-action-popover sh-skill-drawer__prototype-action-popover--${prototypeAction}`}
-          contentRef={prototypeActionPopover.contentRef}
-          onCloseAutoFocus={prototypeActionPopover.onCloseAutoFocus}
-          onOpenChange={prototypeActionPopover.onOpenChange}
-          open={prototypeActionPopover.open}
-          position={prototypeActionPopover.position}
-          setPosition={prototypeActionPopover.setPosition}
-          triggerRef={prototypeActionPopover.triggerRef}
-        >
-          <strong>{t(PROTOTYPE_ACTION_TITLE_KEYS[prototypeAction])}</strong>
-          <p className="sh-skill-drawer__prototype-action-disclaimer">{t("skillLibrary.drawer.prototype.actionNoExecution")}</p>
-          <section>
-            <span>{t("skillLibrary.drawer.prototype.sampleImpactLabel")}</span>
-            <p>{t(PROTOTYPE_ACTION_IMPACT_KEYS[prototypeAction], { skill: view.name })}</p>
-          </section>
-          <Button onClick={() => prototypeActionPopover.close(true)} size="sm" variant="secondary">
-            {t("skillLibrary.drawer.prototype.cancelActionPreview")}
-          </Button>
-        </PrototypePopover>
-      ) : null}
-    </>
+        <Button data-prototype-action="true" onClick={() => onExport(view.id)} size="sm" variant="secondary">
+          {t("skillLibrary.drawer.prototype.export")}
+        </Button>
+      </div>
+      <Button className="sh-skill-drawer__delete-action" data-prototype-action="true" onClick={() => onDelete({ id: view.id, name: view.name })} size="sm" variant="danger">
+        {t("skillLibrary.drawer.prototype.delete")}
+      </Button>
+    </section>
   );
 }
 
