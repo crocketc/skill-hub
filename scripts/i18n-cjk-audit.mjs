@@ -25,6 +25,24 @@ const EXEMPT = {
     'DEV-only UI foundations board; registered solely under import.meta.env.DEV and eliminated from production builds, so its bilingual sample copy is design-review material rather than production UI text',
   'features/projects/ProjectsPreview.tsx':
     'DEV-only projects preview fixture (previewAssemblyPlans sample conflict reason); registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds, so the fixture copy is design-review material rather than user-visible runtime text',
+  // Reviewed 2026-10-06: the four previews below joined the same DEV-only
+  // group when the detail/drawer flows were prototyped; all four are mounted
+  // only inside the import.meta.env.DEV __preview subtree (app/router.tsx)
+  // and tree-shaken out of production builds, so their bilingual sample copy
+  // is design-review material, not user-visible runtime text.
+  'features/skills/SkillLibraryPreview.tsx':
+    'DEV-only skill library preview fixture; registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds',
+  'features/skill-detail/SkillDetailPreview.tsx':
+    'DEV-only skill detail preview fixture; registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds',
+  'features/relationships/governance/GovernancePreview.tsx':
+    'DEV-only relationship governance preview fixture; registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds',
+  'features/agents/AgentsPreview.tsx':
+    'DEV-only agents preview fixture; registered solely under import.meta.env.DEV in app/router.tsx and eliminated from production builds',
+  // settingsSearch aliases are bilingual search keywords matched against the
+  // user query; rendering only ever goes through labelKey via t(), so the
+  // alias strings never reach the UI as copy.
+  'features/settings/settingsSearch.ts':
+    'bilingual search alias data matched against user input only; visible labels render from labelKey via i18n',
 };
 
 function stripComments(text) {
