@@ -315,6 +315,24 @@ export function SkillDetailPreview() {
     createReviewFacade(createMockSkillDetailFacade({
       relationshipOverview: previewRelationshipOverview,
       removalImpactFact: previewRemovalImpact,
+      // W3-4：预览呈现有候选、有谱系的来源更新形态（静态真实形状，不执行命令）。
+      sourceUpdateStatus: {
+        skill_id: "skill-pdf",
+        state: "update_available_with_local_changes",
+        checked_at: "2026-10-05T08:00:00Z",
+        upstream_label: "v2.5.0",
+        candidate_identity: "tree:preview-candidate",
+        ignored_candidates: [],
+        candidate_ignored: false,
+      },
+      summary: {
+        upstreamLineage: {
+          source_skill_id: "skill-doc",
+          source_version_id: "version-100",
+          source_display_name: "DOCX Writer",
+          created_at: "1757808000",
+        },
+      },
     })),
   );
   const [markdownFacade] = useState(() => createMockMarkdownFacade());

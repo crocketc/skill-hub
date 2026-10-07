@@ -26,6 +26,8 @@ import type {
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
   RelationGovernanceRow,
+  SourceUpdateStatus,
+  UpstreamCheckResult,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -1169,5 +1171,206 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByText("pdf-reader <file>")).not.toBeInTheDocument();
     expect(screen.getByText("Poppler")).toBeVisible();
     expect(screen.getByText("Executable used for PDF rendering")).toBeVisible();
+  });
+});
+
+// W3-4：来源更新区接真实五命令（getSourceUpdateStatus / checkSourceUpdate /
+// prepareSourceUpdate+commitSourceUpdate / ignoreSourceUpdate / relinkSource），
+// 删除六个 DEV 场景模拟按钮；候选、状态与谱系全部来自门面事实，不再伪造
+// 来源名称或结果文案。
+describe("SkillDetailPage source updates real commands (W3-4)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "IntersectionObserver", {
+      configurable: true,
+      value: class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  const sourcesSection = async () => {
+    const section = await waitFor(() => {
+      const el = document.getElementById("review-sources");
+      if (!el) throw new Error("review-sources section not mounted yet");
+      return el;
+    });
+    return within(section);
+  };
+
+  const candidateStatus: SourceUpdateStatus = {
+    skill_id: "skill-pdf",
+    state: "update_available",
+    checked_at: "2026-10-05T08:00:00Z",
+    upstream_label: "v2.5.0",
+    candidate_identity: "tree:abc",
+    ignored_candidates: [],
+    candidate_ignored: false,
+  };
+
+  it("renders the persisted status and candidate actions without fabricated source names", async () => {
+    const facade = createMockSkillDetailFacade({ sourceUpdateStatus: candidateStatus });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    expect(await section.findByText("发现可采用的更新候选（v2.5.0）。")).toBeVisible();
+    expect(section.getByRole("button", { name: "预览采用影响" })).toBeVisible();
+    expect(section.getByRole("button", { name: "忽略本次更新" })).toBeVisible();
+    expect(section.getByRole("button", { name: "更换来源" })).toBeVisible();
+    // 原型示例仓库名不得再出现；来源展示只来自门面事实。
+    expect(screen.queryByText("PDF Reader 官方维护仓库")).not.toBeInTheDocument();
+  });
+
+  it("runs a real check through the facade and reports the result", async () => {
+    const facade = createMockSkillDetailFacade({
+      sourceUpdateResult: {
+        skill_id: "skill-pdf",
+        state: "up_to_date",
+        local_version: null,
+        upstream_version: null,
+        upstream_label: "v1.4.0",
+      } satisfies UpstreamCheckResult,
+    });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    fireEvent.click(await section.findByRole("button", { name: "检查更新" }));
+
+    expect(await section.findByText("来源检查完成：已是最新。")).toBeVisible();
+    expect(facade.calls.checkedSourceUpdates).toEqual([{ skillId: "skill-pdf" }]);
+  });
+
+  it("prepares the real preview and commits the confirmed adoption", async () => {
+    const facade = createMockSkillDetailFacade({ sourceUpdateStatus: candidateStatus });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    fireEvent.click(await section.findByRole("button", { name: "预览采用影响" }));
+
+    expect(facade.calls.preparedSourceUpdates).toEqual([{ skillId: "skill-pdf" }]);
+    expect(await screen.findByRole("dialog", { name: "采用更新影响预览" })).toBeVisible();
+    // 预览对话框列出门面返回的文件级变更，不编造版本号或影响项。
+    expect(screen.getByText("SKILL.md（修改）")).toBeVisible();
+    expect(screen.getByText("scripts/run.py（新增）")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认采用更新" }));
+
+    expect(await section.findByText("已采用来源更新并创建新版本。")).toBeVisible();
+    expect(facade.calls.committedSourceUpdates).toEqual([
+      { previewId: "preview-1", decision: "take_upstream" },
+    ]);
+    expect(screen.queryByRole("dialog", { name: "采用更新影响预览" })).not.toBeInTheDocument();
+  });
+
+  it("ignores the current candidate by its identity", async () => {
+    const facade = createMockSkillDetailFacade({ sourceUpdateStatus: candidateStatus });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    fireEvent.click(await section.findByRole("button", { name: "忽略本次更新" }));
+
+    await waitFor(() => {
+      expect(facade.calls.ignoredSourceUpdates).toEqual([
+        { skillId: "skill-pdf", candidateIdentity: "tree:abc" },
+      ]);
+    });
+  });
+
+  it("relinks an update source with an explicit user-chosen kind", async () => {
+    const facade = createMockSkillDetailFacade({
+      sourceUpdateStatus: { ...candidateStatus, state: "no_upstream", checked_at: null, upstream_label: null, candidate_identity: null },
+    });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    expect(await section.findByText(/没有可检查更新的上游来源/)).toBeVisible();
+    fireEvent.click(section.getByRole("button", { name: "关联更新来源" }));
+
+    expect(await screen.findByRole("dialog", { name: "关联网络更新来源" })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("来源地址"), {
+      target: { value: "https://example.com/org/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认关联" }));
+
+    await waitFor(() => {
+      expect(facade.calls.relinkSourceInputs).toEqual([
+        { skillId: "skill-pdf", source: { kind: "https", value: "https://example.com/org/repo" } },
+      ]);
+    });
+    expect(screen.queryByRole("dialog", { name: "关联网络更新来源" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the relink dialog open with a readable error when the command fails", async () => {
+    const facade = createMockSkillDetailFacade({
+      sourceUpdateStatus: { ...candidateStatus, state: "no_upstream", checked_at: null, upstream_label: null, candidate_identity: null },
+      failRelinkSource: true,
+    });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    fireEvent.click(await section.findByRole("button", { name: "关联更新来源" }));
+    fireEvent.change(await screen.findByLabelText("来源地址"), {
+      target: { value: "https://example.com/org/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认关联" }));
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "关联网络更新来源" })).toBeVisible();
+  });
+
+  it("renders the upstream lineage from summary facts and never sample names", async () => {
+    await renderDetail();
+
+    expect(await screen.findByText("无复用修改依据。此技能不是从其他 Skill 复用修改创建的。")).toBeVisible();
+    expect(screen.queryByText(/PDF Reader 基础版/)).not.toBeInTheDocument();
+  });
+
+  it("links to the upstream skill when the lineage resolves a display name", async () => {
+    const facade = createMockSkillDetailFacade({
+      summary: {
+        upstreamLineage: {
+          source_skill_id: "skill-doc",
+          source_version_id: "version-100",
+          source_display_name: "DOCX Writer",
+          created_at: null,
+        },
+      },
+    });
+    await renderDetail({ facade });
+
+    const lineageLink = await screen.findByRole("link", { name: /DOCX Writer/ });
+    expect(lineageLink).toHaveAttribute("href", "/library/skill-doc");
+  });
+
+  it("keeps no DEV demo buttons in the source updates section", async () => {
+    await renderDetail();
+    await screen.findByRole("heading", { name: "PDF Reader" });
+
+    const section = await sourcesSection();
+    for (const label of ["模拟未关联", "模拟已关联", "模拟本地有修改", "模拟检查失败", "模拟查找失败", "切换复用修改追溯"]) {
+      expect(section.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
+    expect(section.queryByText("DEV 场景演示")).not.toBeInTheDocument();
+  });
+
+  it("renders the import record from real provenance fields", async () => {
+    await renderDetail();
+
+    // 同一原始路径也会出现在已观察部署等真实区块中；导入记录断言限定其容器。
+    const importRecord = await waitFor(() => {
+      const el = document.querySelector(".sh-skill-detail-review__import-record");
+      if (!el) throw new Error("import record block not mounted yet");
+      return within(el as HTMLElement);
+    });
+    // 原始位置与来源记录夹具值相同，两条 dd 各渲染一次。
+    const pathEntries = await importRecord.findAllByText("C:/Users/demo/.agents/skills/pdf-reader");
+    expect(pathEntries.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("~/Agents/Codex/skills/pdf-reader")).not.toBeInTheDocument();
   });
 });

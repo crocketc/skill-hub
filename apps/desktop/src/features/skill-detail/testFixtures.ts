@@ -64,6 +64,10 @@ export interface MockSkillDetailOptions {
   /** Task 8：AI 可用性（缺省 true，与导入向导 mock 行为一致）。 */
   aiAvailable?: boolean;
   sourceUpdateResult?: UpstreamCheckResult;
+  /** W3-4：getSourceUpdateStatus 的持久化状态投影（缺省为从未检查）。 */
+  sourceUpdateStatus?: SourceUpdateStatus;
+  /** W3-4：relinkSource 抛错路径。 */
+  failRelinkSource?: boolean;
   deferredRollbackImpact?: boolean;
   failMetadataSave?: boolean;
   failRelations?: boolean;
@@ -501,7 +505,10 @@ export function createMockSkillDetailFacade(
         current_version_id: null,
         candidate_identity: "sha256:mockcandidate",
         upstream_label: null,
-        files: [],
+        files: [
+          { path: "SKILL.md", change: "modified" },
+          { path: "scripts/run.py", change: "added" },
+        ],
       };
       return preview;
     },
@@ -518,7 +525,7 @@ export function createMockSkillDetailFacade(
       calls.ignoredSourceUpdates.push({ candidateIdentity, skillId });
     },
     async getSourceUpdateStatus(skillId): Promise<SourceUpdateStatus> {
-      return {
+      return options.sourceUpdateStatus ?? {
         skill_id: skillId,
         state: null,
         checked_at: null,
@@ -529,6 +536,7 @@ export function createMockSkillDetailFacade(
       };
     },
     async relinkSource(skillId, source) {
+      if (options.failRelinkSource) throw new Error("relink failed");
       calls.relinkSourceInputs.push({ skillId, source });
       return { messageCode: "source.relinked" };
     },

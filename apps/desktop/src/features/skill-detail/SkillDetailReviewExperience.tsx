@@ -1,7 +1,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
+import { describeNativeError } from "../../api/nativeErrors";
+import type { SourceState, SourceUpdateFileChange, SourceUpdatePreview } from "../../api/bindings";
 import { AgentPresentation, inferAgentKindKey, readableAgentIdName } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -27,7 +30,9 @@ import type {
   SkillMetadata,
   SkillProvenance,
   SkillRequirementFact,
+  SourceRelinkInput,
 } from "./api";
+import { skillDetailKeys } from "./api";
 
 const sections = [
   ["review-overview", "概览"],
@@ -76,7 +81,8 @@ interface SkillDetailReviewExperienceProps {
  * （W3-2，§10 统一操作入口），头部转为集中管理接真实治理批次契约（W3-3a，
  * §7.8 生产承载）；
  * 使用去向卡接治理清单事实与治理页深链（W3-5/W3-3b）；
- * 来源更新示例流保持原型确认行为，接真实数据由后续任务裁决。
+ * 来源更新区接真实五命令与 K6 预览绑定采用流（W3-4）：状态投影、只读检查、
+ * 预览确认采用、按候选身份忽略与显式类型的来源关联，事实全部来自门面。
  */
 export function SkillDetailReviewExperience({
   adjacent,
@@ -279,7 +285,7 @@ export function SkillDetailReviewExperience({
                   </dl>
                 ) : null}
               </div>
-              <ReviewSourceUpdates markdownFacade={markdownFacade} />
+              <ReviewSourceUpdates facade={facade} skillId={skillId} summary={summary} />
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-versions">
@@ -538,164 +544,294 @@ function UsageDestinationCardView({
   );
 }
 
-function ReviewSourceUpdates({ markdownFacade }: { markdownFacade?: MarkdownFacade }) {
-  const [sourceState, setSourceState] = useState<"missing" | "linked">("missing");
-  const [lookup, setLookup] = useState<"idle" | "verified" | "failed">("idle");
-  const [chooserOpen, setChooserOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmIntent, setConfirmIntent] = useState<"associate" | "replace" | "adopt">("associate");
-  // §18.1：无来源时允许“关联并采用更新”一次确认；单独关联仍走 associate。
-  const [adoptCombined, setAdoptCombined] = useState(false);
-  const [unlinkOpen, setUnlinkOpen] = useState(false);
-  const [localChanges, setLocalChanges] = useState(false);
-  const [actionResult, setActionResult] = useState<string>();
-  const [sourceInput, setSourceInput] = useState("https://example.org/pdf-reader");
-  // §来源追溯：复用修改依据默认可见；DEV 场景按钮可在两态间切换演示。
-  const [derived, setDerived] = useState(true);
-  const [upstreamOpen, setUpstreamOpen] = useState(false);
-  const confirmTitle = confirmIntent === "adopt"
-    ? adoptCombined ? "关联并采用更新影响预览" : "采用网络更新影响预览"
-    : confirmIntent === "replace" ? "更换网络来源影响预览"
-      : "关联影响预览";
-  const confirmDescription = confirmIntent === "associate" ? "关联不会采用或替换当前内容"
-    : confirmIntent === "replace" ? "更换来源只变更更新关系，不会采用新内容"
-      : adoptCombined ? "一次确认同时登记更新来源并采用其核验版本；当前内容保留为历史版本。"
-        : "采用将以核验的来源版本创建当前 Skill 的新版本";
+// W3-4：来源更新区接真实五命令——getSourceUpdateStatus（持久化状态投影）、
+// checkSourceUpdate（只读检查）、prepareSourceUpdate+commitSourceUpdate（K6
+// 预览绑定采用流）、ignoreSourceUpdate（按候选身份忽略）、relinkSource（G-15
+// 显式来源类型）。状态、候选与谱系全部来自门面事实；后端没有「解除来源关联」
+// 命令，界面不提供该入口（登记为契约缺口待开发项）。
+const SOURCE_KIND_LABELS: Record<string, string> = {
+  local: "本机目录导入",
+  https: "网络 HTTPS 导入",
+  git: "Git 仓库导入",
+};
+
+const SOURCE_UPDATE_FILE_CHANGE_LABELS: Record<SourceUpdateFileChange["change"], string> = {
+  added: "新增",
+  removed: "移除",
+  modified: "修改",
+};
+
+function checkResultNotice(state: SourceState): string {
+  switch (state) {
+    case "up_to_date": return "来源检查完成：已是最新。";
+    case "update_available": return "来源检查完成：发现可采用的更新候选。";
+    case "update_available_with_local_changes": return "来源检查完成：发现可采用的更新候选；本机内容有未同步修改。";
+    case "no_upstream": return "来源检查完成：没有可检查更新的上游来源。";
+    case "source_unavailable": return "来源检查失败 · 上次关联仍保留，技能内容没有变化。";
+    case "authentication_required": return "来源需要认证后才能检查更新。";
+  }
+}
+
+function ReviewSourceUpdates({ facade, skillId, summary }: {
+  facade: SkillDetailFacade;
+  skillId: string;
+  summary: SkillDetailSummary;
+}) {
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery({
+    queryFn: () => facade.getSourceUpdateStatus(skillId),
+    queryKey: skillDetailKeys.sourceUpdateStatus(skillId),
+    retry: false,
+  });
+  const [relinkOpen, setRelinkOpen] = useState(false);
+  const [relinkKind, setRelinkKind] = useState<SourceRelinkInput["kind"]>("https");
+  const [relinkValue, setRelinkValue] = useState("");
+  const [relinkError, setRelinkError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SourceUpdatePreview | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en-US";
+  const describeError = useCallback(
+    (reason: unknown) => describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "tasks.notices.failureUnknown",
+    ),
+    [t],
+  );
+  const invalidateSourceFacts = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: skillDetailKeys.sourceUpdateStatus(skillId) });
+    void queryClient.invalidateQueries({ queryKey: skillDetailKeys.versions(skillId) });
+    void queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skillId) });
+  }, [queryClient, skillId]);
+
+  const checkMutation = useMutation({
+    mutationFn: () => facade.checkSourceUpdate(skillId),
+    onSuccess: (result) => {
+      setNotice(checkResultNotice(result.state));
+      setActionError(null);
+      invalidateSourceFacts();
+    },
+    onError: (reason: unknown) => {
+      setNotice(null);
+      setActionError(describeError(reason));
+    },
+  });
+  const ignoreMutation = useMutation({
+    mutationFn: (candidateIdentity: string) => facade.ignoreSourceUpdate(skillId, candidateIdentity),
+    onSuccess: () => {
+      setNotice("已忽略当前候选；之后的新候选会再次提醒。");
+      setActionError(null);
+      invalidateSourceFacts();
+    },
+    onError: (reason: unknown) => {
+      setNotice(null);
+      setActionError(describeError(reason));
+    },
+  });
+  // K6：采纳入口先取得真实候选预览（preview_id + 文件级变化），确认后才提交。
+  const preparePreview = async () => {
+    setActionError(null);
+    setCommitError(null);
+    try {
+      setPreview(await facade.prepareSourceUpdate(skillId));
+      setPreviewOpen(true);
+    } catch (reason: unknown) {
+      setActionError(describeError(reason));
+    }
+  };
+  const commitMutation = useMutation({
+    mutationFn: (boundPreview: SourceUpdatePreview) =>
+      facade.commitSourceUpdate(boundPreview.preview_id, "take_upstream"),
+    onSuccess: (applied) => {
+      setPreviewOpen(false);
+      setPreview(null);
+      setNotice(
+        applied.deployments_need_reconciliation
+          ? "已采用来源更新并创建新版本。有部署需要重新对账；请在关系治理中检查。"
+          : "已采用来源更新并创建新版本。",
+      );
+      setActionError(null);
+      invalidateSourceFacts();
+    },
+    onError: (reason: unknown) => setCommitError(describeError(reason)),
+  });
+  const relinkMutation = useMutation({
+    mutationFn: (source: SourceRelinkInput) => facade.relinkSource(skillId, source),
+    onSuccess: () => {
+      setRelinkOpen(false);
+      setRelinkValue("");
+      setRelinkError(null);
+      setNotice("已登记更新来源；可随时执行只读检查。");
+      setActionError(null);
+      invalidateSourceFacts();
+    },
+    onError: (reason: unknown) => setRelinkError(describeError(reason)),
+  });
+
+  const status = statusQuery.data;
+  const hasSource = status !== undefined && status.state !== null && status.state !== "no_upstream";
+  const candidateAvailable = status !== undefined
+    && (status.state === "update_available" || status.state === "update_available_with_local_changes")
+    && !status.candidate_ignored
+    && status.candidate_identity !== null;
+  let stateText: string;
+  if (statusQuery.isPending) stateText = "正在获取来源更新状态。";
+  else if (statusQuery.isError || status === undefined) stateText = "来源更新状态暂时无法获取。";
+  else {
+    switch (status.state) {
+      case null: stateText = "尚未检查更新来源。"; break;
+      case "no_upstream": stateText = "没有可检查更新的上游来源；本地创建或仅本机目录导入的技能没有网络更新来源。"; break;
+      case "up_to_date": stateText = "来源为最新状态。"; break;
+      case "update_available": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}。`; break;
+      case "update_available_with_local_changes": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}；本机内容有未同步修改，采用前会说明覆盖影响。`; break;
+      case "source_unavailable": stateText = "来源暂不可用；已登记的来源保持不变，技能内容没有变化。"; break;
+      case "authentication_required": stateText = "来源需要认证后才能检查更新。"; break;
+    }
+    if (status.candidate_ignored) stateText += "当前候选已被忽略；之后的新候选会再次提醒。";
+  }
+
   return (
     <section className="sh-skill-detail-review__source-updates" aria-label="网络更新来源">
       <div className="sh-skill-detail-review__section-heading">
         <div>
           <h3>网络更新来源</h3>
-          <p>{sourceState === "linked" ? "已关联：PDF Reader 官方维护仓库" : "尚未关联更新来源"}</p>
-          {sourceState === "linked" ? (
-            <p className="sh-skill-detail-review__source-badges" aria-label="来源形态">
-              <span>网络仓库</span>
-              <span>GitHub</span>
-            </p>
-          ) : null}
+          <p>{stateText}</p>
+          {status?.checked_at ? <p className="sh-skill-detail-review__secondary">最近检查：{formatTimestamp(status.checked_at, locale)}</p> : null}
         </div>
-        <Button className="sh-skill-detail-review__accent-action" onClick={() => { setLookup("idle"); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setChooserOpen(true); }} size="sm" variant="ghost">
-          {sourceState === "linked" ? "更换来源" : "查找更新来源"}
-        </Button>
       </div>
       <p>关联来源只建立更新关系，不会替换当前内容或自动升级。</p>
-      {actionResult ? <p role="status">{actionResult}</p> : null}
-      {sourceState === "linked" ? (
-        <div className="sh-skill-detail-review__source-actions">
-          <Button onClick={() => { setLookup("verified"); setActionResult(undefined); }} size="sm" variant="secondary">检查更新</Button>
+      {notice ? <p role="status">{notice}</p> : null}
+      {actionError ? <p role="alert">{actionError}</p> : null}
+      <div className="sh-skill-detail-review__source-actions">
+        <Button
+          loading={checkMutation.isPending}
+          onClick={() => checkMutation.mutate()}
+          size="sm"
+          variant="secondary"
+        >
+          检查更新
+        </Button>
+        {!statusQuery.isError ? (
           <Button
+            className="sh-skill-detail-review__accent-action"
             onClick={() => {
-              if (markdownFacade) void markdownFacade.openExternalUrl(sourceInput);
-              setActionResult("原型演示：已请求在浏览器打开来源页面；不会发送技能内容或凭据。");
+              setRelinkError(null);
+              setRelinkKind("https");
+              setRelinkOpen(true);
             }}
             size="sm"
             variant="ghost"
           >
-            打开来源页面
+            {hasSource ? "更换来源" : "关联更新来源"}
           </Button>
-          <Button onClick={() => setUnlinkOpen(true)} size="sm" variant="ghost">解除来源关联</Button>
-        </div>
-      ) : null}
-      {sourceState === "linked" && localChanges ? <p className="sh-skill-detail-review__source-local-changes" role="status">本机内容有未同步修改。检查结果会保留为来源证据，采用前会说明覆盖影响。</p> : null}
-      {lookup === "verified" && sourceState === "linked" ? (
-        <div className="sh-skill-detail-review__source-candidate" role="status">
-          <strong>发现可检查的上游更新</strong><span>当前内容没有被替换。</span>
-          <Button onClick={() => { setAdoptCombined(false); setConfirmIntent("adopt"); setConfirmOpen(true); }} size="sm">预览采用影响</Button>
-          <Button
-            onClick={() => {
-              setLookup("idle");
-              setActionResult("已忽略本次更新；该决定只作用于这一候选，之后的新候选会再次提醒。");
-            }}
-            size="sm"
-            variant="ghost"
-          >
-            忽略本次更新
-          </Button>
-        </div>
-      ) : null}
-      {lookup === "failed" && sourceState === "linked" ? <p role="alert">来源检查失败 · 上次关联仍保留，技能内容没有变化。</p> : null}
-      <Dialog.Root open={chooserOpen} onOpenChange={setChooserOpen}>
+        ) : null}
+        {candidateAvailable ? (
+          <>
+            <Button onClick={() => void preparePreview()} size="sm">预览采用影响</Button>
+            <Button
+              loading={ignoreMutation.isPending}
+              onClick={() => ignoreMutation.mutate(status.candidate_identity as string)}
+              size="sm"
+              variant="ghost"
+            >
+              忽略本次更新
+            </Button>
+          </>
+        ) : null}
+      </div>
+      <Dialog.Root
+        open={relinkOpen}
+        onOpenChange={(open) => {
+          setRelinkOpen(open);
+          if (!open) setRelinkError(null);
+        }}
+      >
         <Dialog.Portal>
           <Dialog.Overlay className="sh-dialog__overlay" />
           <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>选择网络更新来源</Dialog.Title>
-            <Dialog.Description>导入记录会保留；这里只查找并核验候选来源，不会替换技能内容。</Dialog.Description>
-            <label className="sh-skill-detail-review__dialog-field">来源地址<input value={sourceInput} onChange={(event) => { setSourceInput(event.currentTarget.value); setLookup("idle"); }} /></label>
-            <div className="sh-skill-detail-review__source-actions">
-              <Button disabled={!sourceInput.trim()} onClick={() => setLookup(sourceInput.startsWith("https://") ? "verified" : "failed")} size="sm" variant="secondary">查找来源</Button>
+            <Dialog.Title>{hasSource ? "更换网络更新来源" : "关联网络更新来源"}</Dialog.Title>
+            <Dialog.Description>来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。</Dialog.Description>
+            <label className="sh-skill-detail-review__dialog-field">
+              来源类型
+              <select
+                onChange={(event) => setRelinkKind(event.currentTarget.value as SourceRelinkInput["kind"])}
+                value={relinkKind}
+              >
+                <option value="https">HTTPS URL</option>
+                <option value="git">Git 仓库</option>
+                <option value="local">本地目录</option>
+              </select>
+            </label>
+            <label className="sh-skill-detail-review__dialog-field">
+              来源地址
+              <input onChange={(event) => setRelinkValue(event.currentTarget.value)} value={relinkValue} />
+            </label>
+            {relinkError ? <p role="alert">{relinkError}</p> : null}
+            <div className="sh-dialog__actions">
+              <Button onClick={() => setRelinkOpen(false)} size="sm" variant="ghost">关闭</Button>
+              <Button
+                disabled={!relinkValue.trim()}
+                loading={relinkMutation.isPending}
+                onClick={() => relinkMutation.mutate({ kind: relinkKind, value: relinkValue.trim() })}
+                size="sm"
+                variant="secondary"
+              >
+                {hasSource ? "确认更换" : "确认关联"}
+              </Button>
             </div>
-            {lookup === "failed" ? <p role="alert">未能核验来源。请检查 HTTPS 来源地址后重试；当前关联和内容不变。</p> : null}
-            {lookup === "verified" ? (
-              <div className="sh-skill-detail-review__source-candidate" role="status">
-                <strong>PDF Reader 官方维护仓库</strong>
-                <span>来源已核验，可用于只读检查</span>
-                <div className="sh-skill-detail-review__source-actions">
-                  <Button onClick={() => { setChooserOpen(false); setConfirmIntent(sourceState === "linked" ? "replace" : "associate"); setAdoptCombined(false); setConfirmOpen(true); }} size="sm" variant="secondary">{sourceState === "linked" ? "更换来源" : "只关联来源"}</Button>
-                  {sourceState === "missing" ? (
-                    <Button onClick={() => { setChooserOpen(false); setConfirmIntent("adopt"); setAdoptCombined(true); setConfirmOpen(true); }} size="sm">关联并采用更新</Button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            <div className="sh-dialog__actions"><Button onClick={() => setChooserOpen(false)} size="sm" variant="ghost">关闭</Button></div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog.Root open={previewOpen} onOpenChange={setPreviewOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="sh-dialog__overlay" />
-          <Dialog.Content aria-describedby="review-source-impact-description" className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>{confirmTitle}</Dialog.Title>
-            <Dialog.Description id="review-source-impact-description">{confirmDescription}</Dialog.Description>
-            {confirmIntent === "adopt" ? (
-              <div className="sh-skill-detail-review__action-impact"><strong>当前版本 v2.4.1 → 来源版本 v2.5.0</strong><ul><li>{localChanges ? "本机有未同步修改；采用前必须显式处理覆盖影响" : "未发现本机未同步修改"}</li><li>原有高风险发现保留在安全记录中，不会被更新覆盖</li><li>2 个受管链接会继续跟随新当前版本</li><li>1 个独立副本保持原状，不自动更新</li></ul></div>
-            ) : confirmIntent === "replace" ? (
-              <ul><li>当前来源关系更换为 PDF Reader 官方维护仓库</li><li>技能内容和现有版本保持不变</li><li>原导入来源记录继续保留</li></ul>
-            ) : (
-              <><p>导入记录会继续保留；后续检查为只读，采用更新需再次查看影响并明确确认。</p><ul><li>当前技能内容保持不变</li><li>导入时的本机来源记录继续保留</li><li>联网检查仅在你主动选择时执行</li></ul></>
-            )}
+          <Dialog.Content aria-describedby="review-source-adopt-description" className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
+            <Dialog.Title>采用更新影响预览</Dialog.Title>
+            <Dialog.Description id="review-source-adopt-description">确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。</Dialog.Description>
+            {preview?.upstream_label ? <p>来源版本：{preview.upstream_label}</p> : null}
+            <ul>
+              {(preview?.files ?? []).map((file) => (
+                <li key={file.path}>{`${file.path}（${SOURCE_UPDATE_FILE_CHANGE_LABELS[file.change]}）`}</li>
+              ))}
+            </ul>
+            {preview ? <p>预览有效期至 {formatTimestamp(preview.expires_at, locale)}；过期后需重新预览。</p> : null}
+            {commitError ? <p role="alert">{commitError}</p> : null}
             <div className="sh-dialog__actions">
-              <Button onClick={() => setConfirmOpen(false)} size="sm" variant="ghost">取消</Button>
-              <Button onClick={() => {
-                if (confirmIntent === "adopt") {
-                  setLocalChanges(false);
-                  setLookup("idle");
-                  setActionResult(adoptCombined
-                    ? "已关联来源并采用示例更新；新版本已创建，安全发现与独立副本仍保留。"
-                    : "示例更新已采用；新版本已创建，安全发现与独立副本仍保留。");
-                  setAdoptCombined(false);
-                } else if (confirmIntent === "replace") {
-                  setActionResult("更新来源已更换；当前内容和导入记录未改变。");
-                } else {
-                  // §6.4：关联成功后自动进行一次只读检查，避免重复点击。
-                  setLookup("verified");
-                  setActionResult("已关联更新来源，并自动完成一次只读检查；未采用任何内容。");
-                }
-                setSourceState("linked");
-                setConfirmOpen(false);
-              }} size="sm">{confirmIntent === "adopt" ? (adoptCombined ? "确认关联并采用更新" : "确认采用更新") : confirmIntent === "replace" ? "确认更换来源" : "确认关联"}</Button>
+              <Button onClick={() => setPreviewOpen(false)} size="sm" variant="ghost">取消</Button>
+              <Button
+                disabled={!preview}
+                loading={commitMutation.isPending}
+                onClick={() => { if (preview) commitMutation.mutate(preview); }}
+                size="sm"
+              >
+                确认采用更新
+              </Button>
             </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-      <Dialog.Root open={unlinkOpen} onOpenChange={setUnlinkOpen}>
-        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>解除网络来源关联</Dialog.Title><Dialog.Description>只解除更新来源关系，技能主体、当前内容与导入记录都会保留。</Dialog.Description>
-          <div className="sh-dialog__actions"><Button onClick={() => setUnlinkOpen(false)} size="sm" variant="ghost">取消</Button><Button onClick={() => { setSourceState("missing"); setLocalChanges(false); setLookup("idle"); setUnlinkOpen(false); }} size="sm">确认解除</Button></div>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
-      {derived ? <div className="sh-skill-detail-review__action-impact"><h3>复用修改的原技能</h3><p>从 PDF Reader 基础版 v2.3.2 创建，两个主体独立维护。此追溯不会自动建立网络更新来源。</p><Button onClick={() => setUpstreamOpen(true)} size="sm" variant="ghost">查看原技能</Button></div> : <p>无复用修改依据。此技能不是从其他 Skill 复用修改创建的。</p>}
-      <Dialog.Root open={upstreamOpen} onOpenChange={setUpstreamOpen}><Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog"><Dialog.Title>PDF Reader 基础版 · 原技能</Dialog.Title><Dialog.Description>起始版本 v2.3.2；复用修改关系只用于来源追溯，原技能后续修改不会自动覆盖当前主体。</Dialog.Description><Button onClick={() => setUpstreamOpen(false)} size="sm">返回当前技能</Button></Dialog.Content></Dialog.Portal></Dialog.Root>
-      <details className="sh-skill-detail-review__dev-scenarios"><summary>DEV 场景演示</summary>
-        <div>
-          <Button onClick={() => { setSourceState("missing"); setLookup("idle"); }} size="sm" variant="ghost">模拟未关联</Button>
-          <Button onClick={() => { setSourceState("linked"); setLocalChanges(false); }} size="sm" variant="ghost">模拟已关联</Button>
-          <Button onClick={() => { setSourceState("linked"); setLocalChanges(true); }} size="sm" variant="ghost">模拟本地有修改</Button>
-          <Button onClick={() => { setSourceState("linked"); setLookup("failed"); }} size="sm" variant="ghost">模拟检查失败</Button>
-          <Button onClick={() => { setSourceState("missing"); setLookup("failed"); }} size="sm" variant="ghost">模拟查找失败</Button>
-          <Button onClick={() => setDerived((current) => !current)} size="sm" variant="ghost">切换复用修改追溯</Button>
+      {summary.upstreamLineage ? (
+        <div className="sh-skill-detail-review__action-impact">
+          <h3>复用修改的原技能</h3>
+          <p>
+            从{" "}
+            {summary.upstreamLineage.source_display_name ? (
+              <Link to={`/library/${encodeURIComponent(summary.upstreamLineage.source_skill_id)}`}>
+                {summary.upstreamLineage.source_display_name}
+              </Link>
+            ) : (
+              "来源主体（名称不可解析）"
+            )}
+            {" "}复用修改创建，两个主体独立维护。此追溯不会自动建立网络更新来源。
+          </p>
         </div>
-      </details>
+      ) : (
+        <p>无复用修改依据。此技能不是从其他 Skill 复用修改创建的。</p>
+      )}
     </section>
   );
 }
@@ -707,9 +843,10 @@ function ReviewImportRecord({ provenance }: { provenance: SkillProvenance }) {
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en-US";
   return (
     <dl className="sh-skill-detail-review__record">
-      <div><dt>导入类型</dt><dd>本机目录导入</dd></div>
+      <div><dt>导入类型</dt><dd>{SOURCE_KIND_LABELS[record.sourceKind] ?? record.sourceKind}</dd></div>
       <div><dt>导入时间</dt><dd>{formatTimestamp(record.importedAt, locale)}</dd></div>
-      <div><dt>来源记录</dt><dd>~/Agents/Codex/skills/pdf-reader</dd></div>
+      <div><dt>原始位置</dt><dd><code title={record.originalPath}>{record.originalPath}</code></dd></div>
+      <div><dt>来源记录</dt><dd><code title={record.sourceLocator}>{record.sourceLocator}</code></dd></div>
       <div><dt>记录说明</dt><dd>这是导入时的来源存证，不是可更新的网络来源。</dd></div>
     </dl>
   );
