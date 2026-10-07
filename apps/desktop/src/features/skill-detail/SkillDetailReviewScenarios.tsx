@@ -100,9 +100,13 @@ export function ReviewSubjectLocation() {
   );
 }
 
-export function ReviewHeaderActions({ centralized, onCentralize, onDispatch, onExport, onDelete }: {
-  centralized: boolean;
-  onCentralize: () => void;
+export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDelete }: {
+  /**
+   * §7.8 生产承载：转为集中管理保留一次确认入口，承载与治理页共用的真实
+   * 批次契约（候选行/确认绑定/影响预览都来自治理门面）；无待接管关系时不
+   * 传该回调，入口隐藏。演示确认弹层与前端状态机已移除。
+   */
+  onCentralize?: () => void;
   /** 派发接真实部署流程（§10）：跳转部署对话框路由，演示弹层已移除。 */
   onDispatch: () => void;
   /** 导出接标准导出（W3-2）：跳转数据保护页并携带本 Skill，复用同一条导出流。 */
@@ -110,44 +114,14 @@ export function ReviewHeaderActions({ centralized, onCentralize, onDispatch, onE
   /** 删除接统一确认（W3-2/K2 两段式）：触发详情页既有的删除影响确认流程。 */
   onDelete: () => void;
 }) {
-  // §关系治理：转为集中管理单步确认；确认后由父级隐藏入口并联动使用去向。
-  const [centralizeOpen, setCentralizeOpen] = useState(false);
-  const [centralizeBasis, setCentralizeBasis] = useState<"library" | "original">("library");
   return (
     <>
-      {centralized ? null : (
-        <Button className="sh-skill-detail-review__warning-action" onClick={() => { setCentralizeBasis("library"); setCentralizeOpen(true); }} size="sm" variant="ghost">转为集中管理</Button>
-      )}
+      {onCentralize ? (
+        <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">转为集中管理</Button>
+      ) : null}
       <Button onClick={onDispatch} size="sm">派发</Button>
       <Button onClick={onExport} size="sm" variant="secondary">导出</Button>
       <Button onClick={onDelete} size="sm" variant="danger">删除</Button>
-      <Dialog.Root open={centralizeOpen} onOpenChange={setCentralizeOpen}>
-        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>转为集中管理</Dialog.Title>
-          <Dialog.Description>把待集中管理的使用位置纳入集中库管理；本次仅演示，不写真实文件。</Dialog.Description>
-          <div className="sh-skill-detail-review__action-impact">
-            <strong>待接管位置</strong>
-            <ul><li>Codex 终端 · <code>~/Agents/Codex/skills/pdf-reader</code> · 当前为独立副本，原位置内容尚未接管。</li></ul>
-          </div>
-          <fieldset className="sh-skill-detail-review__choice-list"><legend>接管内容基准</legend>
-            <label><input checked={centralizeBasis === "library"} name="review-centralize-basis" onChange={() => setCentralizeBasis("library")} type="radio" /> 以集中库当前内容为准（推荐）</label>
-            <label><input checked={centralizeBasis === "original"} name="review-centralize-basis" onChange={() => setCentralizeBasis("original")} type="radio" /> 以原位置现有内容为准（先保存为集中库历史版本再接管）</label>
-          </fieldset>
-          <div className="sh-skill-detail-review__action-impact">
-            <strong>影响预览</strong>
-            <ul>
-              <li>该位置入口改为受管链接，跟随集中库当前版本</li>
-              <li>原独立副本文件保留，可回退</li>
-              <li>不删除任何文件</li>
-              <li>其他使用关系不受影响</li>
-            </ul>
-          </div>
-          <div className="sh-dialog__actions">
-            <Button onClick={() => setCentralizeOpen(false)} size="sm" variant="ghost">取消</Button>
-            <Button onClick={() => { setCentralizeOpen(false); onCentralize(); }} size="sm">确认转为集中管理</Button>
-          </div>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
     </>
   );
 }

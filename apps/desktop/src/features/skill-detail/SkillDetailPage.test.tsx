@@ -21,6 +21,13 @@ import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import type { RemovalFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
+import type {
+  DeploymentRelationFact,
+  RelationGovernanceBatchOutcome,
+  RelationGovernanceLedger,
+  RelationGovernanceRow,
+} from "../../api/bindings";
+import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 import type { SkillLibraryFacade, SkillLibraryQuery, SkillTableRow } from "../skills/api";
@@ -29,6 +36,7 @@ import { MOCK_SKILL_BROWSER, MOCK_SKILL_DOCX, MOCK_SKILL_PDF } from "../skills/t
 interface RenderDetailOptions {
   entry?: InitialEntry;
   facade?: SkillDetailFacade;
+  governanceFacade?: RelationGovernanceFacade;
   libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   locale?: "en-US" | "zh-CN";
   markdownFacade?: MarkdownFacade;
@@ -79,6 +87,7 @@ function createTestLibraryFacade(rows?: SkillTableRow[]) {
 async function renderDetail({
   entry = "/library/skill-pdf",
   facade = createMockSkillDetailFacade(),
+  governanceFacade = createTestGovernanceFacade(),
   libraryFacade = createTestLibraryFacade().facade,
   locale = "en-US",
   markdownFacade = createMockMarkdownFacade(),
@@ -97,11 +106,11 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -130,6 +139,152 @@ function SecurityProbe() {
 function DeploymentProbe() {
   const location = useLocation();
   return <p data-testid="deployment-location">{location.pathname}</p>;
+}
+
+// W3-3（§7.8 生产承载）：详情头部「转为集中管理」接真实治理契约。
+// 候选行与批次结果都来自治理门面，不复制第二套执行状态机。
+function governanceDeploymentFact(overrides: Partial<DeploymentRelationFact> = {}): DeploymentRelationFact {
+  return {
+    relation_id: "managed:dep-1",
+    skill_id: "skill-pdf",
+    agent_client_id: "codex",
+    path: "C:/agents/codex/skills/pdf-reader",
+    path_key: "c:/agents/codex/skills/pdf-reader",
+    directory_node_id: "node-codex",
+    relationship: "managed_copy",
+    file_representation: "copy",
+    ownership: "skillhub_managed",
+    link_target_path: "C:/library/pdf-reader",
+    link_target_path_key: "c:/library/pdf-reader",
+    link_target_directory_id: "node-library",
+    content_fingerprint: "sha256:aaa",
+    origin: "import",
+    match_state: "content_verified",
+    active: true,
+    observed_at: "1737600000000",
+    released_at: null,
+    ...overrides,
+  };
+}
+
+function governanceRow(spec: {
+  relationId: string;
+  sharedImpactOnly?: boolean;
+}): RelationGovernanceRow {
+  const sharedImpactOnly = spec.sharedImpactOnly === true;
+  return {
+    relation: {
+      kind: "deployment",
+      fact: governanceDeploymentFact({
+        relation_id: spec.relationId,
+        relationship: sharedImpactOnly ? "observed_copy" : "managed_copy",
+        ownership: sharedImpactOnly ? "observed_unmanaged" : "skillhub_managed",
+      }),
+    },
+    skill_display_name: "PDF Reader",
+    status: sharedImpactOnly ? "needs_validation" : "normal",
+    readiness: sharedImpactOnly ? "needs_validation" : "eligible_to_centralize",
+    primary_action: sharedImpactOnly ? "revalidate" : "centralize_management",
+    blockers: sharedImpactOnly ? ["shared_impact_confirmation_required"] : [],
+    impact: {
+      other_consumer_agent_ids: sharedImpactOnly ? ["cursor"] : [],
+      other_skill_paths: [],
+      backup_required: true,
+      rollback_available: true,
+    },
+    governance: {
+      governance_status: "pending",
+      management_status: "not_taken_over",
+      decision: "undecided",
+      management_confirmed_at: null,
+      health_reasons: sharedImpactOnly ? ["shared_impact_confirmation_required"] : [],
+      action_conditions: [{
+        action: "centralize_management",
+        available: !sharedImpactOnly,
+        reasons: sharedImpactOnly ? ["shared_impact_confirmation_required"] : [],
+      }],
+    },
+    target_identity: null,
+    source_read_only: false,
+    evidence_relation_ids: [spec.relationId],
+  };
+}
+
+function governanceLedger(rows: RelationGovernanceRow[]): RelationGovernanceLedger {
+  return {
+    rows,
+    counts: {
+      all: rows.length,
+      eligible_to_centralize: rows.length,
+      needs_validation: 0,
+      blocked: 0,
+      status_normal: rows.length,
+      status_retained: 0,
+      status_needs_validation: 0,
+      status_needs_attention: 0,
+      status_blocked: 0,
+      source_copies: 0,
+      deployments: rows.length,
+    },
+    bucket: "eligible_to_centralize",
+    total: rows.length,
+    relationship_revision: "rev-1",
+    last_verified_at: null,
+  };
+}
+
+function batchOutcome(
+  state: RelationGovernanceBatchOutcome["state"],
+  relationId: string,
+): RelationGovernanceBatchOutcome {
+  const committed = state === "committed";
+  return {
+    batch_id: "batch-1",
+    action: "centralize_management",
+    state,
+    items: [{
+      relation_id: relationId,
+      operation_id: "op-migrate-1",
+      state: committed ? "committed" : "prepared",
+      error_code: null,
+      detail: null,
+      retryable: true,
+      rollback_available: true,
+      backup_path: "C:/backups/dep-1",
+      affected_paths: [],
+      blockers: [],
+    }],
+    prepared_count: 1,
+    committed_count: committed ? 1 : 0,
+    failed_count: 0,
+    blocked_count: 0,
+    cancelled_count: 0,
+    relationship_revision: "rev-2",
+  };
+}
+
+function createTestGovernanceFacade(
+  rows: RelationGovernanceRow[] = [],
+): RelationGovernanceFacade {
+  return {
+    listGovernance: vi.fn().mockResolvedValue(governanceLedger(rows)),
+    revalidate: vi.fn(),
+    listHistory: vi.fn(),
+    retainSourceCopy: vi.fn(),
+    revokeRetention: vi.fn(),
+    endRelationship: vi.fn(),
+    relinkSourceCopy: vi.fn(),
+    getRelationshipRemovalImpact: vi.fn(),
+    prepareGovernanceBatch: vi.fn().mockImplementation(
+      async (request: { relationIds: string[] }) => batchOutcome("prepared", request.relationIds[0]),
+    ),
+    commitGovernanceBatch: vi.fn().mockImplementation(
+      async (_batchId: string, relationIds: string[]) => batchOutcome("committed", relationIds[0]),
+    ),
+    rollbackGovernanceBatch: vi.fn(),
+    prepareRelationUndeploy: vi.fn(),
+    commitRelationUndeploy: vi.fn(),
+  };
 }
 
 function ExportProbe() {
@@ -240,6 +395,71 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
     expect(screen.queryByText("本次示例影响")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
+  });
+
+  // W3-3（§7.8 生产承载）：头部「转为集中管理」打开真实治理批次面板，
+  // 经 prepare/commit 批命令执行；演示状态机（前端翻转徽标）已移除。
+  it("runs the header takeover through the real governance batch contract", async () => {
+    const tracker = createOperationTracker();
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({ relationId: "managed:dep-1" }),
+    ]);
+    await renderDetail({ governanceFacade, tracker });
+
+    fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Bring the selection under central library management",
+    });
+    fireEvent.click(within(dialog).getByTestId("governance-batch-confirm"));
+
+    await waitFor(() => expect(governanceFacade.prepareGovernanceBatch).toHaveBeenCalledWith({
+      action: "centralize_management",
+      confirmations: {},
+      relationIds: ["managed:dep-1"],
+    }));
+    await waitFor(() => expect(governanceFacade.commitGovernanceBatch).toHaveBeenCalledWith("batch-1", ["managed:dep-1"]));
+    expect(await screen.findByTestId("governance-batch-result")).toBeVisible();
+    const trackerEntries = tracker.getSnapshot();
+    // 父批次 + 逐项子任务都进 tracker；父批次对齐后端 batch_id 且成功。
+    expect(trackerEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operationId: "batch-1", status: "success" }),
+    ]));
+    // 演示确认弹层不再出现：接管确认绑定真实契约。
+    expect(screen.queryByRole("button", { name: "确认转为集中管理" })).not.toBeInTheDocument();
+    expect(screen.queryByText("接管内容基准")).not.toBeInTheDocument();
+  });
+
+  it("requires the shared impact confirmation before committing the takeover", async () => {
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({ relationId: "managed:dep-shared", sharedImpactOnly: true }),
+    ]);
+    await renderDetail({ governanceFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Bring the selection under central library management",
+    });
+    const confirm = within(dialog).getByTestId("governance-batch-confirm");
+    expect(confirm).toBeDisabled();
+
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I confirm the shared-directory impact for PDF Reader/ }));
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(governanceFacade.prepareGovernanceBatch).toHaveBeenCalledWith({
+      action: "centralize_management",
+      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
+      relationIds: ["managed:dep-shared"],
+    }));
+  });
+
+  it("hides the header takeover entry when the skill has no pending takeover relations", async () => {
+    await renderDetail({ governanceFacade: createTestGovernanceFacade([]) });
+
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "转为集中管理" })).not.toBeInTheDocument();
   });
 
   it("provides the same actionable security review from full details", async () => {

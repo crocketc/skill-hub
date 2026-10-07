@@ -5,8 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../../api/nativeErrors";
 import type {
-  RelationGovernanceBatchAction,
-  RelationGovernanceBatchOutcome,
+    RelationGovernanceBatchOutcome,
   RelationGovernanceRow,
   RelationshipCheckItem,
   RelationshipCheckReport,
@@ -36,8 +35,8 @@ import {
   rowIsNaturallyExecutable,
   summarizeBatchSelection,
   summarizeRowExecutability,
-  SHARED_IMPACT_CONFIRMATION_TOKEN,
 } from "./api";
+import { createGovernanceBatchRunner } from "./governanceBatchOperation";
 import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
@@ -398,107 +397,25 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, facade, notifications, queryClient, t, tracker]);
 
-  const buildConfirmations = useCallback((relationIds: readonly string[], confirmed: ReadonlySet<string>) => {
-    const confirmations: Record<string, string> = {};
-    for (const relationId of relationIds) {
-      if (confirmed.has(relationId)) {
-        confirmations[relationId] = SHARED_IMPACT_CONFIRMATION_TOKEN;
-      }
-    }
-    return confirmations;
-  }, []);
+  const translate = useCallback(
+    (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never)),
+    [t],
+  );
 
   /** 一组关系的同动作批次执行（单条 = 一个只有一项的批次）；全部异步写操作
-   *  都经这里走 runTrackedOperation 并与后端 operation id 关联（任务 11.14）。 */
-  const runGovernanceBatch = useCallback((
-    action: RelationGovernanceBatchAction,
-    relationIds: string[],
-    confirmed: ReadonlySet<string>,
-    onResult: (outcome: RelationGovernanceBatchOutcome) => void,
-    onError: (message: string) => void,
-    phaseLabel: string,
-  ) => {
-    void runTrackedOperation<RelationGovernanceBatchOutcome>({
-      targetHref: governanceDestination(relationIds),
-      canCancel: false,
+   *  都经这里走 runTrackedOperation 并与后端 operation id 关联（任务 11.14）。
+   *  编排在 governanceBatchOperation 中与详情页头部接管入口共用（§7.8）。 */
+  const runGovernanceBatch = useMemo(
+    () => createGovernanceBatchRunner({
       describeError,
-      invalidateQueryKeys: [[relationshipsKeys.root]],
-      kind: "relation_governance_batch",
-      label: t("relationships.governance.batch.trackerLabel"),
+      facade,
       notifications,
       queryClient,
-      run: async (handle) => {
-        handle.phase(phaseLabel);
-        const prepared = await facade.prepareGovernanceBatch({
-          action,
-          confirmations: buildConfirmations(relationIds, confirmed),
-          relationIds,
-        });
-        // 父批次对齐后端持久化 operation（batch_id），通知/记录三端同源。
-        handle.correlate(prepared.batch_id);
-        // 逐项子任务进入 tracker：子 migrate_relation 挂在父批次下，
-        // 顶栏、通知与 /operations/:id 都能按 id 关联。
-        const childIds = new Map<string, string>();
-        for (const item of prepared.items) {
-          if (item.state !== "prepared" || !item.operation_id) continue;
-          const childId = tracker.begin({
-            kind: "migrate_relation",
-            label: t("relationships.governance.batch.itemTrackerLabel", { id: item.relation_id }),
-            parentId: handle.trackedId,
-            total: 1,
-          });
-          tracker.attach(childId, { operationId: item.operation_id });
-          tracker.start(childId);
-          childIds.set(item.relation_id, childId);
-        }
-        handle.progress(0, relationIds.length);
-        const outcome = await facade.commitGovernanceBatch(prepared.batch_id, relationIds);
-        let finished = 0;
-        for (const item of outcome.items) {
-          const childId = childIds.get(item.relation_id);
-          if (childId) {
-            if (item.state === "committed") {
-              tracker.complete(childId, { failed: 0, skipped: 0, succeeded: 1 });
-            } else if (item.state === "cancelled" || item.state === "rolled_back") {
-              tracker.cancel(childId);
-            } else if (item.state === "failed") {
-              tracker.fail(childId, item.detail ?? item.error_code ?? item.relation_id);
-            }
-          }
-          finished += 1;
-          handle.progress(finished, relationIds.length);
-        }
-        return outcome;
-      },
-      successNotice: (outcome) => {
-        // 通知标题必须与终态语义一致：partial 用部分成功文案，
-        // 0 成功（含 backend Ok 返回的全失败批次）直接用 resultNone，不冒充成功。
-        if (outcome.state === "committed") {
-          return { title: t("relationships.governance.batch.trackerLabel"), tone: "success" as const };
-        }
-        if (outcome.committed_count > 0) {
-          return {
-            title: t("relationships.governance.batch.resultPartial", {
-              committed: outcome.committed_count,
-              failed: outcome.failed_count,
-            }),
-            tone: "warning" as const,
-          };
-        }
-        return { title: t("relationships.governance.batch.resultNone"), tone: "danger" as const };
-      },
-      summarize: (outcome) => ({
-        failed: outcome.failed_count,
-        skipped: outcome.cancelled_count + outcome.blocked_count,
-        succeeded: outcome.committed_count,
-      }),
-      total: relationIds.length,
       tracker,
-      translate: (key, options) => String(t(key as never, options as never)),
-    }).then(onResult).catch((reason: unknown) => {
-      onError(describeError(reason));
-    });
-  }, [buildConfirmations, describeError, facade, notifications, queryClient, t, tracker]);
+      translate,
+    }),
+    [describeError, facade, notifications, queryClient, tracker, translate],
+  );
 
   /** 单条成功文案；committed 以外的终态一律走逐项结果面板，不冒充成功。 */
   const centralizeDoneText = useCallback((flow: SingleFlowState) => t(

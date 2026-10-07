@@ -73,7 +73,8 @@ describe("governance deep link params", () => {
     const link = parseGovernanceSearchParams(new URLSearchParams(
       "governance=exploded&management=all&bucket=blocked&status=blocked",
     ));
-    expect(link.classification).toBe("all");
+    // W2-3（§10）：页签默认「待处理」，未知分类安全回退到 pending。
+    expect(link.classification).toBe("pending");
     expect(link.management).toBeNull();
   });
 
@@ -84,7 +85,8 @@ describe("governance deep link params", () => {
     const link = parseGovernanceSearchParams(params);
     expect(link.from).toBeNull();
     expect(link.scope).toBe("all");
-    expect(link.classification).toBe("all");
+    // W2-3（§10）：页签默认「待处理」。
+    expect(link.classification).toBe("pending");
     expect(link.management).toBeNull();
     expect(link.batchId).toBeNull();
   });
@@ -94,7 +96,7 @@ describe("governance deep link params", () => {
       "deployment",
     );
     expect(parseGovernanceSearchParams(new URLSearchParams()).scope).toBe("all");
-    expect(parseGovernanceSearchParams(new URLSearchParams()).classification).toBe("all");
+    expect(parseGovernanceSearchParams(new URLSearchParams()).classification).toBe("pending");
     expect(parseGovernanceSearchParams(new URLSearchParams()).management).toBeNull();
   });
 });

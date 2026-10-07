@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -33,10 +33,19 @@ import type {
   RemovalResult,
 } from "../removal/api";
 import { nativeRemovalFacade, unavailableRemovalFacade } from "../removal/nativeApi";
+import type { RelationGovernanceBatchOutcome } from "../../api/bindings";
+import { relationshipsKeys } from "../relationships/api";
+import type { RelationGovernanceFacade } from "../relationships/governance/api";
+import { mergeBatchItemOutcome, relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
+import { createGovernanceBatchRunner } from "../relationships/governance/governanceBatchOperation";
+import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
+import { GovernanceBatchDialog } from "../relationships/governance/GovernanceBatchDialog";
 import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
+  /** W3-3（§7.8 生产承载）：头部「转为集中管理」接真实治理批次契约。 */
+  governanceFacade?: RelationGovernanceFacade;
   /** W1-5（FB-①/D7-A）：相邻技能由库列表（同筛选/排序）前端推导所需的只读能力。 */
   libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   markdownFacade?: MarkdownFacade;
@@ -53,6 +62,7 @@ interface SkillDetailPageProps {
  */
 export function SkillDetailPage({
   facade,
+  governanceFacade,
   libraryFacade,
   markdownFacade = nativeMarkdownFacade,
   removalFacade,
@@ -68,6 +78,8 @@ export function SkillDetailPage({
   const { skillId = "" } = useParams();
   const isPreviewRoute = location.pathname.startsWith("/__preview/");
   const effectiveRemovalFacade = removalFacade ?? (isPreviewRoute ? unavailableRemovalFacade : nativeRemovalFacade);
+  // §7.8 生产承载：预览路由不接真实治理门面；生产默认原生门面。
+  const effectiveGovernanceFacade = governanceFacade ?? (isPreviewRoute ? undefined : nativeGovernanceFacade);
   const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
   const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
@@ -105,6 +117,146 @@ export function SkillDetailPage({
     queryFn: () => facade.getInsights(skillId),
     queryKey: skillDetailKeys.insights(skillId),
   });
+  // W3-3（§7.8 生产承载）：待接管使用关系来自真实治理清单（按 Skill 过滤），
+  // 候选行以后端 action_conditions 为唯一准入依据（可执行，或只差共享影响确认）。
+  const takeoverLedgerQuery = useQuery({
+    enabled: effectiveGovernanceFacade !== undefined,
+    queryFn: async () => {
+      if (!effectiveGovernanceFacade) throw new Error("governance.facade_unavailable");
+      return effectiveGovernanceFacade.listGovernance({ skill_id: skillId });
+    },
+    queryKey: relationshipsKeys.governance({ skill_id: skillId }),
+    retry: false,
+  });
+  const takeoverCandidates = useMemo(
+    () => (takeoverLedgerQuery.data?.rows ?? []).filter(rowIsBatchExecutable),
+    [takeoverLedgerQuery.data],
+  );
+  // §7.8：详情面板承载与治理页同一套批次流程——面板状态只管选择与呈现，
+  // 执行走共享的批次编排（prepare → commit，逐项结果 + 重试/回退）。
+  const [takeoverOpen, setTakeoverOpen] = useState(false);
+  const [takeoverCheckedIds, setTakeoverCheckedIds] = useState<ReadonlySet<string>>(new Set());
+  const [takeoverSharedConfirmedIds, setTakeoverSharedConfirmedIds] = useState<ReadonlySet<string>>(new Set());
+  const [takeoverRunning, setTakeoverRunning] = useState(false);
+  const [takeoverResult, setTakeoverResult] = useState<RelationGovernanceBatchOutcome | null>(null);
+  const [takeoverError, setTakeoverError] = useState<string | null>(null);
+  const describeTakeoverError = useCallback(
+    (reason: unknown) => describeNativeError(
+      reason,
+      (key, options) => String(t(key as never, options as never)),
+      "tasks.notices.failureUnknown",
+    ),
+    [t],
+  );
+  const translateTakeover = useCallback(
+    (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never)),
+    [t],
+  );
+
+  const openTakeover = () => {
+    setTakeoverCheckedIds(new Set(takeoverCandidates.map((row) => relationIdOf(row.relation))));
+    setTakeoverSharedConfirmedIds(new Set());
+    setTakeoverResult(null);
+    setTakeoverError(null);
+    setTakeoverOpen(true);
+  };
+  const closeTakeover = () => {
+    setTakeoverOpen(false);
+    setTakeoverCheckedIds(new Set());
+    setTakeoverSharedConfirmedIds(new Set());
+    setTakeoverResult(null);
+    setTakeoverError(null);
+  };
+
+  const runTakeoverBatch = useMemo(() => {
+    if (!effectiveGovernanceFacade) return null;
+    return createGovernanceBatchRunner({
+      describeError: describeTakeoverError,
+      facade: effectiveGovernanceFacade,
+      notifications,
+      queryClient,
+      tracker,
+      translate: translateTakeover,
+    });
+  }, [describeTakeoverError, effectiveGovernanceFacade, notifications, queryClient, tracker, translateTakeover]);
+
+  const confirmTakeover = () => {
+    const relationIds = [...takeoverCheckedIds];
+    if (!runTakeoverBatch || relationIds.length === 0) return;
+    setTakeoverRunning(true);
+    setTakeoverError(null);
+    runTakeoverBatch(
+      "centralize_management",
+      relationIds,
+      takeoverSharedConfirmedIds,
+      (outcome) => {
+        setTakeoverRunning(false);
+        setTakeoverResult(outcome);
+      },
+      (message) => {
+        setTakeoverRunning(false);
+        setTakeoverError(message);
+      },
+      t("relationships.governance.batch.running"),
+    );
+  };
+
+  const retryTakeoverItem = (relationId: string) => {
+    if (!runTakeoverBatch) return;
+    setTakeoverRunning(true);
+    setTakeoverError(null);
+    runTakeoverBatch(
+      "centralize_management",
+      [relationId],
+      takeoverSharedConfirmedIds,
+      (outcome) => {
+        setTakeoverRunning(false);
+        // 逐项重试后原位替换该项，计数与终态按合并后的事实重算。
+        setTakeoverResult((current) => current
+          ? mergeBatchItemOutcome(current, relationId, outcome)
+          : current);
+      },
+      (message) => {
+        setTakeoverRunning(false);
+        setTakeoverError(message);
+      },
+      t("relationships.governance.batch.running"),
+    );
+  };
+
+  const rollbackTakeoverItem = (relationId: string) => {
+    if (!effectiveGovernanceFacade || !takeoverResult) return;
+    const batchId = takeoverResult.batch_id;
+    setTakeoverRunning(true);
+    setTakeoverError(null);
+    void runTrackedOperation<RelationGovernanceBatchOutcome>({
+      canCancel: false,
+      describeError: describeTakeoverError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "relation_governance_batch",
+      label: t("relationships.governance.batch.trackerLabel"),
+      notifications,
+      queryClient,
+      run: async (handle) => {
+        const outcome = await effectiveGovernanceFacade.rollbackGovernanceBatch(batchId, [relationId]);
+        handle.correlate(batchId);
+        return outcome;
+      },
+      successNotice: () => null,
+      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
+      total: 1,
+      tracker,
+      translate: translateTakeover,
+    }).then((outcome) => {
+      setTakeoverRunning(false);
+      setTakeoverResult((current) => current
+        ? mergeBatchItemOutcome(current, relationId, outcome)
+        : current);
+    }).catch((reason: unknown) => {
+      setTakeoverRunning(false);
+      setTakeoverError(describeTakeoverError(reason));
+    });
+  };
   const [removalImpact, setRemovalImpact] = useState<RemovalImpact | null>(null);
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSubmitting, setRemovalSubmitting] = useState(false);
@@ -261,6 +413,8 @@ export function SkillDetailPage({
         insights={insightsQuery.data}
         markdownFacade={markdownFacade}
         metadata={metadataQuery.data}
+        // §7.8：入口只在存在真实待接管关系时出现（隐藏而非禁用）。
+        onCentralize={takeoverCandidates.length > 0 ? openTakeover : undefined}
         onDelete={() => void startRemoval()}
         provenance={provenanceQuery.data}
         refreshSnapshot={refreshSnapshot}
@@ -290,6 +444,32 @@ export function SkillDetailPage({
           }}
           result={removalOutcome.result}
           targetLabels={removalOutcome.targetLabels}
+        />
+      ) : null}
+      {takeoverOpen && effectiveGovernanceFacade ? (
+        <GovernanceBatchDialog
+          checkedIds={takeoverCheckedIds}
+          error={takeoverError}
+          onClose={closeTakeover}
+          onConfirm={confirmTakeover}
+          onRetry={retryTakeoverItem}
+          onRollback={rollbackTakeoverItem}
+          onSharedImpactConfirm={(relationId, checked) => setTakeoverSharedConfirmedIds((current) => {
+            const next = new Set(current);
+            if (checked) next.add(relationId);
+            else next.delete(relationId);
+            return next;
+          })}
+          onToggleItem={(relationId, checked) => setTakeoverCheckedIds((current) => {
+            const next = new Set(current);
+            if (checked) next.add(relationId);
+            else next.delete(relationId);
+            return next;
+          })}
+          result={takeoverResult}
+          rows={takeoverCandidates}
+          running={takeoverRunning}
+          sharedConfirmedIds={takeoverSharedConfirmedIds}
         />
       ) : null}
     </>

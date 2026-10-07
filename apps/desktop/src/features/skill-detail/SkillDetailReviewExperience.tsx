@@ -48,6 +48,12 @@ interface SkillDetailReviewExperienceProps {
   insights?: SkillDetailInsights;
   markdownFacade?: MarkdownFacade;
   metadata?: SkillMetadata;
+  /**
+   * W3-3（§7.8 生产承载）：头部「转为集中管理」入口——仅当存在真实待接管
+   * 使用关系（治理门面候选行非空）时由详情页传入，确认面板走真实治理批次
+   * 契约；无候选行时缺省隐藏入口。
+   */
+  onCentralize?: () => void;
   /** W3-2：头部「删除」触发详情页既有的真实删除影响确认（K2 两段式）。 */
   onDelete: () => void;
   provenance?: SkillProvenance;
@@ -62,7 +68,7 @@ interface SkillDetailReviewExperienceProps {
  * 技能详情评审布局（§9 裁决，2026-10-06）：生产默认呈现。
  * 安全区块接入真实 SecurityFacade 与安全预警事实（task C，六裁决安全呈现）；
  * 派发接真实部署对话框路由（W3-1），导出接标准导出流、删除接统一确认
- * （W3-2，§10 统一操作入口）；
+ * （W3-2），转为集中管理接真实治理批次契约（W3-3，§7.8 生产承载）；
  * 演示性操作（来源更新示例流、使用去向示例卡）保持原型确认行为，
  * 接真实数据由后续任务裁决。
  */
@@ -76,6 +82,7 @@ export function SkillDetailReviewExperience({
   insights,
   markdownFacade,
   metadata,
+  onCentralize,
   onDelete,
   provenance,
   refreshSnapshot,
@@ -87,8 +94,6 @@ export function SkillDetailReviewExperience({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<ReviewSectionId>(sections[0][0]);
-  // §关系治理：转为集中管理是演示状态；确认后头部入口隐藏、使用去向卡片联动为已集中管理。
-  const [centralized, setCentralized] = useState(false);
   // §分区折叠：默认全部展开；折叠用 hidden 隐藏 body，不卸载组件（保留编辑草稿等状态）。
   const [openSections, setOpenSections] = useState<Record<ReviewSectionId, boolean>>({
     "review-overview": true,
@@ -141,8 +146,7 @@ export function SkillDetailReviewExperience({
             </div>
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
               <ReviewHeaderActions
-                centralized={centralized}
-                onCentralize={() => setCentralized(true)}
+                onCentralize={onCentralize}
                 onDispatch={() => navigate(`/library/${skillId}/deploy`)}
                 onExport={() => navigate("/settings/data-protection", { state: { exportSkillIds: [skillId] } })}
                 onDelete={onDelete}
@@ -168,7 +172,6 @@ export function SkillDetailReviewExperience({
                 </Button>
               </div>
             ) : null}
-            {centralized ? <p className="sh-skill-detail-review__inline-status" role="status">已转为集中管理（演示）：原位置已按受管链接跟随当前版本。</p> : null}
           </div>
           <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
             {sections.map(([id, label]) => (
@@ -246,7 +249,7 @@ export function SkillDetailReviewExperience({
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
-              <ReviewUsageDestinations centralized={centralized} />
+              <ReviewUsageDestinations />
               {insights ? <ReviewUsageInsights insights={insights} /> : null}
             </div>
           </section>
@@ -428,7 +431,9 @@ function ReviewGraphEntry({ skillId }: { skillId: string }) {
   );
 }
 
-function ReviewUsageDestinations({ centralized }: { centralized: boolean }) {
+// W3-5 待办：使用去向卡仍为示例数据；真实接管后的状态变化由治理清单驱动，
+// 不再用前端状态翻转徽标（§7.8：不以前端状态切换登记成功）。
+function ReviewUsageDestinations() {
   const [selectedTarget, setSelectedTarget] = useState<string>();
   const [targetView, setTargetView] = useState<"target" | "governance">("governance");
   const targets = [
@@ -438,8 +443,8 @@ function ReviewUsageDestinations({ centralized }: { centralized: boolean }) {
       kind: "agent" as const,
       agentId: "openai.codex-cli",
       path: "~/Agents/Codex/skills/pdf-reader",
-      status: centralized ? "已集中管理" : "待集中管理",
-      detail: centralized ? "原位置已由集中库受管链接接管，跟随当前版本；原独立副本内容保留。" : "原位置仍是独立副本，当前内容尚未接管。",
+      status: "待集中管理",
+      detail: "原位置仍是独立副本，当前内容尚未接管。",
     },
     {
       id: "shared-directory",
