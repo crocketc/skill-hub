@@ -21,6 +21,7 @@ import type { SecurityFacade } from "../security/api";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
+import type { DirectoryOpener } from "../../platform/directoryOpener";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
 import {
   RemovalOutcomeResult,
@@ -46,6 +47,8 @@ import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
+  /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
+  directoryOpener?: DirectoryOpener;
   /** W3-3（§7.8 生产承载）：头部「转为集中管理」接真实治理批次契约。 */
   governanceFacade?: RelationGovernanceFacade;
   /** W1-5（FB-①/D7-A）：相邻技能由库列表（同筛选/排序）前端推导所需的只读能力。 */
@@ -64,6 +67,7 @@ interface SkillDetailPageProps {
  */
 export function SkillDetailPage({
   facade,
+  directoryOpener,
   governanceFacade,
   libraryFacade,
   markdownFacade = nativeMarkdownFacade,
@@ -433,6 +437,7 @@ export function SkillDetailPage({
         adjacent={adjacentQuery.data ?? undefined}
         backSearch={backSearch}
         detailPathname={detailPathname}
+        directoryOpener={directoryOpener}
         facade={facade}
         insights={insightsQuery.data}
         markdownFacade={markdownFacade}

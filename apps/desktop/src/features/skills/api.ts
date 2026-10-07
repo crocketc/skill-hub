@@ -88,6 +88,8 @@ export interface SkillTableRow {
   ownership?: string;
   pendingCount: number;
   projectDeploymentCount: number;
+  /** K9：Skill 在集中库的真实物化根目录；树未物化时省略（W3-6 主体位置）。 */
+  rootPath?: string;
   purpose: string;
   /**
    * W3-1（FB-003 裁决第 1 节）：当前内容版本的安全预警状态（security_alert

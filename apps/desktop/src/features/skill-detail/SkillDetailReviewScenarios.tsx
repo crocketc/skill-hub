@@ -2,6 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatTimestamp } from "../../i18n";
+import { desktopDirectoryOpener, type DirectoryOpener } from "../../platform/directoryOpener";
 import { Button } from "../../ui/Button";
 import type { SkillDetailSummary } from "./api";
 
@@ -68,35 +69,57 @@ export function ReviewOverviewStatus({ summary }: { summary: SkillDetailSummary 
   );
 }
 
-export function ReviewSubjectLocation() {
-  const [open, setOpen] = useState(false);
+// W3-6：主体位置展示 K9 真实物化根路径（summary.rootPath）；「打开位置」走
+// 受控 open_local_directory 命令，「复制路径」走剪贴板；不再渲染样例路径与
+// 弹层。根未物化时如实呈现空态，不渲染任何操作按钮。
+export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener, rootPath }: {
+  directoryOpener?: DirectoryOpener;
+  rootPath?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string>();
-  const path = "~/SkillHub/skills/pdf-reader";
-  return (
-    <>
+  const [openError, setOpenError] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const openLocation = async () => {
+    if (!rootPath || opening) return;
+    setOpenError(false);
+    setOpening(true);
+    try {
+      await directoryOpener.openDirectory(rootPath);
+    } catch {
+      setOpenError(true);
+    } finally {
+      setOpening(false);
+    }
+  };
+  if (!rootPath) {
+    return (
       <div className="sh-skill-detail-review__context-row">
-        <div><span>技能库主体位置</span><strong><code>{path}</code></strong><Button onClick={() => { setOpen(true); setCopied(false); }} size="sm" variant="ghost">打开位置</Button></div>
+        <div><span>技能库主体位置</span><p>主体目录未物化或未知。</p></div>
       </div>
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>技能库主体位置</Dialog.Title><Dialog.Description>这是技能库中的主体目录示例，不代表 Agent 或项目使用位置。</Dialog.Description>
-          <code className="sh-skill-detail-review__long-value">{path}</code>
-          {copied ? <p role="status">路径已复制。</p> : null}
-          {copyError ? <p role="alert">{copyError}</p> : null}
-          <div className="sh-dialog__actions"><Button onClick={() => {
-            setCopied(false); setCopyError(undefined);
-            void (async () => {
-              try {
-                if (!navigator.clipboard) throw new Error("Clipboard unavailable");
-                await navigator.clipboard.writeText(path);
-                setCopied(true);
-              } catch { setCopyError("无法复制路径。请允许剪贴板访问，或选中上方完整路径后手动复制。"); }
-            })();
-          }} size="sm" variant="secondary">复制路径</Button><Button onClick={() => setOpen(false)} size="sm">返回技能详情</Button></div>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root>
-    </>
+    );
+  }
+  return (
+    <div className="sh-skill-detail-review__context-row">
+      <div>
+        <span>技能库主体位置</span>
+        <strong><code title={rootPath}>{rootPath}</code></strong>
+        <Button disabled={opening} onClick={() => void openLocation()} size="sm" variant="ghost">打开位置</Button>
+        <Button onClick={() => {
+          setCopied(false); setCopyError(undefined);
+          void (async () => {
+            try {
+              if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+              await navigator.clipboard.writeText(rootPath);
+              setCopied(true);
+            } catch { setCopyError("无法复制路径。请允许剪贴板访问，或选中上方完整路径后手动复制。"); }
+          })();
+        }} size="sm" variant="secondary">复制路径</Button>
+      </div>
+      {copied ? <p role="status">路径已复制。</p> : null}
+      {copyError ? <p role="alert">{copyError}</p> : null}
+      {openError ? <p role="alert">无法打开主体目录。</p> : null}
+    </div>
   );
 }
 

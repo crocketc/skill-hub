@@ -178,3 +178,28 @@ it("maps the native review date into the drawer quick view", async () => {
   expect(view.lifecycle).toBe("trial");
   expect(view.trialDue).toBe("2026-11-03");
 });
+
+// W3-6（K9）：主体位置携带后端真实物化根路径；缺失或 null 时如实省略，
+// 不派生自显示文本。
+it("maps the materialized root path into the drawer quick view", async () => {
+  const payload = skillPayload();
+  (payload.payload as Record<string, unknown>).root_path = "C:/SkillHub/skills/pdf-reader";
+  vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
+    const request = query as { type: string };
+    if (request.type === "get_skill") return payload as never;
+    throw new Error(`unexpected query ${request.type}`);
+  });
+
+  const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
+  expect(view.rootPath).toBe("C:/SkillHub/skills/pdf-reader");
+
+  const unmaterialized = skillPayload();
+  (unmaterialized.payload as Record<string, unknown>).root_path = null;
+  vi.mocked(queryApplication).mockImplementation(async (query: unknown) => {
+    const request = query as { type: string };
+    if (request.type === "get_skill") return unmaterialized as never;
+    throw new Error(`unexpected query ${request.type}`);
+  });
+  const withoutRoot = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
+  expect(withoutRoot.rootPath).toBeUndefined();
+});

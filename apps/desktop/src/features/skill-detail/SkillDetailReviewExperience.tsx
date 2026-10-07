@@ -11,6 +11,7 @@ import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { formatTimestamp } from "../../i18n";
+import type { DirectoryOpener } from "../../platform/directoryOpener";
 import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import type { MarkdownFacade } from "../markdown/api";
 import { SecurityResults } from "../security/SecurityResults";
@@ -48,6 +49,8 @@ interface SkillDetailReviewExperienceProps {
   adjacent?: AdjacentSkillContext;
   backSearch: string;
   detailPathname: string;
+  /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
+  directoryOpener?: DirectoryOpener;
   libraryReturn?: SkillLibraryReturnState;
   returnToLibrary: string;
   facade: SkillDetailFacade;
@@ -88,6 +91,7 @@ export function SkillDetailReviewExperience({
   adjacent,
   backSearch,
   detailPathname,
+  directoryOpener,
   libraryReturn,
   returnToLibrary,
   facade,
@@ -218,7 +222,7 @@ export function SkillDetailReviewExperience({
                 )}
                 <div className="sh-skill-detail-review__facts">
                   <ReviewOverviewStatus summary={summary} />
-                  <ReviewSubjectLocation />
+                  <ReviewSubjectLocation directoryOpener={directoryOpener} rootPath={summary.rootPath} />
                   <RequirementsPanel invocationPolicy={metadata?.invocationPolicy} requirements={requirements ?? []} />
                 </div>
               </div>

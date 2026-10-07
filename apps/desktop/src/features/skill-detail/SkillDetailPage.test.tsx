@@ -37,6 +37,7 @@ import { MOCK_SKILL_BROWSER, MOCK_SKILL_DOCX, MOCK_SKILL_PDF } from "../skills/t
 
 interface RenderDetailOptions {
   entry?: InitialEntry;
+  directoryOpener?: { openDirectory: (path: string) => Promise<void> };
   facade?: SkillDetailFacade;
   governanceFacade?: RelationGovernanceFacade;
   libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
@@ -88,6 +89,7 @@ function createTestLibraryFacade(rows?: SkillTableRow[]) {
 
 async function renderDetail({
   entry = "/library/skill-pdf",
+  directoryOpener,
   facade = createMockSkillDetailFacade(),
   governanceFacade = createTestGovernanceFacade(),
   libraryFacade = createTestLibraryFacade().facade,
@@ -108,11 +110,11 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -1372,5 +1374,68 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     const pathEntries = await importRecord.findAllByText("C:/Users/demo/.agents/skills/pdf-reader");
     expect(pathEntries.length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("~/Agents/Codex/skills/pdf-reader")).not.toBeInTheDocument();
+  });
+});
+
+// W3-6：主体位置展示 K9 真实物化根路径（summary.rootPath），打开走受控
+// open_local_directory 命令（注入 DirectoryOpener），复制走剪贴板；样例
+// 路径与「打开位置确认弹层」不再存在。
+describe("SkillDetailPage subject location (W3-6)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "IntersectionObserver", {
+      configurable: true,
+      value: class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("opens the real subject location through the controlled opener", async () => {
+    const openDirectory = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
+    const facade = createMockSkillDetailFacade({ summary: { rootPath: "C:/SkillHub/skills/pdf-reader" } });
+    await renderDetail({ directoryOpener: { openDirectory }, facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开位置" }));
+
+    await waitFor(() => expect(openDirectory).toHaveBeenCalledWith("C:/SkillHub/skills/pdf-reader"));
+    expect(screen.queryByText("~/SkillHub/skills/pdf-reader")).not.toBeInTheDocument();
+  });
+
+  it("keeps a readable error when the open command fails", async () => {
+    const openDirectory = vi.fn<(path: string) => Promise<void>>().mockRejectedValue(new Error("denied"));
+    const facade = createMockSkillDetailFacade({ summary: { rootPath: "C:/SkillHub/skills/pdf-reader" } });
+    await renderDetail({ directoryOpener: { openDirectory }, facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "打开位置" }));
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+  });
+
+  it("copies the real subject location path to the clipboard", async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const facade = createMockSkillDetailFacade({ summary: { rootPath: "C:/SkillHub/skills/pdf-reader" } });
+    await renderDetail({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制路径" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("C:/SkillHub/skills/pdf-reader"));
+    expect(await screen.findByText("路径已复制。")).toBeVisible();
+  });
+
+  it("shows an honest empty state when the root is not materialized", async () => {
+    await renderDetail();
+
+    expect(await screen.findByText("主体目录未物化或未知。")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "打开位置" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制路径" })).not.toBeInTheDocument();
+    expect(screen.queryByText("~/SkillHub/skills/pdf-reader")).not.toBeInTheDocument();
   });
 });

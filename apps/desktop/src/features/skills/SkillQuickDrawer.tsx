@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { displayPath } from "../../platform/displayPath";
+import { desktopDirectoryOpener, type DirectoryOpener } from "../../platform/directoryOpener";
 import { describeNativeError } from "../../api/nativeErrors";
 import {
   type CSSProperties,
@@ -44,6 +45,8 @@ import "./skillQuickDrawer.css";
 
 export interface SkillQuickDrawerProps {
   detailSearch?: string;
+  /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
+  directoryOpener?: DirectoryOpener;
   facade: SkillLibraryFacade;
   libraryReturn?: SkillLibraryReturnState;
   onOpenChange: (open: boolean) => void;
@@ -171,6 +174,7 @@ function viewportWidth() {
 
 export function SkillQuickDrawer({
   detailSearch = "",
+  directoryOpener,
   facade,
   libraryReturn,
   onOpenChange,
@@ -713,7 +717,7 @@ export function SkillQuickDrawer({
               <PrototypeRelationsModule detailSearch={detailSearch} skillId={skillId} view={view} />
               <PrototypeCollectionsModule />
               {normalizedPreferences.visibleModules.includes("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
-              <PrototypeSubjectLocationModule />
+              <PrototypeSubjectLocationModule directoryOpener={directoryOpener} view={view} />
               <PrototypeSecurityChecksModule llmConfigured={llmConfigured} securityFacade={securityFacade} view={view} />
               <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
             </div>
@@ -1030,70 +1034,72 @@ function PrototypeCollectionsModule() {
 }
 
 
-const PROTOTYPE_SKILL_PATH = "C:\\preview\\SkillHub\\skills\\pdf-reader";
-
-
-function PrototypeSubjectLocationModule() {
+// W3-6：主体位置展示 K9 真实物化根路径（SkillQuickView.rootPath，绑定
+// SkillResult.root_path）；「打开位置」走受控 open_local_directory 命令，
+// 复制走剪贴板；根未物化时如实呈现空态，不渲染任何样例路径。
+function PrototypeSubjectLocationModule({ directoryOpener = desktopDirectoryOpener, view }: {
+  directoryOpener?: DirectoryOpener;
+  view: SkillQuickView;
+}) {
   const { t } = useTranslation();
-  const locationPopover = useBoundedPrototypePopover();
   const [copyStatus, setCopyStatus] = useState<"copied" | "unavailable" | "">("");
-  const openLocationPreview = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    locationPopover.triggerRef.current = event.currentTarget;
-    locationPopover.setOpen(true);
-  };
-  const copySamplePath = async () => {
+  const [openFailed, setOpenFailed] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const rootPath = view.rootPath;
+  const copyPath = async () => {
+    if (!rootPath) return;
     try {
-      await navigator.clipboard.writeText(PROTOTYPE_SKILL_PATH);
+      await navigator.clipboard.writeText(rootPath);
       setCopyStatus("copied");
     } catch {
       setCopyStatus("unavailable");
     }
   };
+  const openLocation = async () => {
+    if (!rootPath || opening) return;
+    setOpenFailed(false);
+    setOpening(true);
+    try {
+      await directoryOpener.openDirectory(rootPath);
+    } catch {
+      setOpenFailed(true);
+    } finally {
+      setOpening(false);
+    }
+  };
   return (
     <ModuleCard title={t("skillLibrary.drawer.prototype.subjectLocationTitle")}>
-      <div className="sh-skill-drawer__prototype-location">
-        <code title={PROTOTYPE_SKILL_PATH}>{PROTOTYPE_SKILL_PATH}</code>
-        <span>{t("skillLibrary.drawer.prototype.sampleOnly")}</span>
-        <div>
-          <Button aria-label={t("skillLibrary.drawer.prototype.openSampleLocation")} onClick={openLocationPreview} size="sm" variant="ghost">
-            <Icon name="open-external" size={16} />
-          </Button>
-          <Button aria-label={t("skillLibrary.drawer.prototype.copySamplePath")} onClick={() => void copySamplePath()} size="sm" variant="ghost">
-            <PrototypeCopyIcon />
-          </Button>
+      {rootPath ? (
+        <div className="sh-skill-drawer__prototype-location">
+          <code title={rootPath}>{rootPath}</code>
+          <div>
+            <Button aria-label={t("skillLibrary.drawer.prototype.openLocation")} disabled={opening} onClick={() => void openLocation()} size="sm" variant="ghost">
+              <Icon name="open-external" size={16} />
+            </Button>
+            <Button aria-label={t("skillLibrary.drawer.prototype.copySubjectPath")} onClick={() => void copyPath()} size="sm" variant="ghost">
+              <PrototypeCopyIcon />
+            </Button>
+          </div>
+          {copyStatus ? (
+            <span
+              aria-live="polite"
+              className={`sh-skill-drawer__prototype-copy-status${copyStatus === "unavailable" ? " is-error" : ""}`}
+              role="status"
+            >
+              {t(copyStatus === "copied"
+                ? "skillLibrary.drawer.prototype.pathCopied"
+                : "skillLibrary.drawer.prototype.pathCopyUnavailable")}
+            </span>
+          ) : null}
+          {openFailed ? (
+            <span className="sh-skill-drawer__prototype-copy-status is-error" role="alert">
+              {t("skillLibrary.drawer.prototype.openLocationFailed")}
+            </span>
+          ) : null}
         </div>
-        {copyStatus ? (
-          <span
-            aria-live="polite"
-            className={`sh-skill-drawer__prototype-copy-status${copyStatus === "unavailable" ? " is-error" : ""}`}
-            role="status"
-          >
-            {t(copyStatus === "copied"
-              ? "skillLibrary.drawer.prototype.samplePathCopied"
-              : "skillLibrary.drawer.prototype.samplePathCopyUnavailable")}
-          </span>
-        ) : null}
-      </div>
-      {locationPopover.open ? (
-        <PrototypePopover
-          ariaLabel={t("skillLibrary.drawer.prototype.subjectLocationDialog")}
-          className="sh-skill-drawer__prototype-popover sh-skill-drawer__prototype-location-popover"
-          contentRef={locationPopover.contentRef}
-          onCloseAutoFocus={locationPopover.onCloseAutoFocus}
-          onOpenChange={locationPopover.onOpenChange}
-          open={locationPopover.open}
-          position={locationPopover.position}
-          setPosition={locationPopover.setPosition}
-          triggerRef={locationPopover.triggerRef}
-        >
-          <strong>{t("skillLibrary.drawer.prototype.subjectLocationDialog")}</strong>
-          <code title={PROTOTYPE_SKILL_PATH}>{PROTOTYPE_SKILL_PATH}</code>
-          <p>{t("skillLibrary.drawer.prototype.noFilesystemOpen")}</p>
-          <Button onClick={() => locationPopover.close(true)} size="sm" variant="ghost">
-            {t("skillLibrary.drawer.prototype.closeLocationPreview")}
-          </Button>
-        </PrototypePopover>
-      ) : null}
+      ) : (
+        <p>{t("skillLibrary.drawer.prototype.rootNotMaterialized")}</p>
+      )}
     </ModuleCard>
   );
 }

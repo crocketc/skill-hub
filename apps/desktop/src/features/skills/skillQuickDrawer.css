@@ -1496,7 +1496,6 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-location code,
-.sh-skill-drawer__prototype-location-popover code,
 .sh-skill-drawer__prototype-relation-popover code {
   min-width: 0;
   overflow: hidden;
@@ -1541,16 +1540,6 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   border: 0;
   background: transparent;
   color: var(--ui-ink-muted);
-}
-
-.sh-skill-drawer__prototype-location-popover > strong {
-  display: block;
-  margin-bottom: var(--space-2);
-}
-
-.sh-skill-drawer__prototype-location-popover code {
-  display: block;
-  max-width: 100%;
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-agent-card,

@@ -174,6 +174,7 @@ function createMockSkillLibraryFacade(options: MockOptions = {}): MockFacade {
 
 interface DrawerHarnessProps {
   detailSearch?: string;
+  directoryOpener?: { openDirectory: (path: string) => Promise<void> };
   facade: SkillLibraryFacade;
   libraryReturn?: { focusSkillId: string; scrollLeft: number; scrollTop: number };
   onLocationChange?: (location: ReturnType<typeof useLocation>) => void;
@@ -186,6 +187,7 @@ interface DrawerHarnessProps {
 
 function DrawerHarness({
   detailSearch,
+  directoryOpener,
   facade,
   libraryReturn,
   onLocationChange,
@@ -212,6 +214,7 @@ function DrawerHarness({
       </button>
       <SkillQuickDrawer
         detailSearch={detailSearch}
+        directoryOpener={directoryOpener}
         facade={facade}
         libraryReturn={libraryReturn}
         onOpenChange={() => undefined}
@@ -1316,5 +1319,45 @@ describe("drawer long description clamping (FB-⑦)", () => {
     const value = await screen.findByTitle(longTranslation);
     expect(value).toHaveClass("sh-skill-drawer__clamp");
     expect(value).toHaveTextContent(longTranslation);
+  });
+
+  // W3-6：主体位置展示 K9 真实物化根路径；打开走受控 open_local_directory
+  // 命令，复制走剪贴板；不再渲染样例路径与「不会打开本机目录」浮层。
+  it("opens the real subject location through the controlled opener and copies the path", async () => {
+    const openDirectory = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const facade = createMockSkillLibraryFacade({
+      quickView: { ...QUICK_VIEW, rootPath: "C:/SkillHub/skills/pdf-reader" } as SkillQuickView,
+    });
+    await renderDrawer({ directoryOpener: { openDirectory }, facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open location" }));
+    await waitFor(() => expect(openDirectory).toHaveBeenCalledWith("C:/SkillHub/skills/pdf-reader"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy subject location path" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("C:/SkillHub/skills/pdf-reader"));
+    expect(await screen.findByText("Path copied.")).toBeVisible();
+  });
+
+  it("reports a readable failure when the open command rejects", async () => {
+    const openDirectory = vi.fn<(path: string) => Promise<void>>().mockRejectedValue(new Error("denied"));
+    const facade = createMockSkillLibraryFacade({
+      quickView: { ...QUICK_VIEW, rootPath: "C:/SkillHub/skills/pdf-reader" } as SkillQuickView,
+    });
+    await renderDrawer({ directoryOpener: { openDirectory }, facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open location" }));
+
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByText("Path copied.")).not.toBeInTheDocument();
+  });
+
+  it("shows an honest empty subject location when the root is not materialized", async () => {
+    await renderDrawer({ facade: createMockSkillLibraryFacade({ quickView: { ...QUICK_VIEW } as SkillQuickView }) });
+
+    expect(await screen.findByText("The subject directory is not materialized or unknown.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Open location" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy subject location path" })).not.toBeInTheDocument();
   });
 });

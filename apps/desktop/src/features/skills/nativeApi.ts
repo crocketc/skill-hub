@@ -172,6 +172,8 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
     originalName: payload.runtime_name,
     pendingCount: payload.pending_count ?? 0,
     projectDeploymentCount: 0,
+    // K9：主体位置来自 get_skill 的真实物化根路径，不派生自显示文本。
+    rootPath: payload.root_path ?? undefined,
     purpose: "",
     invocationPolicy: payload.invocation_policy
       ? {
