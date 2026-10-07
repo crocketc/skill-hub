@@ -19,7 +19,8 @@ pub use validation::{
 
 pub use classifier::{
     classify_directory_capability, classify_observed_relation,
-    classify_observed_relation_with_reason, RelationClassification, RelationTargetFact,
+    classify_observed_relation_with_reason, derive_relationship, RelationClassification,
+    RelationTargetFact,
 };
 pub use governance::{
     legacy_bucket_statuses, project_governable_relation, project_relation_governance_ledger,

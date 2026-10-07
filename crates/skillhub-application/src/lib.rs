@@ -12303,7 +12303,71 @@ impl LocalApplicationFacade {
                     observed_at,
                 )?;
             }
+            // #10 第 4 项：比对落库后，对扫描范围内仍未分类的观察行做一次
+            // 关系再推导（见 rederive_unknown_relationships_in）。复用外层
+            // 数据库句柄：with_database 的锁不可重入。
+            self.rederive_unknown_relationships_in(database, &scanned_roots)?;
             Ok(())
+        })
+    }
+
+    /// #10 第 4 项（2026-10-07 定稿）：对扫描范围内 relationship 仍未分类
+    /// （Unknown）的活跃未受管部署边，按现行 ownership×表示 口径做一次再
+    /// 推导。历史行当初落库即 Unknown、比对「未变化」又永不改写，治理清单
+    /// 因此把它们永久挡在「不可转换」后面；再推导给这些行一个随真实文件
+    /// 系统事实归位的机会。探测失败或推导仍为 Unknown 时保持原样（不猜）；
+    /// SkillHub 管理的条目永不改写。返回实际改写的行数。
+    fn rederive_unknown_relationships_in(
+        &self,
+        database: &Database,
+        scanned_roots: &[String],
+    ) -> AppResult<usize> {
+        if scanned_roots.is_empty() {
+            return Ok(0);
+        }
+        // 与比对阶段同一口径：根路径先折叠到 canonical 形态再比较。
+        let scanned_roots = scanned_roots
+            .iter()
+            .map(|root| Self::canonical_path_string(root))
+            .collect::<Vec<_>>();
+        let repository = database.relationship_repository();
+        let mut rederived = 0;
+        for mut fact in repository.list_relations()? {
+            if !fact.active
+                || fact.ownership == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                || fact.relationship != skillhub_core::relationship::RelationshipType::Unknown
+            {
+                continue;
+            }
+            let fact_path = Self::canonical_path_string(&fact.path);
+            if !scanned_roots
+                .iter()
+                .any(|root| path_lives_under(&fact_path, root))
+            {
+                continue;
+            }
+            let representation = FilesystemRelationshipProbe.directory_representation(&fact_path);
+            let relationship =
+                skillhub_core::relationship::derive_relationship(fact.ownership, representation);
+            if relationship == skillhub_core::relationship::RelationshipType::Unknown {
+                continue;
+            }
+            fact.relationship = relationship;
+            fact.file_representation = representation;
+            repository.upsert_deployment_relation(&fact)?;
+            rederived += 1;
+        }
+        Ok(rederived)
+    }
+
+    /// 仅供测试：直接驱动扫描后的未知关系再推导，避免在测试里跑完整扫描。
+    #[doc(hidden)]
+    pub fn rederive_unknown_relationships_for_tests(
+        &self,
+        scanned_roots: &[String],
+    ) -> AppResult<usize> {
+        self.with_database("relationship.rederive_unknown_for_tests", |database| {
+            self.rederive_unknown_relationships_in(database, scanned_roots)
         })
     }
 

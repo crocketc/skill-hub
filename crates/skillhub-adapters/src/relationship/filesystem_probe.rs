@@ -11,7 +11,9 @@
 //! offline volumes, UNC paths, timers — degrades to a non-archiving
 //! classification so a transient failure can never archive a relation.
 
-use skillhub_core::relationship::{PlatformFsErrorCategory, RelationshipPathProbe};
+use skillhub_core::relationship::{
+    FileRepresentation, PlatformFsErrorCategory, RelationshipPathProbe,
+};
 use skillhub_core::{physical_id_for_path, reparse_physical_id_for_path};
 use std::io::ErrorKind;
 use std::path::Path;
@@ -33,6 +35,37 @@ impl FilesystemRelationshipProbe {
                 }
             }
             Err(error) => classify_lookup_error(path, &error),
+        }
+    }
+
+    /// 表示推导（#10 第 4 项，2026-10-07 定稿）：只报告文件系统事实，
+    /// 不做业务裁决。目录条目返回 `Directory`；Windows reparse 目录按
+    /// SkillHub 自建部署的 junction 形态记为 `DirectoryJunction`（保守：
+    /// 表示不可校验即受阻），Unix 符号链接目录返回 `SymbolicLink`；
+    /// 不可读、非目录一律 `Unknown`（不猜，等待下一次探测）。
+    pub fn directory_representation(&self, path: impl AsRef<Path>) -> FileRepresentation {
+        let path = path.as_ref();
+        let Ok(metadata) = std::fs::symlink_metadata(path) else {
+            return FileRepresentation::Unknown;
+        };
+        if is_reparse_metadata(&metadata) {
+            // 链接型条目（symlink_metadata.is_dir() 为 false）：只有指向
+            // 目录的链接才是链接表示，文件链接不猜。
+            return match std::fs::metadata(path) {
+                Ok(target) if target.is_dir() => {
+                    if cfg!(windows) {
+                        FileRepresentation::DirectoryJunction
+                    } else {
+                        FileRepresentation::SymbolicLink
+                    }
+                }
+                _ => FileRepresentation::Unknown,
+            };
+        }
+        if metadata.is_dir() {
+            FileRepresentation::Directory
+        } else {
+            FileRepresentation::Unknown
         }
     }
 }
@@ -147,7 +180,38 @@ mod windows_tests {
     use crate::deployment::{create_junction, remove_junction};
     use crate::relationship::filesystem_probe::FilesystemRelationshipProbe;
     use skillhub_core::physical_id_for_path;
-    use skillhub_core::relationship::RelationshipPathProbe;
+    use skillhub_core::relationship::{FileRepresentation, RelationshipPathProbe};
+
+    #[test]
+    fn junction_representation_is_directory_junction() {
+        // #10 第 4 项：Windows reparse 目录像 SkillHub 自建部署一样按
+        // DirectoryJunction 记；普通目录是 Directory；探测不到不猜。
+        let workspace = tempfile::tempdir().expect("workspace");
+        let source = workspace.path().join("source");
+        let link = workspace.path().join("link");
+        std::fs::create_dir(&source).expect("source");
+        std::fs::write(source.join("SKILL.md"), "# notes\n").expect("skill file");
+        create_junction(&source, &link).expect("create junction");
+        let probe = FilesystemRelationshipProbe;
+        assert_eq!(
+            probe.directory_representation(&link),
+            FileRepresentation::DirectoryJunction
+        );
+        assert_eq!(
+            probe.directory_representation(&source),
+            FileRepresentation::Directory
+        );
+        assert_eq!(
+            probe.directory_representation(workspace.path().join("missing")),
+            FileRepresentation::Unknown
+        );
+        assert_eq!(
+            probe.directory_representation(workspace.path().join("source/SKILL.md")),
+            FileRepresentation::Unknown,
+            "非目录条目不是任何可部署表示"
+        );
+        remove_junction(&link).expect("remove junction");
+    }
 
     #[test]
     fn junction_identity_is_the_link_itself_not_the_target() {
@@ -176,7 +240,37 @@ mod windows_tests {
 mod unix_tests {
     use super::{directory_identity, FilesystemRelationshipProbe};
     use skillhub_core::physical_id_for_path;
-    use skillhub_core::relationship::RelationshipPathProbe;
+    use skillhub_core::relationship::{FileRepresentation, RelationshipPathProbe};
+
+    #[test]
+    fn symlink_representation_is_symbolic_link() {
+        // #10 第 4 项：Unix 符号链接目录按 SymbolicLink 记；普通目录是
+        // Directory；探测不到不猜。
+        let workspace = tempfile::tempdir().expect("workspace");
+        let source = workspace.path().join("source");
+        let link = workspace.path().join("link");
+        std::fs::create_dir(&source).expect("source");
+        std::fs::write(source.join("SKILL.md"), "# notes\n").expect("skill file");
+        std::os::unix::fs::symlink(&source, &link).expect("symlink");
+        let probe = FilesystemRelationshipProbe;
+        assert_eq!(
+            probe.directory_representation(&link),
+            FileRepresentation::SymbolicLink
+        );
+        assert_eq!(
+            probe.directory_representation(&source),
+            FileRepresentation::Directory
+        );
+        assert_eq!(
+            probe.directory_representation(workspace.path().join("missing")),
+            FileRepresentation::Unknown
+        );
+        assert_eq!(
+            probe.directory_representation(source.join("SKILL.md")),
+            FileRepresentation::Unknown,
+            "非目录条目不是任何可部署表示"
+        );
+    }
 
     #[test]
     fn symlinked_directory_identity_does_not_follow_the_link() {

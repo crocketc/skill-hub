@@ -1259,9 +1259,8 @@ fn apply_read_only_original_governance(
             .evidence_relation_ids
             .iter()
             .any(|relation_id| read_only_ids.contains(relation_id));
-        let has_import_original_evidence = row
-            .deployment()
-            .is_some_and(fact_is_import_original_edge);
+        let has_import_original_evidence =
+            row.deployment().is_some_and(fact_is_import_original_edge);
         if !has_read_only_evidence && !has_import_original_evidence {
             continue;
         }

@@ -230,13 +230,16 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
     assert_eq!(junction.readiness, RelationGovernanceReadiness::Blocked);
     // #10 第 3 项（2026-10-07 定稿）：受阻行不再零操作——「重新检查」
     // 是可用的行级动作（RunRelationshipCheck，仅人工触发）。
-    assert_eq!(junction.primary_action, RelationGovernanceAction::Revalidate);
+    assert_eq!(
+        junction.primary_action,
+        RelationGovernanceAction::Revalidate
+    );
     let revalidate = junction
         .governance
         .action_conditions
         .iter()
         .find(|condition| {
-            serde_json::to_value(&condition.action).unwrap() == serde_json::json!("revalidate")
+            serde_json::to_value(condition.action).unwrap() == serde_json::json!("revalidate")
         })
         .expect("blocked rows offer a working re-check");
     assert!(revalidate.available);
@@ -307,7 +310,10 @@ fn observed_unmanaged_deployments_offer_the_record_exit() {
     // #10 第 2 项（2026-10-07 定稿）：观察行（未受管部署边）的结束关系是
     // 纯记录操作，不再被「受管条目须先验证移除」挡住；该约束只约束
     // Skillhub 管理的条目（托管链接／托管副本）。
-    let specs = vec![RelationSpec::observed_copy("relation:observed", "/agent/skills/notes")];
+    let specs = vec![RelationSpec::observed_copy(
+        "relation:observed",
+        "/agent/skills/notes",
+    )];
     let ledger = ledger_of(&specs, &supported_capabilities(), all_bucket());
     let row = ledger
         .rows
@@ -319,7 +325,7 @@ fn observed_unmanaged_deployments_offer_the_record_exit() {
         .action_conditions
         .iter()
         .find(|condition| {
-            serde_json::to_value(&condition.action).unwrap() == serde_json::json!("end_relationship")
+            serde_json::to_value(condition.action).unwrap() == serde_json::json!("end_relationship")
         })
         .expect("record exit is offered for unmanaged deployments");
     assert!(end.available);
@@ -1397,9 +1403,9 @@ mod read_only_import_originals {
     #[test]
     fn import_originals_outside_the_read_only_set_complete_when_healthy() {
         let ledger = ledger_with_read_only(
-            vec![GovernableRelationFact::Deployment(observed_import_deployment(
-                "rel-observed",
-            ))],
+            vec![GovernableRelationFact::Deployment(
+                observed_import_deployment("rel-observed"),
+            )],
             &[],
         );
         let row = &ledger.rows[0];
@@ -1431,10 +1437,8 @@ mod read_only_import_originals {
         deployment.health_reasons = Some(vec![
             skillhub_core::relationship::RelationHealthReason::ContentChanged,
         ]);
-        let ledger = ledger_with_read_only(
-            vec![GovernableRelationFact::Deployment(deployment)],
-            &[],
-        );
+        let ledger =
+            ledger_with_read_only(vec![GovernableRelationFact::Deployment(deployment)], &[]);
         let row = &ledger.rows[0];
         assert_eq!(
             row.governance.governance_status,
