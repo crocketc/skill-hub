@@ -673,7 +673,6 @@ fn removal_impact_for_shared_direct_read_lists_other_consumers() {
 }
 
 #[test]
-#[test]
 fn removal_impact_keeps_read_only_import_originals_record_only() {
     // FB-④（2026-10-06）：可写原件随主体删除一并清理必须显式确认并备份；
     // 只读原件只结束关系记录，不删除文件、无需备份。
@@ -710,6 +709,7 @@ fn removal_impact_keeps_read_only_import_originals_record_only() {
     );
 }
 
+#[test]
 fn removal_impact_for_unknown_capability_is_a_governance_todo() {
     let relation = RelationTargetFact::directory(
         "shared",

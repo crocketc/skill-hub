@@ -5158,7 +5158,7 @@ mod unified_and_history {
             .find(|row| row.relation_id() == copy_relation_id)
             .expect("copy row");
         assert_eq!(copy_row.status, GovernableRelationStatus::Retained);
-        assert_eq!(copy_row.source_read_only, false);
+        assert!(!copy_row.source_read_only);
 
         // 状态过滤只命中对应行。
         let filters = RelationGovernanceFilters {

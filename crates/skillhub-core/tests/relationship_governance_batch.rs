@@ -1277,7 +1277,7 @@ mod read_only_import_originals {
 
         assert_eq!(ledger.rows.len(), 1, "one physical original, one row");
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, true);
+        assert!(row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Completed
@@ -1309,7 +1309,7 @@ mod read_only_import_originals {
         );
 
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, true);
+        assert!(row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Completed
@@ -1335,7 +1335,7 @@ mod read_only_import_originals {
         );
 
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, false);
+        assert!(!row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Completed,
@@ -1367,7 +1367,7 @@ mod read_only_import_originals {
         );
 
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, true);
+        assert!(row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Pending
@@ -1438,11 +1438,10 @@ mod read_only_import_originals {
             &[],
         );
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, false);
+        assert!(!row.source_read_only);
         assert!(
             !row.blockers
-                .iter()
-                .any(|blocker| *blocker == RelationGovernanceBlocker::RelationshipNotConvertible),
+                .contains(&RelationGovernanceBlocker::RelationshipNotConvertible),
             "writable import copies are convertible: {:?}",
             row.blockers
         );
@@ -1466,7 +1465,7 @@ mod read_only_import_originals {
             &["rel-readonly"],
         );
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, true);
+        assert!(row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Completed
@@ -1491,7 +1490,7 @@ mod read_only_import_originals {
             &["rel-readonly"],
         );
         let row = &ledger.rows[0];
-        assert_eq!(row.source_read_only, true);
+        assert!(row.source_read_only);
         assert_eq!(
             row.governance.governance_status,
             RelationGovernanceClassification::Pending

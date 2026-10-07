@@ -12020,6 +12020,10 @@ impl LocalApplicationFacade {
             RootKind::Project => 2,
             RootKind::Agent => 1,
         };
+        // 根证据四元组：规范路径、根类型、目录节点 id、Agent 归属 client。
+        type RootEvidence = (String, RootKind, Option<String>, Option<String>);
+        // 当前最优匹配：根证据三元组加排序键（路径深度，根类型秩）。
+        type BestRootMatch = (RootKind, Option<String>, Option<String>, (usize, usize));
         if source.locator.as_local_path().is_none() {
             // 在线来源只保存业务坐标；临时缓存不产生长期身份事实。
             return Ok(Some(ClassifiedImportSource {
@@ -12032,7 +12036,7 @@ impl LocalApplicationFacade {
         // 目录节点先收集，Agent 逻辑目标后收集：同为最长匹配时目标自带
         // client_id，优先作为归属证据；节点 id 与 client id 是互补证据，
         // 并存时合并且不互斥（节点 id 供治理身份合并使用）。
-        let mut roots: Vec<(String, RootKind, Option<String>, Option<String>)> = Vec::new();
+        let mut roots: Vec<RootEvidence> = Vec::new();
         if let Some(central) = central_root {
             roots.push((
                 Self::canonical_path_string(central),
@@ -12077,7 +12081,7 @@ impl LocalApplicationFacade {
             ));
         }
         let canonical = Self::canonical_path_string(resolved_root);
-        let mut best: Option<(RootKind, Option<String>, Option<String>, (usize, usize))> = None;
+        let mut best: Option<BestRootMatch> = None;
         for (root, kind, node_id, client_id) in roots
             .into_iter()
             .filter(|(root, _, _, _)| canonical == *root || path_lives_under(&canonical, root))

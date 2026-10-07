@@ -502,6 +502,7 @@ pub fn project_relation_governance_ledger_with_names(
 /// Unified projection entry (plan 7.8): consumes source-copy relations and
 /// deployment relations in one ledger, plus the batch→relation map used by
 /// the `batch_id` filter. Pure: no filesystem I/O, no writes.
+#[allow(clippy::too_many_arguments)]
 pub fn project_unified_governance_ledger(
     filters: &RelationGovernanceFilters,
     facts: &[GovernableRelationFact],
@@ -1225,7 +1226,7 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
 /// 结束关系只清理观察记录，不删除只读目录里的用户文件，因此不受
 /// 「受管条目须先验证移除」约束。
 fn apply_read_only_original_governance(
-    rows: &mut Vec<RelationGovernanceRow>,
+    rows: &mut [RelationGovernanceRow],
     facts: &[GovernableRelationFact],
     read_only_ids: &BTreeSet<String>,
 ) {
