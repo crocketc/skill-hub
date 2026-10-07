@@ -214,6 +214,21 @@ it("keeps four agent tags on one row and wraps the fifth", async () => {
   expect(agentCell.querySelector('[data-agent-row="1"]')?.querySelectorAll("[data-agent-id]")).toHaveLength(1);
 });
 
+// #14：后端没有版本标签时渲染统一占位文案，不得回退英文 "unknown"。
+it("shows the unified empty-version copy instead of an English unknown fallback", async () => {
+  await renderTable({
+    page: { ...page, items: [{ ...rows[0], currentVersion: undefined }] },
+    // 版本列默认隐藏；本用例显式打开该列验证占位文案。
+    preferences: {
+      ...DEFAULT_TABLE_PREFERENCES,
+      visibleColumns: [...DEFAULT_TABLE_PREFERENCES.visibleColumns, "version"],
+    },
+  });
+
+  expect(screen.getByText("No version yet")).toBeVisible();
+  expect(screen.queryByText("unknown")).not.toBeInTheDocument();
+});
+
 it("opens a focused row with Enter and emits manual sort and pagination", async () => {
   const onOpenSkill = vi.fn();
   const onQueryChange = vi.fn();

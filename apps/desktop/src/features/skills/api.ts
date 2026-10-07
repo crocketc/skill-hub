@@ -72,7 +72,8 @@ export interface SkillTableRow {
   /** 用户设置的显示别名；与原名一致或未设置时省略（P1-10）。 */
   alias?: string;
   basicCheck: CheckState;
-  currentVersion: string;
+  /** 后端没有可读版本标签时保持 undefined；展示层用统一文案呈现（#14）。 */
+  currentVersion?: string;
   /** Immutable version identity used by version-scoped security checks. */
   currentVersionId?: string;
   highRiskCount: number;

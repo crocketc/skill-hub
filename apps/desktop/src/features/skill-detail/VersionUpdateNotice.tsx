@@ -27,7 +27,7 @@ export function VersionUpdateNotice({ compact = false, summary }: VersionUpdateN
         <h3>{t("skillDetail.versions.updateAvailableTitle")}</h3>
         <p>
           {t("skillDetail.versions.updateVersion", {
-            current: summary.currentVersion,
+            current: summary.currentVersion ?? t("skillLibrary.noVersion"),
             upstream: summary.upstreamVersion ?? t("skillDetail.versions.upstreamPending"),
           })}
         </p>

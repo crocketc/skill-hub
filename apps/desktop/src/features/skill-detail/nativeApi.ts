@@ -147,7 +147,7 @@ function summaryOf(skill: SkillResult): SkillDetailSummary {
     alias: aliased ? skill.display_name : undefined,
     basicCheck: "not_run",
     // QA-010：概览展示后端推导的可读标签，内容哈希不进入展示层。
-    currentVersion: skill.current_version_label ?? "unknown",
+    currentVersion: skill.current_version_label ?? undefined,
     currentVersionId: skill.current_version ?? undefined,
     highRiskCount: skill.high_risk_count,
     id: skill.skill_id,

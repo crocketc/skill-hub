@@ -1357,6 +1357,7 @@
       }
     },
     "fullDetailsBoundary": "Full Skill details are delivered in the next task",
+    "noVersion": "No version yet",
     "page": {
       "batch": {
         "addTo": "Add to…",

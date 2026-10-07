@@ -130,7 +130,8 @@ it("keeps the quick view honest when the skill has no current version", async ()
   });
 
   const view = await nativeSkillLibraryFacade.getSkillQuickView("skill-pdf");
-  expect(view.currentVersion).toBe("unknown");
+  // #14：缺版本是事实缺失，门面不得编造英文 "unknown"；由界面用统一文案呈现。
+  expect(view.currentVersion).toBeUndefined();
   expect(view.basicCheck).toBe("not_run");
   expect(view.aiCheck).toBe("not_run");
   expect(view.pendingCount).toBe(0);

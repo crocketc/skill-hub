@@ -694,6 +694,19 @@ it("carries the library query and return position into full details", async () =
   );
 });
 
+// #14：抽屉各版本槽位使用统一占位文案，不出现英文 "unknown"。
+it("renders the unified empty-version copy when the Skill has no version yet", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: { ...QUICK_VIEW, currentVersion: undefined },
+  });
+  await renderDrawer({ facade });
+
+  const slots = await screen.findAllByText("No version yet");
+  expect(slots.length).toBeGreaterThanOrEqual(1);
+  // 精确匹配整个文本节点：抽屉里本就存在含 "unknown" 的其他英文文案。
+  expect(screen.queryByText("unknown")).not.toBeInTheDocument();
+});
+
 it("keeps preview full-detail links inside the development preview routes", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade, initialEntry: "/__preview/skill-library" });

@@ -95,7 +95,7 @@ function toTableRow(item: SkillListItem, agentTargets: Map<string, AgentDeployme
     agentDeployments,
     alias: aliased ? item.display_name : undefined,
     basicCheck: checkStateOf(item.basic_check),
-    currentVersion: item.current_version_label ?? "unknown",
+    currentVersion: item.current_version_label ?? undefined,
     currentVersionId: item.current_version ?? undefined,
     highRiskCount: item.high_risk_count,
     id: item.skill_id,
@@ -165,7 +165,7 @@ function asQuickView(result: AppQueryResult): SkillQuickView {
     agentDeploymentCount: 0,
     alias: aliased ? payload.display_name : undefined,
     basicCheck: checkStateOf(payload.basic_check ?? "not_checked"),
-    currentVersion: payload.current_version_label ?? "unknown",
+    currentVersion: payload.current_version_label ?? undefined,
     currentVersionId: payload.current_version ?? undefined,
     highRiskCount: payload.high_risk_count ?? 0,
     id: payload.skill_id,
@@ -321,7 +321,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
       // 用真实读模型填充抽屉各模块（FE-05）：身份/版本/检查/部署关系。
       // QA-010：当前版本展示后端推导的可读标签；内容哈希只是技术身份，
       // 仍用于检查查询等需要精确版本身份的场合。
-      view.currentVersion = skill.current_version_label ?? "unknown";
+      view.currentVersion = skill.current_version_label ?? undefined;
       // QA-008：用途显示用户独立撰写的字段，不用译文或原文冒充。
       view.purpose = skill.user_purpose ?? "";
       view.userPurpose = skill.user_purpose ?? undefined;

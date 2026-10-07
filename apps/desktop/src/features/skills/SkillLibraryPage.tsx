@@ -1274,7 +1274,10 @@ export function SkillLibraryPage({
       description:
         item.purpose || item.translatedDescription || item.originalDescription || undefined,
       metrics: [
-        t("skillLibrary.page.card.version", { version: item.currentVersion }),
+        // #14：缺版本时指标槽直接呈现统一占位文案，不拼出 "Current version No version yet"。
+        item.currentVersion
+          ? t("skillLibrary.page.card.version", { version: item.currentVersion })
+          : t("skillLibrary.noVersion"),
         t("skillLibrary.page.card.deploymentCount", { count: item.agentDeploymentCount }),
         t("skillLibrary.table.projectDeployments", { count: item.projectDeploymentCount }),
       ],

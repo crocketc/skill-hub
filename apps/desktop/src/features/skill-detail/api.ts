@@ -14,7 +14,8 @@ export interface SkillDetailSummary {
   aiCheck: CheckState;
   alias?: string;
   basicCheck: CheckState;
-  currentVersion: string;
+  /** 后端没有可读版本标签时保持 undefined；展示层用统一文案呈现（#14）。 */
+  currentVersion?: string;
   /** Immutable identity of the current version used by version-scoped actions. */
   currentVersionId?: string;
   highRiskCount?: number;

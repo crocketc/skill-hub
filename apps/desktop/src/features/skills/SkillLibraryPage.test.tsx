@@ -1826,6 +1826,18 @@ it("routes the drawer's delete entry into the unified removal flow", async () =>
     expect(screen.getByRole("button", { name: "Next page" })).toBeVisible();
   });
 
+  // #14：卡片版本槽在缺版本标签时呈现统一占位文案，不得回退英文 "unknown"。
+  it("shows the unified empty-version copy on cards when the Skill has no version yet", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [{ ...MOCK_SKILL_PDF, currentVersion: undefined }],
+    });
+    renderLibrary({ facade, persistedViewMode: "unset" });
+
+    const card = await screen.findByTestId("skill-card-skill-pdf");
+    expect(within(card).getByText("No version yet")).toBeVisible();
+    expect(within(card).queryByText(/unknown/)).not.toBeInTheDocument();
+  });
+
   it("keeps the select control from activating the card body", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade, persistedViewMode: "unset" });

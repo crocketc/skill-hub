@@ -94,6 +94,8 @@ describe("native skill library facade", () => {
       tags: ["documents"],
       license: "MIT",
     });
+    // #14：无版本标签时行契约保持 undefined，不得回填英文 "unknown"。
+    expect(page.items[0].currentVersion).toBeUndefined();
     expect(page.total).toBe(1);
     expect(page.facets.tags).toEqual(["documents"]);
   });

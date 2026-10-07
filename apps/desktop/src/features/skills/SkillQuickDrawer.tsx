@@ -1483,7 +1483,7 @@ function PrototypeSecurityChecksModule({ llmConfigured = true, securityFacade, v
     const longDescription = t("skillLibrary.drawer.prototype.securityTooltip", {
       check: labels[kind],
       result: stateText,
-      version: view.currentVersion,
+      version: view.currentVersion ?? t("skillLibrary.noVersion"),
       time: checkedAt,
     });
     const accessibleLabel = failed
@@ -1583,7 +1583,7 @@ function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: Mod
         </div>
         <div>
           <dt>{t("skillLibrary.filters.version")}</dt>
-          <dd>{view.currentVersion}</dd>
+          <dd>{view.currentVersion ?? t("skillLibrary.noVersion")}</dd>
         </div>
         <div>
           <dt>{t("skillLibrary.drawer.values.license")}</dt>
@@ -1818,7 +1818,7 @@ function PrototypeIdentityRegion({
             <span className="sh-skill-drawer__field-label">
               {t("skillLibrary.filters.version")}
             </span>
-            <span className="sh-skill-drawer__summary-value">{view.currentVersion}</span>
+            <span className="sh-skill-drawer__summary-value">{view.currentVersion ?? t("skillLibrary.noVersion")}</span>
           </div>
           <div className="sh-skill-drawer__summary-item sh-skill-drawer__summary-item--agents">
             <span className="sh-skill-drawer__field-label">

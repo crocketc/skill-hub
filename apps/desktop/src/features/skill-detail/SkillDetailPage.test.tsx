@@ -371,6 +371,15 @@ describe("SkillDetailPage shell", () => {
     ]);
   });
 
+  // #14：详情头部缺版本时渲染统一占位文案，不得回退英文 "unknown"。
+  it("shows the unified empty-version copy when the Skill has no version yet", async () => {
+    const facade = createMockSkillDetailFacade({ summary: { currentVersion: undefined } });
+    await renderDetail({ facade });
+
+    // 「当前版本 · 」与占位文案同属一个 <p>，用正则匹配该段完整文本。
+    expect(await screen.findByText(/当前版本 · No version yet/)).toBeVisible();
+  });
+
   it("opens the relationship graph focused on the current Skill", async () => {
     await renderDetail({ entry: "/library/skill-pdf" });
 

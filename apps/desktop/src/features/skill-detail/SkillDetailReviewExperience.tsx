@@ -162,7 +162,7 @@ export function SkillDetailReviewExperience({
           <div className="sh-skill-detail-review__identity">
             <div className="sh-skill-detail-review__identity-name">
               <h1>{summary.name}</h1>
-              <p>当前版本 · {summary.currentVersion}</p>
+              <p>当前版本 · {summary.currentVersion ?? t("skillLibrary.noVersion")}</p>
             </div>
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
               <ReviewHeaderActions

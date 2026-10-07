@@ -208,7 +208,7 @@ export function createSkillColumns(t: TFunction): ColumnDef<SkillTableRow>[] {
     },
     {
       id: "version",
-      cell: ({ row }) => <div className="sh-skill-table__version"><span>{row.original.currentVersion}</span>{row.original.upgradeAvailable ? <span>{t("skillLibrary.table.updateAvailable")}</span> : null}</div>,
+      cell: ({ row }) => <div className="sh-skill-table__version"><span>{row.original.currentVersion ?? t("skillLibrary.noVersion")}</span>{row.original.upgradeAvailable ? <span>{t("skillLibrary.table.updateAvailable")}</span> : null}</div>,
       header: t(COLUMN_LABELS.version),
     },
     { id: "security_status", cell: ({ row }) => <SecurityStatusCell row={row.original} />, header: t(COLUMN_LABELS.security_status) },

@@ -145,7 +145,8 @@ describe("native skill detail facade", () => {
       },
     } as never);
 
-    await expect(nativeSkillDetailFacade.getSummary("skill-1")).resolves.toMatchObject({
+    const summary = await nativeSkillDetailFacade.getSummary("skill-1");
+    expect(summary).toMatchObject({
       agentDeploymentCount: 3,
       highRiskCount: 1,
       pendingCount: 4,
@@ -155,6 +156,8 @@ describe("native skill detail facade", () => {
       independentCopyCount: 5,
       rootPath: "C:/SkillHub/library/pdf-reader",
     });
+    // #14：无版本标签时概要保持 undefined，不得编造英文 "unknown"。
+    expect(summary.currentVersion).toBeUndefined();
   });
 
   // K5/MS-04：上游谱系原样透传给详情摘要；None=无登记，不做任何派生。
