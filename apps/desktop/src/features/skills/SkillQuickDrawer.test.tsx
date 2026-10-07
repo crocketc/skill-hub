@@ -1469,3 +1469,34 @@ describe("drawer primary actions wired to real flows", () => {
     expect(onDelete).toHaveBeenCalledWith({ id: "skill-pdf", name: "PDF Reader" });
   });
 });
+
+// W4-2：抽屉事实与关系呈现只反映门面真实数据，不再携带样例/预览声明。
+describe("drawer sample-claim cleanup", () => {
+  it("renders registered source facts without fabricated samples", async () => {
+    await renderDrawer({ facade: createMockSkillLibraryFacade() });
+
+    expect(await screen.findByText("Internal catalog")).toBeVisible();
+    expect(screen.queryByText("Import record")).not.toBeInTheDocument();
+    expect(screen.queryByText("Network update source")).not.toBeInTheDocument();
+    expect(screen.queryByText(/GitHub · PDF Toolkit/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Derived sample/)).not.toBeInTheDocument();
+    // 真实翻译流不再声称“仅演示、不发送内容”。
+    expect(screen.queryByText("Preview only; the description is not sent anywhere.")).not.toBeInTheDocument();
+  });
+
+  it("presents relation targets without fabricated managed states", async () => {
+    const facade = createMockSkillLibraryFacade({
+      quickView: {
+        ...QUICK_VIEW,
+        agentDeployments: [
+          { id: "codex", name: "OpenAI Codex", agentId: "codex-cli" },
+        ],
+      } as SkillQuickView,
+    });
+    await renderDrawer({ facade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open relation context: Codex CLI" }));
+    expect(await screen.findByRole("button", { name: "Open relationship governance" })).toBeVisible();
+    expect(screen.queryByText(/Preview sample/)).not.toBeInTheDocument();
+  });
+});

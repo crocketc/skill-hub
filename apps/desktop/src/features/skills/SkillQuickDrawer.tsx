@@ -1194,7 +1194,6 @@ interface PrototypeRelationsModuleProps extends ModuleProps {
 interface RelationPreviewTarget {
   name: string;
   type: "agent" | "project";
-  managed: boolean;
   path?: string;
   agentClientId?: string;
 }
@@ -1256,12 +1255,12 @@ function PrototypeRelationsModule({ detailSearch = "", skillId, view }: Prototyp
                 role="region"
                 tabIndex={0}
               >
-                {agentDeployments.map((agent, index) => (
+                {agentDeployments.map((agent) => (
                   <button
                     aria-label={t("skillLibrary.drawer.prototype.openRelationContext", { target: agent.name })}
                     className="sh-skill-drawer__prototype-agent-card"
                     key={agent.id}
-                    onClick={(event) => openRelationPreview(event, { name: agent.name, type: "agent", managed: index === 0, agentClientId: agent.agentId ?? agent.id })}
+                    onClick={(event) => openRelationPreview(event, { name: agent.name, type: "agent", agentClientId: agent.agentId ?? agent.id })}
                     title={agent.name}
                     type="button"
                   >
@@ -1272,9 +1271,6 @@ function PrototypeRelationsModule({ detailSearch = "", skillId, view }: Prototyp
                       instance={agent.name}
                       sharedDirectory={agent.sharedDirectory}
                     />
-                    <span className={`sh-skill-drawer__prototype-relation-state${index === 0 ? " is-managed" : " is-pending"}`}>
-                      {t(index === 0 ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}
-                    </span>
                   </button>
                 ))}
               </div>
@@ -1298,19 +1294,16 @@ function PrototypeRelationsModule({ detailSearch = "", skillId, view }: Prototyp
                 tabIndex={0}
               >
                 <ul className="sh-skill-drawer__project-list">
-                  {projects.map((project, index) => (
+                  {projects.map((project) => (
                     <li key={project.id}>
                       <button
                         aria-label={t("skillLibrary.drawer.prototype.openRelationContext", { target: project.name })}
                         className="sh-skill-drawer__prototype-project-card"
-                        onClick={(event) => openRelationPreview(event, { name: project.name, type: "project", managed: index === 0, path: displayPath(project.path) })}
+                        onClick={(event) => openRelationPreview(event, { name: project.name, type: "project", path: displayPath(project.path) })}
                         type="button"
                       >
                         <strong title={project.name}>{project.name}</strong>
                         <code title={displayPath(project.path)}>{displayPath(project.path)}</code>
-                        <span className={`sh-skill-drawer__prototype-relation-state${index === 0 ? " is-managed" : " is-pending"}`}>
-                          {t(index === 0 ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}
-                        </span>
                       </button>
                     </li>
                   ))}
@@ -1346,8 +1339,8 @@ function PrototypeRelationsModule({ detailSearch = "", skillId, view }: Prototyp
           {relationPreviewSection === "summary" ? (
             <>
               <p><span>{t(selectedTarget.type === "agent" ? "skillLibrary.drawer.values.agents" : "skillLibrary.drawer.values.projects")}</span><strong>{selectedTarget.name}</strong></p>
-              <p><span>{t("skillLibrary.drawer.prototype.relationshipState")}</span><strong>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManaged" : "skillLibrary.drawer.prototype.samplePending")}</strong></p>
-              <p>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManagedReason" : "skillLibrary.drawer.prototype.samplePendingReason")}</p>
+              {/* W4-2：集中管理状态由关系治理页的真实批次事实呈现，
+                  抽屉不再按索引伪造「已集中管理/待集中管理」。 */}
               <div className="sh-skill-drawer__prototype-popover-actions">
                 <Button onClick={() => setRelationPreviewSection("target")} size="sm" variant="secondary">
                   {t("skillLibrary.drawer.prototype.openTargetSample", { type: selectedTarget.type === "agent" ? t("skillLibrary.drawer.values.agents") : t("skillLibrary.drawer.values.projects") })}
@@ -1571,8 +1564,10 @@ function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: Mod
     <ModuleCard title={t("skillLibrary.drawer.prototype.sourceVersionTitle")}>
       <dl className="sh-skill-drawer__prototype-source-facts">
         <div>
-          <dt>{t("skillLibrary.drawer.prototype.importReceipt")}</dt>
-          <dd>{t("skillLibrary.drawer.prototype.importReceiptSample")}</dd>
+          {/* W4-2：登记来源来自门面真实事实（source_locator/source_kind），
+              不再渲染伪造的导入存证与网络更新来源样例。 */}
+          <dt>{t("skillLibrary.drawer.prototype.sourceLabel")}</dt>
+          <dd title={view.source ?? undefined}>{view.source ?? <EmptyValue />}</dd>
         </div>
         <div>
           <dt>{t("skillLibrary.filters.version")}</dt>
@@ -1582,14 +1577,7 @@ function SourceVersionPrototypeModule({ versionsHref, versionsState, view }: Mod
           <dt>{t("skillLibrary.drawer.values.license")}</dt>
           <dd>{view.license ?? <EmptyValue />}</dd>
         </div>
-        <div>
-          <dt>{t("skillLibrary.drawer.prototype.networkUpdateSource")}</dt>
-          <dd title={t("skillLibrary.drawer.prototype.networkUpdateSourceSample")}>{t("skillLibrary.drawer.prototype.networkUpdateSourceSample")}</dd>
-        </div>
       </dl>
-      <p className="sh-skill-drawer__prototype-derived-source">
-        {t("skillLibrary.drawer.prototype.derivedFromSample", { sourceSkill: "PDF Toolkit" })}
-      </p>
       {view.upgradeAvailable ? (
         <div className="sh-skill-drawer__version-update sh-skill-drawer__prototype-update">
           <span aria-hidden="true" className="sh-skill-drawer__prototype-update-mark" />
@@ -1848,7 +1836,6 @@ function PrototypeIdentityRegion({
             onClick={onTranslateDescription}
             size="sm"
             variant="ghost"
-            title={t("skillLibrary.drawer.prototype.translationPreview")}
           >
             {translationLoading ? <span className="sh-skill-drawer__prototype-translate-loading" aria-hidden="true" /> : <PrototypeTranslationIcon />}
           </Button>
@@ -1859,7 +1846,6 @@ function PrototypeIdentityRegion({
             <Link to="/settings?section=networkAi">{t("skillLibrary.drawer.prototype.configureTranslation")}</Link>
           </span>
         ) : null}
-        <span className="sh-visually-hidden">{t("skillLibrary.drawer.prototype.translationPreview")}</span>
         {translationError ? <p role="alert">{translationError}</p> : null}
         {translationDraft ? (
           <div aria-label={t("skillLibrary.drawer.translation.confirmLabel")} role="alertdialog">

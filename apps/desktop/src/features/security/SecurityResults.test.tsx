@@ -395,7 +395,7 @@ it("explains the risk-aware provider gap through i18n without a settings link", 
     preferences: { llmProvider: "", dataScope: "explicit_selection" },
   });
 
-  expect(await screen.findByText("可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。")).toBeVisible();
+  expect(await screen.findByText("可在设置中的网络与 AI 配置提供商；未配置提供商时不会发送内容。")).toBeVisible();
   expect(screen.queryByRole("link", { name: "配置 AI 设置" })).not.toBeInTheDocument();
 });
 

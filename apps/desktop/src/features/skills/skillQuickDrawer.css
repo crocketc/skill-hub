@@ -1594,23 +1594,6 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   white-space: nowrap;
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-relation-state {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-relation-state.is-managed {
-  color: var(--ui-success-foreground);
-}
-
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-relation-state.is-pending {
-  color: var(--ui-warning-foreground);
-}
-
 .sh-skill-drawer__prototype-relation-popover > p:first-of-type {
   display: flex;
   justify-content: space-between;
@@ -1676,12 +1659,6 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__prototype-derived-source {
-  margin: var(--space-2) 0 0;
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
-
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-security-summary > strong {
   font-weight: 600;
 }
@@ -1711,44 +1688,6 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-findings {
   max-height: 6rem;
   margin-top: var(--space-1);
-}
-
-.sh-skill-drawer__prototype-action-popover {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.sh-skill-drawer__prototype-action-popover > strong {
-  color: var(--ui-ink);
-  font-size: var(--font-size-md);
-}
-
-.sh-skill-drawer__prototype-action-popover .sh-skill-drawer__prototype-action-disclaimer {
-  margin: 0;
-  border-inline-start: 3px solid var(--ui-info-foreground);
-  padding-inline-start: var(--space-2);
-  color: var(--ui-info-foreground);
-}
-
-.sh-skill-drawer__prototype-action-popover section {
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2);
-  background: var(--ui-surface-subtle);
-}
-
-.sh-skill-drawer__prototype-action-popover section > span {
-  color: var(--ui-ink-muted);
-  font-size: var(--font-size-xs);
-}
-
-.sh-skill-drawer__prototype-action-popover--delete section {
-  border-color: var(--ui-danger-border);
-  background: var(--ui-danger-background);
-}
-
-.sh-skill-drawer__prototype-action-popover--delete section p {
-  color: var(--ui-danger-foreground);
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-risk-summary {
