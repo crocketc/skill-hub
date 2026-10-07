@@ -439,6 +439,17 @@ describe("GraphDetailsPanel governance entries", () => {
     expect(screen.queryByText(/C:[/\\]cache[/\\]online/)).not.toBeInTheDocument();
   });
 
+  // #13：中心操作区的「前往关系治理」必须携带当前 Skill 上下文，
+  // 治理页据此直接过滤，不再让用户手动搜索刚才查看的 Skill。
+  it("carries the center Skill id to relationship governance", async () => {
+    await renderSelection({});
+
+    expect(screen.getByRole("link", { name: "Open relationship governance" })).toHaveAttribute(
+      "href",
+      "/relationships/governance?from=graph&skillId=pdf-reader",
+    );
+  });
+
   it("routes a source edge to the Skill lifecycle and does not misclassify it as governance", async () => {
     await renderSelection({
       selectedEdgeId: "e-src-local",

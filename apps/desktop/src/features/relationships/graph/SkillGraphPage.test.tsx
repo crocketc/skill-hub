@@ -597,9 +597,11 @@ describe("jumps and return state", () => {
 
     const viewSkill = screen.getByRole("link", { name: "View Skill" });
     expect(viewSkill).toHaveAttribute("href", "/library/pdf-reader?from=relationships");
+    // #13：治理深链必须携带当前 Skill 上下文（skillId），治理页据此直接
+    // 过滤到该 Skill；无中心节点的全局图谱才不带参。
     expect(screen.getByRole("link", { name: "Open relationship governance" })).toHaveAttribute(
       "href",
-      "/relationships/governance?from=graph",
+      "/relationships/governance?from=graph&skillId=pdf-reader",
     );
 
     // 点击跳转前保存返回状态（视口），供浏览器后退恢复。
@@ -609,6 +611,21 @@ describe("jumps and return state", () => {
       true,
     );
     expect(view.container).toBeInstanceOf(HTMLElement);
+  });
+
+  // #13：折叠摘要区的「前往关系治理」同样携带 skillId，两处入口行为一致。
+  it("carries the center Skill to governance from the collapsed summary too", async () => {
+    await renderPage("/relationships?skillId=pdf-reader&types=related_skill");
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    });
+
+    const collapsed = screen.getByRole("status");
+    expect(within(collapsed).getByRole("link", { name: "Open relationship governance" })).toHaveAttribute(
+      "href",
+      "/relationships/governance?from=graph&skillId=pdf-reader",
+    );
   });
 
   it("shows an honest error state when the graph query fails", async () => {

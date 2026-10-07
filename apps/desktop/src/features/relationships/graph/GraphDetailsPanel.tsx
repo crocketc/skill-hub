@@ -255,7 +255,7 @@ export function GraphDetailsPanel({
           </Link>
           <Link
             className="sh-button sh-button--secondary sh-button--sm"
-            to="/relationships/governance?from=graph"
+            to={`/relationships/governance?from=graph&skillId=${encodeURIComponent(centerSkillId)}`}
             onClick={onBeforeNavigate}
           >
             {t("relationships.graph.goToGovernance")}

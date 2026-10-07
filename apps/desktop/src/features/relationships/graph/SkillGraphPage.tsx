@@ -767,7 +767,7 @@ export function SkillGraphPage({
           <div className="sh-graph-details__actions">
             <Link
               className="sh-button sh-button--secondary sh-button--sm"
-              to="/relationships/governance?from=graph"
+              to={`/relationships/governance?from=graph&skillId=${encodeURIComponent(skillId)}`}
               onClick={saveReturnState}
             >
               {t("relationships.graph.goToGovernance")}
