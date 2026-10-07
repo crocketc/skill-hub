@@ -228,7 +228,19 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
         .find(|row| row.relation_id() == "relation:junction")
         .expect("junction row");
     assert_eq!(junction.readiness, RelationGovernanceReadiness::Blocked);
-    assert_eq!(junction.primary_action, RelationGovernanceAction::None);
+    // #10 第 3 项（2026-10-07 定稿）：受阻行不再零操作——「重新检查」
+    // 是可用的行级动作（RunRelationshipCheck，仅人工触发）。
+    assert_eq!(junction.primary_action, RelationGovernanceAction::Revalidate);
+    let revalidate = junction
+        .governance
+        .action_conditions
+        .iter()
+        .find(|condition| {
+            serde_json::to_value(&condition.action).unwrap() == serde_json::json!("revalidate")
+        })
+        .expect("blocked rows offer a working re-check");
+    assert!(revalidate.available);
+    assert!(revalidate.reasons.is_empty());
     assert_eq!(
         junction.blockers,
         vec![RelationGovernanceBlocker::UnverifiableRepresentation]
@@ -288,6 +300,30 @@ fn ledger_returns_four_buckets_with_object_relationship_impact_and_reasons() {
             "counts always describe the whole ledger, not the filtered page"
         );
     }
+}
+
+#[test]
+fn observed_unmanaged_deployments_offer_the_record_exit() {
+    // #10 第 2 项（2026-10-07 定稿）：观察行（未受管部署边）的结束关系是
+    // 纯记录操作，不再被「受管条目须先验证移除」挡住；该约束只约束
+    // Skillhub 管理的条目（托管链接／托管副本）。
+    let specs = vec![RelationSpec::observed_copy("relation:observed", "/agent/skills/notes")];
+    let ledger = ledger_of(&specs, &supported_capabilities(), all_bucket());
+    let row = ledger
+        .rows
+        .iter()
+        .find(|row| row.relation_id() == "relation:observed")
+        .expect("observed row");
+    let end = row
+        .governance
+        .action_conditions
+        .iter()
+        .find(|condition| {
+            serde_json::to_value(&condition.action).unwrap() == serde_json::json!("end_relationship")
+        })
+        .expect("record exit is offered for unmanaged deployments");
+    assert!(end.available);
+    assert!(end.reasons.is_empty());
 }
 
 #[test]
@@ -1319,7 +1355,7 @@ mod read_only_import_originals {
     }
 
     #[test]
-    fn writable_import_originals_complete_but_keep_their_safety_rules() {
+    fn writable_import_originals_complete_and_end_as_record_operations() {
         let mut copy = read_only_copy("rel-copy", SourceCopyHealth::Normal);
         copy.source_path = "C:/agents/trae/skills/notes".to_owned();
         copy.source_path_key = "c:/agents/trae/skills/notes".to_owned();
@@ -1341,15 +1377,76 @@ mod read_only_import_originals {
             RelationGovernanceClassification::Completed,
             "healthy writable originals are completed·已保留副本 too"
         );
+        // 观察边不是受管条目：结束关系是纯记录出口，不再套用
+        // 「受管条目须先验证移除」（#10 第 2 项，约束只针对托管链接／副本）。
         let end = condition_of(row, "end_relationship");
+        assert!(end.available);
+        assert!(end.reasons.is_empty());
+        // 表示未知：转集中管理保持不可用并给出原因，不假装可转换。
+        let centralize = condition_of(row, "centralize_management");
+        assert!(!centralize.available);
+        assert_eq!(
+            serde_json::to_value(&centralize.reasons).unwrap(),
+            serde_json::json!(["relationship_not_convertible"])
+        );
+    }
+
+    /// #10 第 1 项主场景：只读根路径判定漏掉的导入原件——现场 150 条
+    /// doubao 行的形状（origin=import、关系未知、目录已注册）。不再要求
+    /// 命中「内置只读根」：健康原件投影时自动归已完成（已保留副本）。
+    #[test]
+    fn import_originals_outside_the_read_only_set_complete_when_healthy() {
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::Deployment(observed_import_deployment(
+                "rel-observed",
+            ))],
+            &[],
+        );
+        let row = &ledger.rows[0];
         assert!(
-            !end.available,
-            "writable originals keep the verified-removal rule"
+            !row.source_read_only,
+            "root check failed: not presented as a read-only card"
         );
         assert_eq!(
-            serde_json::to_value(&end.reasons).unwrap(),
-            serde_json::json!(["managed_entry_requires_verified_removal"])
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed
         );
+        assert_eq!(
+            row.governance.decision,
+            RelationGovernanceDecision::RetainedIndependentCopy
+        );
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+        assert_eq!(
+            row.readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+        let end = condition_of(row, "end_relationship");
+        assert!(end.available, "record exit stays reachable");
+        assert!(end.reasons.is_empty());
+    }
+
+    #[test]
+    fn import_originals_outside_the_read_only_set_return_to_pending_with_exits_when_anomalous() {
+        let mut deployment = observed_import_deployment("rel-observed");
+        deployment.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
+        let ledger = ledger_with_read_only(
+            vec![GovernableRelationFact::Deployment(deployment)],
+            &[],
+        );
+        let row = &ledger.rows[0];
+        assert_eq!(
+            row.governance.governance_status,
+            RelationGovernanceClassification::Pending
+        );
+        // 异常原件提供重新检查与记录出口两个动作，不是零操作卡片。
+        assert_eq!(row.primary_action, RelationGovernanceAction::Revalidate);
+        let revalidate = condition_of(row, "revalidate");
+        assert!(revalidate.available);
+        let end = condition_of(row, "end_relationship");
+        assert!(end.available, "record exit for anomalous originals");
+        assert!(end.reasons.is_empty());
     }
 
     #[test]
@@ -1429,7 +1526,10 @@ mod read_only_import_originals {
     }
 
     #[test]
-    fn writable_import_copy_deployments_offer_centralizing() {
+    fn writable_import_copy_deployments_complete_and_keep_centralizing() {
+        // #10 第 1 项（2026-10-07 定稿）：健康的导入原件投影时自动归
+        // 已完成·已保留副本，不再停在待处理；可转换行保留转集中管理，
+        // 观察边另有记录出口。
         let ledger = ledger_with_read_only(
             vec![GovernableRelationFact::Deployment(import_copy_deployment(
                 "rel-import",
@@ -1446,13 +1546,22 @@ mod read_only_import_originals {
             row.blockers
         );
         assert_eq!(
-            row.primary_action,
-            RelationGovernanceAction::CentralizeManagement
+            row.governance.governance_status,
+            RelationGovernanceClassification::Completed
         );
         assert_eq!(
-            row.readiness,
-            RelationGovernanceReadiness::EligibleToCentralize
+            row.governance.decision,
+            RelationGovernanceDecision::RetainedIndependentCopy
         );
+        assert_eq!(row.primary_action, RelationGovernanceAction::None);
+        assert_eq!(
+            row.readiness,
+            RelationGovernanceReadiness::AlreadyCentralized
+        );
+        let centralize = condition_of(row, "centralize_management");
+        assert!(centralize.available);
+        let end = condition_of(row, "end_relationship");
+        assert!(end.available);
     }
 
     #[test]

@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use super::source_copy::{SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact};
 use super::RelationHealthReason;
-use crate::deployment::{DeploymentRelationFact, ObservedMatchState};
+use crate::deployment::{DeploymentRelationFact, ObservedMatchState, ObservedOrigin};
 use crate::import::ImportSourceClass;
 use crate::relationship::{
     calculate_removal_impact, AgentDirectoryCapabilityFact, DirectoryNodeFact,
@@ -993,14 +993,18 @@ fn action_conditions(
     evidence: GovernanceActionEvidence,
 ) -> Vec<RelationGovernanceActionCondition> {
     let mut conditions = Vec::new();
+    // #10 第 2 项（2026-10-07 定稿）：结束关系对未受管部署边是纯记录
+    // 操作；「受管条目须先验证移除」只约束 Skillhub 管理的条目
+    // （托管链接／托管副本）。
     if evidence.contains_source_copy || evidence.contains_deployment {
+        let end_available = !evidence.contains_managed_deployment;
         conditions.push(RelationGovernanceActionCondition {
             action: RelationGovernanceAction::EndRelationship,
-            available: !evidence.contains_deployment,
-            reasons: if evidence.contains_deployment {
-                vec![RelationGovernanceReason::ManagedEntryRequiresVerifiedRemoval]
-            } else {
+            available: end_available,
+            reasons: if end_available {
                 Vec::new()
+            } else {
+                vec![RelationGovernanceReason::ManagedEntryRequiresVerifiedRemoval]
             },
         });
     }
@@ -1051,7 +1055,9 @@ fn action_conditions(
             let reasons = if !health_reasons.is_empty() {
                 health_reasons.to_vec()
             } else {
-                blockers
+                // 不可校验表示与不可转换关系都会落到同一个用户原因上；
+                // 同一原因只呈现一次。
+                let mut reasons = blockers
                     .iter()
                     .map(|blocker| match blocker {
                         RelationGovernanceBlocker::VerificationNotCurrent
@@ -1066,7 +1072,9 @@ fn action_conditions(
                         }
                         _ => RelationGovernanceReason::RelationshipNotConvertible,
                     })
-                    .collect()
+                    .collect::<Vec<_>>();
+                sort_dedup_reasons(&mut reasons);
+                reasons
             };
             conditions.push(RelationGovernanceActionCondition {
                 action: RelationGovernanceAction::CentralizeManagement,
@@ -1083,6 +1091,7 @@ fn action_conditions(
 struct GovernanceActionEvidence {
     contains_source_copy: bool,
     contains_deployment: bool,
+    contains_managed_deployment: bool,
     contains_retained_source_copy: bool,
 }
 
@@ -1092,11 +1101,13 @@ impl GovernanceActionEvidence {
             GovernableRelationFact::SourceCopy(copy) => Self {
                 contains_source_copy: true,
                 contains_deployment: false,
+                contains_managed_deployment: false,
                 contains_retained_source_copy: copy.decision == SourceCopyDecision::Retained,
             },
-            GovernableRelationFact::Deployment(_) => Self {
+            GovernableRelationFact::Deployment(relation) => Self {
                 contains_source_copy: false,
                 contains_deployment: true,
+                contains_managed_deployment: relation.ownership == OwnershipState::SkillhubManaged,
                 contains_retained_source_copy: false,
             },
         }
@@ -1106,6 +1117,8 @@ impl GovernanceActionEvidence {
         Self {
             contains_source_copy: self.contains_source_copy || other.contains_source_copy,
             contains_deployment: self.contains_deployment || other.contains_deployment,
+            contains_managed_deployment: self.contains_managed_deployment
+                || other.contains_managed_deployment,
             contains_retained_source_copy: self.contains_retained_source_copy
                 || other.contains_retained_source_copy,
         }
@@ -1225,12 +1238,20 @@ fn merge_rows_for_same_target(rows: Vec<RelationGovernanceRow>) -> Vec<RelationG
 /// 仍有健康异常的原件回到待处理并提供重新校验与结束关系两个出口——
 /// 结束关系只清理观察记录，不删除只读目录里的用户文件，因此不受
 /// 「受管条目须先验证移除」约束。
+///
+/// #10 第 1 项（2026-10-07 定稿）：导入原件（部署边 origin=import／关系
+/// 类型=导入副本、未受管、活跃）不再要求命中「内置只读根」才享受第七类
+/// 待遇——只读根路径判定漏掉的行（现场 150 条 doubao 行）不再卡死。命中
+/// 只读根的行维持第七类完整改写（健康 → 只读终端卡；异常 → 记录出口）；
+/// 未命中只读根的行：健康 → 投影时自动归「已完成（已保留副本）」，不再
+/// 推回待处理；异常 → 维持待处理事实，重查与记录出口由受阻重查与未受管
+/// 放行两条规则提供。障碍保留不动：转集中管理是否可用仍由真实事实决定。
 fn apply_read_only_original_governance(
     rows: &mut [RelationGovernanceRow],
     facts: &[GovernableRelationFact],
     read_only_ids: &BTreeSet<String>,
 ) {
-    if read_only_ids.is_empty() {
+    if read_only_ids.is_empty() && !facts.iter().any(fact_is_import_original) {
         return;
     }
     for row in rows.iter_mut() {
@@ -1238,7 +1259,10 @@ fn apply_read_only_original_governance(
             .evidence_relation_ids
             .iter()
             .any(|relation_id| read_only_ids.contains(relation_id));
-        if !has_read_only_evidence {
+        let has_import_original_evidence = row
+            .deployment()
+            .is_some_and(fact_is_import_original_edge);
+        if !has_read_only_evidence && !has_import_original_evidence {
             continue;
         }
         let evidence_copies = facts
@@ -1257,41 +1281,116 @@ fn apply_read_only_original_governance(
         if evidence_copies.is_empty() && row.deployment().is_none() {
             continue;
         }
-        row.source_read_only = true;
-        let all_copies_healthy = evidence_copies
-            .iter()
-            .all(|copy| healthy_import_original(copy));
-        let healthy = all_copies_healthy && row.governance.health_reasons.is_empty();
-        if healthy {
-            row.blockers = Vec::new();
-            row.readiness = RelationGovernanceReadiness::AlreadyCentralized;
-            row.primary_action = RelationGovernanceAction::None;
-            row.governance.action_conditions = Vec::new();
-            row.governance.governance_status = RelationGovernanceClassification::Completed;
-            if row.governance.management_status != RelationManagementStatus::TakenOver {
-                row.status = GovernableRelationStatus::Retained;
-                row.governance.decision = RelationGovernanceDecision::RetainedIndependentCopy;
-            }
-        } else {
-            row.status = GovernableRelationStatus::NeedsValidation;
-            row.blockers = Vec::new();
-            row.readiness = RelationGovernanceReadiness::NeedsValidation;
-            row.primary_action = RelationGovernanceAction::Revalidate;
-            row.governance.governance_status = RelationGovernanceClassification::Pending;
-            row.governance.action_conditions = vec![
-                RelationGovernanceActionCondition {
-                    action: RelationGovernanceAction::Revalidate,
-                    available: true,
-                    reasons: Vec::new(),
-                },
-                RelationGovernanceActionCondition {
-                    action: RelationGovernanceAction::EndRelationship,
-                    available: true,
-                    reasons: Vec::new(),
-                },
-            ];
+        if has_read_only_evidence {
+            rewrite_read_only_original_row(row, &evidence_copies);
+            continue;
         }
+        // 未命中只读根的导入原件：健康 → 已完成·已保留副本；异常 →
+        // 不覆盖健康证据之外的事实，交还给通用投影与行动作规则。
+        let healthy = row.governance.health_reasons.is_empty()
+            && evidence_copies
+                .iter()
+                .all(|copy| healthy_import_original(copy))
+            && row.deployment().is_some_and(|relation| {
+                relation.match_state == ObservedMatchState::ContentVerified
+                    && relation
+                        .health_reasons
+                        .as_ref()
+                        .is_some_and(|reasons| reasons.is_empty())
+            });
+        if !healthy {
+            continue;
+        }
+        row.readiness = RelationGovernanceReadiness::AlreadyCentralized;
+        row.primary_action = RelationGovernanceAction::None;
+        row.governance.governance_status = RelationGovernanceClassification::Completed;
+        if row.governance.management_status != RelationManagementStatus::TakenOver {
+            row.status = GovernableRelationStatus::Retained;
+            row.governance.decision = RelationGovernanceDecision::RetainedIndependentCopy;
+        }
+        // 依据完整证据重算动作条件：结束关系按未受管放行；转集中管理
+        // 的可用性由保留的障碍如实决定；撤销保留跟随保留副本证据。
+        let evidence_flags = facts
+            .iter()
+            .filter(|fact| match fact {
+                GovernableRelationFact::SourceCopy(copy) => {
+                    row.evidence_relation_ids.contains(&copy.relation_id)
+                }
+                GovernableRelationFact::Deployment(relation) => {
+                    row.evidence_relation_ids.contains(&relation.relation_id)
+                }
+            })
+            .fold(GovernanceActionEvidence::default(), |acc, fact| {
+                acc.merge(GovernanceActionEvidence::for_fact(fact))
+            });
+        row.governance.action_conditions = action_conditions(
+            &row.relation,
+            row.governance.management_status,
+            RelationGovernanceAction::None,
+            &row.blockers,
+            &row.governance.health_reasons,
+            evidence_flags,
+        );
     }
+}
+
+/// 只读原件的第七类完整改写：健康原件是权限边界内的正常终态（只读终端
+/// 卡，无动作区、无受阻原因）；异常原件回到待处理并保证「重新检查 +
+/// 结束关系记录」两个出口。
+fn rewrite_read_only_original_row(
+    row: &mut RelationGovernanceRow,
+    evidence_copies: &[&SourceCopyRelationFact],
+) {
+    row.source_read_only = true;
+    let all_copies_healthy = evidence_copies
+        .iter()
+        .all(|copy| healthy_import_original(copy));
+    let healthy = all_copies_healthy && row.governance.health_reasons.is_empty();
+    if healthy {
+        row.blockers = Vec::new();
+        row.readiness = RelationGovernanceReadiness::AlreadyCentralized;
+        row.primary_action = RelationGovernanceAction::None;
+        row.governance.action_conditions = Vec::new();
+        row.governance.governance_status = RelationGovernanceClassification::Completed;
+        if row.governance.management_status != RelationManagementStatus::TakenOver {
+            row.status = GovernableRelationStatus::Retained;
+            row.governance.decision = RelationGovernanceDecision::RetainedIndependentCopy;
+        }
+    } else {
+        row.status = GovernableRelationStatus::NeedsValidation;
+        row.blockers = Vec::new();
+        row.readiness = RelationGovernanceReadiness::NeedsValidation;
+        row.primary_action = RelationGovernanceAction::Revalidate;
+        row.governance.governance_status = RelationGovernanceClassification::Pending;
+        row.governance.action_conditions = vec![
+            RelationGovernanceActionCondition {
+                action: RelationGovernanceAction::Revalidate,
+                available: true,
+                reasons: Vec::new(),
+            },
+            RelationGovernanceActionCondition {
+                action: RelationGovernanceAction::EndRelationship,
+                available: true,
+                reasons: Vec::new(),
+            },
+        ];
+    }
+}
+
+fn fact_is_import_original(fact: &GovernableRelationFact) -> bool {
+    match fact {
+        GovernableRelationFact::Deployment(relation) => fact_is_import_original_edge(relation),
+        GovernableRelationFact::SourceCopy(_) => false,
+    }
+}
+
+/// #10 第 1 项：导入原件部署边判定——origin=import 或关系类型=导入副本、
+/// 未受管、活跃。
+fn fact_is_import_original_edge(relation: &DeploymentRelationFact) -> bool {
+    relation.active
+        && relation.ownership != OwnershipState::SkillhubManaged
+        && (relation.origin == ObservedOrigin::Import
+            || relation.relationship == RelationshipType::ImportCopy)
 }
 
 /// 健康原件判定：核验为 Normal 且没有任何健康异常（`None` 表示旧版
@@ -1324,8 +1423,12 @@ fn bucket_accepts_governance_actions(
             })
         }
         RelationGovernanceBucket::NeedsValidation => {
+            // #10 第 3 项之后受阻行也带可用的重新检查；「待核验」桶仍只收
+            // 真正处于待核验准备的行，受阻行留在受阻桶。
             row.governance.action_conditions.iter().any(|condition| {
-                (condition.action == RelationGovernanceAction::Revalidate && condition.available)
+                (condition.action == RelationGovernanceAction::Revalidate
+                    && condition.available
+                    && row.readiness != RelationGovernanceReadiness::Blocked)
                     || (condition.action == RelationGovernanceAction::CentralizeManagement
                         && !condition.available
                         && condition.reasons.iter().any(|reason| {
@@ -1443,7 +1546,10 @@ fn primary_action_for(
             RelationGovernanceAction::CentralizeManagement
         }
         RelationGovernanceReadiness::NeedsValidation => RelationGovernanceAction::Revalidate,
-        RelationGovernanceReadiness::Blocked => RelationGovernanceAction::None,
+        // #10 第 3 项（2026-10-07 定稿）：受阻行不再零操作——「重新检查」
+        // 是可用的行级动作（RunRelationshipCheck，仅人工触发；自动路径是
+        // 扫描时的关系再推导）。
+        RelationGovernanceReadiness::Blocked => RelationGovernanceAction::Revalidate,
         // Only an entry SkillHub created may be removed by the undeploy flow;
         // a foreign entry is left alone rather than offered as a one-click
         // target.
