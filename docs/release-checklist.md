@@ -53,7 +53,7 @@
 | 前端测试 | 通过 | `pnpm test:frontend`：1933 项通过（2026-09-24 于 `0b1eebb1`，含 committedBlocked 文案键、项目注册列宽、概览 hero 跨列等红灯先行回归护栏） |
 | 前端生产构建 | 通过 | `pnpm build:frontend`（2026-09-24；仅既有大 chunk 提示） |
 | 发布静态预检 | 通过 | `pnpm verify:release`、`node scripts/verify_atomic_test_catalog.mjs`（349 条）、`pnpm test:release`、`node scripts/verify_frontend_lifecycle_scripts.mjs` 均通过（2026-09-24 于 `0b1eebb1`） |
-| i18n 双语覆盖 | 通过 | `node scripts/i18n-cjk-audit.mjs`：用户可见命中 0（2026-09-24 于 `0b1eebb1`）；zh/en 键集 parity 由前端测试覆盖 |
+| i18n 双语覆盖 | 未通过（已知回归债） | v0.1 基线为用户可见命中 0（2026-09-24 于 `0b1eebb1`）；2026-10-07 于 `50fd538d` 审计回退 FAIL：非豁免命中 156 处（评审呈现层硬编码中文，英文界面局部显示中文），已豁免 5 个非生产文件（`febe2a32`）并不掩盖生产债；清偿判据（审计归零）与排期见 `docs/development/开发状态-2026-10-06.md`「仍需」与 `docs/development/自动化测试说明-2026-10-06.md`「i18n 回归债登记」 |
 | 验收执行分流 | 已记录 | 页面/交互先走浏览器自动化；依赖 Tauri、真实文件系统、系统弹窗、真实网络、签名资产和双平台安装的项目必须补桌面人工证据，详见 `docs/development/人工验收清单-2026-10-06.md` |
 | 兼容性契约 | 通过 | `cargo test -p skillhub-adapters --test profile_contract` |
 | 数据保护页面 | 通过（自动化） | `/settings/data-protection` 已接入备份包校验、恢复预检/冲突决策、组合导出；真实桌面文件烟测待执行 |
