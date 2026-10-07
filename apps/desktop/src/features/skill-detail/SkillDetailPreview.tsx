@@ -63,7 +63,7 @@ function createReviewFacade(base: SkillDetailFacade): SkillDetailFacade {
       return { rerunsBasicCheck: true, targetVersionId, deployments: [
         { id: "review-shared", label: "共享目录 · 受管链接", affected: true, pinned: false, version: "当前版本" },
         { id: "review-project", label: "文档协作项目 · 受管链接", affected: true, pinned: false, version: "当前版本" },
-        { id: "review-independent", label: "Codex 终端 · 独立副本", affected: false, pinned: true, version: "原有内容" },
+        { id: "review-independent", label: "Codex 终端 · 独立拷贝", affected: false, pinned: true, version: "原有内容" },
       ] };
     },
     async commitRollback() { restored = true; return { newVersionId: "review-restored-version" }; },

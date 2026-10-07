@@ -65,7 +65,7 @@ test("exposes the unified step rail and keeps the primary action at 44px with a 
   const rail = page.getByRole("list", { name: "初始化步骤" });
   await expect(rail.getByRole("listitem")).toHaveCount(3);
   await expect(rail.getByRole("listitem").nth(0)).toHaveAttribute("aria-current", "step");
-  await expect(rail.getByRole("listitem").nth(0)).toContainText("确认集中库位置");
+  await expect(rail.getByRole("listitem").nth(0)).toContainText("确认技能库位置");
   await expect(rail.getByRole("listitem").nth(1)).toContainText("识别兼容的 Agent");
   await expect(rail.getByRole("listitem").nth(2)).toContainText("扫描已有技能");
 
@@ -450,7 +450,7 @@ test("returns focus to the skip trigger after the confirmation dialog is dismiss
   await page.goto("/__preview/onboarding/create");
 
   await page.getByRole("button", { name: "跳过初始化" }).click();
-  await expect(page.getByRole("heading", { name: "将创建空集中库" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "将创建空技能库" })).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "跳过初始化" })).toBeFocused();
@@ -459,7 +459,7 @@ test("returns focus to the skip trigger after the confirmation dialog is dismiss
 test("keeps initialization unavailable without a library path", async ({ page }) => {
   await page.goto("/__preview/onboarding/unavailable");
 
-  await expect(page.getByText("无法确认默认集中库位置")).toBeVisible();
+  await expect(page.getByText("无法确认默认技能库位置")).toBeVisible();
   await expect(page.getByRole("button", { name: "跳过初始化" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "继续" })).toBeDisabled();
 });
@@ -516,7 +516,7 @@ test("applies all nine themes on the flow with key controls intact at 1280x900",
     // 状态呈现（不可用状态 + 错误按钮禁用）在任意主题下可读且不横溢。
     await page.goto("/__preview/onboarding/unavailable");
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme.name);
-    await expect(page.getByText("无法确认默认集中库位置")).toBeVisible();
+    await expect(page.getByText("无法确认默认技能库位置")).toBeVisible();
     await expect(page.getByRole("button", { name: "跳过初始化" })).toBeDisabled();
     await expectNoRootHorizontalOverflow(page, `theme ${theme.name} unavailable@1280`);
 

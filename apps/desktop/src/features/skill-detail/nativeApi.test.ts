@@ -824,7 +824,7 @@ describe("native skill detail facade", () => {
         ],
         deterministicDuplicates: ["PDF Reader（副本）"],
         externalChanges: [
-          { id: "relation-1", path: "SKILL.md", stateLabel: "内容已与集中库分叉" },
+          { id: "relation-1", path: "SKILL.md", stateLabel: "内容已与技能库分叉" },
         ],
         operationHistory: [
           { id: "op-1", label: "添加 Skill · 已完成", at: new Date(1757808000 * 1000).toLocaleString() },
@@ -930,13 +930,13 @@ describe("native skill detail facade", () => {
       await skillHubI18n.changeLanguage("zh-CN");
       const chinese = await loadInsights();
       expect(chinese.dependencies[0]?.shapeLabel).toBe("托管链接");
-      expect(chinese.externalChanges[0]?.stateLabel).toBe("内容已与集中库分叉");
+      expect(chinese.externalChanges[0]?.stateLabel).toBe("内容已与技能库分叉");
       expect(chinese.operationHistory[0]?.label).toBe("核对部署 · 已撤销");
 
       await skillHubI18n.changeLanguage("en-US");
       const english = await loadInsights();
       expect(english.dependencies[0]?.shapeLabel).toBe("Managed link");
-      expect(english.externalChanges[0]?.stateLabel).toBe("Content diverged from the central library");
+      expect(english.externalChanges[0]?.stateLabel).toBe("Content diverged from the skill library");
       expect(english.operationHistory[0]?.label).toBe("Deployment reconciled · Rolled back");
     } finally {
       await skillHubI18n.changeLanguage(previousLanguage);

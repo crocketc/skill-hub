@@ -70,7 +70,7 @@ export function UiFoundationsPreview() {
         title="表单控件"
       >
         <div className="sh-preview-board__form">
-          <Field help="集中库的绝对路径。" label="文本输入">
+          <Field help="技能库的绝对路径。" label="文本输入">
             <Input name="preview-text" placeholder="例如 /Users/me/SkillHub" />
           </Field>
           <Field

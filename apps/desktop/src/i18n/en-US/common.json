@@ -12,8 +12,8 @@
     },
     "onboarding": {
       "libraryRootLocked": "The library root cannot change after initialization. To move the library, use the backup/migration flow under data protection.",
-      "libraryNotReady": "The central library is not active yet. Complete initialization first.",
-      "existingLibraryManifestMissing": "The selected existing library has no valid manifest. Choose the central library directory.",
+      "libraryNotReady": "The skill library is not active yet. Complete initialization first.",
+      "existingLibraryManifestMissing": "The selected existing library has no valid manifest. Choose the skill library directory.",
       "libraryNotWritable": "The selected library directory is not writable. Check permissions or choose another directory."
     }
   },
@@ -285,7 +285,7 @@
       "complete": "Found {{count}} candidate(s). Review the list before continuing.",
       "multiSource": "Acquired candidates from {{count}} source directories",
       "perSource": "{{source}}: {{count}} candidate(s)",
-      "remove": "Remove",
+      "remove": "Remove source",
       "removeSource": "Remove source {{source}}",
       "removeAllSources": "Remove all sources",
       "perSourceFailed": "{{source}}: {{reason}}"
@@ -360,9 +360,9 @@
       "continueToGovernance": "Continue to relationship review",
       "none": "No conflicts require a decision.",
       "kinds": {
-        "exact_duplicate": "Exact duplicate",
-        "same_name": "Same name",
-        "semantic_match": "Possible match",
+        "exact_duplicate": "Same skill",
+        "same_name": "Name taken",
+        "semantic_match": "Similar skill",
         "agent_owned": "Agent-owned directory"
       },
       "actions": {
@@ -384,7 +384,7 @@
         "exact_content": "Content is identical to the existing Skill",
         "same_source": "The source is the same as an existing Skill",
         "same_runtime_name_different_content": "Same runtime name, but different content",
-        "search_candidate": "Search-matched an existing Skill",
+        "search_candidate": "Similar skill",
         "unknown": "Unknown difference type ({{kind}})"
       },
       "diagnosticsLabel": "Diagnostics",
@@ -477,7 +477,7 @@
       "hideCompletedDetails": "Hide successful and skipped details",
       "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
       "governanceNextLabel": "Next steps",
-      "governanceNextDescription": "These Skills are now stored centrally in the library — update once, reuse everywhere. Once the original entry is removed, agents no longer read from their old location; you can later link or copy from the central library to any agent.",
+      "governanceNextDescription": "These Skills are now stored centrally in the library — update once, reuse everywhere. Once the original entry is removed, agents no longer read from their old location; you can later link or copy from the skill library to any agent.",
       "goHandle": "Go handle",
       "organizeLater": "Handle later",
       "retryFailed": "Retry failed items",
@@ -510,7 +510,7 @@
     "governance": {
       "eyebrow": "Relationship governance",
       "title": "Review relationship handling after import",
-      "description": "Importing into the central library and handling original copies are separate actions; every change needs confirmation, impact details, and a recovery path.",
+      "description": "Importing into the skill library and handling original copies are separate actions; every change needs confirmation, impact details, and a recovery path.",
       "aiUnavailable": "AI suggestions are not configured; deterministic relationship checks remain in force.",
       "groupActionLegend": "Default group action",
       "memberOverrideLegend": "Override for {{name}}",
@@ -522,7 +522,7 @@
         "createTodo": "Skip import; record a task"
       },
       "classification": {
-        "exactDuplicate": "Exact duplicates",
+        "exactDuplicate": "Same skill",
         "contentIdenticalCopy": "Content-identical copies",
         "sameNameDifferentContent": "Same name, different content",
         "sharedDirectoryRead": "Shared directory reads",
@@ -531,7 +531,7 @@
       },
       "confirmAction": "Confirm relationship handling",
       "impact": {
-        "summary": "{{count}} skills will be imported into the central library. Affected agents: {{agents}}.",
+        "summary": "{{count}} skills will be imported into the skill library. Affected agents: {{agents}}.",
         "noKnownAgent": "no registered agents",
         "sourcePathLabel": "Source path: {{path}}",
         "agentSeparator": ", "
@@ -600,7 +600,7 @@
         "count": "{{count}} candidates",
         "failed": "Scan failed"
       },
-      "remove": "Remove",
+      "remove": "Remove source",
       "removeSource": "Remove selected source {{source}}",
       "clearAll": "Clear all",
       "retry": "Retry scan",
@@ -720,7 +720,7 @@
       "conflict": "Conflicts {{count}}",
       "suspected": "Suspected duplicates {{count}}",
       "unreadable": "Unreadable {{count}}",
-      "unmanagedHint": "Skills found by the scan that are not managed in the central library yet",
+      "unmanagedHint": "Skills found by the scan that are not managed in the skill library yet",
       "relatedHint": "Target directories that exist, are readable/writable, and are linked to a client",
       "conflictHint": "Target directories that exist but are currently unavailable (unreadable, unwritable, or unlinked)",
       "suspectedHint": "Skills with identical content fingerprints found in different locations, likely duplicates",
@@ -785,7 +785,7 @@
       "name": "Repository",
       "branch": "Branch (empty = default)",
       "add": "Add repository",
-      "remove": "Remove",
+      "remove": "Remove repository",
       "enabled": "Include in discovery",
       "empty": "No repositories yet. Add one to discover Skills.",
       "confirmRemoveTitle": "Remove repository",
@@ -1245,9 +1245,9 @@
     "genericError": "The operation failed ({{code}}). Please retry or reopen the page.",
     "bootstrapUnavailable": "Bootstrap status is unavailable. Initialization and rediscovery are temporarily unavailable.",
     "libraryDescription": "The library keeps managed skill content in one place. It is created or opened only when initialization is completed.",
-    "libraryHelper": "Confirm the default location to continue, or pick another system directory as the central library.",
+    "libraryHelper": "Confirm the default location to continue, or pick another system directory as the skill library.",
     "pickOtherDirectory": "Pick another directory",
-    "customDirectoryApplied": "The directory above is recorded as the central library. It is created or opened only when initialization is completed.",
+    "customDirectoryApplied": "The directory above is recorded as the skill library. It is created or opened only when initialization is completed.",
     "saveAndContinue": "Save and continue",
     "libraryTitle": "Confirm library location",
     "noCompatibleTargets": "No compatible targets are available for selection.",
@@ -1849,7 +1849,7 @@
         "unknown": "Shape unknown"
       },
       "externalChangeStates": {
-        "contentDiverged": "Content diverged from the central library",
+        "contentDiverged": "Content diverged from the skill library",
         "unknown": "State unknown"
       },
       "historyMessages": {
@@ -2019,7 +2019,7 @@
       "logicalTargets": "Linked targets",
       "impact": {
         "label": "Impact",
-        "create": "A Skill entry will be created in the target directory; the source Skill in the central library will not be changed.",
+        "create": "A Skill entry will be created in the target directory; the source Skill in the skill library will not be changed.",
         "noOp": "The target already has the same deployment; no files need to be written."
       },
       "conflicts": {
@@ -2072,7 +2072,7 @@
         "skipped": "Skipped"
       },
       "failure": {
-        "targetExists": "The target directory already contains an entry with the same name, so it cannot be added again. Move or rename the existing folder and retry, or use \"Bring under central library management\" to adopt the existing copy.",
+        "targetExists": "The target directory already contains an entry with the same name, so it cannot be added again. Move or rename the existing folder and retry, or use \"Bring under skill library management\" to adopt the existing copy.",
         "nameMismatch": "The deployed folder name does not match SKILL.md. Choose a deployment name that matches the declared Skill name; no source file was rewritten.",
         "targetChanged": "The target changed while being added. Inspect the target before retrying.",
         "symlinkNotSupported": "The target does not support symbolic links. Try managed copy instead.",
@@ -2212,7 +2212,7 @@
   "removal": {
     "eyebrow": "Delete from library",
     "heading": "Delete {{name}} from the library?",
-    "description": "This deletes the Skill record, its content and version history from the central library; handle the copy at each target below.",
+    "description": "This deletes the Skill record, its content and version history from the skill library; handle the copy at each target below.",
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "errors": {
@@ -2474,7 +2474,7 @@
       "select_authoritative_version": "Compare versions in conflict decisions and select the version to keep.",
       "classify_same_name_skill": "Decide whether the matching names describe distinct Skills or different versions.",
       "confirm_shared_directory_impact": "Review the shared-directory consumers in governance before changing the relationship.",
-      "convert_copy_to_managed_link": "Keep an independent copy or preview bringing it under central-library management.",
+      "convert_copy_to_managed_link": "Keep an independent copy or preview bringing it under skill-library management.",
       "convert_shared_reference_to_managed_link": "Review the shared reference in relationship governance.",
       "unknown_directory_recognition": "Confirm the source directory and its purpose. Unsupported Agent paths can be added manually and rechecked.",
       "operation_failure_recovery": "Use recovery to handle the incomplete operation based on its recorded state."
@@ -2536,7 +2536,7 @@
       "unregistered": "No registered recognition"
     },
     "directoryRole": {
-      "central_library": "Central library",
+      "central_library": "Skill library",
       "agent_native": "Agent native directory",
       "shared_directory": "Shared directory",
       "project": "Project directory"
@@ -2563,7 +2563,7 @@
       "remove_current_relation_keep_shared_files": "Recommended: remove only this relation, keep shared files",
       "remove_current_shared_alias": "Recommended: remove only this alias; the shared directory and other references stay",
       "convert_copy_to_managed_link": "Recommended: convert to a managed link after backup and verification",
-      "end_relation_record_only": "Recommended: end the relationship record only and keep the read-only original",
+      "end_relation_record_only": "Recommended: release the relationship record only and keep the read-only original",
       "create_governance_task": "Recommended: create a governance todo first"
     },
     "governanceTaskKind": {
@@ -2802,7 +2802,7 @@
         "heading": "Decision",
         "confirmSame": "Confirm same Skill",
         "keepDistinct": "Keep as separate Skills",
-        "centralize": "Centralize management",
+        "centralize": "Bring under skill library management",
         "centralizeHint": "No files change here: open relationship governance to review the impact preview and confirm.",
         "notNow": "Not now",
         "notNowHint": "“Not now” writes no conclusion and no history.",
@@ -2856,7 +2856,7 @@
       "decision": {
         "confirm_same_skill": "Confirm same Skill",
         "keep_distinct": "Keep as separate Skills",
-        "centralize_management": "Centralize management"
+        "centralize_management": "Bring under skill library management"
       },
       "empty": {
         "allDone": "Well done! {{count}} conflicts handled in total.",
@@ -2953,7 +2953,7 @@
         "restricted": "Action unavailable",
         "restrictedDescription": "Current permissions or relationship conditions do not allow this action. Review the reason or resolve the listed condition first.",
         "retained": "Copy kept",
-        "retainedDescription": "This relationship was explicitly kept as an independent copy; it is not under central library management.",
+        "retainedDescription": "This relationship was explicitly kept as an independent copy; it is not under skill library management.",
         "taken_over": "Centrally managed",
         "taken_overDescription": "This target is currently managed by the central library. Re-check the relationship if an issue is listed below.",
         "not_taken_over": "Not centrally managed",
@@ -2969,9 +2969,9 @@
         "managed_target_occupied": "Another managed relationship occupies the target. Review the conflict first.",
         "operation_failed": "The last relationship operation did not complete. Review the current state before retrying.",
         "target_identity_unconfirmed": "The target identity has not been confirmed. Re-check the target.",
-        "relationship_not_convertible": "This relationship type cannot currently be brought under central library management.",
+        "relationship_not_convertible": "This relationship type cannot currently be brought under skill library management.",
         "shared_impact_confirmation_required": "Other Agents also use this shared directory. Review and confirm the impact first.",
-        "managed_entry_requires_verified_removal": "This target is managed by the central library. Verify that its entry can be safely removed before ending the relationship; this action cannot bypass that check.",
+        "managed_entry_requires_verified_removal": "This target is managed by the skill library. Verify that its entry can be safely removed before releasing the relationship; this action cannot bypass that check.",
         "link_target_unavailable": "The link target cannot currently be reached. Check its location and re-check the relationship.",
         "link_replaced": "The original link target was replaced. Review the current target content.",
         "subject_unavailable": "The relationship subject is unavailable. Restore access before checking again."
@@ -3005,10 +3005,10 @@
         "legacy_unclassified": "Unclassified source"
       },
       "readiness": {
-        "eligible_to_centralize": "Ready to centralize",
+        "eligible_to_centralize": "Ready for skill library management",
         "needs_validation": "Needs validation",
         "blocked": "Blocked",
-        "already_centralized": "Already centrally managed"
+        "already_centralized": "Managed by the skill library"
       },
       "blockers": {
         "unverifiable_representation": "Directory junctions or unknown representations cannot be verified safely; conversion is blocked.",
@@ -3034,12 +3034,12 @@
         "rollbackUnavailable": "No rollback available"
       },
       "actions": {
-        "centralize_management": "Bring under central library management",
+        "centralize_management": "Bring under skill library management",
         "undeploy": "Remove from Agent/Project",
         "revalidate": "Re-check",
         "keep_independent_copy": "Keep as an independent copy",
         "revoke_retention": "Revoke keep decision",
-        "end_relationship": "End relationship",
+        "end_relationship": "Release relation",
         "none": "Blocked"
       },
       "history": {
@@ -3064,7 +3064,7 @@
           "clean_source_copy": "Clean up source copy",
           "retain_source_copy": "Keep source copy",
           "relink_source_copy": "Relink source directory",
-          "centralize_management": "Bring under central library management",
+          "centralize_management": "Bring under skill library management",
           "retain": "Keep",
           "relink": "Relink",
           "validate": "Re-check"
@@ -3081,7 +3081,7 @@
           "agent": "Agent directory",
           "project": "Project directory",
           "shared": "Shared directory",
-          "central": "Central library"
+          "central": "Skill library"
         }
       },
       "revalidate": {
@@ -3112,7 +3112,7 @@
       },
       "selection": {
         "selectedCount": "{{count}} selected",
-        "openBatch": "Bring the selection under central library management",
+        "openBatch": "Bring the selection under skill library management",
         "openBatchRetain": "Keep selection as independent copies"
       },
       "batchSummary": {
@@ -3120,21 +3120,21 @@
         "blocked": "Blocked {{count}}"
       },
       "centralize": {
-        "explain": "Central library management keeps a usable entry at the current location and switches it to the unified version in the central library.",
-        "done": "Brought under central library management: {{skill}}"
+        "explain": "Skill library management keeps a usable entry at the current location and switches it to the unified version in the skill library.",
+        "done": "Brought under skill library management: {{skill}}"
       },
       "undeployResult": {
         "done": "Removed from the target: {{path}}"
       },
       "preview": {
-        "centralizeTitle": "Central library management preview",
+        "centralizeTitle": "Skill library management preview",
         "undeployTitle": "Remove from Agent/Project preview",
         "revoke_retentionTitle": "Revoke keep decision",
-        "revoke_retentionImpact": "Only the keep decision for this relationship will be revoked. Source files, target entries, and the central library Skill will remain unchanged. The relationship status will be re-evaluated from current health facts.",
+        "revoke_retentionImpact": "Only the keep decision for this relationship will be revoked. Source files, target entries, and the skill library Skill will remain unchanged. The relationship status will be re-evaluated from current health facts.",
         "revoke_retentionConfirm": "Confirm revoking keep decision",
-        "end_relationshipTitle": "End relationship",
-        "end_relationshipImpact": "End this source relationship record. Files in the source directory and the central library Skill will remain. This action will not try to remove a managed target entry.",
-        "end_relationshipConfirm": "Confirm ending relationship",
+        "end_relationshipTitle": "Release relation",
+        "end_relationshipImpact": "Release this source relationship record. Files in the source directory and the skill library Skill will remain. This action will not try to remove a managed target entry.",
+        "end_relationshipConfirm": "Confirm releasing the relationship",
         "skillLabel": "Skill",
         "targetLabel": "Target path",
         "relationLabel": "Relationship type",
@@ -3153,7 +3153,7 @@
         "unexpectedRelation": "The result does not match the selected relationship. Reload the ledger to confirm its state."
       },
       "batch": {
-        "title": "Bring the selection under central library management",
+        "title": "Bring the selection under skill library management",
         "retainTitle": "Keep selection as independent copies",
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
         "mixing": "Source copies and deployment relations cannot join the same batch; handle them separately",
@@ -3166,7 +3166,7 @@
         "running": "Running and verifying item by item…",
         "resultTitle": "Batch result",
         "resultPartial": "Partially committed: {{committed}} succeeded, {{failed}} failed",
-        "resultAll": "All brought under central library management ({{count}} items)",
+        "resultAll": "All brought under skill library management ({{count}} items)",
         "resultAllRetained": "Kept as independent copies ({{count}} items)",
         "resultNone": "Nothing succeeded this time; review the per-item failures",
         "resultCancelled": "{{count}} items cancelled",
@@ -3178,8 +3178,8 @@
         "rollback": "Roll back {{id}}",
         "rollbackAvailable": "Rollback available",
         "childOperation": "Operation record",
-        "trackerLabel": "Central library management batch",
-        "itemTrackerLabel": "Central library management",
+        "trackerLabel": "Skill library management batch",
+        "itemTrackerLabel": "Bring under skill library management",
         "close": "Close"
       },
       "empty": {
@@ -3189,7 +3189,7 @@
       },
       "readOnly": {
         "badge": "Retained copy (read-only)",
-        "note": "The original lives in a read-only location; the central library reads and uses it without rewriting or moving it."
+        "note": "The original lives in a read-only location; the skill library reads and uses it without rewriting or moving it."
       },
       "manageRelations": "Manage relations",
       "scope": {
@@ -3623,7 +3623,7 @@
       "add": "Add rule",
       "adding": "Adding…",
       "created": "Created",
-      "remove": "Remove",
+      "remove": "Remove rule",
       "confirmRemoveTitle": "Remove ignore rule",
       "confirmRemoveDescription": "{{subject}} will participate in health checks again after removal.",
       "confirmRemove": "Confirm removal",
@@ -3686,7 +3686,7 @@
       "formatZip": "ZIP mode (individual skill ZIPs inside an outer ZIP)",
       "formatHint": "Either format always produces a single outer ZIP archive; folder names use each skill's display name (not the internal ID) and contain every file of the skill folder. ZIP mode yields standalone skill ZIPs that Trae, Cline and similar IDE agents can import directly.",
       "pickOutputDir": "Choose output directory",
-      "outputDirDefault": "Not chosen: the export goes to the central library's export folder.",
+      "outputDirDefault": "Not chosen: the export goes to the skill library's export folder.",
       "review": "Review export",
       "summary": "{{count}} skills are ready to export.",
       "decision": "Export decision for {{skillId}}",
@@ -3773,7 +3773,7 @@
       }
     },
     "page": {
-      "description": "Current scale of the central library, configuration relation destinations, and pending work."
+      "description": "Current scale of the skill library, configuration relation destinations, and pending work."
     },
     "pending": {
       "badge": "{{count}} open",
@@ -3859,7 +3859,7 @@
     "uninstall": {
       "heading": "Uninstall preparation",
       "description": "Select deployment relations, preview the impact, then tick each action you want to run. Unticked actions never run.",
-      "scenario": "When to use this: when you no longer want SkillHub to manage a Skill that is deployed to Agents/projects. You can optionally back up first, undeploy everything, leave target folders as independent copies, and clear local data or credentials; the central library is preserved by default and your Agent's own files are never deleted. With no deployments there is nothing to manage here.",
+      "scenario": "When to use this: when you no longer want SkillHub to manage a Skill that is deployed to Agents/projects. You can optionally back up first, undeploy everything, leave target folders as independent copies, and clear local data or credentials; the skill library is preserved by default and your Agent's own files are never deleted. With no deployments there is nothing to manage here.",
       "loadingDeployments": "Loading deployment relations…",
       "noDeployments": "No deployment relations are registered.",
       "selectDeployment": "Select deployment relation {{id}}",
@@ -3894,7 +3894,7 @@
       "maxBackups": "Backups to keep",
       "run": "Run rolling backup",
       "running": "Running…",
-      "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the central library has no cache that needs manual cleanup.",
+      "cacheNote": "Cache cleanup: stale repository-discovery downloads older than 24 hours are removed automatically before the next download; the skill library has no cache that needs manual cleanup.",
       "draftHint": "Backups do not include unsaved edit drafts; save your edits first.",
       "failed": "Rolling backup failed: {{error}}",
       "result": "Rolling backup finished: {{retained}} kept, {{removed}} removed."

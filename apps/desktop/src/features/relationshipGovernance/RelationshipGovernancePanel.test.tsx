@@ -61,7 +61,7 @@ it("renders structured impact facts per group without backend prose", async () =
 
   // 影响数量与受影响 Agent 由成员聚合；第二个成员无 Agent 证据，
   // 不阻止第一个成员的登记 Agent 出现。
-  expect(screen.getByText(/2 个 Skill 将导入集中库。受影响 Agent：/)).toBeVisible();
+  expect(screen.getByText(/2 个 Skill 将导入技能库。受影响 Agent：/)).toBeVisible();
   expect(screen.getAllByLabelText("Trae · 终端").length).toBeGreaterThan(0);
   expect(screen.getAllByLabelText("Agent共享目录").length).toBeGreaterThan(0);
   expect(screen.getByText("通用目录直接读取")).toBeVisible();
@@ -128,7 +128,7 @@ it("renders relationship governance copy in the active English locale", async ()
 
   expect(screen.getByRole("heading", { name: "Review relationship handling after import" })).toBeVisible();
   expect(screen.getByText("Shared directory reads")).toBeVisible();
-  expect(screen.getByText(/2 skills will be imported into the central library. Affected agents:/)).toBeVisible();
+  expect(screen.getByText(/2 skills will be imported into the skill library. Affected agents:/)).toBeVisible();
   expect(screen.getAllByLabelText("Trae · Terminal").length).toBeGreaterThan(0);
   expect(screen.getAllByLabelText("Agent shared directory").length).toBeGreaterThan(0);
   expect(

@@ -365,7 +365,7 @@ async function installNativePreview(page: Page) {
           case "get_deployment_plan": {
             // DEV-18：占用组合（真实场景 find-skills → Claude Code，目标目录
             // 已有同名副本）在规划期即被 D-11 占用识别拒绝。mock 以结构化
-            // AppError 复现同款失败，验证页面渲染可读文案与「纳入集中库
+            // AppError 复现同款失败，验证页面渲染可读文案与「纳入技能库
             // 管理」引导，而不是 [object Object]。
             if (query.payload.request.logical_target_ids.includes("claude-target")) {
               throw { code: "deployment.target_exists", severity: "error", params: { path: "C:/Preview/.claude/pdf-reader" }, actions: ["choose_another_name", "inspect_target"] };

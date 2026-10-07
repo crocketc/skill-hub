@@ -627,7 +627,7 @@ function fixtureConflicts(
         candidateName: candidates[0].name,
         kind: "same_name",
         required: true,
-        summary: "集中库中已有同名 Skill",
+        summary: "技能库中已有同名 Skill",
       },
     ];
   }

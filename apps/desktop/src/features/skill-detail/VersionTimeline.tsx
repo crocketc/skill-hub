@@ -146,7 +146,7 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
           queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
         ]);
         setRollbackTarget(undefined);
-        if (reviewPresentation) setReviewResult("已创建新的当前版本；受管链接继续跟随当前版本，独立副本保持原状。目标内容已完成示例基础检查；原始风险记录仍保留。");
+        if (reviewPresentation) setReviewResult("已创建新的当前版本；受管链接继续跟随当前版本，独立拷贝保持原状。目标内容已完成示例基础检查；原始风险记录仍保留。");
       },
       () => setCommitError(t("skillDetail.versions.rollbackError")),
     ).finally(() => {
@@ -262,7 +262,7 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
           {impactQuery.data ? (
             <>
               <p>{reviewPresentation ? "恢复会创建新的当前版本，原当前版本保留在历史中。" : t("skillDetail.versions.createsVersion")}</p>
-              {reviewPresentation ? <><p>目标版本内容已进行示例基础检查；发现记录不会因恢复而清空。</p><p>受管链接：2 个，继续跟随新当前版本。独立副本：1 个，原样保留。</p></> : null}
+              {reviewPresentation ? <><p>目标版本内容已进行示例基础检查；发现记录不会因恢复而清空。</p><p>受管链接：2 个，继续跟随新当前版本。独立拷贝：1 个，原样保留。</p></> : null}
               <ul>
                 {impactQuery.data.deployments.map((deployment) => (
                   <li key={deployment.id}>

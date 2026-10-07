@@ -181,7 +181,7 @@ it("describes the impact of every decision option", async () => {
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标副本不会被覆盖")).toBeVisible();
+  expect(screen.getByText("复制到 SkillHub：将候选内容复制入库，已有 Skill 及其目标拷贝不会被覆盖")).toBeVisible();
   expect(screen.getByText("独立导入：以新身份存入库中，不覆盖已有 Skill")).toBeVisible();
   expect(screen.getByText("跳过：不导入该候选")).toBeVisible();
   // 影响说明不改变选项的可访问名称，决策仍由用户显式选择。
@@ -241,11 +241,11 @@ it("filters conflicts by reason and applies the batch action only to the filtere
 
   // 顶部筛选显示每个原因类别的数量。
   expect(screen.getByRole("button", { name: "全部（3）" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "名称重复（2）" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "完全重复（1）" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "重名（2）" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "同一技能（1）" })).toBeVisible();
 
-  // 选中“名称重复”类别后只显示该类冲突。
-  await user.click(screen.getByRole("button", { name: "名称重复（2）" }));
+  // 选中“重名”类别后只显示该类冲突。
+  await user.click(screen.getByRole("button", { name: "重名（2）" }));
   expect(screen.queryByText("dup-skill")).not.toBeInTheDocument();
   expect(screen.getByText("pdf-a")).toBeVisible();
   expect(screen.getByText("pdf-b")).toBeVisible();
@@ -275,7 +275,7 @@ it("keeps individual choices working while a category filter is active", async (
     </I18nextProvider>,
   );
 
-  await user.click(screen.getByRole("button", { name: "完全重复（1）" }));
+  await user.click(screen.getByRole("button", { name: "同一技能（1）" }));
   fireEvent.click(screen.getByRole("radio", { name: "跳过此候选项" }));
 
   expect(onAction).toHaveBeenCalledWith("dup-x", "skip");
@@ -295,8 +295,8 @@ it("applies one chosen action to every conflict of the filtered kind at once", a
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("名称重复 · 共 2 项")).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "名称重复（2）" }));
+  expect(screen.getByText("重名 · 共 2 项")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "重名（2）" }));
   await user.selectOptions(screen.getByRole("combobox", { name: "选择处理方式" }), "copy");
   await user.click(screen.getByRole("button", { name: "应用" }));
 

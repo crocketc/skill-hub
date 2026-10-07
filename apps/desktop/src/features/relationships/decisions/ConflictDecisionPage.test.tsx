@@ -435,7 +435,7 @@ describe("ConflictDecisionPage", () => {
     const { tracker } = await renderPage(facade);
     await screen.findByText("冲突组 conflict:a");
 
-    fireEvent.click(screen.getByRole("button", { name: "纳入集中库管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "纳入技能库管理" }));
 
     // 不跨页自动提交：不写决定、不进执行桥，只携带冲突上下文跳治理预览。
     expect(facade.resolveConflictCase).not.toHaveBeenCalled();

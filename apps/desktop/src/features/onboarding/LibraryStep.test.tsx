@@ -29,16 +29,16 @@ function renderLibraryStep(customLibraryPath?: string | null, i18n = createSkill
 it("labels a picked custom directory as the selected library location", async () => {
   await renderLibraryStep(customLibraryPath);
 
-  expect(screen.getByText("已选择的集中库位置")).toBeVisible();
-  expect(screen.queryByText("默认集中库位置")).not.toBeInTheDocument();
+  expect(screen.getByText("已选择的技能库位置")).toBeVisible();
+  expect(screen.queryByText("默认技能库位置")).not.toBeInTheDocument();
   expect(screen.getByText(customLibraryPath)).toBeVisible();
 });
 
 it("keeps the default location label until a custom directory is chosen", async () => {
   await renderLibraryStep(null);
 
-  expect(screen.getByText("默认集中库位置")).toBeVisible();
-  expect(screen.queryByText("已选择的集中库位置")).not.toBeInTheDocument();
+  expect(screen.getByText("默认技能库位置")).toBeVisible();
+  expect(screen.queryByText("已选择的技能库位置")).not.toBeInTheDocument();
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
 });
 

@@ -16,7 +16,7 @@ it("requires a choice for each deployment before deleting the central Skill", as
     </I18nextProvider>,
   );
 
-  expect(screen.getAllByRole("combobox", { name: /目标副本处理方式/ })).toHaveLength(2);
+  expect(screen.getAllByRole("combobox", { name: /目标拷贝处理方式/ })).toHaveLength(2);
   expect(screen.getByRole("button", { name: "确认从库中删除" })).toBeDisabled();
 });
 
@@ -35,8 +35,8 @@ it("names the object as deleting the library Skill and states retention and reco
 
   // 目标副本决策名与对象一一对应，不复用裸词“移除部署”。
   const options = screen.getAllByRole("option").map((option) => option.textContent);
-  expect(options).toContain("删除目标目录中的副本（从目标移除）");
-  expect(options).toContain("转为独立副本（保留目标文件，移除部署关系）");
+  expect(options).toContain("删除目标目录中的拷贝（从目标移除）");
+  expect(options).toContain("转为独立拷贝（保留目标文件，移除部署关系）");
   expect(options).not.toContain("移除部署");
 
   // “保留”选项必须如实：后端会解除部署关系、仅保留目标文件，
