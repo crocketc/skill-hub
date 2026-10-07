@@ -602,13 +602,25 @@ export function SkillQuickDrawer({
         <div className="sh-skill-drawer__chrome">
           <div className="sh-skill-drawer__toolbar">
             {view && skillId ? (
-              <Link
-                className="sh-button sh-button--primary sh-button--sm sh-skill-drawer__prototype-details"
-                state={libraryReturn ? { libraryReturn } : undefined}
-                to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
-              >
-                {t("skillLibrary.drawer.prototype.fullDetails")}
-              </Link>
+              <div className="sh-skill-drawer__toolbar-links">
+                <Link
+                  className="sh-button sh-button--primary sh-button--sm sh-skill-drawer__prototype-details"
+                  state={libraryReturn ? { libraryReturn } : undefined}
+                  to={{ pathname: `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}`, search: detailSearch }}
+                >
+                  {t("skillLibrary.drawer.prototype.fullDetails")}
+                </Link>
+                {/* 人工验收功能反馈（2026-10-07）：抽屉直连图谱查阅——
+                    复用详情页 ReviewGraphEntry 的链接模式（/relationships?skillId=），
+                    与「查看完整详情」同槽位相邻，不先进详情页即可看图谱。 */}
+                <Link
+                  className="sh-button sh-button--secondary sh-button--sm"
+                  to={`/relationships?skillId=${encodeURIComponent(skillId)}`}
+                >
+                  <Icon aria-hidden="true" name="relationships" size={16} />
+                  {t("skillLibrary.drawer.prototype.viewGraph")}
+                </Link>
+              </div>
             ) : <span />}
             <div className="sh-skill-drawer__toolbar-end">
               <div aria-label={t("skillLibrary.drawer.presets.label")} className="sh-skill-drawer__presets sh-skill-drawer__prototype-presets" role="group">

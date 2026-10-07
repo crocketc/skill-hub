@@ -1526,6 +1526,7 @@
         "updateAvailable": "有可用更新",
         "export": "导出",
         "fullDetails": "查看完整详情",
+        "viewGraph": "查看图谱",
         "basicInformation": "基本信息",
         "allTags": "全部标签",
         "moreTags": "其余 {{count}} 个标签",

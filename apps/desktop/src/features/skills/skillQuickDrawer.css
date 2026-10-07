@@ -903,7 +903,15 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   margin-bottom: var(--space-1);
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__toolbar > .sh-skill-drawer__prototype-details {
+/* 工具行左侧导航链接组：「查看完整详情」＋「查看图谱」同类操作同槽位相邻。 */
+.sh-skill-drawer .sh-skill-drawer__toolbar-links {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-skill-drawer--prototype .sh-skill-drawer__toolbar .sh-skill-drawer__prototype-details {
   min-height: 2.25rem;
   border: 1px solid color-mix(in srgb, var(--ui-accent) 42%, var(--ui-border-subtle));
   border-radius: var(--radius-sm);
@@ -914,7 +922,7 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
   text-decoration: none;
 }
 
-.sh-skill-drawer--prototype .sh-skill-drawer__toolbar > .sh-skill-drawer__prototype-details:hover {
+.sh-skill-drawer--prototype .sh-skill-drawer__toolbar .sh-skill-drawer__prototype-details:hover {
   background: color-mix(in srgb, var(--ui-accent) 19%, var(--ui-surface));
 }
 

@@ -704,6 +704,26 @@ it("keeps preview full-detail links inside the development preview routes", asyn
   );
 });
 
+// 人工验收功能反馈（2026-10-07）：抽屉直连图谱查阅入口——复用详情页
+// ReviewGraphEntry 的链接模式（/relationships?skillId=），与「查看完整详情」
+// 同一工具行槽位，不再要求先进详情页再点「在图谱中查看」。
+it("offers a graph entry next to full details carrying the current skill", async () => {
+  const facade = createMockSkillLibraryFacade();
+  const locations: ReturnType<typeof useLocation>[] = [];
+  await renderDrawer({ facade, onLocationChange: (location) => locations.push(location) });
+
+  const graphLink = await screen.findByRole("link", { name: "View graph" });
+  expect(graphLink).toHaveAttribute("href", "/relationships?skillId=skill-pdf");
+  // 同类导航操作同一槽位：图谱入口与完整详情相邻，同在工具行首组。
+  const toolbar = document.querySelector(".sh-skill-drawer__toolbar");
+  expect(toolbar?.firstElementChild).toContainElement(graphLink);
+
+  fireEvent.click(graphLink);
+  const last = locations[locations.length - 1];
+  expect(last.pathname).toBe("/relationships");
+  expect(last.search).toBe("?skillId=skill-pdf");
+});
+
 it("inherits reduced motion while action entries stay display-only", async () => {
   mockReducedMotion(true);
   const facade = createMockSkillLibraryFacade({ usageEvidence: undefined });

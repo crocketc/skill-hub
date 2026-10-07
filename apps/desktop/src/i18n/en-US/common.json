@@ -1526,6 +1526,7 @@
         "updateAvailable": "Update available",
         "export": "Export",
         "fullDetails": "View full details",
+        "viewGraph": "View graph",
         "basicInformation": "Basic information",
         "allTags": "All tags",
         "moreTags": "{{count}} more tags",
