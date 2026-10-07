@@ -359,6 +359,9 @@ export function createMockSkillDetailFacade(
   let summary = { ...fixture.summary, ...options.summary };
   let summaryFailures = options.failSummaryOnce ? 1 : 0;
   let relationFailures = options.failRelationsOnce ? 1 : 0;
+  // K6：忽略决定按候选身份持久投影——与真实后端一致，忽略后重新拉取
+  // 状态仍能看到 candidate_ignored，入口随之隐藏。
+  const ignoredCandidates = new Set<string>();
 
   const relations = options.sharedPhysicalTarget
     ? fixture.relations.map((relation) => ({
@@ -524,9 +527,10 @@ export function createMockSkillDetailFacade(
     },
     async ignoreSourceUpdate(skillId, candidateIdentity) {
       calls.ignoredSourceUpdates.push({ candidateIdentity, skillId });
+      ignoredCandidates.add(candidateIdentity);
     },
     async getSourceUpdateStatus(skillId): Promise<SourceUpdateStatus> {
-      return options.sourceUpdateStatus ?? {
+      const status = options.sourceUpdateStatus ?? {
         skill_id: skillId,
         state: null,
         checked_at: null,
@@ -535,6 +539,10 @@ export function createMockSkillDetailFacade(
         ignored_candidates: [],
         candidate_ignored: false,
       };
+      if (status.candidate_identity && ignoredCandidates.has(status.candidate_identity)) {
+        return { ...status, candidate_ignored: true, ignored_candidates: [status.candidate_identity] };
+      }
+      return status;
     },
     async relinkSource(skillId, source) {
       if (options.failRelinkSource) throw new Error("relink failed");

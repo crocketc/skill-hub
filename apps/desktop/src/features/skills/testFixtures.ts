@@ -31,6 +31,7 @@ export interface MockSkillLibraryFacade extends SkillLibraryFacade {
     saveSkillMetadata: Array<{ skillId: string; patch: SkillMetadataPatch }>;
     saveTablePreferences: SkillTablePreferences[];
     saveView: Array<Omit<SavedSkillView, "builtIn" | "id">>;
+    setTrial: Array<{ skillId: string; due: string | null }>;
   };
 }
 
@@ -203,6 +204,7 @@ export function createMockSkillLibraryFacade(
     saveSkillMetadata: [],
     saveTablePreferences: [],
     saveView: [],
+    setTrial: [],
   };
   const total = options.total ?? options.pageItems?.length ?? NAMED_ROWS.length;
   let savedViews = [USER_SAVED_VIEW];
@@ -210,6 +212,22 @@ export function createMockSkillLibraryFacade(
   const metadata = new Map<string, SkillMetadataPatch>([
     ["skill-pdf", { note: "Keep this reader near document workflows." }],
   ]);
+  // W3-7（d79cc4d7）：set_trial 命令的内存投影——due 非空即试用态，null
+  // 转常规；quick view 与列表派生都从这里读，抽屉保存后重读即可见。
+  const trials = new Map<string, string | null>();
+  const DEFAULT_TRIAL_DUE = "2026-11-03";
+  const trialStateFor = (
+    skillId: string,
+    row: Pick<SkillTableRow, "lifecycle">,
+  ): { lifecycle: SkillTableRow["lifecycle"]; trialDue?: string } => {
+    if (trials.has(skillId)) {
+      const due = trials.get(skillId) ?? undefined;
+      return due ? { lifecycle: "trial", trialDue: due } : { lifecycle: "active" };
+    }
+    return row.lifecycle === "trial"
+      ? { lifecycle: "trial", trialDue: DEFAULT_TRIAL_DUE }
+      : { lifecycle: row.lifecycle };
+  };
 
   return {
     calls,
@@ -225,6 +243,7 @@ export function createMockSkillLibraryFacade(
       const patch = metadata.get(skillId);
       return clone({
         ...result,
+        ...trialStateFor(skillId, row),
         ...(patch?.alias === null ? { alias: undefined } : patch?.alias ? { alias: patch.alias } : {}),
         ...(patch?.note === null ? { note: undefined } : patch?.note ? { note: patch.note } : {}),
         ...(patch?.tags ? { tags: patch.tags } : {}),
@@ -284,10 +303,16 @@ export function createMockSkillLibraryFacade(
       // need a row regardless of URL page state. Explicit totals opt into the
       // deterministic multi-page preview used by the browser shell.
       const items = shouldFilterText
-        ? filteredRows.slice(start, start + itemCount)
-        : options.pageItems ?? (
+        ? filteredRows.slice(start, start + itemCount).map((row) => ({
+            ...row,
+            lifecycle: trialStateFor(row.id, row).lifecycle,
+          }))
+        : (options.pageItems ?? (
           options.total === undefined ? defaultRows(itemCount) : allRows.slice(start, start + itemCount)
-        );
+        )).map((row) => ({
+            ...row,
+            lifecycle: trialStateFor(row.id, row).lifecycle,
+          }));
       return clone({
         facets: {
           tags: [...new Set(filteredRows.flatMap((row) => row.tags))].sort(),
@@ -333,6 +358,10 @@ export function createMockSkillLibraryFacade(
     },
     async saveTablePreferences(preferences) {
       calls.saveTablePreferences.push(clone(preferences));
+    },
+    async setTrial(skillId, due) {
+      calls.setTrial.push(clone({ skillId, due }));
+      trials.set(skillId, due);
     },
     async saveView(view) {
       const saved = clone(view);

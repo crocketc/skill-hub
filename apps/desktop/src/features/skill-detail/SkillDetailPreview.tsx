@@ -9,9 +9,28 @@ import type {
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { removalImpactFixture, type RemovalFacade } from "../removal/api";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
 import type { SkillDetailFacade, SkillMetadata, SkillMetadataPatch } from "./api";
+
+/**
+ * 真实删除流（47bf9085）的 DEV 预览门面：用确定性影响夹具走完
+ * 「影响预览 → 逐目标处置 → 确认 → 结果」对话框链路，不执行真实删除；
+ * 真机由 nativeRemovalFacade 承载同一契约。
+ */
+const previewRemovalFacade: RemovalFacade = {
+  async prepareDelete(skillId, skillName) {
+    return { ...removalImpactFixture(), skillId, skillName: skillName ?? "PDF Reader" };
+  },
+  async commitDelete() {
+    return { centralSkillDeleted: true, state: "committed", recoveryOperationId: null, items: [] };
+  },
+  async prepareUndeploy(deploymentId, label) {
+    return { deploymentId, label, operationId: `preview-undeploy-${deploymentId}`, sharedTarget: false };
+  },
+  async commitUndeploy() {},
+};
 
 /** State is local to this opt-in preview; production and other fixtures keep their contracts. */
 function createReviewFacade(base: SkillDetailFacade): SkillDetailFacade {
@@ -326,6 +345,7 @@ export function SkillDetailPreview() {
         candidate_ignored: false,
       },
       summary: {
+        rootPath: "C:/Users/demo/SkillHub/skills/pdf-reader",
         upstreamLineage: {
           source_skill_id: "skill-doc",
           source_version_id: "version-100",
@@ -342,6 +362,7 @@ export function SkillDetailPreview() {
       facade={facade}
       governanceFacade={previewGovernanceFacade}
       markdownFacade={markdownFacade}
+      removalFacade={previewRemovalFacade}
       securityFacade={securityFacade}
     />
   );

@@ -37,6 +37,31 @@ export function SkillLibraryPreview() {
       preset: "standard",
       widthPx: drawerWidthForPreset("standard", window.innerWidth),
     });
+    // 抽屉深链上下文（?skill=…）：按真实契约补齐 W3-6 物化根路径与 W3-7
+    // 组合清单，让快捷抽屉的主体位置/所属组合模块可交互；无参预览保持
+    // 精简列表，不影响库页其他预览场景。
+    if (search.get("skill")) {
+      const seededQuickView = previewFacade.getSkillQuickView.bind(previewFacade);
+      previewFacade.getSkillQuickView = async (skillId) => {
+        const view = await seededQuickView(skillId);
+        return {
+          ...view,
+          rootPath: `C:\\preview\\SkillHub\\skills\\${view.originalName ?? skillId}`,
+        };
+      };
+      const combinations = [
+        { name: "文档工具", members: ["skill-pdf", "skill-docx"] },
+        { name: "PDF 工作流", members: ["skill-pdf"] },
+        { name: "研发工具", members: ["skill-docx"] },
+      ];
+      previewFacade.listCombinations = async () =>
+        combinations.map((combination) => ({ ...combination, members: [...combination.members] }));
+      previewFacade.updateCombination = async (name, members) => {
+        const existing = combinations.find((combination) => combination.name === name);
+        if (existing) existing.members = [...members];
+        else combinations.push({ name, members: [...members] });
+      };
+    }
     if (drawerSample === "overflow") {
       const getQuickView = previewFacade.getSkillQuickView.bind(previewFacade);
       previewFacade.getSkillQuickView = async (skillId) => {
