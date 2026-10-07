@@ -92,10 +92,10 @@ use skillhub_core::source::{
 };
 use skillhub_core::{ensure_original_deletion_authorized, plan_original_migration};
 use skillhub_core::{
-    physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
-    AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
-    OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
-    UpdateSignaturePublicKey,
+    physical_id_for_path, reparse_physical_id_for_path, symlink_physical_id_for_path, AllowedRoot,
+    AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
+    DeploymentMode, ErrorCode, OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant,
+    Severity, TargetChange, UpdateSignaturePublicKey,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
@@ -527,15 +527,16 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        // Symbolic-link deployments pin the proof to the link itself, so the
+        // Link deployments pin the proof to the link itself, so the
         // reconstruction must use the same identity the adapters captured at
-        // apply time (the central source may have been replaced meanwhile).
-        let identity_for_mode = |path: &std::path::Path| {
-            if deployment.mode == DeploymentMode::SymbolicLink {
-                symlink_physical_id_for_path(path)
-            } else {
-                physical_id_for_path(path)
-            }
+        // apply time (`ownership_identity`): junctions are reparse points and
+        // must NOT resolve to the staged directory they point at, or every
+        // junction removal fails with a self-inflicted ownership mismatch
+        // (#12 boundary: 链接部署链接文件被删).
+        let identity_for_mode = |path: &std::path::Path| match deployment.mode {
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
         };
         let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -7450,12 +7451,13 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        let identity_for_mode = |path: &std::path::Path| {
-            if deployment.mode == DeploymentMode::SymbolicLink {
-                symlink_physical_id_for_path(path)
-            } else {
-                physical_id_for_path(path)
-            }
+        // 与 deployment_proof 同一约定：恢复路径的证明重建必须复用 adapters
+        // 在 apply 时捕获的身份口径（junction 取 reparse 点自身，不得解析到
+        // 暂存目录），否则恢复续作必然自报归属不匹配。
+        let identity_for_mode = |path: &std::path::Path| match deployment.mode {
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
         };
         let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
