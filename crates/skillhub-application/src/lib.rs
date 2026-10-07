@@ -2646,8 +2646,10 @@ impl LocalApplicationFacade {
     /// 会话残留的这类行永远无法提交，却会让启动恢复闸门永远亮着（用户每次
     /// 取消删除/部署确认框都会留下一条）。四类 prepare 都是只读检查或内存
     /// 计划，没有磁盘副作用需要回滚，故在会话打开时直接结算为 `rolled_back`；
-    /// `applying` 及之后的行可能有真实磁盘效果，保持原样交给启动恢复闸门处置。
-    /// 每个持有 `Database` 的构造路径都必须调用本函数。
+    /// `applying`/`verifying` 行可能有真实磁盘效果（#11 裁决）：只把记账标签
+    /// 转入 `needs_recovery`，绝不碰磁盘——启动快照随即落在如实的
+    /// NeedsRecovery 态，每个候选仍由恢复页用户显式决定「完成操作／回滚
+    /// 操作」。每个持有 `Database` 的构造路径都必须调用本函数。
     fn sweep_stale_journal(database: &Mutex<Database>) {
         let locked = database
             .lock()
@@ -2660,6 +2662,13 @@ impl LocalApplicationFacade {
                 [],
             )
             .expect("settle stale planned/prepared journal rows from the previous session");
+        locked
+            .connection_for_test()
+            .execute(
+                "UPDATE operations SET phase='needs_recovery', state='needs_recovery', updated_at=strftime('%s','now') WHERE phase IN ('applying','verifying')",
+                [],
+            )
+            .expect("relabel stale applying/verifying journal rows as recovery candidates");
     }
 
     /// Starts a single-step flow with a `planned` record.

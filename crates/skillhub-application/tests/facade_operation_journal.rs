@@ -569,11 +569,13 @@ async fn remove_ignore_rule_is_journalled_as_a_committed_record() {
     assert_eq!(record.error_code, None);
 }
 
-/// DEV-101：`prepared`/`planned` 行的可提交状态只活在进程内存里——上一个
-/// 会话残留的这类行永远无法提交（prepared 缓存随进程消失），却会让启动
-/// 恢复闸门永远亮着。新会话打开时必须把它们结算为 `rolled_back`（四类
-/// prepare 都是只读检查/内存计划，不落盘，无磁盘副作用需要回滚）；
-/// `applying` 及之后的行可能有真实磁盘效果，必须保持为恢复候选。
+/// DEV-101 + #11：`prepared`/`planned` 行的可提交状态只活在进程内存里——
+/// 上一个会话残留的这类行永远无法提交（prepared 缓存随进程消失），却会让
+/// 启动恢复闸门永远亮着。新会话打开时必须把它们结算为 `rolled_back`（四类
+/// prepare 都是只读检查/内存计划，不落盘，无磁盘副作用需要回滚）。
+/// `applying`/`verifying` 行可能有真实磁盘效果：只转入 `needs_recovery`
+/// 标签（绝不碰磁盘），启动闸门随即报告 NeedsRecovery，候选由恢复页用户
+/// 显式完成或回滚。
 #[tokio::test]
 async fn stale_planned_and_prepared_rows_settle_as_rolled_back_on_startup() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -697,31 +699,81 @@ async fn stale_planned_and_prepared_rows_settle_as_rolled_back_on_startup() {
         "stale prepared/planned rows alone must not gate startup"
     );
 
-    // 'applying' 行代表可能已写盘的中断，必须不受清扫影响并继续闸住启动。
-    // 单独重开一次会话，保证前面的 Clean 判定不受本夹具行干扰。
+    // 'applying'/'verifying' 行代表可能已写盘的中断：上一会话残留行在新会话
+    // 打开时自动转入 needs_recovery——只改记账标签、绝不碰磁盘，启动闸门
+    // 随即落在如实的 NeedsRecovery 态；候选仍由恢复页用户显式决定
+    // 「完成操作／回滚操作」，清扫绝不代决。applied 目标文件必须原样保留。
+    let pending_target = workspace.path().join("pending-target-copy");
+    std::fs::create_dir_all(&pending_target).expect("pending target dir");
+    std::fs::write(pending_target.join("SKILL.md"), "# interrupted\n").expect("pending file");
+    let pending_json = pending_target.to_string_lossy().replace('\\', "/");
     {
         let database = Database::open(&database_path).expect("database for fixtures");
-        database
-            .connection_for_test()
+        let connection = database.connection_for_test();
+        // recovery_data 走 progress_json 信封（与 operation_repository 同构）。
+        connection
             .execute(
-                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,inverse_json,error_code,created_at,updated_at) \
-                 VALUES('7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d','deploy_skill','running','applying','fixture','{}',NULL,0,0)",
-                [],
+                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,progress_json,inverse_json,error_code,created_at,updated_at) \
+                 VALUES('7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d','deploy_skill','running','applying','fixture',?1,'{}',NULL,0,0)",
+                [format!(
+                    "{{\"recovery_data\":{{\"pending_targets\":[{{\"path\":\"{pending_json}\",\"mode\":\"managed_copy\"}}]}}}}"
+                )],
             )
             .expect("seed an applying fixture row");
+        connection
+            .execute(
+                "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,inverse_json,error_code,created_at,updated_at) \
+                 VALUES('8d5ce3f2-71bc-4a08-9e4d-2f6a7b0c9d3e','remove_skill','running','verifying','fixture','{}',NULL,0,0)",
+                [],
+            )
+            .expect("seed a verifying fixture row");
     }
     let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
-        .expect("facade after an applying crash");
+        .expect("facade after an interrupted session");
     let operations = recent_operations(&facade).await;
-    let applying = operations
-        .iter()
-        .find(|record| record.operation_id.to_string() == "7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d")
-        .expect("the applying row must survive the sweep");
-    assert_eq!(applying.phase, OperationPhase::Applying);
-    assert_eq!(applying.state, "running");
+    let residue = |id: &str| {
+        operations
+            .iter()
+            .find(|record| record.operation_id.to_string() == id)
+            .map(|record| (record.phase, record.state.to_owned()))
+    };
+    assert_eq!(
+        residue("7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d"),
+        Some((OperationPhase::NeedsRecovery, "needs_recovery".to_owned())),
+        "a stale applying row must relabel to needs_recovery on the next session open"
+    );
+    assert_eq!(
+        residue("8d5ce3f2-71bc-4a08-9e4d-2f6a7b0c9d3e"),
+        Some((OperationPhase::NeedsRecovery, "needs_recovery".to_owned())),
+        "a stale verifying row must relabel to needs_recovery on the next session open"
+    );
     assert_eq!(
         recovery_state(&facade).await,
-        StartupRecoveryState::InProgress,
-        "an applying row without recovery data reports InProgress and still gates startup (NeedsRecovery is reserved for rows carrying recovery_data)"
+        StartupRecoveryState::NeedsRecovery,
+        "the startup snapshot must report the honest NeedsRecovery state after the relabel"
     );
+    // 只改标签：中断写盘的目标文件必须原样保留，等待用户在恢复页决策。
+    assert!(
+        pending_target.join("SKILL.md").is_file(),
+        "the sweep must never touch the disk; the pending target file stays as-is"
+    );
+    // 候选出现在恢复页清单中，等待用户显式完成或回滚。
+    let candidates = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates");
+    let AppQueryResult::RecoveryCandidates(candidates) = candidates else {
+        panic!("expected recovery candidates");
+    };
+    for id in [
+        "7c4bd2e1-90ab-4f7e-8d3c-6a5b1e9f0c2d",
+        "8d5ce3f2-71bc-4a08-9e4d-2f6a7b0c9d3e",
+    ] {
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.operation_id.to_string() == id),
+            "the relabelled residue {id} must surface as a recovery candidate"
+        );
+    }
 }
