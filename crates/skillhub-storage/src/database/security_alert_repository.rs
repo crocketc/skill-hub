@@ -267,6 +267,5 @@ fn now() -> i64 {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("reason", format!("security_alerts: {error}"))
+    super::classify_database_error(error)
 }

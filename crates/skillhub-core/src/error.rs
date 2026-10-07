@@ -44,6 +44,11 @@ pub enum ErrorCode {
     MigrationRequired,
     #[serde(rename = "database.newer_schema")]
     DatabaseNewerSchema,
+    /// #12：SQLite 完整性约束（外键/CHECK/NOT NULL/主键）拦截了写入或
+    /// 删除。前端按 `database_constraint` 提供专属文案与反馈指引，不再
+    /// 落入 `internal.error` 兜底。
+    #[serde(rename = "database.constraint")]
+    DatabaseConstraint,
     #[serde(rename = "internal.error")]
     InternalError,
     #[serde(rename = "combination.nesting_not_allowed")]
@@ -166,6 +171,7 @@ impl ErrorCode {
             Self::CredentialUnavailable => "credential.unavailable",
             Self::MigrationRequired => "migration.required",
             Self::DatabaseNewerSchema => "database.newer_schema",
+            Self::DatabaseConstraint => "database.constraint",
             Self::InternalError => "internal.error",
             Self::CombinationNestingNotAllowed => "combination.nesting_not_allowed",
             Self::CatalogInvalidMetadata => "catalog.invalid_metadata",

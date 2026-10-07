@@ -2285,7 +2285,8 @@
         "path_outside_allowed_root": "删除失败：目标路径超出允许范围。",
         "object_not_found": "删除失败：目标不存在，可能已被删除。",
         "operation_conflict": "删除失败：操作冲突，请重新确认后重试。",
-        "internal_error": "删除失败：内部错误，可从恢复中心继续。"
+        "internal_error": "删除失败：内部错误，可从恢复中心继续。",
+        "database_constraint": "删除失败：数据完整性约束阻止了该操作，请反馈此问题。"
       }
     }
   },

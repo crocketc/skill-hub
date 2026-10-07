@@ -4,7 +4,7 @@ use super::Database;
 use skillhub_core::llm::translation::{
     TranslationOrigin, TranslationProvenance, TranslationRecord,
 };
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
+use skillhub_core::{AppError, AppResult, SkillId};
 
 /// One persisted translation row: the domain record plus view metadata. The
 /// source description hash drives the "needs update" state; `origin`
@@ -172,7 +172,5 @@ fn origin_from_text(text: &str) -> Option<TranslationOrigin> {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", error.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(error)
 }

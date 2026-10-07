@@ -943,9 +943,7 @@ fn parse_date(v: String) -> Option<(i32, u8, u8)> {
     }
 }
 fn error(e: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", e.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(e)
 }
 
 fn bad_id() -> AppError {

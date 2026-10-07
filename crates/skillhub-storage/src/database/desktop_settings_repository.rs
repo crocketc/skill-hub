@@ -50,9 +50,7 @@ fn invalid_record() -> AppError {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", error.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(error)
 }
 
 #[cfg(test)]

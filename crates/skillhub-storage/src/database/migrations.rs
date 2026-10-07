@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use rusqlite::{params, Connection, Transaction};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
@@ -324,17 +322,7 @@ fn read_schema_version(connection: &Connection) -> AppResult<u32> {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    let mut params = BTreeMap::new();
-    params.insert(
-        "source".to_owned(),
-        serde_json::Value::String(error.to_string()),
-    );
-    AppError {
-        code: ErrorCode::InternalError,
-        severity: Severity::Error,
-        params,
-        actions: vec![RecoveryAction::Retry],
-    }
+    super::classify_database_error(error)
 }
 
 #[cfg(test)]

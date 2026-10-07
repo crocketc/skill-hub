@@ -2285,7 +2285,8 @@
         "path_outside_allowed_root": "Deletion failed: the target path is outside the allowed root.",
         "object_not_found": "Deletion failed: the target does not exist; it may already be gone.",
         "operation_conflict": "Deletion failed: the operation conflicts with another; re-confirm and retry.",
-        "internal_error": "Deletion failed: an internal error occurred; continue from the recovery center."
+        "internal_error": "Deletion failed: an internal error occurred; continue from the recovery center.",
+        "database_constraint": "Deletion failed: a database integrity constraint blocked this operation. Please report this issue."
       }
     }
   },
