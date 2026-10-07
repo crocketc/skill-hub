@@ -395,15 +395,10 @@
   overflow-wrap: anywhere;
 }
 
-.sh-skill-detail-review__identity-name p,
-.sh-skill-detail-review__prototype-note {
+.sh-skill-detail-review__identity-name p {
   color: var(--ui-ink-muted);
   font-size: var(--font-size-xs);
   margin: 0;
-}
-
-.sh-skill-detail-review__prototype-note {
-  padding-block: var(--space-2);
 }
 
 /* 主体动作：派发主强调整行，导出/删除同排低强调/危险色。 */

@@ -209,10 +209,6 @@ export function SkillDetailReviewExperience({
           <ReviewAdjacentSkills adjacent={adjacent} backSearch={backSearch} detailPathname={detailPathname} libraryReturn={libraryReturn} />
         </aside>
         <main className="sh-skill-detail__content sh-skill-detail-review__main">
-          <p className="sh-skill-detail-review__prototype-note" role="note">
-            原型示例 · 操作不会更改真实文件、网络来源或技能库数据。
-          </p>
-
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-overview">
             <h2>
               <ReviewSectionToggle label="概览" onToggle={() => toggleSection("review-overview")} open={openSections["review-overview"]} sectionId="review-overview" />
@@ -306,7 +302,6 @@ export function SkillDetailReviewExperience({
             </h2>
             <div hidden={!openSections["review-versions"]} id="review-versions-body">
               <VersionTimeline facade={facade} skillId={skillId} summary={summary} userFacingDates reviewPresentation />
-              {insights ? <details className="sh-skill-detail-review__supplemental" open><summary>外部变更与操作记录</summary><ul><li>2026年10月2日：SKILL.md 在 SkillHub 外发生修改</li><li>2026年9月14日：从本机目录导入</li></ul><p>仅为样例证据；未知时间或未覆盖范围不会推断为无变化。</p></details> : null}
             </div>
           </section>
         </main>
@@ -366,7 +361,7 @@ function ReviewUsageInsights({ facade, insights, skillId }: {
         skillId={skillId}
       />
       <h3>使用证据</h3>
-      <p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p>
+      <p>{insights.usageEvidence ? `记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p>
     </details>
   );
 }
