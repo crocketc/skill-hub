@@ -5964,6 +5964,11 @@ impl LocalApplicationFacade {
         }
 
         let current_version_id = context.store.current(skill_id)?;
+        // #15：受管复制是否「跟随当前版本」按内容判定——核对过的盘上指纹与
+        // 当前可见树（＝当前版本内容）的部署树哈希一致；两者必须同一哈希
+        // 口径（DeploymentFilesystem 树哈希），不与版本清单树哈希混比。
+        let visible_tree_hash =
+            DeploymentFilesystem::hash_tree(context.central.visible_skill_path(&skill)).ok();
         let visible_tree_fingerprint = context.central.visible_tree_fingerprint(&skill)?;
         let (database_current_version_id, portable_record, target_basic_check_required, relations) =
             self.with_database("version_adoption.read_facts", |database| {
@@ -6110,12 +6115,28 @@ impl LocalApplicationFacade {
                                     .and_then(|node| std::fs::canonicalize(&node.path).ok())
                                     .is_some_and(|node_path| &node_path == target)
                             });
-                        let follows_current = relation.active
+                        let link_follows_current = relation.active
                             && path_is_link
                             && visible_path_canonical
                                 .as_ref()
                                 .zip(actual_target)
                                 .is_some_and(|(expected, actual)| expected == actual);
+                        // #15（2026-10-08 裁决）：受管复制是受管去向，跟随
+                        // 当前版本按内容判定——核对过的盘上指纹与当前可见树
+                        // 的部署树哈希一致；未核对（match_state 非
+                        // ContentVerified）时不猜。
+                        let copy_follows_current = relation.active
+                            && !path_is_link
+                            && relation.relationship
+                                == skillhub_core::relationship::RelationshipType::ManagedCopy
+                            && relation.ownership
+                                == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                            && relation.match_state
+                                == skillhub_core::deployment::ObservedMatchState::ContentVerified
+                            && visible_tree_hash
+                                .as_ref()
+                                .is_some_and(|hash| *hash == relation.content_fingerprint);
+                        let follows_current = link_follows_current || copy_follows_current;
                         let identity_reliable = !relation.active
                             || (relation_path_key_matches
                                 && link_target_path_key_matches
@@ -6127,12 +6148,14 @@ impl LocalApplicationFacade {
                                 && target_directory_identity_matches
                                 && relation.match_state
                                     == skillhub_core::deployment::ObservedMatchState::ContentVerified);
+                        // #15：受管复制属受管去向（由采用新版同步重写），
+                        // 不再归入「独立副本」；独立副本只保留导入副本与
+                        // 观察副本这两类真正不受管理的拷贝。
                         let independent_copy = relation.active
                             && !follows_current
                             && matches!(
                                 relation.relationship,
                                 skillhub_core::relationship::RelationshipType::ImportCopy
-                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
                                     | skillhub_core::relationship::RelationshipType::ObservedCopy
                             );
                         skillhub_core::api::VersionAdoptionRelationImpact {
@@ -6533,6 +6556,27 @@ impl LocalApplicationFacade {
             return Err(error);
         }
 
+        // #15（2026-10-08 裁决）：库内树与指针切换完成后，同步重写全部受管
+        // 部署——链接核验重指向并记账新版本；受管复制核对-备份-重写实盘。
+        // 单个目标失败不回滚整体采用，按目标如实报告部分成功。
+        let rewrite_outcomes = self.rewrite_managed_deployments_for_adoption(
+            &context,
+            &skill,
+            &request.version_id,
+            &request.preview_id,
+        );
+        let rewrite_partial = rewrite_outcomes.iter().any(|outcome| !outcome.rewritten);
+        if rewrite_partial {
+            record.progress.message_code = "version.adopted_deployment_partial".to_owned();
+            record.result = Some(serde_json::json!({
+                "skill_id": request.skill_id,
+                "version_id": request.version_id,
+                "managed_deployment_rewrites": rewrite_outcomes,
+            }));
+            // 结果明细记账失败不影响已完成的采用本体。
+            let _ = self.persist_version_adoption_record(&record);
+        }
+
         let cleanup_pending = context
             .central
             .finalize_visible_tree_replacement(replacement)
@@ -6541,7 +6585,9 @@ impl LocalApplicationFacade {
             skillhub_core::OperationSummary {
                 operation_id: request.preview_id,
                 phase: skillhub_core::OperationPhase::Committed,
-                message_code: if cleanup_pending {
+                message_code: if rewrite_partial {
+                    "version.adopted_deployment_partial".to_owned()
+                } else if cleanup_pending {
                     "version.adopted_backup_cleanup_pending".to_owned()
                 } else {
                     "version.adopted".to_owned()
@@ -6549,6 +6595,352 @@ impl LocalApplicationFacade {
                 error_code: None,
             },
         ))
+    }
+
+    /// #15（2026-10-08 裁决）：采用新版切换库内树后，同步重写该技能的全部
+    /// 受管部署。链接部署核验仍解析进新可见树（不一致时按新树重建链接）并
+    /// 记账新版本与新树哈希；受管复制先核对盘上内容仍与钉住版本的期望哈希
+    /// 一致（绝不覆盖用户修改），留底到库内 tmp 后按新版本重写实盘并记账
+    /// expected_hash。分叉的复制一字不动，关系事实如实标记分叉与健康异常，
+    /// 留待既有 reconcile 流程结算。单个目标失败不回滚整体采用。
+    fn rewrite_managed_deployments_for_adoption(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        version_id: &skillhub_core::VersionId,
+        operation_id: &skillhub_core::OperationId,
+    ) -> Vec<ManagedDeploymentRewriteOutcome> {
+        let records =
+            match self.with_database("version_adoption.list_managed_deployments", |database| {
+                Ok(database
+                    .deployment_repository()
+                    .list_all()?
+                    .into_iter()
+                    .filter(|record| {
+                        record.skill_id == skill.id()
+                            && record.state == skillhub_core::DeploymentState::Deployed
+                            && record.managed
+                    })
+                    .collect::<Vec<_>>())
+            }) {
+                Ok(records) => records,
+                Err(error) => {
+                    return vec![ManagedDeploymentRewriteOutcome::failed(
+                        String::new(),
+                        "",
+                        "",
+                        "unknown",
+                        format!("managed deployment listing failed: {error}"),
+                    )];
+                }
+            };
+        let filesystem = DeploymentFilesystem::new();
+        let visible_path = context.central.visible_skill_path(skill);
+        records
+            .iter()
+            .map(|record| {
+                self.rewrite_one_managed_deployment(
+                    &filesystem,
+                    context,
+                    record,
+                    version_id,
+                    &visible_path,
+                    operation_id,
+                )
+            })
+            .collect()
+    }
+
+    fn rewrite_one_managed_deployment(
+        &self,
+        filesystem: &DeploymentFilesystem,
+        context: &library_runtime::LibraryContext,
+        record: &skillhub_core::DeploymentRecord,
+        version_id: &skillhub_core::VersionId,
+        visible_path: &Path,
+        operation_id: &skillhub_core::OperationId,
+    ) -> ManagedDeploymentRewriteOutcome {
+        let relation_id = format!("managed:{}", record.id);
+        let deployment_id = record.id.to_string();
+        let mode = match record.mode {
+            skillhub_core::DeploymentMode::ManagedCopy => "managed_copy",
+            skillhub_core::DeploymentMode::SymbolicLink => "symbolic_link",
+            skillhub_core::DeploymentMode::DirectoryJunction => "directory_junction",
+        };
+        let destination = match self.backend.target_root(record) {
+            Ok(root) => root.join(&record.runtime_name),
+            Err(error) => {
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    "",
+                    mode,
+                    error.to_string(),
+                );
+            }
+        };
+        let destination_text = destination.to_string_lossy().into_owned();
+        if record.mode.is_directory_link() {
+            // 核验：链接仍解析进库内可见树；不一致时按新可见树重建链接。
+            let resolves_into_visible = std::fs::symlink_metadata(&destination).is_ok()
+                && std::fs::canonicalize(&destination)
+                    .ok()
+                    .zip(std::fs::canonicalize(visible_path).ok())
+                    .is_some_and(|(linked, visible)| linked == visible);
+            if !resolves_into_visible {
+                let re_point = self
+                    .backend
+                    .deployment_proof(record)
+                    .and_then(|proof| filesystem.replace_owned(&proof))
+                    .and_then(|()| {
+                        Self::recreate_managed_link(
+                            filesystem,
+                            record,
+                            &destination,
+                            version_id,
+                            visible_path,
+                        )
+                    });
+                if let Err(error) = re_point {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("link re-point failed: {error}"),
+                    );
+                }
+            }
+            // 记账：新版本与新树哈希（部署树哈希口径，与 reconcile 校验、
+            // 关系指纹同一格式）。经链接观测失败时按目标失败处理，不猜测。
+            let observed = match DeploymentFilesystem::hash_tree(&destination) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("linked tree is unreadable: {error}"),
+                    );
+                }
+            };
+            let recorded = self.with_database("version_adoption.rerecord_link", |database| {
+                database
+                    .deployment_repository()
+                    .update_reconcile_facts_sync(record.id, version_id, &observed, Some(&observed))
+            });
+            match recorded {
+                Ok(()) => ManagedDeploymentRewriteOutcome::rewritten(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                ),
+                Err(error) => ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!("link accounting failed: {error}"),
+                ),
+            }
+        } else {
+            // 核对：盘上内容仍与钉住版本的期望哈希一致才允许重写；分叉的
+            // 复制一字不动（绝不覆盖用户修改），如实标记后留待 reconcile。
+            let observed_before = match DeploymentFilesystem::hash_tree(&destination) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("managed copy is unreadable: {error}"),
+                    );
+                }
+            };
+            if observed_before != record.expected_hash {
+                let marking_failed = self
+                    .mark_managed_copy_diverged(record, &observed_before)
+                    .is_err();
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!(
+                        "managed copy diverged from its pinned version; not rewritten, reconcile first{}",
+                        if marking_failed {
+                            "; divergence marking failed"
+                        } else {
+                            ""
+                        }
+                    ),
+                );
+            }
+            // 备份：留底到库内 tmp（与可见树备份同一区域），重写失败时回拷。
+            let backup_path = context.central.paths().tmp_dir.join(format!(
+                "managed-copy-backup-{}-{}-{operation_id}",
+                record.skill_id, record.id
+            ));
+            if let Err(error) = copy_directory_tree(&destination, &backup_path) {
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!("managed copy backup failed, rewrite skipped: {error}"),
+                );
+            }
+            let write_result = (|| -> AppResult<String> {
+                let proof = self.backend.deployment_proof(record)?;
+                filesystem.replace_owned(&proof)?;
+                let target = TargetPlan {
+                    physical_target_id: record.target_id.clone(),
+                    logical_target_ids: Vec::new(),
+                    target_path: destination
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .to_string_lossy()
+                        .into_owned(),
+                    destination_path: destination_text.clone(),
+                    source_path: context
+                        .root
+                        .join("versions")
+                        .join(record.skill_id.to_string())
+                        .join(version_id.as_str())
+                        .to_string_lossy()
+                        .into_owned(),
+                    runtime_name: record.runtime_name.clone(),
+                    skill_id: record.skill_id,
+                    version_id: version_id.clone(),
+                    mode: record.mode,
+                    change: skillhub_core::TargetChange::Create,
+                    warnings: Vec::new(),
+                    conflicts: Vec::new(),
+                };
+                let source = self.backend.materialized_source(&target)?;
+                let mut effective = target;
+                effective.source_path = source.to_string_lossy().into_owned();
+                let prepared = filesystem.prepare(&effective)?;
+                let applied = filesystem.apply(prepared)?;
+                Ok(applied.observed_tree_hash)
+            })();
+            match write_result {
+                Ok(observed) => {
+                    // 记账：新版本＋新树哈希（部署树哈希口径，与既有
+                    // reconcile 记账一致：expected 与 observed 同值）。
+                    let recorded =
+                        self.with_database("version_adoption.rerecord_copy", |database| {
+                            database
+                                .deployment_repository()
+                                .update_reconcile_facts_sync(
+                                    record.id,
+                                    version_id,
+                                    &observed,
+                                    Some(&observed),
+                                )
+                        });
+                    match recorded {
+                        Ok(()) => ManagedDeploymentRewriteOutcome::rewritten(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                        ),
+                        Err(error) => ManagedDeploymentRewriteOutcome::failed(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                            format!("copy rewritten but accounting failed: {error}"),
+                        ),
+                    }
+                }
+                Err(error) => {
+                    // 已删除但未写成 → 回拷备份；回拷也失败则如实报告残留。
+                    let residue = if destination.exists() {
+                        "original copy still in place".to_owned()
+                    } else {
+                        match copy_directory_tree(&backup_path, &destination) {
+                            Ok(()) => "original copy restored from backup".to_owned(),
+                            Err(restore_error) => {
+                                format!("original copy could not be restored: {restore_error}")
+                            }
+                        }
+                    };
+                    ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("managed copy rewrite failed: {error}; {residue}"),
+                    )
+                }
+            }
+        }
+    }
+
+    /// 按 TargetPlan 既有链路重建一条指向库内可见树的受管链接。
+    fn recreate_managed_link(
+        filesystem: &DeploymentFilesystem,
+        record: &skillhub_core::DeploymentRecord,
+        destination: &Path,
+        version_id: &skillhub_core::VersionId,
+        visible_path: &Path,
+    ) -> AppResult<()> {
+        let target = TargetPlan {
+            physical_target_id: record.target_id.clone(),
+            logical_target_ids: Vec::new(),
+            target_path: destination
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_string_lossy()
+                .into_owned(),
+            destination_path: destination.to_string_lossy().into_owned(),
+            source_path: visible_path.to_string_lossy().into_owned(),
+            runtime_name: record.runtime_name.clone(),
+            skill_id: record.skill_id,
+            version_id: version_id.clone(),
+            mode: record.mode,
+            change: skillhub_core::TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let prepared = filesystem.prepare(&target)?;
+        filesystem.apply(prepared)?;
+        Ok(())
+    }
+
+    /// 分叉的受管复制：关系事实如实标记分叉＋内容健康异常（观察事实），
+    /// 部署记录仍钉在旧版本，留待既有 reconcile 流程结算。
+    fn mark_managed_copy_diverged(
+        &self,
+        record: &skillhub_core::DeploymentRecord,
+        observed_hash: &str,
+    ) -> AppResult<()> {
+        self.with_database("version_adoption.mark_copy_diverged", |database| {
+            let repository = database.relationship_repository();
+            let relation_id = format!("managed:{}", record.id);
+            let mut fact = repository
+                .list_relations()?
+                .into_iter()
+                .find(|relation| relation.relation_id == relation_id)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("relation_id", relation_id)
+                        .with_action(RecoveryAction::Retry)
+                })?;
+            fact.content_fingerprint = observed_hash.to_owned();
+            fact.match_state = skillhub_core::deployment::ObservedMatchState::Diverged;
+            fact.health_reasons = Some(vec![
+                skillhub_core::relationship::RelationHealthReason::ContentChanged,
+            ]);
+            fact.observed_at = now_epoch_seconds();
+            repository.upsert_deployment_relation(&fact)?;
+            Ok(())
+        })
     }
 
     fn persist_version_adoption_record(
@@ -8740,10 +9132,12 @@ impl ApplicationFacade for LocalApplicationFacade {
                             && matches!(
                                 relation.relationship,
                                 skillhub_core::relationship::RelationshipType::ImportCopy
-                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
                                     | skillhub_core::relationship::RelationshipType::ObservedCopy
                             )
                         {
+                            // #15：受管复制是受管去向（采用新版时同步重写），
+                            // 不计入独立副本；只有导入/观察副本才是真正独立
+                            // 的拷贝。
                             independent_copy_count += 1;
                         }
                     }
@@ -16471,6 +16865,49 @@ fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+/// #15：单个受管部署在采用新版时的重写结果。`rewritten=false` 时 `reason`
+/// 用可核查的事实说明目标状态（分叉、备份失败、残留等），不冒充全部成功。
+#[derive(Clone, Debug, serde::Serialize)]
+struct ManagedDeploymentRewriteOutcome {
+    relation_id: String,
+    deployment_id: String,
+    path: String,
+    mode: &'static str,
+    rewritten: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+impl ManagedDeploymentRewriteOutcome {
+    fn rewritten(relation_id: String, deployment_id: &str, path: &str, mode: &'static str) -> Self {
+        Self {
+            relation_id,
+            deployment_id: deployment_id.to_owned(),
+            path: path.to_owned(),
+            mode,
+            rewritten: true,
+            reason: None,
+        }
+    }
+
+    fn failed(
+        relation_id: String,
+        deployment_id: &str,
+        path: &str,
+        mode: &'static str,
+        reason: String,
+    ) -> Self {
+        Self {
+            relation_id,
+            deployment_id: deployment_id.to_owned(),
+            path: path.to_owned(),
+            mode,
+            rewritten: false,
+            reason: Some(reason),
+        }
+    }
 }
 
 /// K7/G-18：关系形状的展示码——snake_case 关系类型，不向调用方裸露内部枚举。
