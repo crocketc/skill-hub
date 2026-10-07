@@ -256,9 +256,7 @@ pub fn calculate_removal_impact(relation_id: &str, facts: &RemovalFacts) -> Remo
         }
     }
 
-    let read_only_target = facts
-        .read_only_relation_ids
-        .contains(relation_id);
+    let read_only_target = facts.read_only_relation_ids.contains(relation_id);
     let backup = backup_info(relation.as_ref(), read_only_target);
     let mut impact = RemovalImpactFact {
         relation_id: relation_id.to_owned(),
@@ -308,7 +306,10 @@ pub fn recommend_removal_action(impact: &RemovalImpactFact) -> MinimalImpactActi
     }
 }
 
-fn backup_info(relation: Option<&DeploymentRelationFact>, read_only_target: bool) -> BackupRecoveryInfo {
+fn backup_info(
+    relation: Option<&DeploymentRelationFact>,
+    read_only_target: bool,
+) -> BackupRecoveryInfo {
     // FB-④：可写导入原件的清理先备份（原件就是用户文件）；只读原件
     // 只结束关系记录，没有文件变更，也就没有备份。
     let conversion = !read_only_target

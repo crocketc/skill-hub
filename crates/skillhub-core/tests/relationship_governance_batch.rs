@@ -1011,7 +1011,10 @@ mod unified_ledger {
             vec![GovernableRelationFact::SourceCopy(imported_copy)],
             RelationGovernanceFilters::default(),
         );
-        assert_eq!(imported.rows[0].primary_action, RelationGovernanceAction::None);
+        assert_eq!(
+            imported.rows[0].primary_action,
+            RelationGovernanceAction::None
+        );
         assert_eq!(
             imported.rows[0].governance.governance_status,
             RelationGovernanceClassification::Completed
@@ -1202,8 +1205,8 @@ mod read_only_import_originals {
     /// 导入存证时自动建立的观察行：未受管、身份已核验、目录未注册、
     /// 表示未知——正是现场 150 条 doubao 行的部署侧形状。
     fn observed_import_deployment(relation_id: &'static str) -> DeploymentRelationFact {
-        let mut relation = RelationSpec::observed_copy(relation_id, "C:/agents/doubao/.skills/notes")
-            .build();
+        let mut relation =
+            RelationSpec::observed_copy(relation_id, "C:/agents/doubao/.skills/notes").build();
         relation.relationship = RelationshipType::Unknown;
         relation.file_representation = FileRepresentation::Unknown;
         relation.match_state = ObservedMatchState::ContentVerified;
@@ -1263,7 +1266,10 @@ mod read_only_import_originals {
     fn healthy_read_only_originals_complete_as_retained_read_only_copies() {
         let ledger = ledger_with_read_only(
             vec![
-                GovernableRelationFact::SourceCopy(read_only_copy("rel-copy", SourceCopyHealth::Normal)),
+                GovernableRelationFact::SourceCopy(read_only_copy(
+                    "rel-copy",
+                    SourceCopyHealth::Normal,
+                )),
                 GovernableRelationFact::Deployment(observed_import_deployment("rel-observed")),
             ],
             &["rel-copy"],
@@ -1410,9 +1416,11 @@ mod read_only_import_originals {
     /// W2-2（FB-④ 后端收口）：部署侧 ImportCopy 行。可写目录里的导入
     /// 副本是可转换副本——不再打「不可转换」硬阻塞，给出转集中管理；
     /// 只读目录里的导入原件（即使没有副本事实）按第七类改写呈现。
-    fn import_copy_deployment(relation_id: &'static str, path: &'static str) -> DeploymentRelationFact {
-        let mut relation =
-            RelationSpec::observed_copy(relation_id, path).build();
+    fn import_copy_deployment(
+        relation_id: &'static str,
+        path: &'static str,
+    ) -> DeploymentRelationFact {
+        let mut relation = RelationSpec::observed_copy(relation_id, path).build();
         relation.relationship = RelationshipType::ImportCopy;
         relation.match_state = ObservedMatchState::ContentVerified;
         relation.origin = ObservedOrigin::Import;
@@ -1438,7 +1446,10 @@ mod read_only_import_originals {
             "writable import copies are convertible: {:?}",
             row.blockers
         );
-        assert_eq!(row.primary_action, RelationGovernanceAction::CentralizeManagement);
+        assert_eq!(
+            row.primary_action,
+            RelationGovernanceAction::CentralizeManagement
+        );
         assert_eq!(
             row.readiness,
             RelationGovernanceReadiness::EligibleToCentralize
@@ -1471,10 +1482,7 @@ mod read_only_import_originals {
 
     #[test]
     fn unhealthy_read_only_import_copy_deployments_offer_the_record_exit() {
-        let mut relation = import_copy_deployment(
-            "rel-readonly",
-            "C:/agents/doubao/.skills/notes",
-        );
+        let mut relation = import_copy_deployment("rel-readonly", "C:/agents/doubao/.skills/notes");
         relation.health_reasons = Some(vec![
             skillhub_core::relationship::RelationHealthReason::ContentChanged,
         ]);

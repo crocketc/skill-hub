@@ -586,8 +586,7 @@ pub fn project_unified_governance_ledger_with_context(
                 // FB-④（2026-10-06）：核验健康的原件由导入自动记录保留决定，
                 // 呈现层不再给出待决策动作；旧行的显式保留决定沿用原映射。
                 let healthy_original = healthy_import_original(copy);
-                let decision = if healthy_original
-                    || copy.decision == SourceCopyDecision::Retained
+                let decision = if healthy_original || copy.decision == SourceCopyDecision::Retained
                 {
                     RelationGovernanceDecision::RetainedIndependentCopy
                 } else {

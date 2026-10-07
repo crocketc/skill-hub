@@ -446,13 +446,10 @@ impl LocalApplicationFacade {
                 }
             } else {
                 let Some(source_copy) = row.source_copy() else {
-                    return Err(AppError::new(
-                        ErrorCode::OperationConflict,
-                        Severity::Error,
-                    )
-                    .with_param("relation_id", request.relation_id.clone())
-                    .with_param("reason", "relationship_cannot_be_ended_non_destructively")
-                    .with_action(skillhub_core::RecoveryAction::Retry));
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("relation_id", request.relation_id.clone())
+                        .with_param("reason", "relationship_cannot_be_ended_non_destructively")
+                        .with_action(skillhub_core::RecoveryAction::Retry));
                 };
                 RelationshipRepository::archive_source_copy_relation_tx(
                     &transaction,

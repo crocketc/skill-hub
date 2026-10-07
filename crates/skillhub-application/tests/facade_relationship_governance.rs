@@ -7488,8 +7488,8 @@ mod read_only_original_exit {
     //! 「结束关系记录」；来源建档缺失的部署侧导入原件行同样被只读边界
     //! 识别，仍能走纯记录出口。
 
-    use super::*;
     use super::retain_and_cleanup_prepare::{import_source_copy, relation_fact};
+    use super::*;
     use skillhub_core::agent::{
         ClientInstance, ClientKind, ClientPresence, DiscoverySnapshot, LogicalTarget,
         OperatingSystem, TargetScope,
@@ -7500,9 +7500,7 @@ mod read_only_original_exit {
 
     /// 内置（builtin）Agent 目录基座：快照里唯一的逻辑目标是只读观察
     /// 目录，且已注册为目录节点，导入能把来源归属绑定到它。
-    fn builtin_facade(
-        workspace: &std::path::Path,
-    ) -> (LocalApplicationFacade, std::path::PathBuf) {
+    fn builtin_facade(workspace: &std::path::Path) -> (LocalApplicationFacade, std::path::PathBuf) {
         let agent_root = workspace.join("agents/demo/skills");
         std::fs::create_dir_all(&agent_root).expect("agent root");
         let database = Database::open(workspace.join("db.sqlite")).expect("database");
@@ -7695,8 +7693,9 @@ mod read_only_original_exit {
         // 异常阶段：来源内容变化后回到待处理，给出两个出口。
         let mut changed = copy.clone();
         changed.health = skillhub_core::relationship::SourceCopyHealth::ContentChanged;
-        changed.health_reasons =
-            Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged]);
+        changed.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
         {
             let database = facade.database_for_tests().clone();
             let database = database.lock().expect("database lock");
@@ -7766,8 +7765,9 @@ mod read_only_original_exit {
         let copy_id = import_source_copy(&facade, &source, "Notes").await;
         let mut copy = relation_fact(&facade, &copy_id).await;
         copy.health = skillhub_core::relationship::SourceCopyHealth::ContentChanged;
-        copy.health_reasons =
-            Some(vec![skillhub_core::relationship::RelationHealthReason::ContentChanged]);
+        copy.health_reasons = Some(vec![
+            skillhub_core::relationship::RelationHealthReason::ContentChanged,
+        ]);
         {
             let database = facade.database_for_tests().clone();
             let database = database.lock().expect("database lock");
@@ -7804,10 +7804,7 @@ mod read_only_original_exit {
             .await
             .expect_err("managed entries require verified removal");
         assert_eq!(error.code, ErrorCode::OperationConflict);
-        assert!(
-            relation_fact(&facade, &copy_id).await.active,
-            "copy stays"
-        );
+        assert!(relation_fact(&facade, &copy_id).await.active, "copy stays");
     }
 
     /// 可写目录里的 ImportCopy 是可转换副本（FB-④ 2026-10-06）：「转集
@@ -7932,7 +7929,10 @@ mod read_only_original_exit {
             impact.minimal_action,
             skillhub_core::relationship::MinimalImpactAction::EndRelationRecordOnly
         );
-        assert!(!impact.backup.required, "record-only cleanup needs no backup");
+        assert!(
+            !impact.backup.required,
+            "record-only cleanup needs no backup"
+        );
     }
 
     /// 来源建档缺失的部署侧导入原件行（现场 150 条观察行的形状）同样

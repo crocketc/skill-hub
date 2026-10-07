@@ -691,7 +691,10 @@ fn removal_impact_keeps_read_only_import_originals_record_only() {
         recommend_removal_action(&writable),
         MinimalImpactAction::RemoveCurrentAgentTarget
     );
-    assert!(writable.backup.required, "writable cleanup requires a backup");
+    assert!(
+        writable.backup.required,
+        "writable cleanup requires a backup"
+    );
 
     let read_only = calculate_removal_impact(
         "relation",
@@ -701,7 +704,10 @@ fn removal_impact_keeps_read_only_import_originals_record_only() {
         recommend_removal_action(&read_only),
         MinimalImpactAction::EndRelationRecordOnly
     );
-    assert!(!read_only.backup.required, "record-only exits touch no files");
+    assert!(
+        !read_only.backup.required,
+        "record-only exits touch no files"
+    );
 }
 
 fn removal_impact_for_unknown_capability_is_a_governance_todo() {
