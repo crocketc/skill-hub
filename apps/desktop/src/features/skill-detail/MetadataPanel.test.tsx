@@ -223,20 +223,50 @@ describe("MetadataPanel", () => {
     expect(facade.calls.metadataPatches).toEqual([]);
   });
 
-  it("closes the review AI preview dialog on Escape without touching the field edit", async () => {
-    const { facade } = await renderMetadata({ reviewPresentation: true });
+  // W3-8 #6：评审态"重新翻译"与常规态共用真实 emitIntent 翻译契约；
+  // 原型说明框（"此原型未配置 AI 服务"）移除，Esc 先收译文草稿浮层。
+  it("runs the real retranslate flow from review presentation and keeps the field draft on Escape", async () => {
+    const facade = createMockSkillDetailFacade();
+    const original = facade.emitIntent.bind(facade);
+    facade.emitIntent = async (intent) => {
+      await original(intent);
+      return { text: "用于读取 PDF 文本" };
+    };
+    await renderMetadata({ facade, reviewPresentation: true });
     fireEvent.click(screen.getByRole("button", { name: "编辑我的用途说明" }));
     const field = screen.getByRole("textbox", { name: "我的用途说明" });
     fireEvent.change(field, { target: { value: "预览浮层打开时的字段草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
-    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "重新翻译描述" }));
+    expect(await screen.findByText("用于读取 PDF 文本")).toBeVisible();
 
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(field, { key: "Escape", code: "Escape" });
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("用于读取 PDF 文本")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "我的用途说明" })).toHaveValue("预览浮层打开时的字段草稿");
     expect(facade.calls.metadataPatches).toEqual([]);
+    expect(facade.calls.intents).toEqual([
+      { locale: "zh-CN", overwriteUserRevision: false, skillId: "skill-pdf", type: "translate_description" },
+    ]);
+  });
+
+  it("confirms overwriting a user-revised translation before retranslating in review presentation", async () => {
+    const facade = createMockSkillDetailFacade();
+    await renderMetadata({
+      facade,
+      metadata: detailFixture({ userRevisedTranslation: true }).metadata,
+      reviewPresentation: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重新翻译描述" }));
+
+    // 需求 5.35：覆盖用户人工修订必须显式确认；确认前不发翻译命令。
+    expect(screen.getByRole("alertdialog")).toBeVisible();
+    expect(screen.getByText("现有用户修订译文将被替换（zh-CN）。")).toBeVisible();
     expect(facade.calls.intents).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "替换译文" }));
+    await waitFor(() => expect(facade.calls.intents).toEqual([
+      { locale: "zh-CN", overwriteUserRevision: true, skillId: "skill-pdf", type: "translate_description" },
+    ]));
   });
 
   it("keeps the draft on blur and restores the edit trigger after explicit cancel", async () => {

@@ -1493,3 +1493,54 @@ describe("SkillDetailPage lifecycle and combinations (W3-7)", () => {
     expect(screen.queryByText("组合成员变更已保存到当前原型示例。")).not.toBeInTheDocument();
   });
 });
+
+// W3-8：评审使用区 AI 相似性接真实契约——SemanticDuplicatePanel 常显
+// insights 确定性候选，可选 AI 层按 isAiAvailable 三态降级（未配置→停用
+// 按钮+如实文案；已配置→真实 analyzeSemanticDuplicates；失败→可读原因）。
+// DEV 演示开关与模拟结果文本移除。
+describe("SkillDetailPage AI usage insights (W3-8)", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "IntersectionObserver", {
+      configurable: true,
+      value: class {
+        disconnect() {}
+        observe() {}
+        unobserve() {}
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  it("runs the real AI similarity analysis from the review usage section", async () => {
+    const facade = createMockSkillDetailFacade();
+    await renderDetail({ facade });
+
+    expect(await screen.findByText("Deterministic duplicate candidates")).toBeVisible();
+    expect(screen.getByText("PDF Reader（副本）")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Run analysis" }));
+    expect(await screen.findByText("PDF Text Extractor")).toBeVisible();
+    expect(facade.calls.analyzedDuplicateSkills).toEqual(["skill-pdf"]);
+    expect(screen.queryByText("模拟 AI 已配置")).not.toBeInTheDocument();
+    expect(screen.queryByText("DEV 演示：只影响本区")).not.toBeInTheDocument();
+    expect(screen.queryByText("PDF Text Extractor · 内容比对候选，尚未确认重复。")).not.toBeInTheDocument();
+  });
+
+  it("keeps deterministic candidates usable when no AI provider is configured", async () => {
+    const facade = createMockSkillDetailFacade({ aiAvailable: false });
+    await renderDetail({ facade });
+
+    const run = await screen.findByRole("button", { name: "Run analysis" });
+    expect(run).toBeDisabled();
+    expect(
+      screen.getByText(
+        "No usable LLM provider is configured; AI actions are disabled and deterministic candidates remain available.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("PDF Reader（副本）")).toBeVisible();
+    expect(facade.calls.analyzedDuplicateSkills).toEqual([]);
+  });
+});

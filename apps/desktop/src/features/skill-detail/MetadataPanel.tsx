@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -209,7 +208,6 @@ function MetadataPanelForSkill({
   const notifications = useOptionalAppNotifications();
   const [translationConfirmation, setTranslationConfirmation] = useState(false);
   const [translationPurposeDraft, setTranslationPurposeDraft] = useState<string>();
-  const [reviewAiPreviewOpen, setReviewAiPreviewOpen] = useState(false);
   const [translationError, setTranslationError] = useState<string>();
   // 结构化失败必须可读：原生命令以 AppError 对象拒绝，默认 String() 会得到
   // "[object Object]"。通知的补充说明与页面局部提示共用同一段描述。
@@ -296,7 +294,6 @@ function MetadataPanelForSkill({
 
   // G-18/MS-01：确认框类内层浮层打开时，Esc 先收浮层本身，不穿透到字段的
   // 放弃编辑；capture 阶段先于表单容器的冒泡处理，且随后阻断继续传播。
-  // AI 预览 Radix 对话框是 modal portal，事件不会到达本面板，无需在此处理。
   const onPanelKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape") return;
     if (translationConfirmation) {
@@ -344,7 +341,7 @@ function MetadataPanelForSkill({
       <details className="sh-metadata-panel__secondary" open={reviewPresentation}>
         <summary>{t("skillDetail.metadata.sourceTexts")}</summary>
         <section>
-          <div className="sh-metadata-panel__section-heading"><h3>{t("skillDetail.metadata.originalDescription")}</h3>{reviewPresentation ? <IconButton icon="sparkle" label={t("skillDetail.metadata.retranslate")} onClick={() => setReviewAiPreviewOpen(true)} /> : null}</div>
+          <div className="sh-metadata-panel__section-heading"><h3>{t("skillDetail.metadata.originalDescription")}</h3>{reviewPresentation ? <IconButton icon="sparkle" label={t("skillDetail.metadata.retranslate")} onClick={() => { if (metadata.translation?.userRevised) setTranslationConfirmation(true); else void requestTranslation(false); }} /> : null}</div>
           <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>
         </section>
         <section>
@@ -417,13 +414,6 @@ function MetadataPanelForSkill({
               </Button>
             </div>
       ) : null}
-      {reviewPresentation ? <Dialog.Root open={reviewAiPreviewOpen} onOpenChange={setReviewAiPreviewOpen}>
-        <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>{t("skillDetail.metadata.retranslate")}</Dialog.Title>
-          <Dialog.Description>此原型未配置 AI 服务，也不会发送技能内容。正式操作会先说明数据范围，再由你选择是否开始。</Dialog.Description>
-          <div className="sh-dialog__actions"><Button onClick={() => setReviewAiPreviewOpen(false)} size="sm">关闭</Button></div>
-        </Dialog.Content></Dialog.Portal>
-      </Dialog.Root> : null}
         </section>
       </details>
       {/* DEV-16：身份区显示别名与用途的读值——用户要求详情页完整显示所有

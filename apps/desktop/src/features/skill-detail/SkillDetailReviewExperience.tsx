@@ -19,6 +19,7 @@ import type { SecurityFacade } from "../security/api";
 import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { MetadataPanel } from "./MetadataPanel";
 import { RequirementsPanel } from "./RequirementsPanel";
+import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import { VersionTimeline } from "./VersionTimeline";
 import { projectDisplayName, type UsageDestinationCard, type UsageDestinationsState } from "./usageDestinations";
 import { ReviewHeaderActions, ReviewOverviewStatus, ReviewSubjectLocation } from "./SkillDetailReviewScenarios";
@@ -275,7 +276,7 @@ export function SkillDetailReviewExperience({
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
               <ReviewUsageDestinations destinations={usageDestinations} onOpenGovernance={onOpenGovernanceDestination} />
-              {insights ? <ReviewUsageInsights insights={insights} /> : null}
+              {insights ? <ReviewUsageInsights facade={facade} insights={insights} skillId={skillId} /> : null}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-sources">
@@ -337,20 +338,15 @@ function ReviewSectionToggle({ label, onToggle, open, sectionId }: {
 
 /**
  * 依赖、重复候选与使用证据：依赖与使用证据是随页面数据加载的确定性只读事实，
- * 不提供刷新入口；AI 相似性分析是独立可选入口，默认未配置，只读演示不发送内容。
+ * 不提供刷新入口；重复候选走 SemanticDuplicatePanel 真实契约——确定性候选
+ * 常显（insights.deterministicDuplicates），可选 AI 层按 isAiAvailable 三态
+ * 降级（未配置→停用+配置入口文案；已配置→真实分析；失败→可读原因）。
  */
-function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
-  const [aiConfigured, setAiConfigured] = useState(false);
-  const [aiRunning, setAiRunning] = useState(false);
-  const [aiResult, setAiResult] = useState(false);
-  const runAnalysis = () => {
-    if (!aiConfigured || aiRunning) return;
-    setAiRunning(true);
-    window.setTimeout(() => {
-      setAiRunning(false);
-      setAiResult(true);
-    }, 300);
-  };
+function ReviewUsageInsights({ facade, insights, skillId }: {
+  facade: SkillDetailFacade;
+  insights: SkillDetailInsights;
+  skillId: string;
+}) {
   return (
     <details className="sh-skill-detail-review__supplemental" open>
       <summary>依赖、重复候选与使用证据</summary>
@@ -364,35 +360,13 @@ function ReviewUsageInsights({ insights }: { insights: SkillDetailInsights }) {
           </li>
         ))}
       </ul>
-      <div className="sh-skill-detail-review__section-heading">
-        <h3>可能重复的技能</h3>
-        <Button disabled={!aiConfigured} loading={aiRunning} onClick={runAnalysis} size="sm" variant="secondary">AI 相似性分析</Button>
-      </div>
-      <p>PDF Text Extractor · 内容比对候选，尚未确认重复。</p>
-      {!aiConfigured ? (
-        <>
-          <p>AI 相似性分析未配置，当前保留确定性比对证据。</p>
-          <p>可在设置中的网络与 AI 配置提供商；当前原型不会发送内容。</p>
-        </>
-      ) : null}
-      {aiResult ? (
-        <div role="status">
-          <p>AI 相似性分析完成：PDF Text Extractor 相似度最高，建议人工确认；未发现其他高相似候选。</p>
-          <p>AI 结果只是辅助证据，不替代确定性比对。</p>
-        </div>
-      ) : null}
+      <SemanticDuplicatePanel
+        deterministicCandidates={insights.deterministicDuplicates}
+        facade={facade}
+        skillId={skillId}
+      />
       <h3>使用证据</h3>
       <p>{insights.usageEvidence ? `样例记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p>
-      <div className="sh-skill-detail-review__source-actions">
-        <span className="sh-skill-detail-review__inline-status">DEV 演示：只影响本区</span>
-        <Button
-          onClick={() => { setAiConfigured((current) => !current); setAiRunning(false); setAiResult(false); }}
-          size="sm"
-          variant="ghost"
-        >
-          {aiConfigured ? "恢复未配置" : "模拟 AI 已配置"}
-        </Button>
-      </div>
     </details>
   );
 }
