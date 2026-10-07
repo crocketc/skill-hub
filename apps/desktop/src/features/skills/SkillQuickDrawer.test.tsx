@@ -557,6 +557,52 @@ it("bounds prototype relation columns as fixed-height scroll regions", async () 
   ).not.toBeInTheDocument();
 });
 
+// W3-3b（§关系摘要与精确导航）：抽屉关系浮窗的治理入口改为真实深链，
+// 携 Skill 与 Agent 身份及受控返回上下文（回库重开抽屉），不再模拟切换
+// 治理示例面板。
+it("opens the real governance page from an agent relation popover with return context", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: {
+      ...QUICK_VIEW,
+      agentDeployments: [
+        { id: "codex", name: "OpenAI Codex", agentId: "codex-cli" },
+      ],
+    } as SkillQuickView,
+  });
+  const locations: ReturnType<typeof useLocation>[] = [];
+  await renderDrawer({ facade, onLocationChange: (location) => locations.push(location) });
+
+  // id "codex" 收敛为品牌呈现（Codex CLI），客户端标识 agentId=codex-cli 随深链携带。
+  fireEvent.click(await screen.findByRole("button", { name: "Open relation context: Codex CLI" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Open relationship governance" }));
+
+  const last = locations[locations.length - 1];
+  expect(last.pathname).toBe("/relationships/governance");
+  expect(last.search).toBe("?from=library&skillId=skill-pdf&agent=codex-cli");
+  expect(last.state).toEqual({ returnTo: "/library?skill=skill-pdf" });
+});
+
+it("opens the real governance page from a project relation popover filtered to the skill", async () => {
+  const facade = createMockSkillLibraryFacade({
+    quickView: {
+      ...QUICK_VIEW,
+      projectDeployments: [
+        { id: "project-docs", name: "Document workflows", path: "C:\\workspace\\docs" },
+      ],
+    } as SkillQuickView,
+  });
+  const locations: ReturnType<typeof useLocation>[] = [];
+  await renderDrawer({ facade, onLocationChange: (location) => locations.push(location) });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Open relation context: Document workflows" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Open relationship governance" }));
+
+  const last = locations[locations.length - 1];
+  expect(last.pathname).toBe("/relationships/governance");
+  expect(last.search).toBe("?from=library&skillId=skill-pdf");
+  expect(last.state).toEqual({ returnTo: "/library?skill=skill-pdf" });
+});
+
 it("keeps the prototype chrome with a single width cycle and the full-details route", async () => {
   const facade = createMockSkillLibraryFacade();
   await renderDrawer({ facade });

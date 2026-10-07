@@ -16,7 +16,8 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { buildGovernanceDrawerReturnTo } from "../relationships/governance/libraryReturnContext";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
@@ -709,7 +710,7 @@ export function SkillQuickDrawer({
 
           {view ? (
             <div className="sh-skill-drawer__modules sh-skill-drawer__prototype-modules">
-              <PrototypeRelationsModule view={view} />
+              <PrototypeRelationsModule detailSearch={detailSearch} skillId={skillId} view={view} />
               <PrototypeCollectionsModule />
               {normalizedPreferences.visibleModules.includes("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
               <PrototypeSubjectLocationModule />
@@ -1098,11 +1099,25 @@ function PrototypeSubjectLocationModule() {
 }
 
 
-function PrototypeRelationsModule({ view }: ModuleProps) {
+interface PrototypeRelationsModuleProps extends ModuleProps {
+  detailSearch?: string;
+  skillId?: string;
+}
+
+interface RelationPreviewTarget {
+  name: string;
+  type: "agent" | "project";
+  managed: boolean;
+  path?: string;
+  agentClientId?: string;
+}
+
+function PrototypeRelationsModule({ detailSearch = "", skillId, view }: PrototypeRelationsModuleProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const relationPopover = useBoundedPrototypePopover();
-  const [selectedTarget, setSelectedTarget] = useState<{ name: string; type: "agent" | "project"; managed: boolean; path?: string }>();
-  const [relationPreviewSection, setRelationPreviewSection] = useState<"summary" | "target" | "governance">("summary");
+  const [selectedTarget, setSelectedTarget] = useState<RelationPreviewTarget>();
+  const [relationPreviewSection, setRelationPreviewSection] = useState<"summary" | "target">("summary");
   const agentDeployments = (view.agentDeployments ?? []).map((agent) => {
     if (agent.id === "codex") {
       return { ...agent, agentId: "codex-cli", brand: "openai", name: "Codex CLI" };
@@ -1113,11 +1128,27 @@ function PrototypeRelationsModule({ view }: ModuleProps) {
     return agent;
   });
   const projects = view.projectDeployments ?? [];
-  const openRelationPreview = (event: ReactMouseEvent<HTMLButtonElement>, target: { name: string; type: "agent" | "project"; managed: boolean; path?: string }) => {
+  const openRelationPreview = (event: ReactMouseEvent<HTMLButtonElement>, target: RelationPreviewTarget) => {
     relationPopover.triggerRef.current = event.currentTarget;
     setSelectedTarget(target);
     setRelationPreviewSection("summary");
     relationPopover.setOpen(true);
+  };
+  // §关系摘要与精确导航：治理入口改为真实深链，携 Skill 与 Agent 身份及受控
+  // 返回上下文（回库重开抽屉）；上下文构建失败时不携带 state，治理页降级为
+  // 可读的返回说明。项目卡不带 agent 过滤（治理清单未按项目标识过滤）。
+  const openGovernance = () => {
+    if (!selectedTarget) return;
+    const governedSkillId = skillId ?? view.id;
+    const params = new URLSearchParams({ from: "library", skillId: governedSkillId });
+    if (selectedTarget.type === "agent" && selectedTarget.agentClientId) {
+      params.set("agent", selectedTarget.agentClientId);
+    }
+    const returnTo = buildGovernanceDrawerReturnTo(governedSkillId, detailSearch);
+    navigate(
+      `/relationships/governance?${params.toString()}`,
+      returnTo ? { state: { returnTo } } : undefined,
+    );
   };
 
   return (
@@ -1143,7 +1174,7 @@ function PrototypeRelationsModule({ view }: ModuleProps) {
                     aria-label={t("skillLibrary.drawer.prototype.openRelationContext", { target: agent.name })}
                     className="sh-skill-drawer__prototype-agent-card"
                     key={agent.id}
-                    onClick={(event) => openRelationPreview(event, { name: agent.name, type: "agent", managed: index === 0 })}
+                    onClick={(event) => openRelationPreview(event, { name: agent.name, type: "agent", managed: index === 0, agentClientId: agent.agentId ?? agent.id })}
                     title={agent.name}
                     type="button"
                   >
@@ -1217,11 +1248,9 @@ function PrototypeRelationsModule({ view }: ModuleProps) {
         >
           <div className="sh-skill-drawer__prototype-popover-heading">
             <strong>
-              {relationPreviewSection === "governance"
-                ? t("skillLibrary.drawer.prototype.relationGovernanceSample")
-                : relationPreviewSection === "target"
-                  ? t("skillLibrary.drawer.prototype.relationTargetSample")
-                  : t("skillLibrary.drawer.prototype.relationContextTitle", { target: selectedTarget.name })}
+              {relationPreviewSection === "target"
+                ? t("skillLibrary.drawer.prototype.relationTargetSample")
+                : t("skillLibrary.drawer.prototype.relationContextTitle", { target: selectedTarget.name })}
             </strong>
             <Button aria-label={t("skillLibrary.drawer.prototype.closeRelationPreview")} onClick={() => relationPopover.close(true)} size="sm" variant="ghost">
               <Icon name="close" size={16} />
@@ -1236,21 +1265,15 @@ function PrototypeRelationsModule({ view }: ModuleProps) {
                 <Button onClick={() => setRelationPreviewSection("target")} size="sm" variant="secondary">
                   {t("skillLibrary.drawer.prototype.openTargetSample", { type: selectedTarget.type === "agent" ? t("skillLibrary.drawer.values.agents") : t("skillLibrary.drawer.values.projects") })}
                 </Button>
-                <Button onClick={() => setRelationPreviewSection("governance")} size="sm" variant="ghost">
+                <Button onClick={openGovernance} size="sm" variant="ghost">
                   {t("skillLibrary.drawer.prototype.openGovernanceSample")}
                 </Button>
               </div>
             </>
-          ) : relationPreviewSection === "target" ? (
+          ) : (
             <>
               <p>{t("skillLibrary.drawer.prototype.targetContextSample", { name: selectedTarget.name, skill: view.name })}</p>
               {selectedTarget.path ? <code title={selectedTarget.path}>{selectedTarget.path}</code> : null}
-              <Button onClick={() => setRelationPreviewSection("summary")} size="sm" variant="ghost">{t("skillLibrary.drawer.prototype.backToRelationSummary")}</Button>
-            </>
-          ) : (
-            <>
-              <p>{t("skillLibrary.drawer.prototype.governanceContextSample", { skill: view.name, target: selectedTarget.name })}</p>
-              <p>{t(selectedTarget.managed ? "skillLibrary.drawer.prototype.sampleManagedReason" : "skillLibrary.drawer.prototype.samplePendingReason")}</p>
               <Button onClick={() => setRelationPreviewSection("summary")} size="sm" variant="ghost">{t("skillLibrary.drawer.prototype.backToRelationSummary")}</Button>
             </>
           )}

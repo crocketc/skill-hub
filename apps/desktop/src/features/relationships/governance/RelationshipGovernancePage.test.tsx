@@ -1304,6 +1304,26 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
     expect(screen.getByTestId("location-state")).toHaveTextContent(JSON.stringify({ libraryReturn }));
   });
 
+  // W3-3b：抽屉发起的治理深链返回形状为 `/library?skill=<id>`——回到库列表并
+  // 通过 skill 参数重开快捷抽屉；返回上下文校验与详情形状同一套白名单。
+  it("returns to the library list and reopens the drawer for a drawer-origin returnTo", async () => {
+    await renderGovernanceApp({
+      entries: [{
+        pathname: "/relationships/governance",
+        search: "?from=library&skillId=skill-pdf&relationId=managed:dep-eligible",
+        state: { returnTo: "/library?q=pdf&skill=skill-pdf" },
+      }],
+    });
+    await waitRows();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回技能库" }));
+
+    expect(await screen.findByText("LIBRARY_ORIGIN")).toBeVisible();
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/library");
+    expect(screen.getByTestId("location-search")).toHaveTextContent("?q=pdf&skill=skill-pdf");
+    expect(screen.getByTestId("location-state")).toHaveTextContent("null");
+  });
+
   it.each([
     ["external URL", "https://evil.example/"],
     ["protocol-relative URL", "//evil.example/library/skill-pdf"],
