@@ -115,8 +115,9 @@ it("states retention and the backup-only recovery path before batch deletion", a
   await renderDialog();
 
   // P1-15：批量删除同样是“删除库中 Skill”对象——提交前固定说明
-  // 保留什么（库外原文件）与恢复方式（仅事先导出的备份）。
-  expect(screen.getByText(/Kept: files outside SkillHub are never touched/)).toBeVisible();
+  // 保留什么（库外原件文件）与恢复方式（仅事先导出的备份）。
+  // #12-7：removal.retained 随单删重构同步改写，批量共用同一行。
+  expect(screen.getByText(/Kept: original files outside SkillHub are untouched/)).toBeVisible();
   expect(screen.getByText(/Recovery: deleting from the library cannot be undone/)).toBeVisible();
   expect(screen.getByText(/export a backup first/)).toBeVisible();
 });

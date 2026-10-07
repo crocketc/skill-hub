@@ -130,6 +130,85 @@ it("defaults the draft count to zero for legacy impacts without draft_count", as
   });
 });
 
+// #12-7 重构：对话框按部署形态分组（链接固定删除/拷贝默认保留），
+// 按共享物理目标分组要求逐项确认——桌面契约必须携带 mode 与 targetId；
+// 导入拷贝关系数来自治理台账（只读、best-effort），失败时如实省略。
+it("maps deployment modes, target ids and the imported-copy relation count", async () => {
+  const impact = {
+    operation_id: "op-modes",
+    skill_id: "skill-pdf",
+    deployments: [
+      {
+        id: "d-link", skill_id: "skill-pdf", version_id: "v1", target_id: "target-link",
+        state: "deployed" as const, mode: "symbolic_link" as const, managed: true,
+        runtime_name: "pdf", expected_hash: "h", observed_hash: null,
+      },
+      {
+        id: "d-copy", skill_id: "skill-pdf", version_id: "v1", target_id: "target-copy",
+        state: "deployed" as const, mode: "managed_copy" as const, managed: true,
+        runtime_name: "pdf", expected_hash: "h", observed_hash: null,
+      },
+    ],
+    requires_shared_target_choice: false,
+    dependencies: [],
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
+  vi.mocked(queryApplication)
+    .mockResolvedValueOnce({
+      type: "deployment_targets",
+      payload: [
+        { id: "target-link", physical_id: "target-link", label: "Codex", path: "C:\\links\\skills", available: true, modes: [], physical_identity_verified: true },
+        { id: "target-copy", physical_id: "target-copy", label: "Claude", path: "C:\\copies\\skills", available: true, modes: [], physical_identity_verified: true },
+      ],
+    } as never)
+    .mockResolvedValueOnce({
+      type: "relation_governance_ledger",
+      payload: { rows: [], counts: {}, bucket: "all", total: 2, relationship_revision: "r1", last_verified_at: null },
+    } as never);
+
+  await expect(nativeRemovalFacade.prepareDelete("skill-pdf", "PDF Reader")).resolves.toMatchObject({
+    deployments: [
+      { id: "d-link", mode: "symbolic_link", targetId: "target-link" },
+      { id: "d-copy", mode: "managed_copy", targetId: "target-copy" },
+    ],
+    importRelationCount: 2,
+  });
+  expect(queryApplication).toHaveBeenNthCalledWith(2, {
+    type: "list_relation_governance",
+    payload: { filters: { skill_id: "skill-pdf", relationship_types: ["import_copy"] } },
+  });
+});
+
+it("omits the imported-copy relation count when the governance ledger is unreachable", async () => {
+  const impact = {
+    operation_id: "op-import-fail",
+    skill_id: "skill-pdf",
+    deployments: [
+      {
+        id: "d-copy", skill_id: "skill-pdf", version_id: "v1", target_id: "target-1",
+        state: "deployed" as const, mode: "managed_copy" as const, managed: true,
+        runtime_name: "pdf", expected_hash: "h", observed_hash: null,
+      },
+    ],
+    requires_shared_target_choice: false,
+    dependencies: [],
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_impact", payload: impact });
+  vi.mocked(queryApplication)
+    .mockResolvedValueOnce({
+      type: "deployment_targets",
+      payload: [
+        { id: "target-1", physical_id: "target-1", label: "Claude", path: "C:\\copies\\skills", available: true, modes: [], physical_identity_verified: true },
+      ],
+    } as never)
+    .mockRejectedValueOnce(new Error("ledger unavailable"));
+
+  // 台账不可达只是少一行摘要，绝不能阻塞删除确认。
+  await expect(nativeRemovalFacade.prepareDelete("skill-pdf", "PDF Reader")).resolves.toMatchObject({
+    importRelationCount: undefined,
+  });
+});
+
 it("rejects deletion preparation when deployment target facts cannot be loaded", async () => {
   vi.mocked(executeCommand).mockResolvedValue({
     type: "removal_impact",
@@ -429,7 +508,39 @@ it("prepares and commits central Skill deletion with explicit mapped choices", a
     type: "commit_delete_skill",
     payload: {
       prepared_delete_id: "op-delete",
-      decisions: [{ deployment_id: "deployment-1", decision: "remove_relation_only" }],
+      decisions: [{
+        deployment_id: "deployment-1",
+        decision: "remove_relation_only",
+        confirm_shared_target_removal: false,
+      }],
+    },
+  });
+});
+
+// K2/G-09：回收共享物理目标必须逐条显式确认；门面把对话框收集的
+// 确认集合逐条转发进提交载荷，未确认的行保持显式 false。
+it("forwards explicit shared-target confirmations into the commit payload", async () => {
+  const result = {
+    operation_id: "op-confirm",
+    skill_id: "skill-pdf",
+    decisions: [],
+    central_skill_deleted: true,
+  };
+  vi.mocked(executeCommand).mockResolvedValueOnce({ type: "removal_result", payload: result });
+
+  await expect(nativeRemovalFacade.commitDelete(
+    "op-confirm",
+    { "dep-1": "remove_deployment", "dep-2": "convert_to_copy" },
+    new Set(["dep-1"]),
+  )).resolves.toMatchObject({ centralSkillDeleted: true });
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "commit_delete_skill",
+    payload: {
+      prepared_delete_id: "op-confirm",
+      decisions: [
+        { deployment_id: "dep-1", decision: "remove_owned_target", confirm_shared_target_removal: true },
+        { deployment_id: "dep-2", decision: "remove_relation_only", confirm_shared_target_removal: false },
+      ],
     },
   });
 });
@@ -496,9 +607,9 @@ it("maps the full commit_delete result shape with per-item status and central fa
     payload: {
       prepared_delete_id: "op-delete-1",
       decisions: [
-        { deployment_id: "dep-1", decision: "remove_owned_target" },
-        { deployment_id: "dep-2", decision: "remove_owned_target" },
-        { deployment_id: "dep-3", decision: "keep_shared_deployment" },
+        { deployment_id: "dep-1", decision: "remove_owned_target", confirm_shared_target_removal: false },
+        { deployment_id: "dep-2", decision: "remove_owned_target", confirm_shared_target_removal: false },
+        { deployment_id: "dep-3", decision: "keep_shared_deployment", confirm_shared_target_removal: false },
       ],
     },
   });

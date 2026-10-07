@@ -1,9 +1,15 @@
 export type RemovalChoice = "keep_deployed" | "remove_deployment" | "convert_to_copy";
+/** 生成绑定 DeploymentMode：部署形态决定删除确认里的分组（链接/拷贝）。 */
+export type RemovalDeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 export type RemovalDeployment = {
   id: string;
   label: string;
   path: string;
   physicalId: string;
+  /** 部署形态；旧载荷缺省按复制部署归组（保守：默认保留文件）。 */
+  mode?: RemovalDeploymentMode;
+  /** 部署目标 id；同一 targetId 被多条部署共用时，删除该目录需逐项显式确认。 */
+  targetId?: string;
   agentId?: string;
   brand?: string;
   sharedDirectory?: boolean;
@@ -28,6 +34,8 @@ export type RemovalImpact = {
   unknownExternalReferences: string[];
   /** W1-2：随主体删除的未保存编辑草稿数量；旧载荷缺省按 0 归一。 */
   draftCount?: number;
+  /** 随主体删除的导入拷贝关系记录数（原件文件不动）；台账不可得时缺省。 */
+  importRelationCount?: number;
 };
 
 /** K2：多目标删除逐项执行状态（生成绑定 RemovalItemStatus）。 */
@@ -68,6 +76,8 @@ export interface RemovalFacade {
   commitDelete(
     operationId: string,
     choices: Record<string, RemovalChoice>,
+    /** 选择删除共享物理目标的部署 id 集合（逐项显式确认，K2/G-09）。 */
+    confirmSharedTargetRemoval?: ReadonlySet<string>,
   ): Promise<RemovalResult>;
 }
 
@@ -76,8 +86,22 @@ export function removalImpactFixture(): RemovalImpact {
     skillId: "skill-pdf",
     skillName: "PDF Reader",
     deployments: [
-      { id: "codex", label: "Codex CLI", path: "C:/Users/demo/.codex/skills", physicalId: "codex-skills" },
-      { id: "claude", label: "Claude Code", path: "C:/Users/demo/.claude/skills", physicalId: "claude-skills" },
+      {
+        id: "codex",
+        label: "Codex CLI",
+        path: "C:/Users/demo/.codex/skills",
+        physicalId: "codex-skills",
+        mode: "symbolic_link",
+        targetId: "target-codex-skills",
+      },
+      {
+        id: "claude",
+        label: "Claude Code",
+        path: "C:/Users/demo/.claude/skills",
+        physicalId: "claude-skills",
+        mode: "managed_copy",
+        targetId: "target-claude-skills",
+      },
     ],
     dependentProjects: ["Demo Project"],
     declaredDependencies: [],

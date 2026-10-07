@@ -222,3 +222,117 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* —— #12-7 重构：摘要优先 + 分组明细（默认收起） ——
+   摘要区先给结论（删什么/默认保留什么/连带影响）；分组用原生
+   details/summary 折叠，展开后逐项调整。只使用语义 token。 */
+
+.sh-removal-impact__summary {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+}
+
+.sh-removal-impact__summary-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.sh-removal-impact__summary-lines {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.sh-removal-impact__group {
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.sh-removal-impact__group > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.sh-removal-impact__group > summary::marker,
+.sh-removal-impact__group > summary::-webkit-details-marker {
+  color: var(--ui-ink-muted);
+}
+
+.sh-removal-impact__group-label {
+  font-weight: 650;
+}
+
+.sh-removal-impact__group-outcome {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-removal-impact__group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--ui-danger-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.sh-removal-impact__group .sh-workflow-list {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--ui-border-subtle);
+}
+
+.sh-removal-impact__fixed-outcome {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sh-removal-impact__choice {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sh-removal-impact__choice-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.sh-removal-impact__choice-option input {
+  margin-top: 0.2rem;
+}
+
+.sh-removal-impact__choice-text {
+  display: grid;
+  gap: 0.125rem;
+  font-size: var(--font-size-sm);
+}
+
+.sh-removal-impact__choice-text small {
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-removal-impact__shared-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--ui-danger-foreground);
+  font-size: var(--font-size-sm);
+}

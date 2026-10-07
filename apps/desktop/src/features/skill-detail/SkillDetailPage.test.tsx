@@ -715,7 +715,7 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
     fireEvent.click(screen.getByRole("button", { name: "Confirm deletion from library" }));
 
-    await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}));
+    await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("op-delete", {}, expect.any(Set)));
     expect(tracker.getSnapshot()).toEqual([
       expect.objectContaining({ operationId: "op-delete", status: "success" }),
     ]);
@@ -738,8 +738,8 @@ describe("SkillDetailPage shell", () => {
         skillId: "skill-pdf",
         skillName: "PDF Reader",
         deployments: [
-          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex" },
-          { id: "dep-2", label: "Claude Code", path: "C:/claude/skills/pdf-reader", physicalId: "claude" },
+          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex", mode: "managed_copy", targetId: "target-codex" },
+          { id: "dep-2", label: "Claude Code", path: "C:/claude/skills/pdf-reader", physicalId: "claude", mode: "managed_copy", targetId: "target-claude" },
         ],
         dependentProjects: [],
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
@@ -763,14 +763,7 @@ describe("SkillDetailPage shell", () => {
     client.setQueryData(skillLibraryKeys.root, { cached: true });
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
-      { target: { value: "keep_deployed" } },
-    );
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\claude\\skills\\pdf-reader" }),
-      { target: { value: "remove_deployment" } },
-    );
+    // 新交互：预勾默认（拷贝默认保留为独立拷贝）即可直接确认。
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm deletion from library" }));
 
     const panel = await screen.findByTestId("removal-outcome-result");
@@ -802,7 +795,7 @@ describe("SkillDetailPage shell", () => {
         skillId: "skill-pdf",
         skillName: "PDF Reader",
         deployments: [
-          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex" },
+          { id: "dep-1", label: "Codex CLI", path: "C:/codex/skills/pdf-reader", physicalId: "codex", mode: "managed_copy", targetId: "target-codex" },
         ],
         dependentProjects: [],
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
@@ -820,10 +813,7 @@ describe("SkillDetailPage shell", () => {
     });
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling：C:\\codex\\skills\\pdf-reader" }),
-      { target: { value: "keep_deployed" } },
-    );
+    // 预勾默认即可直接确认；继续处理入口按契约重新 prepare。
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm deletion from library" }));
     await screen.findByTestId("removal-outcome-result");
 

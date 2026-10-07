@@ -121,9 +121,9 @@ export const nativeRemovalFacade = {
     }));
   },
 
-  async deleteSkill(skillId: string, choices: Record<string, RemovalChoice>): Promise<DesktopRemovalResult> {
+  async deleteSkill(skillId: string, choices: Record<string, RemovalChoice>, confirmSharedTargetRemoval?: ReadonlySet<string>): Promise<DesktopRemovalResult> {
     const prepared = await this.prepareDelete(skillId);
-    return this.commitDelete(prepared.operationId ?? "", choices);
+    return this.commitDelete(prepared.operationId ?? "", choices, confirmSharedTargetRemoval);
   },
 
   async prepareDelete(skillId: string, skillName?: string): Promise<DesktopRemovalImpact> {
@@ -158,11 +158,29 @@ export const nativeRemovalFacade = {
         label: target.label || deployment.runtime_name,
         path: target.path,
         physicalId: target.physical_id,
+        // #12-7：部署形态与目标 id 进桌面契约——对话框按形态分组
+        // （链接固定删除/拷贝默认保留）、按共享目标分组要求逐项确认。
+        mode: deployment.mode,
+        targetId: deployment.target_id,
         agentId: target.agent_client_id ?? undefined,
         brand: target.agent_profile_id ?? undefined,
         sharedDirectory: target.shared_directory,
       };
     });
+    // #12-7：随主体删除的导入拷贝关系数来自治理台账（best-effort）。
+    // 台账不可达只是省略一行摘要，绝不阻塞删除确认。
+    let importRelationCount: number | undefined;
+    try {
+      const ledger = await queryApplication({
+        type: "list_relation_governance",
+        payload: { filters: { skill_id: impact.skill_id, relationship_types: ["import_copy"] } },
+      });
+      if (ledger.type === "relation_governance_ledger") {
+        importRelationCount = ledger.payload.total;
+      }
+    } catch {
+      importRelationCount = undefined;
+    }
     return {
       operationId: impact.operation_id,
       skillId: impact.skill_id,
@@ -183,13 +201,16 @@ export const nativeRemovalFacade = {
       // W1-2：prepare_delete 返回随主体删除的未保存编辑草稿数量，
       // 旧载荷缺省按 0 归一（消费方仅在数量 > 0 时呈现草稿行与确认说明）。
       draftCount: impact.draft_count ?? 0,
+      importRelationCount,
     };
   },
 
-  async commitDelete(operationId: string, choices: Record<string, RemovalChoice>): Promise<DesktopRemovalResult> {
+  async commitDelete(operationId: string, choices: Record<string, RemovalChoice>, confirmSharedTargetRemoval?: ReadonlySet<string>): Promise<DesktopRemovalResult> {
     const decisions = Object.entries(choices).map(([deploymentId, choice]) => ({
       deployment_id: deploymentId,
       decision: deleteChoiceToDecision(choice),
+      // K2/G-09：回收共享物理目标必须逐条显式确认；缺省 false 绝不默认回收。
+      confirm_shared_target_removal: confirmSharedTargetRemoval?.has(deploymentId) ?? false,
     }));
     const result = removalResult(await executeCommand({
       type: "commit_delete_skill",

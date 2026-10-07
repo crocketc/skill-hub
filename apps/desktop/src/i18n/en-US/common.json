@@ -2214,7 +2214,14 @@
   "removal": {
     "eyebrow": "Delete from library",
     "heading": "Delete {{name}} from the library?",
-    "description": "This deletes the Skill record, its content and version history from the central library; handle the copy at each target below.",
+    "description": "The Skill's record, contents and version history will be deleted from the central library. Read the deletion summary first; expand each group to adjust the handling item by item.",
+    "summary": {
+      "title": "Deletion summary",
+      "central": "Central library: the Skill's record, contents and version history will be deleted",
+      "links": "Link deployments {{count}}: the link files will be removed along with it",
+      "copies": "Copy deployments {{count}}: kept as independent copies by default; you can change each to delete the copy",
+      "imports": "Imported-copy relations {{count}}: the relation records are deleted with the Skill; the original files are untouched"
+    },
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "errors": {
@@ -2223,7 +2230,7 @@
     },
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
     "dependents": "Dependent projects: {{projects}}",
-    "retained": "Kept: files outside SkillHub are never touched; each target copy follows the choice you make for its row.",
+    "retained": "Kept: original files outside SkillHub are untouched; the copies at the targets are handled exactly as you confirmed.",
     "recovery": "Recovery: deleting from the library cannot be undone in the app; export a backup first in Settings → Data protection if you need one.",
     "drafts": "Deleting also removes the skill's unfinished edit drafts.",
     "choiceLabel": "Target copy handling",
@@ -2235,6 +2242,19 @@
     },
     "confirm": "Confirm deletion from library",
     "submitting": "Deleting from library…",
+    "groups": {
+      "links": "Link deployments",
+      "copies": "Copy deployments",
+      "linksOutcome": "Link files will be removed",
+      "copiesOutcome": "Kept as independent copies by default",
+      "needsConfirmation": "Confirmation needed",
+      "linkWillBeDeleted": "The link file here will be removed",
+      "copyKeep": "Keep as an independent copy",
+      "copyKeepHint": "The copy stays where it is and keeps working; SkillHub no longer manages it",
+      "copyDelete": "Delete the copy too",
+      "copyDeleteHint": "The copy files in the target directory will be deleted",
+      "sharedConfirm": "This directory is shared by several deployments; I confirm deleting the files in it"
+    },
     "batch": {
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",

@@ -309,7 +309,7 @@ export function SkillDetailPage({
     }
   };
 
-  const commitRemoval = async (choices: Record<string, RemovalChoice>) => {
+  const commitRemoval = async (choices: Record<string, RemovalChoice>, confirmedSharedTargets: ReadonlySet<string>) => {
     const operationId = removalImpact?.operationId;
     if (!operationId) {
       // K2 预览失效边界：prepared 丢失时拒绝提交并要求重新预览，
@@ -337,7 +337,8 @@ export function SkillDetailPage({
         }),
         run: async (handle) => {
           handle.correlate(operationId);
-          return effectiveRemovalFacade.commitDelete(operationId, choices);
+          // K2/G-09：共享物理目标的逐项显式确认集合随提交转发。
+          return effectiveRemovalFacade.commitDelete(operationId, choices, confirmedSharedTargets);
         },
       });
       if (!result.centralSkillDeleted) {
