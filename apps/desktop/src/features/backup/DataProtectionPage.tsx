@@ -209,8 +209,15 @@ export function DataProtectionPage({
   const reviewRestore = () => run(async () => {
     if (!path.trim()) return;
     setRestoreResult(undefined);
-    setRestoreDecisions({});
-    setRestorePlan(await facade.prepareRestore(path.trim()));
+    const plan = await facade.prepareRestore(path.trim());
+    setRestorePlan(plan);
+    // 业务决策模型（恢复场景）：缺省「恢复为新名字」（keep_both），
+    // 覆盖现有技能必须显式改选；逐项预填后提交闸门只拦无效数据冲突。
+    setRestoreDecisions(Object.fromEntries(
+      plan.conflicts
+        .filter((conflict) => conflict.skill_id)
+        .map((conflict) => [conflict.skill_id!, "keep_both" as const]),
+    ));
   });
   const commitRestore = () => run(async () => {
     if (!restorePlan) return;
@@ -462,7 +469,7 @@ export function DataProtectionPage({
 
 function RestoreReview({ plan, conflicts, decisions, onDecision }: { plan: RestorePlan; conflicts: RestoreConflict[]; decisions: Record<string, Decision>; onDecision: (skillId: string, decision: Decision) => void }) {
   const { t } = useTranslation();
-  return <div><p>{t("dataProtection.restore.summary", plan)}</p>{conflicts.map((conflict, index) => <div key={`${conflict.skill_id ?? "invalid"}-${index}`}><p>{conflict.detail}</p>{conflict.skill_id ? <label>{t("dataProtection.restore.decision", { skillId: conflict.skill_id })}<select aria-label={t("dataProtection.restore.decision", { skillId: conflict.skill_id })} value={decisions[conflict.skill_id] ?? ""} onChange={(event) => onDecision(conflict.skill_id!, event.target.value as Decision)}><option value="">{t("dataProtection.restore.choose")}</option><option value="overwrite">{t("dataProtection.restore.overwrite")}</option><option value="keep_both">{t("dataProtection.restore.keepBoth")}</option><option value="skip">{t("dataProtection.restore.skip")}</option></select></label> : <strong>{t("dataProtection.restore.invalid")}</strong>}</div>)}</div>;
+  return <div><p>{t("dataProtection.restore.summary", plan)}</p>{conflicts.map((conflict, index) => <div key={`${conflict.skill_id ?? "invalid"}-${index}`}><p>{conflict.detail}</p>{conflict.skill_id ? <label>{t("dataProtection.restore.decision", { skillId: conflict.skill_id })}<select aria-label={t("dataProtection.restore.decision", { skillId: conflict.skill_id })} value={decisions[conflict.skill_id] ?? "keep_both"} onChange={(event) => onDecision(conflict.skill_id!, event.target.value as Decision)}><option value="">{t("dataProtection.restore.choose")}</option><option value="overwrite">{t("dataProtection.restore.overwrite")}</option><option value="keep_both">{t("dataProtection.restore.keepBoth")}</option><option value="skip">{t("dataProtection.restore.skip")}</option></select></label> : <strong>{t("dataProtection.restore.invalid")}</strong>}</div>)}</div>;
 }
 
 function ExportReview({ plan, decisions, onDecision }: { plan: ExportPreview; decisions: Record<string, SensitiveDecision>; onDecision: (skillId: string, decision: SensitiveDecision) => void }) {

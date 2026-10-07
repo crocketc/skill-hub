@@ -85,17 +85,18 @@ function exportPreviewFixture(overrides: Partial<ExportPreview> = {}): ExportPre
 }
 
 describe("DataProtectionPage", () => {
-  it("requires restore conflict decisions before committing and shows the result", async () => {
+  // 业务决策模型（恢复场景）：缺省「恢复为新名字」（keep_both）；
+  // 覆盖现有技能是危险选择，必须显式改选后提交。
+  it("defaults restore conflicts to restoring as a new name and commits the chosen decision", async () => {
     const facade = createFacade();
     renderPage(facade);
     fireEvent.change(screen.getByLabelText("Backup package path"), { target: { value: "C:/backup.skillhub" } });
     fireEvent.click(screen.getByRole("button", { name: "Review restore" }));
     expect(await screen.findByText("Already exists")).toBeVisible();
-    const commit = screen.getByRole("button", { name: "Restore backup" });
-    expect(commit).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Decision for skill-1"), { target: { value: "overwrite" } });
-    fireEvent.click(commit);
-    await waitFor(() => expect(facade.commitRestore).toHaveBeenCalledWith("C:/backup.skillhub", [{ skill_id: "skill-1", decision: "overwrite" }]));
+    expect(screen.getByLabelText("Decision for skill-1")).toHaveValue("keep_both");
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore backup" }));
+    await waitFor(() => expect(facade.commitRestore).toHaveBeenCalledWith("C:/backup.skillhub", [{ skill_id: "skill-1", decision: "keep_both" }]));
     expect(await screen.findByText(/Restored 1 skills/)).toBeVisible();
   });
 

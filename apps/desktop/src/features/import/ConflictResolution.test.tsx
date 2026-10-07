@@ -30,6 +30,34 @@ it("renders only the actions allowed by each conflict", async () => {
   expect(screen.queryByRole("radio", { name: /覆盖/ })).not.toBeInTheDocument();
 });
 
+// W4-1 锁定测试：只读内建/插件来源的撞库由后端把 allowedActions 收口为
+// 「复制为独立受管 Skill + 跳过」，前端按数据渲染，不得自行补出其他动作。
+it("locks read-only same-source duplicates to the backend-allowed copy and skip actions", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const readOnlySameSource: ImportConflict = {
+    candidateId: "builtin-pdf",
+    candidateName: "builtin-pdf",
+    kind: "exact_duplicate",
+    duplicateKind: "same_source",
+    matchedSkillIds: ["skill-builtin"],
+    summary: "与内建 Skill 同源",
+    allowedActions: ["copy", "skip"],
+    required: true,
+  };
+  render(
+    <I18nextProvider i18n={i18n}>
+      <ConflictResolution conflicts={[readOnlySameSource]} actions={{}} onAction={vi.fn()} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByRole("radio", { name: "复制到 SkillHub" })).toBeVisible();
+  expect(screen.getByRole("radio", { name: "跳过此候选项" })).toBeVisible();
+  expect(screen.getByText("来源与已有 Skill 相同")).toBeVisible();
+  expect(screen.queryByRole("radio", { name: "复用已管理的 Skill" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("radio", { name: "独立导入" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("radio", { name: "保留当前位置并纳入管理" })).not.toBeInTheDocument();
+});
+
 const sameNameA: ImportConflict = {
   candidateId: "pdf-a",
   candidateName: "pdf-a",
