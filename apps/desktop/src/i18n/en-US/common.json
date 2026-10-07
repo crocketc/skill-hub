@@ -3188,7 +3188,7 @@
         "pendingDone": "All pending items are handled — nothing is waiting for a decision."
       },
       "readOnly": {
-        "badge": "Retained copy (read-only)",
+        "badge": "In library · original retained (read-only)",
         "note": "The original lives in a read-only location; the central library reads and uses it without rewriting or moving it."
       },
       "manageRelations": "Manage relations",

@@ -317,6 +317,14 @@ export function isReadOnlySourceRelation(row: RelationGovernanceRow): boolean {
   return row.source_read_only;
 }
 
+/**
+ * 只读导入原件的完成态（§10，2026-10-07）：只有已完成原件才是无动作的
+ * 只读终端卡；异常原件回到待处理，必须给出「重新检查 / 结束关系」出口。
+ */
+export function isReadOnlyTerminalRelation(row: RelationGovernanceRow): boolean {
+  return row.source_read_only && row.governance.governance_status === "completed";
+}
+
 /** 该行是否允许批量纳入集中库管理。 */
 export function rowIsBatchExecutable(row: RelationGovernanceRow): boolean {
   return rowCanRunBatchAction(row, "centralize_management");

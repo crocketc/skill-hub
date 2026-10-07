@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { RelationGovernanceRow } from "../../../api/bindings";
-import { relationIdOf, rowIsNaturallyExecutable, isReadOnlySourceRelation } from "./api";
+import { relationIdOf, rowIsNaturallyExecutable, isReadOnlySourceRelation, isReadOnlyTerminalRelation } from "./api";
 import type { GovernanceClassificationFilter } from "./api";
 import { projectGovernanceBuckets, type GovernanceBucket } from "./governanceBuckets";
 import {
@@ -378,8 +378,10 @@ function GovernanceBoardCard({
 }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
-  // 只读导入原件（§10）：正常终态卡——无勾选、无受阻区、无动作按钮区。
+  // 只读导入原件不参与勾选；完成态是正常终态卡——无受阻区、无动作按钮区
+  // （§10）。异常原件回到待处理，必须给出受阻原因与「重新检查 / 结束关系」。
   const readOnly = isReadOnlySourceRelation(row);
+  const readOnlyTerminal = isReadOnlyTerminalRelation(row);
   return (
     <li className="sh-governance__board-card-wrap">
       <article
@@ -399,7 +401,7 @@ function GovernanceBoardCard({
           </span>
           <GovernanceRelationTargetSummary row={row} />
         </div>
-        {!readOnly ? (
+        {!readOnlyTerminal ? (
           <div className="sh-governance__board-issue" data-testid={`governance-verification-${relationId}`}>
             <GovernanceRelationBlockers row={row} />
           </div>
@@ -433,7 +435,7 @@ function GovernanceBoardCard({
             </div>
           </div>
         </details>
-        {!readOnly ? (
+        {!readOnlyTerminal ? (
           <div className="sh-governance__board-actions" data-testid={`governance-actions-${relationId}`}>
             <GovernanceRelationActions
               busy={busy}
