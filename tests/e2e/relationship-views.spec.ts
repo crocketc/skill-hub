@@ -60,17 +60,30 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   await page.goto("/__preview/skill-detail/skill-pdf");
 
   // 转正后使用去向区以卡片呈现每个使用位置的状态事实（待集中管理/已集中管理）。
+  // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改为行动导向措辞，
+  // 待接管给出治理入口指引，已接管说明跟随与共享目录计数口径。
   const usage = page.locator("#review-usage-body");
-  await expect(usage.getByText("原位置仍是独立副本，当前内容尚未接管。")).toBeVisible();
+  await expect(usage.getByText("原位置仍是独立副本；可在关系治理中纳入集中管理。")).toBeVisible();
   await expect(
-    usage.getByText("受管链接跟随集中库当前版本；共享目录只计一个物理去向。"),
+    usage.getByText("受管链接跟随集中库当前版本。共享目录只计一个物理去向。"),
   ).toBeVisible();
 
-  // 移除影响入口：工具栏「删除」打开删除技能主体对话框，先展示影响预览，
-  // 并如实声明原型阶段不执行删除、不假装成功。
+  // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框——先展示影响
+  // 预览（逐目标处置选择 + 依赖项目 + 保留/恢复说明），全部目标都有处置才
+  // 允许确认；预览门面提供确定性影响夹具，不在预览里执行真实删除。
   await page.getByRole("button", { name: "删除", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("删除前会先展示技能主体和当前使用关系影响");
-  await expect(dialog).toContainText("本次示例影响");
-  await expect(dialog).toContainText("按受管目标安全回收");
+  await expect(dialog).toContainText("从库中删除 PDF Reader 吗？");
+  await expect(dialog).toContainText("将从集中库删除该 Skill 的记录、内容与版本历史；每个目标中的副本按下方选择处理。");
+  await expect(dialog).toContainText("Codex CLI");
+  await expect(dialog).toContainText("Claude Code");
+  await expect(dialog).toContainText("依赖项目");
+  await expect(dialog).toContainText("Demo Project");
+  await expect(
+    dialog.getByText("恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。"),
+  ).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeDisabled();
+  await dialog.getByLabel(/目标副本处理方式/).first().selectOption({ label: "保留目标处的文件，解除部署关系（库中记录一并删除）" });
+  await dialog.getByLabel(/目标副本处理方式/).last().selectOption({ label: "删除目标目录中的副本（从目标移除）" });
+  await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
 });

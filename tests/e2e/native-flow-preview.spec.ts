@@ -9,6 +9,8 @@ async function installNativePreview(page: Page) {
   await page.addInitScript(() => {
     let callbackId = 0;
     let conflictResolved = false;
+    // 来源更新的会话内状态：检查后才出现可采用候选；采用后回到最新。
+    let sourceUpdateState: { state: string; checked_at: string; upstream_label: string; candidate_identity: string } | null = null;
     const callbacks = new Map<number, (payload: unknown) => void>();
     const bootstrap = {
       initialization_state: "initialized",
@@ -222,7 +224,17 @@ async function installNativePreview(page: Page) {
           case "diff_versions": return ok("version_diff", { added: ["new section"], changed: ["SKILL.md"], removed: [] });
           case "check_source_updates": return ok("source_update_checks", [{ skill_id: "pdf-reader", state: "update_available" }]);
           // K6：来源更新面板的持久化状态投影（从未检查过的诚实缺省）。
-          case "get_source_update_status": return ok("source_update_status", { skill_id: query.payload.skill_id ?? "pdf-reader", state: null, checked_at: null, upstream_label: null, candidate_identity: null, ignored_candidates: [], candidate_ignored: false });
+          // 真实流接线轮后检查是显式动作：check_source_update 执行后才把
+          // 状态投影翻到 update_available，供「预览采用影响」入口出现。
+          case "get_source_update_status": return ok("source_update_status", {
+            skill_id: query.payload.skill_id ?? "pdf-reader",
+            state: sourceUpdateState?.state ?? null,
+            checked_at: sourceUpdateState?.checked_at ?? null,
+            upstream_label: sourceUpdateState?.upstream_label ?? null,
+            candidate_identity: sourceUpdateState?.candidate_identity ?? null,
+            ignored_candidates: [],
+            candidate_ignored: false,
+          });
           // 恢复候选走的是 **查询**（`queryApplication { type: "list_recovery_candidates" }`），
           // 不是命令；写在下面 execute_command 分支里等于没接线，恢复页只能拿到
           // default 的 bootstrap_snapshot，于是整页落进错误态。
@@ -235,7 +247,77 @@ async function installNativePreview(page: Page) {
             { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", tags: ["automation"], matched_alias: null, relationship_count: 1, relationship_revision: "preview-rel-1", last_verified_at: null },
           ]);
           case "get_conflict_workspace": return ok("conflict_workspace", { cases: conflictResolved ? [] : [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
-          case "list_relation_governance": return ok("relation_governance_ledger", { rows: [], counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1, status_normal: 1, status_retained: 0, status_needs_validation: 1, status_needs_attention: 0, status_blocked: 1, source_copies: 1, deployments: 2 }, bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null });
+          // 真实流接线轮（W3-5/ed0cdf39）：使用去向卡以治理清单行为单一事实
+          // 来源，清单必须携带真实行——两条部署关系（待接管独立副本 + 已接管
+          // 受管链接）与一条只读导入原件（已完成保留）。counts 保持既有口径
+          // 不动：概览「2 to handle」= status_needs_validation + status_blocked，
+          // 关系页签治理计数 = counts.all，均被其他用例断言。
+          case "list_relation_governance": return ok("relation_governance_ledger", {
+            rows: [
+              {
+                relation: { kind: "deployment", fact: {
+                  relation_id: "rel:pdf-reader:codex-copy", skill_id: "pdf-reader",
+                  agent_client_id: "openai.codex-cli", path: "C:/Preview/.agents/skills/pdf-reader",
+                  path_key: "c:/preview/.agents/skills/pdf-reader", directory_node_id: "codex-physical",
+                  relationship: "observed_copy", file_representation: "copy", ownership: "observed_unmanaged",
+                  link_target_path: null, link_target_path_key: null, link_target_directory_id: null,
+                  content_fingerprint: "sha256:preview-pdf-reader", origin: "import",
+                  match_state: "content_verified", health_reasons: [], active: true,
+                  observed_at: "2026-09-08T08:00:00Z", released_at: null } },
+                skill_display_name: "PDF Reader", status: "normal",
+                readiness: "eligible_to_centralize", primary_action: "centralize_management",
+                blockers: [], source_read_only: false,
+                impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: true, rollback_available: true },
+                governance: { governance_status: "pending", management_status: "not_taken_over", decision: "undecided", management_confirmed_at: null, health_reasons: [],
+                  action_conditions: [{ action: "centralize_management", available: true, reasons: [] }] },
+                target_identity: null,
+                evidence_relation_ids: ["rel:pdf-reader:codex-copy"],
+              },
+              {
+                relation: { kind: "deployment", fact: {
+                  relation_id: "rel:release-notes:codex-link", skill_id: "release-notes",
+                  agent_client_id: "openai.codex-cli", path: "C:/Preview/.agents/skills/release-notes",
+                  path_key: "c:/preview/.agents/skills/release-notes", directory_node_id: "codex-physical",
+                  relationship: "managed_link", file_representation: "symbolic_link", ownership: "skillhub_managed",
+                  link_target_path: "C:/Preview/SkillHub/skills/release-notes",
+                  link_target_path_key: "c:/preview/skillhub/skills/release-notes",
+                  link_target_directory_id: "library", content_fingerprint: "sha256:preview-release-notes",
+                  origin: "deployment", match_state: "content_verified",
+                  health_reasons: ["verification_required"], active: true,
+                  observed_at: "2026-09-08T08:00:00Z", released_at: null } },
+                skill_display_name: "Release Notes", status: "needs_validation",
+                readiness: "needs_validation", primary_action: "revalidate",
+                blockers: [], source_read_only: false,
+                impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: false, rollback_available: true },
+                governance: { governance_status: "pending", management_status: "taken_over", decision: "undecided", management_confirmed_at: "2026-09-08T08:00:00Z",
+                  health_reasons: ["verification_required"],
+                  action_conditions: [{ action: "revalidate", available: true, reasons: [] }] },
+                target_identity: { skill_id: "release-notes", target_kind: "agent", directory_node_id: "codex-physical", entry_path_key: "c:/preview/.agents/skills/release-notes" },
+                evidence_relation_ids: ["rel:release-notes:codex-link"],
+              },
+              {
+                relation: { kind: "source_copy", fact: {
+                  relation_id: "rel:pdf-reader:source-copy", skill_id: "pdf-reader",
+                  latest_provenance_id: "prov-pdf-reader", source_class: "agent_local",
+                  source_path: "C:/Users/demo/.agents/skills/pdf-reader",
+                  source_path_key: "c:/users/demo/.agents/skills/pdf-reader",
+                  physical_source_id: "codex-physical", source_container_id: null,
+                  directory_node_id: "codex-physical", agent_client_id: "openai.codex-cli",
+                  expected_fingerprint: "sha256:preview-pdf-reader", current_fingerprint: "sha256:preview-pdf-reader",
+                  decision: "retained", health: "normal", health_reasons: [], active: true,
+                  last_verified_at: "2026-09-08T08:00:00Z", archived_at: null, archive_reason: null } },
+                skill_display_name: "PDF Reader", status: "retained",
+                readiness: "already_centralized", primary_action: "none",
+                blockers: [], source_read_only: true,
+                impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: false, rollback_available: false },
+                governance: { governance_status: "completed", management_status: "not_taken_over", decision: "retained_independent_copy", management_confirmed_at: null, health_reasons: [], action_conditions: [] },
+                target_identity: null,
+                evidence_relation_ids: ["rel:pdf-reader:source-copy"],
+              },
+            ],
+            counts: { all: 3, eligible_to_centralize: 1, needs_validation: 1, blocked: 1, status_normal: 1, status_retained: 0, status_needs_validation: 1, status_needs_attention: 0, status_blocked: 1, source_copies: 1, deployments: 2 },
+            bucket: "all", total: 3, relationship_revision: "preview-rel-1", last_verified_at: null,
+          });
           case "get_deployment_batch_preview": {
             // 任务 13B/14 契约：预览按 Skill × 物理目标 pair 返回结构化处置。
             // find-skills 场景的占用组合（→ Claude Code）仍以 target_occupied
@@ -401,10 +483,16 @@ async function installNativePreview(page: Page) {
             });
           }
           case "commit_deployment": return ok("deployment_summary", { operation_id: "op-deploy-1", skill_id: args.command.payload.prepared_deployment_id, version_id: "v1", committed: true, targets: [{ logical_target_ids: ["codex-target"], physical_target_id: "codex-physical", status: "succeeded", error_code: null, residue: false }] });
-          case "check_source_update": return ok("upstream_check_result", { skill_id: "pdf-reader", state: "update_available", local_version: "v1", upstream_version: "v2", upstream_label: "v2.0.0" });
+          case "check_source_update": {
+            sourceUpdateState = { state: "update_available", checked_at: "2026-09-08T09:00:00Z", upstream_label: "v2.0.0", candidate_identity: "sha256:source-candidate-1" };
+            return ok("upstream_check_result", { skill_id: "pdf-reader", state: "update_available", local_version: "v1", upstream_version: "v2", upstream_label: "v2.0.0" });
+          }
           // K6 预览绑定流：采纳入口 prepare 出三件套预览，决定经 commit 消耗。
           case "prepare_source_update": return ok("source_update_preview", { skill_id: action.payload.skill_id ?? "pdf-reader", preview_id: "preview-source-1", expires_at: new Date(Date.now() + 600000).toISOString(), confirmation_fingerprint: "source-fp-1", current_version_id: "v1", candidate_identity: "sha256:source-candidate-1", upstream_label: "v2.0.0", files: [{ path: "SKILL.md", change: "modified" }] });
-          case "commit_source_update": return ok("applied_source_update", { skill_id: "pdf-reader", decision: action.payload.decision, new_version: action.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
+          case "commit_source_update": {
+            sourceUpdateState = { state: "up_to_date", checked_at: "2026-09-08T09:01:00Z", upstream_label: "v2.0.0", candidate_identity: "sha256:source-candidate-1" };
+            return ok("applied_source_update", { skill_id: "pdf-reader", decision: action.payload.decision, new_version: action.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
+          }
           case "relink_source":
           case "set_version_label":
           case "set_current_version": return ok("operation_summary", operationSummary);
@@ -915,26 +1003,30 @@ test("native skill detail surfaces review sections, source adoption, and version
   // §9 裁决（2026-10-06）：评审原型即生产默认呈现。概览区呈现许可证等
   // 主体事实；使用去向区以真实关系数据呈现治理状态（native 夹具：独立副本待接管）。
   await expect(page.getByText("MIT", { exact: true })).toBeVisible();
-  await expect(page.getByText("原位置仍是独立副本，当前内容尚未接管。")).toBeVisible();
-  // 来源更新区（演示流）：查找来源 → 只关联 → 自动只读检查 → 采用更新。
-  // 每一步都在影响预览对话框里显式确认，没有检查后的直连按钮。
-  await page.getByRole("button", { name: "查找更新来源" }).click();
+  // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改写为行动导向措辞，
+  // 待接管的独立副本直接给出治理入口指引，徽标为「待集中管理」。
+  await expect(page.getByText("原位置仍是独立副本；可在关系治理中纳入集中管理。")).toBeVisible();
+  // 来源更新区（真实流，K6）：显式关联网络来源 → 显式只读检查 → 采用影响
+  // 预览 → 确认采用。关联只登记来源（不替换内容、不自动检查）；检查通过
+  // 后才出现采用入口；采用前先看文件级影响预览。
+  await page.getByRole("button", { name: "关联更新来源" }).click();
   const chooser = page.getByRole("dialog");
-  await expect(chooser).toContainText("选择网络更新来源");
-  await chooser.getByRole("button", { name: "查找来源" }).click();
-  await expect(chooser).toContainText("PDF Reader 官方维护仓库");
-  await chooser.getByRole("button", { name: "只关联来源" }).click();
-  const associateDialog = page.getByRole("dialog");
-  await expect(associateDialog).toContainText("关联影响预览");
-  await associateDialog.getByRole("button", { name: "确认关联" }).click();
-  await expect(page.getByText("已关联更新来源，并自动完成一次只读检查；未采用任何内容。")).toBeVisible();
-  await expect(page.getByText("发现可检查的上游更新")).toBeVisible();
+  await expect(chooser).toContainText("关联网络更新来源");
+  await expect(chooser).toContainText("来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。");
+  await chooser.getByLabel("来源地址").fill("https://example.com/pdf-reader.git");
+  await chooser.getByRole("button", { name: "确认关联" }).click();
+  await expect(page.getByText("已登记更新来源；可随时执行只读检查。")).toBeVisible();
+  await page.getByRole("button", { name: "检查更新" }).click();
+  await expect(page.getByText("来源检查完成：发现可采用的更新候选。")).toBeVisible();
+  await expect(page.getByText("发现可采用的更新候选（v2.0.0）。")).toBeVisible();
   await page.getByRole("button", { name: "预览采用影响" }).click();
   const adoptDialog = page.getByRole("dialog");
-  await expect(adoptDialog).toContainText("采用网络更新影响预览");
-  await expect(adoptDialog).toContainText("2 个受管链接会继续跟随新当前版本");
+  await expect(adoptDialog).toContainText("采用更新影响预览");
+  await expect(adoptDialog).toContainText("确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。");
+  await expect(adoptDialog).toContainText("来源版本：v2.0.0");
+  await expect(adoptDialog).toContainText("SKILL.md（修改）");
   await adoptDialog.getByRole("button", { name: "确认采用更新" }).click();
-  await expect(page.getByText("示例更新已采用；新版本已创建，安全发现与独立副本仍保留。")).toBeVisible();
+  await expect(page.getByText("已采用来源更新并创建新版本。")).toBeVisible();
   // 版本历史区：对比两个版本后按评审流回滚，影响预览先行、确认创建恢复版本。
   await page.getByRole("link", { name: "版本历史" }).click();
   await expect(page).toHaveURL(/#review-versions$/);

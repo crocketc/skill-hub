@@ -15,31 +15,31 @@ test("the saved-translation loop retranslates the description on demand", async 
   await expect(page.getByText("示例译文")).toBeVisible();
   await expect(page.getByText("当前内容", { exact: true })).toBeVisible();
 
-  // 用户主动重翻译：评审原型未接 AI 服务，入口打开数据范围说明框且不发送
-  // 内容；按需重翻译的完整链路（夹具 preview-model 刷新路径）由组件层测试
-  // 覆盖，待 AI 接线后回到 E2E。
+  // 真实流接线轮（149c7065）：重翻译不再弹「未配置 AI」说明框，而是发送真实
+  // translate_description intent；预览门面模拟后端成功回写，译文随之刷新。
+  // 「用户已修订先确认替换」的分支由组件层测试覆盖。
   await panel.getByRole("button", { name: "Translate description again" }).click();
-  const aiNotice = page.getByRole("dialog");
-  await expect(aiNotice).toContainText("此原型未配置 AI 服务");
-  await aiNotice.getByRole("button", { name: "关闭" }).click();
+  await expect(page.getByText("Retranslated description (zh-CN)")).toBeVisible();
 });
 
 test("the semantic duplicate analysis reports AI candidates as advisory", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
   await page.getByRole("link", { name: "使用去向" }).click();
 
-  // 转正后确定性候选与可选 AI 分析收纳进「使用去向」的补充面板：
-  // 确定性候选常显，AI 层是可选增强且只做提示。
+  // 真实流接线轮（149c7065）：确定性候选常显（来自 getInsights，不依赖 AI）；
+  // 预览门面 isAiAvailable 返回 true（已配置供应商），AI 分析按钮可点并返回
+  // 真实报告，结果如实标注来源且声明仅供参考。
   const duplicates = page.locator("#review-usage-body");
-  await expect(duplicates.getByRole("heading", { name: "可能重复的技能" })).toBeVisible();
+  await expect(duplicates.getByRole("heading", { name: "Deterministic duplicate candidates" })).toBeVisible();
+  await expect(duplicates.getByText("PDF Reader（副本）")).toBeVisible();
+  await duplicates.getByRole("button", { name: "Run analysis" }).click();
   await expect(
-    duplicates.getByText("PDF Text Extractor · 内容比对候选，尚未确认重复。"),
+    duplicates.getByText("Source: deterministic candidates + AI semantic analysis"),
   ).toBeVisible();
-
-  // 已知缺口（评审原型）：AI 相似性分析未接入提供商配置，按钮如实禁用；
-  // "AI 结果仅辅助证据、合并/删除/归档需另行确认"的结果提示语义待真实
-  // AI 接线后在 E2E 恢复（组件层测试先行覆盖）。
-  await expect(duplicates.getByRole("button", { name: "AI 相似性分析" })).toBeDisabled();
+  await expect(duplicates.getByText("PDF Text Extractor")).toBeVisible();
+  await expect(
+    duplicates.getByText(/Results are advisory only; merging, deleting or archiving/),
+  ).toBeVisible();
 });
 
 test("the LLM security check runs on demand and surfaces AI findings", async ({ page }) => {

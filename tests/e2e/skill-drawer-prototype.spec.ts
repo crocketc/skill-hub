@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+// 抽屉评审布局转正后的 E2E 契约（§9；ed0cdf39 抽屉真实流、d79cc4d7 生命
+// 周期/组合接真实命令、a7eb2e65 主体位置接真实根路径、ca005fec 样例清零）：
+// 主要操作是真实派发/导出/删除，生命周期走 set_trial 命令，所属组合走
+// list/update_combination，主体位置展示真实物化根路径。
+
 test("drawer review prototype stays isolated and fits a compact desktop viewport", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
   await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
@@ -45,9 +50,9 @@ test("drawer review prototype stays isolated and fits a compact desktop viewport
     await expect(button).toBeEnabled();
     await expect(button).not.toBeEmpty();
   }
-  const actionDescription = await actionButtons.first().getAttribute("aria-describedby");
-  expect(actionDescription).toBeTruthy();
-  await expect(drawer.locator(`[id="${actionDescription}"]`)).not.toBeEmpty();
+  // W4-2（ed0cdf39）：主要操作是真实派发/导出/删除，操作区以「主要操作」
+  // 区域标签暴露；旧原型的逐按钮 aria-describedby 演示描述已退役。
+  await expect(prototypeActions).toHaveAttribute("aria-label", /Primary actions|主要操作/i);
   const widthCycle = drawer.locator(".sh-skill-drawer__prototype-presets button");
   await expect(widthCycle).toHaveCount(1);
   const initialWidthLabel = await widthCycle.getAttribute("aria-label");
@@ -128,11 +133,14 @@ test("review layout is the only quick drawer layout without a preview flag", asy
 
 test("review date overlay stays fully inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
-  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+  // W3-7（d79cc4d7）：复核日期走真实 set_trial 命令，弹层只在门面提供
+  // setTrial 时出现；试用样例（Browser Automation）携带 trialDue。
+  await page.goto("/__preview/skill-library?skill=skill-browser&drawerPrototype=review");
   const drawer = page.getByTestId("drawer-panel");
   await drawer.getByRole("button", { name: /adjust review date|调整复核日期/i }).click();
   const editor = page.getByRole("dialog", { name: /set review date|设置复核日期/i });
   await expect(editor).toBeVisible();
+  await expect(editor.getByLabel(/review date|复核日期/i)).toHaveValue("2026-11-03");
   const bounds = await editor.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     const trigger = document.querySelector<HTMLElement>(".sh-skill-drawer__prototype-calendar");
@@ -157,7 +165,8 @@ test("review date overlay stays fully inside the viewport", async ({ page }) => 
 
 test("Escape dismisses the review editor without closing the selected Skill drawer", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
-  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+  // W3-7（d79cc4d7）：复核日期弹层是真实 set_trial 入口（试用样例）。
+  await page.goto("/__preview/skill-library?skill=skill-browser&drawerPrototype=review");
   const drawer = page.getByTestId("drawer-panel");
   const dateTrigger = drawer.getByRole("button", { name: /adjust review date|调整复核日期/i });
   await dateTrigger.click();
@@ -166,7 +175,7 @@ test("Escape dismisses the review editor without closing the selected Skill draw
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);
   await expect(page.getByTestId("drawer-panel")).toBeVisible();
-  await expect(page).toHaveURL(/skill=skill-pdf/);
+  await expect(page).toHaveURL(/skill=skill-browser/);
   await expect(dateTrigger).toBeFocused();
 });
 
@@ -207,12 +216,11 @@ test("review drawer keeps its clipped floating surface and compact fixed action 
 
   const order = await drawer.locator(".sh-skill-drawer__prototype-modules > .sh-skill-drawer__module h3").allTextContents();
   expect(order.at(-1)).toMatch(/source and version|来源与版本/i);
-  await actionButtons.first().click();
-  await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toBeVisible();
-  await expect(page.getByText(/nothing is actually dispatched|不会真实派发/i)).toBeVisible();
-  await page.getByRole("button", { name: /cancel preview|取消预览/i }).click();
-  await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toHaveCount(0);
   await page.screenshot({ path: "test-results/drawer-prototype/prototype-v2-corners-750x719.png" });
+  // W4-2（ed0cdf39）：主要操作接真实链路——派发路由到统一部署流；
+  // 旧“派发预览”演示弹层已随原型转正退役。
+  await actionButtons.first().click();
+  await expect(page).toHaveURL(/\/library\/skill-pdf\/deploy$/);
 });
 
 test("overflow review sample bounds tags and relation scrolling to each list", async ({ page }) => {
@@ -278,7 +286,9 @@ test("review drawer shows local safety results and translation shortcuts without
   await expect(riskShield.locator("svg path").nth(1)).toHaveAttribute("stroke", "var(--ui-danger-foreground)");
   await expect(riskShield.locator("svg circle")).toHaveAttribute("fill", "var(--ui-danger-foreground)");
   await expect(securityIcons.nth(1)).toHaveAttribute("aria-label", /AI check failed|AI 检查失败/i);
-  await expect(drawer.getByText(/local preview data only|仅使用本地预览数据/i)).toBeVisible();
+  // ca005fec：样例声明清零——安全模块改为统一的本地范围说明，不再有
+  // “仅使用本地预览数据”样例文案。
+  await expect(drawer.getByText(/basic checks read local content of the current version only|基础检查仅读取本机当前版本内容/i)).toBeVisible();
 
   const dataRequests: string[] = [];
   page.on("request", (request) => {
@@ -297,101 +307,111 @@ test("review drawer shows local safety results and translation shortcuts without
   await page.screenshot({ path: "test-results/drawer-prototype/prototype-v3-security-390x719.png" });
 });
 
-test("main drawer sample exposes lifecycle, collections, relationship routes, location, and cancelable actions", async ({ page }) => {
+test("main drawer sample exposes lifecycle commands, collections, relationship routes, location, and real primary actions", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
   await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
   const origin = new URL(page.url()).origin;
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin });
   const drawer = page.getByTestId("drawer-panel");
 
-  await expect(drawer.getByText(/trial|试用/i, { exact: true })).toBeVisible();
-  await expect(drawer.getByText("2026-10-17")).toBeVisible();
-  await expect(drawer.getByRole("button", { name: /adjust review date|调整复核日期/i })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: /convert to regular|转为常规/i })).toBeVisible();
+  // W3-7：生命周期读写真实 set_trial 派生态——常规态经「设为试用」保存
+  // 复核日期后呈现试用徽标与复核日期，再经「转为常规」回到常规态。
+  const lifecycleItem = drawer.locator(".sh-skill-drawer__summary-item--lifecycle");
+  await expect(lifecycleItem).toContainText(/Regular|常规/);
+  const setTrialButton = lifecycleItem.getByRole("button", { name: /Set trial|设为试用/i });
+  await expect(setTrialButton).toBeVisible();
+  await setTrialButton.click();
+  const reviewEditor = page.getByRole("dialog", { name: /Set review date|设置复核日期/i });
+  await expect(reviewEditor).toBeVisible();
+  await reviewEditor.getByLabel(/Review date|复核日期/i).fill("2026-10-24");
+  await reviewEditor.getByRole("button", { name: /Save review date|保存复核日期/i }).click();
+  await expect(lifecycleItem).toContainText(/Trial|试用/);
+  await expect(lifecycleItem).toContainText("2026-10-24");
+  const convertButton = lifecycleItem.getByRole("button", { name: /Convert to regular|转为常规/i });
+  await expect(convertButton).toBeVisible();
+  await convertButton.click();
+  await expect(lifecycleItem).toContainText(/Regular|常规/);
+  await expect(lifecycleItem).not.toContainText("2026-10-24");
+
+  // W3-7：所属组合读真实组合清单；编辑经 update_combination 保存（取消不改）。
   await expect(drawer.getByRole("heading", { name: /collections|所属组合/i })).toBeVisible();
   await expect(drawer.getByText("文档工具", { exact: true })).toBeVisible();
   await expect(drawer.getByText("PDF 工作流", { exact: true })).toBeVisible();
-  await expect(drawer.getByRole("heading", { name: /skill body location|主体位置/i })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: /copy sample path|复制样例路径/i })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: /open sample location|打开样例位置/i })).toBeVisible();
-  await expect(drawer.getByText(/import record|导入存证/i)).toBeVisible();
-  await expect(drawer.getByText(/network update source|网络更新来源/i)).toBeVisible();
-  await expect(drawer.getByText(/derived sample|复用修改/i)).toBeVisible();
-
-  const relationshipEntry = drawer.getByRole("button", { name: /open relation context: Codex CLI|打开关系上下文：Codex CLI/i });
-  await relationshipEntry.click();
-  const relationContext = page.getByRole("dialog", { name: /relation context: Codex CLI|关系上下文：Codex CLI/i });
-  await expect(relationContext).toContainText(/centrally managed|已集中管理/i);
-  await relationContext.getByRole("button", { name: /preview relationship governance|模拟打开关系治理/i }).click();
-  await expect(relationContext.getByText(/relationship governance sample|关系治理样例/i)).toBeVisible();
-  await expect(relationContext.getByText(/skill-pdf/)).toHaveCount(0);
-  await relationContext.getByRole("button", { name: /back to relation summary|返回关系摘要/i }).click();
-  await relationContext.getByRole("button", { name: /close relation preview|关闭关系预览/i }).click();
-
-  const lifecycleButton = drawer.getByRole("button", { name: /adjust review date|调整复核日期/i });
-  await lifecycleButton.click();
-  const reviewEditor = page.getByRole("dialog", { name: /set review date|设置复核日期/i });
-  await expect(reviewEditor.getByLabel(/review date|复核日期/i)).toHaveValue("2026-10-17");
-  await page.keyboard.press("Escape");
-  await expect(reviewEditor).toHaveCount(0);
-  await expect(drawer).toBeVisible();
-  await expect(lifecycleButton).toBeFocused();
-  await lifecycleButton.click();
-  const reopenedReviewEditor = page.getByRole("dialog", { name: /set review date|设置复核日期/i });
-  await reopenedReviewEditor.getByLabel(/review date|复核日期/i).fill("2026-10-24");
-  await reopenedReviewEditor.getByRole("button", { name: /save date preview|保存日期预览/i }).click();
-  await expect(drawer.getByText("2026-10-24", { exact: true })).toBeVisible();
-  await drawer.getByRole("button", { name: /convert to regular|转为常规/i }).click();
-  await expect(drawer.getByText(/regular|常规/i, { exact: true })).toBeVisible();
-
   const collectionEditorButton = drawer.getByRole("button", { name: /edit collections|编辑所属组合/i });
   await collectionEditorButton.click();
-  const collectionEditor = page.getByRole("dialog", { name: /edit collections|所属组合预览/i });
+  const collectionEditor = page.getByRole("dialog", { name: /edit collections|编辑所属组合/i });
   await collectionEditor.getByRole("checkbox", { name: "研发工具" }).check();
   await collectionEditor.getByRole("button", { name: /cancel|取消/i }).click();
   await expect(drawer.getByText("研发工具", { exact: true })).toHaveCount(0);
   await collectionEditorButton.click();
-  await page.getByRole("dialog", { name: /edit collections|所属组合预览/i }).getByRole("checkbox", { name: "研发工具" }).check();
-  await page.getByRole("dialog", { name: /edit collections|所属组合预览/i }).getByRole("button", { name: /save collection preview|保存组合预览/i }).click();
+  const reopenedCollectionEditor = page.getByRole("dialog", { name: /edit collections|编辑所属组合/i });
+  await reopenedCollectionEditor.getByRole("checkbox", { name: "研发工具" }).check();
+  await reopenedCollectionEditor.getByRole("button", { name: /save collection changes|保存组合变更/i }).click();
   await expect(drawer.getByText("研发工具", { exact: true })).toBeVisible();
 
-  await drawer.getByRole("button", { name: /open sample location|打开样例位置/i }).click();
-  const locationPreview = page.getByRole("dialog", { name: /skill body location sample|主体位置样例/i });
-  await expect(locationPreview).toContainText(/no local folder will open|不会打开本机目录/i);
-  await locationPreview.getByRole("button", { name: /close location preview|关闭位置预览/i }).click();
-  await drawer.getByRole("button", { name: /copy sample path|复制样例路径/i }).click();
+  // W3-6：主体位置展示真实物化根路径；复制走剪贴板，打开走受控
+  // open_local_directory（浏览器预览无 Tauri 后端 → 如实呈现打开失败）。
+  await expect(drawer.getByRole("heading", { name: /skill body location|主体位置/i })).toBeVisible();
+  const locationPath = drawer.locator(".sh-skill-drawer__prototype-location code");
+  await expect(locationPath).toHaveText("C:\\preview\\SkillHub\\skills\\pdf-reader");
+  await drawer.getByRole("button", { name: /copy subject location path|复制主体位置路径/i }).click();
   const copyStatus = drawer.locator(".sh-skill-drawer__prototype-location [role='status']");
-  await expect(copyStatus).toBeVisible();
-  await expect(copyStatus).toHaveCSS("position", "static");
-  await expect(copyStatus).toContainText(/sample path copied|样例路径已复制/i);
+  await expect(copyStatus).toContainText(/Path copied|路径已复制/i);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("C:\\preview\\SkillHub\\skills\\pdf-reader");
+  await drawer.getByRole("button", { name: /open location|打开位置/i }).click();
+  await expect(drawer.getByText(/Could not open the subject directory|无法打开主体目录/i)).toBeVisible();
 
-  await drawer.getByRole("button", { name: /dispatch|派发/i }).click();
-  await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toBeVisible();
-  await expect(page.getByText(/nothing is actually dispatched|不会真实派发/i)).toBeVisible();
-  await page.getByRole("button", { name: /cancel preview|取消预览/i }).click();
-  await expect(page.getByRole("dialog", { name: /dispatch preview|派发预览/i })).toHaveCount(0);
+  // ca005fec：登记来源读真实来源事实，不再渲染导入存证/网络更新来源/
+  // 复用修改等样例声明。
+  const sourceModule = drawer.locator(".sh-skill-drawer__module", { hasText: /Source and version|来源与版本/i });
+  await expect(sourceModule).toContainText(/Registered source|登记来源/i);
+  await expect(sourceModule).toContainText("Internal catalog");
+  await expect(sourceModule).toContainText("1.4.0");
+
+  // 关系弹层：上下文摘要不再伪造集中管理状态（W4-2），也不泄露内部标识；
+  // 目标位置是受控样例说明，治理入口是真实深链（携 Skill 与 Agent 身份）。
+  const relationEntry = drawer.getByRole("button", { name: /Open relation context: Codex CLI|打开关系上下文：Codex CLI/i });
+  await relationEntry.click();
+  const relationContext = page.getByRole("dialog", { name: /Relation context: Codex CLI|关系上下文：Codex CLI/i });
+  await expect(relationContext).toContainText("Codex CLI");
+  await expect(relationContext.getByText(/skill-pdf/)).toHaveCount(0);
+  await relationContext.getByRole("button", { name: /View Agents location|查看Agent位置/i }).click();
+  await expect(relationContext).toContainText(/Registered location of Codex CLI|Codex CLI 的登记位置/i);
+  await expect(relationContext).toContainText(/related Skill: PDF Reader|当前关联 Skill：PDF Reader/i);
+  await relationContext.getByRole("button", { name: /Back to relation summary|返回关系摘要/i }).click();
+  await expect(relationContext.getByText(/Registered location of Codex CLI/i)).toHaveCount(0);
+  await relationContext.getByRole("button", { name: /Open relationship governance|打开关系治理/i }).click();
+  await expect(page).toHaveURL(/\/relationships\/governance\?from=library&skillId=skill-pdf&agent=codex-cli$/);
+
+  // W4-2（ed0cdf39）：派发路由到统一部署流。
+  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+  const reopenedDrawer = page.getByTestId("drawer-panel");
+  await expect(reopenedDrawer.locator(".sh-skill-drawer__pinned-title h2")).toHaveText("PDF Reader");
   await page.screenshot({ path: "test-results/drawer-prototype/prototype-v2-full-750x719.png" });
+  await reopenedDrawer.getByRole("button", { name: /dispatch|派发/i }).click();
+  await expect(page).toHaveURL(/\/library\/skill-pdf\/deploy$/);
 });
 
-test("sample path copy reports denied clipboard access visibly and allows retry", async ({ page }) => {
+test("subject path copy reports denied clipboard access visibly and allows retry", async ({ page }) => {
   await page.setViewportSize({ width: 750, height: 719 });
   await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
   const origin = new URL(page.url()).origin;
   await page.context().grantPermissions([], { origin });
   const drawer = page.getByTestId("drawer-panel");
-  const copyButton = drawer.getByRole("button", { name: /copy sample path|复制样例路径/i });
+  const copyButton = drawer.getByRole("button", { name: /copy subject location path|复制主体位置路径/i });
   await copyButton.click();
   const copyStatus = drawer.locator(".sh-skill-drawer__prototype-location [role='status']");
   await expect(copyStatus).toBeVisible();
   await expect(copyStatus).toHaveCSS("position", "static");
-  await expect(copyStatus).toContainText(/allow clipboard access and retry|允许剪贴板访问后重试/i);
+  // W3-6（a7eb2e65）：复制的是真实根路径；剪贴板拒绝统一为可读失败文案，
+  // 授权后同入口重试即可成功。
+  await expect(copyStatus).toContainText(/Could not copy the path|无法复制路径/i);
   expect(await page.evaluate(() => navigator.clipboard.readText().catch(() => ""))).toBe("");
   await copyStatus.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/drawer-prototype/prototype-v3-copy-denied-750x719.png" });
 
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin });
   await copyButton.click();
-  await expect(copyStatus).toContainText(/sample path copied|样例路径已复制/i);
+  await expect(copyStatus).toContainText(/Path copied|路径已复制/i);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("C:\\preview\\SkillHub\\skills\\pdf-reader");
 });

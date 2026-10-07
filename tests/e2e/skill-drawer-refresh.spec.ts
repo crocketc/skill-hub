@@ -184,10 +184,13 @@ test("quick drawer keeps its lifecycle summary, actions, and module controls usa
   const drawer = page.getByTestId("skill-quick-drawer");
   const panel = page.getByTestId("drawer-panel");
   await expect(drawer).toBeVisible();
-  // 生命周期摘要槽位固定：试用态徽标 + 复核日期 + 调整入口（转正后控件化）。
+  // 生命周期摘要槽位固定：状态徽标 + 复核日期（试用态）+ 调整入口。
+  // W3-7（d79cc4d7）转正后生命周期读真实 set_trial 派生态：预览样例
+  // PDF Reader 为常规态，入口呈现「设为试用」；试用态呈现与复核日期
+  // 弹层由 skill-drawer-prototype.spec 以试用样例（Browser Automation）覆盖。
   const lifecycleItem = drawer.locator(".sh-skill-drawer__summary-item--lifecycle");
-  await expect(lifecycleItem).toContainText("Trial");
-  await expect(lifecycleItem.getByRole("button", { name: "Adjust review date" })).toBeVisible();
+  await expect(lifecycleItem).toContainText(/Regular|常规/);
+  await expect(lifecycleItem.getByRole("button", { name: /Set trial|设为试用/ })).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--version")).toContainText("1.4.0");
   await expect(drawer.locator(".sh-skill-drawer__summary-item--agents")).toBeVisible();
   await expect(drawer.locator(".sh-skill-drawer__summary-item--projects")).toBeVisible();

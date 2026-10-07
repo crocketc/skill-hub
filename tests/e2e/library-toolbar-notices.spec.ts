@@ -21,7 +21,11 @@ test("card body activation opens the quick drawer and the view button routes to 
   await expect(drawer).toHaveCount(0);
 
   // “查看”按钮 → 完整详情页路由。
-  await page.getByRole("button", { name: "View PDF Reader" }).click();
+  // 真实流接线轮（315e69f4）：卡片统一布局后按钮文案为「View」，不重复 Skill 名。
+  await page
+    .getByTestId("skill-card-skill-pdf")
+    .getByRole("button", { name: "View", exact: true })
+    .click();
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);
 });
 

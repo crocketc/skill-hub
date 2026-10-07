@@ -108,7 +108,10 @@ for (const width of [800, 1024, 1280, 1440]) {
     await expect(page.getByTestId("skill-card-skill-pdf")).toBeVisible();
     expect(await rootHasNoHorizontalOverflow(page)).toBe(true);
     // 卡片操作区钉底可见：打开按钮始终可交互。
-    await expect(page.getByRole("button", { name: "View PDF Reader" })).toBeVisible();
+    // 真实流接线轮（315e69f4）：卡片统一布局后打开按钮不再重复 Skill 名，改为「View」。
+    await expect(
+      page.getByTestId("skill-card-skill-pdf").getByRole("button", { name: "View", exact: true }),
+    ).toBeVisible();
   });
 }
 

@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
  * /__preview/import-wizard?scenario=governance）。
  * 只断言公开角色、可访问名称与确定性事实；全部跑在 mock facade 上。
  * 导入侧：冲突步诚实呈现（含 AI 未配置信号）→ 提交 → 摘要呈现本次导入
- * 的治理待办深链、来源副本整理 CTA 与原件保护事实。
+ * 的治理待办深链、治理处理 CTA（「去处理」）与原件保护事实。
  * 边界：治理页内行为（保留后可查、清理预览完整影响、成功后部署入口）
  * 属于治理页组件测试与真机人工验收范围；E2E 只锁定入口契约——
  * 深链按钮只指向本次导入产生的待办，不把浏览器 fixture 当作真实治理状态。
@@ -51,8 +51,9 @@ test("lands the import on a summary with the governance task deep link and organ
     summary.getByRole("button", { name: "查看治理待办 task:preview-governance" }),
   ).toBeVisible();
   // AgentLocal/UserLocal 导入携带可管理来源副本 → 提供整理 CTA。
+  // 真实流接线轮（c156a8f7）：入口按动词模型改为「去处理」，仍深链治理页。
   await expect(
-    summary.getByRole("button", { name: "整理来源副本" }),
+    summary.getByRole("button", { name: "去处理" }),
   ).toBeVisible();
   // 原件保护事实：导入不删源，清理必须在关系治理中单独确认。
   await expect(summary.getByText(/原始副本保持不变/)).toBeVisible();

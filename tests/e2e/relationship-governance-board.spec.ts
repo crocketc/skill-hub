@@ -10,7 +10,9 @@ test("governance board stays compact, switches views with selection, and opens t
   const screenshots = path.resolve(process.cwd(), "apps/desktop/test-results/ui/relationship-governance");
   mkdirSync(screenshots, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/__preview/relationship-governance");
+  // 治理板类别桶轮（0aef5494/75ede171，§10）：缺省进页直接看待处理（单列）；
+  // 本用例锁「全部」页签下的双桶全景与计数。
+  await page.goto("/__preview/relationship-governance?governance=all");
 
   await expect(page.getByRole("note")).toContainText("预览数据");
   const board = page.getByTestId("governance-board");
@@ -81,23 +83,24 @@ test("completed source-copy deep links use the authoritative classification", as
 
   const board = page.getByTestId("governance-board");
   await expect(board).toBeVisible();
+  // 治理板类别桶轮（§10）：页签决定列数——completed 页签只渲染已完成单列，
+  // 不再固定双列并排。
   const columnOrder = await board.locator(":scope > section").evaluateAll((columns) =>
     columns.map((column) => column.getAttribute("data-testid")),
   );
-  expect(columnOrder).toEqual([
-    "governance-board-column-completed",
-    "governance-board-column-pending",
-  ]);
+  expect(columnOrder).toEqual(["governance-board-column-completed"]);
   await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("1");
   await expect(page.getByTestId("governance-row")).toHaveCount(1);
   await expect(page.getByTestId("governance-row")).toContainText("已保留为独立副本");
   await expect(page.getByTestId("governance-row")).not.toContainText("已纳入集中库管理");
 });
 
-test("board columns sort by filtered count and keep their own scroll position", async ({ page }) => {
+test("board keeps a fixed column order and columns keep their own scroll position", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 680 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/__preview/relationship-governance");
+  // 治理板类别桶轮（§10）：列序固定（待处理在左、已完成在右），不再按
+  // 过滤计数排序；本用例在「全部」页签下锁双列独立滚动。
+  await page.goto("/__preview/relationship-governance?governance=all");
 
   const board = page.getByTestId("governance-board");
   await expect(board).toBeVisible();
@@ -163,91 +166,47 @@ test("board columns sort by filtered count and keep their own scroll position", 
   await page.getByTestId("governance-select-all").check();
   await expect(page.getByTestId("governance-open-batch")).toBeVisible();
   await expect.poll(() => pending.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
-  await page.getByTestId("governance-filter-trigger").click();
-  await page.getByTestId("governance-scope-source_copy").click();
-  await expect(page).toHaveURL(/scope=source_copy/);
+  // 治理板类别桶轮（§10）：二级过滤浮层移除，scope 转为隐藏深链过滤；
+  // 筛选变化改为经搜索提交（筛选条常驻内联），并同样重置列滚动。
+  await page.getByRole("searchbox", { name: "搜索 Skill、目标或路径" }).fill("PDF");
+  await page.getByRole("button", { name: "搜索" }).click();
+  await expect(page).toHaveURL(/text=PDF/);
   await expect.poll(() => pending.evaluate((node) => node.scrollTop)).toBe(0);
 
   await page.goto("/__preview/relationship-governance?scope=source_copy&governance=completed");
   await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("1");
-  await expect.poll(columnOrder).toEqual([
-    "governance-board-column-completed",
-    "governance-board-column-pending",
-  ]);
+  await expect.poll(columnOrder).toEqual(["governance-board-column-completed"]);
 });
 
-test("secondary filters overlay the board and a single icon switches board and table", async ({ page }) => {
+test("inline filter bar stays put while a single icon switches board and table", async ({ page }) => {
   const screenshots = path.resolve(process.cwd(), "apps/desktop/test-results/ui/relationship-governance");
   mkdirSync(screenshots, { recursive: true });
   await page.setViewportSize({ width: 800, height: 560 });
   await page.goto("/__preview/relationship-governance");
 
+  // 治理板类别桶轮（§10）：二级过滤浮层移除，筛选条常驻内联（页签+搜索+
+  // 视图切换）；旧浮层的弹出几何、Esc/外点关闭与逐主题对比度断言随浮层
+  // 一起退役，内联条对比度由主题与组件层测试覆盖。这里锁内联条不推移
+  // 看板、筛选进 URL、视图切换与窄视口无横向溢出。
   const board = page.getByTestId("governance-board");
   await expect(board).toBeVisible();
   const topBefore = (await board.boundingBox())?.y;
-  const filterTrigger = page.getByTestId("governance-filter-trigger");
-  await filterTrigger.click();
-  const filterPopover = page.getByTestId("governance-filter-popover");
-  await expect(filterPopover).toBeVisible();
-  const popoverBounds = await filterPopover.boundingBox();
-  const workspaceBounds = await page.locator(".sh-relationships").boundingBox();
-  expect(popoverBounds?.x).toBeGreaterThanOrEqual(workspaceBounds?.x ?? 0);
-  expect(popoverBounds?.x).toBeGreaterThanOrEqual(0);
-  expect((popoverBounds?.x ?? 0) + (popoverBounds?.width ?? 0)).toBeLessThanOrEqual(800);
+  await expect(page.getByTestId("governance-bucket-all")).toBeVisible();
+  await expect(page.getByTestId("governance-bucket-pending")).toBeVisible();
+  await expect(page.getByTestId("governance-bucket-completed")).toBeVisible();
+  const search = page.getByRole("searchbox", { name: "搜索 Skill、目标或路径" });
+  await expect(search).toBeVisible();
   expect((await board.boundingBox())?.y).toBe(topBefore);
-  await expect(page.getByTestId("governance-scope-explanations")).toContainText("导入来源");
-  await expect(page.getByTestId("governance-scope-explanations")).toContainText("派发关系");
-  const popoverContrast = () => filterPopover.evaluate((element) => {
-    const channels = (color: string) => color.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [0, 0, 0];
-    const luminance = (color: string) => channels(color).map((channel) => {
-      const normalized = channel / 255;
-      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
-    }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
-    const style = getComputedStyle(element);
-    const values = [luminance(style.color), luminance(style.backgroundColor)].sort((a, b) => b - a);
-    return (values[0] + 0.05) / (values[1] + 0.05);
-  });
-  const themes = [
-    "moss-neutral",
-    "spring-signal",
-    "terracotta",
-    "codex-light",
-    "ocean-cobalt",
-    "sakura",
-    "aurora",
-    "roast",
-    "grok-night",
-  ];
-  for (const theme of themes) {
-    await page.evaluate((nextTheme) => document.documentElement.setAttribute("data-theme", nextTheme), theme);
-    expect(await popoverContrast(), `filter contrast for ${theme}`).toBeGreaterThanOrEqual(4.5);
-  }
-  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "grok-night"));
-  await page.screenshot({
-    path: path.join(screenshots, "relationship-governance-filters-800x560-dark.png"),
-    fullPage: false,
-  });
-  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "moss-neutral"));
   await page.screenshot({
     path: path.join(screenshots, "relationship-governance-filters-800x560.png"),
     fullPage: false,
   });
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("governance-filter-popover")).toBeHidden();
-  await expect(filterTrigger).toBeFocused();
-  await filterTrigger.click();
-  await page.mouse.click(780, 320);
-  await expect(page.getByTestId("governance-filter-popover")).toBeHidden();
-  await expect(filterTrigger).toBeFocused();
-  await filterTrigger.click();
-  await page.getByTestId("governance-bucket-all").click();
-  await expect(page.getByTestId("governance-filter-popover")).toBeHidden();
-  await filterTrigger.click();
-  await page.getByTestId("governance-scope-source_copy").click();
-  await expect(page).toHaveURL(/scope=source_copy/);
-  await page.getByRole("searchbox", { name: "搜索 Skill、目标或路径" }).fill("PDF");
+
+  await search.fill("PDF");
   await page.getByRole("button", { name: "搜索" }).click();
-  await expect(page).toHaveURL(/scope=source_copy.*text=PDF|text=PDF.*scope=source_copy/);
+  await expect(page).toHaveURL(/text=PDF/);
+  await page.getByTestId("governance-bucket-completed").click();
+  await expect(page).toHaveURL(/governance=completed/);
 
   const switchView = page.getByTestId("governance-view-toggle");
   await expect(switchView).toHaveAttribute("aria-label", "切换到表格视图");
@@ -274,11 +233,18 @@ test("governance presents all, pending, and completed summary filters", async ({
   await expect(page.getByTestId("governance-bucket-completed")).toBeVisible();
 });
 
-test("governance board has two resolution columns", async ({ page }) => {
+test("governance board defaults to the pending column and expands to two columns on the all tab", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/relationship-governance");
 
+  // 治理板类别桶轮（§10）：缺省进页直接看待处理（单列）；「全部」页签
+  // 才并排双列，列序固定待处理在左、已完成在右。
   const columns = page.getByTestId("governance-board").locator(":scope > section");
+  await expect(columns).toHaveCount(1);
+  await expect(columns.nth(0).getByRole("heading", { level: 2, name: /^待处理/ })).toBeVisible();
+
+  await page.getByTestId("governance-bucket-all").click();
+  await expect(page).toHaveURL(/governance=all/);
   await expect(columns).toHaveCount(2);
   await expect(columns.nth(0).getByRole("heading", { level: 2, name: /^待处理/ })).toBeVisible();
   await expect(columns.nth(1).getByRole("heading", { level: 2, name: /^已完成/ })).toBeVisible();

@@ -51,8 +51,9 @@ test("organizes the detail page into six information zones", async ({ page }) =>
   await expect(page.getByText("当前版本 · v2.4.1")).toBeVisible();
   await expect(page.locator('[aria-label="技能操作"]').getByRole("button", { name: "派发" })).toBeVisible();
 
-  // 原型示例警示可见：页面操作不写真实文件与技能库数据。
-  await expect(page.getByRole("note")).toContainText("原型示例");
+  // 真实流接线轮（8a8baf01，§9 裁决：评审原型即生产默认呈现）：原型示例
+  // 警示 note 已随横幅退役；预览路由的隔离性由 DEV 门面（previewApi）
+  // 保证，不再以页面文案声明。
 });
 
 test("full Skill details expose the shared security checks and finding dispositions", async ({ page }, testInfo) => {
@@ -105,31 +106,29 @@ test("states each fact once and keeps deterministic candidates ahead of the opti
   expect(zoneLabels).toEqual(["概览", "内容与文件", "安全检查", "使用去向", "来源更新", "版本历史"]);
   await expect(page.getByRole("heading", { name: "Source identity" })).toHaveCount(0);
 
-  // 旧九章节锚点不再是本页事实出口；外部变更收纳为版本区唯一的补充 details。
+  // 旧九章节锚点不再是本页事实出口；真实流接线轮（8a8baf01）：伪造的
+  // 外部变更样例历史整体移除——“事实只说一次”在此锚定为页面不再
+  // 出现编造的操作记录。
   for (const anchor of ["metadata", "overview", "description", "relations", "connections", "external", "zone-identity", "zone-lifecycle"]) {
     expect(await page.locator(`#${anchor}`).count()).toBe(0);
   }
-  await expect(page.getByText("外部变更与操作记录")).toHaveCount(1);
+  await expect(page.getByText("外部变更与操作记录")).toHaveCount(0);
 
   await expect(page.getByRole("heading", { level: 1, name: "PDF Reader" })).toBeVisible();
   // 别名只在元数据面板出现一次：读值与编辑入口同源（EditableTextSection）。
   await expect(page.locator('p[aria-label="Alias"]')).toHaveText("PDF 表格读取器");
   await expect(page.getByRole("button", { name: "Edit Alias" })).toBeVisible();
 
-  // 确定性重复候选加载即常显；可选 AI 分析默认未配置，结果区不提前出现。
-  await expect(page.getByRole("heading", { name: "可能重复的技能" })).toBeVisible();
-  await expect(page.getByText("PDF Text Extractor · 内容比对候选，尚未确认重复。")).toBeVisible();
-  const aiAnalysis = page.getByRole("button", { name: "AI 相似性分析" });
-  await expect(aiAnalysis).toBeDisabled();
-  await expect(page.getByText("AI 相似性分析未配置，当前保留确定性比对证据。")).toBeVisible();
-  await expect(page.getByText("AI 相似性分析完成：")).toHaveCount(0);
-
-  // 模拟配置后分析可运行；结果只是辅助证据，不替代确定性比对。
-  await page.getByRole("button", { name: "模拟 AI 已配置" }).click();
-  await expect(aiAnalysis).toBeEnabled();
-  await aiAnalysis.click();
-  await expect(page.getByText(/AI 相似性分析完成：/)).toBeVisible();
-  await expect(page.getByText("AI 结果只是辅助证据，不替代确定性比对。")).toBeVisible();
+  // 确定性重复候选加载即常显（en-US 渲染，面板契约与 llm-loops 同源，
+  // 149c7065）；可选 AI 分析是增强层：结果只在显式运行后出现，且仅作
+  // 辅助证据，不前置渲染、不替代确定性比对。
+  const duplicates = page.locator("#review-usage-body");
+  await expect(duplicates.getByRole("heading", { name: "Deterministic duplicate candidates" })).toBeVisible();
+  await expect(duplicates.getByText("PDF Reader（副本）")).toBeVisible();
+  await expect(duplicates.getByText("Source: deterministic candidates + AI semantic analysis")).toHaveCount(0);
+  await duplicates.getByRole("button", { name: "Run analysis" }).click();
+  await expect(duplicates.getByText("Source: deterministic candidates + AI semantic analysis")).toBeVisible();
+  await expect(duplicates.getByText(/Results are advisory only; merging, deleting or archiving/)).toBeVisible();
 });
 
 test("keeps review-section hashes working for deep links", async ({ page }) => {
@@ -234,10 +233,11 @@ test.describe("responsive workspace behaviour", () => {
     await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
 
     // 唯一滚动所有者可以滚到最后两个分区；可达性探针用分区真实存在的
-    // 可操作元素（来源更新区的查找入口、版本区的比较入口）。
+    // 可操作元素（来源更新区按 K6 真实流接入后的只读检查入口、版本区
+    // 的比较入口）。
     await page.locator("#review-sources").scrollIntoViewIfNeeded();
     await expect(
-      page.locator("#review-sources").getByRole("button", { name: "查找更新来源" }),
+      page.locator("#review-sources").getByRole("button", { name: "检查更新" }),
     ).toBeVisible();
     await page.locator("#review-versions").scrollIntoViewIfNeeded();
     await expect(
