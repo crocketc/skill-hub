@@ -117,6 +117,9 @@ async function renderDetail({
             <Route element={<SecurityProbe />} path="/library/:skillId/security" />
             <Route element={<DeploymentProbe />} path="/library/:skillId/deploy" />
             <Route element={<ExportProbe />} path="/settings/data-protection" />
+            <Route element={<GovernanceProbe />} path="/relationships/governance" />
+            <Route element={<p data-testid="agents-location">Agents route</p>} path="/agents" />
+            <Route element={<p data-testid="projects-location">Projects route</p>} path="/projects" />
             <Route element={<p>Recovery route</p>} path="/recovery" />
           </Routes>
         </MemoryRouter>
@@ -139,6 +142,18 @@ function SecurityProbe() {
 function DeploymentProbe() {
   const location = useLocation();
   return <p data-testid="deployment-location">{location.pathname}</p>;
+}
+
+// W3-5/W3-3b：使用去向卡治理入口必须携 Skill+关系身份与受控返回上下文进治理页。
+function GovernanceProbe() {
+  const location = useLocation();
+  return (
+    <>
+      <p data-testid="governance-location">{location.pathname}</p>
+      <p data-testid="governance-search">{location.search}</p>
+      <output data-testid="governance-state">{JSON.stringify(location.state)}</output>
+    </>
+  );
 }
 
 // W3-3（§7.8 生产承载）：详情头部「转为集中管理」接真实治理契约。
@@ -170,15 +185,26 @@ function governanceDeploymentFact(overrides: Partial<DeploymentRelationFact> = {
 function governanceRow(spec: {
   relationId: string;
   sharedImpactOnly?: boolean;
+  /** W3-5：使用去向卡需要真实的接管状态与目标身份。 */
+  takenOver?: boolean;
+  targetKind?: "agent" | "project" | "shared_directory";
+  path?: string;
+  agentClientId?: string;
 }): RelationGovernanceRow {
   const sharedImpactOnly = spec.sharedImpactOnly === true;
+  const takenOver = spec.takenOver === true;
+  const path = spec.path ?? "C:/agents/codex/skills/pdf-reader";
+  const targetKind = spec.targetKind ?? "agent";
   return {
     relation: {
       kind: "deployment",
       fact: governanceDeploymentFact({
         relation_id: spec.relationId,
-        relationship: sharedImpactOnly ? "observed_copy" : "managed_copy",
-        ownership: sharedImpactOnly ? "observed_unmanaged" : "skillhub_managed",
+        path,
+        path_key: path.toLowerCase(),
+        agent_client_id: spec.agentClientId ?? "codex",
+        relationship: takenOver ? "managed_link" : sharedImpactOnly ? "observed_copy" : "managed_copy",
+        ownership: takenOver || !sharedImpactOnly ? "skillhub_managed" : "observed_unmanaged",
       }),
     },
     skill_display_name: "PDF Reader",
@@ -193,18 +219,20 @@ function governanceRow(spec: {
       rollback_available: true,
     },
     governance: {
-      governance_status: "pending",
-      management_status: "not_taken_over",
+      governance_status: takenOver ? "completed" : "pending",
+      management_status: takenOver ? "taken_over" : "not_taken_over",
       decision: "undecided",
       management_confirmed_at: null,
       health_reasons: sharedImpactOnly ? ["shared_impact_confirmation_required"] : [],
-      action_conditions: [{
+      action_conditions: takenOver ? [] : [{
         action: "centralize_management",
         available: !sharedImpactOnly,
         reasons: sharedImpactOnly ? ["shared_impact_confirmation_required"] : [],
       }],
     },
-    target_identity: null,
+    target_identity: targetKind === "agent"
+      ? null
+      : { skill_id: "skill-pdf", target_kind: targetKind, directory_node_id: `node-${spec.relationId}`, entry_path_key: path.toLowerCase() },
     source_read_only: false,
     evidence_relation_ids: [spec.relationId],
   };
@@ -460,6 +488,93 @@ describe("SkillDetailPage shell", () => {
 
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "转为集中管理" })).not.toBeInTheDocument();
+  });
+
+  // W3-5：使用去向卡由治理清单（单一事实来源）驱动，样例卡与演示弹层退场。
+  it("renders usage destinations from the real governance ledger instead of demo cards", async () => {
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({ relationId: "observed:codex-1", sharedImpactOnly: true }),
+      governanceRow({
+        relationId: "managed:dep-shared",
+        takenOver: true,
+        targetKind: "shared_directory",
+        path: "C:/agents/shared/skills/pdf-reader",
+      }),
+    ]);
+    await renderDetail({ governanceFacade });
+
+    const destinations = await screen.findByLabelText("技能使用去向");
+    const pending = within(destinations).getByTestId("usage-destination-observed:codex-1");
+    expect(within(pending).getByText("待集中管理")).toBeVisible();
+    expect(within(pending).getByText("C:/agents/codex/skills/pdf-reader")).toBeVisible();
+    const managed = within(destinations).getByTestId("usage-destination-managed:dep-shared");
+    expect(within(managed).getByText("已集中管理")).toBeVisible();
+    expect(within(managed).getByText("C:/agents/shared/skills/pdf-reader")).toBeVisible();
+    // 示例卡样例与演示弹层不再出现（主体位置区仍可真实呈现同路径事实，
+    // 因此样例断言限定在使用去向容器内）。
+    expect(within(destinations).queryByText("文档协作项目")).not.toBeInTheDocument();
+    expect(within(destinations).queryByText("~/Agents/Codex/skills/pdf-reader")).not.toBeInTheDocument();
+    expect(screen.queryByText(/已精确选中此目标上下文/)).not.toBeInTheDocument();
+  });
+
+  it("deep-links the card governance entry with skill and relation identity plus a return context", async () => {
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({ relationId: "observed:codex-1", sharedImpactOnly: true }),
+    ]);
+    await renderDetail({ governanceFacade });
+
+    const card = await screen.findByTestId("usage-destination-observed:codex-1");
+    fireEvent.click(within(card).getByRole("button", { name: "查看治理详情" }));
+
+    expect(await screen.findByTestId("governance-location")).toHaveTextContent("/relationships/governance");
+    expect(screen.getByTestId("governance-search")).toHaveTextContent(
+      "?from=library&skillId=skill-pdf&relationId=observed%3Acodex-1",
+    );
+    expect(screen.getByTestId("governance-state")).toHaveTextContent('{"returnTo":"/library/skill-pdf"}');
+  });
+
+  it("routes the card agent entry to the real Agent list", async () => {
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({ relationId: "observed:codex-1", sharedImpactOnly: true }),
+    ]);
+    await renderDetail({ governanceFacade });
+
+    const agentCard = await screen.findByTestId("usage-destination-observed:codex-1");
+    fireEvent.click(within(agentCard).getByRole("button", { name: "进入 Agent" }));
+    expect(await screen.findByTestId("agents-location")).toHaveTextContent("Agents route");
+  });
+
+  it("routes the card project entry to the real project list with a derived title", async () => {
+    const governanceFacade = createTestGovernanceFacade([
+      governanceRow({
+        relationId: "observed:project-1",
+        sharedImpactOnly: true,
+        targetKind: "project",
+        path: "C:/Projects/docs/skills/pdf-reader",
+        agentClientId: "",
+      }),
+    ]);
+    await renderDetail({ governanceFacade });
+
+    const projectCard = await screen.findByTestId("usage-destination-observed:project-1");
+    expect(within(projectCard).getByText("docs")).toBeVisible();
+    fireEvent.click(within(projectCard).getByRole("button", { name: "进入项目" }));
+    expect(await screen.findByTestId("projects-location")).toHaveTextContent("Projects route");
+  });
+
+  it("keeps the usage destinations honest when the ledger is empty", async () => {
+    await renderDetail({ governanceFacade: createTestGovernanceFacade([]) });
+
+    expect(await screen.findByTestId("usage-destinations-empty")).toBeVisible();
+  });
+
+  it("shows an explicit failure instead of demo cards when the governance ledger cannot load", async () => {
+    const governanceFacade = createTestGovernanceFacade([]);
+    vi.mocked(governanceFacade.listGovernance).mockRejectedValue(new Error("ledger unavailable"));
+    await renderDetail({ governanceFacade });
+
+    expect(await screen.findByTestId("usage-destinations-error")).toBeVisible();
+    expect(screen.queryByLabelText("技能使用去向")).not.toBeInTheDocument();
   });
 
   it("provides the same actionable security review from full details", async () => {

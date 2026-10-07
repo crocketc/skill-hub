@@ -87,7 +87,9 @@ it("shows a target-fact error and keeps delete confirmation unavailable when imp
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByRole("alert")).toHaveTextContent("Deployment target details could not be verified, so deletion was not prepared.");
+  // W3-5：治理清单不可用时使用去向区会同时呈现自身 alert；删除影响错误
+  // 按文本精确定位，不依赖 alert 顺序。
+  expect(await screen.findByText("Deployment target details could not be verified, so deletion was not prepared.")).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Confirm deletion from library" })).not.toBeInTheDocument();
 });

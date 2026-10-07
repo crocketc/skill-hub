@@ -1,5 +1,12 @@
 import { useState } from "react";
-import type { RemovalImpactFact } from "../../api/bindings";
+import type {
+  RelationshipType,
+  RelationGovernanceBatchOutcome,
+  RelationGovernanceLedger,
+  RelationGovernanceRow,
+  RemovalImpactFact,
+} from "../../api/bindings";
+import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import { SkillDetailPage } from "./SkillDetailPage";
@@ -127,6 +134,181 @@ const previewRemovalImpact: RemovalImpactFact = {
   relation_id: "rel:skill-preview:copy",
 };
 
+/**
+ * W3-5：DEV 预览的治理清单夹具——使用去向卡三种形态各一张（待集中管理
+ * 独立副本、已集中管理共享目录、已集中管理项目），行事实与生产契约同构。
+ * 批次方法返回一次性成功结果，仅服务预览交互，不承载生产行为。
+ */
+function deploymentRow(spec: {
+  relationId: string;
+  path: string;
+  agentClientId: string;
+  relationship: RelationshipType;
+  takenOver: boolean;
+  targetKind: "agent" | "project" | "shared_directory";
+}): RelationGovernanceRow {
+  return {
+    relation: {
+      kind: "deployment",
+      fact: {
+        relation_id: spec.relationId,
+        skill_id: "skill-pdf",
+        agent_client_id: spec.agentClientId,
+        path: spec.path,
+        path_key: spec.path.toLowerCase(),
+        directory_node_id: "node-shared",
+        relationship: spec.relationship,
+        file_representation: spec.relationship === "managed_link" ? "symbolic_link" : "copy",
+        ownership: spec.takenOver ? "skillhub_managed" : "observed_unmanaged",
+        link_target_path: spec.takenOver ? "/Users/preview/SkillHub/skills/pdf" : null,
+        link_target_path_key: spec.takenOver ? "/users/preview/skillhub/skills/pdf" : null,
+        link_target_directory_id: spec.takenOver ? "node-library" : null,
+        content_fingerprint: "sha256:preview-copy",
+        origin: "import",
+        match_state: "content_verified",
+        health_reasons: [],
+        active: true,
+        observed_at: "0",
+        released_at: null,
+      },
+    },
+    skill_display_name: "PDF Reader",
+    status: "normal",
+    readiness: spec.takenOver ? "already_centralized" : "eligible_to_centralize",
+    primary_action: spec.takenOver ? "undeploy" : "centralize_management",
+    blockers: [],
+    impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: true, rollback_available: true },
+    governance: {
+      governance_status: spec.takenOver ? "completed" : "pending",
+      management_status: spec.takenOver ? "taken_over" : "not_taken_over",
+      decision: "undecided",
+      management_confirmed_at: null,
+      health_reasons: [],
+      action_conditions: spec.takenOver
+        ? [{ action: "undeploy", available: true, reasons: [] }]
+        : [{ action: "centralize_management", available: true, reasons: [] }],
+    },
+    target_identity: spec.targetKind === "agent"
+      ? null
+      : { skill_id: "skill-pdf", target_kind: spec.targetKind, directory_node_id: "node-shared", entry_path_key: spec.path.toLowerCase() },
+    source_read_only: false,
+    evidence_relation_ids: [spec.relationId],
+  };
+}
+
+const previewGovernanceRows: RelationGovernanceRow[] = [
+  deploymentRow({
+    relationId: "rel:skill-preview:copy",
+    path: "/Users/preview/.agents/skills/pdf",
+    agentClientId: "auditor.cli",
+    relationship: "observed_copy",
+    takenOver: false,
+    targetKind: "agent",
+  }),
+  deploymentRow({
+    relationId: "rel:skill-preview:managed-shared",
+    path: "/Users/preview/.agents/shared/skills/pdf",
+    agentClientId: "auditor.cli",
+    relationship: "shared_directory_read",
+    takenOver: true,
+    targetKind: "shared_directory",
+  }),
+  deploymentRow({
+    relationId: "rel:skill-preview:managed-project",
+    path: "/Users/preview/Projects/文档协作/skills/pdf",
+    agentClientId: "",
+    relationship: "managed_link",
+    takenOver: true,
+    targetKind: "project",
+  }),
+];
+
+function previewBatchOutcome(state: RelationGovernanceBatchOutcome["state"], relationId: string): RelationGovernanceBatchOutcome {
+  return {
+    batch_id: "preview-batch-1",
+    action: "centralize_management",
+    state,
+    items: [{
+      relation_id: relationId,
+      operation_id: "preview-op-migrate-1",
+      state: state === "committed" ? "committed" : "prepared",
+      error_code: null,
+      detail: null,
+      retryable: true,
+      rollback_available: true,
+      backup_path: "/Users/preview/SkillHub/backups/preview",
+      affected_paths: [],
+      blockers: [],
+    }],
+    prepared_count: 1,
+    committed_count: state === "committed" ? 1 : 0,
+    failed_count: 0,
+    blocked_count: 0,
+    cancelled_count: 0,
+    relationship_revision: "preview-relationship-revision",
+  };
+}
+
+const previewGovernanceFacade: RelationGovernanceFacade = {
+  async listGovernance() {
+    const ledger: RelationGovernanceLedger = {
+      rows: previewGovernanceRows,
+      counts: {
+        all: previewGovernanceRows.length,
+        eligible_to_centralize: 1,
+        needs_validation: 0,
+        blocked: 0,
+        status_normal: previewGovernanceRows.length,
+        status_retained: 0,
+        status_needs_validation: 0,
+        status_needs_attention: 0,
+        status_blocked: 0,
+        source_copies: 0,
+        deployments: previewGovernanceRows.length,
+      },
+      bucket: "all",
+      total: previewGovernanceRows.length,
+      relationship_revision: "preview-relationship-revision",
+      last_verified_at: "0",
+    };
+    return ledger;
+  },
+  revalidate: async () => ({ items: [], relationship_revision: "preview-relationship-revision" }),
+  async listHistory() {
+    throw new Error("Preview facade does not serve governance history.");
+  },
+  async retainSourceCopy() {
+    throw new Error("Preview facade does not execute retention.");
+  },
+  async revokeRetention() {
+    throw new Error("Preview facade does not execute retention.");
+  },
+  async endRelationship() {
+    throw new Error("Preview facade does not execute lifecycle actions.");
+  },
+  async relinkSourceCopy() {
+    throw new Error("Preview facade does not execute relinks.");
+  },
+  async getRelationshipRemovalImpact(relationId) {
+    return { ...previewRemovalImpact, relation_id: relationId };
+  },
+  async prepareGovernanceBatch(request) {
+    return previewBatchOutcome("prepared", request.relationIds[0] ?? "");
+  },
+  async commitGovernanceBatch(_batchId, relationIds) {
+    return previewBatchOutcome("committed", relationIds[0] ?? "");
+  },
+  async rollbackGovernanceBatch(_batchId, relationIds) {
+    return previewBatchOutcome("committed", relationIds[0] ?? "");
+  },
+  async prepareRelationUndeploy() {
+    throw new Error("Preview facade does not execute undeploys.");
+  },
+  async commitRelationUndeploy() {
+    throw new Error("Preview facade does not execute undeploys.");
+  },
+};
+
 export function SkillDetailPreview() {
   // §9 转正裁决：评审布局已是生产默认呈现；DEV 预览固定走内存评审门面。
   const [facade] = useState(() =>
@@ -140,6 +322,7 @@ export function SkillDetailPreview() {
   return (
     <SkillDetailPage
       facade={facade}
+      governanceFacade={previewGovernanceFacade}
       markdownFacade={markdownFacade}
       securityFacade={securityFacade}
     />

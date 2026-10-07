@@ -2,7 +2,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
-import { AgentPresentation, readableAgentIdName } from "../../ui/AgentPresentation";
+import { AgentPresentation, inferAgentKindKey, readableAgentIdName } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
 import { Icon } from "../../ui/Icon";
@@ -16,6 +16,7 @@ import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { MetadataPanel } from "./MetadataPanel";
 import { RequirementsPanel } from "./RequirementsPanel";
 import { VersionTimeline } from "./VersionTimeline";
+import { projectDisplayName, type UsageDestinationCard, type UsageDestinationsState } from "./usageDestinations";
 import { ReviewHeaderActions, ReviewOverviewStatus, ReviewSubjectLocation } from "./SkillDetailReviewScenarios";
 import type { SkillLibraryReturnState } from "./detailContext";
 import type {
@@ -62,15 +63,20 @@ interface SkillDetailReviewExperienceProps {
   securityFacade: SecurityFacade;
   skillId: string;
   summary: SkillDetailSummary;
+  /** W3-5：使用去向卡呈现模型（来自治理清单）；undefined 表示本路由未接治理门面。 */
+  usageDestinations?: UsageDestinationsState;
+  /** W3-3b（§7.8）：卡片治理入口携 Skill+关系身份深链治理页，由详情页提供。 */
+  onOpenGovernanceDestination?: (relationId: string) => void;
 }
 
 /**
  * 技能详情评审布局（§9 裁决，2026-10-06）：生产默认呈现。
  * 安全区块接入真实 SecurityFacade 与安全预警事实（task C，六裁决安全呈现）；
  * 派发接真实部署对话框路由（W3-1），导出接标准导出流、删除接统一确认
- * （W3-2），转为集中管理接真实治理批次契约（W3-3，§7.8 生产承载）；
- * 演示性操作（来源更新示例流、使用去向示例卡）保持原型确认行为，
- * 接真实数据由后续任务裁决。
+ * （W3-2，§10 统一操作入口），头部转为集中管理接真实治理批次契约（W3-3a，
+ * §7.8 生产承载）；
+ * 使用去向卡接治理清单事实与治理页深链（W3-5/W3-3b）；
+ * 来源更新示例流保持原型确认行为，接真实数据由后续任务裁决。
  */
 export function SkillDetailReviewExperience({
   adjacent,
@@ -90,6 +96,8 @@ export function SkillDetailReviewExperience({
   securityFacade,
   skillId,
   summary,
+  usageDestinations,
+  onOpenGovernanceDestination,
 }: SkillDetailReviewExperienceProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -249,7 +257,7 @@ export function SkillDetailReviewExperience({
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
-              <ReviewUsageDestinations />
+              <ReviewUsageDestinations destinations={usageDestinations} onOpenGovernance={onOpenGovernanceDestination} />
               {insights ? <ReviewUsageInsights insights={insights} /> : null}
             </div>
           </section>
@@ -431,86 +439,102 @@ function ReviewGraphEntry({ skillId }: { skillId: string }) {
   );
 }
 
-// W3-5 待办：使用去向卡仍为示例数据；真实接管后的状态变化由治理清单驱动，
-// 不再用前端状态翻转徽标（§7.8：不以前端状态切换登记成功）。
-function ReviewUsageDestinations() {
-  const [selectedTarget, setSelectedTarget] = useState<string>();
-  const [targetView, setTargetView] = useState<"target" | "governance">("governance");
-  const targets = [
-    {
-      id: "codex-copy",
-      name: "Codex 终端",
-      kind: "agent" as const,
-      agentId: "openai.codex-cli",
-      path: "~/Agents/Codex/skills/pdf-reader",
-      status: "待集中管理",
-      detail: "原位置仍是独立副本，当前内容尚未接管。",
-    },
-    {
-      id: "shared-directory",
-      name: "共享目录",
-      kind: "shared" as const,
-      agentId: "openai.codex-cli",
-      path: "~/Agents/shared/skills/pdf-reader",
-      status: "已集中管理",
-      detail: "受管链接跟随集中库当前版本；共享目录只计一个物理去向。",
-    },
-    {
-      id: "project-target",
-      name: "文档协作项目",
-      kind: "project" as const,
-      agentId: "",
-      path: "~/Projects/文档协作/skills/pdf-reader",
-      status: "已集中管理",
-      detail: "项目使用链接跟随集中库当前版本。",
-    },
-  ];
+// W3-5：使用去向卡由治理清单驱动（usageDestinations.ts 模型），状态、路径
+// 与关系身份都来自真实行事实；接管状态变化由清单刷新承载，不用前端状态
+// 翻转徽标（§7.8）。治理入口经 onOpenGovernanceDestination 深链治理页，
+// 卡片不复制头部接管确认；Agent/项目入口进真实列表页（Agent 详情路由的
+// id 空间与治理行的 client id 不同，不伪造直达链接）。
+function ReviewUsageDestinations({
+  destinations,
+  onOpenGovernance,
+}: {
+  destinations?: UsageDestinationsState;
+  onOpenGovernance?: (relationId: string) => void;
+}) {
+  const navigate = useNavigate();
+  if (!destinations) return null;
+  if (destinations.state === "loading") {
+    return <p data-testid="usage-destinations-loading" role="status">正在获取使用去向。</p>;
+  }
+  if (destinations.state === "unavailable") {
+    return <p data-testid="usage-destinations-error" role="alert">使用去向暂时无法获取；关系治理清单不可用。</p>;
+  }
+  if (destinations.cards.length === 0) {
+    return (
+      <p data-testid="usage-destinations-empty">
+        还没有使用去向；通过「派发」创建第一个使用位置后，这里会显示各位置的状态。
+      </p>
+    );
+  }
   return (
-    <>
     <div aria-label="技能使用去向" className="sh-skill-detail-review__destinations">
-          {targets.map((target) => {
-            return (
-              <article className="sh-skill-detail-review__destination" key={target.id}>
-                <div className="sh-skill-detail-review__destination-heading">
-                  <div>
-                    {target.kind === "shared" ? (
-                      <AgentPresentation
-                        sharedAgentBrandKinds={{ "openai.codex-cli": ["cli"], "codebuddy.code": ["cli"] }}
-                        sharedAgentBrands={["openai.codex-cli", "codebuddy.code"]}
-                        sharedDirectory
-                      />
-                    ) : target.kind === "agent" ? (
-                      <AgentPresentation agentId={target.agentId} />
-                    ) : <strong>{target.name}</strong>}
-                  </div>
-                  <StatusBadge tone={target.status === "已集中管理" ? "success" : "warning"}>
-                    {target.status}
-                  </StatusBadge>
-                </div>
-                <p title={target.detail}>{target.detail}</p>
-                <code title={target.path}>{target.path}</code>
-                <div className="sh-skill-detail-review__source-actions"><Button onClick={() => { setTargetView("target"); setSelectedTarget(target.id); }} size="sm" variant="ghost">{target.kind === "project" ? "进入项目" : "进入 Agent"}</Button><Button onClick={() => { setTargetView("governance"); setSelectedTarget(target.id); }} size="sm" variant="ghost">查看治理详情</Button></div>
-              </article>
-            );
-          })}
+      {destinations.cards.map((card) => (
+        <UsageDestinationCardView
+          card={card}
+          key={card.relationId}
+          onOpenAgentList={() => navigate("/agents")}
+          onOpenGovernance={onOpenGovernance}
+          onOpenProjectList={() => navigate("/projects")}
+        />
+      ))}
     </div>
-    {selectedTarget ? (() => {
-      const target = targets.find((item) => item.id === selectedTarget);
-      if (!target) return null;
-      return (
-        <Dialog.Root open onOpenChange={(open) => { if (!open) setSelectedTarget(undefined); }}>
-          <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>{target.name} · {targetView === "target" ? "目标详情" : "使用关系"}</Dialog.Title>
-            <Dialog.Description>{target.detail}</Dialog.Description>
-            <dl className="sh-skill-detail-review__record"><div><dt>使用位置</dt><dd><code>{target.path}</code></dd></div><div><dt>当前管理方式</dt><dd>{target.status}</dd></div></dl>
-            {targetView === "target" ? <p>此目标正在使用 PDF Reader。{target.kind === "shared" ? "这是一个物理共享目录；Codex 与 CodeBuddy 是其消费者，不重复计算目标。" : target.kind === "project" ? "当前项目：文档协作项目。" : "当前 Agent：Codex 终端。"}</p> : <p>{target.status === "已集中管理" ? "入口健康：链接可用，当前没有治理待办。" : "治理待处理：原入口是独立副本，等待选择是否集中管理。"}接管、保留/撤销、修复、回收、结束由统一关系治理流程承接。</p>}
-            <p>已精确选中此目标上下文。返回技能详情不会改变使用状态。正式实现将携带此技能与该使用关系、物理目标的身份进入关系治理，并保留返回技能详情的入口。</p>
-            <div className="sh-dialog__actions"><Button onClick={() => setTargetView((current) => current === "target" ? "governance" : "target")} size="sm" variant="secondary">{targetView === "target" ? "查看治理详情" : "查看目标详情"}</Button><Button onClick={() => setSelectedTarget(undefined)} size="sm">返回技能详情</Button></div>
-          </Dialog.Content></Dialog.Portal>
-        </Dialog.Root>
-      );
-    })() : null}
-    </>
+  );
+}
+
+function UsageDestinationCardView({
+  card,
+  onOpenAgentList,
+  onOpenGovernance,
+  onOpenProjectList,
+}: {
+  card: UsageDestinationCard;
+  onOpenAgentList: () => void;
+  onOpenGovernance?: (relationId: string) => void;
+  onOpenProjectList: () => void;
+}) {
+  const healthNote = card.unhealthy ? "入口健康异常，请在关系治理中检查。" : "";
+  const detail = card.takenOver
+    ? `受管链接跟随集中库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
+    : `原位置仍是独立副本；可在关系治理中纳入集中管理。${healthNote}`;
+  return (
+    <article className="sh-skill-detail-review__destination" data-testid={`usage-destination-${card.relationId}`}>
+      <div className="sh-skill-detail-review__destination-heading">
+        <div>
+          {card.targetKind === "shared_directory" ? (
+            <AgentPresentation
+              sharedAgentBrandKinds={Object.fromEntries(
+                card.agentClientIds.map((clientId) => [clientId, [inferAgentKindKey(clientId)]]),
+              )}
+              sharedAgentBrands={card.agentClientIds}
+              sharedDirectory
+            />
+          ) : card.targetKind === "project" ? (
+            <strong>{projectDisplayName(card.path) ?? "项目位置"}</strong>
+          ) : (
+            <AgentPresentation agentId={card.agentClientIds[0] ?? ""} />
+          )}
+        </div>
+        <StatusBadge tone={card.takenOver ? "success" : "warning"}>
+          {card.takenOver ? "已集中管理" : "待集中管理"}
+        </StatusBadge>
+      </div>
+      <p title={detail}>{detail}</p>
+      <code title={card.path}>{card.path}</code>
+      <div className="sh-skill-detail-review__source-actions">
+        <Button
+          onClick={card.targetKind === "project" ? onOpenProjectList : onOpenAgentList}
+          size="sm"
+          variant="ghost"
+        >
+          {card.targetKind === "project" ? "进入项目" : "进入 Agent"}
+        </Button>
+        {onOpenGovernance ? (
+          <Button onClick={() => onOpenGovernance(card.relationId)} size="sm" variant="ghost">
+            查看治理详情
+          </Button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

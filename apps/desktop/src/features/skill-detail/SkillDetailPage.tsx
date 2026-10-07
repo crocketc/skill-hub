@@ -37,9 +37,11 @@ import type { RelationGovernanceBatchOutcome } from "../../api/bindings";
 import { relationshipsKeys } from "../relationships/api";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { mergeBatchItemOutcome, relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
+import { buildGovernanceLibraryReturnTo } from "../relationships/governance/libraryReturnContext";
 import { createGovernanceBatchRunner } from "../relationships/governance/governanceBatchOperation";
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { GovernanceBatchDialog } from "../relationships/governance/GovernanceBatchDialog";
+import { usageDestinationCards, type UsageDestinationsState } from "./usageDestinations";
 import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
 interface SkillDetailPageProps {
@@ -132,6 +134,28 @@ export function SkillDetailPage({
     () => (takeoverLedgerQuery.data?.rows ?? []).filter(rowIsBatchExecutable),
     [takeoverLedgerQuery.data],
   );
+  // W3-5：使用去向卡与待接管候选共用同一份治理清单（单一事实来源），
+  // 卡片状态、路径与关系身份都来自清单行，不在前端自备样例或翻转状态。
+  const usageDestinations: UsageDestinationsState | undefined = useMemo(() => {
+    if (effectiveGovernanceFacade === undefined) return undefined;
+    if (takeoverLedgerQuery.isError) return { state: "unavailable" };
+    if (!takeoverLedgerQuery.isSuccess) return { state: "loading" };
+    return { state: "ready", cards: usageDestinationCards(takeoverLedgerQuery.data?.rows ?? []) };
+  }, [effectiveGovernanceFacade, takeoverLedgerQuery.isError, takeoverLedgerQuery.isSuccess, takeoverLedgerQuery.data]);
+  // W3-3b（§7.8）：卡片治理入口携 Skill+关系身份深链治理页，并带受控返回
+  // 上下文（returnTo 只接受本 Skill 详情；接管等动作仍在治理页执行）。
+  const openGovernanceDestination = useCallback((relationId: string) => {
+    navigate(`/relationships/governance?${new URLSearchParams({
+      from: "library",
+      skillId,
+      relationId,
+    })}`, {
+      state: {
+        returnTo: buildGovernanceLibraryReturnTo(skillId, backSearch) ?? `/library/${encodeURIComponent(skillId)}`,
+        ...(libraryReturn ? { libraryReturn } : {}),
+      },
+    });
+  }, [backSearch, libraryReturn, navigate, skillId]);
   // §7.8：详情面板承载与治理页同一套批次流程——面板状态只管选择与呈现，
   // 执行走共享的批次编排（prepare → commit，逐项结果 + 重试/回退）。
   const [takeoverOpen, setTakeoverOpen] = useState(false);
@@ -416,12 +440,14 @@ export function SkillDetailPage({
         // §7.8：入口只在存在真实待接管关系时出现（隐藏而非禁用）。
         onCentralize={takeoverCandidates.length > 0 ? openTakeover : undefined}
         onDelete={() => void startRemoval()}
+        onOpenGovernanceDestination={openGovernanceDestination}
         provenance={provenanceQuery.data}
         refreshSnapshot={refreshSnapshot}
         requirements={requirementsQuery.data}
         securityFacade={securityFacade}
         skillId={skillId}
         summary={summaryQuery.data}
+        usageDestinations={usageDestinations}
         libraryReturn={libraryReturn}
         returnToLibrary={`${backPathname}?${reviewReturnParams.toString()}`}
       />
