@@ -113,9 +113,7 @@ it("shows cached home data while filesystem verification continues", async () =>
 
   expect(await screen.findAllByText("42")).toHaveLength(1);
   expect(screen.queryByText("正在核对本地变化")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("progressbar", { name: "阻塞启动" }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "概览" })).toBeVisible();
   expect(screen.getByRole("link", { name: "设置" })).toBeVisible();
 });
@@ -137,8 +135,12 @@ it("blocks only for a truthful recovery state", async () => {
 
   expect(await screen.findByText("需要恢复后才能继续")).toBeVisible();
   expect(screen.getByRole("alert")).toBeVisible();
-  expect(screen.queryByRole("progressbar", { name: "阻塞启动" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "概览" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "打开操作记录与恢复" })).toHaveAttribute(
+    "href",
+    "/recovery",
+  );
 });
 
 it("names an in-progress recovery without pretending it is complete", async () => {
@@ -147,18 +149,41 @@ it("names an in-progress recovery without pretending it is complete", async () =
     verification: { kind: "unavailable" },
   });
 
-  expect(await screen.findByText("正在恢复本地数据")).toBeVisible();
-  expect(screen.getByRole("progressbar", { name: "阻塞启动" })).toBeVisible();
+  expect(await screen.findByText("上次操作尚未完成")).toBeVisible();
+  expect(
+    screen.getByText(
+      "检测到上次会话有未完成的操作，SkillHub 暂不显示可能过期的本地数据。请在恢复页确认处置方式。",
+    ),
+  ).toBeVisible();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
 });
 
 it("keeps the recovery page reachable from the startup blocker", async () => {
   await renderBootstrapGate({
-    snapshot: { ...cachedSnapshot, recovery_state: "in_progress" as const },
+    snapshot: {
+      ...cachedSnapshot,
+      recovery_state: "needs_recovery" as const,
+      recent_operations: [
+        {
+          operation_id: "9f1c3a52-6c0d-4a7e-9d4a-2b8e5f0a1c73",
+          kind: "version_adoption",
+          state: "needs_recovery",
+          phase: "needs_recovery" as const,
+          error_code: null,
+          created_at: "2026-10-07T08:00:00Z",
+          object_name: null,
+          targets: [],
+        },
+      ],
+    },
     verification: { kind: "unavailable" },
   });
 
   const link = await screen.findByRole("link", { name: "打开操作记录与恢复" });
-  expect(link).toHaveAttribute("href", "/recovery");
+  expect(link).toHaveAttribute(
+    "href",
+    "/recovery?operationId=9f1c3a52-6c0d-4a7e-9d4a-2b8e5f0a1c73",
+  );
   fireEvent.click(link);
   expect(await screen.findByRole("heading", { name: "恢复页面" })).toBeVisible();
 });

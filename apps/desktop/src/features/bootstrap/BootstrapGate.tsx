@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useLocation } from "react-router-dom";
-import type { BootstrapSnapshot, StartupRecoveryState } from "../../api/bindings";
+import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { DataState } from "../../ui/DataState";
 import {
@@ -23,9 +23,14 @@ type BootstrapLoadState =
     }
   | { kind: "error" };
 
-function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryState }) {
+function RecoveryBlocker({ snapshot }: { snapshot: BootstrapSnapshot }) {
   const { t } = useTranslation();
-  const isRecovering = recoveryState === "in_progress";
+  const isRecovering = snapshot.recovery_state === "in_progress";
+  // 启动被挡时，把第一个待恢复候选直接带给恢复页，让恢复页落到对应候选，
+  // 用户不必再从列表里自己找。
+  const candidateId = snapshot.recent_operations.find(
+    (operation) => operation.phase === "needs_recovery",
+  )?.operation_id;
 
   return (
     <main className="sh-startup-blocker">
@@ -36,10 +41,9 @@ function RecoveryBlocker({ recoveryState }: { recoveryState: StartupRecoveryStat
       >
         <h1>{t(isRecovering ? "bootstrap.recoveryInProgressTitle" : "bootstrap.recoveryTitle")}</h1>
         <p>{t(isRecovering ? "bootstrap.recoveryInProgressDescription" : "bootstrap.recoveryDescription")}</p>
-        {isRecovering ? (
-          <div aria-label={t("bootstrap.blockingStartup")} role="progressbar" />
-        ) : null}
-        <Link to="/recovery">{t("bootstrap.openRecovery")}</Link>
+        <Link to={candidateId ? `/recovery?operationId=${candidateId}` : "/recovery"}>
+          {t("bootstrap.openRecovery")}
+        </Link>
       </section>
     </main>
   );
@@ -97,7 +101,7 @@ export function BootstrapGate({ runtime = desktopBootstrapRuntime }: BootstrapGa
     return <ErrorState retry={() => void load(true)} />;
   }
   if (state.snapshot.recovery_state !== "clean" && location.pathname !== "/recovery") {
-    return <RecoveryBlocker recoveryState={state.snapshot.recovery_state} />;
+    return <RecoveryBlocker snapshot={state.snapshot} />;
   }
   if (state.snapshot.initialization_state === "not_initialized") {
     return <Navigate replace to="/initialize" />;

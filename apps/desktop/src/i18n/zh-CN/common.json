@@ -1204,11 +1204,10 @@
       "newDetail_other": "本次启动后台重扫新识别 {{count}} 个品牌/类型：{{brands}}",
       "newTitle": "发现新的 Agent"
     },
-    "blockingStartup": "阻塞启动",
     "openRecovery": "打开操作记录与恢复",
     "recoveryDescription": "检测到尚未完成的恢复操作。完成恢复前，SkillHub 不会继续显示可能过期的本地数据。",
-    "recoveryInProgressDescription": "SkillHub 正在恢复本地数据。恢复完成前不会显示可能过期的本地数据。",
-    "recoveryInProgressTitle": "正在恢复本地数据",
+    "recoveryInProgressDescription": "检测到上次会话有未完成的操作，SkillHub 暂不显示可能过期的本地数据。请在恢复页确认处置方式。",
+    "recoveryInProgressTitle": "上次操作尚未完成",
     "recoveryTitle": "需要恢复后才能继续"
   },
   "onboarding": {
@@ -2501,7 +2500,7 @@
     },
     "tabs": {
       "records": "操作记录",
-      "backupRestore": "备份恢复",
+      "backupRestore": "未完成操作",
       "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
     },
     "unknownOperation": "未知操作"

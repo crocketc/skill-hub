@@ -1204,11 +1204,10 @@
       "newDetail_other": "Startup background rediscovery found {{count}} new brands/types: {{brands}}",
       "newTitle": "New agents discovered"
     },
-    "blockingStartup": "Blocking startup",
     "openRecovery": "Open operations and recovery",
     "recoveryDescription": "An unfinished recovery operation needs attention. SkillHub will not show potentially stale local data until recovery is complete.",
-    "recoveryInProgressDescription": "SkillHub is restoring local data. Potentially stale local data will remain hidden until restoration is complete.",
-    "recoveryInProgressTitle": "Restoring local data",
+    "recoveryInProgressDescription": "An operation from the previous session did not finish. SkillHub is holding back potentially stale local data. Confirm how to handle it on the recovery page.",
+    "recoveryInProgressTitle": "Previous operation unfinished",
     "recoveryTitle": "Recovery is required before continuing"
   },
   "onboarding": {
@@ -2501,7 +2500,7 @@
     },
     "tabs": {
       "records": "Operation records",
-      "backupRestore": "Backup & restore",
+      "backupRestore": "Unfinished operations",
       "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
     },
     "unknownOperation": "Unknown operation"
