@@ -424,7 +424,7 @@ it("removes a repository only after an explicit confirmation", async () => {
   renderCard(baseFacade({ removeSkillRepo }));
 
   await screen.findByRole("heading", { name: "anthropics/skills" });
-  await click(screen.getAllByRole("button", { name: "移除" })[0]);
+  await click(screen.getAllByRole("button", { name: "移除仓库" })[0]);
   expect(removeSkillRepo).not.toHaveBeenCalled();
 
   await click(await screen.findByRole("button", { name: "确认移除" }));

@@ -186,7 +186,7 @@ it("renders mixed ignore rules as structured rows with type badges", async () =>
   expect(document.body).not.toHaveTextContent("pending-7");
   expect(screen.getByText("等待上游修复后再检查")).toBeVisible();
   expect(screen.getByText("创建于: 2026-09-03T08:00:00Z")).toBeVisible();
-  expect(screen.getAllByRole("button", { name: "移除" })).toHaveLength(3);
+  expect(screen.getAllByRole("button", { name: "移除规则" })).toHaveLength(3);
 });
 
 it("keeps the rule and reports the failure when removal fails", async () => {
@@ -196,7 +196,7 @@ it("keeps the rule and reports the failure when removal fails", async () => {
   await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule], removeIgnoreRule }));
   expect(await screen.findByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
 
-  await click(screen.getByRole("button", { name: "移除" }));
+  await click(screen.getByRole("button", { name: "移除规则" }));
   await click(await screen.findByRole("button", { name: "确认移除" }));
 
   expect(removeIgnoreRule).toHaveBeenCalledWith("rule-1");
@@ -282,7 +282,7 @@ it("removes an ignore rule only after an explicit confirmation", async () => {
   await renderLibrary(healthFacade({ listIgnoreRules: async () => [pathRule], removeIgnoreRule }));
   expect(await screen.findByText("C:\\SkillHub\\library\\drafts")).toBeVisible();
 
-  await click(screen.getByRole("button", { name: "移除" }));
+  await click(screen.getByRole("button", { name: "移除规则" }));
   expect(removeIgnoreRule).not.toHaveBeenCalled();
   expect(
     await screen.findByText("移除后C:\\SkillHub\\library\\drafts将重新参与健康检查。"),

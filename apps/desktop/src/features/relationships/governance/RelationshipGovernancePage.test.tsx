@@ -853,7 +853,7 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
   });
 
   it("gives anomalous read-only originals the pending exits instead of a zero-action card", async () => {
-    // #10 第 1 项（§10）：异常原件回到待处理并提供「重新检查 / 结束关系」；
+    // #10 第 1 项（§10）：异常原件回到待处理并提供「重新检查 / 解除关系」；
     // 「已入库」完成态徽标不属于待处理行，只读来源说明保留。
     await renderGovernanceApp({
       facade: createFacade(sourceLedger([READ_ONLY_ANOMALOUS_ROW])),
@@ -863,7 +863,7 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
     expect(screen.getByTestId("governance-action-src-readonly-anomalous"))
       .toHaveTextContent("重新检查");
     expect(screen.getByTestId("governance-action-end_relationship-src-readonly-anomalous"))
-      .toHaveTextContent("结束关系");
+      .toHaveTextContent("解除关系");
     // 只读行不参与批量勾选。
     expect(screen.queryByTestId("governance-select-src-readonly-anomalous")).toBeNull();
     // 原因 + 重新核验说明可见；完成态徽标不出现。
