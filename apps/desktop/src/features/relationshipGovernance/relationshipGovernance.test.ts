@@ -128,6 +128,7 @@ function overviewWith(overrides: Partial<RelationshipOverview> = {}): Relationsh
     pending_governance_tasks: [],
     agent_execution_confirmed: false,
     ...overrides,
+    usage_relations: overrides.usage_relations ?? [],
   };
 }
 

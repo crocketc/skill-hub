@@ -251,6 +251,7 @@ function createPreviewAgentFacade(empty: boolean, pathStyleTarget = false): Agen
           applicable_platforms: [],
         },
       ],
+      usage_relations: [],
       source_relations: [],
       deployment_relations: [
         {

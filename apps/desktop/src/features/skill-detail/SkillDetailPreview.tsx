@@ -132,6 +132,7 @@ const previewRelationshipOverview = {
       task_id: "task:skill-preview:copy",
     },
   ],
+  usage_relations: [],
   agent_execution_confirmed: false as const,
 };
 

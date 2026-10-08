@@ -102,6 +102,7 @@ const overview: RelationshipOverview = {
       applicable_platforms: [],
     },
   ],
+  usage_relations: [],
   source_relations: [],
   deployment_relations: [
     {

@@ -5188,8 +5188,11 @@ export type UsageRelationView = {
 	link_target_path: string | null,
 	link_target_path_key: string | null,
 	link_target_directory_id: string | null,
-	/**  Ephemeral physical identity evidence; it is never part of `entry_key`. */
-	physical_source_id_evidence: string | null,
+	/**
+	 *  Ephemeral physical identity evidence; it is never part of `entry_key`.
+	 *  Multiple distinct IDs are retained as an explicit identity conflict.
+	 */
+	physical_source_ids_evidence: string[],
 	evidence_relation_ids: string[],
 };
 

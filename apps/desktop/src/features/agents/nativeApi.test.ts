@@ -784,6 +784,7 @@ it("loads the relationship overview scoped to the agent client", async () => {
     scope: { type: "agent", value: { agent_client_id: "codex-cli" } },
     directory_nodes: [],
     agent_directory_capabilities: [],
+    usage_relations: [],
     source_relations: [],
     deployment_relations: [],
     conflict_cases: [],

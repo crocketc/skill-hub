@@ -149,11 +149,31 @@ fn project(
 ) -> Vec<skillhub_core::relationship::UsageRelationView> {
     let nodes = vec![node()];
     let recognition = directory_recognition();
+    project_with_directory_facts(
+        deployments,
+        source_copies,
+        agent_directories,
+        decisions,
+        management,
+        &nodes,
+        &recognition,
+    )
+}
+
+fn project_with_directory_facts(
+    deployments: &[DeploymentRelationFact],
+    source_copies: &[SourceCopyRelationFact],
+    agent_directories: &AgentDirectoryProjection,
+    decisions: &[UsageDecisionEvidence],
+    management: &[UsageManagementEvidence],
+    nodes: &[DirectoryNodeFact],
+    recognition: &[AgentDirectoryCapabilityFact],
+) -> Vec<skillhub_core::relationship::UsageRelationView> {
     project_usage_relations(&UsageProjectionInput {
         deployments,
         source_copies,
-        directory_nodes: &nodes,
-        directory_recognition: &recognition,
+        directory_nodes: nodes,
+        directory_recognition: recognition,
         agent_directories,
         decision_evidence: decisions,
         management_evidence: management,
@@ -212,10 +232,7 @@ fn source_baseline_is_import_snapshot() {
         view.decision, None,
         "legacy auto-retained is not user evidence"
     );
-    assert_eq!(
-        view.physical_source_id_evidence.as_deref(),
-        Some("file-id:ephemeral")
-    );
+    assert_eq!(view.physical_source_ids_evidence, vec!["file-id:ephemeral"]);
     assert_eq!(
         view.entry_key,
         Some(UsageEntryKey {
@@ -352,6 +369,8 @@ fn verification_match_state_is_not_discarded_when_health_reasons_are_empty() {
     diverged.match_state = ObservedMatchState::Diverged;
     let mut name_only = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
     name_only.relation_id = "relation:name-only".into();
+    name_only.path = format!("{ROOT}/name-only");
+    name_only.path_key = name_only.path.to_ascii_lowercase();
     name_only.match_state = ObservedMatchState::NameOnly;
 
     let views = project(
@@ -387,7 +406,7 @@ fn link_and_junction_evidence_are_preserved_under_one_business_form() {
     let mut junction = deployment(RelationshipType::ObservedLink, Some(Vec::new()));
     junction.relation_id = "relation:junction".into();
     junction.file_representation = FileRepresentation::DirectoryJunction;
-    junction.link_target_path = Some("C:/library/other".into());
+    junction.link_target_path = Some("C:/library/notes".into());
     let skill_id = SkillId::new();
     link.skill_id = Some(skill_id);
     junction.skill_id = Some(skill_id);
@@ -406,4 +425,426 @@ fn link_and_junction_evidence_are_preserved_under_one_business_form() {
     ));
     assert!(views[0].link_target_path.is_some());
     assert_eq!(views[0].evidence_relation_ids.len(), 2);
+    assert_eq!(views[0].health_reasons, vec![UsageHealthReason::Normal]);
+}
+
+#[test]
+fn original_identity_change_is_not_reported_as_link_abnormal() {
+    let original = source_copy();
+    let skillhub_core::relationship::SourceCopyTransition::Update(original) =
+        skillhub_core::relationship::validate_source_copy_transition(
+            &original,
+            skillhub_core::relationship::SourceCopyProbe::PhysicalIdentityChanged,
+            2,
+        )
+    else {
+        panic!("identity verification updates the active source fact");
+    };
+
+    let views = project(
+        &[],
+        &[original],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("recognized original remains visible");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view
+        .health_reasons
+        .contains(&UsageHealthReason::LinkAbnormal));
+    assert!(!view
+        .health_reasons
+        .contains(&UsageHealthReason::ContentChanged));
+}
+
+#[test]
+fn full_copy_replacement_is_not_reported_as_link_abnormal() {
+    let mut relation = deployment(
+        RelationshipType::ObservedCopy,
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::TargetEntryReplaced,
+        ]),
+    );
+    relation.file_representation = FileRepresentation::Copy;
+
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views
+        .first()
+        .expect("active full-copy relation is projected");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view
+        .health_reasons
+        .contains(&UsageHealthReason::LinkAbnormal));
+}
+
+#[test]
+fn replaced_link_still_reports_link_abnormal() {
+    let mut relation = deployment(
+        RelationshipType::ObservedLink,
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::TargetEntryReplaced,
+        ]),
+    );
+    relation.file_representation = FileRepresentation::SymbolicLink;
+
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("active link relation is projected");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::LinkAbnormal));
+}
+
+#[test]
+fn unknown_file_representation_is_not_reported_as_normal() {
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.file_representation = FileRepresentation::Unknown;
+
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("active relation is projected");
+
+    assert_eq!(view.form, None);
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::Normal));
+}
+
+#[test]
+fn ordinary_original_operation_failure_does_not_claim_copy_sync_failed() {
+    let mut original = source_copy();
+    original.health = SourceCopyHealth::OperationFailed;
+    original.health_reasons = Some(vec![
+        skillhub_core::relationship::RelationHealthReason::OperationFailed,
+    ]);
+
+    let views = project(
+        &[],
+        &[original],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("recognized original remains visible");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::SyncFailed));
+}
+
+#[test]
+fn unmanaged_deployment_operation_failure_does_not_claim_copy_sync_failed() {
+    let relation = deployment(
+        RelationshipType::ObservedCopy,
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::OperationFailed,
+        ]),
+    );
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("active deployment is projected");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::SyncFailed));
+}
+
+#[test]
+fn managed_link_operation_failure_does_not_claim_copy_sync_failed() {
+    let mut relation = deployment(
+        RelationshipType::ManagedLink,
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::OperationFailed,
+        ]),
+    );
+    relation.file_representation = FileRepresentation::SymbolicLink;
+    relation.ownership = OwnershipState::SkillhubManaged;
+
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    let view = views.first().expect("active managed link is projected");
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::SyncFailed));
+}
+
+#[test]
+fn conflicting_link_targets_require_confirmation_and_expose_no_actionable_target() {
+    let mut link = deployment(RelationshipType::ManagedLink, Some(Vec::new()));
+    link.file_representation = FileRepresentation::SymbolicLink;
+    link.link_target_path = Some("C:/library/notes".into());
+    let mut junction = deployment(RelationshipType::ObservedLink, Some(Vec::new()));
+    junction.relation_id = "relation:junction".into();
+    junction.file_representation = FileRepresentation::DirectoryJunction;
+    junction.link_target_path = Some("C:/library/other".into());
+    let skill_id = SkillId::new();
+    link.skill_id = Some(skill_id);
+    junction.skill_id = Some(skill_id);
+
+    let views = project(
+        &[link, junction],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    assert_eq!(views.len(), 1, "same skill and entry has one usage view");
+    let view = &views[0];
+
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::Normal));
+    assert_eq!(view.form, None);
+    assert_eq!(view.file_representation, FileRepresentation::Unknown);
+    assert_eq!(view.link_target_path, None);
+    assert_eq!(view.link_target_path_key, None);
+    assert_eq!(view.link_target_directory_id, None);
+    assert_eq!(view.evidence_relation_ids.len(), 2);
+}
+
+#[test]
+fn three_way_link_target_conflict_stays_sticky_when_unknown_evidence_follows() {
+    let mut link = deployment(RelationshipType::ManagedLink, Some(Vec::new()));
+    link.relation_id = "relation:a-link".into();
+    link.file_representation = FileRepresentation::SymbolicLink;
+    link.link_target_path = Some("C:/library/notes".into());
+    let mut junction = deployment(RelationshipType::ObservedLink, Some(Vec::new()));
+    junction.relation_id = "relation:b-junction".into();
+    junction.file_representation = FileRepresentation::DirectoryJunction;
+    junction.link_target_path = Some("C:/library/other".into());
+    let mut unknown = deployment(RelationshipType::ObservedLink, Some(Vec::new()));
+    unknown.relation_id = "relation:c-unknown".into();
+    unknown.file_representation = FileRepresentation::Unknown;
+    unknown.link_target_path = Some("C:/library/third".into());
+    let skill_id = SkillId::new();
+    link.skill_id = Some(skill_id);
+    junction.skill_id = Some(skill_id);
+    unknown.skill_id = Some(skill_id);
+
+    for relations in [
+        [link.clone(), junction.clone(), unknown.clone()],
+        [unknown.clone(), link.clone(), junction.clone()],
+        [link.clone(), unknown.clone(), junction.clone()],
+    ] {
+        let views = project(
+            &relations,
+            &[],
+            &directory(AgentDirectoryRole::AgentUser),
+            &[],
+            &[],
+        );
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert!(view
+            .health_reasons
+            .contains(&UsageHealthReason::UserConfirmation));
+        assert!(!view.health_reasons.contains(&UsageHealthReason::Normal));
+        assert_eq!(view.form, None);
+        assert_eq!(view.file_representation, FileRepresentation::Unknown);
+        assert_eq!(view.link_target_path, None);
+        assert_eq!(view.link_target_path_key, None);
+        assert_eq!(view.link_target_directory_id, None);
+        assert_eq!(view.evidence_relation_ids.len(), 3);
+    }
+}
+
+#[test]
+fn conflicting_skills_at_one_usage_entry_are_both_unconfirmed() {
+    let mut first = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    let mut second = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    first.skill_id = Some(SkillId::new());
+    second.skill_id = Some(SkillId::new());
+    second.relation_id = "relation:other-skill".into();
+
+    let views = project(
+        &[first, second],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+
+    assert_eq!(
+        views.len(),
+        2,
+        "conflicting skill evidence is not collapsed"
+    );
+    assert!(views.iter().all(|view| view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation)));
+    assert!(views
+        .iter()
+        .all(|view| !view.health_reasons.contains(&UsageHealthReason::Normal)));
+}
+
+#[test]
+fn different_usage_forms_at_one_entry_do_not_choose_a_normal_form() {
+    let mut copy = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    copy.file_representation = FileRepresentation::Copy;
+    let mut link = deployment(RelationshipType::ObservedLink, Some(Vec::new()));
+    link.relation_id = "relation:link".into();
+    link.file_representation = FileRepresentation::SymbolicLink;
+    link.link_target_path = Some("C:/library/notes".into());
+    let skill_id = SkillId::new();
+    copy.skill_id = Some(skill_id);
+    link.skill_id = Some(skill_id);
+
+    let views = project(
+        &[copy, link],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    assert_eq!(views.len(), 1);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!views[0].health_reasons.contains(&UsageHealthReason::Normal));
+    assert_eq!(views[0].form, None);
+    assert_eq!(views[0].file_representation, FileRepresentation::Unknown);
+    assert_eq!(views[0].link_target_path, None);
+}
+
+#[test]
+fn physical_identity_conflict_at_one_usage_entry_requires_confirmation() {
+    let first = source_copy();
+    let mut second = source_copy();
+    second.relation_id = "relation:other-original".into();
+    second.skill_id = first.skill_id;
+    second.physical_source_id = "file-id:replacement".into();
+
+    let views = project(
+        &[],
+        &[first, second],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+    assert_eq!(views.len(), 1);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!views[0].health_reasons.contains(&UsageHealthReason::Normal));
+    assert_eq!(
+        views[0].physical_source_ids_evidence,
+        vec!["file-id:ephemeral", "file-id:replacement"]
+    );
+    assert_eq!(views[0].evidence_relation_ids.len(), 2);
+}
+
+#[test]
+fn unsupported_shared_and_project_directories_do_not_create_source_usage() {
+    for role in [DirectoryRole::SharedDirectory, DirectoryRole::Project] {
+        let mut fact = node();
+        fact.role = role;
+        let nodes = vec![fact];
+        let mut recognition = directory_recognition();
+        recognition[0].recognition = DirectoryRecognition::Unsupported;
+        let views = project_with_directory_facts(
+            &[],
+            &[source_copy()],
+            &AgentDirectoryProjection::default(),
+            &[],
+            &[],
+            &nodes,
+            &recognition,
+        );
+        assert!(
+            views.is_empty(),
+            "unsupported {role:?} source directory is not a usage target"
+        );
+    }
+}
+
+#[test]
+fn unknown_shared_directory_role_keeps_usage_unverified() {
+    let mut fact = node();
+    fact.role = DirectoryRole::SharedDirectory;
+    let nodes = vec![fact];
+    let mut recognition = directory_recognition();
+    recognition[0].recognition = DirectoryRecognition::Unknown;
+    let views = project_with_directory_facts(
+        &[],
+        &[source_copy()],
+        &AgentDirectoryProjection::default(),
+        &[],
+        &[],
+        &nodes,
+        &recognition,
+    );
+
+    let view = views
+        .first()
+        .expect("explicit shared role evidence is retained");
+    assert_eq!(view.target.recognition, Some(DirectoryRecognition::Unknown));
+    assert_eq!(
+        view.target.kind,
+        skillhub_core::relationship::RelationGovernanceTargetKind::SharedDirectory
+    );
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(view
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+    assert!(!view.health_reasons.contains(&UsageHealthReason::Normal));
 }

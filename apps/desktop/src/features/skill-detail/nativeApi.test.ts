@@ -1469,6 +1469,7 @@ describe("native relationship governance queries", () => {
       scope: { type: "skill", value: { skill_id: "skill-1" } },
       directory_nodes: [],
       agent_directory_capabilities: [],
+      usage_relations: [],
       source_relations: [],
       deployment_relations: [],
       conflict_cases: [],

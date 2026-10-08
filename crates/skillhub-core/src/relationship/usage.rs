@@ -99,7 +99,8 @@ pub struct UsageRelationView {
     pub link_target_path_key: Option<String>,
     pub link_target_directory_id: Option<String>,
     /// Ephemeral physical identity evidence; it is never part of `entry_key`.
-    pub physical_source_id_evidence: Option<String>,
+    /// Multiple distinct IDs are retained as an explicit identity conflict.
+    pub physical_source_ids_evidence: Vec<String>,
     pub evidence_relation_ids: Vec<String>,
 }
 
@@ -151,12 +152,27 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
         if relation.relationship == RelationshipType::Unknown {
             health_reasons.push(UsageHealthReason::UserConfirmation);
         }
+        if form_for_representation(relation.file_representation).is_none() {
+            health_reasons.push(UsageHealthReason::UnableToVerify);
+            health_reasons.push(UsageHealthReason::UserConfirmation);
+        }
+        let form = form_for_representation(relation.file_representation);
+        let (link_target_path, link_target_path_key, link_target_directory_id) =
+            if form == Some(UsageForm::Link) {
+                (
+                    relation.link_target_path.clone(),
+                    relation.link_target_path_key.clone(),
+                    relation.link_target_directory_id.clone(),
+                )
+            } else {
+                (None, None, None)
+            };
         let view = UsageRelationView {
             relation_id: relation.relation_id.clone(),
             skill_id: relation.skill_id,
             target,
             entry_key,
-            form: form_for_representation(relation.file_representation),
+            form,
             management: management_by_relation
                 .get(relation.relation_id.as_str())
                 .copied()
@@ -172,10 +188,10 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
             ),
             active: true,
             file_representation: relation.file_representation,
-            link_target_path: relation.link_target_path.clone(),
-            link_target_path_key: relation.link_target_path_key.clone(),
-            link_target_directory_id: relation.link_target_directory_id.clone(),
-            physical_source_id_evidence: None,
+            link_target_path,
+            link_target_path_key,
+            link_target_directory_id,
+            physical_source_ids_evidence: Vec::new(),
             evidence_relation_ids: vec![relation.relation_id.clone()],
         };
         insert_or_merge(&mut projected, view);
@@ -207,6 +223,10 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
             continue;
         }
         let mut health_reasons = source_copy_health(copy);
+        if target.recognition != Some(DirectoryRecognition::Supported) {
+            health_reasons.push(UsageHealthReason::UnableToVerify);
+            health_reasons.push(UsageHealthReason::UserConfirmation);
+        }
         if copy.current_fingerprint.as_deref() != Some(copy.expected_fingerprint.as_str()) {
             health_reasons.push(if copy.current_fingerprint.is_some() {
                 UsageHealthReason::ContentChanged
@@ -238,13 +258,15 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
             link_target_path: None,
             link_target_path_key: None,
             link_target_directory_id: None,
-            physical_source_id_evidence: Some(copy.physical_source_id.clone()),
+            physical_source_ids_evidence: vec![copy.physical_source_id.clone()],
             evidence_relation_ids: vec![copy.relation_id.clone()],
         };
         insert_or_merge(&mut projected, view);
     }
 
-    projected.into_values().collect()
+    let mut projected = projected.into_values().collect::<Vec<_>>();
+    mark_conflicting_skill_evidence(&mut projected);
+    projected
 }
 
 fn decision_history_ids(evidence: Option<&UsageDecisionEvidence>) -> Vec<String> {
@@ -279,7 +301,11 @@ fn deployment_health(relation: &DeploymentRelationFact) -> Vec<UsageHealthReason
             if reasons.is_empty() {
                 vec![UsageHealthReason::Normal]
             } else {
-                reasons.iter().copied().map(map_health_reason).collect()
+                reasons
+                    .iter()
+                    .copied()
+                    .flat_map(|reason| map_health_reason(reason, relation.file_representation))
+                    .collect()
             }
         },
     );
@@ -298,7 +324,13 @@ fn deployment_health(relation: &DeploymentRelationFact) -> Vec<UsageHealthReason
 fn source_copy_health(copy: &SourceCopyRelationFact) -> Vec<UsageHealthReason> {
     let mut reasons = copy.health_reasons.as_deref().map_or_else(
         || vec![UsageHealthReason::UnableToVerify],
-        |reasons| reasons.iter().copied().map(map_health_reason).collect(),
+        |reasons| {
+            reasons
+                .iter()
+                .copied()
+                .flat_map(|reason| map_health_reason(reason, FileRepresentation::Directory))
+                .collect()
+        },
     );
     match copy.health {
         SourceCopyHealth::Normal => {}
@@ -306,23 +338,43 @@ fn source_copy_health(copy: &SourceCopyRelationFact) -> Vec<UsageHealthReason> {
         SourceCopyHealth::ContentChanged => reasons.push(UsageHealthReason::ContentChanged),
         SourceCopyHealth::PermissionLimited => reasons.push(UsageHealthReason::UnableToVerify),
         SourceCopyHealth::ManagedOccupied => reasons.push(UsageHealthReason::UserConfirmation),
-        SourceCopyHealth::OperationFailed => reasons.push(UsageHealthReason::SyncFailed),
+        SourceCopyHealth::OperationFailed => {
+            reasons.push(UsageHealthReason::UnableToVerify);
+            reasons.push(UsageHealthReason::UserConfirmation);
+        }
     }
     reasons
 }
 
-fn map_health_reason(reason: RelationHealthReason) -> UsageHealthReason {
+fn map_health_reason(
+    reason: RelationHealthReason,
+    representation: FileRepresentation,
+) -> Vec<UsageHealthReason> {
     match reason {
-        RelationHealthReason::TargetEntryMissing => UsageHealthReason::FileMissing,
+        RelationHealthReason::TargetEntryMissing => vec![UsageHealthReason::FileMissing],
+        RelationHealthReason::TargetEntryReplaced | RelationHealthReason::TargetLinkUnavailable
+            if matches!(
+                representation,
+                FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+            ) =>
+        {
+            vec![UsageHealthReason::LinkAbnormal]
+        }
         RelationHealthReason::TargetEntryReplaced | RelationHealthReason::TargetLinkUnavailable => {
-            UsageHealthReason::LinkAbnormal
+            vec![
+                UsageHealthReason::UnableToVerify,
+                UsageHealthReason::UserConfirmation,
+            ]
         }
         RelationHealthReason::PermissionLimited
         | RelationHealthReason::SubjectUnavailable
-        | RelationHealthReason::ProbeUnavailable => UsageHealthReason::UnableToVerify,
-        RelationHealthReason::ContentChanged => UsageHealthReason::ContentChanged,
-        RelationHealthReason::ManagedTargetOccupied => UsageHealthReason::UserConfirmation,
-        RelationHealthReason::OperationFailed => UsageHealthReason::SyncFailed,
+        | RelationHealthReason::ProbeUnavailable => vec![UsageHealthReason::UnableToVerify],
+        RelationHealthReason::ContentChanged => vec![UsageHealthReason::ContentChanged],
+        RelationHealthReason::ManagedTargetOccupied => vec![UsageHealthReason::UserConfirmation],
+        RelationHealthReason::OperationFailed => vec![
+            UsageHealthReason::UnableToVerify,
+            UsageHealthReason::UserConfirmation,
+        ],
     }
 }
 
@@ -481,6 +533,9 @@ fn actual_agent_directory<'a>(
 }
 
 fn is_recognized_usage_directory(target: &UsageRelationTarget) -> bool {
+    if target.recognition == Some(DirectoryRecognition::Unsupported) {
+        return false;
+    }
     matches!(
         target.kind,
         RelationGovernanceTargetKind::SharedDirectory | RelationGovernanceTargetKind::Project
@@ -540,8 +595,42 @@ fn insert_or_merge(projected: &mut BTreeMap<String, UsageRelationView>, view: Us
 }
 
 fn merge_view(existing: &mut UsageRelationView, mut other: UsageRelationView) {
+    let conflicting_form = existing.form != other.form;
+    let conflicting_link_target = existing.form == Some(UsageForm::Link)
+        && other.form == Some(UsageForm::Link)
+        && link_target_evidence_conflicts(existing, &other);
     if other.relation_id < existing.relation_id {
         std::mem::swap(&mut existing.relation_id, &mut other.relation_id);
+    }
+    if conflicting_form || conflicting_link_target {
+        existing.form = None;
+        existing.file_representation = FileRepresentation::Unknown;
+        existing.link_target_path = None;
+        existing.link_target_path_key = None;
+        existing.link_target_directory_id = None;
+        existing
+            .health_reasons
+            .push(UsageHealthReason::UserConfirmation);
+    } else if existing.form == Some(UsageForm::Link) && other.form == Some(UsageForm::Link) {
+        if existing.link_target_path.is_none() {
+            existing.link_target_path = other.link_target_path.clone();
+        }
+        if existing.link_target_path_key.is_none() {
+            existing.link_target_path_key = other.link_target_path_key.clone();
+        }
+        if existing.link_target_directory_id.is_none() {
+            existing.link_target_directory_id = other.link_target_directory_id.clone();
+        }
+    }
+    existing
+        .physical_source_ids_evidence
+        .append(&mut other.physical_source_ids_evidence);
+    existing.physical_source_ids_evidence.sort();
+    existing.physical_source_ids_evidence.dedup();
+    if existing.physical_source_ids_evidence.len() > 1 {
+        existing
+            .health_reasons
+            .push(UsageHealthReason::UserConfirmation);
     }
     if existing.management == UsageManagement::Unmanaged
         && other.management == UsageManagement::Managed
@@ -559,11 +648,64 @@ fn merge_view(existing: &mut UsageRelationView, mut other: UsageRelationView) {
         .append(&mut other.evidence_relation_ids);
     existing.health_reasons.append(&mut other.health_reasons);
     existing.health_reasons = normalize_health(std::mem::take(&mut existing.health_reasons));
-    if existing.physical_source_id_evidence.is_none() {
-        existing.physical_source_id_evidence = other.physical_source_id_evidence;
-    }
     existing.decision_history_ids.sort();
     existing.decision_history_ids.dedup();
     existing.evidence_relation_ids.sort();
     existing.evidence_relation_ids.dedup();
+}
+
+fn link_target_evidence_conflicts(left: &UsageRelationView, right: &UsageRelationView) -> bool {
+    if matches!(
+        (
+            left.link_target_directory_id.as_deref(),
+            right.link_target_directory_id.as_deref()
+        ),
+        (Some(left), Some(right)) if left != right
+    ) {
+        return true;
+    }
+    let left_target = left
+        .link_target_path_key
+        .as_deref()
+        .map(normalize_path_key)
+        .or_else(|| left.link_target_path.as_deref().map(normalize_path_key));
+    let right_target = right
+        .link_target_path_key
+        .as_deref()
+        .map(normalize_path_key)
+        .or_else(|| right.link_target_path.as_deref().map(normalize_path_key));
+    match (left_target, right_target) {
+        (Some(left), Some(right)) => left != right,
+        (None, None) => false,
+        _ => true,
+    }
+}
+
+fn mark_conflicting_skill_evidence(views: &mut [UsageRelationView]) {
+    let mut skills_by_entry = BTreeMap::<(String, String), Vec<Option<String>>>::new();
+    for view in views.iter() {
+        let Some(key) = view.entry_key.as_ref() else {
+            continue;
+        };
+        let skills = skills_by_entry
+            .entry((key.directory_id.clone(), key.relative_entry_path.clone()))
+            .or_default();
+        let skill_id = view.skill_id.map(|id| id.to_string());
+        if !skills.contains(&skill_id) {
+            skills.push(skill_id);
+        }
+    }
+    for view in views.iter_mut() {
+        let Some(key) = view.entry_key.as_ref() else {
+            continue;
+        };
+        let has_conflicting_skills = skills_by_entry
+            .get(&(key.directory_id.clone(), key.relative_entry_path.clone()))
+            .is_some_and(|skills| skills.len() > 1);
+        if has_conflicting_skills {
+            view.health_reasons
+                .push(UsageHealthReason::UserConfirmation);
+            view.health_reasons = normalize_health(std::mem::take(&mut view.health_reasons));
+        }
+    }
 }

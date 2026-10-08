@@ -197,7 +197,7 @@ pub fn validate_source_copy_transition(
                 SourceCopyProbe::PhysicalIdentityChanged => {
                     updated.health_reasons =
                         Some(vec![super::RelationHealthReason::TargetEntryReplaced]);
-                    SourceCopyHealth::ContentChanged
+                    SourceCopyHealth::NeedsValidation
                 }
                 SourceCopyProbe::PermissionDenied => {
                     updated.health_reasons =

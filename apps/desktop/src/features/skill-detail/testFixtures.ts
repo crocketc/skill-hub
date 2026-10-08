@@ -437,6 +437,7 @@ export function createMockSkillDetailFacade(
         scope: { type: "skill" as const, value: { skill_id: skillId } },
         directory_nodes: [],
         agent_directory_capabilities: [],
+        usage_relations: [],
         source_relations: [],
         deployment_relations: [],
         conflict_cases: [],
