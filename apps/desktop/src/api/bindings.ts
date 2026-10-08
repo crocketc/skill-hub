@@ -1435,7 +1435,13 @@ export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.
  *  错误参数带技能名/级别等可读信息与处理入口指引；导入门禁不再使用
  *  `deployment.security_check_blocked`。
  */
-"deployment.security_alert_blocked" | "deployment.name_mismatch" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "llm.auth_failed" | "llm.model_not_found" | "llm.rate_limited" | "llm.request_timeout" | "llm.cancelled" | "llm.endpoint_unreachable" | "llm.server_error" | "llm.invalid_json" | "llm.response_interrupted" | "llm.protocol_incompatible" | "llm.credential_read_failed" | "llm.capability_disabled" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required" | "backup.restore_decision_required" | "backup.export_decision_required" | "application_update.unavailable" | "application_update.install_blocked" | "application_update.integrity_failed" | "application_update.signature_missing" | "application_update.signature_invalid" | "application_update.invalid_artifact_url" | "application_update.download_cancelled" | "external_link.opener_unavailable" | "local_open.opener_unavailable" | "local_open.unsupported" | "import.runtime_name_conflict" | "import.same_name_disposition_required" | "import.batch_composition_changed" | "import.security_decision_required";
+"deployment.security_alert_blocked" | "deployment.name_mismatch" | "operation.conflict" | "operation.id_reused_with_different_request" | "credential.unavailable" | "migration.required" | "database.newer_schema" |
+/**
+ *  #12：SQLite 完整性约束（外键/CHECK/NOT NULL/主键）拦截了写入或
+ *  删除。前端按 `database_constraint` 提供专属文案与反馈指引，不再
+ *  落入 `internal.error` 兜底。
+ */
+"database.constraint" | "internal.error" | "combination.nesting_not_allowed" | "catalog.invalid_metadata" | "requirements.invalid_declaration" | "agent_profile.invalid_capability" | "source.search_rate_limited" | "source.provider_authentication_unavailable" | "source.search_unavailable" | "network.disabled" | "call_policy.not_supported" | "ignore.only_exact_subjects_supported" | "llm.invalid_structured_response" | "llm.endpoint_not_allowed" | "llm.input_too_large" | "llm.evidence_reference_invalid" | "llm.not_configured" | "llm.auth_failed" | "llm.model_not_found" | "llm.rate_limited" | "llm.request_timeout" | "llm.cancelled" | "llm.endpoint_unreachable" | "llm.server_error" | "llm.invalid_json" | "llm.response_interrupted" | "llm.protocol_incompatible" | "llm.credential_read_failed" | "llm.capability_disabled" | "translation.user_revision_requires_confirmation" | "backup.checksum_mismatch" | "backup.sensitive_decision_required" | "backup.restore_decision_required" | "backup.export_decision_required" | "application_update.unavailable" | "application_update.install_blocked" | "application_update.integrity_failed" | "application_update.signature_missing" | "application_update.signature_invalid" | "application_update.invalid_artifact_url" | "application_update.download_cancelled" | "external_link.opener_unavailable" | "local_open.opener_unavailable" | "local_open.unsupported" | "import.runtime_name_conflict" | "import.same_name_disposition_required" | "import.batch_composition_changed" | "import.security_decision_required";
 
 export type EvidenceCoverage = {
 	sources: string[],
@@ -4688,9 +4694,8 @@ export type SkillResult = {
 	 */
 	managed_link_count?: number,
 	/**
-	 *  G-16：独立副本数——活动且未跟随当前版本的副本型关系
-	 *  （ImportCopy/ManagedCopy/ObservedCopy，K1 影响语义的
-	 *  independent_copy 计数）。
+	 *  G-16：独立副本数——活动且未跟随当前版本的导入/观察副本（#15 起
+	 *  受管复制属受管去向、由采用新版同步重写，不再计入独立副本）。
 	 */
 	independent_copy_count?: number,
 	/**
