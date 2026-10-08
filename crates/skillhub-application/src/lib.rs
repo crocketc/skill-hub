@@ -29,6 +29,7 @@ use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
 use skillhub_adapters::deployment::{AppliedTarget, DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::llm::HttpLlmTaskRunner;
+use skillhub_adapters::logging::{LocalLogConfig, LogEvent, LogLevel};
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
@@ -92,10 +93,10 @@ use skillhub_core::source::{
 };
 use skillhub_core::{ensure_original_deletion_authorized, plan_original_migration};
 use skillhub_core::{
-    physical_id_for_path, symlink_physical_id_for_path, AllowedRoot, AppCommand, AppCommandResult,
-    AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade, DeploymentMode, ErrorCode,
-    OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant, Severity, TargetChange,
-    UpdateSignaturePublicKey,
+    physical_id_for_path, reparse_physical_id_for_path, symlink_physical_id_for_path, AllowedRoot,
+    AppCommand, AppCommandResult, AppError, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
+    DeploymentMode, ErrorCode, OperationId, PathPolicy, RecoveryAction, ResolvedPathGrant,
+    Severity, TargetChange, UpdateSignaturePublicKey,
 };
 use skillhub_storage::backup::{BackupService, RestoreService, RetentionService};
 use skillhub_storage::export::ExportService;
@@ -198,6 +199,15 @@ pub struct LocalApplicationFacade {
         Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
     /// 计划 8.5：原始目录删除实现；生产走文件系统，测试可注入失败。
     original_migration_deletion: Mutex<std::sync::Arc<dyn OriginalMigrationDeletion>>,
+    /// 开发阶段日志（开发状态待开发项 2026-10-07）：脱敏 JSON 行经
+    /// [`skillhub_adapters::logging::RedactingWriter`] 写入有界文件；None 时
+    /// 全部日志调用都是空操作，绝不阻塞或改变操作结果。桌面壳在启动路径
+    /// 注入，目录位于应用数据目录（不进集中库管理区）。
+    event_log: Option<Arc<skillhub_adapters::logging::LocalLogConfig>>,
+    /// 构造时启动清扫（sweep_stale_journal）的结算行数：planned/prepared 转
+    /// rolled_back、applying/verifying 转 needs_recovery（#11 裁决的记账）。
+    /// 日志器接上时补发一条启动事件，让上一会话的残留可见。
+    startup_journal_sweep: (usize, usize),
 }
 
 /// 获取阶段落地的完整来源记录：原始 descriptor、临时工作区、权威类别与
@@ -527,15 +537,15 @@ impl LocalDeploymentBackend {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        // Symbolic-link deployments pin the proof to the link itself, so the
-        // reconstruction must use the same identity the adapters captured at
-        // apply time (the central source may have been replaced meanwhile).
-        let identity_for_mode = |path: &std::path::Path| {
-            if deployment.mode == DeploymentMode::SymbolicLink {
-                symlink_physical_id_for_path(path)
-            } else {
-                physical_id_for_path(path)
-            }
+        // Physical identity stays meaningful for copy deployments.  Link
+        // deployments are verified against `link_anchor_paths` instead: a
+        // link's own file identity is minted fresh with every replacement and
+        // was never persisted, so it cannot prove ownership (#12 boundary:
+        // 链接部署链接文件被删；被替换的链接必须 fail closed，自己的链接必须可删).
+        let identity_for_mode = |path: &std::path::Path| match deployment.mode {
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
         };
         let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -548,12 +558,18 @@ impl LocalDeploymentBackend {
             .join("versions")
             .join(deployment.skill_id.to_string())
             .join(deployment.version_id.as_str());
+        let link_anchor_paths = if deployment.mode.is_directory_link() {
+            deployed_link_anchor_paths(&library, deployment)?
+        } else {
+            Vec::new()
+        };
         Ok(OwnershipProof {
             mode: deployment.mode,
             destination_path,
             source_path,
             expected_hash: deployment.expected_hash.clone(),
             target_identity,
+            link_anchor_paths,
             skill_id: deployment.skill_id,
             version_id: deployment.version_id.clone(),
             runtime_name: deployment.runtime_name.clone(),
@@ -633,6 +649,43 @@ impl LocalDeploymentBackend {
         }
         Ok(("skillhub".to_owned(), "global", None))
     }
+}
+
+/// Managed locations a deployed link may resolve to.  The apply-time choice
+/// (`materialized_source`) depends on library state at deploy time — the
+/// visible current tree, the version tree or the deployment staging tree —
+/// so a rebuilt proof accepts any current candidate instead of guessing one
+/// path.  A link resolving anywhere else was not deployed by us and must
+/// fail closed.
+fn deployed_link_anchor_paths(
+    library: &library_runtime::LibraryContext,
+    deployment: &DeploymentRecord,
+) -> AppResult<Vec<PathBuf>> {
+    let paths = LibraryPaths::from_root(library.root.clone());
+    let mut anchors = vec![
+        library
+            .root
+            .join("versions")
+            .join(deployment.skill_id.to_string())
+            .join(deployment.version_id.as_str()),
+        paths
+            .management_dir
+            .join("deployment-trees")
+            .join(deployment.skill_id.to_string())
+            .join(skillhub_core::deployment::deployment_tree_dir_name(
+                &deployment.version_id,
+            )),
+    ];
+    if let Some((record, current)) = library.central.load_portable_skill(deployment.skill_id)? {
+        if current.as_ref() == Some(&deployment.version_id) {
+            anchors.push(
+                library
+                    .central
+                    .visible_skill_path_for_runtime(deployment.skill_id, &record.runtime_name),
+            );
+        }
+    }
+    Ok(anchors)
 }
 
 /// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
@@ -2158,7 +2211,7 @@ impl LocalApplicationFacade {
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
         let database = Arc::new(Mutex::new(database));
-        Self::sweep_stale_journal(&database);
+        let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
@@ -2231,6 +2284,8 @@ impl LocalApplicationFacade {
                 relationship_validation_service::default_relationship_probe(),
             ),
             original_migration_deletion: Mutex::new(default_original_migration_deletion()),
+            event_log: None,
+            startup_journal_sweep,
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -2254,7 +2309,7 @@ impl LocalApplicationFacade {
     ) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
-        Self::sweep_stale_journal(&database);
+        let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let central = CentralLibrary::initialize_with_fault_handler(&library_root, fault_handler)
             .expect("new_with_library requires a valid central library");
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
@@ -2329,6 +2384,8 @@ impl LocalApplicationFacade {
                 relationship_validation_service::default_relationship_probe(),
             ),
             original_migration_deletion: Mutex::new(default_original_migration_deletion()),
+            event_log: None,
+            startup_journal_sweep,
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -2568,6 +2625,107 @@ impl LocalApplicationFacade {
         self
     }
 
+    /// 开发阶段日志接线（开发状态待开发项 2026-10-07）：桌面壳在启动路径
+    /// 构造 [`LocalLogConfig`]（有界 max_bytes＋轮转，目录在应用数据目录，
+    /// 不进集中库管理区）后注入。日志永远尽力而为：写失败只丢弃该条，
+    /// 绝不改变操作结果。接上时补发构造期启动清扫的结算计数。
+    pub fn with_event_log(mut self, event_log: Arc<LocalLogConfig>) -> Self {
+        self.event_log = Some(event_log);
+        let (rolled_back, needs_recovery) = self.startup_journal_sweep;
+        self.log_event(
+            LogLevel::Info,
+            "startup.journal_sweep",
+            None,
+            None,
+            Vec::new(),
+            vec![
+                ("rolled_back", rolled_back as u64),
+                ("needs_recovery", needs_recovery as u64),
+            ],
+        );
+        self
+    }
+
+    /// Best-effort 事件落盘：无日志器时是空操作，写失败只丢弃该条。
+    fn log_event(
+        &self,
+        level: LogLevel,
+        event_code: &str,
+        operation_id: Option<&OperationId>,
+        phase: Option<&str>,
+        params: Vec<(&str, String)>,
+        counts: Vec<(&str, u64)>,
+    ) {
+        let Some(config) = self.event_log.as_ref() else {
+            return;
+        };
+        let event = LogEvent {
+            event_code: event_code.to_owned(),
+            operation_id: operation_id.map(|id| id.to_string()),
+            phase: phase.map(str::to_owned),
+            duration_ms: None,
+            counts: counts
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+            params: params
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+            skill_body: None,
+            level,
+        };
+        let _ = config.write_event(&event);
+    }
+
+    /// 失败路径：错误码与全部结构化参数入日志——journal 表按白名单只存
+    /// 稳定错误码，`source` 参数（底层原因，如 sqlite 报错文本）只能靠
+    /// 这里留住（#12 定因缺口）。脱敏由 RedactingWriter 统一处理。
+    fn log_app_error(
+        &self,
+        event_code: &str,
+        operation_id: Option<&OperationId>,
+        extra: &[(&str, String)],
+        error: &AppError,
+    ) {
+        let mut params: Vec<(&str, String)> = vec![("error_code", error.code.as_str().to_owned())];
+        for (key, value) in &error.params {
+            params.push((key.as_str(), log_param_value(value)));
+        }
+        // 调用点上下文（operation、kind）最后并入：同名时以显式上下文为准。
+        params.extend(extra.iter().cloned());
+        self.log_event(
+            LogLevel::Error,
+            event_code,
+            operation_id,
+            None,
+            params,
+            Vec::new(),
+        );
+    }
+
+    /// journal 行落库前的开发日志：begin/相位/终态共用 `journal.record`，
+    /// phase 取自行内相位，带错误码的行按 Error 级别标注。
+    fn log_journal_record(&self, record: &skillhub_core::OperationRecord) {
+        let mut params = vec![("kind", record.kind.clone())];
+        if let Some(error_code) = record.error_code {
+            params.push(("error_code", error_code.as_str().to_owned()));
+        }
+        let level = if record.error_code.is_some() {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        };
+        self.log_event(
+            level,
+            "journal.record",
+            Some(&record.operation_id),
+            Some(operation_phase_code(record.phase)),
+            params,
+            Vec::new(),
+        );
+    }
+
     /// Aligns the LLM network gate with the stored preference so a persisted
     /// "disable all networking" choice survives a restart.
     fn sync_network_gate(&self) {
@@ -2609,12 +2767,28 @@ impl LocalApplicationFacade {
         operation: &'static str,
         action: impl FnOnce(&Database) -> AppResult<T>,
     ) -> AppResult<T> {
-        let database = self.database.lock().map_err(|_| {
-            AppError::new(ErrorCode::InternalError, Severity::Error)
+        let Ok(database) = self.database.lock() else {
+            let error = AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", operation)
-                .with_action(RecoveryAction::Retry)
-        })?;
-        action(&database)
+                .with_action(RecoveryAction::Retry);
+            self.log_app_error(
+                "storage.error",
+                None,
+                &[("operation", operation.to_owned())],
+                &error,
+            );
+            return Err(error);
+        };
+        let result = action(&database);
+        if let Err(error) = &result {
+            self.log_app_error(
+                "storage.error",
+                None,
+                &[("operation", operation.to_owned())],
+                error,
+            );
+        }
+        result
     }
 
     fn lock_relation_migration(
@@ -2645,20 +2819,31 @@ impl LocalApplicationFacade {
     /// 会话残留的这类行永远无法提交，却会让启动恢复闸门永远亮着（用户每次
     /// 取消删除/部署确认框都会留下一条）。四类 prepare 都是只读检查或内存
     /// 计划，没有磁盘副作用需要回滚，故在会话打开时直接结算为 `rolled_back`；
-    /// `applying` 及之后的行可能有真实磁盘效果，保持原样交给启动恢复闸门处置。
-    /// 每个持有 `Database` 的构造路径都必须调用本函数。
-    fn sweep_stale_journal(database: &Mutex<Database>) {
+    /// `applying`/`verifying` 行可能有真实磁盘效果（#11 裁决）：只把记账标签
+    /// 转入 `needs_recovery`，绝不碰磁盘——启动快照随即落在如实的
+    /// NeedsRecovery 态，每个候选仍由恢复页用户显式决定「完成操作／回滚
+    /// 操作」。每个持有 `Database` 的构造路径都必须调用本函数。返回两类
+    /// 结算行数，供日志器接上时补发启动事件。
+    fn sweep_stale_journal(database: &Mutex<Database>) -> (usize, usize) {
         let locked = database
             .lock()
             .map_err(|_| internal("journal.sweep_stale"))
             .expect("journal sweep requires the database lock");
-        locked
+        let rolled_back = locked
             .connection_for_test()
             .execute(
                 "UPDATE operations SET phase='rolled_back', state='rolled_back', updated_at=strftime('%s','now') WHERE phase IN ('planned','prepared')",
                 [],
             )
             .expect("settle stale planned/prepared journal rows from the previous session");
+        let needs_recovery = locked
+            .connection_for_test()
+            .execute(
+                "UPDATE operations SET phase='needs_recovery', state='needs_recovery', updated_at=strftime('%s','now') WHERE phase IN ('applying','verifying')",
+                [],
+            )
+            .expect("relabel stale applying/verifying journal rows as recovery candidates");
+        (rolled_back, needs_recovery)
     }
 
     /// Starts a single-step flow with a `planned` record.
@@ -2696,12 +2881,21 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::Committed,
                 None,
             ),
-            Some(error) => self.journal_advance(
-                operation_id,
-                kind,
-                skillhub_core::OperationPhase::RolledBack,
-                Some(error.code),
-            ),
+            Some(error) => {
+                // journal 表只留白名单错误码；source 等参数在这里进日志。
+                self.log_app_error(
+                    "journal.error",
+                    Some(&operation_id),
+                    &[("kind", kind.to_owned())],
+                    error,
+                );
+                self.journal_advance(
+                    operation_id,
+                    kind,
+                    skillhub_core::OperationPhase::RolledBack,
+                    Some(error.code),
+                );
+            }
         }
     }
 
@@ -2831,6 +3025,7 @@ impl LocalApplicationFacade {
     }
 
     fn journal_write(&self, record: skillhub_core::OperationRecord) {
+        self.log_journal_record(&record);
         let updated = self.with_database("operation_journal.advance", |database| {
             database.operation_repository().update_sync(&record)
         });
@@ -2840,6 +3035,7 @@ impl LocalApplicationFacade {
     }
 
     fn journal_insert(&self, record: skillhub_core::OperationRecord) {
+        self.log_journal_record(&record);
         let _ = self.with_database("operation_journal.insert", |database| {
             database.operation_repository().insert_sync(&record)
         });
@@ -4093,6 +4289,14 @@ impl LocalApplicationFacade {
     }
 
     fn run_scan(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
+        let result = self.run_scan_inner(requested);
+        if let Err(error) = &result {
+            self.log_app_error("inventory.scan.failed", None, &[], error);
+        }
+        result
+    }
+
+    fn run_scan_inner(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
         let ids = self.scan_scope_ids(requested)?;
         // M-31：文件系统遍历可能持续很久（首次初始化扫描整个用户目录树）。
         // 数据库句柄是全 facade 共享的单把锁，绝不能跨遍历持有——否则
@@ -4123,6 +4327,17 @@ impl LocalApplicationFacade {
     }
 
     fn rescan_skill(
+        &self,
+        request: skillhub_core::api::RescanSkill,
+    ) -> AppResult<AppCommandResult> {
+        let result = self.rescan_skill_inner(request);
+        if let Err(error) = &result {
+            self.log_app_error("inventory.rescan.failed", None, &[], error);
+        }
+        result
+    }
+
+    fn rescan_skill_inner(
         &self,
         request: skillhub_core::api::RescanSkill,
     ) -> AppResult<AppCommandResult> {
@@ -5912,6 +6127,11 @@ impl LocalApplicationFacade {
         }
 
         let current_version_id = context.store.current(skill_id)?;
+        // #15：受管复制是否「跟随当前版本」按内容判定——核对过的盘上指纹与
+        // 当前可见树（＝当前版本内容）的部署树哈希一致；两者必须同一哈希
+        // 口径（DeploymentFilesystem 树哈希），不与版本清单树哈希混比。
+        let visible_tree_hash =
+            DeploymentFilesystem::hash_tree(context.central.visible_skill_path(&skill)).ok();
         let visible_tree_fingerprint = context.central.visible_tree_fingerprint(&skill)?;
         let (database_current_version_id, portable_record, target_basic_check_required, relations) =
             self.with_database("version_adoption.read_facts", |database| {
@@ -6058,12 +6278,28 @@ impl LocalApplicationFacade {
                                     .and_then(|node| std::fs::canonicalize(&node.path).ok())
                                     .is_some_and(|node_path| &node_path == target)
                             });
-                        let follows_current = relation.active
+                        let link_follows_current = relation.active
                             && path_is_link
                             && visible_path_canonical
                                 .as_ref()
                                 .zip(actual_target)
                                 .is_some_and(|(expected, actual)| expected == actual);
+                        // #15（2026-10-08 裁决）：受管复制是受管去向，跟随
+                        // 当前版本按内容判定——核对过的盘上指纹与当前可见树
+                        // 的部署树哈希一致；未核对（match_state 非
+                        // ContentVerified）时不猜。
+                        let copy_follows_current = relation.active
+                            && !path_is_link
+                            && relation.relationship
+                                == skillhub_core::relationship::RelationshipType::ManagedCopy
+                            && relation.ownership
+                                == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                            && relation.match_state
+                                == skillhub_core::deployment::ObservedMatchState::ContentVerified
+                            && visible_tree_hash
+                                .as_ref()
+                                .is_some_and(|hash| *hash == relation.content_fingerprint);
+                        let follows_current = link_follows_current || copy_follows_current;
                         let identity_reliable = !relation.active
                             || (relation_path_key_matches
                                 && link_target_path_key_matches
@@ -6075,12 +6311,14 @@ impl LocalApplicationFacade {
                                 && target_directory_identity_matches
                                 && relation.match_state
                                     == skillhub_core::deployment::ObservedMatchState::ContentVerified);
+                        // #15：受管复制属受管去向（由采用新版同步重写），
+                        // 不再归入「独立副本」；独立副本只保留导入副本与
+                        // 观察副本这两类真正不受管理的拷贝。
                         let independent_copy = relation.active
                             && !follows_current
                             && matches!(
                                 relation.relationship,
                                 skillhub_core::relationship::RelationshipType::ImportCopy
-                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
                                     | skillhub_core::relationship::RelationshipType::ObservedCopy
                             );
                         skillhub_core::api::VersionAdoptionRelationImpact {
@@ -6481,6 +6719,27 @@ impl LocalApplicationFacade {
             return Err(error);
         }
 
+        // #15（2026-10-08 裁决）：库内树与指针切换完成后，同步重写全部受管
+        // 部署——链接核验重指向并记账新版本；受管复制核对-备份-重写实盘。
+        // 单个目标失败不回滚整体采用，按目标如实报告部分成功。
+        let rewrite_outcomes = self.rewrite_managed_deployments_for_adoption(
+            &context,
+            &skill,
+            &request.version_id,
+            &request.preview_id,
+        );
+        let rewrite_partial = rewrite_outcomes.iter().any(|outcome| !outcome.rewritten);
+        if rewrite_partial {
+            record.progress.message_code = "version.adopted_deployment_partial".to_owned();
+            record.result = Some(serde_json::json!({
+                "skill_id": request.skill_id,
+                "version_id": request.version_id,
+                "managed_deployment_rewrites": rewrite_outcomes,
+            }));
+            // 结果明细记账失败不影响已完成的采用本体。
+            let _ = self.persist_version_adoption_record(&record);
+        }
+
         let cleanup_pending = context
             .central
             .finalize_visible_tree_replacement(replacement)
@@ -6489,7 +6748,9 @@ impl LocalApplicationFacade {
             skillhub_core::OperationSummary {
                 operation_id: request.preview_id,
                 phase: skillhub_core::OperationPhase::Committed,
-                message_code: if cleanup_pending {
+                message_code: if rewrite_partial {
+                    "version.adopted_deployment_partial".to_owned()
+                } else if cleanup_pending {
                     "version.adopted_backup_cleanup_pending".to_owned()
                 } else {
                     "version.adopted".to_owned()
@@ -6497,6 +6758,352 @@ impl LocalApplicationFacade {
                 error_code: None,
             },
         ))
+    }
+
+    /// #15（2026-10-08 裁决）：采用新版切换库内树后，同步重写该技能的全部
+    /// 受管部署。链接部署核验仍解析进新可见树（不一致时按新树重建链接）并
+    /// 记账新版本与新树哈希；受管复制先核对盘上内容仍与钉住版本的期望哈希
+    /// 一致（绝不覆盖用户修改），留底到库内 tmp 后按新版本重写实盘并记账
+    /// expected_hash。分叉的复制一字不动，关系事实如实标记分叉与健康异常，
+    /// 留待既有 reconcile 流程结算。单个目标失败不回滚整体采用。
+    fn rewrite_managed_deployments_for_adoption(
+        &self,
+        context: &library_runtime::LibraryContext,
+        skill: &Skill,
+        version_id: &skillhub_core::VersionId,
+        operation_id: &skillhub_core::OperationId,
+    ) -> Vec<ManagedDeploymentRewriteOutcome> {
+        let records =
+            match self.with_database("version_adoption.list_managed_deployments", |database| {
+                Ok(database
+                    .deployment_repository()
+                    .list_all()?
+                    .into_iter()
+                    .filter(|record| {
+                        record.skill_id == skill.id()
+                            && record.state == skillhub_core::DeploymentState::Deployed
+                            && record.managed
+                    })
+                    .collect::<Vec<_>>())
+            }) {
+                Ok(records) => records,
+                Err(error) => {
+                    return vec![ManagedDeploymentRewriteOutcome::failed(
+                        String::new(),
+                        "",
+                        "",
+                        "unknown",
+                        format!("managed deployment listing failed: {error}"),
+                    )];
+                }
+            };
+        let filesystem = DeploymentFilesystem::new();
+        let visible_path = context.central.visible_skill_path(skill);
+        records
+            .iter()
+            .map(|record| {
+                self.rewrite_one_managed_deployment(
+                    &filesystem,
+                    context,
+                    record,
+                    version_id,
+                    &visible_path,
+                    operation_id,
+                )
+            })
+            .collect()
+    }
+
+    fn rewrite_one_managed_deployment(
+        &self,
+        filesystem: &DeploymentFilesystem,
+        context: &library_runtime::LibraryContext,
+        record: &skillhub_core::DeploymentRecord,
+        version_id: &skillhub_core::VersionId,
+        visible_path: &Path,
+        operation_id: &skillhub_core::OperationId,
+    ) -> ManagedDeploymentRewriteOutcome {
+        let relation_id = format!("managed:{}", record.id);
+        let deployment_id = record.id.to_string();
+        let mode = match record.mode {
+            skillhub_core::DeploymentMode::ManagedCopy => "managed_copy",
+            skillhub_core::DeploymentMode::SymbolicLink => "symbolic_link",
+            skillhub_core::DeploymentMode::DirectoryJunction => "directory_junction",
+        };
+        let destination = match self.backend.target_root(record) {
+            Ok(root) => root.join(&record.runtime_name),
+            Err(error) => {
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    "",
+                    mode,
+                    error.to_string(),
+                );
+            }
+        };
+        let destination_text = destination.to_string_lossy().into_owned();
+        if record.mode.is_directory_link() {
+            // 核验：链接仍解析进库内可见树；不一致时按新可见树重建链接。
+            let resolves_into_visible = std::fs::symlink_metadata(&destination).is_ok()
+                && std::fs::canonicalize(&destination)
+                    .ok()
+                    .zip(std::fs::canonicalize(visible_path).ok())
+                    .is_some_and(|(linked, visible)| linked == visible);
+            if !resolves_into_visible {
+                let re_point = self
+                    .backend
+                    .deployment_proof(record)
+                    .and_then(|proof| filesystem.replace_owned(&proof))
+                    .and_then(|()| {
+                        Self::recreate_managed_link(
+                            filesystem,
+                            record,
+                            &destination,
+                            version_id,
+                            visible_path,
+                        )
+                    });
+                if let Err(error) = re_point {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("link re-point failed: {error}"),
+                    );
+                }
+            }
+            // 记账：新版本与新树哈希（部署树哈希口径，与 reconcile 校验、
+            // 关系指纹同一格式）。经链接观测失败时按目标失败处理，不猜测。
+            let observed = match DeploymentFilesystem::hash_tree(&destination) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("linked tree is unreadable: {error}"),
+                    );
+                }
+            };
+            let recorded = self.with_database("version_adoption.rerecord_link", |database| {
+                database
+                    .deployment_repository()
+                    .update_reconcile_facts_sync(record.id, version_id, &observed, Some(&observed))
+            });
+            match recorded {
+                Ok(()) => ManagedDeploymentRewriteOutcome::rewritten(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                ),
+                Err(error) => ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!("link accounting failed: {error}"),
+                ),
+            }
+        } else {
+            // 核对：盘上内容仍与钉住版本的期望哈希一致才允许重写；分叉的
+            // 复制一字不动（绝不覆盖用户修改），如实标记后留待 reconcile。
+            let observed_before = match DeploymentFilesystem::hash_tree(&destination) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("managed copy is unreadable: {error}"),
+                    );
+                }
+            };
+            if observed_before != record.expected_hash {
+                let marking_failed = self
+                    .mark_managed_copy_diverged(record, &observed_before)
+                    .is_err();
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!(
+                        "managed copy diverged from its pinned version; not rewritten, reconcile first{}",
+                        if marking_failed {
+                            "; divergence marking failed"
+                        } else {
+                            ""
+                        }
+                    ),
+                );
+            }
+            // 备份：留底到库内 tmp（与可见树备份同一区域），重写失败时回拷。
+            let backup_path = context.central.paths().tmp_dir.join(format!(
+                "managed-copy-backup-{}-{}-{operation_id}",
+                record.skill_id, record.id
+            ));
+            if let Err(error) = copy_directory_tree(&destination, &backup_path) {
+                return ManagedDeploymentRewriteOutcome::failed(
+                    relation_id,
+                    &deployment_id,
+                    &destination_text,
+                    mode,
+                    format!("managed copy backup failed, rewrite skipped: {error}"),
+                );
+            }
+            let write_result = (|| -> AppResult<String> {
+                let proof = self.backend.deployment_proof(record)?;
+                filesystem.replace_owned(&proof)?;
+                let target = TargetPlan {
+                    physical_target_id: record.target_id.clone(),
+                    logical_target_ids: Vec::new(),
+                    target_path: destination
+                        .parent()
+                        .unwrap_or_else(|| Path::new("."))
+                        .to_string_lossy()
+                        .into_owned(),
+                    destination_path: destination_text.clone(),
+                    source_path: context
+                        .root
+                        .join("versions")
+                        .join(record.skill_id.to_string())
+                        .join(version_id.as_str())
+                        .to_string_lossy()
+                        .into_owned(),
+                    runtime_name: record.runtime_name.clone(),
+                    skill_id: record.skill_id,
+                    version_id: version_id.clone(),
+                    mode: record.mode,
+                    change: skillhub_core::TargetChange::Create,
+                    warnings: Vec::new(),
+                    conflicts: Vec::new(),
+                };
+                let source = self.backend.materialized_source(&target)?;
+                let mut effective = target;
+                effective.source_path = source.to_string_lossy().into_owned();
+                let prepared = filesystem.prepare(&effective)?;
+                let applied = filesystem.apply(prepared)?;
+                Ok(applied.observed_tree_hash)
+            })();
+            match write_result {
+                Ok(observed) => {
+                    // 记账：新版本＋新树哈希（部署树哈希口径，与既有
+                    // reconcile 记账一致：expected 与 observed 同值）。
+                    let recorded =
+                        self.with_database("version_adoption.rerecord_copy", |database| {
+                            database
+                                .deployment_repository()
+                                .update_reconcile_facts_sync(
+                                    record.id,
+                                    version_id,
+                                    &observed,
+                                    Some(&observed),
+                                )
+                        });
+                    match recorded {
+                        Ok(()) => ManagedDeploymentRewriteOutcome::rewritten(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                        ),
+                        Err(error) => ManagedDeploymentRewriteOutcome::failed(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                            format!("copy rewritten but accounting failed: {error}"),
+                        ),
+                    }
+                }
+                Err(error) => {
+                    // 已删除但未写成 → 回拷备份；回拷也失败则如实报告残留。
+                    let residue = if destination.exists() {
+                        "original copy still in place".to_owned()
+                    } else {
+                        match copy_directory_tree(&backup_path, &destination) {
+                            Ok(()) => "original copy restored from backup".to_owned(),
+                            Err(restore_error) => {
+                                format!("original copy could not be restored: {restore_error}")
+                            }
+                        }
+                    };
+                    ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("managed copy rewrite failed: {error}; {residue}"),
+                    )
+                }
+            }
+        }
+    }
+
+    /// 按 TargetPlan 既有链路重建一条指向库内可见树的受管链接。
+    fn recreate_managed_link(
+        filesystem: &DeploymentFilesystem,
+        record: &skillhub_core::DeploymentRecord,
+        destination: &Path,
+        version_id: &skillhub_core::VersionId,
+        visible_path: &Path,
+    ) -> AppResult<()> {
+        let target = TargetPlan {
+            physical_target_id: record.target_id.clone(),
+            logical_target_ids: Vec::new(),
+            target_path: destination
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_string_lossy()
+                .into_owned(),
+            destination_path: destination.to_string_lossy().into_owned(),
+            source_path: visible_path.to_string_lossy().into_owned(),
+            runtime_name: record.runtime_name.clone(),
+            skill_id: record.skill_id,
+            version_id: version_id.clone(),
+            mode: record.mode,
+            change: skillhub_core::TargetChange::Create,
+            warnings: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let prepared = filesystem.prepare(&target)?;
+        filesystem.apply(prepared)?;
+        Ok(())
+    }
+
+    /// 分叉的受管复制：关系事实如实标记分叉＋内容健康异常（观察事实），
+    /// 部署记录仍钉在旧版本，留待既有 reconcile 流程结算。
+    fn mark_managed_copy_diverged(
+        &self,
+        record: &skillhub_core::DeploymentRecord,
+        observed_hash: &str,
+    ) -> AppResult<()> {
+        self.with_database("version_adoption.mark_copy_diverged", |database| {
+            let repository = database.relationship_repository();
+            let relation_id = format!("managed:{}", record.id);
+            let mut fact = repository
+                .list_relations()?
+                .into_iter()
+                .find(|relation| relation.relation_id == relation_id)
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("relation_id", relation_id)
+                        .with_action(RecoveryAction::Retry)
+                })?;
+            fact.content_fingerprint = observed_hash.to_owned();
+            fact.match_state = skillhub_core::deployment::ObservedMatchState::Diverged;
+            fact.health_reasons = Some(vec![
+                skillhub_core::relationship::RelationHealthReason::ContentChanged,
+            ]);
+            fact.observed_at = now_epoch_seconds();
+            repository.upsert_deployment_relation(&fact)?;
+            Ok(())
+        })
     }
 
     fn persist_version_adoption_record(
@@ -7450,12 +8057,13 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::InspectTarget));
         }
         let destination_path = target_root.join(&deployment.runtime_name);
-        let identity_for_mode = |path: &std::path::Path| {
-            if deployment.mode == DeploymentMode::SymbolicLink {
-                symlink_physical_id_for_path(path)
-            } else {
-                physical_id_for_path(path)
-            }
+        // 与 deployment_proof 同一约定：链接部署的归属锚点是 `link_anchor_paths`
+        // （链接解析到的受管来源），链接自身的文件身份每次重建都会变化，
+        // 不能作为归属证明。
+        let identity_for_mode = |path: &std::path::Path| match deployment.mode {
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
         };
         let target_identity = identity_for_mode(&destination_path).ok_or_else(|| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -7468,12 +8076,18 @@ impl LocalApplicationFacade {
             .join("versions")
             .join(deployment.skill_id.to_string())
             .join(deployment.version_id.as_str());
+        let link_anchor_paths = if deployment.mode.is_directory_link() {
+            deployed_link_anchor_paths(&library, deployment)?
+        } else {
+            Vec::new()
+        };
         Ok(OwnershipProof {
             mode: deployment.mode,
             destination_path,
             source_path,
             expected_hash: deployment.expected_hash.clone(),
             target_identity,
+            link_anchor_paths,
             skill_id: deployment.skill_id,
             version_id: deployment.version_id.clone(),
             runtime_name: deployment.runtime_name.clone(),
@@ -8681,10 +9295,12 @@ impl ApplicationFacade for LocalApplicationFacade {
                             && matches!(
                                 relation.relationship,
                                 skillhub_core::relationship::RelationshipType::ImportCopy
-                                    | skillhub_core::relationship::RelationshipType::ManagedCopy
                                     | skillhub_core::relationship::RelationshipType::ObservedCopy
                             )
                         {
+                            // #15：受管复制是受管去向（采用新版时同步重写），
+                            // 不计入独立副本；只有导入/观察副本才是真正独立
+                            // 的拷贝。
                             independent_copy_count += 1;
                         }
                     }
@@ -12190,10 +12806,39 @@ impl LocalApplicationFacade {
     /// 身份可靠（指纹一致）自动建立/维持关系；不可靠标注分叉；路径消失
     /// 收回关系。全程只写 SkillHub 自己的表，绝不触碰用户文件。
     fn reconcile_observed_deployments(&self, scan: &skillhub_core::ScanResult) -> AppResult<()> {
+        let result = self.reconcile_observed_deployments_inner(scan);
+        match &result {
+            Ok(counts) => {
+                // 盘账完成：常规扫描的低频事实行；异常在 failed 事件里。
+                self.log_event(
+                    LogLevel::Info,
+                    "inventory.reconcile",
+                    None,
+                    None,
+                    Vec::new(),
+                    vec![
+                        ("existing_rows", counts.existing_rows as u64),
+                        ("observations", counts.observations as u64),
+                        ("unmatched_observations", counts.unmatched as u64),
+                        ("reclassified_unknowns", counts.reclassified as u64),
+                    ],
+                );
+            }
+            Err(error) => {
+                self.log_app_error("inventory.reconcile.failed", None, &[], error);
+            }
+        }
+        result.map(|_| ())
+    }
+
+    fn reconcile_observed_deployments_inner(
+        &self,
+        scan: &skillhub_core::ScanResult,
+    ) -> AppResult<ObservedReconcileCounts> {
         let _relation_migration_guard = self.lock_relation_migration("observed.reconcile")?;
         // 未激活集中库时没有任何可比对象：诚实缺省为"无关系"，不报错。
         let Ok(library) = self.library_runtime.snapshot() else {
-            return Ok(());
+            return Ok(ObservedReconcileCounts::default());
         };
         let observations = self.scan_observations(scan, &library);
         let observed_at = now_epoch_seconds();
@@ -12207,6 +12852,7 @@ impl LocalApplicationFacade {
                 .iter()
                 .map(|root| Self::canonical_path_string(root))
                 .collect::<Vec<_>>();
+            let mut unmatched = 0usize;
             for row in &existing {
                 // 只裁决本次扫描覆盖的根之下的关系；未扫描范围不动。行里
                 // 存的路径可能来自导入候选（未解析符号链接前缀），先折叠
@@ -12283,6 +12929,11 @@ impl LocalApplicationFacade {
                     .iter()
                     .find(|(_, hash)| hash == &observation.fingerprint)
                     .map(|(skill_id, _)| *skill_id);
+                if matched.is_none() {
+                    // 盘账异常信号：盘上内容与库内任何 Skill 指纹不一致
+                    //（#14 类不一致的来源之一），计数随完成事件进日志。
+                    unmatched += 1;
+                }
                 let action = reconcile_observed_row(None, Some(observation), matched);
                 repository.apply_observed_row_action(
                     &client_id,
@@ -12292,7 +12943,76 @@ impl LocalApplicationFacade {
                     observed_at,
                 )?;
             }
-            Ok(())
+            // #10 第 4 项：比对落库后，对扫描范围内仍未分类的观察行做一次
+            // 关系再推导（见 rederive_unknown_relationships_in）。复用外层
+            // 数据库句柄：with_database 的锁不可重入。
+            let reclassified = self.rederive_unknown_relationships_in(database, &scanned_roots)?;
+            Ok(ObservedReconcileCounts {
+                existing_rows: existing.len(),
+                observations: observations.len(),
+                unmatched,
+                reclassified,
+            })
+        })
+    }
+
+    /// #10 第 4 项（2026-10-07 定稿）：对扫描范围内 relationship 仍未分类
+    /// （Unknown）的活跃未受管部署边，按现行 ownership×表示 口径做一次再
+    /// 推导。历史行当初落库即 Unknown、比对「未变化」又永不改写，治理清单
+    /// 因此把它们永久挡在「不可转换」后面；再推导给这些行一个随真实文件
+    /// 系统事实归位的机会。探测失败或推导仍为 Unknown 时保持原样（不猜）；
+    /// SkillHub 管理的条目永不改写。返回实际改写的行数。
+    fn rederive_unknown_relationships_in(
+        &self,
+        database: &Database,
+        scanned_roots: &[String],
+    ) -> AppResult<usize> {
+        if scanned_roots.is_empty() {
+            return Ok(0);
+        }
+        // 与比对阶段同一口径：根路径先折叠到 canonical 形态再比较。
+        let scanned_roots = scanned_roots
+            .iter()
+            .map(|root| Self::canonical_path_string(root))
+            .collect::<Vec<_>>();
+        let repository = database.relationship_repository();
+        let mut rederived = 0;
+        for mut fact in repository.list_relations()? {
+            if !fact.active
+                || fact.ownership == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                || fact.relationship != skillhub_core::relationship::RelationshipType::Unknown
+            {
+                continue;
+            }
+            let fact_path = Self::canonical_path_string(&fact.path);
+            if !scanned_roots
+                .iter()
+                .any(|root| path_lives_under(&fact_path, root))
+            {
+                continue;
+            }
+            let representation = FilesystemRelationshipProbe.directory_representation(&fact_path);
+            let relationship =
+                skillhub_core::relationship::derive_relationship(fact.ownership, representation);
+            if relationship == skillhub_core::relationship::RelationshipType::Unknown {
+                continue;
+            }
+            fact.relationship = relationship;
+            fact.file_representation = representation;
+            repository.upsert_deployment_relation(&fact)?;
+            rederived += 1;
+        }
+        Ok(rederived)
+    }
+
+    /// 仅供测试：直接驱动扫描后的未知关系再推导，避免在测试里跑完整扫描。
+    #[doc(hidden)]
+    pub fn rederive_unknown_relationships_for_tests(
+        &self,
+        scanned_roots: &[String],
+    ) -> AppResult<usize> {
+        self.with_database("relationship.rederive_unknown_for_tests", |database| {
+            self.rederive_unknown_relationships_in(database, scanned_roots)
         })
     }
 
@@ -13495,14 +14215,27 @@ impl LocalApplicationFacade {
 
     /// 计划 8.14：启动恢复。扫描所有未到终态的迁移记录，按"原路径/
     /// 备份/活动关系"三方事实推进（core 纯判定），不通过删除审计做
-    /// 补偿。返回推进的记录数。
+    /// 补偿。返回推进的记录数。begin/done 两条计数进开发日志；
+    /// 单条推进细节为 Debug 级（生产默认最小级别不落盘）。
     pub fn recover_original_migrations(&self) -> AppResult<usize> {
         let pending = self.with_database("recover.original_migrations.list", |database| {
             database
                 .provenance_repository()
                 .list_pending_original_migrations()
         })?;
+        self.log_event(
+            LogLevel::Info,
+            "migration.recovery.begin",
+            None,
+            None,
+            Vec::new(),
+            vec![("pending", pending.len() as u64)],
+        );
         let mut advanced = 0usize;
+        let mut roll_forward = 0usize;
+        let mut roll_back = 0usize;
+        let mut needs_recovery = 0usize;
+        let mut advance_failures = 0usize;
         for record in pending {
             let original = PathBuf::from(&record.original_path);
             let backup = PathBuf::from(&record.backup_path);
@@ -13554,6 +14287,22 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += rolled.is_ok() as usize;
+                    if rolled.is_ok() {
+                        roll_forward += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "roll_forward".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
                 skillhub_core::import::OriginalMigrationRecoveryAdvancement::RollBackToFailed => {
                     // 删除未发生：标 Failed，关系 OperationFailed，历史 failed。
@@ -13599,6 +14348,22 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += failed.is_ok() as usize;
+                    if failed.is_ok() {
+                        roll_back += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "roll_back_to_failed".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
                 skillhub_core::import::OriginalMigrationRecoveryAdvancement::NeedsRecovery => {
                     // 备份缺失：只能如实转 NeedsRecovery 并记录历史。
@@ -13636,9 +14401,43 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += marked.is_ok() as usize;
+                    if marked.is_ok() {
+                        needs_recovery += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "needs_recovery".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
             }
         }
+        self.log_event(
+            if advance_failures > 0 {
+                LogLevel::Error
+            } else {
+                LogLevel::Info
+            },
+            "migration.recovery.done",
+            None,
+            None,
+            Vec::new(),
+            vec![
+                ("advanced", advanced as u64),
+                ("roll_forward", roll_forward as u64),
+                ("roll_back", roll_back as u64),
+                ("needs_recovery", needs_recovery as u64),
+                ("failed", advance_failures as u64),
+            ],
+        );
         Ok(advanced)
     }
 }
@@ -16321,13 +17120,33 @@ fn save_as_copy_replacement_fingerprint(
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
+/// 盘账比对（observed deployments reconcile）一次运行的规模计数，随
+/// `inventory.reconcile` 完成事件进日志；异常走 `inventory.reconcile.failed`。
+#[derive(Default)]
+struct ObservedReconcileCounts {
+    existing_rows: usize,
+    observations: usize,
+    unmatched: usize,
+    reclassified: usize,
+}
+
 fn journal_record(
     operation_id: OperationId,
     kind: &str,
     phase: skillhub_core::OperationPhase,
     error_code: Option<ErrorCode>,
 ) -> skillhub_core::OperationRecord {
-    let phase_name = match phase {
+    let mut record = skillhub_core::OperationRecord::planned(operation_id, kind, "");
+    record.phase = phase;
+    record.progress.phase = phase;
+    record.progress.message_code = format!("operation.{kind}.{}", operation_phase_code(phase));
+    record.error_code = error_code;
+    record
+}
+
+/// journal 行相位与开发日志共用的稳定小写相位名。
+fn operation_phase_code(phase: skillhub_core::OperationPhase) -> &'static str {
+    match phase {
         skillhub_core::OperationPhase::Planned => "planned",
         skillhub_core::OperationPhase::Prepared => "prepared",
         skillhub_core::OperationPhase::Applying => "applying",
@@ -16335,19 +17154,64 @@ fn journal_record(
         skillhub_core::OperationPhase::Committed => "committed",
         skillhub_core::OperationPhase::NeedsRecovery => "needs_recovery",
         skillhub_core::OperationPhase::RolledBack => "rolled_back",
-    };
-    let mut record = skillhub_core::OperationRecord::planned(operation_id, kind, "");
-    record.phase = phase;
-    record.progress.phase = phase;
-    record.progress.message_code = format!("operation.{kind}.{phase_name}");
-    record.error_code = error_code;
-    record
+    }
+}
+
+/// 日志参数统一转字符串：字符串值去掉 JSON 引号，其余保留结构化形态。
+fn log_param_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn unsupported(operation: &'static str) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error)
         .with_param("operation", operation)
         .with_action(RecoveryAction::Retry)
+}
+
+/// #15：单个受管部署在采用新版时的重写结果。`rewritten=false` 时 `reason`
+/// 用可核查的事实说明目标状态（分叉、备份失败、残留等），不冒充全部成功。
+#[derive(Clone, Debug, serde::Serialize)]
+struct ManagedDeploymentRewriteOutcome {
+    relation_id: String,
+    deployment_id: String,
+    path: String,
+    mode: &'static str,
+    rewritten: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+impl ManagedDeploymentRewriteOutcome {
+    fn rewritten(relation_id: String, deployment_id: &str, path: &str, mode: &'static str) -> Self {
+        Self {
+            relation_id,
+            deployment_id: deployment_id.to_owned(),
+            path: path.to_owned(),
+            mode,
+            rewritten: true,
+            reason: None,
+        }
+    }
+
+    fn failed(
+        relation_id: String,
+        deployment_id: &str,
+        path: &str,
+        mode: &'static str,
+        reason: String,
+    ) -> Self {
+        Self {
+            relation_id,
+            deployment_id: deployment_id.to_owned(),
+            path: path.to_owned(),
+            mode,
+            rewritten: false,
+            reason: Some(reason),
+        }
+    }
 }
 
 /// K7/G-18：关系形状的展示码——snake_case 关系类型，不向调用方裸露内部枚举。

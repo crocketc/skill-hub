@@ -76,11 +76,11 @@ it("defaults to the operation records tab", async () => {
   expect(screen.getByRole("tabpanel")).toBeVisible();
 });
 
-it("switches to the backup & restore tab and keeps the recovery confirmation there", async () => {
+it("switches to the unfinished operations tab and keeps the recovery confirmation there", async () => {
   const user = userEvent.setup();
   await renderPage();
 
-  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   expect(screen.getByRole("tabpanel")).toHaveTextContent("deployment.target_conflict");
   expect(screen.getByRole("button", { name: "确认恢复" })).toBeVisible();
 });
@@ -100,7 +100,7 @@ it("lists every recovery candidate so the gate always has an exit", async () => 
     },
   }));
 
-  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   // DEV-98：有快照事实的候选显示「操作名：对象名」；缺快照的如实标注未知操作，
   // 两种情况都不暴露技术 id。
   expect(screen.getByLabelText("导入技能：Writer")).toBeVisible();
@@ -113,7 +113,7 @@ it("recovers the selected candidate through resolve_recovery", async () => {
   const resolveRecovery = vi.fn(async () => undefined);
   await renderPage(createFacade({ resolveRecovery }));
 
-  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   await act(async () => {
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
   });
@@ -131,7 +131,7 @@ it("reports a failed recovery readably instead of rendering [object Object]", as
     },
   }));
 
-  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   await act(async () => {
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
   });
@@ -146,7 +146,7 @@ it("says so plainly when nothing needs recovery", async () => {
   const user = userEvent.setup();
   await renderPage(createFacade({ async listRecoveryCandidates() { return []; } }));
 
-  await user.click(screen.getByRole("tab", { name: "备份恢复" }));
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   expect(screen.getByText("当前没有需要恢复的操作。")).toBeVisible();
   expect(screen.queryByRole("button", { name: "确认恢复" })).not.toBeInTheDocument();
 });
@@ -155,7 +155,7 @@ it("wires each tab to its panel with aria-controls and roving tabindex", async (
   await renderPage();
 
   const records = screen.getByRole("tab", { name: "操作记录" });
-  const backup = screen.getByRole("tab", { name: "备份恢复" });
+  const backup = screen.getByRole("tab", { name: "未完成操作" });
 
   expect(records).toHaveAttribute("aria-controls", "recovery-panel-records");
   expect(backup).toHaveAttribute("aria-controls", "recovery-panel-backup");
@@ -167,7 +167,7 @@ it("wires each tab to its panel with aria-controls and roving tabindex", async (
   await userEvent.setup().click(backup);
   expect(backup).toHaveAttribute("tabindex", "0");
   expect(records).toHaveAttribute("tabindex", "-1");
-  expect(screen.getByRole("tabpanel", { name: "备份恢复" })).toHaveAttribute("id", "recovery-panel-backup");
+  expect(screen.getByRole("tabpanel", { name: "未完成操作" })).toHaveAttribute("id", "recovery-panel-backup");
 });
 
 it("moves selection and focus with the arrow keys and wraps at the ends", async () => {
@@ -175,7 +175,7 @@ it("moves selection and focus with the arrow keys and wraps at the ends", async 
   await renderPage();
 
   const records = screen.getByRole("tab", { name: "操作记录" });
-  const backup = screen.getByRole("tab", { name: "备份恢复" });
+  const backup = screen.getByRole("tab", { name: "未完成操作" });
 
   await user.click(records);
   records.focus();

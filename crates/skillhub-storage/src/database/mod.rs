@@ -510,15 +510,120 @@ fn enable_foreign_keys(connection: &Connection) -> AppResult<()> {
         .map_err(database_error)
 }
 
-fn database_error(error: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
+/// SQLite extended result codes for the constraint subclasses this
+/// classifier distinguishes (see sqlite3.h). Declared locally so the
+/// mapping does not depend on the libsqlite3-sys feature flags.
+const SQLITE_CONSTRAINT_CHECK: i32 = 275;
+const SQLITE_CONSTRAINT_FOREIGNKEY: i32 = 787;
+const SQLITE_CONSTRAINT_NOTNULL: i32 = 1299;
+const SQLITE_CONSTRAINT_PRIMARYKEY: i32 = 1555;
+const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
+
+/// #12：SQLite 约束类失败不得落入 `internal.error` 兜底。外键与完整性
+/// 冲突（外键/CHECK/NOT NULL/主键）映射专属 `database.constraint`，唯一
+/// 冲突保留既有 `deployment.target_exists` 语义（部署与组合命名先例），
+/// 其余仍是内部错误。各 repository 的本地 `database_error`/`error` fn
+/// 统一走本分类，保证同一驱动错误在全仓映射一致。
+pub(crate) fn classify_database_error(error: rusqlite::Error) -> AppError {
+    let code = match &error {
+        rusqlite::Error::SqliteFailure(failure, _) => match failure.extended_code {
+            SQLITE_CONSTRAINT_UNIQUE => ErrorCode::TargetExists,
+            SQLITE_CONSTRAINT_FOREIGNKEY
+            | SQLITE_CONSTRAINT_CHECK
+            | SQLITE_CONSTRAINT_NOTNULL
+            | SQLITE_CONSTRAINT_PRIMARYKEY => ErrorCode::DatabaseConstraint,
+            _ => ErrorCode::InternalError,
+        },
+        _ => ErrorCode::InternalError,
+    };
+    AppError::new(code, Severity::Error)
         .with_param("source", error.to_string())
-        .with_action(RecoveryAction::Retry)
+        .with_action(if code == ErrorCode::TargetExists {
+            RecoveryAction::ChooseAnotherName
+        } else {
+            RecoveryAction::Retry
+        })
+}
+
+fn database_error(error: rusqlite::Error) -> AppError {
+    classify_database_error(error)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Database;
+    use super::{classify_database_error, Database, ErrorCode};
+
+    /// #12：外键/完整性冲突映射 `database.constraint`，唯一冲突保留
+    /// `deployment.target_exists` 语义，其余仍是 `internal.error`。
+    #[test]
+    fn constraint_failures_are_classified_by_their_sqlite_subclass() {
+        let db = Database::open_in_memory().unwrap();
+        let connection = db.connection_for_test();
+        connection
+            .execute_batch(
+                "CREATE TABLE classifier_parent (id TEXT PRIMARY KEY);
+                 CREATE TABLE classifier_child (
+                    id TEXT PRIMARY KEY,
+                    parent_id TEXT NOT NULL REFERENCES classifier_parent(id));
+                 CREATE TABLE classifier_check (value INTEGER NOT NULL CHECK (value > 0));
+                 CREATE TABLE classifier_plain (id TEXT PRIMARY KEY, note TEXT);",
+            )
+            .unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO classifier_parent (id) VALUES ('parent');
+                 INSERT INTO classifier_child (id, parent_id) VALUES ('child', 'parent');
+                 INSERT INTO classifier_check (value) VALUES (1);",
+            )
+            .unwrap();
+
+        let foreign_key = connection.execute("DELETE FROM classifier_parent WHERE id='parent'", []);
+        assert!(matches!(
+            foreign_key,
+            Err(rusqlite::Error::SqliteFailure(ref failure, _))
+                if failure.extended_code == super::SQLITE_CONSTRAINT_FOREIGNKEY
+        ));
+        assert_eq!(
+            classify_database_error(foreign_key.unwrap_err()).code,
+            ErrorCode::DatabaseConstraint
+        );
+
+        // 唯一冲突：现有消费方按 TargetExists 提示改名。
+        connection
+            .execute(
+                "INSERT INTO tags (id, name) VALUES ('seed', 'seed-tag')",
+                [],
+            )
+            .unwrap();
+        let unique =
+            connection.execute("INSERT INTO tags (id, name) VALUES ('dup', 'seed-tag')", []);
+        assert_eq!(
+            classify_database_error(unique.unwrap_err()).code,
+            ErrorCode::TargetExists
+        );
+
+        let check = connection.execute("INSERT INTO classifier_check (value) VALUES (0)", []);
+        assert_eq!(
+            classify_database_error(check.unwrap_err()).code,
+            ErrorCode::DatabaseConstraint
+        );
+
+        let not_null = connection
+            .execute("INSERT INTO skills (id, display_name, runtime_name, created_at, updated_at) VALUES ('x', NULL, 'x', 0, 0)", []);
+        assert_eq!(
+            classify_database_error(not_null.unwrap_err()).code,
+            ErrorCode::DatabaseConstraint
+        );
+
+        let primary_key = connection.execute_batch(
+            "INSERT INTO classifier_plain (id, note) VALUES ('dup', 'a');
+             INSERT INTO classifier_plain (id, note) VALUES ('dup', 'b');",
+        );
+        assert_eq!(
+            classify_database_error(primary_key.unwrap_err()).code,
+            ErrorCode::DatabaseConstraint
+        );
+    }
 
     #[test]
     fn foreign_keys_are_enabled_for_cascade_and_restrict_behavior() {

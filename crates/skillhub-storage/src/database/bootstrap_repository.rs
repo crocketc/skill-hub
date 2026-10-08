@@ -522,7 +522,5 @@ fn invalid_snapshot() -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error).with_action(RecoveryAction::Retry)
 }
 fn error(e: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", e.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(e)
 }

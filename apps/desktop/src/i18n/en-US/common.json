@@ -1204,11 +1204,10 @@
       "newDetail_other": "Startup background rediscovery found {{count}} new brands/types: {{brands}}",
       "newTitle": "New agents discovered"
     },
-    "blockingStartup": "Blocking startup",
     "openRecovery": "Open operations and recovery",
     "recoveryDescription": "An unfinished recovery operation needs attention. SkillHub will not show potentially stale local data until recovery is complete.",
-    "recoveryInProgressDescription": "SkillHub is restoring local data. Potentially stale local data will remain hidden until restoration is complete.",
-    "recoveryInProgressTitle": "Restoring local data",
+    "recoveryInProgressDescription": "An operation from the previous session did not finish. SkillHub is holding back potentially stale local data. Confirm how to handle it on the recovery page.",
+    "recoveryInProgressTitle": "Previous operation unfinished",
     "recoveryTitle": "Recovery is required before continuing"
   },
   "onboarding": {
@@ -2307,7 +2306,8 @@
         "path_outside_allowed_root": "Deletion failed: the target path is outside the allowed root.",
         "object_not_found": "Deletion failed: the target does not exist; it may already be gone.",
         "operation_conflict": "Deletion failed: the operation conflicts with another; re-confirm and retry.",
-        "internal_error": "Deletion failed: an internal error occurred; continue from the recovery center."
+        "internal_error": "Deletion failed: an internal error occurred; continue from the recovery center.",
+        "database_constraint": "Deletion failed: a database integrity constraint blocked this operation. Please report this issue."
       }
     }
   },
@@ -2522,7 +2522,7 @@
     },
     "tabs": {
       "records": "Operation records",
-      "backupRestore": "Backup & restore",
+      "backupRestore": "Unfinished operations",
       "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
     },
     "unknownOperation": "Unknown operation"
@@ -3210,7 +3210,7 @@
         "pendingDone": "All pending items are handled — nothing is waiting for a decision."
       },
       "readOnly": {
-        "badge": "Retained copy (read-only)",
+        "badge": "In library · original retained (read-only)",
         "note": "The original lives in a read-only location; the skill library reads and uses it without rewriting or moving it."
       },
       "manageRelations": "Manage relations",

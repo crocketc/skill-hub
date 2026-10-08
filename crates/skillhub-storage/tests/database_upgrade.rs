@@ -76,7 +76,7 @@ fn v19_enforces_immutability_of_import_events_and_relation_history() {
         )
         .unwrap();
 
-    // 证据与历史在 schema 层不可改写、不可删除。
+    // 证据与历史在 schema 层不可改写；关系历史不可删除。
     assert!(connection
         .execute(
             "UPDATE import_provenance_events_v19 SET content_fingerprint='tampered'",
@@ -84,14 +84,21 @@ fn v19_enforces_immutability_of_import_events_and_relation_history() {
         )
         .is_err());
     assert!(connection
-        .execute("DELETE FROM import_provenance_events_v19", [])
-        .is_err());
-    assert!(connection
         .execute("UPDATE relation_history_events SET action='rewritten'", [])
         .is_err());
     assert!(connection
         .execute("DELETE FROM relation_history_events", [])
         .is_err());
+    // #12（2026-10-07 治理裁决）：主体名下全部使用关系随删除一并删除
+    // （「相当于恢复到没导入状态」），0019 对存证事件的删除禁令由迁移
+    // 029 解除；存证行由主体删除编排按 skill_id 显式清理（见
+    // skill_removal_chain.rs），改写禁令保持不变。
+    assert!(connection
+        .execute(
+            "DELETE FROM import_provenance_events_v19 WHERE provenance_id='event-a9'",
+            []
+        )
+        .is_ok());
 }
 
 #[test]

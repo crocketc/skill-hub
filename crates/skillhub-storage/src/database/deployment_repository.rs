@@ -399,17 +399,6 @@ fn invalid_record() -> AppError {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    let code = match error {
-        rusqlite::Error::SqliteFailure(ref failure, _) if failure.extended_code == 2067 => {
-            ErrorCode::TargetExists
-        }
-        _ => ErrorCode::InternalError,
-    };
-    AppError::new(code, Severity::Error)
-        .with_param("source", error.to_string())
-        .with_action(if code == ErrorCode::TargetExists {
-            RecoveryAction::ChooseAnotherName
-        } else {
-            RecoveryAction::Retry
-        })
+    // 2067（UNIQUE）→ TargetExists 的既有语义由共享分类统一维护。
+    super::classify_database_error(error)
 }

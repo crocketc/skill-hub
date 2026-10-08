@@ -301,8 +301,11 @@ async fn applying_checkpoint_failure_keeps_all_version_consumers_untouched() {
     );
 }
 
+/// #11：重启清扫把上一会话残留的 applying 采用操作转入 needs_recovery
+/// （只改记账标签），磁盘上的当前版本与可见树原样保留，等待恢复页用户
+/// 显式完成或回滚；启动闸门如实报告 NeedsRecovery。
 #[tokio::test]
-async fn restart_sweep_preserves_an_applying_version_adoption_for_recovery() {
+async fn restart_sweep_relables_an_applying_version_adoption_for_recovery() {
     let root = tempfile::tempdir().expect("isolated fixture root");
     let database_path = root.path().join("skillhub.sqlite");
     let library_root = root.path().join("library");
@@ -361,15 +364,17 @@ async fn restart_sweep_preserves_an_applying_version_adoption_for_recovery() {
         .unwrap();
     assert_eq!(
         record.phase,
-        OperationPhase::Applying,
-        "startup sweep must preserve an operation that may have physical side effects"
+        OperationPhase::NeedsRecovery,
+        "#11：重启清扫把可能有真实磁盘效果的 applying 行转入恢复候选（只改标签），\
+         不再保持 applying 让闸门停在含糊的 InProgress"
     );
     let active = reopened.library_runtime().snapshot().unwrap();
     assert_eq!(active.current(skill.id()).unwrap(), Some(first.id));
     assert_eq!(
         std::fs::read_to_string(active.central.visible_skill_path(&skill).join("SKILL.md"))
             .unwrap(),
-        "# First\n"
+        "# First\n",
+        "清扫绝不碰磁盘：当前版本与可见树保持中断前原样，等待恢复页用户决策"
     );
 }
 

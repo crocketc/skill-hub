@@ -1,12 +1,10 @@
-use std::collections::BTreeMap;
-
 use rusqlite::{params, Connection, Transaction};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 use super::relationship_repository::deployment_entry_path;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 28;
+pub const CURRENT_SCHEMA_VERSION: u32 = 29;
 
 #[derive(Clone, Copy)]
 struct Migration<'a> {
@@ -126,6 +124,10 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 28,
         sql: include_str!("../../migrations/0028_security_alerts.sql"),
+    },
+    Migration {
+        version: 29,
+        sql: include_str!("../../migrations/0029_import_evidence_removal.sql"),
     },
 ];
 
@@ -320,17 +322,7 @@ fn read_schema_version(connection: &Connection) -> AppResult<u32> {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    let mut params = BTreeMap::new();
-    params.insert(
-        "source".to_owned(),
-        serde_json::Value::String(error.to_string()),
-    );
-    AppError {
-        code: ErrorCode::InternalError,
-        severity: Severity::Error,
-        params,
-        actions: vec![RecoveryAction::Retry],
-    }
+    super::classify_database_error(error)
 }
 
 #[cfg(test)]

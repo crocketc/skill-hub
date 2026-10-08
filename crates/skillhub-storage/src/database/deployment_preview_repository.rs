@@ -1,19 +1,9 @@
 use super::Database;
 use rusqlite::{params, OptionalExtension};
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
+use skillhub_core::{AppError, AppResult};
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    let mut params = std::collections::BTreeMap::new();
-    params.insert(
-        "source".to_owned(),
-        serde_json::Value::String(error.to_string()),
-    );
-    AppError {
-        code: ErrorCode::InternalError,
-        severity: Severity::Error,
-        params,
-        actions: vec![RecoveryAction::Retry],
-    }
+    super::classify_database_error(error)
 }
 
 /// One stored deployment preview snapshot.  `payload_json` carries the full

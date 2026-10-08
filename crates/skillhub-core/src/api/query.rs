@@ -463,9 +463,8 @@ pub struct SkillResult {
     /// 的链接（K1 影响语义的 follows_current 计数）。
     #[serde(default)]
     pub managed_link_count: u32,
-    /// G-16：独立副本数——活动且未跟随当前版本的副本型关系
-    /// （ImportCopy/ManagedCopy/ObservedCopy，K1 影响语义的
-    /// independent_copy 计数）。
+    /// G-16：独立副本数——活动且未跟随当前版本的导入/观察副本（#15 起
+    /// 受管复制属受管去向、由采用新版同步重写，不再计入独立副本）。
     #[serde(default)]
     pub independent_copy_count: u32,
     /// QA-010：当前版本的可读标签——用户命名优先，其次 vN 捕获序号；

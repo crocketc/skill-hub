@@ -406,5 +406,5 @@ fn io_error(error: std::io::Error) -> AppError {
 }
 
 fn database_error(error: rusqlite::Error) -> AppError {
-    internal(error.to_string())
+    super::classify_database_error(error)
 }

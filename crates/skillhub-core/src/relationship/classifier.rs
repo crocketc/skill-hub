@@ -187,6 +187,16 @@ fn relationship_for_ownership(
     }
 }
 
+/// ownership×表示 → 关系类型的现行口径（#10 第 4 项，2026-10-07 定稿）。
+/// 扫描/初始化/再发现时对未知关系行的再推导与治理投影共用这一份映射，
+/// 不允许出现第二套规则。
+pub fn derive_relationship(
+    ownership: OwnershipState,
+    representation: FileRepresentation,
+) -> RelationshipType {
+    relationship_for_ownership(ownership, representation)
+}
+
 fn relationship_for_target(target: &RelationTargetFact) -> RelationshipType {
     // The persisted relationship is a hint from an earlier observation. The
     // current ownership and filesystem representation are authoritative.
@@ -282,4 +292,53 @@ fn target_sort_key(
         target.agent_client_id.clone(),
         target.relation_id.clone().unwrap_or_default(),
     )
+}
+
+#[cfg(test)]
+mod derive_relationship_tests {
+    use super::*;
+
+    #[test]
+    fn derive_relationship_is_the_shared_ownership_representation_mapping() {
+        assert_eq!(
+            derive_relationship(
+                OwnershipState::SkillhubManaged,
+                FileRepresentation::SymbolicLink
+            ),
+            RelationshipType::ManagedLink
+        );
+        assert_eq!(
+            derive_relationship(OwnershipState::SkillhubManaged, FileRepresentation::Copy),
+            RelationshipType::ManagedCopy
+        );
+        assert_eq!(
+            derive_relationship(
+                OwnershipState::ObservedUnmanaged,
+                FileRepresentation::SymbolicLink
+            ),
+            RelationshipType::ObservedLink
+        );
+        assert_eq!(
+            derive_relationship(
+                OwnershipState::ObservedUnmanaged,
+                FileRepresentation::DirectoryJunction
+            ),
+            RelationshipType::ObservedLink
+        );
+        assert_eq!(
+            derive_relationship(
+                OwnershipState::ObservedUnmanaged,
+                FileRepresentation::Directory
+            ),
+            RelationshipType::ObservedCopy
+        );
+        assert_eq!(
+            derive_relationship(
+                OwnershipState::ObservedUnmanaged,
+                FileRepresentation::Unknown
+            ),
+            RelationshipType::Unknown,
+            "表示未知时不猜：保持 Unknown，等待下一次探测"
+        );
+    }
 }

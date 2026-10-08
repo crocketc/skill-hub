@@ -1204,11 +1204,10 @@
       "newDetail_other": "本次启动后台重扫新识别 {{count}} 个品牌/类型：{{brands}}",
       "newTitle": "发现新的 Agent"
     },
-    "blockingStartup": "阻塞启动",
     "openRecovery": "打开操作记录与恢复",
     "recoveryDescription": "检测到尚未完成的恢复操作。完成恢复前，SkillHub 不会继续显示可能过期的本地数据。",
-    "recoveryInProgressDescription": "SkillHub 正在恢复本地数据。恢复完成前不会显示可能过期的本地数据。",
-    "recoveryInProgressTitle": "正在恢复本地数据",
+    "recoveryInProgressDescription": "检测到上次会话有未完成的操作，SkillHub 暂不显示可能过期的本地数据。请在恢复页确认处置方式。",
+    "recoveryInProgressTitle": "上次操作尚未完成",
     "recoveryTitle": "需要恢复后才能继续"
   },
   "onboarding": {
@@ -2307,7 +2306,8 @@
         "path_outside_allowed_root": "删除失败：目标路径超出允许范围。",
         "object_not_found": "删除失败：目标不存在，可能已被删除。",
         "operation_conflict": "删除失败：操作冲突，请重新确认后重试。",
-        "internal_error": "删除失败：内部错误，可从恢复中心继续。"
+        "internal_error": "删除失败：内部错误，可从恢复中心继续。",
+        "database_constraint": "删除失败：数据完整性约束阻止了该操作，请反馈此问题。"
       }
     }
   },
@@ -2522,7 +2522,7 @@
     },
     "tabs": {
       "records": "操作记录",
-      "backupRestore": "备份恢复",
+      "backupRestore": "未完成操作",
       "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
     },
     "unknownOperation": "未知操作"
@@ -3210,7 +3210,7 @@
         "pendingDone": "待处理事项已全部处理完，现在没有需要决定的关系。"
       },
       "readOnly": {
-        "badge": "已保留拷贝（只读）",
+        "badge": "已入库·原件保留（只读）",
         "note": "原件位于只读目录，技能库只读取使用，不会改写或移动它。"
       },
       "manageRelations": "管理关系",

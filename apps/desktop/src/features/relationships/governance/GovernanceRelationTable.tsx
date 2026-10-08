@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import type { RelationGovernanceRow } from "../../../api/bindings";
 import {
   isReadOnlySourceRelation,
+  isReadOnlyTerminalRelation,
   relationAgentIdOf,
   relationIdOf,
   relationPathOf,
@@ -110,7 +111,10 @@ export function GovernanceRelationTable({
           {rows.map((row) => {
             const relationId = relationIdOf(row.relation);
             const busy = busyRelationIds.has(relationId);
+            // 只读原件不参与批量勾选；只有完成态原件才是无动作只读终端卡
+            // （§10）：异常原件回到待处理，必须给出动作与原因。
             const readOnly = isReadOnlySourceRelation(row);
+            const readOnlyTerminal = isReadOnlyTerminalRelation(row);
             return (
               <tr data-readonly={readOnly ? "true" : undefined} data-testid="governance-row" key={relationId}>
                 <td>
@@ -134,7 +138,7 @@ export function GovernanceRelationTable({
                 </td>
                 <td><GovernanceRelationVerification row={row} /></td>
                 <td className="sh-governance__actions">
-                  {!readOnly ? (
+                  {!readOnlyTerminal ? (
                     <GovernanceRelationActions
                       busy={busy}
                       onCentralize={onCentralize}
@@ -190,8 +194,10 @@ export function GovernanceRelationSelection({
 export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
-  // 只读导入原件（§10）：状态徽标 + 来源说明，不显示管理状态或受阻徽标。
-  if (isReadOnlySourceRelation(row)) {
+  // 只读导入原件的完成态（§10）：「已入库·原件保留（只读）」徽标 + 来源
+  // 说明，不显示管理状态或受阻徽标。异常原件回到待处理，按正常徽标呈现
+  // 并保留只读来源说明。
+  if (isReadOnlyTerminalRelation(row)) {
     return (
       <div className="sh-governance__identity">
         <strong
@@ -253,6 +259,11 @@ export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow
       ) : null}
       {presentation.decisionKey ? (
         <span className="sh-governance__decision">{t(presentation.decisionKey as never)}</span>
+      ) : null}
+      {isReadOnlySourceRelation(row) ? (
+        <p className="sh-governance__readonly-note" data-testid="governance-readonly-note">
+          {t("relationships.governance.readOnly.note" as never)}
+        </p>
       ) : null}
       <p className="sh-visually-hidden" id={`governance-description-${relationId}`}>
         {t(presentation.descriptionKey as never)}
@@ -340,8 +351,9 @@ export function GovernanceRelationVerificationLabel({ row }: { row: RelationGove
 export function GovernanceRelationBlockers({ row }: { row: RelationGovernanceRow }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
-  // 只读原件不是受阻（§10）：即使后端附带原因也不按受阻呈现。
-  if (isReadOnlySourceRelation(row)) return null;
+  // 只读原件的完成态不是受阻（§10）：即使后端附带原因也不按受阻呈现。
+  // 异常只读原件回到待处理，必须按「原因 + 重新核验」说明呈现。
+  if (isReadOnlyTerminalRelation(row)) return null;
   const reasons = presentGovernanceRow(row).reasonKeys;
   return reasons.length > 0 ? (
     <ul className="sh-governance__reason-list" data-testid={`governance-reasons-${relationId}`}>
@@ -373,8 +385,9 @@ export function GovernanceRelationActions({
 }) {
   const { t } = useTranslation();
   const relationId = relationIdOf(row.relation);
-  // 只读原件没有可用动作（§10）：动作按钮区整体不渲染。
-  if (isReadOnlySourceRelation(row)) return null;
+  // 只读原件的完成态没有可用动作（§10）：动作按钮区整体不渲染。异常
+  // 只读原件回到待处理，按可用条件渲染「重新检查 / 结束关系」出口。
+  if (isReadOnlyTerminalRelation(row)) return null;
   const actions = [
     {
       action: "centralize_management" as const,

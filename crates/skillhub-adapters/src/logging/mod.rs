@@ -1,3 +1,3 @@
 mod redaction;
 
-pub use redaction::{LocalLogConfig, LogEvent, RedactingWriter};
+pub use redaction::{LocalLogConfig, LogEvent, LogLevel, RedactingWriter};

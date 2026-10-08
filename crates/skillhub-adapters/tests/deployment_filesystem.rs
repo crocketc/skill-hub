@@ -155,6 +155,105 @@ fn managed_junction_can_be_removed_after_its_central_source_updates() {
     assert!(!applied.destination_path.exists());
 }
 
+#[test]
+fn remove_owned_refuses_a_managed_link_replaced_by_a_foreign_entry() {
+    // A replacement entry at the recorded destination - a link to someone
+    // else's directory, or a plain directory - is not ours to remove, even
+    // though a link's own file identity would never match anyway.  The
+    // ownership proof anchors link ownership to the managed source the link
+    // resolves to.
+    let fixture = DeploymentFixture::new();
+    let mode = if cfg!(windows) {
+        DeploymentMode::DirectoryJunction
+    } else {
+        DeploymentMode::SymbolicLink
+    };
+    let applied = match fixture.deploy(mode) {
+        Ok(applied) => applied,
+        Err(error)
+            if error.code.as_str() == "deployment.junction_not_supported"
+                || error.code.as_str() == "deployment.symlink_not_supported" =>
+        {
+            eprintln!("this host cannot create the platform's directory link; skipped");
+            return;
+        }
+        Err(error) => panic!("unexpected deploy failure: {error:?}"),
+    };
+    let filesystem = DeploymentFilesystem::new();
+
+    // Remove our own link first so the replacement starts from a clean slot.
+    match mode {
+        DeploymentMode::DirectoryJunction => {
+            skillhub_adapters::deployment::remove_junction(&applied.destination_path).unwrap();
+        }
+        DeploymentMode::SymbolicLink => {
+            #[cfg(unix)]
+            std::os::unix::fs::remove_file(&applied.destination_path).unwrap();
+            #[cfg(not(unix))]
+            {
+                let _ = applied;
+                panic!("non-windows symlink removal path is unix-only in this test");
+            }
+        }
+        DeploymentMode::ManagedCopy => unreachable!("link test never uses managed copy"),
+    }
+
+    let foreign_body = fixture._tempdir.path().join("foreign-body");
+    fs::create_dir(&foreign_body).unwrap();
+    fs::write(foreign_body.join("user-data.txt"), "keep me").unwrap();
+    match mode {
+        DeploymentMode::DirectoryJunction => {
+            skillhub_adapters::deployment::create_junction(
+                &foreign_body,
+                &applied.destination_path,
+            )
+            .unwrap();
+        }
+        DeploymentMode::SymbolicLink => {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&foreign_body, &applied.destination_path).unwrap();
+            #[cfg(not(unix))]
+            unreachable!("non-windows hosts never reach this arm");
+        }
+        DeploymentMode::ManagedCopy => unreachable!("link test never uses managed copy"),
+    }
+
+    let error = filesystem
+        .remove_owned(&applied.ownership)
+        .expect_err("a foreign replacement link must not be removed as ours");
+    assert_eq!(error.code.as_str(), "deployment.ownership_mismatch");
+    assert_eq!(
+        fs::read_to_string(foreign_body.join("user-data.txt")).unwrap(),
+        "keep me"
+    );
+
+    // The same destination replaced by a plain directory fails closed too.
+    match mode {
+        DeploymentMode::DirectoryJunction => {
+            skillhub_adapters::deployment::remove_junction(&applied.destination_path).unwrap();
+        }
+        DeploymentMode::SymbolicLink => {
+            #[cfg(unix)]
+            std::os::unix::fs::remove_file(&applied.destination_path).unwrap();
+            #[cfg(not(unix))]
+            unreachable!("non-windows hosts never reach this arm");
+        }
+        DeploymentMode::ManagedCopy => unreachable!("link test never uses managed copy"),
+    }
+    fs::create_dir(&applied.destination_path).unwrap();
+    fs::write(applied.destination_path.join("user-data.txt"), "keep me").unwrap();
+
+    let error = filesystem
+        .remove_owned(&applied.ownership)
+        .expect_err("a plain directory replacement must not be removed as ours");
+    assert_eq!(error.code.as_str(), "deployment.ownership_mismatch");
+    assert!(applied.destination_path.is_dir());
+    assert_eq!(
+        fs::read_to_string(applied.destination_path.join("user-data.txt")).unwrap(),
+        "keep me"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn junction_probe_cleans_up_and_needs_no_privilege() {

@@ -66,6 +66,16 @@ impl<'a> CatalogRepositorySqlite<'a> {
         tx.commit().map_err(error)
     }
 
+    /// #12：删除主体并清空其名下全部使用关系与投影（同一事务，任一步
+    /// 失败整体回滚）。顺序由真实 schema 的外键方向决定：
+    /// - RESTRICT/NO ACTION 引用（current_pointers/deployments 指向
+    ///   versions、source_copy_relations/import 存证链互指）必须先删；
+    /// - 使用关系边（deployment_relations/observed_deployments）按治理
+    ///   裁决随主体一并删除，不留 ON DELETE SET NULL 产生的悬空边；
+    /// - 无外键的投影与状态行（搜索名、全文检索、翻译、安全警示、版本
+    ///   名、谱系 origin 侧）必须显式删，否则必遗孤；
+    /// - skills 本体最后删除，级联收 versions/check_runs/check_findings/
+    ///   combination_skills/source_update_checks 等子表。
     pub fn remove_sync(&self, id: SkillId) -> AppResult<()> {
         let tx = self
             .database
@@ -73,6 +83,61 @@ impl<'a> CatalogRepositorySqlite<'a> {
             .unchecked_transaction()
             .map_err(error)?;
         let id = id.to_string();
+        // 1) 导入批次项：经 skill_id、存证事件或来源副本关系间接指向主体，
+        //    必须先于下两步删除。
+        tx.execute(
+            "DELETE FROM import_batch_items WHERE skill_id=?1 \
+             OR provenance_id IN (SELECT provenance_id FROM import_provenance_events_v19 WHERE skill_id=?1) \
+             OR source_relation_id IN (SELECT relation_id FROM source_copy_relations WHERE skill_id=?1)",
+            [&id],
+        )
+        .map_err(error)?;
+        // 2) 冲突案成员证据去关联：provenance_id 对存证事件是 NO ACTION
+        //    外键；schema 对主体/版本引用采用 SET NULL 降级，证据引用同样
+        //    置空保留案件行，而不是删掉成员。
+        tx.execute(
+            "UPDATE conflict_case_members SET provenance_id=NULL \
+             WHERE provenance_id IN (SELECT provenance_id FROM import_provenance_events_v19 WHERE skill_id=?1)",
+            [&id],
+        )
+        .map_err(error)?;
+        // 3) 原始迁移审计行（skills 的 CASCADE 子表，但自身对来源副本关系
+        //    有 NO ACTION 外键，必须先于 source_copy_relations 删除）。
+        tx.execute("DELETE FROM original_migrations WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        // 4) 当前指针与部署记录：version_id 对 versions RESTRICT，不先删
+        //    会拦下 skills 级联删 versions。
+        tx.execute("DELETE FROM current_pointers WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM deployments WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        // 5) 使用关系边随主体一并删除（治理裁决：不留无主体悬空关系）。
+        tx.execute("DELETE FROM deployment_relations WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM observed_deployments WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        // 6) 导入来源副本关系（NO ACTION 直拦 skills）与导入存证事件（对
+        //    skills 无外键，不显式删必遗孤）。
+        tx.execute("DELETE FROM source_copy_relations WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute(
+            "DELETE FROM import_provenance_events_v19 WHERE skill_id=?1",
+            [&id],
+        )
+        .map_err(error)?;
+        // 7) 无外键的投影与状态行：搜索展示名、全文检索行、描述翻译、
+        //    安全警示、用户版本名。
+        tx.execute("DELETE FROM search_display_names WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM skills_fts WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM translation_records WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM security_alerts WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        tx.execute("DELETE FROM version_labels WHERE skill_id=?1", [&id])
+            .map_err(error)?;
+        // 8) 目录元数据（既有行为保留）。
         tx.execute("DELETE FROM skill_sources WHERE skill_id=?1", [&id])
             .map_err(error)?;
         tx.execute("DELETE FROM skill_tags WHERE skill_id=?1", [&id])
@@ -82,7 +147,14 @@ impl<'a> CatalogRepositorySqlite<'a> {
             [&id],
         )
         .map_err(error)?;
+        // 9) 主体本体：级联收 versions／check_runs／check_findings／
+        //    combination_skills／source_update_checks／import_provenance／
+        //    skill_lineage(skill 侧) 等 CASCADE 子表；conflict_case_members
+        //    的主体/版本引用按 schema SET NULL 降级。
         tx.execute("DELETE FROM skills WHERE id=?1", [&id])
+            .map_err(error)?;
+        // 10) 复用修改谱系 origin 侧：无外键，主体删除后显式清理。
+        tx.execute("DELETE FROM skill_lineage WHERE origin_skill_id=?1", [&id])
             .map_err(error)?;
         tx.commit().map_err(error)
     }
@@ -871,9 +943,7 @@ fn parse_date(v: String) -> Option<(i32, u8, u8)> {
     }
 }
 fn error(e: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", e.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(e)
 }
 
 fn bad_id() -> AppError {

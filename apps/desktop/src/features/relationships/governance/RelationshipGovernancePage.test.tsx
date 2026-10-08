@@ -779,6 +779,29 @@ const READ_ONLY_ORIGINAL_ROW = makeSourceRow({
   sourceReadOnly: true,
 });
 
+// #10（2026-10-07）：异常只读原件回到待处理——待处理桶不允许零操作卡片。
+const READ_ONLY_ANOMALOUS_ROW = makeSourceRow({
+  relationId: "src-readonly-anomalous",
+  displayName: "只读异常原件",
+  decision: "retained",
+  health: "content_changed",
+  status: "needs_attention",
+  readiness: "needs_validation",
+  primaryAction: "revalidate",
+  sourceReadOnly: true,
+  governance: {
+    governance_status: "pending",
+    management_status: "not_taken_over",
+    decision: "retained_independent_copy",
+    management_confirmed_at: null,
+    health_reasons: ["content_changed"],
+    action_conditions: [
+      { action: "revalidate", available: true, reasons: [] },
+      { action: "end_relationship", available: true, reasons: [] },
+    ],
+  },
+});
+
 describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/D8）", () => {
   it("renders the read-only original as a terminal card without actions, selection or blockers", async () => {
     await renderGovernanceApp({
@@ -790,9 +813,9 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
     const retainedBucket = screen.getByTestId("governance-bucket-retained");
     const readonlyCard = retainedBucket.querySelector('[data-readonly="true"]') as HTMLElement;
     expect(readonlyCard).not.toBeNull();
-    // 状态徽标与来源说明直接可见。
+    // 状态徽标与来源说明直接可见（2026-10-07 措辞裁决）。
     expect(within(readonlyCard).getByTestId("governance-readonly-badge"))
-      .toHaveTextContent("已保留拷贝（只读）");
+      .toHaveTextContent("已入库·原件保留（只读）");
     expect(within(readonlyCard).getByTestId("governance-readonly-note")).toHaveTextContent("只读");
     // 仅保留「查看关系信息」展开：无动作按钮、无勾选、无受阻原因、无待集中管理徽标。
     expect(within(readonlyCard).queryAllByRole("button")).toHaveLength(0);
@@ -822,10 +845,31 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
     });
     await screen.findByTestId("governance-row-list");
 
-    expect(screen.getByTestId("governance-readonly-badge")).toHaveTextContent("已保留拷贝（只读）");
+    expect(screen.getByTestId("governance-readonly-badge")).toHaveTextContent("已入库·原件保留（只读）");
+
     expect(screen.queryByTestId("governance-action-src-readonly-original")).toBeNull();
     expect(screen.queryByTestId("governance-select-src-readonly-original")).toBeNull();
     expect(screen.queryByTestId("governance-reasons-src-readonly-original")).toBeNull();
+  });
+
+  it("gives anomalous read-only originals the pending exits instead of a zero-action card", async () => {
+    // #10 第 1 项（§10）：异常原件回到待处理并提供「重新检查 / 结束关系」；
+    // 「已入库」完成态徽标不属于待处理行，只读来源说明保留。
+    await renderGovernanceApp({
+      facade: createFacade(sourceLedger([READ_ONLY_ANOMALOUS_ROW])),
+    });
+    await screen.findByTestId("governance-row-list");
+
+    expect(screen.getByTestId("governance-action-src-readonly-anomalous"))
+      .toHaveTextContent("重新检查");
+    expect(screen.getByTestId("governance-action-end_relationship-src-readonly-anomalous"))
+      .toHaveTextContent("结束关系");
+    // 只读行不参与批量勾选。
+    expect(screen.queryByTestId("governance-select-src-readonly-anomalous")).toBeNull();
+    // 原因 + 重新核验说明可见；完成态徽标不出现。
+    expect(screen.getByTestId("governance-reasons-src-readonly-anomalous")).toBeInTheDocument();
+    expect(screen.queryByTestId("governance-readonly-badge")).toBeNull();
+    expect(screen.getByTestId("governance-readonly-note")).toBeInTheDocument();
   });
 
   it("shows the encouraging pending-done state when only completed rows remain", async () => {

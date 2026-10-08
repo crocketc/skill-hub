@@ -5048,7 +5048,7 @@ a {
   font-size: 0.875rem;
 }
 
-/* 恢复页双页签（操作记录 / 备份恢复） */
+/* 恢复页双页签（操作记录 / 未完成操作） */
 .sh-tabs {
   display: flex;
   gap: var(--space-2);
