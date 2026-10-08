@@ -19,7 +19,7 @@ use crate::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictWorkspace, DeploymentRelationFact,
     DirectoryNodeFact, GovernanceTaskFact, RelationGovernanceFilters, RelationGovernanceLedger,
     RelationshipGraphFactCounts, RelationshipGraphFilters, SkillRelationshipEdge,
-    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
+    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact, UsageRelationView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1099,6 +1099,8 @@ pub struct RelationshipOverview {
     pub agent_directory_capabilities: Vec<AgentDirectoryCapabilityFact>,
     pub source_relations: Vec<SourceRelationFact>,
     pub deployment_relations: Vec<DeploymentRelationFact>,
+    /// Unified active use facts projected from deployment/source evidence.
+    pub usage_relations: Vec<UsageRelationView>,
     pub conflict_cases: Vec<ConflictCaseFact>,
     pub pending_governance_tasks: Vec<GovernanceTaskFact>,
     pub agent_execution_confirmed: bool,

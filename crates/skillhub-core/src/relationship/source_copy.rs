@@ -47,6 +47,9 @@ pub struct SourceCopyRelationFact {
     pub agent_client_id: Option<String>,
     pub expected_fingerprint: String,
     pub current_fingerprint: Option<String>,
+    /// Legacy import marker. `from_import_event` initializes this to
+    /// `Retained` without a user action, so it is not explicit governance
+    /// decision evidence.
     pub decision: SourceCopyDecision,
     pub health: SourceCopyHealth,
     /// `None` distinguishes a legacy/unverified fact from a newly checked
@@ -95,8 +98,8 @@ impl SourceCopyRelationFact {
             agent_client_id: event.agent_client_id.clone(),
             expected_fingerprint: event.content_fingerprint.clone(),
             current_fingerprint: None,
-            // FB-④（2026-10-06）：导入即自动记录「保留独立副本」决定；撤销
-            // 与结束关系仍由用户显式执行。
+            // Preserve the legacy serialized value for compatibility. This
+            // automatic import default is not proof of an explicit decision.
             decision: SourceCopyDecision::Retained,
             health: SourceCopyHealth::NeedsValidation,
             health_reasons: None,

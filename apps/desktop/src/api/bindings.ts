@@ -3598,6 +3598,8 @@ export type RelationshipOverview = {
 	agent_directory_capabilities: AgentDirectoryCapabilityFact[],
 	source_relations: SourceRelationFact[],
 	deployment_relations: DeploymentRelationFact[],
+	/**  Unified active use facts projected from deployment/source evidence. */
+	usage_relations: UsageRelationView[],
 	conflict_cases: ConflictCaseFact[],
 	pending_governance_tasks: GovernanceTaskFact[],
 	agent_execution_confirmed: boolean,
@@ -4767,6 +4769,11 @@ export type SourceCopyRelationFact = {
 	agent_client_id: string | null,
 	expected_fingerprint: string,
 	current_fingerprint: string | null,
+	/**
+	 *  Legacy import marker. `from_import_event` initializes this to
+	 *  `Retained` without a user action, so it is not explicit governance
+	 *  decision evidence.
+	 */
 	decision: SourceCopyDecision,
 	health: SourceCopyHealth,
 	/**
@@ -5137,12 +5144,53 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
+export type UsageDecision = "released" | "retained_independent_copy";
+
+export type UsageEntryKey = {
+	directory_id: string,
+	relative_entry_path: string,
+};
+
 export type UsageEvidenceAnalysis = {
 	experimental: boolean,
 	window_days: number,
 	threshold_calls: number,
 	coverage: EvidenceCoverage,
 	suggestions: GlobalSkillSuggestion[],
+};
+
+export type UsageForm = "link" | "full_copy";
+
+export type UsageHealthReason = "normal" | "file_missing" | "link_abnormal" | "content_changed" | "needs_sync" | "sync_failed" | "unable_to_verify" | "user_confirmation";
+
+export type UsageManagement = "managed" | "unmanaged";
+
+export type UsageRelationTarget = {
+	kind: RelationGovernanceTargetKind,
+	directory_id: string | null,
+	agent_client_id: string | null,
+	directory_role: AgentDirectoryRole | null,
+	recognition: DirectoryRecognition | null,
+};
+
+export type UsageRelationView = {
+	relation_id: string,
+	skill_id: SkillId | null,
+	target: UsageRelationTarget,
+	entry_key: UsageEntryKey | null,
+	form: UsageForm | null,
+	management: UsageManagement,
+	health_reasons: UsageHealthReason[],
+	decision: UsageDecision | null,
+	decision_history_ids: string[],
+	active: boolean,
+	file_representation: FileRepresentation,
+	link_target_path: string | null,
+	link_target_path_key: string | null,
+	link_target_directory_id: string | null,
+	/**  Ephemeral physical identity evidence; it is never part of `entry_key`. */
+	physical_source_id_evidence: string | null,
+	evidence_relation_ids: string[],
 };
 
 /**  K4：确定性 Markdown 校验（路径合法、大小上限 1 MiB、非空），无 LLM。 */

@@ -5,11 +5,17 @@ pub mod history;
 pub mod impact;
 pub mod resolution;
 pub mod source_copy;
+pub mod usage;
 pub mod validation;
 
 pub use source_copy::{
     validate_source_copy_transition, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
     SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
+};
+pub use usage::{
+    project_usage_relations, UsageDecision, UsageDecisionEvidence, UsageEntryKey, UsageForm,
+    UsageHealthReason, UsageManagement, UsageManagementEvidence, UsageProjectionInput,
+    UsageRelationTarget, UsageRelationView,
 };
 pub use validation::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,

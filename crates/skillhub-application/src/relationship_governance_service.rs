@@ -20,10 +20,12 @@ use skillhub_core::deployment::{DeploymentMode, TargetChange, TargetPlan};
 use skillhub_core::relationship::{
     build_conflict_workspace, calculate_removal_impact, plan_conflict_decision,
     plan_conflict_governance_handoff, project_skill_relationship_graph_with_governance,
-    project_unified_governance_ledger_with_context, ConflictCaseFact, ConflictClassification,
-    ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact, FileRepresentation,
-    GovernanceTaskFact, GovernanceTaskKind, OwnershipState, RelationshipType, RemovalFacts,
-    SourceRelationFact,
+    project_unified_governance_ledger_with_context, project_usage_relations, ConflictCaseFact,
+    ConflictClassification, ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact,
+    FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState,
+    RelationGovernanceDecision, RelationManagementStatus, RelationshipType, RemovalFacts,
+    SourceCopyRelationFact, SourceRelationFact, UsageDecision, UsageDecisionEvidence,
+    UsageManagement, UsageManagementEvidence, UsageProjectionInput,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
@@ -468,8 +470,58 @@ impl LocalApplicationFacade {
         &self,
         scope: RelationshipOverviewScope,
     ) -> AppResult<AppQueryResult> {
+        let agent_directories = match self.get_agent_directory_projection()? {
+            AppQueryResult::AgentDirectoryProjection(projection) => projection,
+            _ => unreachable!("get_agent_directory_projection returns its projection"),
+        };
         let overview = self.with_database("query.relationship_overview", |database| {
             let snapshot = relationship_snapshot_for_scope(database, &scope)?;
+            let source_copies = database
+                .relationship_repository()
+                .list_source_copy_relations(true)?
+                .into_iter()
+                .filter(|copy| source_copy_matches_scope(copy, &scope))
+                .collect::<Vec<_>>();
+            let directory_nodes = database.directory_repository().list_nodes()?;
+            let directory_recognition = database.relationship_repository().list_capabilities()?;
+            let confirmations = database
+                .relationship_repository()
+                .list_relation_governance_confirmations()?;
+            let management_evidence = confirmations
+                .iter()
+                .filter(|fact| fact.confirmed_at.is_some())
+                .map(|fact| UsageManagementEvidence {
+                    relation_id: fact.relation_id.clone(),
+                    management: match fact.management_status {
+                        RelationManagementStatus::TakenOver => UsageManagement::Managed,
+                        RelationManagementStatus::NotTakenOver => UsageManagement::Unmanaged,
+                    },
+                })
+                .collect::<Vec<_>>();
+            let decision_evidence = confirmations
+                .iter()
+                .filter(|fact| {
+                    fact.confirmed_at.is_some()
+                        && fact.decision == RelationGovernanceDecision::RetainedIndependentCopy
+                })
+                .map(|fact| UsageDecisionEvidence {
+                    relation_id: fact.relation_id.clone(),
+                    decision: UsageDecision::RetainedIndependentCopy,
+                    // Existing confirmations persist the relation decision but
+                    // do not carry an independent history row ID. T02 supplies
+                    // durable history IDs through this same evidence seam.
+                    history_id: None,
+                })
+                .collect::<Vec<_>>();
+            let usage_relations = project_usage_relations(&UsageProjectionInput {
+                deployments: &snapshot.deployments,
+                source_copies: &source_copies,
+                directory_nodes: &directory_nodes,
+                directory_recognition: &directory_recognition,
+                agent_directories: &agent_directories,
+                decision_evidence: &decision_evidence,
+                management_evidence: &management_evidence,
+            });
             let all_cases = database.conflict_repository().list_cases()?;
             let all_tasks = database.governance_task_repository().list_pending()?;
             let subject = scope_subject(&scope);
@@ -491,6 +543,7 @@ impl LocalApplicationFacade {
                 agent_directory_capabilities: snapshot.directory_capabilities,
                 source_relations: snapshot.source_relations,
                 deployment_relations: snapshot.deployments,
+                usage_relations,
                 conflict_cases,
                 pending_governance_tasks,
                 // A discovered/recognized directory is not runtime execution
@@ -1735,6 +1788,27 @@ fn relationship_snapshot_for_scope(
             directory_capabilities: database.relationship_repository().list_capabilities()?,
             directory_nodes: database.directory_repository().list_nodes()?,
         }),
+    }
+}
+
+fn source_copy_matches_scope(
+    copy: &SourceCopyRelationFact,
+    scope: &RelationshipOverviewScope,
+) -> bool {
+    match scope {
+        RelationshipOverviewScope::All => true,
+        RelationshipOverviewScope::Skill { skill_id } => copy.skill_id == *skill_id,
+        RelationshipOverviewScope::Agent { agent_client_id } => {
+            copy.agent_client_id.as_deref() == Some(agent_client_id)
+        }
+        RelationshipOverviewScope::Directory { directory_node_id } => {
+            copy.directory_node_id.as_deref() == Some(directory_node_id)
+                || copy.source_container_id.as_deref() == Some(directory_node_id)
+        }
+        RelationshipOverviewScope::Relation { relation_id } => copy.relation_id == *relation_id,
+        RelationshipOverviewScope::Path { path_key } => {
+            copy.source_path_key == *path_key || copy.source_path == *path_key
+        }
     }
 }
 

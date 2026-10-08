@@ -745,6 +745,21 @@ async fn relationship_overview_combines_facts_without_claiming_agent_execution()
     assert_eq!(overview.source_relations.len(), 0);
     assert_eq!(overview.directory_nodes.len(), 1);
     assert_eq!(overview.agent_directory_capabilities.len(), 1);
+    assert_eq!(overview.usage_relations.len(), 1);
+    let usage = &overview.usage_relations[0];
+    assert_eq!(usage.skill_id, Some(fixture.skill_id));
+    assert_eq!(
+        usage.target.directory_id.as_deref(),
+        Some("directory:agent-skills")
+    );
+    assert_eq!(usage.target.directory_role, None);
+    assert_eq!(
+        usage
+            .entry_key
+            .as_ref()
+            .map(|key| key.directory_id.as_str()),
+        Some("directory:agent-skills")
+    );
     assert_eq!(overview.conflict_cases.len(), 1);
     assert_eq!(overview.pending_governance_tasks.len(), 1);
     assert!(!overview.agent_execution_confirmed);
