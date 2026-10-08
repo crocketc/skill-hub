@@ -42,7 +42,7 @@ it("allows skipping only after explicitly confirming the visible default library
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
   await click(screen.getByRole("button", { name: "跳过初始化" }));
   expect(completeOnboarding).not.toHaveBeenCalled();
-  expect(screen.getByText("将创建空集中库")).toBeVisible();
+  expect(screen.getByText("将创建空技能库")).toBeVisible();
 
   await click(screen.getByRole("button", { name: "确认并跳过" }));
   expect(completeOnboarding).toHaveBeenCalledWith({
@@ -156,7 +156,7 @@ it("keeps initialization unavailable when no exact native library path was injec
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("无法确认默认集中库位置")).toBeVisible();
+  expect(screen.getByText("无法确认默认技能库位置")).toBeVisible();
   expect(screen.getByRole("button", { name: "跳过初始化" })).toBeDisabled();
   expect(completeOnboarding).not.toHaveBeenCalled();
 });
@@ -957,7 +957,7 @@ it("exposes the unified step rail with named steps, the current step and complet
   const rail = screen.getByRole("list", { name: "初始化步骤" });
   const steps = within(rail).getAllByRole("listitem");
   expect(steps).toHaveLength(3);
-  expect(steps[0].textContent).toContain("确认集中库位置");
+  expect(steps[0].textContent).toContain("确认技能库位置");
   expect(steps[1].textContent).toContain("识别兼容的 Agent");
   expect(steps[2].textContent).toContain("扫描已有技能");
   expect(steps[0]).toHaveAttribute("aria-current", "step");
@@ -990,7 +990,7 @@ it("shows the restore branch as the single current step of initialization", asyn
   const rail = screen.getByRole("list", { name: "初始化步骤" });
   const steps = within(rail).getAllByRole("listitem");
   expect(steps).toHaveLength(1);
-  expect(steps[0].textContent).toContain("从备份恢复集中库");
+  expect(steps[0].textContent).toContain("从备份恢复技能库");
   expect(steps[0]).toHaveAttribute("aria-current", "step");
 });
 

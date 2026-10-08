@@ -71,7 +71,7 @@ test("first launch plays the welcome journey before the existing setup choices",
   await expect(page.getByRole("button", { name: "暂停动画" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "关闭" })).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "新建集中库" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "新建技能库" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "开始设置" }).click();
 
@@ -80,7 +80,7 @@ test("first launch plays the welcome journey before the existing setup choices",
   expect(await page.evaluate(() => localStorage.getItem("skillhub.appearance"))).toBe("sakura");
   await expect(page.locator("[data-tauri-drag-region]")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "关闭" })).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "新建集中库" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "使用已有集中库" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "新建技能库" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "使用已有技能库" })).toBeVisible();
   await expect(page.getByRole("button", { name: "从备份恢复" })).toBeVisible();
 });

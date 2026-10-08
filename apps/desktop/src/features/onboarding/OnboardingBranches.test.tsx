@@ -61,11 +61,11 @@ it("shows three initialization branches and routes to the create flow", async ()
   renderWizard({ completeOnboarding, discoverAgents: async () => ({ targets: [] }) });
 
   expect(screen.getByRole("heading", { name: "选择初始化方式" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "新建集中库" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "使用已有集中库" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "新建技能库" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "使用已有技能库" })).toBeVisible();
   expect(screen.getByRole("button", { name: "从备份恢复" })).toBeVisible();
 
-  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "新建技能库" }));
   expect(screen.getByText(defaultLibraryPath)).toBeVisible();
 });
 
@@ -85,7 +85,7 @@ it("returns from the library step to the branch selection", async () => {
   const completeOnboarding = vi.fn(async () => undefined);
   renderWizard({ completeOnboarding, discoverAgents: async () => ({ targets: [] }) });
 
-  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "新建技能库" }));
   await click(screen.getByRole("button", { name: "上一步" }));
 
   expect(screen.getByRole("heading", { name: "选择初始化方式" })).toBeVisible();
@@ -101,7 +101,7 @@ it("keeps a selected custom root while continuing without activation", async () 
     activateLibraryRoot,
   } as Operations);
 
-  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "新建技能库" }));
   await click(screen.getByRole("button", { name: "选择其他目录" }));
   await click(screen.getByRole("button", { name: "继续" }));
 
@@ -123,7 +123,7 @@ it("defers library activation until initialization is completed", async () => {
     activateLibraryRoot,
   } as Operations);
 
-  await click(screen.getByRole("button", { name: "新建集中库" }));
+  await click(screen.getByRole("button", { name: "新建技能库" }));
   await click(screen.getByRole("button", { name: "选择其他目录" }));
   await click(screen.getByRole("button", { name: "继续" }));
   expect(activateLibraryRoot).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ it("restores from a backup through prepare and commit before finishing", async (
   );
 
   await click(screen.getByRole("button", { name: "从备份恢复" }));
-  expect(screen.getByRole("heading", { name: "从备份恢复集中库" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "从备份恢复技能库" })).toBeVisible();
 
   await click(screen.getByRole("button", { name: "选择备份目录" }));
   expect(pickDirectory).toHaveBeenCalled();
@@ -217,8 +217,8 @@ it("routes the existing-library branch through a read-only compatibility scan", 
     },
   );
 
-  await click(screen.getByRole("button", { name: "使用已有集中库" }));
-  expect(screen.getByRole("heading", { name: "确认集中库位置" })).toBeVisible();
+  await click(screen.getByRole("button", { name: "使用已有技能库" }));
+  expect(screen.getByRole("heading", { name: "确认技能库位置" })).toBeVisible();
   await click(screen.getByRole("button", { name: "继续" }));
   await click(screen.getByLabelText("我确认这里只识别 Agent，不会把技能添加到 Agent/项目"));
   await click(screen.getByRole("button", { name: "识别 Agent" }));

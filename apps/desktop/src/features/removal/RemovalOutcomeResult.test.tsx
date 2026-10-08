@@ -75,7 +75,7 @@ describe("RemovalOutcomeResult", () => {
     // 终态标题如实：部分成功不是全部完成，中央 Skill 尚未删除必须可见；
     // 未尝试项计入「未删除」总数，不在标题里冒充已处理。
     expect(screen.getByTestId("removal-outcome-title")).toHaveTextContent(
-      "已删除 2 个目标，2 个未删除；集中库 Skill 尚未删除。",
+      "已删除 2 个目标，2 个未删除；技能库 Skill 尚未删除。",
     );
     // 三态分列：同名布局槽位、互不混排。
     const appliedGroup = screen.getByTestId("removal-outcome-applied");

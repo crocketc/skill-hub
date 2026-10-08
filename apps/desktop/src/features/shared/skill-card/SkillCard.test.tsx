@@ -72,7 +72,7 @@ it("honestly omits every optional region that the data does not provide", () => 
   expect(container.querySelector(".sh-skill-card__subtitle")).not.toBeInTheDocument();
 });
 
-// P1-10：集中库卡片需同时展示别名（标题）与原名（小一号副名）。
+// P1-10：技能库卡片需同时展示别名（标题）与原名（小一号副名）。
 it("renders an optional subtitle under the title for dual-name display", () => {
   render(<SkillCard skill={{ ...fullCard, subtitle: "pdf-reader" }} />);
 

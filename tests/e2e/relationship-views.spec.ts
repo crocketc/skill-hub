@@ -65,7 +65,7 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   const usage = page.locator("#review-usage-body");
   await expect(usage.getByText("原位置仍是独立副本；可在关系治理中纳入集中管理。")).toBeVisible();
   await expect(
-    usage.getByText("受管链接跟随集中库当前版本。共享目录只计一个物理去向。"),
+    usage.getByText("受管链接跟随技能库当前版本。共享目录只计一个物理去向。"),
   ).toBeVisible();
 
   // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框——先展示影响
@@ -74,7 +74,7 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   await page.getByRole("button", { name: "删除", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("从库中删除 PDF Reader 吗？");
-  await expect(dialog).toContainText("将从集中库删除该 Skill 的记录、内容与版本历史；每个目标中的副本按下方选择处理。");
+  await expect(dialog).toContainText("将从技能库删除该 Skill 的记录、内容与版本历史；每个目标中的拷贝按下方选择处理。");
   await expect(dialog).toContainText("Codex CLI");
   await expect(dialog).toContainText("Claude Code");
   await expect(dialog).toContainText("依赖项目");

@@ -555,10 +555,10 @@ test("review header offers centralized management through the shared governance 
   await actionArea.getByRole("button", { name: "转为集中管理" }).click();
   const batchDialog = page.getByTestId("governance-batch-dialog");
   await expect(batchDialog).toBeVisible();
-  await expect(batchDialog).toContainText("批量纳入集中库管理");
+  await expect(batchDialog).toContainText("批量纳入技能库管理");
   await expect(batchDialog.getByRole("checkbox", { name: "执行 PDF Reader" })).toBeChecked();
   await batchDialog.getByTestId("governance-batch-confirm").click();
-  await expect(page.getByTestId("governance-batch-result-title")).toContainText("已全部纳入集中库管理（1 条）");
+  await expect(page.getByTestId("governance-batch-result-title")).toContainText("已全部纳入技能库管理（1 条）");
   await expect(page.getByTestId(`governance-batch-result-rel:skill-preview:copy`)).toContainText("成功");
 });
 

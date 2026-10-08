@@ -332,7 +332,7 @@ it("makes organizing source copies the primary action after a clean import", asy
   expect(organize).toHaveClass("sh-button--primary");
   expect(screen.getByRole("button", { name: "稍后处理" })).toBeVisible();
   // 说明文案讲清收益与后果：集中保存、删除原入口后 Agent 不再从原位置读取、
-  // 之后可从集中库为 Agent 重新链接或复制；不承诺提升准确率。
+  // 之后可从技能库为 Agent 重新链接或复制；不承诺提升准确率。
   const note = screen.getByText(/集中保存/);
   expect(note.textContent).toContain("链接");
   expect(note.textContent).not.toContain("准确率");

@@ -268,11 +268,11 @@ it("shows the welcome journey before the real first-run initialization wizard", 
 
     expect(await screen.findByRole("heading", { name: /让每一项技能，\s*都有清晰的来路与去向/ })).toBeVisible();
     expect(screen.getByRole("button", { name: "暂停动画" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("button", { name: "新建集中库" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建技能库" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "开始设置" }));
 
-    expect(await screen.findByRole("button", { name: "新建集中库" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "新建技能库" })).toBeVisible();
     await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "moss-neutral"));
     expect(localStorage.getItem("skillhub.appearance")).toBe("sakura");
     expect(document.querySelector("[data-tauri-drag-region]" )).toBeInTheDocument();

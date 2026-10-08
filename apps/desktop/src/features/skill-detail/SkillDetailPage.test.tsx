@@ -450,7 +450,7 @@ describe("SkillDetailPage shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring the selection under central library management",
+      name: "Bring the selection under skill library management",
     });
     fireEvent.click(within(dialog).getByTestId("governance-batch-confirm"));
 
@@ -480,7 +480,7 @@ describe("SkillDetailPage shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring the selection under central library management",
+      name: "Bring the selection under skill library management",
     });
     const confirm = within(dialog).getByTestId("governance-batch-confirm");
     expect(confirm).toBeDisabled();

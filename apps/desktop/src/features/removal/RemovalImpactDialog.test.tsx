@@ -157,7 +157,7 @@ it("requires explicit per-item confirmation before deleting a shared directory",
 it("names groups, defaults and consequences in English", async () => {
   await renderDialog(removalImpactFixture(), "en-US");
 
-  expect(screen.getByText("Central library: the Skill's record, contents and version history will be deleted")).toBeTruthy();
+  expect(screen.getByText("Skill library: the Skill's record, contents and version history will be deleted")).toBeTruthy();
   expect(screen.getByText("Link deployments 1: the link files will be removed along with it")).toBeTruthy();
   expect(screen.getByText(/Copy deployments 1: kept as independent copies by default/)).toBeTruthy();
   expect(screen.getByText("The link file here will be removed")).toBeTruthy();

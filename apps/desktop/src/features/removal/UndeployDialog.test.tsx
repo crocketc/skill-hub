@@ -56,8 +56,8 @@ it("names the object as undeploying and states retention and recovery in Chinese
   // 对象 2 唯一名称“从目标移除”：标题、决策名不复用“移除托管部署”。
   expect(screen.getByRole("heading", { name: "要从 Codex CLI 移除吗？" })).toBeVisible();
   const options = [...screen.getAllByRole("option")].map((option) => option.textContent);
-  expect(options).toContain("删除目标目录中的副本");
-  expect(options).toContain("转为独立副本（保留目标文件，移除部署关系）");
+  expect(options).toContain("删除目标目录中的拷贝");
+  expect(options).toContain("转为独立拷贝（保留目标文件，移除部署关系）");
   expect(options).not.toContain("移除托管部署");
 
   // 固定两行：保留什么 + 恢复方式。

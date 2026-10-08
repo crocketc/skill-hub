@@ -270,7 +270,7 @@ export function SkillDetailReviewExperience({
               <ReviewGraphEntry skillId={skillId} />
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
-              <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
+              <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
               <ReviewUsageDestinations destinations={usageDestinations} onOpenGovernance={onOpenGovernanceDestination} />
               {insights ? <ReviewUsageInsights facade={facade} insights={insights} skillId={skillId} /> : null}
             </div>
@@ -480,8 +480,8 @@ function UsageDestinationCardView({
 }) {
   const healthNote = card.unhealthy ? "入口健康异常，请在关系治理中检查。" : "";
   const detail = card.takenOver
-    ? `受管链接跟随集中库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
-    : `原位置仍是独立副本；可在关系治理中纳入集中管理。${healthNote}`;
+    ? `受管链接跟随技能库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
+    : `原位置仍是独立拷贝；可在关系治理中纳入集中管理。${healthNote}`;
   return (
     <article className="sh-skill-detail-review__destination" data-testid={`usage-destination-${card.relationId}`}>
       <div className="sh-skill-detail-review__destination-heading">

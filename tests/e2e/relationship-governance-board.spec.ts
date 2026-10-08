@@ -71,7 +71,7 @@ test("governance board stays compact, switches views with selection, and opens t
   expect(narrowCanvas?.height).toBeGreaterThan(180);
 
   await page.getByTestId("governance-action-preview:centralize-pdf").click();
-  await expect(page.getByRole("dialog", { name: "纳入集中库管理预览" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
   await expect(page.getByTestId("governance-centralize-explain")).toContainText("保留当前位置");
   await expect(page.getByTestId("removal-impact-facts")).toBeVisible();
   await expect(page.getByRole("button", { name: "确认执行" })).toBeVisible();
@@ -91,8 +91,8 @@ test("completed source-copy deep links use the authoritative classification", as
   expect(columnOrder).toEqual(["governance-board-column-completed"]);
   await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("1");
   await expect(page.getByTestId("governance-row")).toHaveCount(1);
-  await expect(page.getByTestId("governance-row")).toContainText("已保留为独立副本");
-  await expect(page.getByTestId("governance-row")).not.toContainText("已纳入集中库管理");
+  await expect(page.getByTestId("governance-row")).toContainText("已保留为独立拷贝");
+  await expect(page.getByTestId("governance-row")).not.toContainText("已纳入技能库管理");
 });
 
 test("board keeps a fixed column order and columns keep their own scroll position", async ({ page }) => {
