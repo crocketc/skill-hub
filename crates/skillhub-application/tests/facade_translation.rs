@@ -127,12 +127,10 @@ async fn translations_persist_across_restarts_and_flag_stale_descriptions() {
 
     // Restart over the same database: the translation survives, and changing
     // the source description flips the row to "needs update".
+    // 注意：remove_sync 不能用来模拟重启——#12 起删除主体会连同
+    // translation_records 一并清理（翻译记录随主体消亡）。重开数据库＋
+    // insert_sync（upsert 改写描述）即等价于"重启＋源描述变化"。
     let database = Database::open(&database_path).expect("database");
-    database
-        .catalog_repository()
-        .expect("catalog repository")
-        .remove_sync(id)
-        .expect("remove skill");
     database
         .catalog_repository()
         .expect("catalog repository")
