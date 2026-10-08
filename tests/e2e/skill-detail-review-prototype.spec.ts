@@ -338,7 +338,9 @@ test("review toolbar routes dispatch and export to their real flows and previews
   await page.getByRole("button", { name: "删除", exact: true }).click();
   const deleteDialog = page.getByRole("dialog");
   await expect(deleteDialog).toContainText("从库中删除 PDF Reader 吗？");
-  await expect(deleteDialog.getByRole("button", { name: "确认从库中删除" })).toBeDisabled();
+  // 2026-10-08 弹窗重设计：复制部署默认预勾「保留为独立拷贝」，确认带默认值即可用；
+  // 门控与改选细节由 relationship-views 与 workflow-deployment 用例把守，取消仍无副作用。
+  await expect(deleteDialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
   await deleteDialog.getByRole("button", { name: "取消" }).click();
   await expect(deleteDialog).toHaveCount(0);
 });
@@ -440,7 +442,8 @@ test("review versions compare, rename and restore with current relationship impa
   await page.getByRole("button", { name: "恢复到 稳定版" }).click();
   const rollback = page.getByRole("region", { name: "恢复影响预览" });
   await expect(rollback).toContainText("受管链接：2 个");
-  await expect(rollback).toContainText("独立副本：1 个");
+  // 术语轮（2026-10-08）：副本→拷贝。
+  await expect(rollback).toContainText("独立拷贝：1 个");
   await expect(rollback).toContainText("恢复后重新执行基础安全检查");
   await rollback.getByRole("button", { name: "取消" }).click();
   await expect(rollback).toHaveCount(0);
@@ -449,7 +452,7 @@ test("review versions compare, rename and restore with current relationship impa
   await page.getByRole("region", { name: "恢复影响预览" }).getByRole("button", { name: "确认创建恢复版本" }).click();
   await expect(page.getByTestId("review-version-result")).toContainText("已创建新的当前版本");
   await expect(page.getByTestId("review-version-result")).toContainText("受管链接继续跟随当前版本");
-  await expect(page.getByTestId("review-version-result")).toContainText("独立副本保持原状");
+  await expect(page.getByTestId("review-version-result")).toContainText("独立拷贝保持原状");
 });
 
 test("review content explorer lists files and opens the system app", async ({ page }) => {
@@ -579,7 +582,8 @@ test("review usage section explains section-level governance once above the card
   await page.getByRole("link", { name: "使用去向" }).click();
 
   const usageSection = page.locator("#review-usage");
-  await expect(usageSection.getByText("此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收、结束在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。", { exact: true })).toBeVisible();
+  // 术语轮（2026-10-08）：回收→回收技能、结束→解除关系；汇总句随界面文案重锚。
+  await expect(usageSection.getByText("此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。", { exact: true })).toBeVisible();
   await expect(usageSection.locator(".sh-skill-detail-review__destination")).toHaveCount(3);
 });
 

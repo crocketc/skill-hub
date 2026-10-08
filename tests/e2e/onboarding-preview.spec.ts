@@ -490,6 +490,11 @@ test("keeps the rediscovery layout usable at the 600px minimum height", async ({
   await expect(complete).toBeInViewport();
 });
 
+// 9 主题×多次导航的矩阵用例：全量并发下 vite dev 转换队列使单条 goto
+// 超出默认 30s（连续两轮全量在同一导航超时；隔离重跑 27/27 全绿 26.7s）。
+// test.slow() 仅放宽该用例自身的时间预算（×3），不改等待策略、不降断言、
+// 不加任意延时；隔离仍可复现真实渲染断言。
+test.slow();
 test("applies all nine themes on the flow with key controls intact at 1280x900", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/onboarding/create");

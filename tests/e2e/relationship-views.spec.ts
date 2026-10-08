@@ -63,18 +63,21 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改为行动导向措辞，
   // 待接管给出治理入口指引，已接管说明跟随与共享目录计数口径。
   const usage = page.locator("#review-usage-body");
-  await expect(usage.getByText("原位置仍是独立副本；可在关系治理中纳入集中管理。")).toBeVisible();
+  // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
+  await expect(usage.getByText("原位置仍是独立拷贝；可在关系治理中纳入集中管理。")).toBeVisible();
   await expect(
     usage.getByText("受管链接跟随技能库当前版本。共享目录只计一个物理去向。"),
   ).toBeVisible();
 
-  // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框——先展示影响
-  // 预览（逐目标处置选择 + 依赖项目 + 保留/恢复说明），全部目标都有处置才
-  // 允许确认；预览门面提供确定性影响夹具，不在预览里执行真实删除。
+  // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框。2026-10-08
+  // 弹窗重设计：摘要优先（删什么/留什么），分组明细默认收起；复制部署默认
+  // 预勾「保留为独立拷贝」，确认带默认值即可用，改选在组内单选完成；
+  // 预览门面提供确定性影响夹具，不在预览里执行真实删除。
   await page.getByRole("button", { name: "删除", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("从库中删除 PDF Reader 吗？");
-  await expect(dialog).toContainText("将从技能库删除该 Skill 的记录、内容与版本历史；每个目标中的拷贝按下方选择处理。");
+  await expect(dialog).toContainText("将从技能库删除该 Skill 的记录、内容与版本历史。先看删除摘要；展开各组明细可逐项调整处理方式。");
+  await expect(dialog).toContainText("技能库：该 Skill 的记录、内容与版本历史将被删除");
   await expect(dialog).toContainText("Codex CLI");
   await expect(dialog).toContainText("Claude Code");
   await expect(dialog).toContainText("依赖项目");
@@ -82,8 +85,8 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   await expect(
     dialog.getByText("恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。"),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeDisabled();
-  await dialog.getByLabel(/目标副本处理方式/).first().selectOption({ label: "保留目标处的文件，解除部署关系（库中记录一并删除）" });
-  await dialog.getByLabel(/目标副本处理方式/).last().selectOption({ label: "删除目标目录中的副本（从目标移除）" });
+  await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
+  await dialog.locator("details > summary").filter({ hasText: "复制部署" }).click();
+  await dialog.getByRole("radio", { name: /连拷贝一起删/ }).first().check();
   await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
 });

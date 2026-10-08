@@ -786,7 +786,8 @@ test("pending, recovery, and security routes expose state boundaries", async ({ 
   await expect(
     page.getByRole("heading", { name: "Recover the unfinished operation" }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Backup & restore" }).click();
+  // #11（2026-10-08）页签改名：「备份恢复」→「未完成操作」；锚点随界面文案重锚。
+  await page.getByRole("tab", { name: "Unfinished operations" }).click();
   await expect(page.getByText(/full backup\/restore flow/i)).toBeVisible();
 
   await page.goto("/library/pdf-reader/security");
@@ -1005,7 +1006,8 @@ test("native skill detail surfaces review sections, source adoption, and version
   await expect(page.getByText("MIT", { exact: true })).toBeVisible();
   // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改写为行动导向措辞，
   // 待接管的独立副本直接给出治理入口指引，徽标为「待集中管理」。
-  await expect(page.getByText("原位置仍是独立副本；可在关系治理中纳入集中管理。")).toBeVisible();
+  // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
+  await expect(page.getByText("原位置仍是独立拷贝；可在关系治理中纳入集中管理。")).toBeVisible();
   // 来源更新区（真实流，K6）：显式关联网络来源 → 显式只读检查 → 采用影响
   // 预览 → 确认采用。关联只登记来源（不替换内容、不自动检查）；检查通过
   // 后才出现采用入口；采用前先看文件级影响预览。

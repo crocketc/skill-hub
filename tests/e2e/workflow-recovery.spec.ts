@@ -39,8 +39,10 @@ test("moves selection and focus with the arrow keys and updates the panel", asyn
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/recovery");
 
+  // #11（2026-10-08）页签改名：「备份恢复」→「未完成操作」（en "Unfinished operations"）；
+  // 锚点随界面文案重锚，断言意图（页签导航行为）不变。
   const records = page.getByRole("tab", { name: "Operation records" });
-  const backup = page.getByRole("tab", { name: "Backup & restore" });
+  const backup = page.getByRole("tab", { name: "Unfinished operations" });
   await records.click();
   await records.focus();
 
@@ -64,11 +66,11 @@ test("moves selection and focus with the arrow keys and updates the panel", asyn
   expect(backId).toBe("recovery-tab-records");
 });
 
-test("keeps the recovery confirmation inside the backup & restore tab", async ({ page }) => {
+test("keeps the recovery confirmation inside the unfinished-operations tab", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/recovery");
 
-  await page.getByRole("tab", { name: "Backup & restore" }).click();
+  await page.getByRole("tab", { name: "Unfinished operations" }).click();
   await expect(page.getByText("deployment.target_conflict")).toBeVisible();
   await page.getByRole("button", { name: "Confirm recovery" }).click();
   await expect(page.getByText("Recovered")).toBeVisible();
@@ -86,7 +88,7 @@ test.describe("recovery width matrix", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/__preview/recovery");
 
-      const backup = page.getByRole("tab", { name: "Backup & restore" });
+      const backup = page.getByRole("tab", { name: "Unfinished operations" });
       await expect(backup).toBeVisible();
       await backup.click();
       await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
@@ -107,7 +109,7 @@ test.describe("recovery 9-theme matrix at 1280x900", () => {
       await expectNoRootHorizontalOverflow(page);
       const records = page.getByRole("tab", { name: "Operation records" });
       await expect(records).toHaveAttribute("aria-selected", "true");
-      await page.getByRole("tab", { name: "Backup & restore" }).click();
+      await page.getByRole("tab", { name: "Unfinished operations" }).click();
       await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
       await expect(page.getByText("Needs recovery")).toBeVisible();
     });

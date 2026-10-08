@@ -285,7 +285,7 @@ test.describe("batch deployment flow", () => {
 });
 
 test.describe("removal confirmations", () => {
-  test("requires a per-deployment choice before deletion and keeps the impact readable", async ({ page }) => {
+  test("defaults to keeping copies with grouped details and keeps every choice adjustable", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/removal?scenario=impact");
 
@@ -299,11 +299,17 @@ test.describe("removal confirmations", () => {
     await expect(
       dialog.getByText("Deleting also removes the skill's unfinished edit drafts."),
     ).toBeVisible();
+    // 2026-10-08 弹窗重设计：摘要优先，各组明细默认收起；复制部署默认预勾
+    // 「保留为独立拷贝」，因此确认按钮带默认值即可用；逐项改选在组内单选完成。
+    const summary = dialog.getByRole("region", { name: "Deletion summary" });
+    await expect(summary).toBeVisible();
+    await expect(summary).toContainText("Skill library: the Skill's record, contents and version history will be deleted");
+    await expect(summary).toContainText("Link deployments 1:");
+    await expect(summary).toContainText("Copy deployments 1:");
     const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
-    await expect(confirm).toBeDisabled();
-    // DEV-97：单目标确认的选项可达名是「Target copy handling：规范化目标路径」。
-    await dialog.getByRole("combobox", { name: /Target copy handling：.*\.codex/ }).selectOption("remove_deployment");
-    await dialog.getByRole("combobox", { name: /Target copy handling：.*\.claude/ }).selectOption("keep_deployed");
+    await expect(confirm).toBeEnabled();
+    await dialog.locator("details > summary").filter({ hasText: "Copy deployments" }).click();
+    await dialog.getByRole("radio", { name: /Delete the copy too/ }).first().check();
     await expect(confirm).toBeEnabled();
   });
 
