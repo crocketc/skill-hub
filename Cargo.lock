@@ -4996,6 +4996,7 @@ dependencies = [
  "async-trait",
  "rfd",
  "serde_json",
+ "skillhub-adapters",
  "skillhub-application",
  "skillhub-core",
  "skillhub-storage",

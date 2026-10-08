@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use skillhub_adapters::logging::{LocalLogConfig, LogEvent, LogLevel};
 use skillhub_application::relationship_watch_confirmation::{
     RelationshipCheckExecuting, RelationshipWatchPump,
 };
@@ -423,7 +425,17 @@ fn apply_main_window_chrome(app: &tauri::App) -> tauri::Result<()> {
     window.show()
 }
 
-pub fn run_with_facade(facade: Arc<LocalApplicationFacade>) -> tauri::Result<()> {
+pub fn run_with_facade(
+    facade: LocalApplicationFacade,
+    event_log: Arc<LocalLogConfig>,
+) -> tauri::Result<()> {
+    // 日志器在启动恢复之前接上：上一会话的清扫计数、迁移恢复与后续关键
+    // 路径都进日志（日志永远尽力而为，绝不阻塞启动）。
+    let facade = Arc::new(
+        facade
+            .with_event_log(event_log)
+            .with_production_llm_runtime(),
+    );
     re_register_custom_agent_grants(&facade);
     // 计划 8.14：启动恢复——把上次清理中断的 checkpoint 按三方事实推进。
     if let Err(error) = facade.recover_original_migrations() {
@@ -468,6 +480,19 @@ pub fn run() -> tauri::Result<()> {
     let probe_directory = updater::default_startup_probe_directory();
     let _ = updater::write_starting_probe(&probe_directory, std::time::SystemTime::now());
 
+    // 开发阶段日志（开发状态待开发项 2026-10-07）：脱敏 JSON 行写
+    // skillhub.log，单文件按 EVENT_LOG_MAX_BYTES 封顶＋轮转；目录在应用
+    // 数据目录，绝不进集中库管理区。生产默认 Info（关键路径最小集），
+    // 开发期用 SKILLHUB_LOG_LEVEL=debug 提高详细度。日志配置先于 facade
+    // 构造，让启动失败本身也留痕。
+    let event_log = event_log_config();
+    shell_log_event(
+        &event_log,
+        "desktop.startup",
+        LogLevel::Info,
+        &[("probe", format!("{previous_probe:?}"))],
+    );
+
     let database_path = default_database_path();
     let facade_result = match LocalApplicationFacade::persisted_library_root(&database_path) {
         Some(root) => LocalApplicationFacade::open_with_library(&database_path, root),
@@ -479,6 +504,12 @@ pub fn run() -> tauri::Result<()> {
     let facade = match facade_result {
         Ok(facade) => facade,
         Err(error) => {
+            shell_log_app_error(
+                &event_log,
+                "desktop.startup.failed",
+                "open_database",
+                &error,
+            );
             let _ = updater::write_failed_probe(&probe_directory);
             panic!("failed to open SkillHub application database: {error}");
         }
@@ -488,7 +519,20 @@ pub fn run() -> tauri::Result<()> {
         previous_probe,
         updater::StartupProbeResult::Failed | updater::StartupProbeResult::TimedOut
     ) {
-        let _ = tauri::async_runtime::block_on(facade.rollback_if_unhealthy());
+        match tauri::async_runtime::block_on(facade.rollback_if_unhealthy()) {
+            Ok(result) => shell_log_event(
+                &event_log,
+                "desktop.recovery.rollback",
+                LogLevel::Info,
+                &[
+                    ("state", format!("{:?}", result.state)),
+                    ("attempts", result.attempts.to_string()),
+                ],
+            ),
+            Err(error) => {
+                shell_log_app_error(&event_log, "desktop.recovery.rollback", "rollback", &error);
+            }
+        }
     }
 
     match tauri::async_runtime::block_on(facade.query(AppQuery::GetBootstrapSnapshot)) {
@@ -496,11 +540,108 @@ pub fn run() -> tauri::Result<()> {
             let _ = updater::write_healthy_probe(&probe_directory);
         }
         Err(error) => {
+            shell_log_app_error(&event_log, "desktop.startup.failed", "bootstrap", &error);
             let _ = updater::write_failed_probe(&probe_directory);
             panic!("failed to initialize SkillHub application facade: {error}");
         }
     }
-    run_with_facade(Arc::new(facade.with_production_llm_runtime()))
+    run_with_facade(facade.with_production_llm_runtime(), Arc::new(event_log))
+}
+
+/// 单文件字节上限：轮转后总占用按 2× 封顶（skillhub.log＋skillhub.log.1）。
+const EVENT_LOG_MAX_BYTES: u64 = 1024 * 1024;
+
+/// 开发阶段日志配置：有界＋轮转，生产默认 Info，`SKILLHUB_LOG_LEVEL=debug`
+/// 在开发期放开 Debug 细节。
+fn event_log_config() -> LocalLogConfig {
+    let min_level = match std::env::var("SKILLHUB_LOG_LEVEL").as_deref() {
+        Ok("debug") => LogLevel::Debug,
+        _ => LogLevel::Info,
+    };
+    LocalLogConfig::new(default_log_directory(), EVENT_LOG_MAX_BYTES).with_min_level(min_level)
+}
+
+/// 桌面壳直接写日志（facade 尚未构造或失败路径）：尽力而为，失败只丢弃。
+fn shell_log_event(
+    config: &LocalLogConfig,
+    event_code: &str,
+    level: LogLevel,
+    params: &[(&str, String)],
+) {
+    let event = LogEvent {
+        event_code: event_code.to_owned(),
+        operation_id: None,
+        phase: None,
+        duration_ms: None,
+        counts: BTreeMap::new(),
+        params: params
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
+        skill_body: None,
+        level,
+    };
+    let _ = config.write_event(&event);
+}
+
+/// 失败路径：错误码与结构化参数（含 `source`，即底层原因）进日志。
+fn shell_log_app_error(
+    config: &LocalLogConfig,
+    event_code: &str,
+    stage: &str,
+    error: &skillhub_core::AppError,
+) {
+    let mut params: Vec<(String, String)> = vec![
+        ("stage".to_owned(), stage.to_owned()),
+        ("error_code".to_owned(), error.code.as_str().to_owned()),
+    ];
+    for (key, value) in &error.params {
+        let text = match value {
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
+        params.push((key.clone(), text));
+    }
+    let event = LogEvent {
+        event_code: event_code.to_owned(),
+        operation_id: None,
+        phase: None,
+        duration_ms: None,
+        counts: BTreeMap::new(),
+        params: params.into_iter().collect(),
+        skill_body: None,
+        level: LogLevel::Error,
+    };
+    let _ = config.write_event(&event);
+}
+
+/// 应用数据根目录：数据库与开发日志的共同落点。绝不与技能库默认根
+/// （用户主目录/SkillHub）共用，日志因此永远不进集中库管理区。
+#[cfg(windows)]
+fn app_data_root() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+        .join("SkillHub")
+}
+
+#[cfg(target_os = "macos")]
+fn app_data_root() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Library")
+        .join("Application Support")
+        .join("SkillHub")
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn app_data_root() -> PathBuf {
+    PathBuf::from("SkillHub")
 }
 
 #[cfg(windows)]
@@ -524,33 +665,14 @@ fn default_library_root() -> PathBuf {
     PathBuf::from("SkillHub")
 }
 
-#[cfg(windows)]
 fn default_database_path() -> PathBuf {
-    std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::var_os("USERPROFILE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("."))
-        })
-        .join("SkillHub")
-        .join("skillhub.sqlite")
+    app_data_root().join("skillhub.sqlite")
 }
 
-#[cfg(target_os = "macos")]
-fn default_database_path() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("Library")
-        .join("Application Support")
-        .join("SkillHub")
-        .join("skillhub.sqlite")
-}
-
-#[cfg(not(any(windows, target_os = "macos")))]
-fn default_database_path() -> PathBuf {
-    PathBuf::from("skillhub.sqlite")
+/// 开发阶段日志目录：应用数据目录下的 logs（与 skillhub.sqlite 同级），
+/// 不在集中库管理区内。
+fn default_log_directory() -> PathBuf {
+    app_data_root().join("logs")
 }
 
 #[cfg(test)]
@@ -1086,6 +1208,79 @@ mod path_grant_tests {
         let draft = custom_agent_draft(grant_id, path);
         tauri::async_runtime::block_on(bridge.execute(AppCommand::CreateCustomAgent(draft)))
             .expect("seed custom agent");
+    }
+}
+
+#[cfg(test)]
+mod event_log_tests {
+    //! 开发阶段日志接线（开发状态待开发项 2026-10-07）：桌面壳启动路径构造
+    //! 有界＋轮转的脱敏日志（目录在应用数据目录，绝不进技能库管理区），
+    //! facade 在启动恢复之前接上日志器，让启动失败与恢复都留痕。
+
+    use super::*;
+
+    #[test]
+    fn log_directory_is_app_data_never_the_skill_library() {
+        let log_directory = default_log_directory();
+        assert_eq!(
+            log_directory.file_name().and_then(|name| name.to_str()),
+            Some("logs"),
+            "the log directory is a dedicated logs folder: {log_directory:?}"
+        );
+        assert_eq!(
+            log_directory.parent(),
+            default_database_path().parent(),
+            "logs live beside the application database in the app data directory"
+        );
+        // 技能库默认根（用户主目录/SkillHub）不是日志目录的前缀：日志绝不
+        // 进入集中库管理区。
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let library_root = default_library_root();
+            assert!(
+                !log_directory.starts_with(&library_root),
+                "the log directory must stay outside the skill library area: {log_directory:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn startup_wires_the_bounded_redacting_event_log() {
+        let source =
+            std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"))
+                .expect("desktop shell source");
+        let config = source
+            .find("let event_log = event_log_config();")
+            .expect("the startup path builds the bounded log config");
+        let open = source
+            .find("LocalApplicationFacade::persisted_library_root")
+            .expect("facade construction reference");
+        let attach = source
+            .find("with_event_log(")
+            .expect("the facade receives the event log");
+        assert!(
+            config < open,
+            "the log config exists before the facade so startup failures land in it"
+        );
+        assert!(
+            source.contains("const EVENT_LOG_MAX_BYTES: u64 ="),
+            "the per-file bound is an explicit constant"
+        );
+        assert!(
+            source.contains("SKILLHUB_LOG_LEVEL"),
+            "development can raise the detail level via SKILLHUB_LOG_LEVEL"
+        );
+        assert!(
+            source.contains("default_log_directory()"),
+            "the directory comes from the app data root, never the skill library"
+        );
+        assert!(
+            attach
+                < source
+                    .find("recover_original_migrations")
+                    .expect("recovery call"),
+            "the logger is attached before startup recovery so it is logged"
+        );
     }
 }
 

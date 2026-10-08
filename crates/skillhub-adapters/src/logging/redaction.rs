@@ -4,7 +4,23 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Serialize)]
+/// Severity of one structured log event. Ordering drives the configured
+/// minimum level: `Debug` detail is dropped first, `Error` always survives.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, Serialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    /// Development-only detail (per-item progress, decision traces).
+    Debug,
+    /// Key-path facts that production keeps by default.
+    #[default]
+    Info,
+    /// Failures; every configured level keeps them.
+    Error,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct LogEvent {
     pub event_code: String,
     pub operation_id: Option<String>,
@@ -13,6 +29,7 @@ pub struct LogEvent {
     pub counts: BTreeMap<String, u64>,
     pub params: BTreeMap<String, String>,
     pub skill_body: Option<String>,
+    pub level: LogLevel,
 }
 
 pub struct RedactingWriter<W> {
@@ -42,6 +59,7 @@ impl<W: Write> RedactingWriter<W> {
         }
         let safe = serde_json::json!({
             "event_code": event.event_code,
+            "level": event.level,
             "operation_id": event.operation_id,
             "phase": event.phase,
             "duration_ms": event.duration_ms,
@@ -56,10 +74,30 @@ impl<W: Write> RedactingWriter<W> {
 pub struct LocalLogConfig {
     pub directory: PathBuf,
     pub max_bytes: u64,
+    /// Production keeps the minimal default (`Info`); development raises it
+    /// to `Debug` via the shell wiring (e.g. an environment variable).
+    pub min_level: LogLevel,
 }
 
 impl LocalLogConfig {
+    pub fn new(directory: impl Into<PathBuf>, max_bytes: u64) -> Self {
+        Self {
+            directory: directory.into(),
+            max_bytes,
+            min_level: LogLevel::Info,
+        }
+    }
+
+    /// Development override for richer detail.
+    pub fn with_min_level(mut self, min_level: LogLevel) -> Self {
+        self.min_level = min_level;
+        self
+    }
+
     pub fn write_event(&self, event: &LogEvent) -> io::Result<()> {
+        if event.level < self.min_level {
+            return Ok(());
+        }
         fs::create_dir_all(&self.directory)?;
         let path = self.directory.join("skillhub.log");
         if path.exists() && fs::metadata(&path)?.len() >= self.max_bytes {

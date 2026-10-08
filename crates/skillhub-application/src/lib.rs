@@ -29,6 +29,7 @@ use skillhub_adapters::credentials::{OsCredentialStore, SessionCredentialStore};
 use skillhub_adapters::deployment::{AppliedTarget, DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::llm::HttpLlmTaskRunner;
+use skillhub_adapters::logging::{LocalLogConfig, LogEvent, LogLevel};
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_adapters::scanner::ScanService;
 use skillhub_adapters::security::BasicScanner;
@@ -198,6 +199,15 @@ pub struct LocalApplicationFacade {
         Mutex<std::sync::Arc<dyn relationship_validation_service::RelationshipPathProbing>>,
     /// 计划 8.5：原始目录删除实现；生产走文件系统，测试可注入失败。
     original_migration_deletion: Mutex<std::sync::Arc<dyn OriginalMigrationDeletion>>,
+    /// 开发阶段日志（开发状态待开发项 2026-10-07）：脱敏 JSON 行经
+    /// [`skillhub_adapters::logging::RedactingWriter`] 写入有界文件；None 时
+    /// 全部日志调用都是空操作，绝不阻塞或改变操作结果。桌面壳在启动路径
+    /// 注入，目录位于应用数据目录（不进集中库管理区）。
+    event_log: Option<Arc<skillhub_adapters::logging::LocalLogConfig>>,
+    /// 构造时启动清扫（sweep_stale_journal）的结算行数：planned/prepared 转
+    /// rolled_back、applying/verifying 转 needs_recovery（#11 裁决的记账）。
+    /// 日志器接上时补发一条启动事件，让上一会话的残留可见。
+    startup_journal_sweep: (usize, usize),
 }
 
 /// 获取阶段落地的完整来源记录：原始 descriptor、临时工作区、权威类别与
@@ -2201,7 +2211,7 @@ impl LocalApplicationFacade {
     /// Creates a facade with an explicit date boundary for deterministic tests.
     pub fn new_with_today(database: Database, today: (i32, u8, u8)) -> Self {
         let database = Arc::new(Mutex::new(database));
-        Self::sweep_stale_journal(&database);
+        let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
@@ -2274,6 +2284,8 @@ impl LocalApplicationFacade {
                 relationship_validation_service::default_relationship_probe(),
             ),
             original_migration_deletion: Mutex::new(default_original_migration_deletion()),
+            event_log: None,
+            startup_journal_sweep,
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -2297,7 +2309,7 @@ impl LocalApplicationFacade {
     ) -> Self {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
-        Self::sweep_stale_journal(&database);
+        let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let central = CentralLibrary::initialize_with_fault_handler(&library_root, fault_handler)
             .expect("new_with_library requires a valid central library");
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
@@ -2372,6 +2384,8 @@ impl LocalApplicationFacade {
                 relationship_validation_service::default_relationship_probe(),
             ),
             original_migration_deletion: Mutex::new(default_original_migration_deletion()),
+            event_log: None,
+            startup_journal_sweep,
             llm_credentials: Arc::new(SessionCredentialStore::default()),
             llm_admin: None,
             network_gate: NetworkGate::open(),
@@ -2611,6 +2625,107 @@ impl LocalApplicationFacade {
         self
     }
 
+    /// 开发阶段日志接线（开发状态待开发项 2026-10-07）：桌面壳在启动路径
+    /// 构造 [`LocalLogConfig`]（有界 max_bytes＋轮转，目录在应用数据目录，
+    /// 不进集中库管理区）后注入。日志永远尽力而为：写失败只丢弃该条，
+    /// 绝不改变操作结果。接上时补发构造期启动清扫的结算计数。
+    pub fn with_event_log(mut self, event_log: Arc<LocalLogConfig>) -> Self {
+        self.event_log = Some(event_log);
+        let (rolled_back, needs_recovery) = self.startup_journal_sweep;
+        self.log_event(
+            LogLevel::Info,
+            "startup.journal_sweep",
+            None,
+            None,
+            Vec::new(),
+            vec![
+                ("rolled_back", rolled_back as u64),
+                ("needs_recovery", needs_recovery as u64),
+            ],
+        );
+        self
+    }
+
+    /// Best-effort 事件落盘：无日志器时是空操作，写失败只丢弃该条。
+    fn log_event(
+        &self,
+        level: LogLevel,
+        event_code: &str,
+        operation_id: Option<&OperationId>,
+        phase: Option<&str>,
+        params: Vec<(&str, String)>,
+        counts: Vec<(&str, u64)>,
+    ) {
+        let Some(config) = self.event_log.as_ref() else {
+            return;
+        };
+        let event = LogEvent {
+            event_code: event_code.to_owned(),
+            operation_id: operation_id.map(|id| id.to_string()),
+            phase: phase.map(str::to_owned),
+            duration_ms: None,
+            counts: counts
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+            params: params
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+            skill_body: None,
+            level,
+        };
+        let _ = config.write_event(&event);
+    }
+
+    /// 失败路径：错误码与全部结构化参数入日志——journal 表按白名单只存
+    /// 稳定错误码，`source` 参数（底层原因，如 sqlite 报错文本）只能靠
+    /// 这里留住（#12 定因缺口）。脱敏由 RedactingWriter 统一处理。
+    fn log_app_error(
+        &self,
+        event_code: &str,
+        operation_id: Option<&OperationId>,
+        extra: &[(&str, String)],
+        error: &AppError,
+    ) {
+        let mut params: Vec<(&str, String)> = vec![("error_code", error.code.as_str().to_owned())];
+        for (key, value) in &error.params {
+            params.push((key.as_str(), log_param_value(value)));
+        }
+        // 调用点上下文（operation、kind）最后并入：同名时以显式上下文为准。
+        params.extend(extra.iter().cloned());
+        self.log_event(
+            LogLevel::Error,
+            event_code,
+            operation_id,
+            None,
+            params,
+            Vec::new(),
+        );
+    }
+
+    /// journal 行落库前的开发日志：begin/相位/终态共用 `journal.record`，
+    /// phase 取自行内相位，带错误码的行按 Error 级别标注。
+    fn log_journal_record(&self, record: &skillhub_core::OperationRecord) {
+        let mut params = vec![("kind", record.kind.clone())];
+        if let Some(error_code) = record.error_code {
+            params.push(("error_code", error_code.as_str().to_owned()));
+        }
+        let level = if record.error_code.is_some() {
+            LogLevel::Error
+        } else {
+            LogLevel::Info
+        };
+        self.log_event(
+            level,
+            "journal.record",
+            Some(&record.operation_id),
+            Some(operation_phase_code(record.phase)),
+            params,
+            Vec::new(),
+        );
+    }
+
     /// Aligns the LLM network gate with the stored preference so a persisted
     /// "disable all networking" choice survives a restart.
     fn sync_network_gate(&self) {
@@ -2652,12 +2767,28 @@ impl LocalApplicationFacade {
         operation: &'static str,
         action: impl FnOnce(&Database) -> AppResult<T>,
     ) -> AppResult<T> {
-        let database = self.database.lock().map_err(|_| {
-            AppError::new(ErrorCode::InternalError, Severity::Error)
+        let Ok(database) = self.database.lock() else {
+            let error = AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("operation", operation)
-                .with_action(RecoveryAction::Retry)
-        })?;
-        action(&database)
+                .with_action(RecoveryAction::Retry);
+            self.log_app_error(
+                "storage.error",
+                None,
+                &[("operation", operation.to_owned())],
+                &error,
+            );
+            return Err(error);
+        };
+        let result = action(&database);
+        if let Err(error) = &result {
+            self.log_app_error(
+                "storage.error",
+                None,
+                &[("operation", operation.to_owned())],
+                error,
+            );
+        }
+        result
     }
 
     fn lock_relation_migration(
@@ -2691,26 +2822,28 @@ impl LocalApplicationFacade {
     /// `applying`/`verifying` 行可能有真实磁盘效果（#11 裁决）：只把记账标签
     /// 转入 `needs_recovery`，绝不碰磁盘——启动快照随即落在如实的
     /// NeedsRecovery 态，每个候选仍由恢复页用户显式决定「完成操作／回滚
-    /// 操作」。每个持有 `Database` 的构造路径都必须调用本函数。
-    fn sweep_stale_journal(database: &Mutex<Database>) {
+    /// 操作」。每个持有 `Database` 的构造路径都必须调用本函数。返回两类
+    /// 结算行数，供日志器接上时补发启动事件。
+    fn sweep_stale_journal(database: &Mutex<Database>) -> (usize, usize) {
         let locked = database
             .lock()
             .map_err(|_| internal("journal.sweep_stale"))
             .expect("journal sweep requires the database lock");
-        locked
+        let rolled_back = locked
             .connection_for_test()
             .execute(
                 "UPDATE operations SET phase='rolled_back', state='rolled_back', updated_at=strftime('%s','now') WHERE phase IN ('planned','prepared')",
                 [],
             )
             .expect("settle stale planned/prepared journal rows from the previous session");
-        locked
+        let needs_recovery = locked
             .connection_for_test()
             .execute(
                 "UPDATE operations SET phase='needs_recovery', state='needs_recovery', updated_at=strftime('%s','now') WHERE phase IN ('applying','verifying')",
                 [],
             )
             .expect("relabel stale applying/verifying journal rows as recovery candidates");
+        (rolled_back, needs_recovery)
     }
 
     /// Starts a single-step flow with a `planned` record.
@@ -2748,12 +2881,21 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::Committed,
                 None,
             ),
-            Some(error) => self.journal_advance(
-                operation_id,
-                kind,
-                skillhub_core::OperationPhase::RolledBack,
-                Some(error.code),
-            ),
+            Some(error) => {
+                // journal 表只留白名单错误码；source 等参数在这里进日志。
+                self.log_app_error(
+                    "journal.error",
+                    Some(&operation_id),
+                    &[("kind", kind.to_owned())],
+                    error,
+                );
+                self.journal_advance(
+                    operation_id,
+                    kind,
+                    skillhub_core::OperationPhase::RolledBack,
+                    Some(error.code),
+                );
+            }
         }
     }
 
@@ -2883,6 +3025,7 @@ impl LocalApplicationFacade {
     }
 
     fn journal_write(&self, record: skillhub_core::OperationRecord) {
+        self.log_journal_record(&record);
         let updated = self.with_database("operation_journal.advance", |database| {
             database.operation_repository().update_sync(&record)
         });
@@ -2892,6 +3035,7 @@ impl LocalApplicationFacade {
     }
 
     fn journal_insert(&self, record: skillhub_core::OperationRecord) {
+        self.log_journal_record(&record);
         let _ = self.with_database("operation_journal.insert", |database| {
             database.operation_repository().insert_sync(&record)
         });
@@ -4145,6 +4289,14 @@ impl LocalApplicationFacade {
     }
 
     fn run_scan(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
+        let result = self.run_scan_inner(requested);
+        if let Err(error) = &result {
+            self.log_app_error("inventory.scan.failed", None, &[], error);
+        }
+        result
+    }
+
+    fn run_scan_inner(&self, requested: Vec<String>) -> AppResult<AppCommandResult> {
         let ids = self.scan_scope_ids(requested)?;
         // M-31：文件系统遍历可能持续很久（首次初始化扫描整个用户目录树）。
         // 数据库句柄是全 facade 共享的单把锁，绝不能跨遍历持有——否则
@@ -4175,6 +4327,17 @@ impl LocalApplicationFacade {
     }
 
     fn rescan_skill(
+        &self,
+        request: skillhub_core::api::RescanSkill,
+    ) -> AppResult<AppCommandResult> {
+        let result = self.rescan_skill_inner(request);
+        if let Err(error) = &result {
+            self.log_app_error("inventory.rescan.failed", None, &[], error);
+        }
+        result
+    }
+
+    fn rescan_skill_inner(
         &self,
         request: skillhub_core::api::RescanSkill,
     ) -> AppResult<AppCommandResult> {
@@ -12643,10 +12806,39 @@ impl LocalApplicationFacade {
     /// 身份可靠（指纹一致）自动建立/维持关系；不可靠标注分叉；路径消失
     /// 收回关系。全程只写 SkillHub 自己的表，绝不触碰用户文件。
     fn reconcile_observed_deployments(&self, scan: &skillhub_core::ScanResult) -> AppResult<()> {
+        let result = self.reconcile_observed_deployments_inner(scan);
+        match &result {
+            Ok(counts) => {
+                // 盘账完成：常规扫描的低频事实行；异常在 failed 事件里。
+                self.log_event(
+                    LogLevel::Info,
+                    "inventory.reconcile",
+                    None,
+                    None,
+                    Vec::new(),
+                    vec![
+                        ("existing_rows", counts.existing_rows as u64),
+                        ("observations", counts.observations as u64),
+                        ("unmatched_observations", counts.unmatched as u64),
+                        ("reclassified_unknowns", counts.reclassified as u64),
+                    ],
+                );
+            }
+            Err(error) => {
+                self.log_app_error("inventory.reconcile.failed", None, &[], error);
+            }
+        }
+        result.map(|_| ())
+    }
+
+    fn reconcile_observed_deployments_inner(
+        &self,
+        scan: &skillhub_core::ScanResult,
+    ) -> AppResult<ObservedReconcileCounts> {
         let _relation_migration_guard = self.lock_relation_migration("observed.reconcile")?;
         // 未激活集中库时没有任何可比对象：诚实缺省为"无关系"，不报错。
         let Ok(library) = self.library_runtime.snapshot() else {
-            return Ok(());
+            return Ok(ObservedReconcileCounts::default());
         };
         let observations = self.scan_observations(scan, &library);
         let observed_at = now_epoch_seconds();
@@ -12660,6 +12852,7 @@ impl LocalApplicationFacade {
                 .iter()
                 .map(|root| Self::canonical_path_string(root))
                 .collect::<Vec<_>>();
+            let mut unmatched = 0usize;
             for row in &existing {
                 // 只裁决本次扫描覆盖的根之下的关系；未扫描范围不动。行里
                 // 存的路径可能来自导入候选（未解析符号链接前缀），先折叠
@@ -12736,6 +12929,11 @@ impl LocalApplicationFacade {
                     .iter()
                     .find(|(_, hash)| hash == &observation.fingerprint)
                     .map(|(skill_id, _)| *skill_id);
+                if matched.is_none() {
+                    // 盘账异常信号：盘上内容与库内任何 Skill 指纹不一致
+                    //（#14 类不一致的来源之一），计数随完成事件进日志。
+                    unmatched += 1;
+                }
                 let action = reconcile_observed_row(None, Some(observation), matched);
                 repository.apply_observed_row_action(
                     &client_id,
@@ -12748,8 +12946,13 @@ impl LocalApplicationFacade {
             // #10 第 4 项：比对落库后，对扫描范围内仍未分类的观察行做一次
             // 关系再推导（见 rederive_unknown_relationships_in）。复用外层
             // 数据库句柄：with_database 的锁不可重入。
-            self.rederive_unknown_relationships_in(database, &scanned_roots)?;
-            Ok(())
+            let reclassified = self.rederive_unknown_relationships_in(database, &scanned_roots)?;
+            Ok(ObservedReconcileCounts {
+                existing_rows: existing.len(),
+                observations: observations.len(),
+                unmatched,
+                reclassified,
+            })
         })
     }
 
@@ -14012,14 +14215,27 @@ impl LocalApplicationFacade {
 
     /// 计划 8.14：启动恢复。扫描所有未到终态的迁移记录，按"原路径/
     /// 备份/活动关系"三方事实推进（core 纯判定），不通过删除审计做
-    /// 补偿。返回推进的记录数。
+    /// 补偿。返回推进的记录数。begin/done 两条计数进开发日志；
+    /// 单条推进细节为 Debug 级（生产默认最小级别不落盘）。
     pub fn recover_original_migrations(&self) -> AppResult<usize> {
         let pending = self.with_database("recover.original_migrations.list", |database| {
             database
                 .provenance_repository()
                 .list_pending_original_migrations()
         })?;
+        self.log_event(
+            LogLevel::Info,
+            "migration.recovery.begin",
+            None,
+            None,
+            Vec::new(),
+            vec![("pending", pending.len() as u64)],
+        );
         let mut advanced = 0usize;
+        let mut roll_forward = 0usize;
+        let mut roll_back = 0usize;
+        let mut needs_recovery = 0usize;
+        let mut advance_failures = 0usize;
         for record in pending {
             let original = PathBuf::from(&record.original_path);
             let backup = PathBuf::from(&record.backup_path);
@@ -14071,6 +14287,22 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += rolled.is_ok() as usize;
+                    if rolled.is_ok() {
+                        roll_forward += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "roll_forward".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
                 skillhub_core::import::OriginalMigrationRecoveryAdvancement::RollBackToFailed => {
                     // 删除未发生：标 Failed，关系 OperationFailed，历史 failed。
@@ -14116,6 +14348,22 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += failed.is_ok() as usize;
+                    if failed.is_ok() {
+                        roll_back += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "roll_back_to_failed".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
                 skillhub_core::import::OriginalMigrationRecoveryAdvancement::NeedsRecovery => {
                     // 备份缺失：只能如实转 NeedsRecovery 并记录历史。
@@ -14153,9 +14401,43 @@ impl LocalApplicationFacade {
                         },
                     );
                     advanced += marked.is_ok() as usize;
+                    if marked.is_ok() {
+                        needs_recovery += 1;
+                    } else {
+                        advance_failures += 1;
+                    }
+                    self.log_event(
+                        LogLevel::Debug,
+                        "migration.recovery.advance",
+                        None,
+                        None,
+                        vec![
+                            ("outcome", "needs_recovery".to_owned()),
+                            ("migration_id", record.migration_id.to_string()),
+                        ],
+                        Vec::new(),
+                    );
                 }
             }
         }
+        self.log_event(
+            if advance_failures > 0 {
+                LogLevel::Error
+            } else {
+                LogLevel::Info
+            },
+            "migration.recovery.done",
+            None,
+            None,
+            Vec::new(),
+            vec![
+                ("advanced", advanced as u64),
+                ("roll_forward", roll_forward as u64),
+                ("roll_back", roll_back as u64),
+                ("needs_recovery", needs_recovery as u64),
+                ("failed", advance_failures as u64),
+            ],
+        );
         Ok(advanced)
     }
 }
@@ -16838,13 +17120,33 @@ fn save_as_copy_replacement_fingerprint(
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
+/// 盘账比对（observed deployments reconcile）一次运行的规模计数，随
+/// `inventory.reconcile` 完成事件进日志；异常走 `inventory.reconcile.failed`。
+#[derive(Default)]
+struct ObservedReconcileCounts {
+    existing_rows: usize,
+    observations: usize,
+    unmatched: usize,
+    reclassified: usize,
+}
+
 fn journal_record(
     operation_id: OperationId,
     kind: &str,
     phase: skillhub_core::OperationPhase,
     error_code: Option<ErrorCode>,
 ) -> skillhub_core::OperationRecord {
-    let phase_name = match phase {
+    let mut record = skillhub_core::OperationRecord::planned(operation_id, kind, "");
+    record.phase = phase;
+    record.progress.phase = phase;
+    record.progress.message_code = format!("operation.{kind}.{}", operation_phase_code(phase));
+    record.error_code = error_code;
+    record
+}
+
+/// journal 行相位与开发日志共用的稳定小写相位名。
+fn operation_phase_code(phase: skillhub_core::OperationPhase) -> &'static str {
+    match phase {
         skillhub_core::OperationPhase::Planned => "planned",
         skillhub_core::OperationPhase::Prepared => "prepared",
         skillhub_core::OperationPhase::Applying => "applying",
@@ -16852,13 +17154,15 @@ fn journal_record(
         skillhub_core::OperationPhase::Committed => "committed",
         skillhub_core::OperationPhase::NeedsRecovery => "needs_recovery",
         skillhub_core::OperationPhase::RolledBack => "rolled_back",
-    };
-    let mut record = skillhub_core::OperationRecord::planned(operation_id, kind, "");
-    record.phase = phase;
-    record.progress.phase = phase;
-    record.progress.message_code = format!("operation.{kind}.{phase_name}");
-    record.error_code = error_code;
-    record
+    }
+}
+
+/// 日志参数统一转字符串：字符串值去掉 JSON 引号，其余保留结构化形态。
+fn log_param_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
 }
 
 fn unsupported(operation: &'static str) -> AppError {
