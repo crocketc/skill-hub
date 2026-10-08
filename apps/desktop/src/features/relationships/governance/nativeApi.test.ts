@@ -96,3 +96,18 @@ it("sends an explicit false confirmation when the user did not confirm the share
     },
   });
 });
+
+
+it("queries the unified relationship overview independently from the legacy governance ledger", async () => {
+  vi.mocked(queryApplication).mockResolvedValue({
+    type: "relationship_overview",
+    payload: { usage_relations: [] },
+  } as never);
+
+  expect("getRelationshipOverview" in nativeGovernanceFacade).toBe(true);
+  await (nativeGovernanceFacade as unknown as { getRelationshipOverview(): Promise<unknown> }).getRelationshipOverview();
+  expect(queryApplication).toHaveBeenCalledWith({
+    type: "get_relationship_overview",
+    payload: { scope: { type: "all" } },
+  });
+});

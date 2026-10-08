@@ -5,6 +5,8 @@ import type {
   RelationGovernanceLedger,
   RelationGovernanceRow,
   RemovalImpactFact,
+  RelationshipOverview,
+  UsageRelationView,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
@@ -292,6 +294,49 @@ const previewGovernanceFacade: RelationGovernanceFacade = {
       last_verified_at: "0",
     };
     return ledger;
+  },
+  async getRelationshipOverview(): Promise<RelationshipOverview> {
+    return {
+      ...previewRelationshipOverview,
+      usage_relations: previewGovernanceRows.map((row): UsageRelationView => {
+        const fact = row.relation.fact;
+        const deployment = row.relation.kind === "deployment" ? row.relation.fact : null;
+        const targetKind = row.target_identity?.target_kind ?? "agent";
+        const fileRepresentation = deployment?.file_representation ?? "copy";
+        return {
+          relation_id: fact.relation_id,
+          skill_id: fact.skill_id,
+          target: {
+            kind: targetKind,
+            directory_id: fact.directory_node_id,
+            agent_client_id: fact.agent_client_id,
+            directory_role: targetKind === "shared_directory"
+              ? "shared_directory"
+              : targetKind === "project"
+                ? "project"
+                : "agent_user",
+            recognition: null,
+          },
+          entry_key: fact.directory_node_id
+            ? { directory_id: fact.directory_node_id, relative_entry_path: "pdf" }
+            : null,
+          form: fileRepresentation === "symbolic_link" || fileRepresentation === "directory_junction"
+            ? "link"
+            : "full_copy",
+          management: row.governance.management_status === "taken_over" ? "managed" : "unmanaged",
+          health_reasons: ["normal"],
+          decision: null,
+          decision_history_ids: [],
+          active: fact.active,
+          file_representation: fileRepresentation,
+          link_target_path: deployment?.link_target_path ?? null,
+          link_target_path_key: deployment?.link_target_path_key ?? null,
+          link_target_directory_id: deployment?.link_target_directory_id ?? null,
+          physical_source_ids_evidence: [],
+          evidence_relation_ids: [...row.evidence_relation_ids],
+        };
+      }),
+    };
   },
   revalidate: async () => ({ items: [], relationship_revision: "preview-relationship-revision" }),
   async listHistory() {

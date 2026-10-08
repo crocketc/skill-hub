@@ -1,5 +1,10 @@
-import type { RelationGovernanceReason, RelationGovernanceRow } from "../../../api/bindings";
-import { governanceReasonKeys } from "./api";
+import type {
+  RelationGovernanceReason,
+  RelationGovernanceRow,
+  UsageHealthReason,
+  UsageRelationView,
+} from "../../../api/bindings";
+import { classifyUsageRelation } from "../../relationshipGovernance/relationshipGovernance";
 
 export type GovernancePresentationTone = "success" | "warning" | "danger";
 
@@ -9,8 +14,13 @@ export interface GovernanceRowPresentation {
   decisionKey: string | null;
   summaryKey: string;
   descriptionKey: string;
-  reasonKeys: RelationGovernanceReason[];
+  reasonKeys: Array<RelationGovernanceReason | UsageHealthReason>;
+  formKey?: string | null;
   tone: GovernancePresentationTone;
+}
+
+export interface LegacyGovernanceRowPresentation extends Omit<GovernanceRowPresentation, "reasonKeys"> {
+  reasonKeys: RelationGovernanceReason[];
 }
 
 const LINK_ISSUES = new Set<RelationGovernanceReason>([
@@ -36,14 +46,29 @@ const RESTRICTED_REASONS = new Set<RelationGovernanceReason>([
  * Converts the backend's three-layer fact into user language shared by the
  * governance board, table and relationship graph.
  */
-export function presentGovernanceRow(row: RelationGovernanceRow): GovernanceRowPresentation {
-  return presentGovernanceState(row.governance, governanceReasonKeys(row));
+export function presentGovernanceRow(view: UsageRelationView): GovernanceRowPresentation {
+  const reasonKeys = view.health_reasons.length > 0
+    ? view.health_reasons
+    : ["unable_to_verify" as const];
+  const summary = usageSummary(view, reasonKeys);
+  const tone = usageTone(summary);
+  const classification = classifyUsageRelation(view) ?? "pending";
+  return {
+    classificationKey: `relationships.governance.classification.${classification}`,
+    managementKey: `relationships.governance.usageManagement.${view.management}`,
+    decisionKey: null,
+    summaryKey: `relationships.governance.shortName.${summary}`,
+    descriptionKey: `relationships.governance.shortName.${summary}Description`,
+    reasonKeys,
+    formKey: view.form ? `relationships.governance.form.${view.form}` : null,
+    tone,
+  };
 }
 
 export function presentGovernanceState(
   governance: RelationGovernanceRow["governance"],
   reasonKeys: RelationGovernanceReason[] = governance.health_reasons,
-): GovernanceRowPresentation {
+): LegacyGovernanceRowPresentation {
   const healthReasons = governance.health_reasons;
   let summary: string;
   let tone: GovernancePresentationTone;
@@ -93,6 +118,39 @@ export function presentGovernanceState(
   };
 }
 
+function usageSummary(
+  view: UsageRelationView,
+  reasons: readonly UsageHealthReason[],
+): string {
+  if (
+    classifyUsageRelation(view) === "no_action"
+    && view.target.directory_role === "builtin"
+  ) return "builtin_original";
+  const priority: readonly UsageHealthReason[] = [
+    "user_confirmation",
+    "link_abnormal",
+    "file_missing",
+    "content_changed",
+    "sync_failed",
+    "needs_sync",
+    "unable_to_verify",
+  ];
+  const issue = priority.find((reason) => reasons.includes(reason));
+  if (issue) return issue;
+  if (view.management === "unmanaged") return "unmanaged";
+  return "healthy";
+}
+
+function usageTone(summary: string): GovernancePresentationTone {
+  if (["link_abnormal", "file_missing", "sync_failed"].includes(summary)) return "danger";
+  if (summary === "healthy") return "success";
+  return "warning";
+}
+
 export function governanceReasonLabelKey(reason: RelationGovernanceReason): string {
   return `relationships.governance.reasonMessages.${reason}`;
+}
+
+export function usageHealthLabelKey(reason: UsageHealthReason): string {
+  return `relationships.governance.healthMessages.${reason}`;
 }

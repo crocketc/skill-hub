@@ -2917,6 +2917,10 @@
         "scrollToTop": "Back to top of the {{label}} column"
       },
       "loading": "Loading the relationship governance ledger…",
+      "usageOverviewLoading": "Loading unified usage relationships…",
+      "usageOverviewLoadError": "Unified usage relationships are unavailable.",
+      "loadingActionContext": "Loading the underlying relationship evidence needed for actions; status classification already uses the unified relationship projection.",
+      "actionContextUnavailable": "The underlying relationship evidence needed for actions is unavailable; relationship status remains based on the unified projection.",
       "loadError": "The relationship governance ledger is unavailable.",
       "retryLoad": "Reload",
       "deepLink": {
@@ -2941,9 +2945,19 @@
       "classification": {
         "all": "All",
         "pending": "Pending",
-        "completed": "Completed"
+        "completed": "No action needed",
+        "no_action": "No action needed"
       },
       "buckets": {
+        "unmanaged": "Not under skill library management",
+        "file_missing": "Usage target missing",
+        "link_abnormal": "Link issue",
+        "needs_sync": "Sync needed",
+        "sync_failed": "Sync failed",
+        "unable_to_verify": "Unable to verify",
+        "user_confirmation": "User confirmation needed",
+        "managed_usage": "Healthy and managed by the skill library",
+        "builtin_original": "Healthy built-in original",
         "undecided": "No decision yet",
         "content_changed": "Contents differ",
         "source_missing": "Original missing",
@@ -2960,10 +2974,55 @@
         "not_taken_over": "Not centrally managed",
         "taken_over": "Centrally managed"
       },
+      "usageManagement": {
+        "managed": "Managed by the skill library",
+        "unmanaged": "Not under skill library management"
+      },
+      "form": {
+        "link": "Link",
+        "full_copy": "Full copy",
+        "unknown": "Form not confirmed"
+      },
+      "healthMessages": {
+        "normal": "The usage state is healthy.",
+        "file_missing": "The usage target file or directory is missing.",
+        "link_abnormal": "The usage link is abnormal or its target changed.",
+        "content_changed": "The usage target differs from the confirmed content.",
+        "needs_sync": "The usage copy needs synchronization.",
+        "sync_failed": "The most recent synchronization failed.",
+        "unable_to_verify": "There is not enough evidence to verify the usage state.",
+        "user_confirmation": "This relationship needs you to choose how to proceed."
+      },
+      "actionRestrictions": {
+        "missing_subject": "The confirmed skill subject is missing, so this action is unavailable.",
+        "entry_identity_unavailable": "The unique identity of this usage entry cannot be verified, so this action is unavailable.",
+        "identity_conflict": "The subject or physical target identity conflicts. Review it first.",
+        "incomplete_evidence": "Underlying relationship evidence is incomplete, so this action is unavailable.",
+        "multiple_targets": "This unified usage fact contains multiple underlying targets that this action cannot safely handle together.",
+        "shared_impact": "This relationship affects other consumers. Review the shared impact first."
+      },
       "decision": {
         "retained_independent_copy": "Kept as an independent copy"
       },
       "shortName": {
+        "healthy": "Usage healthy",
+        "unmanaged": "Not managed yet",
+        "builtin_original": "Built-in original is healthy",
+        "file_missing": "Usage target missing",
+        "link_abnormal": "Link needs review",
+        "needs_sync": "Sync needed",
+        "sync_failed": "Sync failed",
+        "unable_to_verify": "Unable to verify",
+        "user_confirmation": "User confirmation needed",
+        "healthyDescription": "The active usage fact is verified as healthy and managed by the skill library.",
+        "unmanagedDescription": "The usage state is healthy but is not managed by the skill library. A management decision is still needed.",
+        "builtin_originalDescription": "This healthy built-in file remains an original and needs no management.",
+        "file_missingDescription": "The usage target file or directory is missing. Review the target before choosing an available action.",
+        "link_abnormalDescription": "The usage link is abnormal or its target changed. Review the actual target before continuing.",
+        "needs_syncDescription": "The usage copy differs from the skill subject. Review synchronization impact before acting.",
+        "sync_failedDescription": "The most recent synchronization failed. Review the target state before retrying.",
+        "unable_to_verifyDescription": "There is not enough evidence to verify the usage state. Add verifiable information before continuing.",
+        "user_confirmationDescription": "This relationship still needs you to choose how to proceed. Review the facts and available actions first.",
         "link_issue": "Link needs attention",
         "link_issueDescription": "The target is unavailable or has changed. Re-check the relationship before choosing an available action.",
         "content_changed": "Content changed",
@@ -2983,6 +3042,8 @@
         "completed": "Completed",
         "completedDescription": "This relationship has a recorded outcome. Check central library management separately."
       },
+      "entryLabel": "Entry:",
+      "multipleSkillNames": "Multiple skill names: {{names}}",
       "reasonMessages": {
         "decision_required": "Choose how this relationship should be handled first.",
         "verification_required": "The current verification is insufficient. Re-check the target.",
@@ -3050,6 +3111,7 @@
       },
       "impact": {
         "noOtherConsumers": "No other shared consumers",
+        "unconfirmed": "Underlying impact evidence is not available for verification",
         "otherConsumers_one": "{{count}} other shared consumer",
         "otherConsumers_other": "{{count}} other shared consumers",
         "rollbackAvailable": "Rollback available",

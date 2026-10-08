@@ -3,166 +3,146 @@ import type {
   RelationGovernanceActionCondition,
   RelationGovernanceRow,
   RelationGovernanceState,
+  UsageHealthReason,
+  UsageRelationView,
 } from "../../../api/bindings";
+import { projectUsageGovernanceRows } from "../../relationshipGovernance/relationshipGovernance";
 import { rowIsBatchExecutable, rowIsNaturallyExecutable, rowNeedsSharedImpactConfirmation } from "./api";
 import {
-  GOVERNANCE_COMPLETED_BUCKETS,
+  GOVERNANCE_NO_ACTION_BUCKETS,
   GOVERNANCE_PENDING_BUCKETS,
   completedBucketKeyOf,
   pendingBucketKeyOf,
   projectGovernanceBuckets,
 } from "./governanceBuckets";
 
-function row(
-  relationId: string,
-  governance: Partial<RelationGovernanceState> & Pick<RelationGovernanceState, "governance_status">,
-): RelationGovernanceRow {
+function usageView(overrides: Partial<UsageRelationView> = {}): UsageRelationView {
   return {
-    relation: {
-      kind: "deployment",
-      fact: { relation_id: relationId },
-    } as unknown as RelationGovernanceRow["relation"],
-    skill_display_name: "Skill",
-    status: "needs_validation",
-    readiness: "needs_validation",
-    primary_action: "revalidate",
-    blockers: [],
-    impact: {
-      other_consumer_agent_ids: [],
-      other_skill_paths: [],
-      backup_required: false,
-      rollback_available: false,
+    relation_id: "usage-1",
+    skill_id: "skill-1",
+    target: {
+      kind: "agent",
+      directory_id: "directory-1",
+      agent_client_id: "codex-cli",
+      directory_role: "agent_user",
+      recognition: "supported",
     },
-    governance: {
-      management_status: "not_taken_over",
-      decision: "undecided",
-      management_confirmed_at: null,
-      health_reasons: [],
-      action_conditions: [] as RelationGovernanceActionCondition[],
-      ...governance,
-    },
-    target_identity: null,
-    source_read_only: false,
-    evidence_relation_ids: [relationId],
+    entry_key: { directory_id: "directory-1", relative_entry_path: "skill-a" },
+    form: "full_copy",
+    management: "unmanaged",
+    health_reasons: ["normal"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: "directory",
+    link_target_path: null,
+    link_target_path_key: null,
+    link_target_directory_id: null,
+    physical_source_ids_evidence: [],
+    evidence_relation_ids: [],
+    ...overrides,
   };
 }
 
-describe("pendingBucketKeyOf（FB-④ §10 待处理细分桶）", () => {
-  it("assigns each pending row to exactly one category by the documented priority", () => {
-    // 原文件缺失优先于链接异常；链接异常优先于内容不同。
-    expect(pendingBucketKeyOf(row("a", {
-      governance_status: "pending",
-      health_reasons: ["subject_unavailable", "link_replaced", "content_changed"],
-    }))).toBe("source_missing");
-    expect(pendingBucketKeyOf(row("b", {
-      governance_status: "pending",
-      health_reasons: ["link_target_unavailable", "content_changed"],
-    }))).toBe("link_issue");
-    expect(pendingBucketKeyOf(row("c", {
-      governance_status: "pending",
-      health_reasons: ["content_changed", "verification_required"],
-    }))).toBe("content_changed");
-    expect(pendingBucketKeyOf(row("d", {
-      governance_status: "pending",
-      health_reasons: ["verification_required"],
-    }))).toBe("needs_review");
-    expect(pendingBucketKeyOf(row("e", {
-      governance_status: "pending",
-      health_reasons: ["operation_failed"],
-    }))).toBe("operation_failed");
-    expect(pendingBucketKeyOf(row("f", {
-      governance_status: "pending",
-      health_reasons: ["permission_limited"],
-    }))).toBe("restricted");
-    expect(pendingBucketKeyOf(row("g", { governance_status: "pending" }))).toBe("undecided");
+function projected(view: UsageRelationView) {
+  return projectUsageGovernanceRows([view], []);
+}
+
+describe("统一使用关系治理桶", () => {
+  it("normal_unmanaged_requires_action", () => {
+    const normalUnmanaged = projected(usageView())[0]!;
+    const projection = projectGovernanceBuckets([normalUnmanaged]);
+
+    expect(pendingBucketKeyOf(normalUnmanaged)).toBe("unmanaged");
+    expect(projection.pending.flatMap((bucket) => bucket.rows)).toContain(normalUnmanaged);
+    expect(projection.noAction).toEqual([]);
   });
 
-  it("treats shared-impact confirmation as restricted even when health is clean", () => {
-    // 共享影响确认只出现在动作条件里时同样归入权限受限桶。
-    expect(pendingBucketKeyOf(row("h", {
-      governance_status: "pending",
-      action_conditions: [{
-        action: "centralize_management",
-        available: false,
-        reasons: ["shared_impact_confirmation_required"],
-      }],
-    }))).toBe("restricted");
+  it("healthy_builtin_needs_no_action", () => {
+    const builtin = projected(usageView({
+      target: { ...usageView().target, directory_role: "builtin" },
+    }))[0]!;
+    const projection = projectGovernanceBuckets([builtin]);
+
+    expect(completedBucketKeyOf(builtin)).toBe("builtin_original");
+    expect(projection.noAction.flatMap((bucket) => bucket.rows)).toContain(builtin);
+    expect(builtin.usage.decision).not.toBe("retained_independent_copy");
   });
-});
 
-describe("completedBucketKeyOf（FB-④ §10 已完成细分桶）", () => {
-  it("splits retained independent copies from managed links", () => {
-    expect(completedBucketKeyOf(row("i", {
-      governance_status: "completed",
-      decision: "retained_independent_copy",
-    }))).toBe("retained");
-    expect(completedBucketKeyOf(row("j", {
-      governance_status: "completed",
-      management_status: "taken_over",
-    }))).toBe("managed_link");
+  it("released_copy_is_history_only", () => {
+    const released = usageView({ active: false, decision: "released" });
+    const retained = usageView({ relation_id: "retained", active: false, decision: "retained_independent_copy" });
+    const rows = projectUsageGovernanceRows([released, retained], []);
+    const projection = projectGovernanceBuckets(rows);
+
+    expect(rows).toEqual([]);
+    expect(projection.pending).toEqual([]);
+    expect(projection.noAction).toEqual([]);
   });
-});
 
-describe("projectGovernanceBuckets（FB-④ §10 细分桶投影）", () => {
-  it("returns non-empty buckets in the fixed documented order and keeps row order", () => {
-    const undecided = row("undecided-1", { governance_status: "pending" });
-    const changed = row("changed-1", {
-      governance_status: "pending",
-      health_reasons: ["content_changed"],
-    });
-    const managed = row("managed-1", {
-      governance_status: "completed",
-      management_status: "taken_over",
-    });
-    const retained = row("retained-1", {
-      governance_status: "completed",
-      decision: "retained_independent_copy",
-    });
-
-    const projection = projectGovernanceBuckets([managed, undecided, retained, changed]);
-
-    expect(projection.pending.map((bucket) => bucket.key)).toEqual([
-      "undecided",
+  it("maps every health cause to a pending bucket without dropping the full health list", () => {
+    const reasons: UsageHealthReason[] = [
+      "file_missing",
+      "link_abnormal",
       "content_changed",
-    ]);
-    expect(projection.pending[0]!.rows).toEqual([undecided]);
-    expect(projection.completed.map((bucket) => bucket.key)).toEqual([
-      "managed_link",
-      "retained",
-    ]);
-    // 空桶不出现；桶序固定不随数量变化。
-    expect(GOVERNANCE_PENDING_BUCKETS).toContain("undecided");
-    expect(GOVERNANCE_COMPLETED_BUCKETS).toEqual(["managed_link", "retained"]);
-    expect(projection.pending.some((bucket) => bucket.key === "restricted")).toBe(false);
+      "needs_sync",
+      "sync_failed",
+      "unable_to_verify",
+      "user_confirmation",
+    ];
+    for (const reason of reasons) {
+      const row = projected(usageView({ health_reasons: [reason] }))[0]!;
+      expect(pendingBucketKeyOf(row)).toBe(reason);
+    }
+    const multiple = usageView({ health_reasons: ["file_missing", "needs_sync"] });
+    const [row] = projected(multiple);
+    expect(pendingBucketKeyOf(row!)).toBe("file_missing");
+    expect(row!.usage.health_reasons).toEqual(["file_missing", "needs_sync"]);
+  });
+
+  it("returns non-empty buckets in fixed order", () => {
+    const unmanaged = projected(usageView({ relation_id: "unmanaged" }))[0]!;
+    const missing = projected(usageView({ relation_id: "missing", health_reasons: ["file_missing"] }))[0]!;
+    const managed = projected(usageView({
+      relation_id: "managed",
+      management: "managed",
+    }))[0]!;
+    const projection = projectGovernanceBuckets([managed, unmanaged, missing]);
+
+    expect(projection.pending.map((bucket) => bucket.key)).toEqual(["unmanaged", "file_missing"]);
+    expect(projection.noAction.map((bucket) => bucket.key)).toEqual(["managed_usage"]);
+    expect(GOVERNANCE_PENDING_BUCKETS).toContain("user_confirmation");
+    expect(GOVERNANCE_NO_ACTION_BUCKETS).toEqual(["managed_usage", "builtin_original"]);
   });
 });
 
-describe("行可执行性仍由动作条件裁定（原 governanceProjection 契约）", () => {
-  function legacyRow(
-    relationId: string,
-    governance: RelationGovernanceState,
-    legacy: Pick<RelationGovernanceRow, "readiness" | "status" | "primary_action">,
-  ): RelationGovernanceRow {
+describe("旧 action condition 仍只决定旧动作是否可用", () => {
+  function row(relationId: string, governance: RelationGovernanceState): RelationGovernanceRow {
     return {
-      ...row(relationId, { governance_status: governance.governance_status }),
-      readiness: legacy.readiness,
-      status: legacy.status,
-      primary_action: legacy.primary_action,
+      relation: { kind: "deployment", fact: { relation_id: relationId } } as unknown as RelationGovernanceRow["relation"],
+      skill_display_name: "Skill",
+      status: "needs_validation",
+      readiness: "needs_validation",
+      primary_action: "none",
+      blockers: [],
+      impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: false, rollback_available: false },
       governance,
+      target_identity: null,
+      source_read_only: false,
+      evidence_relation_ids: [relationId],
     };
   }
 
   function state(
     governance_status: RelationGovernanceState["governance_status"],
     management_status: RelationGovernanceState["management_status"],
-    decision: RelationGovernanceState["decision"] = "undecided",
     health_reasons: RelationGovernanceState["health_reasons"] = [],
     action_conditions: RelationGovernanceActionCondition[] = [],
   ): RelationGovernanceState {
     return {
       governance_status,
       management_status,
-      decision,
+      decision: "undecided",
       management_confirmed_at: null,
       health_reasons,
       action_conditions,
@@ -170,31 +150,15 @@ describe("行可执行性仍由动作条件裁定（原 governanceProjection 契
   }
 
   it("uses action conditions instead of legacy readiness for row and batch availability", () => {
-    const allowed = legacyRow(
-      "allowed-by-contract",
-      state("pending", "not_taken_over", "undecided", [], [
-        { action: "centralize_management", available: true, reasons: [] },
-      ]),
-      { readiness: "blocked", status: "blocked", primary_action: "none" },
-    );
-    const restricted = legacyRow(
-      "restricted-by-contract",
-      state("pending", "not_taken_over", "undecided", [], [
-        { action: "centralize_management", available: false, reasons: ["permission_limited"] },
-      ]),
-      { readiness: "eligible_to_centralize", status: "normal", primary_action: "centralize_management" },
-    );
-    const confirmationOnly = legacyRow(
-      "confirmation-by-contract",
-      state("pending", "not_taken_over", "undecided", [], [
-        {
-          action: "centralize_management",
-          available: false,
-          reasons: ["shared_impact_confirmation_required"],
-        },
-      ]),
-      { readiness: "already_centralized", status: "blocked", primary_action: "none" },
-    );
+    const allowed = row("allowed", state("pending", "not_taken_over", [], [
+      { action: "centralize_management", available: true, reasons: [] },
+    ]));
+    const restricted = row("restricted", state("pending", "not_taken_over", [], [
+      { action: "centralize_management", available: false, reasons: ["permission_limited"] },
+    ]));
+    const confirmationOnly = row("confirm", state("pending", "not_taken_over", [], [
+      { action: "centralize_management", available: false, reasons: ["shared_impact_confirmation_required"] },
+    ]));
 
     expect(rowIsBatchExecutable(allowed)).toBe(true);
     expect(rowIsNaturallyExecutable(allowed)).toBe(true);

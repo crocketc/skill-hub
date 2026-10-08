@@ -15,7 +15,10 @@ import type {
   RelationshipOverview,
   RelationshipType,
   SourceRelationFact,
+  RelationGovernanceRow,
+  UsageRelationView,
 } from "../../api/bindings";
+import { relationIdOf } from "../relationships/governance/api";
 
 export type {
   ImportGovernanceAction,
@@ -30,6 +33,150 @@ export type {
  */
 
 export type { ConflictClassification, DirectoryPrecedence, DirectoryRecognition, DirectoryRole, FileRepresentation, GovernanceTaskKind, MinimalImpactAction, ObservedMatchState, OwnershipState, RelationshipOverview, RelationshipType, SourceRelationFact };
+
+export type UsageGovernanceActionRestriction =
+  | "missing_subject"
+  | "entry_identity_unavailable"
+  | "identity_conflict"
+  | "incomplete_evidence"
+  | "multiple_targets"
+  | "shared_impact";
+
+/** A unified active usage fact with legacy rows retained only as action context. */
+export interface UsageGovernanceRow {
+  usage: UsageRelationView;
+  evidenceRows: RelationGovernanceRow[];
+  actionRow: RelationGovernanceRow | null;
+  actionRestriction: UsageGovernanceActionRestriction | null;
+  actionContextState: "ready" | "loading" | "unavailable";
+}
+
+export function projectActiveUsageRelations(
+  views: readonly UsageRelationView[],
+): UsageRelationView[] {
+  return views.filter((view) => view.active && view.decision === null);
+}
+
+export function classifyUsageRelation(
+  view: UsageRelationView,
+): "pending" | "no_action" | null {
+  if (!view.active || view.decision !== null) return null;
+  const healthy = view.health_reasons.length === 1 && view.health_reasons[0] === "normal";
+  const builtinOriginal = view.target.directory_role === "builtin";
+  return healthy && (view.management === "managed" || builtinOriginal)
+    ? "no_action"
+    : "pending";
+}
+
+/**
+ * Join each unified fact to all of its legacy evidence rows. A mutating action
+ * is available only for one complete, identity-matched bottom-level row.
+ */
+export function projectUsageGovernanceRows(
+  views: readonly UsageRelationView[],
+  legacyRows: readonly RelationGovernanceRow[],
+  actionContextState: UsageGovernanceRow["actionContextState"] = "ready",
+): UsageGovernanceRow[] {
+  return projectActiveUsageRelations(views).map((usage) => {
+    if (actionContextState !== "ready") {
+      return { usage, evidenceRows: [], actionRow: null, actionRestriction: null, actionContextState };
+    }
+    const expectedIds = new Set(usage.evidence_relation_ids.filter(Boolean));
+    const evidenceRows = legacyRows.filter((row) => {
+      const rowIds = new Set([...row.evidence_relation_ids, relationIdOf(row.relation)]);
+      return [...rowIds].some((id) => expectedIds.has(id));
+    });
+    let actionRestriction: UsageGovernanceActionRestriction | null = null;
+    let actionRow: RelationGovernanceRow | null = null;
+
+    if (usage.skill_id === null) {
+      actionRestriction = "missing_subject";
+    } else if (usage.entry_key === null) {
+      actionRestriction = "entry_identity_unavailable";
+    } else if (
+      new Set(usage.physical_source_ids_evidence).size > 1
+    ) {
+      actionRestriction = "identity_conflict";
+    } else if (expectedIds.size === 0 || evidenceRows.length === 0) {
+      actionRestriction = "incomplete_evidence";
+    } else {
+      const coveredIds = new Set<string>();
+      let hasExtraEvidence = false;
+      for (const row of evidenceRows) {
+        const rowIds = new Set([...row.evidence_relation_ids, relationIdOf(row.relation)]);
+        for (const id of rowIds) {
+          if (expectedIds.has(id)) coveredIds.add(id);
+          else hasExtraEvidence = true;
+        }
+      }
+      const complete = !hasExtraEvidence
+        && coveredIds.size === expectedIds.size
+        && [...expectedIds].every((id) => coveredIds.has(id));
+      if (!complete) {
+        actionRestriction = "incomplete_evidence";
+      } else if (expectedIds.size !== 1 || evidenceRows.length !== 1) {
+        actionRestriction = "multiple_targets";
+      } else {
+        const onlyId = [...expectedIds][0]!;
+        const row = evidenceRows[0]!;
+        const fact = row.relation.fact;
+        const rowSkillId = fact.skill_id;
+        const rowDirectoryId = fact.directory_node_id;
+        const rowEvidenceIds = new Set(row.evidence_relation_ids);
+        if (
+          rowSkillId !== usage.skill_id
+          || rowDirectoryId !== usage.target.directory_id
+          || relationIdOf(row.relation) !== onlyId
+          || rowEvidenceIds.size !== 1
+          || !rowEvidenceIds.has(onlyId)
+        ) {
+          actionRestriction = "identity_conflict";
+        } else if (
+          usage.target.kind === "shared_directory"
+          || usage.target.directory_role === "shared_directory"
+          || row.impact.other_consumer_agent_ids.length > 0
+          || row.impact.other_skill_paths.length > 0
+        ) {
+          actionRestriction = "shared_impact";
+          // A unique, complete bottom-level target may still be opened in the
+          // existing impact preview. The preview owns explicit confirmation;
+          // only ambiguous/multiple identities lose their action context.
+          actionRow = row;
+        } else {
+          actionRow = row;
+        }
+      }
+    }
+
+    return { usage, evidenceRows, actionRow, actionRestriction, actionContextState };
+  });
+}
+
+export function usageGovernanceRowId(row: UsageGovernanceRow): string {
+  return row.usage.relation_id;
+}
+
+/** Legacy commands target the exact bottom-level relation, never the aggregate representative ID. */
+export function usageGovernanceActionRelationId(row: UsageGovernanceRow): string {
+  return row.actionRow ? relationIdOf(row.actionRow.relation) : usageGovernanceRowId(row);
+}
+
+export function usageGovernanceRowIsSelectable(row: UsageGovernanceRow): boolean {
+  const actionRow = row.actionRow;
+  const centralizeCondition = actionRow?.governance.action_conditions.find(
+    (condition) => condition.action === "centralize_management",
+  );
+  const sharedImpactOnlyConfirmation = Boolean(
+    centralizeCondition
+      && !centralizeCondition.available
+      && centralizeCondition.reasons.length > 0
+      && centralizeCondition.reasons.every((reason) => reason === "shared_impact_confirmation_required"),
+  );
+  return classifyUsageRelation(row.usage) === "pending"
+    && row.actionContextState === "ready"
+    && actionRow?.relation.kind === "deployment"
+    && (centralizeCondition?.available === true || sharedImpactOnlyConfirmation);
+}
 
 /** 用户可执行的动作入口；Task 7 只提供影响预览，不内置转换执行。 */
 export type RelationshipViewAction = "view_removal_impact";

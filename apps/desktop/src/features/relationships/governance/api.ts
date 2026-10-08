@@ -9,6 +9,7 @@ import type {
   RelationGovernanceLedger,
   RelationGovernanceReason,
   RelationGovernanceRow,
+  RelationshipOverview,
   RelationshipGovernanceMutationResult,
   RelationManagementStatus,
   RelationshipCheckLevel,
@@ -20,10 +21,10 @@ import type {
 import type { RelationshipGovernanceParams } from "../api";
 
 /**
- * Top-level governance filter. Action readiness remains a separate fact.
- * FB-④（2026-10-06 §10）：进页默认「待处理」，页签顺序待处理、已完成、全部。
+ * Top-level governance filter. Only valid active usage facts can be no-action.
+ * `completed` remains an input alias for older saved URLs.
  */
-export const GOVERNANCE_CLASSIFICATIONS = ["pending", "completed", "all"] as const;
+export const GOVERNANCE_CLASSIFICATIONS = ["pending", "no_action", "all"] as const;
 export type GovernanceClassificationFilter = (typeof GOVERNANCE_CLASSIFICATIONS)[number];
 
 export const GOVERNANCE_MANAGEMENT_FILTERS = ["not_taken_over", "taken_over"] as const;
@@ -153,6 +154,8 @@ export interface GovernanceHistoryParams {
  */
 export interface RelationGovernanceFacade {
   listGovernance(params?: RelationshipGovernanceParams): Promise<RelationGovernanceLedger>;
+  /** Unified active usage facts; queried independently of the legacy action ledger. */
+  getRelationshipOverview(): Promise<RelationshipOverview>;
   /** 计划 9.4：重校验走 RunRelationshipCheck 命令，而不是再查一次清单。 */
   revalidate(
     relationIds: string[],
@@ -202,9 +205,8 @@ const SHARED_IMPACT_BLOCKER: RelationGovernanceBlocker = "shared_impact_confirma
 /**
  * 行过滤参数只透传已提交的事实；未知来源/桶/scope/状态回退为“不过滤”，
  * 不让恶意或过期的 URL 制造查询错误。
- * FB-④（§10）：?governance=/?scope=/?management= 保留解析兼容——页签缺省
- * 时旧管理状态深链映射到对应页签（taken_over→已完成、not_taken_over→待
- * 处理），缺省进页直接看待处理。
+ * Old `governance=completed` URLs remain readable as `no_action`; this alias
+ * does not make legacy completion facts eligible for the active no-action tab.
  */
 export function parseGovernanceSearchParams(searchParams: URLSearchParams): GovernanceDeepLink {
   const classificationParam = searchParams.get("governance");
@@ -212,8 +214,10 @@ export function parseGovernanceSearchParams(searchParams: URLSearchParams): Gove
   const fromParam = searchParams.get("from");
   const scopeParam = searchParams.get("scope");
   const management = GOVERNANCE_MANAGEMENT_FILTERS.find((candidate) => candidate === managementParam) ?? null;
-  const classification = GOVERNANCE_CLASSIFICATIONS.find((candidate) => candidate === classificationParam)
-    ?? (management === "taken_over" ? "completed" : "pending");
+  const classification = classificationParam === "completed"
+    ? "no_action"
+    : GOVERNANCE_CLASSIFICATIONS.find((candidate) => candidate === classificationParam)
+      ?? (management === "taken_over" ? "no_action" : "pending");
   return {
     from: GOVERNANCE_SOURCES.find((candidate) => candidate === fromParam) ?? null,
     classification,

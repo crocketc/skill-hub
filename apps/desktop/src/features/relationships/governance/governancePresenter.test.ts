@@ -1,77 +1,93 @@
 import { describe, expect, it } from "vitest";
-import type { RelationGovernanceRow } from "../../../api/bindings";
+import type { UsageHealthReason, UsageRelationView } from "../../../api/bindings";
 import { presentGovernanceRow } from "./governancePresenter";
 
-function row(overrides: Partial<RelationGovernanceRow["governance"]>): RelationGovernanceRow {
+function usageView(overrides: Partial<UsageRelationView> = {}): UsageRelationView {
   return {
-    relation: { kind: "deployment", fact: { relation_id: "rel" } } as unknown as RelationGovernanceRow["relation"],
-    status: "normal",
-    skill_display_name: "Skill",
-    readiness: "already_centralized",
-    primary_action: "none",
-    blockers: [],
-    impact: {
-      other_consumer_agent_ids: [],
-      other_skill_paths: [],
-      backup_required: false,
-      rollback_available: false,
+    relation_id: "usage-1",
+    skill_id: "skill-1",
+    target: {
+      kind: "agent",
+      directory_id: "directory-1",
+      agent_client_id: "codex-cli",
+      directory_role: "agent_user",
+      recognition: "supported",
     },
-    governance: {
-      governance_status: "pending",
-      management_status: "not_taken_over",
-      decision: "undecided",
-      management_confirmed_at: null,
-      health_reasons: [],
-      action_conditions: [],
-      ...overrides,
-    },
-    target_identity: null,
-    source_read_only: false,
-    evidence_relation_ids: ["rel"],
+    entry_key: { directory_id: "directory-1", relative_entry_path: "skill-a" },
+    form: "full_copy",
+    management: "unmanaged",
+    health_reasons: ["normal"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: "directory",
+    link_target_path: null,
+    link_target_path_key: null,
+    link_target_directory_id: null,
+    physical_source_ids_evidence: [],
+    evidence_relation_ids: ["rel-1"],
+    ...overrides,
   };
 }
 
-describe("presentGovernanceRow", () => {
-  it("keeps completed retained copies separate from management and old readiness", () => {
-    const presentation = presentGovernanceRow(row({
-      governance_status: "completed",
-      management_status: "not_taken_over",
-      decision: "retained_independent_copy",
-    }));
+describe("presentGovernanceRow（统一使用关系）", () => {
+  it("uses active health and management facts instead of legacy completion fields", () => {
+    const unmanaged = presentGovernanceRow(usageView());
+    expect(unmanaged.classificationKey).toBe("relationships.governance.classification.pending");
+    expect(unmanaged.managementKey).toBe("relationships.governance.usageManagement.unmanaged");
+    expect(unmanaged.summaryKey).toBe("relationships.governance.shortName.unmanaged");
+    expect(unmanaged.decisionKey).toBeNull();
 
-    expect(presentation.classificationKey).toBe("relationships.governance.classification.completed");
-    expect(presentation.managementKey).toBe("relationships.governance.management.not_taken_over");
-    expect(presentation.decisionKey).toBe("relationships.governance.decision.retained_independent_copy");
-    expect(presentation.summaryKey).toBe("relationships.governance.shortName.retained");
-    expect(presentation.reasonKeys).toEqual([]);
+    const managed = presentGovernanceRow(usageView({ management: "managed" }));
+    expect(managed.classificationKey).toBe("relationships.governance.classification.no_action");
+    expect(managed.summaryKey).toBe("relationships.governance.shortName.healthy");
   });
 
-  it("prioritizes a real link exception and unions unavailable action reasons", () => {
-    const presentation = presentGovernanceRow(row({
-      governance_status: "pending",
-      management_status: "taken_over",
-      health_reasons: ["link_replaced"],
-      action_conditions: [
-        { action: "undeploy", available: false, reasons: ["permission_limited"] },
-        { action: "revalidate", available: true, reasons: [] },
-      ],
+  it("missing_subject_does_not_imply_broken_link", () => {
+    const presentation = presentGovernanceRow(usageView({
+      skill_id: null,
+      health_reasons: ["user_confirmation", "unable_to_verify"],
     }));
 
-    expect(presentation.classificationKey).toBe("relationships.governance.classification.pending");
-    expect(presentation.managementKey).toBe("relationships.governance.management.taken_over");
-    expect(presentation.summaryKey).toBe("relationships.governance.shortName.link_issue");
-    expect(presentation.tone).toBe("danger");
-    expect(presentation.reasonKeys).toEqual(["link_replaced", "permission_limited"]);
+    expect(presentation.reasonKeys).toEqual(["user_confirmation", "unable_to_verify"]);
+    expect(presentation.reasonKeys).not.toContain("link_abnormal");
+    expect(presentation.summaryKey).not.toBe("relationships.governance.shortName.link_abnormal");
   });
 
-  it("does not promote a healthy but undecided relation because legacy fields look ready", () => {
-    const presentation = presentGovernanceRow(row({
-      governance_status: "pending",
-      management_status: "not_taken_over",
-      decision: "undecided",
+  it("maps every health reason and preserves co-occurring reasons", () => {
+    const reasons: UsageHealthReason[] = [
+      "normal",
+      "file_missing",
+      "link_abnormal",
+      "content_changed",
+      "needs_sync",
+      "sync_failed",
+      "unable_to_verify",
+      "user_confirmation",
+    ];
+    for (const reason of reasons) {
+      const presentation = presentGovernanceRow(usageView({ health_reasons: [reason] }));
+      expect(presentation.reasonKeys).toEqual([reason]);
+      expect(presentation.summaryKey).toMatch(/^relationships\.governance\.shortName\./);
+      expect(presentation.tone).toMatch(/^(success|warning|danger)$/);
+    }
+
+    const multiple = presentGovernanceRow(usageView({
+      health_reasons: ["file_missing", "needs_sync", "user_confirmation"],
+    }));
+    expect(multiple.reasonKeys).toEqual(["file_missing", "needs_sync", "user_confirmation"]);
+    expect(multiple.summaryKey).toBe("relationships.governance.shortName.user_confirmation");
+  });
+
+  it("treats a healthy built-in original as no-action without a retained decision", () => {
+    const presentation = presentGovernanceRow(usageView({
+      target: { ...usageView().target, directory_role: "builtin" },
+      health_reasons: ["normal"],
+      management: "unmanaged",
     }));
 
-    expect(presentation.summaryKey).toBe("relationships.governance.shortName.not_taken_over");
-    expect(presentation.descriptionKey).toBe("relationships.governance.shortName.not_taken_overDescription");
+    expect(presentation.classificationKey).toBe("relationships.governance.classification.no_action");
+    expect(presentation.summaryKey).toBe("relationships.governance.shortName.builtin_original");
+    expect(presentation.decisionKey).toBeNull();
   });
 });

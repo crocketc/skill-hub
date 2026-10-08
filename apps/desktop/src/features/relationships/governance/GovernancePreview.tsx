@@ -4,7 +4,9 @@ import type {
   RelationGovernanceRow,
   RelationGovernanceActionCondition,
   RemovalImpactFact,
+  RelationshipOverview,
   RelationshipCheckReport,
+  UsageRelationView,
 } from "../../../api/bindings";
 import type { RelationGovernanceFacade } from "./api";
 import { RelationshipGovernancePage } from "./RelationshipGovernancePage";
@@ -298,12 +300,154 @@ const ledger: RelationGovernanceLedger = {
   last_verified_at: "2026-09-24T08:55:00Z",
 };
 
-const previewFacade = {
+function usageView(
+  relationId: string,
+  overrides: Partial<UsageRelationView>,
+): UsageRelationView {
+  return {
+    relation_id: relationId,
+    skill_id: null,
+    target: {
+      kind: "agent",
+      directory_id: null,
+      agent_client_id: null,
+      directory_role: "agent_user",
+      recognition: null,
+    },
+    entry_key: null,
+    form: null,
+    management: "unmanaged",
+    health_reasons: ["unable_to_verify"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: "unknown",
+    link_target_path: null,
+    link_target_path_key: null,
+    link_target_directory_id: null,
+    physical_source_ids_evidence: [],
+    evidence_relation_ids: [relationId],
+    ...overrides,
+  };
+}
+
+const relationshipOverview: RelationshipOverview = {
+  scope: { type: "all" },
+  directory_nodes: [],
+  agent_directory_capabilities: [],
+  source_relations: [],
+  deployment_relations: [],
+  usage_relations: [
+    usageView("preview:centralize-pdf", {
+      skill_id: "preview-skill-pdf-reader",
+      target: {
+        kind: "agent",
+        directory_id: "preview-codex-directory",
+        agent_client_id: "codex.cli",
+        directory_role: "agent_user",
+        recognition: "supported",
+      },
+      entry_key: { directory_id: "preview-codex-directory", relative_entry_path: "pdf-reader" },
+      form: "full_copy",
+      health_reasons: ["normal"],
+      file_representation: "copy",
+    }),
+    usageView("preview:verify-notes", {
+      skill_id: "preview-skill-release-notes",
+      target: {
+        kind: "agent",
+        directory_id: "preview-cursor-directory",
+        agent_client_id: "cursor.editor",
+        directory_role: "agent_user",
+        recognition: "supported",
+      },
+      entry_key: { directory_id: "preview-cursor-directory", relative_entry_path: "release-notes" },
+      form: "full_copy",
+      health_reasons: ["unable_to_verify"],
+      file_representation: "copy",
+    }),
+    usageView("preview:shared-attention", {
+      skill_id: "preview-skill-release-notes",
+      target: {
+        kind: "shared_directory",
+        directory_id: "preview-shared-directory",
+        agent_client_id: "cursor.editor",
+        directory_role: "shared_directory",
+        recognition: "supported",
+      },
+      entry_key: { directory_id: "preview-shared-directory", relative_entry_path: "release-notes" },
+      form: "full_copy",
+      health_reasons: ["user_confirmation"],
+      file_representation: "directory",
+    }),
+    usageView("preview:blocked-directory", {
+      skill_id: "preview-skill-audit",
+      target: {
+        kind: "agent",
+        directory_id: null,
+        agent_client_id: "cursor.cli",
+        directory_role: "agent_user",
+        recognition: "unknown",
+      },
+      form: null,
+      health_reasons: ["unable_to_verify"],
+      file_representation: "unknown",
+    }),
+    usageView("preview:managed-link", {
+      skill_id: "preview-skill-pdf-reader",
+      target: {
+        kind: "agent",
+        directory_id: "preview-codex-directory",
+        agent_client_id: "codex.cli",
+        directory_role: "agent_user",
+        recognition: "supported",
+      },
+      entry_key: { directory_id: "preview-codex-directory", relative_entry_path: "pdf-link" },
+      form: "link",
+      management: "managed",
+      health_reasons: ["normal"],
+      file_representation: "symbolic_link",
+      link_target_path: "C:/Preview/SkillHub/skills/pdf-reader",
+      link_target_path_key: "c:/preview/skillhub/skills/pdf-reader",
+      link_target_directory_id: "preview-library-directory",
+    }),
+    // The old source row's Retained state is automatic legacy data, so this
+    // active use has no inferred user decision and cannot enter no-action.
+    usageView("preview:retained-source", {
+      skill_id: "preview-skill-pdf-reader",
+      target: {
+        kind: "agent",
+        directory_id: null,
+        agent_client_id: "codex.cli",
+        directory_role: "agent_user",
+        recognition: "unknown",
+      },
+      form: "full_copy",
+      health_reasons: ["normal"],
+      file_representation: "copy",
+    }),
+  ],
+  conflict_cases: [],
+  pending_governance_tasks: [],
+  agent_execution_confirmed: false,
+};
+
+function unavailablePreviewAction(): never {
+  throw new Error("This action is unavailable in the read-only preview.");
+}
+
+const previewFacade: RelationGovernanceFacade = {
   listGovernance: async () => ledger,
+  getRelationshipOverview: async () => relationshipOverview,
   revalidate: async (): Promise<RelationshipCheckReport> => ({
     items: [],
     relationship_revision: ledger.relationship_revision,
   }),
+  listHistory: async () => unavailablePreviewAction(),
+  retainSourceCopy: async () => unavailablePreviewAction(),
+  revokeRetention: async () => unavailablePreviewAction(),
+  endRelationship: async () => unavailablePreviewAction(),
+  relinkSourceCopy: async () => unavailablePreviewAction(),
   getRelationshipRemovalImpact: async (relationId: string): Promise<RemovalImpactFact> => {
     const row = rows.find((candidate) => candidate.relation.fact.relation_id === relationId);
     const relation = row?.relation.kind === "deployment" ? row.relation.fact : null;
@@ -325,7 +469,12 @@ const previewFacade = {
       permission_limited: false,
     };
   },
-} as unknown as RelationGovernanceFacade;
+  prepareGovernanceBatch: async () => unavailablePreviewAction(),
+  commitGovernanceBatch: async () => unavailablePreviewAction(),
+  rollbackGovernanceBatch: async () => unavailablePreviewAction(),
+  prepareRelationUndeploy: async () => unavailablePreviewAction(),
+  commitRelationUndeploy: async () => unavailablePreviewAction(),
+};
 
 export function GovernancePreview() {
   const { t } = useTranslation();

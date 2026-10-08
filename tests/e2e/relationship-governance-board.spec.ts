@@ -14,18 +14,18 @@ test("governance board stays compact, switches views with selection, and opens t
   // 本用例锁「全部」页签下的双桶全景与计数。
   await page.goto("/__preview/relationship-governance?governance=all");
 
-  await expect(page.getByRole("note")).toContainText("预览数据");
+  await expect(page.getByRole("note").filter({ hasText: "预览数据" })).toBeVisible();
   const board = page.getByTestId("governance-board");
   await expect(board).toBeVisible();
-  await expect(page.getByTestId("governance-board-column-pending-count")).toHaveText("4");
-  await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("2");
+  await expect(page.getByTestId("governance-board-column-pending-count")).toHaveText("5");
+  await expect(page.getByTestId("governance-board-column-no-action-count")).toHaveText("1");
   await expect(page.getByTestId("governance-row")).toHaveCount(6);
   await expect(page.getByTestId("governance-reasons-preview:verify-notes"))
-    .toContainText("当前验证结果不足，请重新检查目标。");
+    .toContainText("当前证据不足以核验使用状态。");
   const shortStatus = page.getByTestId("governance-short-name-preview:centralize-pdf");
   await shortStatus.focus();
   await expect(shortStatus).toHaveAccessibleDescription(
-    "此关系尚未纳入集中库管理。请先查看原因，再使用当前可用操作。",
+    "当前使用状态正常，但尚未纳入技能库管理，仍需你决定是否管理。",
   );
 
   const canvas = page.getByTestId("governance-row-list");
@@ -77,28 +77,27 @@ test("governance board stays compact, switches views with selection, and opens t
   await expect(page.getByRole("button", { name: "确认执行" })).toBeVisible();
 });
 
-test("completed source-copy deep links use the authoritative classification", async ({ page }) => {
+test("legacy retained source evidence is not a no-action decision and history stays reachable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/relationship-governance?scope=source_copy&governance=completed");
 
-  const board = page.getByTestId("governance-board");
-  await expect(board).toBeVisible();
-  // 治理板类别桶轮（§10）：页签决定列数——completed 页签只渲染已完成单列，
-  // 不再固定双列并排。
-  const columnOrder = await board.locator(":scope > section").evaluateAll((columns) =>
-    columns.map((column) => column.getAttribute("data-testid")),
+  // 旧 deep link 仍解析为 no_action，但 legacy Retained 不是用户决定，
+  // 因此来源关系不能进无需处理；历史入口仍保持可达。
+  await expect(page.getByTestId("governance-empty-state")).toContainText("该筛选下没有关系");
+  await expect(page.getByRole("link", { name: "查看治理历史" })).toHaveAttribute(
+    "href",
+    "/relationships/governance/history",
   );
-  expect(columnOrder).toEqual(["governance-board-column-completed"]);
-  await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("1");
+
+  await page.goto("/__preview/relationship-governance?scope=source_copy&governance=pending");
   await expect(page.getByTestId("governance-row")).toHaveCount(1);
-  await expect(page.getByTestId("governance-row")).toContainText("已保留为独立拷贝");
-  await expect(page.getByTestId("governance-row")).not.toContainText("已纳入技能库管理");
+  await expect(page.getByTestId("governance-row")).not.toContainText("已保留为独立拷贝");
 });
 
 test("board keeps a fixed column order and columns keep their own scroll position", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 680 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  // 治理板类别桶轮（§10）：列序固定（待处理在左、已完成在右），不再按
+  // 治理板类别桶轮（§10）：列序固定（待处理在左、无需处理在右），不再按
   // 过滤计数排序；本用例在「全部」页签下锁双列独立滚动。
   await page.goto("/__preview/relationship-governance?governance=all");
 
@@ -109,17 +108,17 @@ test("board keeps a fixed column order and columns keep their own scroll positio
   );
   await expect.poll(columnOrder).toEqual([
     "governance-board-column-pending",
-    "governance-board-column-completed",
+    "governance-board-column-no-action",
   ]);
 
   const bodies = page.locator("[data-testid^='governance-board-column-body-']");
   await expect(bodies).toHaveCount(2);
   const pending = page.getByTestId("governance-board-column-body-pending");
-  const completed = page.getByTestId("governance-board-column-body-completed");
+  const noAction = page.getByTestId("governance-board-column-body-noAction");
   const pendingHeading = page.getByTestId("governance-board-column-pending").locator("h2");
   await expect(pending).toHaveAttribute("tabindex", "0");
   await expect(pending).toHaveAttribute("role", "region");
-  await expect(pending).toHaveAttribute("aria-label", "待处理列，4 条关系");
+  await expect(pending).toHaveAttribute("aria-label", "待处理列，5 条关系");
   await expect.poll(() => pending.evaluate((node) => getComputedStyle(node).scrollbarWidth)).toBe("none");
   await expect(page.getByTestId("governance-board-scroll-top-pending")).toBeDisabled();
   const headingTop = (await pendingHeading.boundingBox())?.y;
@@ -128,8 +127,8 @@ test("board keeps a fixed column order and columns keep their own scroll positio
   // without changing the rows or their status projection.
   await page.addStyleTag({ content: ".sh-governance__board-column-body { flex: 0 0 180px !important; } .sh-governance__board-card { min-height: 240px; }" });
   const pendingContentHeight = await pending.evaluate((node) => node.scrollHeight);
-  const completedContentHeight = await completed.evaluate((node) => node.scrollHeight);
-  expect(pendingContentHeight).toBeGreaterThan(completedContentHeight);
+  const noActionContentHeight = await noAction.evaluate((node) => node.scrollHeight);
+  expect(pendingContentHeight).toBeGreaterThan(noActionContentHeight);
   await pending.hover();
   await page.mouse.wheel(0, 520);
   await expect.poll(() => pending.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
@@ -149,7 +148,7 @@ test("board keeps a fixed column order and columns keep their own scroll positio
   expect(pendingMetrics.scrollTop).toBeGreaterThanOrEqual(
     pendingMetrics.scrollHeight - pendingMetrics.clientHeight - 1,
   );
-  await expect(completed).toHaveJSProperty("scrollTop", 0);
+  await expect(noAction).toHaveJSProperty("scrollTop", 0);
   await expect(page.getByTestId("governance-row-list")).toHaveJSProperty("scrollTop", 0);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   expect((await pendingHeading.boundingBox())?.y).toBe(headingTop);
@@ -173,9 +172,9 @@ test("board keeps a fixed column order and columns keep their own scroll positio
   await expect(page).toHaveURL(/text=PDF/);
   await expect.poll(() => pending.evaluate((node) => node.scrollTop)).toBe(0);
 
-  await page.goto("/__preview/relationship-governance?scope=source_copy&governance=completed");
-  await expect(page.getByTestId("governance-board-column-completed-count")).toHaveText("1");
-  await expect.poll(columnOrder).toEqual(["governance-board-column-completed"]);
+  await page.goto("/__preview/relationship-governance?scope=source_copy&governance=no_action");
+  await expect(page.getByTestId("governance-empty-state")).toContainText("该筛选下没有关系");
+  await expect(page.getByTestId("governance-bucket-no_action")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("inline filter bar stays put while a single icon switches board and table", async ({ page }) => {
@@ -193,7 +192,7 @@ test("inline filter bar stays put while a single icon switches board and table",
   const topBefore = (await board.boundingBox())?.y;
   await expect(page.getByTestId("governance-bucket-all")).toBeVisible();
   await expect(page.getByTestId("governance-bucket-pending")).toBeVisible();
-  await expect(page.getByTestId("governance-bucket-completed")).toBeVisible();
+  await expect(page.getByTestId("governance-bucket-no_action")).toBeVisible();
   const search = page.getByRole("searchbox", { name: "搜索 Skill、目标或路径" });
   await expect(search).toBeVisible();
   expect((await board.boundingBox())?.y).toBe(topBefore);
@@ -205,8 +204,8 @@ test("inline filter bar stays put while a single icon switches board and table",
   await search.fill("PDF");
   await page.getByRole("button", { name: "搜索" }).click();
   await expect(page).toHaveURL(/text=PDF/);
-  await page.getByTestId("governance-bucket-completed").click();
-  await expect(page).toHaveURL(/governance=completed/);
+  await page.getByTestId("governance-bucket-no_action").click();
+  await expect(page).toHaveURL(/governance=no_action/);
 
   const switchView = page.getByTestId("governance-view-toggle");
   await expect(switchView).toHaveAttribute("aria-label", "切换到表格视图");
@@ -222,7 +221,7 @@ test("inline filter bar stays put while a single icon switches board and table",
   await expect.poll(() => viewport.evaluate((node) => node.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("governance presents all, pending, and completed summary filters", async ({ page }) => {
+test("governance presents all, pending, and no-action summary filters", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/__preview/relationship-governance");
 
@@ -230,7 +229,7 @@ test("governance presents all, pending, and completed summary filters", async ({
   // authoritative category values and actions are covered by native-contract tests.
   await expect(page.getByTestId("governance-bucket-all")).toBeVisible();
   await expect(page.getByTestId("governance-bucket-pending")).toBeVisible();
-  await expect(page.getByTestId("governance-bucket-completed")).toBeVisible();
+  await expect(page.getByTestId("governance-bucket-no_action")).toBeVisible();
 });
 
 test("governance board defaults to the pending column and expands to two columns on the all tab", async ({ page }) => {
@@ -238,7 +237,7 @@ test("governance board defaults to the pending column and expands to two columns
   await page.goto("/__preview/relationship-governance");
 
   // 治理板类别桶轮（§10）：缺省进页直接看待处理（单列）；「全部」页签
-  // 才并排双列，列序固定待处理在左、已完成在右。
+  // 才并排双列，列序固定待处理在左、无需处理在右。
   const columns = page.getByTestId("governance-board").locator(":scope > section");
   await expect(columns).toHaveCount(1);
   await expect(columns.nth(0).getByRole("heading", { level: 2, name: /^待处理/ })).toBeVisible();
@@ -247,7 +246,7 @@ test("governance board defaults to the pending column and expands to two columns
   await expect(page).toHaveURL(/governance=all/);
   await expect(columns).toHaveCount(2);
   await expect(columns.nth(0).getByRole("heading", { level: 2, name: /^待处理/ })).toBeVisible();
-  await expect(columns.nth(1).getByRole("heading", { level: 2, name: /^已完成/ })).toBeVisible();
+  await expect(columns.nth(1).getByRole("heading", { level: 2, name: /^无需处理/ })).toBeVisible();
 });
 
 test("overview governance shortcut navigates to the pending governance route", async ({ page }) => {

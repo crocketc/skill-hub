@@ -5,6 +5,10 @@ import { relationshipsKeys } from "./api";
 describe("relationships query keys", () => {
   it("namespaces every key under the relationships root", () => {
     expect(relationshipsKeys.root).toEqual(["relationships"]);
+    expect(relationshipsKeys.governanceUsageOverview()).toEqual([
+      relationshipsKeys.root,
+      "governance-usage-overview",
+    ]);
   });
 
   it("carries skillId, filters and relationship_revision in the graph key", () => {
@@ -89,6 +93,13 @@ describe("governance deep link params", () => {
     expect(link.classification).toBe("pending");
     expect(link.management).toBeNull();
     expect(link.batchId).toBeNull();
+  });
+
+  it("maps saved completed URLs to the no-action tab", () => {
+    expect(parseGovernanceSearchParams(new URLSearchParams("governance=completed")).classification)
+      .toBe("no_action");
+    expect(parseGovernanceSearchParams(new URLSearchParams("governance=no_action")).classification)
+      .toBe("no_action");
   });
 
   it("keeps deployment scope parseable and defaults scope to all", () => {

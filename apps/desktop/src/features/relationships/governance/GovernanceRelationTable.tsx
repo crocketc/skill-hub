@@ -2,64 +2,49 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { RefObject } from "react";
 import type { RelationGovernanceRow } from "../../../api/bindings";
-import {
-  isReadOnlySourceRelation,
-  isReadOnlyTerminalRelation,
-  relationAgentIdOf,
-  relationIdOf,
-  relationPathOf,
-  relationSourceKeyOf,
-  relationVerificationKeyOf,
-  relationshipKeyOf,
-  isGovernanceActionAvailable,
-  rowIsNaturallyExecutable,
-  rowNeedsSharedImpactConfirmation,
-} from "./api";
 import { Button } from "../../../ui/Button";
 import { StatusBadge } from "../../../ui/StatusBadge";
-import {
-  fingerprintLabelKey,
-  relationshipLabelKey,
-} from "../../relationshipGovernance/relationshipGovernance";
 import { AgentIdentity } from "../../skills/AgentDeploymentIcons";
-import { AgentPresentation, agentBrandKey } from "../../../ui/AgentPresentation";
-import { brandDisplayName } from "../../../ui/BrandTag";
+import { AgentPresentation } from "../../../ui/AgentPresentation";
 import { RelationshipPath } from "../RelationshipPath";
-import { governanceReasonLabelKey, presentGovernanceRow } from "./governancePresenter";
+import {
+  classifyUsageRelation,
+  usageGovernanceActionRelationId,
+  directoryRoleLabelKey,
+  usageGovernanceRowId,
+  usageGovernanceRowIsSelectable,
+  type UsageGovernanceRow,
+} from "../../relationshipGovernance/relationshipGovernance";
+import {
+  isGovernanceActionAvailable,
+  relationIdOf,
+  relationPathOf,
+  rowNeedsSharedImpactConfirmation,
+} from "./api";
+import {
+  presentGovernanceRow,
+  usageHealthLabelKey,
+} from "./governancePresenter";
 
 export interface GovernanceRelationTableProps {
-  rows: readonly RelationGovernanceRow[];
+  rows: readonly UsageGovernanceRow[];
   selectedIds: ReadonlySet<string>;
   busyRelationIds: ReadonlySet<string>;
-  /** 清单滚动容器引用：页面用它保存/恢复返回上下文中的滚动位置。 */
   listRef?: RefObject<HTMLDivElement>;
-  /** 滚动事件透传：页面据此把滚动位置写进返回上下文。 */
   onListScroll?: () => void;
   onToggleRow: (relationId: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
   onCentralize: (row: RelationGovernanceRow) => void;
   onUndeploy: (row: RelationGovernanceRow) => void;
-  onRevokeRetention: (row: RelationGovernanceRow) => void;
-  onEndRelationship: (row: RelationGovernanceRow) => void;
   onRevalidate: (row: RelationGovernanceRow) => void;
-  /** 来源副本保留：账本写入，绝不触碰来源目录。 */
-  onRetain: (row: RelationGovernanceRow) => void;
 }
 
-/**
- * 治理清单表（任务 8）：一行一条关系边（不按 Skill 合并），列固定为
- * 关系/来源/目标/影响/校验/操作；受阻行逐条给出确定性解释。
- * 选择框只是会话状态：同步浏览不写 tracker、通知或操作记录。
- */
 export function GovernanceRelationTable({
   busyRelationIds,
   listRef,
   onCentralize,
-  onEndRelationship,
   onListScroll,
   onRevalidate,
-  onRetain,
-  onRevokeRetention,
   onToggleAll,
   onToggleRow,
   onUndeploy,
@@ -67,9 +52,9 @@ export function GovernanceRelationTable({
   selectedIds,
 }: GovernanceRelationTableProps) {
   const { t } = useTranslation();
-  const selectableRows = rows.filter(rowIsNaturallyExecutable);
+  const selectableRows = rows.filter(usageGovernanceRowIsSelectable);
   const allChecked = selectableRows.length > 0
-    && selectableRows.every((row) => selectedIds.has(relationIdOf(row.relation)));
+    && selectableRows.every((row) => selectedIds.has(usageGovernanceRowId(row)));
 
   return (
     <div
@@ -91,34 +76,26 @@ export function GovernanceRelationTable({
                 type="checkbox"
               />
             </th>
-            <th data-testid="governance-header-relation" scope="col">
-              {t("relationships.governance.table.relation")}
-            </th>
-            <th data-testid="governance-header-source" scope="col">
-              {t("relationships.governance.table.source")}
-            </th>
-            <th data-testid="governance-header-target" scope="col">
-              {t("relationships.governance.table.target")}
-            </th>
-            <th data-testid="governance-header-impact" scope="col">
-              {t("relationships.governance.table.impact")}
-            </th>
+            <th data-testid="governance-header-relation" scope="col">{t("relationships.governance.table.relation")}</th>
+            <th data-testid="governance-header-source" scope="col">{t("relationships.governance.table.source")}</th>
+            <th data-testid="governance-header-target" scope="col">{t("relationships.governance.table.target")}</th>
+            <th data-testid="governance-header-impact" scope="col">{t("relationships.governance.table.impact")}</th>
             <th scope="col">{t("relationships.governance.table.verification")}</th>
             <th scope="col">{t("relationships.governance.table.action")}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
-            const relationId = relationIdOf(row.relation);
-            const busy = busyRelationIds.has(relationId);
-            // 只读原件不参与批量勾选；只有完成态原件才是无动作只读终端卡
-            // （§10）：异常原件回到待处理，必须给出动作与原因。
-            const readOnly = isReadOnlySourceRelation(row);
-            const readOnlyTerminal = isReadOnlyTerminalRelation(row);
+            const relationId = usageGovernanceRowId(row);
+            const noAction = classifyUsageRelation(row.usage) === "no_action";
             return (
-              <tr data-readonly={readOnly ? "true" : undefined} data-testid="governance-row" key={relationId}>
+              <tr
+                data-readonly={row.usage.target.directory_role === "builtin" ? "true" : undefined}
+                data-testid="governance-row"
+                key={relationId}
+              >
                 <td>
-                  {!readOnly ? (
+                  {!noAction ? (
                     <GovernanceRelationSelection
                       onToggleRow={onToggleRow}
                       row={row}
@@ -127,29 +104,18 @@ export function GovernanceRelationTable({
                   ) : null}
                 </td>
                 <td><GovernanceRelationIdentity row={row} /></td>
-                <td data-testid={`governance-source-${relationId}`}>
-                  <GovernanceRelationSource row={row} />
-                </td>
-                <td data-testid={`governance-target-${relationId}`}>
-                  <GovernanceRelationTarget row={row} />
-                </td>
-                <td data-testid={`governance-impact-${relationId}`}>
-                  <GovernanceRelationImpact row={row} />
-                </td>
+                <td data-testid={`governance-source-${relationId}`}><GovernanceRelationSource row={row} /></td>
+                <td data-testid={`governance-target-${relationId}`}><GovernanceRelationTarget row={row} /></td>
+                <td data-testid={`governance-impact-${relationId}`}><GovernanceRelationImpact row={row} /></td>
                 <td><GovernanceRelationVerification row={row} /></td>
                 <td className="sh-governance__actions">
-                  {!readOnlyTerminal ? (
-                    <GovernanceRelationActions
-                      busy={busy}
-                      onCentralize={onCentralize}
-                      onEndRelationship={onEndRelationship}
-                      onRevalidate={onRevalidate}
-                      onRetain={onRetain}
-                      onRevokeRetention={onRevokeRetention}
-                      onUndeploy={onUndeploy}
-                      row={row}
-                    />
-                  ) : null}
+                  <GovernanceRelationActions
+                    busy={busyRelationIds.has(usageGovernanceActionRelationId(row))}
+                    onCentralize={onCentralize}
+                    onRevalidate={onRevalidate}
+                    onUndeploy={onUndeploy}
+                    row={row}
+                  />
                 </td>
               </tr>
             );
@@ -160,9 +126,14 @@ export function GovernanceRelationTable({
   );
 }
 
-export function governanceSkillDisplayName(row: RelationGovernanceRow, t: TFunction): string {
-  const name = row.skill_display_name?.trim();
-  return name || String(t("relationships.governance.unnamedSkill"));
+export function governanceSkillDisplayName(row: UsageGovernanceRow | RelationGovernanceRow, t: TFunction): string {
+  if (!("usage" in row)) return row.skill_display_name?.trim() || String(t("relationships.governance.unnamedSkill"));
+  const names = [...new Set(row.evidenceRows
+    .map((evidence) => evidence.skill_display_name?.trim())
+    .filter((name): name is string => Boolean(name)))];
+  if (names.length === 1) return names[0]!;
+  if (names.length > 1) return String(t("relationships.governance.multipleSkillNames", { names: names.join("、") }));
+  return String(t("relationships.governance.unnamedSkill"));
 }
 
 export function GovernanceRelationSelection({
@@ -171,17 +142,15 @@ export function GovernanceRelationSelection({
   selected,
 }: {
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
-  row: RelationGovernanceRow;
+  row: UsageGovernanceRow;
   selected: boolean;
 }) {
   const { t } = useTranslation();
-  const relationId = relationIdOf(row.relation);
-  const executable = rowIsNaturallyExecutable(row);
+  const relationId = usageGovernanceRowId(row);
+  const executable = usageGovernanceRowIsSelectable(row);
   return (
     <input
-      aria-label={t("relationships.governance.table.selectRow", {
-        name: governanceSkillDisplayName(row, t),
-      })}
+      aria-label={t("relationships.governance.table.selectRow", { name: governanceSkillDisplayName(row, t) })}
       checked={selected}
       data-testid={`governance-select-${relationId}`}
       disabled={!executable}
@@ -191,44 +160,15 @@ export function GovernanceRelationSelection({
   );
 }
 
-export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationIdentity({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
-  const relationId = relationIdOf(row.relation);
-  // 只读导入原件的完成态（§10）：「已入库·原件保留（只读）」徽标 + 来源
-  // 说明，不显示管理状态或受阻徽标。异常原件回到待处理，按正常徽标呈现
-  // 并保留只读来源说明。
-  if (isReadOnlyTerminalRelation(row)) {
-    return (
-      <div className="sh-governance__identity">
-        <strong
-          aria-label={governanceSkillDisplayName(row, t)}
-          tabIndex={0}
-          title={governanceSkillDisplayName(row, t)}
-        >
-          {governanceSkillDisplayName(row, t)}
-        </strong>
-        <StatusBadge tone="success">
-          <span data-testid="governance-readonly-badge">
-            {t("relationships.governance.readOnly.badge" as never)}
-          </span>
-        </StatusBadge>
-        <p className="sh-governance__readonly-note" data-testid="governance-readonly-note">
-          {t("relationships.governance.readOnly.note" as never)}
-        </p>
-      </div>
-    );
-  }
-  const presentation = presentGovernanceRow(row);
-  const managementMatchesSummary = (
-    row.governance.management_status === "taken_over"
-      && presentation.summaryKey === "relationships.governance.shortName.taken_over"
-  ) || (
-    row.governance.management_status === "not_taken_over"
-      && presentation.summaryKey === "relationships.governance.shortName.not_taken_over"
-  );
-  const relationshipLabel = row.relation.kind === "source_copy"
-    ? t("relationships.governance.scope.source_copy")
-    : t(relationshipLabelKey(relationshipKeyOf(row.relation) as never) as never);
+  const relationId = usageGovernanceRowId(row);
+  const presentation = presentGovernanceRow(row.usage);
+  const noAction = classifyUsageRelation(row.usage) === "no_action";
+  const relationshipLabel = presentation.formKey
+    ? t(presentation.formKey as never)
+    : t("relationships.governance.form.unknown");
+
   return (
     <div className="sh-governance__identity">
       <strong
@@ -238,10 +178,8 @@ export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow
       >
         {governanceSkillDisplayName(row, t)}
       </strong>
-      <StatusBadge tone="info">
-        {relationshipLabel}
-      </StatusBadge>
-      <StatusBadge tone={row.governance.governance_status === "completed" ? "success" : "warning"}>
+      <StatusBadge tone="info">{relationshipLabel}</StatusBadge>
+      <StatusBadge tone={noAction ? "success" : "warning"}>
         {t(presentation.classificationKey as never)}
       </StatusBadge>
       <StatusBadge tone={presentation.tone}>
@@ -254,15 +192,15 @@ export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow
           {t(presentation.summaryKey as never)}
         </span>
       </StatusBadge>
-      {!managementMatchesSummary ? (
-        <StatusBadge tone="info">{t(presentation.managementKey as never)}</StatusBadge>
+      <StatusBadge tone="info">{t(presentation.managementKey as never)}</StatusBadge>
+      {noAction && row.usage.target.directory_role === "builtin" ? (
+        <p className="sh-governance__readonly-note" data-testid="governance-builtin-note">
+          {t(presentation.descriptionKey as never)}
+        </p>
       ) : null}
-      {presentation.decisionKey ? (
-        <span className="sh-governance__decision">{t(presentation.decisionKey as never)}</span>
-      ) : null}
-      {isReadOnlySourceRelation(row) ? (
+      {!noAction && row.usage.target.directory_role === "builtin" ? (
         <p className="sh-governance__readonly-note" data-testid="governance-readonly-note">
-          {t("relationships.governance.readOnly.note" as never)}
+          {t("relationships.governance.readOnly.note")}
         </p>
       ) : null}
       <p className="sh-visually-hidden" id={`governance-description-${relationId}`}>
@@ -272,170 +210,153 @@ export function GovernanceRelationIdentity({ row }: { row: RelationGovernanceRow
   );
 }
 
-export function GovernanceRelationTargetSummary({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationTargetSummary({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
-  const rowAgentId = relationAgentIdOf(row.relation);
+  const target = row.usage.target;
+  const hasDeploymentEvidence = row.evidenceRows.some((evidence) => evidence.relation.kind === "deployment");
   return (
     <div className="sh-governance__board-target-summary">
       <strong className="sh-governance__directory-kind">{directoryGovernanceLabel(row, t)}</strong>
-      {row.relation.kind === "deployment" && rowAgentId ? (
-        <AgentIdentity agentId={rowAgentId} />
-      ) : null}
+      {hasDeploymentEvidence && target.kind === "agent" && target.agent_client_id
+        ? <AgentIdentity agentId={target.agent_client_id} />
+        : null}
     </div>
   );
 }
 
-export function GovernanceRelationSource({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationSource({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
-  return <>{t(`relationships.governance.source.${relationSourceKeyOf(row.relation)}` as never)}</>;
+  const form = row.usage.form;
+  return <>{t(form ? `relationships.governance.form.${form}` as never : "relationships.governance.form.unknown")}</>;
 }
 
-export function GovernanceRelationTarget({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationTarget({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
-  const rowAgentId = relationAgentIdOf(row.relation);
+  const { target, entry_key: entryKey } = row.usage;
+  const hasDeploymentEvidence = row.evidenceRows.some((evidence) => evidence.relation.kind === "deployment");
+  const paths = [...new Set(row.evidenceRows.map((evidence) => relationPathOf(evidence.relation)))];
   return (
     <>
       <strong className="sh-governance__directory-kind">{directoryGovernanceLabel(row, t)}</strong>
-      {/* 来源副本边没有 Agent 归属；部署边使用统一的品牌 + 用户视角类型 presenter。 */}
-      {row.relation.kind === "deployment" && rowAgentId ? (
-        <AgentIdentity agentId={rowAgentId} />
+      {hasDeploymentEvidence && target.kind === "agent" && target.agent_client_id
+        ? <AgentIdentity agentId={target.agent_client_id} />
+        : null}
+      {entryKey?.relative_entry_path ? (
+        <span>{t("relationships.governance.entryLabel")} <RelationshipPath path={entryKey.relative_entry_path} /></span>
       ) : null}
-      <span>{t("agents.pathLabel")} <RelationshipPath path={relationPathOf(row.relation)} /></span>
+      {paths.length > 0 ? (
+        <span>{t("agents.pathLabel")} {paths.map((path) => <RelationshipPath key={path} path={path} />)}</span>
+      ) : null}
     </>
   );
 }
 
-export function GovernanceRelationImpact({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationImpact({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
+  const consumerIds = [...new Set(row.evidenceRows.flatMap((evidence) => evidence.impact.other_consumer_agent_ids))];
+  const paths = [...new Set(row.evidenceRows.flatMap((evidence) => evidence.impact.other_skill_paths.map((item) => item.path)))];
+  if (row.evidenceRows.length === 0) return <>{t("relationships.governance.impact.unconfirmed")}</>;
   return (
     <>
-      {row.impact.other_consumer_agent_ids.length > 0
+      {consumerIds.length > 0
         ? <>
-            {t("relationships.governance.impact.otherConsumers", {
-              agents: "",
-              count: row.impact.other_consumer_agent_ids.length,
-            })}
-            {row.impact.other_consumer_agent_ids.map((agentId, index) => (
-              <span key={agentId}>
-                {index > 0 ? "、" : ""}
-                <AgentPresentation agentId={agentId} />
-              </span>
-            ))}
+            {t("relationships.governance.impact.otherConsumers", { agents: "", count: consumerIds.length })}
+            {consumerIds.map((agentId, index) => <span key={agentId}>{index > 0 ? "、" : ""}<AgentPresentation agentId={agentId} /></span>)}
           </>
         : t("relationships.governance.impact.noOtherConsumers")}
-      <span>
-        {row.impact.rollback_available
-          ? t("relationships.governance.impact.rollbackAvailable")
-          : t("relationships.governance.impact.rollbackUnavailable")}
-      </span>
+      {paths.map((path) => <span key={path}><RelationshipPath path={path} /></span>)}
+      {row.actionRestriction ? (
+        <span role="note">{t(`relationships.governance.actionRestrictions.${row.actionRestriction}` as never)}</span>
+      ) : null}
     </>
   );
 }
 
-export function GovernanceRelationVerification({ row }: { row: RelationGovernanceRow }) {
+export function GovernanceRelationVerification({ row }: { row: UsageGovernanceRow }) {
+  return <><GovernanceRelationVerificationLabel row={row} /><GovernanceRelationBlockers row={row} /></>;
+}
+
+export function GovernanceRelationVerificationLabel({ row }: { row: UsageGovernanceRow }) {
+  const { t } = useTranslation();
+  const presentation = presentGovernanceRow(row.usage);
+  return <span>{t(presentation.summaryKey as never)}</span>;
+}
+
+export function GovernanceRelationBlockers({ row }: { row: UsageGovernanceRow }) {
+  const { t } = useTranslation();
+  const relationId = usageGovernanceRowId(row);
+  const reasons = presentGovernanceRow(row.usage).reasonKeys.filter((reason) => reason !== "normal");
   return (
     <>
-      <GovernanceRelationVerificationLabel row={row} />
-      <GovernanceRelationBlockers row={row} />
+      {reasons.length > 0 ? (
+        <ul className="sh-governance__reason-list" data-testid={`governance-reasons-${relationId}`}>
+          {reasons.map((reason) => (
+            <li key={reason}>{t(usageHealthLabelKey(reason as never) as never)}</li>
+          ))}
+        </ul>
+      ) : null}
+      {row.actionRestriction ? (
+        <p className="sh-governance__action-restriction" data-testid={`governance-action-restriction-${relationId}`} role="note">
+          {t(`relationships.governance.actionRestrictions.${row.actionRestriction}` as never)}
+        </p>
+      ) : null}
     </>
   );
-}
-
-export function GovernanceRelationVerificationLabel({ row }: { row: RelationGovernanceRow }) {
-  const { t } = useTranslation();
-  return (
-    <span>{t(fingerprintLabelKey(relationVerificationKeyOf(row.relation) as never) as never)}</span>
-  );
-}
-
-export function GovernanceRelationBlockers({ row }: { row: RelationGovernanceRow }) {
-  const { t } = useTranslation();
-  const relationId = relationIdOf(row.relation);
-  // 只读原件的完成态不是受阻（§10）：即使后端附带原因也不按受阻呈现。
-  // 异常只读原件回到待处理，必须按「原因 + 重新核验」说明呈现。
-  if (isReadOnlyTerminalRelation(row)) return null;
-  const reasons = presentGovernanceRow(row).reasonKeys;
-  return reasons.length > 0 ? (
-    <ul className="sh-governance__reason-list" data-testid={`governance-reasons-${relationId}`}>
-      {reasons.map((reason) => (
-        <li key={reason}>{t(governanceReasonLabelKey(reason) as never)}</li>
-      ))}
-    </ul>
-  ) : null;
 }
 
 export function GovernanceRelationActions({
   busy,
   onCentralize,
-  onEndRelationship,
   onRevalidate,
-  onRetain,
-  onRevokeRetention,
   onUndeploy,
   row,
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
-  onEndRelationship: GovernanceRelationTableProps["onEndRelationship"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
-  onRetain: GovernanceRelationTableProps["onRetain"];
-  onRevokeRetention: GovernanceRelationTableProps["onRevokeRetention"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
-  row: RelationGovernanceRow;
+  row: UsageGovernanceRow;
 }) {
   const { t } = useTranslation();
-  const relationId = relationIdOf(row.relation);
-  // 只读原件的完成态没有可用动作（§10）：动作按钮区整体不渲染。异常
-  // 只读原件回到待处理，按可用条件渲染「重新检查 / 结束关系」出口。
-  if (isReadOnlyTerminalRelation(row)) return null;
+  const actionRow = row.actionRow;
+  if (!actionRow) return null;
+  const classification = classifyUsageRelation(row.usage);
   const actions = [
     {
       action: "centralize_management" as const,
-      available: isGovernanceActionAvailable(row, "centralize_management")
-        || rowNeedsSharedImpactConfirmation(row),
-      onClick: () => onCentralize(row),
+      available: classification === "pending"
+        && row.usage.management === "unmanaged"
+        && (
+          isGovernanceActionAvailable(actionRow, "centralize_management")
+          || rowNeedsSharedImpactConfirmation(actionRow)
+        ),
+      onClick: () => onCentralize(actionRow),
       variant: "primary" as const,
     },
     {
       action: "revalidate" as const,
-      available: isGovernanceActionAvailable(row, "revalidate"),
-      onClick: () => onRevalidate(row),
-      variant: "secondary" as const,
-    },
-    {
-      action: "keep_independent_copy" as const,
-      available: isGovernanceActionAvailable(row, "keep_independent_copy"),
-      onClick: () => onRetain(row),
+      available: row.usage.health_reasons.some((reason) => reason !== "normal")
+        && isGovernanceActionAvailable(actionRow, "revalidate"),
+      onClick: () => onRevalidate(actionRow),
       variant: "secondary" as const,
     },
     {
       action: "undeploy" as const,
-      available: isGovernanceActionAvailable(row, "undeploy"),
-      onClick: () => onUndeploy(row),
-      variant: "secondary" as const,
-    },
-    {
-      action: "revoke_retention" as const,
-      available: isGovernanceActionAvailable(row, "revoke_retention"),
-      onClick: () => onRevokeRetention(row),
-      variant: "secondary" as const,
-    },
-    {
-      action: "end_relationship" as const,
-      available: isGovernanceActionAvailable(row, "end_relationship"),
-      onClick: () => onEndRelationship(row),
+      available: row.usage.management === "managed"
+        && isGovernanceActionAvailable(actionRow, "undeploy"),
+      onClick: () => onUndeploy(actionRow),
       variant: "secondary" as const,
     },
   ].filter((item) => item.available);
 
   return (
     <>
-      {actions.map(({ action, onClick, variant }, index) => (
+      {actions.map(({ action, onClick, variant }) => (
         <Button
           data-action={action}
-          data-testid={index === 0
-            ? `governance-action-${relationId}`
-            : `governance-action-${action}-${relationId}`}
+          data-testid={action === "centralize_management"
+            ? `governance-action-${relationIdOf(actionRow.relation)}`
+            : `governance-action-${action}-${relationIdOf(actionRow.relation)}`}
           disabled={busy}
           key={action}
           onClick={onClick}
@@ -448,31 +369,15 @@ export function GovernanceRelationActions({
     </>
   );
 }
-/**
- * 治理单位按同一物理目录上的消费者关系呈现：共享目录只操作一次；
- * 同品牌多端共用的目录也只操作一次；其余目录保持独立。内部 relation
- * 类型不进入用户界面。
- */
-function directoryGovernanceLabel(
-  row: RelationGovernanceRow,
-  t: TFunction,
-): string {
-  if (
-    row.relation.kind === "deployment"
-    && (row.relation.fact.relationship === "shared_directory_read"
-      || row.relation.fact.relationship === "shared_directory_reference")
-  ) {
+
+function directoryGovernanceLabel(row: UsageGovernanceRow, t: TFunction): string {
+  const { target } = row.usage;
+  if (target.kind === "shared_directory" || target.directory_role === "shared_directory") {
     return t("relationships.governance.directory.sharedAgent");
   }
-  const consumers = [
-    relationAgentIdOf(row.relation),
-    ...row.impact.other_consumer_agent_ids,
-  ].filter((agentId): agentId is string => agentId !== null);
-  const brands = new Set(consumers.map(agentBrandKey));
-  if (consumers.length > 1 && brands.size === 1) {
-    return t("relationships.governance.directory.brandCommon", {
-      brand: brandDisplayName(agentBrandKey(consumers[0])),
-    });
-  }
+  if (target.directory_role === "agent_user") return t("agents.directoryRole.user");
+  if (target.directory_role === "agent_workspace") return t("agents.directoryRole.workspace");
+  if (target.directory_role === "builtin") return t("agents.directoryRole.builtin");
+  if (target.directory_role) return t(directoryRoleLabelKey(target.directory_role as never) as never);
   return t("relationships.governance.directory.independent");
 }

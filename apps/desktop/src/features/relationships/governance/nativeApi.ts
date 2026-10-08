@@ -75,6 +75,17 @@ function deploymentIdForRelation(relation: GovernableRelation): {
 export const nativeGovernanceFacade: RelationGovernanceFacade = {
   listGovernance: (params) => nativeRelationshipsFacade.listGovernance(params),
 
+  async getRelationshipOverview() {
+    const result = await queryApplication({
+      type: "get_relationship_overview",
+      payload: { scope: { type: "all" } },
+    });
+    if (result.type !== "relationship_overview") {
+      return unexpectedResult("get_relationship_overview");
+    }
+    return result.payload;
+  },
+
   /** 计划 9.4：重校验是 RunRelationshipCheck 命令，事实由 Full/Light 校验落库。 */
   async revalidate(
     relationIds: string[],

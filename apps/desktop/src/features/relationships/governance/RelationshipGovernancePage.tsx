@@ -9,6 +9,7 @@ import type {
   RelationGovernanceRow,
   RelationshipCheckItem,
   RelationshipCheckReport,
+  RelationshipOverview,
 } from "../../../api/bindings";
 import {
   operationTracker,
@@ -22,10 +23,17 @@ import { DataState } from "../../../ui/DataState";
 import { RelationshipsLayout } from "../RelationshipsLayout";
 import { useRelationshipsReturnState } from "../returnState";
 import { relationshipsKeys } from "../api";
+import { nativeRelationshipsFacade } from "../nativeApi";
+import {
+  classifyUsageRelation,
+  projectUsageGovernanceRows,
+  usageGovernanceRowId,
+  usageGovernanceRowIsSelectable,
+  type UsageGovernanceRow,
+} from "../../relationshipGovernance/relationshipGovernance";
 import { useRelationshipContextCheck } from "./useRelationshipContextCheck";
 import {
   GOVERNANCE_CLASSIFICATIONS,
-  actionConditionOf,
   isGovernanceActionAvailable,
   mergeBatchItemOutcome,
   parseGovernanceSearchParams,
@@ -43,9 +51,7 @@ import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { governanceSkillDisplayName } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
-import { GovernanceDecisionPreview, type GovernanceDecisionAction } from "./GovernanceDecisionPreview";
 import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
-import { governanceReasonLabelKey } from "./governancePresenter";
 import { readGovernanceLibraryReturnTarget } from "./libraryReturnContext";
 import "./governance.css";
 
@@ -61,7 +67,7 @@ export interface RelationshipGovernancePageProps {
 }
 
 interface SingleFlowState {
-  kind: "centralize" | "undeploy" | GovernanceDecisionAction;
+  kind: "centralize" | "undeploy";
   row: RelationGovernanceRow;
   relationshipRevision: string;
   busy: boolean;
@@ -106,6 +112,10 @@ export function RelationshipGovernancePage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
+  const layoutFacade = useMemo(() => ({
+    ...nativeRelationshipsFacade,
+    listGovernance: (params: Parameters<RelationGovernanceFacade["listGovernance"]>[0]) => facade.listGovernance(params),
+  }), [facade]);
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLink = useMemo(
     () => parseGovernanceSearchParams(searchParams),
@@ -134,42 +144,76 @@ export function RelationshipGovernancePage({
     new Map(),
   );
 
-  const governanceFilters = {
-    agent_client_id: deepLink.agentClientId ?? undefined,
-    bucket: "all" as const,
-    skill_id: deepLink.skillId ?? undefined,
-    text: deepLink.text || undefined,
-    batch_id: deepLink.batchId ?? undefined,
-  } as const;
+  // The usage projection drives the displayed facts. The legacy ledger is a
+  // second, independently loaded query used only to resolve safe action rows.
+  const governanceFilters = { batch_id: deepLink.batchId ?? undefined } as const;
   const ledgerQuery = useQuery({
     queryFn: () => facade.listGovernance({ ...governanceFilters }),
     queryKey: relationshipsKeys.governance(governanceFilters),
   });
-  const rows = useMemo(() => ledgerQuery.data?.rows ?? [], [ledgerQuery.data]);
-  // scope=source_copy/deployment 与 management 深链保留为隐藏行过滤
-  // （§10：参数解析兼容、映射到页签或细分桶，UI 不再提供 chips）。
+  const usageOverviewQuery = useQuery<RelationshipOverview>({
+    queryFn: () => facade.getRelationshipOverview(),
+    queryKey: relationshipsKeys.governanceUsageOverview(),
+  });
+  const legacyRows = useMemo(() => ledgerQuery.data?.rows ?? [], [ledgerQuery.data]);
+  const relationRows = useMemo(
+    () => projectUsageGovernanceRows(
+      usageOverviewQuery.data?.usage_relations ?? [],
+      legacyRows,
+      ledgerQuery.isPending ? "loading" : ledgerQuery.isError ? "unavailable" : "ready",
+    ),
+    [ledgerQuery.isError, ledgerQuery.isPending, legacyRows, usageOverviewQuery.data],
+  );
   const scopedRows = useMemo(() => {
-    let filtered = rows;
+    let filtered = relationRows;
+    if (deepLink.agentClientId) {
+      filtered = filtered.filter((row) => row.usage.target.agent_client_id === deepLink.agentClientId
+        || row.evidenceRows.some((evidence) => evidence.relation.fact.agent_client_id === deepLink.agentClientId));
+    }
+    if (deepLink.skillId) {
+      filtered = filtered.filter((row) => row.usage.skill_id === deepLink.skillId);
+    }
     if (deepLink.scope === "source_copy") {
-      filtered = filtered.filter((row) => row.relation.kind === "source_copy");
+      filtered = filtered.filter((row) => row.evidenceRows.some((evidence) => evidence.relation.kind === "source_copy"));
     } else if (deepLink.scope === "deployment") {
-      filtered = filtered.filter((row) => row.relation.kind === "deployment");
+      filtered = filtered.filter((row) => row.evidenceRows.some((evidence) => evidence.relation.kind === "deployment"));
     }
     if (deepLink.management) {
-      filtered = filtered.filter((row) => row.governance.management_status === deepLink.management);
+      filtered = filtered.filter((row) => (row.usage.management === "managed" ? "taken_over" : "not_taken_over") === deepLink.management);
+    }
+    if (deepLink.batchId) filtered = filtered.filter((row) => row.evidenceRows.length > 0);
+    if (deepLink.text) {
+      const needle = deepLink.text.toLocaleLowerCase();
+      filtered = filtered.filter((row) => [
+        row.usage.entry_key?.relative_entry_path,
+        row.usage.target.agent_client_id,
+        row.usage.target.directory_id,
+        ...row.evidenceRows.flatMap((evidence) => [
+          evidence.skill_display_name,
+          evidence.relation.kind === "deployment" ? evidence.relation.fact.path : evidence.relation.fact.source_path,
+        ]),
+      ].some((value) => value?.toLocaleLowerCase().includes(needle)));
     }
     return filtered;
-  }, [deepLink.management, deepLink.scope, rows]);
+  }, [
+    deepLink.agentClientId,
+    deepLink.batchId,
+    deepLink.management,
+    deepLink.scope,
+    deepLink.skillId,
+    deepLink.text,
+    relationRows,
+  ]);
   const visibleRows = useMemo(
     () => deepLink.classification === "all"
       ? scopedRows
-      : scopedRows.filter((row) => row.governance.governance_status === deepLink.classification),
+      : scopedRows.filter((row) => classifyUsageRelation(row.usage) === deepLink.classification),
     [deepLink.classification, scopedRows],
   );
   const classificationCounts = useMemo(() => ({
     all: scopedRows.length,
-    pending: scopedRows.filter((row) => row.governance.governance_status === "pending").length,
-    completed: scopedRows.filter((row) => row.governance.governance_status === "completed").length,
+    pending: scopedRows.filter((row) => classifyUsageRelation(row.usage) === "pending").length,
+    no_action: scopedRows.filter((row) => classifyUsageRelation(row.usage) === "no_action").length,
   }), [scopedRows]);
   // D8（§10）：无隐藏过滤且清单仍有行时，待处理页签为空 = 已全部处理完；
   // 深链隐藏过滤（scope/management）造成的空仍按「该筛选下没有关系」呈现。
@@ -184,15 +228,15 @@ export function RelationshipGovernancePage({
       && scopedRows.length === 0);
   // 导入横幅的 N：本次批次映射的本地来源副本数（不受隐藏行过滤影响）。
   const sourceCopyCount = useMemo(
-    () => rows.filter((row) => row.relation.kind === "source_copy").length,
-    [rows],
+    () => legacyRows.filter((row) => row.relation.kind === "source_copy").length,
+    [legacyRows],
   );
   // 任务 11.6：清单先渲染，再对当前 scope 做一次会话级 Light check。
   useRelationshipContextCheck({
     facade,
     scope: deepLink.scope,
-    relationIds: visibleRows.map((row) => relationIdOf(row.relation)),
-    enabled: ledgerQuery.isSuccess && visibleRows.length > 0,
+    relationIds: [...new Set(visibleRows.flatMap((row) => row.usage.evidence_relation_ids))],
+    enabled: usageOverviewQuery.isSuccess && ledgerQuery.isSuccess && visibleRows.length > 0,
   });
 
   // —— 会话视图状态：勾选 + 滚动（仅存 return-state，不进 URL/tracker）——
@@ -221,20 +265,20 @@ export function RelationshipGovernancePage({
 
   // 滚动恢复：清单数据就绪后按保存位置复位一次（同一条目返回时）。
   useEffect(() => {
-    if (restoredScrollRef.current || !ledgerQuery.isSuccess) return;
+    if (restoredScrollRef.current || !usageOverviewQuery.isSuccess) return;
     restoredScrollRef.current = true;
     const saved = returnState.initialState?.scrollY;
     if (view === "table" && saved && listRef.current) {
       listRef.current.scrollTop = saved;
     }
-  }, [ledgerQuery.isSuccess, returnState.initialState, view]);
+  }, [returnState.initialState, usageOverviewQuery.isSuccess, view]);
 
   // Table view owns one scroll canvas; board columns keep their own scroll state.
   useEffect(() => {
-    if (ledgerQuery.isSuccess && view === "table" && listRef.current) {
+    if (usageOverviewQuery.isSuccess && view === "table" && listRef.current) {
       listRef.current.scrollTop = viewStateRef.current.scrollY;
     }
-  }, [ledgerQuery.isSuccess, view]);
+  }, [usageOverviewQuery.isSuccess, view]);
 
   const onListScroll = useCallback(() => {
     const element = listRef.current;
@@ -258,14 +302,16 @@ export function RelationshipGovernancePage({
   }, [persistViewState]);
 
   const toggleRow = useCallback((relationId: string, checked: boolean) => {
+    const row = visibleRows.find((candidate) => usageGovernanceRowId(candidate) === relationId);
+    if (!row || !usageGovernanceRowIsSelectable(row)) return;
     setSelectedIds((current) => checked
       ? [...current, relationId]
       : current.filter((id) => id !== relationId));
-  }, []);
+  }, [visibleRows]);
 
   // 整桶勾选（§10）：一类关系一桶，桶勾选只覆盖桶内可批量执行的行。
-  const toggleBucketRows = useCallback((bucketRows: readonly RelationGovernanceRow[], checked: boolean) => {
-    const ids = bucketRows.filter(rowIsNaturallyExecutable).map((row) => relationIdOf(row.relation));
+  const toggleBucketRows = useCallback((bucketRows: readonly UsageGovernanceRow[], checked: boolean) => {
+    const ids = bucketRows.filter(usageGovernanceRowIsSelectable).map(usageGovernanceRowId);
     setSelectedIds((current) => checked
       ? [...new Set([...current, ...ids])]
       : current.filter((id) => !ids.includes(id)));
@@ -275,10 +321,16 @@ export function RelationshipGovernancePage({
     setSelectedIds(() => {
       if (!checked) return [];
       return visibleRows
-        .filter(rowIsNaturallyExecutable)
-        .map((row) => relationIdOf(row.relation));
+        .filter(usageGovernanceRowIsSelectable)
+        .map(usageGovernanceRowId);
     });
   }, [visibleRows]);
+
+  useEffect(() => {
+    if (!usageOverviewQuery.isSuccess || !ledgerQuery.isSuccess) return;
+    const selectableIds = new Set(relationRows.filter(usageGovernanceRowIsSelectable).map(usageGovernanceRowId));
+    setSelectedIds((current) => current.filter((id) => selectableIds.has(id)));
+  }, [ledgerQuery.isSuccess, relationRows, usageOverviewQuery.isSuccess]);
 
   // —— URL 即状态：已提交筛选写入历史条目（任务 11），前进/后退可恢复；
   // 勾选与滚动位置仍走 return-state，不进 URL。 ——
@@ -311,9 +363,13 @@ export function RelationshipGovernancePage({
   }, [ledgerQuery.data?.relationship_revision]);
 
   // —— 批量流程 ——
-  const selectedRows = useMemo(
-    () => visibleRows.filter((row) => selectedIds.includes(relationIdOf(row.relation))),
+  const selectedUsageRows = useMemo(
+    () => visibleRows.filter((row) => selectedIds.includes(usageGovernanceRowId(row))),
     [selectedIds, visibleRows],
+  );
+  const selectedRows = useMemo(
+    () => selectedUsageRows.map((row) => row.actionRow).filter((row): row is RelationGovernanceRow => row !== null),
+    [selectedUsageRows],
   );
   const executability = useMemo(
     () => summarizeRowExecutability(selectedRows),
@@ -482,32 +538,6 @@ export function RelationshipGovernancePage({
     );
   }, [centralizeDoneText, runGovernanceBatch, single, t]);
 
-  // —— 来源副本动作（任务 11.7/11.9/11.14）——
-
-  /** 保留来源副本：账本写入（决策改 retained + 历史），绝不触碰来源目录。 */
-  const retainSourceCopyRow = useCallback((row: RelationGovernanceRow) => {
-    const relationId = relationIdOf(row.relation);
-    void runTrackedOperation({
-      targetHref: governanceDestination([relationId]),
-      canCancel: false,
-      describeError,
-      invalidateQueryKeys: [[relationshipsKeys.root]],
-      kind: "retain_source_copy",
-      label: t("relationships.governance.retain.action"),
-      notifications,
-      queryClient,
-      run: () => facade.retainSourceCopy(relationId),
-      successNotice: () => ({
-        title: t("relationships.governance.retain.done"),
-        tone: "success" as const,
-      }),
-      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
-      total: 1,
-      tracker,
-      translate: (key, options) => String(t(key as never, options as never)),
-    }).catch(() => undefined);
-  }, [describeError, facade, notifications, queryClient, t, tracker]);
-
   /** 单条结果的逐项回退：回退必须针对发起批次（子任务挂在该批次下）。 */
   const rollbackSingleItem = useCallback((relationId: string) => {
     if (!single?.outcome) return;
@@ -589,96 +619,6 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, facade, notifications, queryClient, t, tracker]);
 
-  const confirmSingleDecision = useCallback((action: GovernanceDecisionAction, flow: SingleFlowState) => {
-    const relationId = relationIdOf(flow.row.relation);
-    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-
-    void (async () => {
-      try {
-        const refreshed = await ledgerQuery.refetch();
-        const currentRow = refreshed.data?.rows.find((row) => relationIdOf(row.relation) === relationId);
-        if (refreshed.isError || !refreshed.data || !currentRow) {
-          setSingle((current) => current ? {
-            ...current,
-            busy: false,
-            error: t(currentRow ? "relationships.governance.mutation.refreshFailed" : "relationships.governance.mutation.relationshipUnavailable"),
-            ...(currentRow ? { row: currentRow } : {}),
-          } : current);
-          return;
-        }
-
-        if (refreshed.data.relationship_revision !== flow.relationshipRevision) {
-          setSingle((current) => current ? {
-            ...current,
-            busy: false,
-            error: t("relationships.governance.mutation.changedReviewAgain"),
-            relationshipRevision: refreshed.data.relationship_revision,
-            row: currentRow,
-          } : current);
-          return;
-        }
-
-        const condition = actionConditionOf(currentRow, action);
-        if (!condition?.available) {
-          const reason = condition?.reasons.map((item) => String(t(governanceReasonLabelKey(item) as never))).join(" ");
-          setSingle((current) => current ? {
-            ...current,
-            busy: false,
-            error: reason || t("relationships.governance.mutation.actionUnavailable"),
-            row: currentRow,
-          } : current);
-          return;
-        }
-
-        const operationId = createGovernanceOperationId();
-        const actionLabel = String(t(`relationships.governance.actions.${action}` as never));
-        void runTrackedOperation({
-          targetHref: governanceDestination([relationId]),
-          canCancel: false,
-          describeError,
-          invalidateQueryKeys: [[relationshipsKeys.root]],
-          kind: "relationship_governance_mutation",
-          label: actionLabel,
-          mode: "instant",
-          notifications,
-          operationId,
-          queryClient,
-          run: () => facade[action === "revoke_retention" ? "revokeRetention" : "endRelationship"]({
-            operationId,
-            relationId,
-            expectedRelationshipRevision: refreshed.data.relationship_revision,
-          }),
-          successNotice: () => ({
-            title: t(`relationships.governance.mutation.${action}Done` as never),
-            tone: "success" as const,
-          }),
-          summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
-          total: 1,
-          tracker,
-          translate: (key, options) => String(t(key as never, options as never)),
-        }).then((result) => {
-          if (result.relation_id !== relationId) {
-            setSingle((current) => current ? {
-              ...current,
-              busy: false,
-              error: t("relationships.governance.mutation.unexpectedRelation"),
-            } : current);
-            return;
-          }
-          setSingle((current) => current ? {
-            ...current,
-            busy: false,
-            resultText: String(t(`relationships.governance.mutation.${action}Done` as never)),
-          } : current);
-        }).catch((reason: unknown) => {
-          setSingle((current) => current ? { ...current, busy: false, error: describeError(reason) } : current);
-        });
-      } catch (reason: unknown) {
-        setSingle((current) => current ? { ...current, busy: false, error: describeError(reason) } : current);
-      }
-    })();
-  }, [describeError, facade, ledgerQuery, notifications, queryClient, t, tracker]);
-
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
     const selection = summarizeBatchSelection(selectedRows);
@@ -759,23 +699,38 @@ export function RelationshipGovernancePage({
   // 深链 relationId：进入页面后按行的最恰当动作直接打开治理预览（仅一次）。
   const pendingRelationIdRef = useRef<string | null>(deepLink.relationId);
   useEffect(() => { pendingRelationIdRef.current = deepLink.relationId; }, [deepLink.relationId]);
+  const matchingDeepLinkRow = useMemo(() => {
+    const requestedRelationId = deepLink.relationId;
+    if (!requestedRelationId) return null;
+    return visibleRows.find((row) => row.usage.relation_id === requestedRelationId
+      || row.usage.evidence_relation_ids.includes(requestedRelationId)) ?? null;
+  }, [deepLink.relationId, visibleRows]);
   useEffect(() => {
-    if (!ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
+    if (!usageOverviewQuery.isSuccess || !ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
     const relationId = pendingRelationIdRef.current;
     pendingRelationIdRef.current = null;
-    const row = visibleRows.find((candidate) => relationIdOf(candidate.relation) === relationId);
-    if (!row) return;
-    if (rowIsBatchExecutable(row)) openSingle("centralize", row);
-    else if (isGovernanceActionAvailable(row, "undeploy")) openSingle("undeploy", row);
-    else if (isGovernanceActionAvailable(row, "revoke_retention")) openSingle("revoke_retention", row);
-    else if (isGovernanceActionAvailable(row, "end_relationship")) openSingle("end_relationship", row);
-  }, [ledgerQuery.isSuccess, openSingle, visibleRows]);
+    const row = matchingDeepLinkRow?.usage.relation_id === relationId
+      || matchingDeepLinkRow?.usage.evidence_relation_ids.includes(relationId)
+      ? matchingDeepLinkRow
+      : null;
+    const actionRow = row?.actionRow;
+    if (!actionRow) return;
+    if (
+      row.usage.management === "unmanaged"
+      && classifyUsageRelation(row.usage) === "pending"
+      && rowIsBatchExecutable(actionRow)
+    ) openSingle("centralize", actionRow);
+    else if (
+      row.usage.management === "managed"
+      && isGovernanceActionAvailable(actionRow, "undeploy")
+    ) openSingle("undeploy", actionRow);
+  }, [ledgerQuery.isSuccess, matchingDeepLinkRow, openSingle, usageOverviewQuery.isSuccess]);
 
   const closeSingle = useCallback(() => setSingle(null), []);
 
   return (
-    <RelationshipsLayout scope="governance">
-      {ledgerQuery.isSuccess && deepLink.relationId && !visibleRows.some((row) => relationIdOf(row.relation) === deepLink.relationId) ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
+    <RelationshipsLayout facade={layoutFacade} scope="governance">
+      {usageOverviewQuery.isSuccess && deepLink.relationId && !matchingDeepLinkRow ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
       {/* 工作台是 .sh-relationships 两行网格的唯一画布子元素：页签行 +
           画布行。治理页的块级内容一旦直接散落在网格里，画布行会被
           压缩，内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。 */}
@@ -893,19 +848,32 @@ export function RelationshipGovernancePage({
         </div>
       </div>
 
-      {ledgerQuery.isError ? (
+      {usageOverviewQuery.isError ? (
         <div role="alert">
-          <p>{t("relationships.governance.loadError")}</p>
+          <p>{t("relationships.governance.usageOverviewLoadError")}</p>
+          <Button onClick={() => void usageOverviewQuery.refetch()} size="sm" variant="secondary">
+            {t("relationships.governance.retryLoad")}
+          </Button>
+        </div>
+      ) : null}
+      {usageOverviewQuery.isPending ? (
+        <DataState message={t("relationships.governance.usageOverviewLoading")} state="loading" />
+      ) : null}
+      {usageOverviewQuery.isSuccess && ledgerQuery.isPending ? (
+        <p data-testid="governance-action-context-loading" role="status">
+          {t("relationships.governance.loadingActionContext")}
+        </p>
+      ) : null}
+      {usageOverviewQuery.isSuccess && ledgerQuery.isError ? (
+        <div data-testid="governance-action-context-error" role="alert">
+          <p>{t("relationships.governance.actionContextUnavailable")}</p>
           <Button onClick={() => void ledgerQuery.refetch()} size="sm" variant="secondary">
             {t("relationships.governance.retryLoad")}
           </Button>
         </div>
       ) : null}
-      {ledgerQuery.isPending ? (
-        <DataState message={t("relationships.governance.loading")} state="loading" />
-      ) : null}
 
-      {ledgerQuery.isSuccess ? (
+      {usageOverviewQuery.isSuccess ? (
         visibleRows.length === 0 ? (
           <p
             data-testid={pendingDoneEmpty ? "governance-empty-pending" : "governance-empty-state"}
@@ -922,7 +890,7 @@ export function RelationshipGovernancePage({
             {selectedIds.length > 0 ? (
               <div className="sh-governance__toolbar" data-testid="governance-batch-summary">
                 <span>
-                  {t("relationships.governance.selection.selectedCount", { count: selectedIds.length })}
+                  {t("relationships.governance.selection.selectedCount", { count: selectedUsageRows.length })}
                 </span>
                 <span>
                   {t("relationships.governance.batchSummary.executable", { count: executability.executable })}
@@ -947,11 +915,8 @@ export function RelationshipGovernancePage({
                 busyRelationIds={busyRelationIds}
                 listRef={listRef}
                 onCentralize={(row) => openSingle("centralize", row)}
-                onEndRelationship={(row) => openSingle("end_relationship", row)}
-                onRevokeRetention={(row) => openSingle("revoke_retention", row)}
                 onListScroll={onListScroll}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
-                onRetain={(row) => retainSourceCopyRow(row)}
                 onToggleAll={toggleAll}
                 onToggleRow={toggleRow}
                 onUndeploy={(row) => openSingle("undeploy", row)}
@@ -963,10 +928,7 @@ export function RelationshipGovernancePage({
                 busyRelationIds={busyRelationIds}
                 classification={deepLink.classification}
                 onCentralize={(row) => openSingle("centralize", row)}
-                onEndRelationship={(row) => openSingle("end_relationship", row)}
-                onRevokeRetention={(row) => openSingle("revoke_retention", row)}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
-                onRetain={(row) => retainSourceCopyRow(row)}
                 onToggleAll={toggleAll}
                 onToggleBucket={toggleBucketRows}
                 onToggleRow={toggleRow}
@@ -1028,20 +990,6 @@ export function RelationshipGovernancePage({
             </div>
           </div>
         ) : (
-          single.kind === "revoke_retention" || single.kind === "end_relationship" ? (
-            <GovernanceDecisionPreview
-              action={single.kind}
-              busy={single.busy}
-              error={single.error}
-              onCancel={closeSingle}
-              onConfirm={() => {
-                if (single.kind === "revoke_retention" || single.kind === "end_relationship") {
-                  confirmSingleDecision(single.kind, single);
-                }
-              }}
-              row={single.row}
-            />
-          ) : (
             <GovernanceImpactPreview
               busy={single.busy}
               error={single.error}
@@ -1057,7 +1005,6 @@ export function RelationshipGovernancePage({
               row={single.row}
               sharedImpactConfirmed={single.sharedImpactConfirmed}
             />
-          )
         )
       ) : null}
 
@@ -1091,11 +1038,6 @@ export function RelationshipGovernancePage({
       </div>
     </RelationshipsLayout>
   );
-}
-
-function createGovernanceOperationId(): string {
-  const randomId = globalThis.crypto?.randomUUID?.();
-  return randomId ?? `relationship-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function GovernanceViewIcon({ view }: { view: "board" | "table" }) {

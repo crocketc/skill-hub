@@ -2917,6 +2917,10 @@
         "scrollToTop": "返回“{{label}}”列顶部"
       },
       "loading": "正在加载关系治理清单…",
+      "usageOverviewLoading": "正在加载统一使用关系…",
+      "usageOverviewLoadError": "统一使用关系暂不可用。",
+      "loadingActionContext": "正在读取操作所需的底层关系证据；状态分类已根据统一关系投影完成。",
+      "actionContextUnavailable": "操作所需的底层关系证据暂不可用；关系状态仍按统一关系投影显示。",
       "loadError": "关系治理清单暂不可用。",
       "retryLoad": "重新加载",
       "deepLink": {
@@ -2941,9 +2945,19 @@
       "classification": {
         "all": "全部",
         "pending": "待处理",
-        "completed": "已完成"
+        "completed": "无需处理",
+        "no_action": "无需处理"
       },
       "buckets": {
+        "unmanaged": "尚未纳入技能库管理",
+        "file_missing": "目标位置缺失",
+        "link_abnormal": "链接异常",
+        "needs_sync": "需要同步",
+        "sync_failed": "同步失败",
+        "unable_to_verify": "无法核验",
+        "user_confirmation": "需用户确认",
+        "managed_usage": "健康且由技能库管理",
+        "builtin_original": "健康的内置原件",
         "undecided": "尚未作决定",
         "content_changed": "两边内容不同",
         "source_missing": "原文件缺失",
@@ -2960,10 +2974,55 @@
         "not_taken_over": "待集中管理",
         "taken_over": "已集中管理"
       },
+      "usageManagement": {
+        "managed": "已纳入技能库管理",
+        "unmanaged": "尚未纳入技能库管理"
+      },
+      "form": {
+        "link": "链接",
+        "full_copy": "完整拷贝",
+        "unknown": "形式待确认"
+      },
+      "healthMessages": {
+        "normal": "使用状态正常。",
+        "file_missing": "使用目标文件或目录缺失。",
+        "link_abnormal": "使用链接异常或目标已变化。",
+        "content_changed": "使用目标内容与已确认内容不同。",
+        "needs_sync": "使用拷贝需要同步。",
+        "sync_failed": "最近一次同步失败。",
+        "unable_to_verify": "当前证据不足以核验使用状态。",
+        "user_confirmation": "当前关系需要你选择处理方式。"
+      },
+      "actionRestrictions": {
+        "missing_subject": "缺少已确认的技能主体，暂时不能执行操作。",
+        "entry_identity_unavailable": "无法核验此使用入口的唯一身份，暂时不能执行操作。",
+        "identity_conflict": "主体或物理目标身份存在冲突，请先核对。",
+        "incomplete_evidence": "底层关系证据不完整，暂时不能执行操作。",
+        "multiple_targets": "此统一使用事实包含多个底层目标，当前操作入口不能安全地逐一处理。",
+        "shared_impact": "此关系会影响其他使用者，请先检查共享影响。"
+      },
       "decision": {
         "retained_independent_copy": "已保留为独立拷贝"
       },
       "shortName": {
+        "healthy": "使用正常",
+        "unmanaged": "尚未纳入管理",
+        "builtin_original": "内置原件正常",
+        "file_missing": "使用目标缺失",
+        "link_abnormal": "链接需检查",
+        "needs_sync": "需要同步",
+        "sync_failed": "同步失败",
+        "unable_to_verify": "暂无法核验",
+        "user_confirmation": "需用户确认",
+        "healthyDescription": "当前使用事实已核验为正常，且纳入技能库管理。",
+        "unmanagedDescription": "当前使用状态正常，但尚未纳入技能库管理，仍需你决定是否管理。",
+        "builtin_originalDescription": "这是健康的内置原件，无需管理；它仍是原件，不是独立拷贝。",
+        "file_missingDescription": "使用目标文件或目录缺失。检查目标后再选择可用操作。",
+        "link_abnormalDescription": "使用链接异常或链接目标已变化。检查实际目标后再继续。",
+        "needs_syncDescription": "使用拷贝与主体内容不同步。查看同步影响后再处理。",
+        "sync_failedDescription": "最近一次同步失败。检查目标状态后再重试。",
+        "unable_to_verifyDescription": "当前证据不足以核验使用状态。补充可验证信息后再继续。",
+        "user_confirmationDescription": "当前关系仍需你选择处理方式。查看事实与可用操作后再决定。",
         "link_issue": "链接需处理",
         "link_issueDescription": "目标不可访问或链接目标已变化。先重新检查关系，再查看可用处理方式。",
         "content_changed": "内容有变化",
@@ -2983,6 +3042,8 @@
         "completed": "已完成",
         "completedDescription": "此关系已有明确处理结果；集中库管理状态请单独查看。"
       },
+      "entryLabel": "入口：",
+      "multipleSkillNames": "多个技能名称：{{names}}",
       "reasonMessages": {
         "decision_required": "需要先确认这条关系的处理决定。",
         "verification_required": "当前验证结果不足，请重新检查目标。",
@@ -3050,6 +3111,7 @@
       },
       "impact": {
         "noOtherConsumers": "没有其他共享消费者",
+        "unconfirmed": "尚无可核验的底层影响证据",
         "otherConsumers_one": "共享消费者：{{count}} 个",
         "otherConsumers_other": "共享消费者：{{count}} 个",
         "rollbackAvailable": "可回退",

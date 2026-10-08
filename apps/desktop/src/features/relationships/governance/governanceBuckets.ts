@@ -1,133 +1,105 @@
-import type { RelationGovernanceReason, RelationGovernanceRow } from "../../../api/bindings";
-import { governanceReasonKeys } from "./api";
+import type { UsageHealthReason } from "../../../api/bindings";
+import {
+  classifyUsageRelation,
+  type UsageGovernanceRow,
+} from "../../relationshipGovernance/relationshipGovernance";
 
-/**
- * FB-④（2026-10-06 §10）桶内细分：一类关系一桶，同桶同操作，支持整桶
- * 勾选批量。待处理按「尚未作决定 / 两边内容不同 / 原文件缺失 / 使用链接
- * 异常」等分类分桶；已完成按「正常受管链接 / 已保留独立副本」分桶。分类
- * 只从后端治理事实（健康原因、动作条件、决定）推导，前端不新增状态。
- */
 export type GovernancePendingBucketKey =
-  | "undecided"
+  | "unmanaged"
+  | "file_missing"
+  | "link_abnormal"
   | "content_changed"
-  | "source_missing"
-  | "link_issue"
-  | "needs_review"
-  | "operation_failed"
+  | "needs_sync"
+  | "sync_failed"
+  | "unable_to_verify"
+  | "user_confirmation"
   | "restricted";
 
-export type GovernanceCompletedBucketKey = "managed_link" | "retained";
-
-export type GovernanceBucketKey = GovernancePendingBucketKey | GovernanceCompletedBucketKey;
+export type GovernanceNoActionBucketKey = "managed_usage" | "builtin_original";
+/** Kept as an export alias for existing consumers during the terminology transition. */
+export type GovernanceCompletedBucketKey = GovernanceNoActionBucketKey;
+export type GovernanceBucketKey = GovernancePendingBucketKey | GovernanceNoActionBucketKey;
 
 export interface GovernanceBucket {
   key: GovernanceBucketKey;
-  rows: RelationGovernanceRow[];
+  rows: UsageGovernanceRow[];
 }
 
 export interface GovernanceBucketProjection {
   pending: GovernanceBucket[];
-  completed: GovernanceBucket[];
+  noAction: GovernanceBucket[];
 }
 
-/** 桶的展示顺序固定；空桶由投影直接省略。 */
 export const GOVERNANCE_PENDING_BUCKETS: readonly GovernancePendingBucketKey[] = [
-  "undecided",
+  "unmanaged",
+  "file_missing",
+  "link_abnormal",
   "content_changed",
-  "source_missing",
-  "link_issue",
-  "needs_review",
-  "operation_failed",
+  "needs_sync",
+  "sync_failed",
+  "unable_to_verify",
+  "user_confirmation",
   "restricted",
 ];
 
-export const GOVERNANCE_COMPLETED_BUCKETS: readonly GovernanceCompletedBucketKey[] = [
-  "managed_link",
-  "retained",
+export const GOVERNANCE_NO_ACTION_BUCKETS: readonly GovernanceNoActionBucketKey[] = [
+  "managed_usage",
+  "builtin_original",
+];
+/** Kept as an export alias; these buckets now contain healthy active usage only. */
+export const GOVERNANCE_COMPLETED_BUCKETS = GOVERNANCE_NO_ACTION_BUCKETS;
+
+const HEALTH_PRIORITY: readonly Exclude<UsageHealthReason, "normal">[] = [
+  "user_confirmation",
+  "file_missing",
+  "link_abnormal",
+  "content_changed",
+  "sync_failed",
+  "needs_sync",
+  "unable_to_verify",
 ];
 
-const SUBJECT_MISSING_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "subject_unavailable",
-]);
-
-const LINK_ISSUE_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "link_target_unavailable",
-  "link_replaced",
-]);
-
-const CONTENT_CHANGED_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "content_changed",
-]);
-
-const REVIEW_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "verification_required",
-  "target_identity_unconfirmed",
-]);
-
-const OPERATION_FAILED_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "operation_failed",
-]);
-
-const RESTRICTED_REASONS: ReadonlySet<RelationGovernanceReason> = new Set([
-  "managed_entry_requires_verified_removal",
-  "managed_target_occupied",
-  "permission_limited",
-  "relationship_not_convertible",
-  "shared_impact_confirmation_required",
-]);
-
-/**
- * 待处理行的归类优先级与行内摘要徽标（presentGovernanceState）一致：
- * 原文件缺失 → 链接异常 → 内容不同 → 待核验 → 操作失败 → 权限受限。
- * 权限受限同时读健康原因与不可用动作的原因（如仅差共享影响确认）。
- */
-export function pendingBucketKeyOf(row: RelationGovernanceRow): GovernancePendingBucketKey {
-  const health = row.governance.health_reasons;
-  const has = (reasons: ReadonlySet<RelationGovernanceReason>, keys: readonly RelationGovernanceReason[]) =>
-    keys.some((reason) => reasons.has(reason));
-  if (has(SUBJECT_MISSING_REASONS, health)) return "source_missing";
-  if (has(LINK_ISSUE_REASONS, health)) return "link_issue";
-  if (has(CONTENT_CHANGED_REASONS, health)) return "content_changed";
-  if (has(REVIEW_REASONS, health)) return "needs_review";
-  if (has(OPERATION_FAILED_REASONS, health)) return "operation_failed";
-  if (has(RESTRICTED_REASONS, governanceReasonKeys(row))) return "restricted";
-  return "undecided";
+export function pendingBucketKeyOf(row: UsageGovernanceRow): GovernancePendingBucketKey {
+  const { usage } = row;
+  const healthIssue = HEALTH_PRIORITY.find((reason) => usage.health_reasons.includes(reason));
+  if (healthIssue) return healthIssue;
+  if (usage.management === "unmanaged" && usage.target.directory_role !== "builtin") return "unmanaged";
+  if (row.actionRestriction !== null) return "restricted";
+  return "restricted";
 }
 
-/** 已完成行：保留决定进「已保留独立副本」，其余受管链接进「正常受管链接」。 */
-export function completedBucketKeyOf(row: RelationGovernanceRow): GovernanceCompletedBucketKey {
-  return row.governance.decision === "retained_independent_copy" ? "retained" : "managed_link";
+/** Historical decisions are never projected into this active no-action bucket. */
+export function completedBucketKeyOf(row: UsageGovernanceRow): GovernanceNoActionBucketKey {
+  return row.usage.target.directory_role === "builtin" ? "builtin_original" : "managed_usage";
 }
 
 function projectBuckets<Key extends GovernanceBucketKey>(
-  rows: readonly RelationGovernanceRow[],
+  rows: readonly UsageGovernanceRow[],
   order: readonly Key[],
-  keyOf: (row: RelationGovernanceRow) => Key,
+  keyOf: (row: UsageGovernanceRow) => Key,
 ): GovernanceBucket[] {
-  const grouped = new Map<Key, RelationGovernanceRow[]>(
-    order.map((key) => [key, [] as RelationGovernanceRow[]]),
+  const grouped = new Map<Key, UsageGovernanceRow[]>(
+    order.map((key) => [key, [] as UsageGovernanceRow[]]),
   );
-  for (const row of rows) {
-    grouped.get(keyOf(row))!.push(row);
-  }
+  for (const row of rows) grouped.get(keyOf(row))!.push(row);
   return order
     .filter((key) => grouped.get(key)!.length > 0)
     .map((key) => ({ key, rows: grouped.get(key)! }));
 }
 
-/** 把当前清单行投影成固定顺序、只含非空桶的细分桶列表。
- *  列归属仍由后端 governance_status 唯一决定；细分桶只在同列内部排序。 */
+/** One unified active usage fact appears once; released and independent copies stay in history. */
 export function projectGovernanceBuckets(
-  rows: readonly RelationGovernanceRow[],
+  rows: readonly UsageGovernanceRow[],
 ): GovernanceBucketProjection {
-  const pendingRows: RelationGovernanceRow[] = [];
-  const completedRows: RelationGovernanceRow[] = [];
+  const pendingRows: UsageGovernanceRow[] = [];
+  const noActionRows: UsageGovernanceRow[] = [];
   for (const row of rows) {
-    if (row.governance.governance_status === "completed") completedRows.push(row);
-    else pendingRows.push(row);
+    const classification = classifyUsageRelation(row.usage);
+    if (classification === "pending") pendingRows.push(row);
+    else if (classification === "no_action") noActionRows.push(row);
   }
   return {
     pending: projectBuckets(pendingRows, GOVERNANCE_PENDING_BUCKETS, pendingBucketKeyOf),
-    completed: projectBuckets(completedRows, GOVERNANCE_COMPLETED_BUCKETS, completedBucketKeyOf),
+    noAction: projectBuckets(noActionRows, GOVERNANCE_NO_ACTION_BUCKETS, completedBucketKeyOf),
   };
 }

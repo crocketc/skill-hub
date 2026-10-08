@@ -26,7 +26,9 @@ import type {
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
   RelationGovernanceRow,
+  RelationshipOverview,
   SourceUpdateStatus,
+  UsageRelationView,
   UpstreamCheckResult,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
@@ -265,6 +267,59 @@ function governanceLedger(rows: RelationGovernanceRow[]): RelationGovernanceLedg
   };
 }
 
+function governanceOverview(rows: RelationGovernanceRow[]): RelationshipOverview {
+  return {
+    scope: { type: "all" },
+    directory_nodes: [],
+    agent_directory_capabilities: [],
+    source_relations: [],
+    deployment_relations: [],
+    usage_relations: rows.map((row): UsageRelationView => {
+      const fact = row.relation.fact;
+      const deployment = row.relation.kind === "deployment" ? row.relation.fact : null;
+      const targetKind = row.target_identity?.target_kind ?? "agent";
+      const representation = deployment?.file_representation ?? "copy";
+      const healthReasons = new Set<UsageRelationView["health_reasons"][number]>();
+      for (const reason of deployment?.health_reasons ?? []) {
+        if (reason === "content_changed") healthReasons.add("content_changed");
+        else if (reason === "target_entry_missing") healthReasons.add("file_missing");
+        else if (reason === "target_entry_replaced" || reason === "target_link_unavailable") healthReasons.add("link_abnormal");
+        else if (reason === "managed_target_occupied") healthReasons.add("user_confirmation");
+        else if (reason === "operation_failed") healthReasons.add("sync_failed");
+        else healthReasons.add("unable_to_verify");
+      }
+      if (healthReasons.size === 0) healthReasons.add("normal");
+      return {
+        relation_id: fact.relation_id,
+        skill_id: fact.skill_id,
+        target: {
+          kind: targetKind,
+          directory_id: fact.directory_node_id,
+          agent_client_id: fact.agent_client_id,
+          directory_role: targetKind === "shared_directory" ? "shared_directory" : targetKind === "project" ? "project" : "agent_user",
+          recognition: null,
+        },
+        entry_key: fact.directory_node_id ? { directory_id: fact.directory_node_id, relative_entry_path: "pdf-reader" } : null,
+        form: representation === "symbolic_link" || representation === "directory_junction" ? "link" : "full_copy",
+        management: row.governance.management_status === "taken_over" ? "managed" : "unmanaged",
+        health_reasons: [...healthReasons],
+        decision: null,
+        decision_history_ids: [],
+        active: fact.active,
+        file_representation: representation,
+        link_target_path: deployment?.link_target_path ?? null,
+        link_target_path_key: deployment?.link_target_path_key ?? null,
+        link_target_directory_id: deployment?.link_target_directory_id ?? null,
+        physical_source_ids_evidence: [],
+        evidence_relation_ids: [...row.evidence_relation_ids],
+      };
+    }),
+    conflict_cases: [],
+    pending_governance_tasks: [],
+    agent_execution_confirmed: false,
+  };
+}
+
 function batchOutcome(
   state: RelationGovernanceBatchOutcome["state"],
   relationId: string,
@@ -300,6 +355,7 @@ function createTestGovernanceFacade(
 ): RelationGovernanceFacade {
   return {
     listGovernance: vi.fn().mockResolvedValue(governanceLedger(rows)),
+    getRelationshipOverview: vi.fn().mockResolvedValue(governanceOverview(rows)),
     revalidate: vi.fn(),
     listHistory: vi.fn(),
     retainSourceCopy: vi.fn(),
@@ -353,6 +409,15 @@ describe("SkillDetailPage shell", () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
+  });
+
+  it("provides unified usage facts from the same governance fixture rows", async () => {
+    const row = governanceRow({ relationId: "relation:fixture" });
+    const facade = createTestGovernanceFacade([row]);
+
+    await expect(facade.getRelationshipOverview()).resolves.toMatchObject({
+      usage_relations: [{ relation_id: "relation:fixture", evidence_relation_ids: ["relation:fixture"] }],
+    });
   });
 
   it("renders the review experience as the default detail presentation", async () => {

@@ -60,6 +60,8 @@ export const relationshipsKeys = {
     [relationshipsKeys.root, "conflicts", params] as const,
   governance: (params: RelationshipGovernanceParams = {}) =>
     [relationshipsKeys.root, "governance", params] as const,
+  governanceUsageOverview: () =>
+    [relationshipsKeys.root, "governance-usage-overview"] as const,
   governanceHistory: (params: {
     page: number;
     pageSize: number;

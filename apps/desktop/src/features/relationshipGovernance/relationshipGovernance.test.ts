@@ -1,9 +1,13 @@
+import zhCN from "../../i18n/zh-CN/common.json";
+import enUS from "../../i18n/en-US/common.json";
 import { expect, it } from "vitest";
 import type {
   DeploymentRelationFact,
   DirectoryNodeFact,
   RelationshipOverview,
   SourceRelationFact,
+  UsageRelationView,
+  RelationGovernanceRow,
 } from "../../api/bindings";
 import {
   buildAgentDirectoryViews,
@@ -18,7 +22,11 @@ import {
   precedenceLabelKey,
   recognitionLabelKey,
   relationshipLabelKey,
+  classifyUsageRelation,
   toRelationshipView,
+  projectActiveUsageRelations,
+  projectUsageGovernanceRows,
+  usageGovernanceRowIsSelectable,
 } from "./relationshipGovernance";
 
 const now = "2026-09-15T00:00:00Z";
@@ -328,4 +336,144 @@ it("maps precedence and directory roles deterministically", () => {
   expect(recognitionLabelKey("supported")).toBe("relationshipGovernance.recognition.supported");
   expect(recognitionLabelKey("unknown")).toBe("relationshipGovernance.recognition.unknown");
   expect(recognitionLabelKey("unsupported")).toBe("relationshipGovernance.recognition.unsupported");
+});
+
+
+function usageView(overrides: Partial<UsageRelationView> = {}): UsageRelationView {
+  return {
+    relation_id: "usage-1",
+    skill_id: "skill-1",
+    target: {
+      kind: "agent",
+      directory_id: "directory-1",
+      agent_client_id: "codex-cli",
+      directory_role: "agent_user",
+      recognition: "supported",
+    },
+    entry_key: { directory_id: "directory-1", relative_entry_path: "skill-a" },
+    form: "link",
+    management: "managed",
+    health_reasons: ["normal"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: "symbolic_link",
+    link_target_path: "/library/skill-a",
+    link_target_path_key: "/library/skill-a",
+    link_target_directory_id: "library",
+    physical_source_ids_evidence: [],
+    evidence_relation_ids: ["rel-1"],
+    ...overrides,
+  };
+}
+
+function legacyRow(relationId: string, evidenceRelationIds = [relationId]): RelationGovernanceRow {
+  return {
+    relation: { kind: "deployment", fact: { relation_id: relationId, skill_id: "skill-1", directory_node_id: "directory-1" } } as unknown as RelationGovernanceRow["relation"],
+    skill_display_name: `Skill ${relationId}`,
+    status: "normal",
+    readiness: "already_centralized",
+    primary_action: "none",
+    blockers: [],
+    impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: false, rollback_available: false },
+    governance: {
+      governance_status: "completed",
+      management_status: "taken_over",
+      decision: "undecided",
+      management_confirmed_at: null,
+      health_reasons: [],
+      action_conditions: [],
+    },
+    target_identity: null,
+    source_read_only: false,
+    evidence_relation_ids: evidenceRelationIds,
+  };
+}
+
+it("source_metadata_does_not_break_usage", () => {
+  // UsageRelationView has no source metadata field; missing provenance labels cannot make a healthy use abnormal.
+  const usage = usageView({ health_reasons: ["normal"] });
+  const legacyMetadataMissing = legacyRow("rel-1");
+  legacyMetadataMissing.governance.health_reasons = ["subject_unavailable"];
+  // The legacy display row intentionally has no origin/source metadata; that is not health evidence.
+  const [projected] = projectUsageGovernanceRows([usage], [legacyMetadataMissing]);
+
+  expect(projectActiveUsageRelations([usage])).toEqual([usage]);
+  expect(projected.usage.health_reasons).toEqual(["normal"]);
+  expect(projected.usage.management).toBe("managed");
+  expect(classifyUsageRelation(projected.usage)).toBe("no_action");
+});
+
+it("associates every evidence row and blocks arbitrary action for multi-evidence usage", () => {
+  const usage = usageView({ evidence_relation_ids: ["rel-a", "rel-b"] });
+  const rows = [legacyRow("rel-a"), legacyRow("rel-b")];
+  const [projected] = projectUsageGovernanceRows([usage], rows);
+
+  expect(projected.evidenceRows).toHaveLength(2);
+  expect(projected.actionRow).toBeNull();
+  expect(projected.actionRestriction).toBe("multiple_targets");
+});
+
+it("keeps a unique shared-impact target available for explicit preview confirmation", () => {
+  const row = legacyRow("rel-1");
+  row.impact.other_consumer_agent_ids = ["cursor"];
+  row.governance.action_conditions = [
+    { action: "centralize_management", available: false, reasons: ["shared_impact_confirmation_required"] },
+  ];
+  const [projected] = projectUsageGovernanceRows(
+    [usageView({ management: "unmanaged", health_reasons: ["user_confirmation"] })],
+    [row],
+  );
+
+  expect(projected.actionRow).toBe(row);
+  expect(projected.actionRestriction).toBe("shared_impact");
+  expect(usageGovernanceRowIsSelectable(projected)).toBe(true);
+});
+
+it("blocks action when an old evidence row contains unrelated relation identity", () => {
+  const usage = usageView({ evidence_relation_ids: ["rel-a"] });
+  const row = legacyRow("rel-a", ["rel-a", "rel-unrelated"]);
+  const [projected] = projectUsageGovernanceRows([usage], [row]);
+
+  expect(projected.actionRow).toBeNull();
+  expect(projected.actionRestriction).toBe("incomplete_evidence");
+});
+
+it("distinguishes a missing skill subject from an unverifiable entry identity", () => {
+  const subjectMissing = projectUsageGovernanceRows(
+    [usageView({ skill_id: null })],
+    [legacyRow("rel-1")],
+  )[0]!;
+  const entryIdentityMissing = projectUsageGovernanceRows(
+    [usageView({ entry_key: null })],
+    [legacyRow("rel-1")],
+  )[0]!;
+
+  expect(subjectMissing.actionRestriction).toBe("missing_subject");
+  expect(entryIdentityMissing.actionRestriction).toBe("entry_identity_unavailable");
+});
+
+it("does not treat an ordinary user confirmation request as an identity conflict", () => {
+  const row = legacyRow("rel-1");
+  row.governance.action_conditions = [
+    { action: "centralize_management", available: true, reasons: [] },
+  ];
+  const [projected] = projectUsageGovernanceRows(
+    [usageView({ management: "unmanaged", health_reasons: ["user_confirmation"] })],
+    [row],
+  );
+
+  expect(projected.actionRestriction).toBeNull();
+  expect(projected.actionRow).toBe(row);
+  expect(usageGovernanceRowIsSelectable(projected)).toBe(true);
+});
+
+
+it("labels no-action usage consistently in Chinese and English", () => {
+  expect(zhCN.relationships.governance.classification.no_action).toBe("无需处理");
+  expect(enUS.relationships.governance.classification.no_action).toBe("No action needed");
+  expect(zhCN.relationships.governance.form.link).toBe("链接");
+  expect(zhCN.relationships.governance.form.full_copy).toBe("完整拷贝");
+  expect(enUS.relationships.governance.form.link).toBe("Link");
+  expect(enUS.relationships.governance.form.full_copy).toBe("Full copy");
 });
