@@ -91,7 +91,7 @@ fn deployment(
         skill_id: Some(SkillId::new()),
         agent_client_id: "agent.demo".into(),
         path: format!("{ROOT}/notes"),
-        path_key: format!("{ROOT}/notes").to_ascii_lowercase(),
+        path_key: skillhub_core::deployment::observed_path_key(&format!("{ROOT}/notes")),
         directory_node_id: Some("directory:agent".into()),
         relationship,
         file_representation: FileRepresentation::Copy,
