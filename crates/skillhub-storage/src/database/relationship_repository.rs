@@ -599,13 +599,18 @@ impl<'a> RelationshipRepository<'a> {
         id: &str,
         at: i64,
     ) -> AppResult<bool> {
-        transaction
+        let changed = transaction
             .execute(
                 "UPDATE deployment_relations SET active=0, released_at=?1 WHERE relation_id=?2 AND active=1",
                 params![at, format!("managed:{id}")],
             )
             .map(|changed| changed != 0)
-            .map_err(database_error)
+            .map_err(database_error)?;
+        super::usage_decision_repository::sync_deployment_usage_evidence_tx(
+            transaction,
+            &format!("managed:{id}"),
+        )?;
+        Ok(changed)
     }
 
     pub(crate) fn detach_managed_deployment_tx(
@@ -688,6 +693,27 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
     let path_key = observed_path_key(&relation.path);
     let link_target_path_key = relation.link_target_path.as_deref().map(observed_path_key);
     let directory_node_id = directory_node_id_for_path_tx(transaction, &relation.path)?;
+    let previous_relation_id = transaction
+        .query_row(
+            "SELECT relation_id FROM deployment_relations
+             WHERE agent_client_id=?1 AND path_key=?2",
+            params![relation.agent_client_id, path_key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    if let Some(previous_relation_id) = previous_relation_id.as_deref() {
+        super::usage_decision_repository::remove_usage_evidence_tx(
+            transaction,
+            "deployment",
+            previous_relation_id,
+        )?;
+    }
+    super::usage_decision_repository::remove_usage_evidence_tx(
+        transaction,
+        "deployment",
+        &relation.relation_id,
+    )?;
     let ownership_guard = if allow_managed_downgrade {
         "1=1"
     } else {
@@ -760,6 +786,21 @@ pub(crate) fn upsert_deployment_relation_tx_with_policy(
             ],
     )
         .map_err(database_error)?;
+    let persisted_relation_id = transaction
+        .query_row(
+            "SELECT relation_id FROM deployment_relations
+             WHERE agent_client_id=?1 AND path_key=?2",
+            params![relation.agent_client_id, path_key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    if let Some(persisted_relation_id) = persisted_relation_id {
+        super::usage_decision_repository::sync_deployment_usage_evidence_tx(
+            transaction,
+            &persisted_relation_id,
+        )?;
+    }
     let confirmation_changed = upsert_confirmation_for_deployment_tx(transaction, relation)?;
     Ok(changed != 0 || confirmation_changed)
 }
@@ -817,6 +858,10 @@ pub(crate) fn sync_reconciled_deployment_tx(
             ],
         )
         .map_err(database_error)?;
+    super::usage_decision_repository::sync_deployment_usage_evidence_tx(
+        transaction,
+        &format!("managed:{id}"),
+    )?;
     Ok(changed != 0)
 }
 
@@ -1035,6 +1080,7 @@ impl<'a> RelationshipRepository<'a> {
                     != 0
             }
         };
+        super::usage_decision_repository::sync_source_copy_usage_evidence_tx(transaction, fact)?;
         if changed {
             bump_relationship_revision_tx(transaction)?;
         }
@@ -1061,6 +1107,7 @@ impl<'a> RelationshipRepository<'a> {
         fact.archived_at = Some(archived_at);
         fact.archive_reason = Some(reason);
         write_source_copy_fact(transaction, &fact)?;
+        super::usage_decision_repository::sync_source_copy_usage_evidence_tx(transaction, &fact)?;
         bump_relationship_revision_tx(transaction)?;
         Ok(true)
     }
@@ -1112,6 +1159,7 @@ impl<'a> RelationshipRepository<'a> {
         fact.archived_at = None;
         fact.archive_reason = None;
         write_source_copy_fact(transaction, &fact)?;
+        super::usage_decision_repository::sync_source_copy_usage_evidence_tx(transaction, &fact)?;
         bump_relationship_revision_tx(transaction)?;
         Ok(true)
     }

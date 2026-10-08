@@ -18,7 +18,7 @@ pub use database::{
     RelationshipGovernanceMutationReceipt, RelationshipImpactSnapshot, RelationshipRepository,
     ScanRepository, SearchCandidateRepository, SearchRepository, SecurityAlertRecord,
     SecurityAlertRepository, SecurityAlertSource, SecurityAlertState, TargetRepository,
-    UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
+    UsageDecisionRecord, UsageEvidenceRepository, CURRENT_SCHEMA_VERSION,
 };
 pub use library::{
     CentralLibrary, ManifestFaultHandler, MarkdownDraftRecord, MarkdownDraftStore,

@@ -81,6 +81,9 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
              DROP TABLE relationship_governance_mutation_receipts;
              DROP TABLE skill_lineage;
              DROP TABLE security_alerts;
+             DROP TABLE active_usage_evidence;
+             DROP TABLE active_usage_slots;
+             DROP TABLE usage_decisions;
              PRAGMA user_version=21;",
         )
         .expect("restore prior schema version");

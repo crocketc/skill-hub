@@ -730,6 +730,11 @@ impl<'a> ProvenanceRepository<'a> {
                     )
                     .map_err(database_error)?
                     != 0;
+                super::usage_decision_repository::refresh_deployment_usage_evidence_by_target_tx(
+                    &transaction,
+                    client_id,
+                    &observed_path_key(original_path),
+                )?;
                 if relationship_changed {
                     super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
                 }
@@ -774,6 +779,11 @@ impl<'a> ProvenanceRepository<'a> {
                     )
                     .map_err(database_error)?
                     != 0;
+                super::usage_decision_repository::refresh_deployment_usage_evidence_by_target_tx(
+                    &transaction,
+                    client_id,
+                    &path_key,
+                )?;
                 if relationship_changed {
                     super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
                 }
@@ -820,6 +830,11 @@ impl<'a> ProvenanceRepository<'a> {
             )
             .map_err(database_error)?
             != 0;
+        super::usage_decision_repository::refresh_deployment_usage_evidence_by_target_tx(
+            transaction,
+            client_id,
+            &observed_path_key(original_path),
+        )?;
         if relationship_changed {
             super::relationship_repository::bump_relationship_revision_tx(transaction)?;
         }

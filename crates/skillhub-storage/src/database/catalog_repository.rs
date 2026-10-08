@@ -120,6 +120,7 @@ impl<'a> CatalogRepositorySqlite<'a> {
         //    skills 无外键，不显式删必遗孤）。
         tx.execute("DELETE FROM source_copy_relations WHERE skill_id=?1", [&id])
             .map_err(error)?;
+        super::usage_decision_repository::clear_usage_slots_for_skill_tx(&tx, &id)?;
         tx.execute(
             "DELETE FROM import_provenance_events_v19 WHERE skill_id=?1",
             [&id],

@@ -4,7 +4,7 @@ use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity};
 
 use super::relationship_repository::deployment_entry_path;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 29;
+pub const CURRENT_SCHEMA_VERSION: u32 = 30;
 
 #[derive(Clone, Copy)]
 struct Migration<'a> {
@@ -129,6 +129,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 29,
         sql: include_str!("../../migrations/0029_import_evidence_removal.sql"),
     },
+    Migration {
+        version: 30,
+        sql: include_str!("../../migrations/0030_usage_decisions.sql"),
+    },
 ];
 
 /// The result of applying zero or more schema migrations.
@@ -179,6 +183,10 @@ fn run_with_migrations(
                 return Err(AppError::new(ErrorCode::InternalError, Severity::Error)
                     .with_param("migration", "foreign_key_check"));
             }
+        }
+        if migration.version == 30 {
+            super::usage_decision_repository::backfill_active_usage_slots_tx(&transaction)?;
+            super::usage_decision_repository::migrate_legacy_usage_decisions_tx(&transaction)?;
         }
         transaction
             .pragma_update(None, "user_version", migration.version)
