@@ -26,9 +26,12 @@
   text-wrap: balance;
 }
 
+/* 标题聚焦仅为读屏播报（RemovalShell 打开时 programmatic focus），非交互
+ * 元素不画焦点描边；:focus 与 :focus-visible 一并抑制，否则 Chromium 在
+ * 无先验交互的载入场景会把脚本焦点判为 focus-visible 而画出矩形。 */
+.sh-removal-flow__title:focus,
 .sh-removal-flow__title:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 4px;
+  outline: none;
 }
 
 .sh-removal-flow > p,
