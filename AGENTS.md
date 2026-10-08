@@ -14,6 +14,7 @@ SkillHub 由集中库统一管理 Skill 主体的内容、版本、元数据与�
 
 - `docs/` 按五层组织，完整索引与新文档存放规则见 [docs/README.md](docs/README.md)：业务层与产品层在 `docs/product/`；开发层在 `docs/development/`（四份当前快照 + archive/）；归档层在 `docs/archive/` 与 `docs/development/archive/`，只用于追溯。
 - 新的产品裁决写入 product 对应规范；讨论过程文档出生即放 `docs/archive/decisions/`；开发快照轮换沿用 development 现有规则。
+- 待审阅及执行中的开发计划独立放 `docs/plans/`；开发状态只维护计划链接、任务进度、阻塞和验证摘要，不承载完整计划。计划完成或被取代后移入 `docs/archive/decisions/plans/`。
 - `release-process.md`、`release-checklist.md`、`dependency-policy.md` 与 `docs/install/` 的路径被发布/供应链脚本按字面引用，不得随意移动。
 
 ## 产品文档路由
