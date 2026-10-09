@@ -3,10 +3,18 @@ use super::Database;
 use rusqlite::{params, OptionalExtension, Transaction};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::relationship::{SourceCopyArchiveReason, UsageDecision, UsageEntryKey};
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
+use skillhub_core::{
+    AppError, AppResult, DeploymentId, ErrorCode, RecoveryAction, Severity, SkillId,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use skillhub_core::relationship::UsageDecisionRecord;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageDecisionDeploymentDisposition {
+    Removed,
+    Detached,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveEvidence {
@@ -20,7 +28,7 @@ impl Database {
     /// Stores a usage decision and archives every active fact for the same
     /// skill and canonical entry in one SQLite transaction.
     pub fn record_usage_decision(&self, record: &UsageDecisionRecord) -> AppResult<()> {
-        self.record_usage_decision_inner(record, None)
+        self.record_usage_decision_inner(record, None, None)
     }
 
     /// Stores the actual decision-time fingerprint while comparing the active
@@ -32,13 +40,26 @@ impl Database {
         record: &UsageDecisionRecord,
         expected_fingerprints: &BTreeMap<String, Option<String>>,
     ) -> AppResult<()> {
-        self.record_usage_decision_inner(record, Some(expected_fingerprints))
+        self.record_usage_decision_inner(record, Some(expected_fingerprints), None)
+    }
+
+    /// Stores a usage decision together with the final deployment accounting
+    /// outcome for each matching managed deployment relation. All writes are
+    /// committed or rolled back in the same SQLite transaction.
+    pub fn record_usage_decision_with_deployment_disposition(
+        &self,
+        record: &UsageDecisionRecord,
+        expected_fingerprints: &BTreeMap<String, Option<String>>,
+        disposition: UsageDecisionDeploymentDisposition,
+    ) -> AppResult<()> {
+        self.record_usage_decision_inner(record, Some(expected_fingerprints), Some(disposition))
     }
 
     fn record_usage_decision_inner(
         &self,
         record: &UsageDecisionRecord,
         expected_fingerprints: Option<&BTreeMap<String, Option<String>>>,
+        deployment_disposition: Option<UsageDecisionDeploymentDisposition>,
     ) -> AppResult<()> {
         validate_record(record)?;
         let transaction = self
@@ -113,15 +134,32 @@ impl Database {
                     )?;
                 }
                 "deployment" => {
+                    let deployment_changed = if let Some(disposition) = deployment_disposition {
+                        update_deployment_disposition_tx(
+                            &transaction,
+                            &item.relation_id,
+                            disposition,
+                            record.decided_at,
+                        )?
+                    } else {
+                        false
+                    };
                     let changed = transaction
                         .execute(
-                            "UPDATE deployment_relations
-                             SET active=0, released_at=?1
-                             WHERE relation_id=?2 AND active=1",
-                            params![record.decided_at, item.relation_id],
+                            "UPDATE deployment_relations SET active=0, released_at=?1,
+                             ownership=CASE WHEN ?2=1 THEN 'observed_unmanaged' ELSE ownership END
+                             WHERE relation_id=?3 AND active=1",
+                            params![
+                                record.decided_at,
+                                i64::from(
+                                    deployment_disposition
+                                        == Some(UsageDecisionDeploymentDisposition::Detached)
+                                ),
+                                item.relation_id,
+                            ],
                         )
                         .map_err(database_error)?;
-                    if changed != 0 {
+                    if changed != 0 || deployment_changed {
                         bump_relationship_revision_tx(&transaction)?;
                     }
                     remove_usage_evidence_tx(&transaction, "deployment", &item.relation_id)?;
@@ -174,6 +212,36 @@ impl Database {
         rows.map(|row| decode_usage_decision(row.map_err(database_error)?))
             .collect()
     }
+}
+
+fn update_deployment_disposition_tx(
+    transaction: &Transaction<'_>,
+    relation_id: &str,
+    disposition: UsageDecisionDeploymentDisposition,
+    decided_at: i64,
+) -> AppResult<bool> {
+    let Some(raw_id) = relation_id.strip_prefix("managed:") else {
+        return Ok(false);
+    };
+    let Ok(id) = raw_id.parse::<DeploymentId>() else {
+        return Ok(false);
+    };
+    let (sql, params) = match disposition {
+        UsageDecisionDeploymentDisposition::Removed => (
+            "UPDATE deployments SET state='removed', updated_at=?1
+             WHERE id=?2 AND state IN ('deployed','active') AND managed=1",
+            params![decided_at, id.to_string()],
+        ),
+        UsageDecisionDeploymentDisposition::Detached => (
+            "UPDATE deployments SET managed=0, updated_at=?1
+             WHERE id=?2 AND state IN ('deployed','active') AND managed=1",
+            params![decided_at, id.to_string()],
+        ),
+    };
+    transaction
+        .execute(sql, params)
+        .map(|changed| changed != 0)
+        .map_err(database_error)
 }
 
 /// Backfills a newly-created active-slot index from existing active facts.

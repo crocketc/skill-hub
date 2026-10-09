@@ -62,9 +62,9 @@ it("mounts the deterministic overview preview with deployment, tag, and pending 
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
-  // 冻结指标（api.test.ts 锁定）：已配置/已发现合并为一条指标。
+  // 统一关系统计：真实 Agent 与共享目录对象分别计数。
   expect(
-    screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
+    screen.getByRole("link", { name: "3 Agent objects · shared directories: 1" }),
   ).toBeVisible();
   // 确定性关系事实落地后：冲突指标给出真实计数与钻取（不再是占位符）。
   expect(

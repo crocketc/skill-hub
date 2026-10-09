@@ -18,6 +18,7 @@ import type {
   RemovalImpactFact,
   RemovalResult,
   SourceCopyRelationFact,
+  UsageEnvironmentStatisticsSummary,
 } from "../../../api/bindings";
 import type { RelationshipGovernanceParams } from "../api";
 
@@ -155,6 +156,7 @@ export interface GovernanceHistoryParams {
  */
 export interface RelationGovernanceFacade {
   listGovernance(params?: RelationshipGovernanceParams): Promise<RelationGovernanceLedger>;
+  getUsageEnvironmentStatistics?(): Promise<UsageEnvironmentStatisticsSummary>;
   /** Unified active usage facts; queried independently of the legacy action ledger. */
   getRelationshipOverview(): Promise<RelationshipOverview>;
   /** Reload the complete current environment problem before honoring a pending deep link. */

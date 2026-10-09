@@ -9,7 +9,7 @@ import { PageHeader } from "../../ui/PageHeader";
 import type { RelationshipsFacade } from "../relationships/api";
 import type { PendingFacade } from "../pending/api";
 import { DeploymentBarChart, DeploymentDetailList } from "./DeploymentBarChart";
-import { useOverviewDeploymentNames, useDiscoveredAgentCardCount } from "./deploymentNames";
+import { useOverviewDeploymentNames, useUsageEnvironmentStatistics } from "./deploymentNames";
 import { PendingSummary } from "./PendingSummary";
 import {
   RelationshipThumbnailNetwork,
@@ -26,7 +26,7 @@ import "./overview.css";
 
 /**
  * 紧凑统计的装饰图标映射。`getOverviewSummaryMetrics` 的口径顺序冻结于
- * api.test.ts：合并 Agent、管理项目、部署关系、待确认冲突；图标按同一次序
+ * api.test.ts：Agent 对象、管理项目、物理使用入口、待确认冲突；图标按同一次序
  * 注册，纯装饰。
  */
 const compactStatIcons: IconName[] = ["agents", "projects", "deploy", "warning"];
@@ -46,12 +46,12 @@ export interface OverviewPageProps {
 function OverviewHeroMetric({ metric }: { metric: OverviewMetric }) {
   const body = (
     <>
-      <strong>{metric.count}</strong>
+      <strong>{metric.available === false ? "–" : metric.count}</strong>
       <span>{metric.name}</span>
     </>
   );
 
-  if (metric.href) {
+  if (metric.href && metric.available !== false) {
     return (
       <Link className="sh-overview__hero" to={metric.href}>
         {body}
@@ -188,16 +188,13 @@ export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade, 
   // DEV-22-A：图表用可读的 Agent/项目名，绝不渲染内部 i18n 键；
   // 验收反馈（2026-09-25）：Agent 一律呈现「品牌+类型」。
   const deploymentNames = useOverviewDeploymentNames(agentFacade, projectFacade);
-  // 验收反馈（2026-09-25）：「已发现」与 Agent 页卡片数量同口径（合并计 1）。
-  const discoveredCardCount = useDiscoveredAgentCardCount(agentFacade);
-  // 五个冻结指标（api.test.ts 锁定名称与口径）。前四项来自 bootstrap 快照
-  // 同步可得；冲突项计数来自任务 2 工作台投影（异步）——未就绪时以占位符
-  // 呈现且不提供携带假计数的钻取链接，绝不把 0 当作"查询还没回来"。
+  const usageStatistics = useUsageEnvironmentStatistics(relationshipsFacade);
+  // 五个指标来自统一关系统计；统计或冲突投影未就绪时显示占位符，不伪造 0。
   const summaryMetrics = getOverviewSummaryMetrics(
     snapshot,
     conflictsQuery.data ?? null,
     t,
-    discoveredCardCount,
+    usageStatistics,
   );
   const conflictMetric = summaryMetrics[summaryMetrics.length - 1];
   const heroMetric =
@@ -221,7 +218,8 @@ export function OverviewPage({ agentFacade, projectFacade, relationshipsFacade, 
             className="sh-overview__stats"
           >
             {compactMetrics.map((metric, index) => {
-              const placeholder = metric === conflictMetric && !conflictsQuery.isSuccess;
+              const placeholder = metric.available === false
+                || (metric === conflictMetric && !conflictsQuery.isSuccess);
               const body = (
                 <CompactStatBody
                   icon={compactStatIcons[index] ?? "info"}

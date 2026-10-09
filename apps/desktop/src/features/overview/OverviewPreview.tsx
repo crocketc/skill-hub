@@ -3,6 +3,7 @@ import type {
   ConflictWorkspace,
   RelationGovernanceLedger,
   SkillRelationshipCandidate,
+  UsageEnvironmentStatisticsSummary,
 } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import type { RelationshipsFacade } from "../relationships/api";
@@ -126,6 +127,15 @@ const previewGovernanceLedger: RelationGovernanceLedger = {
   total: 9,
 };
 
+const previewUsageStatistics: UsageEnvironmentStatisticsSummary = {
+  real_agent_count: 2,
+  shared_directory_count: 1,
+  project_count: 3,
+  physical_usage_count: 27,
+  subject_count: 27,
+  environments: [],
+};
+
 /**
  * DEV-only deterministic relationship facade for /__preview/overview. The
  * graph query is not part of the overview surface, so the stub refuses it
@@ -133,6 +143,7 @@ const previewGovernanceLedger: RelationGovernanceLedger = {
  */
 export const overviewPreviewRelationshipsFacade: RelationshipsFacade = {
   getConflictWorkspace: async () => previewConflictWorkspace,
+  getUsageEnvironmentStatistics: async () => previewUsageStatistics,
   async getGraph() {
     throw new Error("the overview preview does not consume the relationship graph query");
   },

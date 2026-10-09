@@ -75,6 +75,7 @@ function deploymentIdForRelation(relation: GovernableRelation): {
  */
 export const nativeGovernanceFacade: RelationGovernanceFacade = {
   listGovernance: (params) => nativeRelationshipsFacade.listGovernance(params),
+  getUsageEnvironmentStatistics: () => nativeRelationshipsFacade.getUsageEnvironmentStatistics!(),
 
   async getRelationshipOverview() {
     const result = await queryApplication({

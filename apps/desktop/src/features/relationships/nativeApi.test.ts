@@ -110,6 +110,31 @@ describe("nativeRelationshipsFacade", () => {
     );
   });
 
+  it("reads unified usage-environment statistics and guards the result type", async () => {
+    const statistics = {
+      real_agent_count: 2,
+      shared_directory_count: 1,
+      project_count: 3,
+      physical_usage_count: 4,
+      subject_count: 5,
+      environments: [],
+    };
+    queryApplicationMock.mockResolvedValueOnce({
+      type: "usage_environment_statistics",
+      payload: statistics,
+    });
+    await expect(nativeRelationshipsFacade.getUsageEnvironmentStatistics?.()).resolves.toBe(statistics);
+    expect(queryApplicationMock).toHaveBeenCalledWith({
+      type: "get_usage_environment_statistics",
+      payload: null,
+    });
+
+    queryApplicationMock.mockResolvedValueOnce({ type: "pending_items", payload: [] });
+    await expect(nativeRelationshipsFacade.getUsageEnvironmentStatistics?.()).rejects.toThrow(
+      "get_usage_environment_statistics returned an unexpected native result.",
+    );
+  });
+
   // 计划 9.4：批次/来源类别/状态等已提交筛选必须原样透传给原生清单查询，
   // 门面不得丢弃、改写或二次猜测。
   it("passes scope/status/batch filters straight through to the governance query", async () => {

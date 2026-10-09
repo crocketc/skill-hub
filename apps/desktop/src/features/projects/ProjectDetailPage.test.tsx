@@ -71,6 +71,65 @@ it("shows shared configuration as read-only project facts", async () => {
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 });
 
+it("lists matching Agent by Project environments without combining their discovery totals", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const project = projectFixture();
+  const governanceFacade = {
+    listGovernance: vi.fn(async () => ({ rows: [] })),
+    getUsageEnvironmentStatistics: vi.fn(async () => ({
+      real_agent_count: 2,
+      shared_directory_count: 1,
+      project_count: 1,
+      physical_usage_count: 3,
+      subject_count: 4,
+      environments: [
+        {
+          environment: { agent_client_id: "codex-cli", project_id: project.id },
+          discovered_item_count: 2,
+          shared_item_count: 1,
+          builtin_item_count: 0,
+          same_skill_problem_count: 1,
+          name_problem_count: 0,
+        },
+        {
+          environment: { agent_client_id: "claude-code", project_id: project.id },
+          discovered_item_count: 4,
+          shared_item_count: 0,
+          builtin_item_count: 2,
+          same_skill_problem_count: 0,
+          name_problem_count: 1,
+        },
+        {
+          environment: { agent_client_id: "other-agent", project_id: "another-project" },
+          discovered_item_count: 99,
+          shared_item_count: 0,
+          builtin_item_count: 0,
+          same_skill_problem_count: 0,
+          name_problem_count: 0,
+        },
+      ],
+    })),
+  } as unknown as RelationGovernanceFacade;
+  render(
+    <TestProviders i18n={i18n}>
+      <MemoryRouter>
+        <ProjectDetailPage
+          facade={detailFacade(project)}
+          governanceFacade={governanceFacade}
+        />
+      </MemoryRouter>
+    </TestProviders>,
+  );
+
+  const statistics = await screen.findByRole("region", { name: "项目使用统计" });
+  expect(statistics).toHaveTextContent("发现 Skill 2 项");
+  expect(statistics).toHaveTextContent("发现 Skill 4 项");
+  expect(statistics).not.toHaveTextContent("发现 Skill 6 项");
+  expect(statistics).not.toHaveTextContent("99");
+  expect(statistics).toHaveTextContent("同一 Skill 1 组");
+  expect(statistics).toHaveTextContent("重名 Skill 1 组");
+});
+
 it("updates the Agent associations without changing the project shared configuration", async () => {
   const user = userEvent.setup();
   const i18n = await createSkillHubI18n(["zh-CN"]);

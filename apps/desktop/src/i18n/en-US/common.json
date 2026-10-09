@@ -971,7 +971,18 @@
       "brand": "Brand",
       "client": "Client",
       "instance": "Instance",
-      "paths": "Discovered paths"
+      "paths": "Discovered paths",
+      "usageStatistics": {
+        "title": "Agent usage statistics",
+        "discovered": "{{count}} discovered Skills",
+        "shared": "{{count}} from shared directories",
+        "builtin": "{{count}} from built-in directories",
+        "sameSkillProblems": "{{count}} same-Skill groups",
+        "nameProblems": "{{count}} name-conflict groups",
+        "loading": "Loading discovery statistics for this Agent environment.",
+        "environmentUnavailable": "No statistics are recorded for this Agent environment.",
+        "unavailable": "Failed to read usage statistics."
+      }
     },
     "relations": {
       "eyebrow": "Target relations",
@@ -1174,6 +1185,15 @@
         "save": "Save associations",
         "saved": "Agent associations saved.",
         "saveFailed": "Agent associations could not be saved."
+      },
+      "usageStatistics": {
+        "eyebrow": "By environment",
+        "title": "Project usage statistics",
+        "description": "Discovery facts are shown separately for each Agent × Project environment. They are not combined into a project total and do not indicate execution.",
+        "agentFallback": "Agent {{index}}",
+        "loading": "Loading project environment statistics.",
+        "unavailable": "Project usage statistics are temporarily unavailable.",
+        "empty": "There are no Agent × Project environments to display."
       },
       "access": {
         "eyebrow": "On this device",
@@ -4161,8 +4181,9 @@
         "governanceAria": "Open needs-governance relations ({{count}} to handle)"
       },
       "metrics": {
-        "agentsCombined": "Agents ({{configured}} configured · {{discovered}} discovered)",
-        "deploymentRelations": "Skill configuration relations ({{agentCount}} to agents · {{projectCount}} to projects)",
+        "agentObjects": "Agent objects · shared directories: {{shared}}",
+        "agentObjectsLoading": "Loading Agent object statistics",
+        "physicalUsage": "Unique physical usage entries",
         "projectsManage": "Manage projects",
         "skillsTotal": "Total skills",
         "unconfirmedConflicts": "Unconfirmed relationship conflicts"

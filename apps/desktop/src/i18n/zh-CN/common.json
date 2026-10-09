@@ -971,7 +971,18 @@
       "brand": "品牌",
       "client": "客户端",
       "instance": "实例",
-      "paths": "已发现路径"
+      "paths": "已发现路径",
+      "usageStatistics": {
+        "title": "Agent 使用统计",
+        "discovered": "发现 Skill {{count}} 项",
+        "shared": "共享目录 {{count}} 项",
+        "builtin": "内置目录 {{count}} 项",
+        "sameSkillProblems": "同一 Skill {{count}} 组",
+        "nameProblems": "重名 Skill {{count}} 组",
+        "loading": "正在读取该 Agent 环境的发现统计。",
+        "environmentUnavailable": "当前没有该 Agent 环境的统计记录。",
+        "unavailable": "读取使用统计失败。"
+      }
     },
     "relations": {
       "eyebrow": "目标关系",
@@ -1174,6 +1185,15 @@
         "save": "保存关联",
         "saved": "已保存 Agent 关联。",
         "saveFailed": "无法保存 Agent 关联。"
+      },
+      "usageStatistics": {
+        "eyebrow": "按环境统计",
+        "title": "项目使用统计",
+        "description": "按每个 Agent 与本项目的环境分别展示发现事实，不合并成项目总数，也不代表实际执行。",
+        "agentFallback": "Agent {{index}}",
+        "loading": "正在读取项目环境统计。",
+        "unavailable": "项目使用统计暂时不可用。",
+        "empty": "当前没有可展示的 Agent × 项目环境。"
       },
       "access": {
         "eyebrow": "本机位置",
@@ -4161,8 +4181,9 @@
         "governanceAria": "打开待治理关系（{{count}} 条需处理）"
       },
       "metrics": {
-        "agentsCombined": "Agent（已配置目标 {{configured}} 个 · 已发现 {{discovered}} 个）",
-        "deploymentRelations": "Skill 配置关系（配置到 Agent {{agentCount}} 条 · 项目 {{projectCount}} 条）",
+        "agentObjects": "Agent 对象（含共享目录 {{shared}} 个）",
+        "agentObjectsLoading": "Agent 对象统计加载中",
+        "physicalUsage": "唯一物理使用入口",
         "projectsManage": "管理项目",
         "skillsTotal": "技能总数",
         "unconfirmedConflicts": "待确认的关系冲突"

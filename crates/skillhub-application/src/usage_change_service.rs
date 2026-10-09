@@ -40,7 +40,9 @@ use skillhub_core::{
     AppResult, DeploymentMode, ErrorCode, OperationId, OperationPhase, OperationProgress,
     OperationRecord, RecoveryAction, Severity, SkillId, TargetChange, TargetPlan, VersionId,
 };
-use skillhub_storage::{CentralLibrary, Database, VersionStore, VisibleSkillRename};
+use skillhub_storage::{
+    CentralLibrary, Database, UsageDecisionDeploymentDisposition, VersionStore, VisibleSkillRename,
+};
 
 use crate::relationship_governance_service::{
     capture_path_chain, create_dir_link, PathChainSnapshot,
@@ -7333,9 +7335,12 @@ fn apply_plan(
     }
 
     let decision = decision_record(journal, index);
-    if let Err(error) = database.record_usage_decision_with_expected_evidence_fingerprints(
+    let deployment_disposition = usage_decision_deployment_disposition(plan.impact.action)
+        .map_err(|error| (error, false))?;
+    if let Err(error) = database.record_usage_decision_with_deployment_disposition(
         &decision,
         &plan.expected_evidence_fingerprints,
+        deployment_disposition,
     ) {
         if plan.target_removed {
             plan.restore_started = true;
@@ -7373,6 +7378,20 @@ fn apply_plan(
         reason: None,
         recovery_point,
     })
+}
+
+fn usage_decision_deployment_disposition(
+    action: UsageChangeImpactAction,
+) -> AppResult<UsageDecisionDeploymentDisposition> {
+    match action {
+        UsageChangeImpactAction::RemoveLink | UsageChangeImpactAction::RemoveCopyWithBackup => {
+            Ok(UsageDecisionDeploymentDisposition::Removed)
+        }
+        UsageChangeImpactAction::KeepIndependentCopy | UsageChangeImpactAction::RecordOnly => {
+            Ok(UsageDecisionDeploymentDisposition::Detached)
+        }
+        _ => Err(operation_conflict("usage_release_action_invalid")),
+    }
 }
 
 fn remove_owned_with_compensation<F>(
@@ -7946,9 +7965,10 @@ pub(crate) fn complete_release_operation(
         }
         if !has_decision {
             journal.plans[index] = plan.clone();
-            database.record_usage_decision_with_expected_evidence_fingerprints(
+            database.record_usage_decision_with_deployment_disposition(
                 &decision_record(&journal, index),
                 &plan.expected_evidence_fingerprints,
+                usage_decision_deployment_disposition(plan.impact.action)?,
             )?;
         }
         persist_journal(

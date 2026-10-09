@@ -77,6 +77,33 @@ pub struct UsageEnvironmentSnapshot {
     pub relationship_revision: String,
 }
 
+/// Counts the files found in one concrete Agent or Agent × registered Project
+/// environment. These are discovery facts, not runtime execution telemetry.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct UsageEnvironmentStatistics {
+    pub environment: UsageEnvironmentKey,
+    pub discovered_item_count: u32,
+    pub shared_item_count: u32,
+    pub builtin_item_count: u32,
+    pub same_skill_problem_count: u32,
+    pub name_problem_count: u32,
+}
+
+/// Object and physical-usage counts paired with the per-environment scan.
+/// `real_agent_count` excludes directory-role cards and the shared-directory
+/// object; the latter is counted separately so the UI can explain inclusion.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct UsageEnvironmentStatisticsSummary {
+    pub real_agent_count: u32,
+    pub shared_directory_count: u32,
+    pub project_count: u32,
+    pub physical_usage_count: u32,
+    pub subject_count: u32,
+    pub environments: Vec<UsageEnvironmentStatistics>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum EnvironmentProblemKind {

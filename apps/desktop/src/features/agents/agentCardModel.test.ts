@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentCardModels, buildAgentDirectoryCardModels, directoryStatusLabel, directoryStatusSuggestion } from "./agentCardModel";
+import { agentObjectCountsFromStatistics, buildAgentCardModels, buildAgentDirectoryCardModels, directoryStatusLabel, directoryStatusSuggestion } from "./agentCardModel";
 import type { AgentDirectoryProjection } from "../../api/bindings";
 import type { AgentView } from "./api";
 
@@ -292,4 +292,26 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards[0].members[0].discoveredPaths).toEqual(["C:/Users/demo/.codex/skills"]);
     expect(cards[1].directories[0].path).toBeNull();
   });
+});
+
+it("does not count directory-role cards as additional Agent objects", () => {
+  const cards = buildAgentDirectoryCardModels({ directories: [
+    projectedDirectory({ role: "agent_native" }),
+    projectedDirectory({ role: "builtin", identity: { kind: "verified_physical", value: "builtin" } }),
+    projectedDirectory({
+      role: "shared_directory",
+      is_shared_directory: true,
+      identity: { kind: "verified_physical", value: "shared" },
+    }),
+  ] });
+
+  expect(cards).toHaveLength(3);
+  expect(agentObjectCountsFromStatistics({
+    real_agent_count: 2,
+    shared_directory_count: 1,
+    project_count: 0,
+    physical_usage_count: 0,
+    subject_count: 0,
+    environments: [],
+  })).toEqual({ total: 3, realAgentCount: 2, sharedDirectoryCount: 1 });
 });

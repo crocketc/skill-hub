@@ -7,6 +7,7 @@ import type {
   BootstrapSnapshot,
   ConflictWorkspace,
   SkillRelationshipCandidate,
+  UsageEnvironmentStatisticsSummary,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import type { AgentFacade, AgentView } from "../agents/api";
@@ -92,6 +93,24 @@ const populatedConflictWorkspace: ConflictWorkspace = {
   last_verified_at: null,
 };
 
+const populatedUsageStatistics: UsageEnvironmentStatisticsSummary = {
+  real_agent_count: 2,
+  shared_directory_count: 1,
+  project_count: 2,
+  physical_usage_count: 18,
+  subject_count: 12,
+  environments: [],
+};
+
+const emptyUsageStatistics: UsageEnvironmentStatisticsSummary = {
+  real_agent_count: 0,
+  shared_directory_count: 0,
+  project_count: 0,
+  physical_usage_count: 0,
+  subject_count: 0,
+  environments: [],
+};
+
 /** 确定性关系门面：图谱候选 2、待确认冲突 2、治理关系边 7。 */
 const populatedRelationshipsFacade: RelationshipsFacade = {
   async listCandidates() {
@@ -124,6 +143,9 @@ const populatedRelationshipsFacade: RelationshipsFacade = {
   async getConflictWorkspace() {
     return populatedConflictWorkspace;
   },
+  async getUsageEnvironmentStatistics() {
+    return populatedUsageStatistics;
+  },
   async listGovernance() {
     return {
       bucket: "all" as const,
@@ -146,6 +168,9 @@ const emptyRelationshipsFacade: RelationshipsFacade = {
   },
   async getConflictWorkspace() {
     return { ...populatedConflictWorkspace, cases: [], handled: [], handled_count: 0 };
+  },
+  async getUsageEnvironmentStatistics() {
+    return emptyUsageStatistics;
   },
   async listGovernance() {
     return {
@@ -170,6 +195,9 @@ const pendingRelationshipsFacade: RelationshipsFacade = {
   getConflictWorkspace() {
     return new Promise(() => undefined);
   },
+  getUsageEnvironmentStatistics() {
+    return new Promise(() => undefined);
+  },
   listGovernance() {
     return new Promise(() => undefined);
   },
@@ -184,6 +212,9 @@ const failingRelationshipsFacade: RelationshipsFacade = {
     throw new Error("the overview never renders a full graph");
   },
   async getConflictWorkspace() {
+    throw new Error("ipc unavailable");
+  },
+  async getUsageEnvironmentStatistics() {
     throw new Error("ipc unavailable");
   },
   async listGovernance() {
@@ -292,23 +323,21 @@ it("drills down into the library filtered by tag from the overview", async () =>
   expect(screen.getByTestId("location")).toHaveTextContent("/library?tag=writing");
 });
 
-it("keeps configured and discovered agent calibers distinct inside the combined frozen metric", async () => {
+it("uses unified object statistics instead of configured or discovered Agent totals", async () => {
   await renderOverview();
 
-  // 冻结指标把两个口径并列在同一条指标名里（已配置 3 · 已发现 5），不再是
-  // 两条独立钻取；口径仍分开命名、分开计数，不混用。
+  // 共享目录对象计入总对象数，且明确展示其数量；不从快照 Agent 或发现
+  // 卡片数推导概览指标。
   expect(
-    await screen.findByRole("link", { name: "3 Agents (3 configured · 5 discovered)" }),
+    await screen.findByRole("link", { name: "3 Agent objects · shared directories: 1" }),
   ).toBeVisible();
-  expect(screen.queryByRole("link", { name: "5 discovered agents" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: "3 configured agents" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /configured|discovered/i })).not.toBeInTheDocument();
 });
 
-it("drills the combined agent metric into the agent management workspace", async () => {
+it("drills the Agent object metric into the Agent management workspace", async () => {
   await renderOverview();
 
-  // 冻结契约：合并后的 Agent 指标统一去 /agents 管理已登记部署目标。
-  const agentMetric = screen.getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" });
+  const agentMetric = screen.getByRole("link", { name: "3 Agent objects · shared directories: 1" });
   expect(agentMetric).toHaveAttribute("href", "/agents");
 
   fireEvent.click(agentMetric);
@@ -341,9 +370,9 @@ it("renders each compact stat as a two-line card with a numeric figure and a met
   // 密度结构：数字与指标名是两个可寻址元素，可访问名称仍由二者组成。
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactStats = [
-    ["3", "Agents (3 configured · 5 discovered)"],
+    ["3", "Agent objects · shared directories: 1"],
     ["2", "Manage projects"],
-    ["18", "Skill configuration relations (15 to agents · 3 to projects)"],
+    ["18", "Unique physical usage entries"],
     ["2", "Unconfirmed relationship conflicts"],
   ] as const;
   for (const [count, name] of compactStats) {
@@ -441,7 +470,7 @@ it("keeps a single page-level h1 for the overview heading outline", async () => 
 it("promotes a single primary metric and turns the rest into compact stats", async () => {
   await renderOverview();
 
-  const hero = screen.getByRole("link", { name: "12 Total skills" });
+  const hero = await screen.findByRole("link", { name: "12 Total skills" });
   expect(hero).toHaveAttribute("href", "/library");
   expect(within(hero).getByText("12", { exact: true })).toBeVisible();
 
@@ -450,12 +479,9 @@ it("promotes a single primary metric and turns the rest into compact stats", asy
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   const compactHrefs = [
-    ["3 Agents (3 configured · 5 discovered)", "/agents"],
+    ["3 Agent objects · shared directories: 1", "/agents"],
     ["2 Manage projects", "/projects"],
-    [
-      "18 Skill configuration relations (15 to agents · 3 to projects)",
-      "/library?deployment=deployed",
-    ],
+    ["18 Unique physical usage entries", "/relationships"],
     ["2 Unconfirmed relationship conflicts", "/relationships/decisions"],
   ] as const;
   for (const [name, href] of compactHrefs) {
@@ -474,7 +500,7 @@ it("fuses the relationship thumbnail network below the charts without replacing 
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "12 Total skills" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "12 Total skills" })).toBeVisible();
 
   // 关系缩略网络作为组织/关系区域进入页面，三个入口带冻结口径计数。
   const relations = screen.getByRole("region", { name: "Skill relationships" });
@@ -560,7 +586,7 @@ it("renders the empty relationship state without swallowing charts or todo", asy
   ).toBeVisible();
   expect(screen.getByRole("list", { name: "Skill count by tag" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "4 pending items" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "12 Total skills" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "0 Total skills" })).toBeVisible();
 });
 
 it("withholds relationship counts behind placeholders while the summaries load", async () => {
@@ -571,7 +597,7 @@ it("withholds relationship counts behind placeholders while the summaries load",
     "aria-busy",
     "true",
   );
-  expect(screen.getAllByText("–")).toHaveLength(4);
+  expect(within(screen.getByRole("list", { name: "Key stats" })).getAllByText("–")).toHaveLength(4);
   expect(screen.queryByRole("link", { name: /unconfirmed conflicts/i })).not.toBeInTheDocument();
 
   // 同步内容不受关系查询影响。
@@ -656,16 +682,14 @@ it("keeps deployment details in the fixed main panel while the rail stays reserv
 it("shows the pending summary without exposing the recent-operation log", async () => {
   await renderOverview();
 
-  expect(screen.getByRole("link", { name: "12 Total skills" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "12 Total skills" })).toBeVisible();
   // 等关系投影落地后再锁定指标带上的冲突项。
   await screen.findByRole("link", { name: "Open conflict workspace (2 unconfirmed conflicts)" });
   const statsList = screen.getByRole("list", { name: "Key stats" });
-  expect(within(statsList).getByRole("link", { name: "3 Agents (3 configured · 5 discovered)" })).toBeVisible();
+  expect(within(statsList).getByRole("link", { name: "3 Agent objects · shared directories: 1" })).toBeVisible();
   expect(within(statsList).getByRole("link", { name: "2 Manage projects" })).toBeVisible();
   expect(
-    within(statsList).getByRole("link", {
-      name: "18 Skill configuration relations (15 to agents · 3 to projects)",
-    }),
+    within(statsList).getByRole("link", { name: "18 Unique physical usage entries" }),
   ).toBeVisible();
   expect(
     within(statsList).getByRole("link", { name: "2 Unconfirmed relationship conflicts" }),
@@ -696,18 +720,15 @@ it("keeps empty and zero-count states legible in the redesigned overview", async
     deployment_categories: [],
     discovered_agent_count: 0,
     pending: { by_kind: {}, total: 0 },
-  });
+    skill_count: 0,
+  }, emptyRelationshipsFacade);
 
   const statsList = screen.getByRole("list", { name: "Key stats" });
   expect(
-    within(statsList).getByRole("link", { name: "0 Agents (0 configured · 0 discovered)" }),
+    await within(statsList).findByRole("link", { name: "0 Agent objects · shared directories: 0" }),
   ).toBeVisible();
-  expect(
-    within(statsList).getByRole("link", {
-      name: "0 Skill configuration relations (0 to agents · 0 to projects)",
-    }),
-  ).toBeVisible();
-  expect(screen.getByRole("link", { name: "12 Total skills" })).toBeVisible();
+  expect(await within(statsList).findByRole("link", { name: "0 Unique physical usage entries" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "0 Total skills" })).toBeVisible();
   expect(screen.getByRole("status")).toHaveTextContent("No configuration relations by agent yet");
   expect(screen.getByRole("heading", { name: "No pending items" })).toBeVisible();
   expect(screen.getByText("All clear")).toBeVisible();
@@ -816,7 +837,7 @@ it("derives the overview discovered count from the unified agent card models (20
   await renderOverview(overviewSnapshot, populatedRelationshipsFacade, { agentFacade });
 
   expect(
-    await screen.findByRole("link", { name: "3 Agents (3 configured · 3 discovered)" }),
+    await screen.findByRole("link", { name: "3 Agent objects · shared directories: 1" }),
   ).toBeVisible();
 });
 

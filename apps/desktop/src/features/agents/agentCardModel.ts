@@ -12,6 +12,7 @@ import type {
   AgentDirectoryView,
   AgentView,
 } from "./api";
+import type { UsageEnvironmentStatisticsSummary } from "../../api/bindings";
 
 export interface AgentCardModel {
   id: string;
@@ -32,6 +33,35 @@ export interface AgentCardModel {
   members: AgentView[];
   /** Raw per-target facts used to expand a selected directory into operations. */
   directoryMembers?: AgentDirectoryMemberFact[];
+}
+
+export interface AgentObjectCounts {
+  total: number;
+  realAgentCount: number;
+  sharedDirectoryCount: number;
+}
+
+/** Object counts come from the backend summary, never from directory-card count. */
+export function agentObjectCountsFromStatistics(
+  statistics: UsageEnvironmentStatisticsSummary,
+): AgentObjectCounts {
+  return {
+    total: statistics.real_agent_count + statistics.shared_directory_count,
+    realAgentCount: statistics.real_agent_count,
+    sharedDirectoryCount: statistics.shared_directory_count,
+  };
+}
+
+/** Select one confirmed Agent or Agent × Project environment from the shared scan. */
+export function usageEnvironmentStatisticsForAgent(
+  statistics: UsageEnvironmentStatisticsSummary,
+  agentClientId: string,
+  projectId: string | null = null,
+) {
+  return statistics.environments.find((environment) =>
+    environment.environment.agent_client_id === agentClientId
+      && environment.environment.project_id === projectId,
+  );
 }
 
 function projectedStatus(status: AgentDirectoryFact["status"]): AgentDirectoryView["status"] {

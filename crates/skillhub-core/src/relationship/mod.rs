@@ -15,7 +15,7 @@ pub use environment::{
     EnvironmentProblemEnvironmentResult, EnvironmentProblemKind, EnvironmentProblemView,
     UsageEnvironmentDirectory, UsageEnvironmentEntry, UsageEnvironmentKey,
     UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
-    UsageEnvironmentSnapshot,
+    UsageEnvironmentSnapshot, UsageEnvironmentStatistics, UsageEnvironmentStatisticsSummary,
 };
 pub use source_copy::{
     validate_source_copy_transition, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,

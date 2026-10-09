@@ -64,4 +64,14 @@ export const nativeRelationshipsFacade: RelationshipsFacade = {
     }
     return result.payload;
   },
+  async getUsageEnvironmentStatistics() {
+    const result = await queryApplication({
+      type: "get_usage_environment_statistics",
+      payload: null,
+    });
+    if (result.type !== "usage_environment_statistics") {
+      return unexpectedResult("get_usage_environment_statistics");
+    }
+    return result.payload;
+  },
 };

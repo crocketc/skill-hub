@@ -6,8 +6,10 @@ import type {
   PendingKind,
   RelationGovernanceLedger,
   SkillRelationshipCandidate,
+  UsageEnvironmentStatisticsSummary,
 } from "../../api/bindings";
 import type { TFunction } from "i18next";
+import { agentObjectCountsFromStatistics } from "../agents/agentCardModel";
 import { agentKindLabel, type AgentKindKey } from "../../ui/AgentPresentation";
 import { brandDisplayName } from "../../ui/BrandTag";
 import type { OverviewDeploymentName } from "./deploymentNames";
@@ -23,6 +25,7 @@ export interface OverviewAgentPresentation {
 export interface OverviewMetric {
   href?: string;
   count: number;
+  available?: boolean;
   /**
    * 不带数量的指标名（如 "configured agents"）。紧凑卡渲染成
    * 数字 + 指标名两行结构；可访问名称由 count 与 name 组合而成
@@ -241,80 +244,53 @@ export interface OverviewRelationSummarySource {
 }
 
 /**
- * 按部署维度汇总部署关系条数。与部署柱状图同源（bootstrap 快照的
- * `deployment_categories`），保证指标主数与括号拆分、柱状图三者一致；
- * 未纳管部署与发现快照一样不计入该口径。
- */
-function deploymentRelationTotals(snapshot: BootstrapSnapshot): {
-  agentRelations: number;
-  projectRelations: number;
-} {
-  let agentRelations = 0;
-  let projectRelations = 0;
-  for (const category of snapshot.deployment_categories) {
-    if (category.dimension === "agent") {
-      agentRelations += category.count;
-    } else {
-      projectRelations += category.count;
-    }
-  }
-  return { agentRelations, projectRelations };
-}
-
-/**
- * 概览融合后的五个指标，显示名称与口径为冻结契约：
- * 技能总数、Agent（已配置/已发现合并口径）、管理项目、
- * Skill 配置关系（按 Agent/项目拆分）、待确认的关系冲突。
- * 冲突数直接复用任务 2 工作台投影的 `cases`（已实现待确认筛选），
- * 本模块不重新实现另一套筛选规则；`conflictWorkspace` 缺省按 0 计。
- * `discoveredCardCount`（验收反馈 2026-09-25）提供 Agent 页合并卡片口径的
- * 已发现数；缺省退回发现快照的实例数（旧数据/查询未就绪）。
+ * 概览五个指标统一取关系体系的主体、对象与物理使用统计；不会把多个
+ * Agent 环境的发现数量相加成全局 Skill 总数。冲突数继续复用工作台投影。
  */
 export function getOverviewSummaryMetrics(
-  snapshot: BootstrapSnapshot,
+  _snapshot: BootstrapSnapshot,
   conflictWorkspace: ConflictWorkspace | null,
   t: TFunction,
-  discoveredCardCount?: number,
+  usageStatistics?: UsageEnvironmentStatisticsSummary | null,
 ): OverviewMetric[] {
-  const { agentRelations, projectRelations } = deploymentRelationTotals(snapshot);
+  const counts = usageStatistics ? agentObjectCountsFromStatistics(usageStatistics) : undefined;
+  const available = Boolean(usageStatistics);
   return [
     {
-      count: snapshot.skill_count,
-      href: "/library",
+      count: usageStatistics?.subject_count ?? 0,
+      ...(available ? { href: "/library" } : {}),
+      available,
       name: t("overview.summary.metrics.skillsTotal"),
       tone: "accent",
     },
     {
-      count: snapshot.agent_count,
-      href: "/agents",
-      // “已发现”优先取与 Agent 页卡片一致的合并口径（合并卡计 1，不展示的
-      // 不计）；快照实例数只作为数据未就绪时的回退。
-      name: t("overview.summary.metrics.agentsCombined", {
-        configured: snapshot.agent_count,
-        discovered: discoveredCardCount ?? snapshot.discovered_agent_count,
-      }),
+      count: counts?.total ?? 0,
+      ...(available ? { href: "/agents" } : {}),
+      available,
+      name: counts
+        ? t("overview.summary.metrics.agentObjects", { shared: counts.sharedDirectoryCount })
+        : t("overview.summary.metrics.agentObjectsLoading"),
       tone: "neutral",
     },
     {
-      count: snapshot.project_count,
-      href: "/projects",
+      count: usageStatistics?.project_count ?? 0,
+      ...(available ? { href: "/projects" } : {}),
+      available,
       name: t("overview.summary.metrics.projectsManage"),
       tone: "neutral",
     },
     {
-      count: agentRelations + projectRelations,
-      href: "/library?deployment=deployed",
-      name: t("overview.summary.metrics.deploymentRelations", {
-        agentCount: agentRelations,
-        projectCount: projectRelations,
-      }),
+      count: usageStatistics?.physical_usage_count ?? 0,
+      ...(available ? { href: "/relationships" } : {}),
+      available,
+      name: t("overview.summary.metrics.physicalUsage"),
       tone: "neutral",
     },
     {
-      // 冲突数复用任务 2 工作台投影的 `cases`（已实现待确认筛选）；
-      // 钻取目标 /relationships/decisions 由任务 5 交付、任务 9 页面切片接线。
+      // 冲突数复用任务 2 工作台投影的 `cases`（已实现待确认筛选）。
       count: conflictWorkspace?.cases.length ?? 0,
-      href: "/relationships/decisions",
+      ...(conflictWorkspace ? { href: "/relationships/decisions" } : {}),
+      available: Boolean(conflictWorkspace),
       name: t("overview.summary.metrics.unconfirmedConflicts"),
       tone: "neutral",
     },

@@ -8,6 +8,7 @@ import type {
   RelationshipType,
   SkillRelationshipCandidate,
   SkillRelationshipGraphResult,
+  UsageEnvironmentStatisticsSummary,
 } from "../../api/bindings";
 
 export type {
@@ -20,6 +21,7 @@ export type {
   RelationshipType,
   SkillRelationshipCandidate,
   SkillRelationshipGraphResult,
+  UsageEnvironmentStatisticsSummary,
 };
 
 /** 图谱筛选（任务 6 消费）：URL 与 query key 都必须携带同一份筛选事实。 */
@@ -64,6 +66,8 @@ export const relationshipsKeys = {
     [relationshipsKeys.root, "governance", params] as const,
   governanceUsageOverview: () =>
     [relationshipsKeys.root, "governance-usage-overview"] as const,
+  usageStatistics: () =>
+    [relationshipsKeys.root, "usage-environment-statistics"] as const,
   governanceUsageProblems: (problemId?: string | null) =>
     [relationshipsKeys.root, "governance-usage-problems", problemId ?? null] as const,
   governanceHistory: (params: {
@@ -81,4 +85,5 @@ export interface RelationshipsFacade {
   getGraph(params: RelationshipGraphParams): Promise<SkillRelationshipGraphResult>;
   getConflictWorkspace(params?: RelationshipConflictsParams): Promise<ConflictWorkspace>;
   listGovernance(params?: RelationshipGovernanceParams): Promise<RelationGovernanceLedger>;
+  getUsageEnvironmentStatistics?(): Promise<UsageEnvironmentStatisticsSummary>;
 }

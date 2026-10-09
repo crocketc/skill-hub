@@ -91,7 +91,7 @@ pub use source_search_cache::SourceSearchCache;
 pub use target_repository::{PhysicalTargetRegistration, TargetRepository};
 pub use translation_repository::{PersistedTranslation, TranslationRecordRepository};
 pub use ui_preference_repository::UiPreferenceRepository;
-pub use usage_decision_repository::UsageDecisionRecord;
+pub use usage_decision_repository::{UsageDecisionDeploymentDisposition, UsageDecisionRecord};
 
 /// An application database backed by SQLite.
 pub struct Database {

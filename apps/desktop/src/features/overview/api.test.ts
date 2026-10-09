@@ -113,33 +113,42 @@ const governanceLedger: RelationGovernanceLedger = {
   total: 7,
 };
 
+const usageStatistics = {
+  real_agent_count: 4,
+  shared_directory_count: 1,
+  project_count: 2,
+  physical_usage_count: 7,
+  subject_count: 12,
+  environments: [],
+};
+
 beforeEach(() => {
   // 空实现占位：测试内按需创建 i18n 实例。
 });
 
 it("names the five overview metrics with the frozen zh semantics and counts", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
-  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, i18n.t.bind(i18n));
+  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, i18n.t.bind(i18n), usageStatistics as never);
 
-  expect(metrics.map((metric) => metric.count)).toEqual([12, 3, 2, 18, 2]);
+  expect(metrics.map((metric) => metric.count)).toEqual([12, 5, 2, 7, 2]);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置目标 3 个 · 已发现 5 个）",
+    "Agent 对象（含共享目录 1 个）",
     "管理项目",
-    "Skill 配置关系（配置到 Agent 15 条 · 项目 3 条）",
+    "唯一物理使用入口",
     "待确认的关系冲突",
   ]);
 });
 
 it("mirrors the frozen metric names in English with the same caliber", async () => {
   const i18n = await createSkillHubI18n(["en-US"]);
-  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, i18n.t.bind(i18n));
+  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, i18n.t.bind(i18n), usageStatistics as never);
 
   expect(metrics.map((metric) => metric.name)).toEqual([
     "Total skills",
-    "Agents (3 configured · 5 discovered)",
+    "Agent objects · shared directories: 1",
     "Manage projects",
-    "Skill configuration relations (15 to agents · 3 to projects)",
+    "Unique physical usage entries",
     "Unconfirmed relationship conflicts",
   ]);
 });
@@ -147,7 +156,7 @@ it("mirrors the frozen metric names in English with the same caliber", async () 
 it("keeps the fixed metric order, accent hero and frozen drill-down targets", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const t = i18n.t.bind(i18n);
-  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, t);
+  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, t, usageStatistics as never);
 
   expect(metrics.map((metric) => metric.tone)).toEqual([
     "accent",
@@ -161,7 +170,7 @@ it("keeps the fixed metric order, accent hero and frozen drill-down targets", as
     "/library",
     "/agents",
     "/projects",
-    "/library?deployment=deployed",
+    "/relationships",
     "/relationships/decisions",
   ]);
 });
@@ -189,10 +198,10 @@ it("splits deployment relations by dimension across all chart categories", async
     ],
   };
 
-  const metrics = getOverviewSummaryMetrics(splitSnapshot, pendingConflictWorkspace, i18n.t.bind(i18n));
+  const metrics = getOverviewSummaryMetrics(splitSnapshot, pendingConflictWorkspace, i18n.t.bind(i18n), usageStatistics as never);
 
-  expect(metrics[3].count).toBe(13);
-  expect(metrics[3].name).toBe("Skill 配置关系（配置到 Agent 8 条 · 项目 5 条）");
+  expect(metrics[3].count).toBe(7);
+  expect(metrics[3].name).toBe("唯一物理使用入口");
 });
 
 it("never renders the raw i18n key as a chart label (DEV-22-A)", async () => {
@@ -258,17 +267,15 @@ it("attaches the brand presentation fact so the detail list can render the unifi
   expect(items[0].buttonLabel).toBe("查看 Claude · 终端 的 3 条配置关系");
 });
 
-it("uses the agent-page card caliber for the discovered count when provided (2026-09-25)", async () => {
+it("does not derive Agent object totals from directory cards or per-Agent discoveries", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const t = i18n.t.bind(i18n);
 
-  // 覆盖值：与 Agent 页合并卡片一致（合并计 1，不展示不计）。
-  const overridden = getOverviewSummaryMetrics(summarySnapshot, null, t, 7);
-  expect(overridden[1].name).toBe("Agent（已配置目标 3 个 · 已发现 7 个）");
-
-  // 未提供（查询未就绪/旧快照）：回退发现快照口径。
-  const fallback = getOverviewSummaryMetrics(summarySnapshot, null, t);
-  expect(fallback[1].name).toBe("Agent（已配置目标 3 个 · 已发现 5 个）");
+  // 共享对象单独计入对象总数；真实 Agent 数不能从 Agent 目录卡片数推导。
+  const metrics = getOverviewSummaryMetrics(summarySnapshot, null, t, usageStatistics as never);
+  expect(metrics[1].count).toBe(5);
+  expect(metrics[1].name).toBe("Agent 对象（含共享目录 1 个）");
+  expect(metrics[3].count).toBe(7);
 });
 
 it("counts exactly the unconfirmed conflicts the workspace projection already selected", async () => {
@@ -277,11 +284,11 @@ it("counts exactly the unconfirmed conflicts the workspace projection already se
 
   // 冲突数 = 工作台投影 `cases` 的长度，本模块不重新实现另一套筛选口径；
   // `handled`/`handled_count` 是历史，不回流当前计数。
-  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, t);
+  const metrics = getOverviewSummaryMetrics(summarySnapshot, pendingConflictWorkspace, t, usageStatistics as never);
   expect(metrics[4].count).toBe(pendingConflictWorkspace.cases.length);
   expect(metrics[4].count).toBe(2);
 
-  const emptyCases = getOverviewSummaryMetrics(summarySnapshot, { ...pendingConflictWorkspace, cases: [] }, t);
+  const emptyCases = getOverviewSummaryMetrics(summarySnapshot, { ...pendingConflictWorkspace, cases: [] }, t, usageStatistics as never);
   expect(emptyCases[4].count).toBe(0);
 });
 
@@ -289,13 +296,21 @@ it("returns well-defined empty shapes that keep the overview intact without rela
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const t = i18n.t.bind(i18n);
 
-  const metrics = getOverviewSummaryMetrics(emptySnapshot, null, t);
+  const emptyUsageStatistics = {
+    real_agent_count: 0,
+    shared_directory_count: 0,
+    project_count: 0,
+    physical_usage_count: 0,
+    subject_count: 0,
+    environments: [],
+  };
+  const metrics = getOverviewSummaryMetrics(emptySnapshot, null, t, emptyUsageStatistics as never);
   expect(metrics).toHaveLength(5);
   expect(metrics.map((metric) => metric.name)).toEqual([
     "技能总数",
-    "Agent（已配置目标 0 个 · 已发现 0 个）",
+    "Agent 对象（含共享目录 0 个）",
     "管理项目",
-    "Skill 配置关系（配置到 Agent 0 条 · 项目 0 条）",
+    "唯一物理使用入口",
     "待确认的关系冲突",
   ]);
   expect(metrics.map((metric) => metric.count)).toEqual([0, 0, 0, 0, 0]);

@@ -4,6 +4,9 @@ import type { AgentFacade } from "../agents/api";
 import { nativeAgentFacade } from "../agents/nativeApi";
 import type { ProjectFacade } from "../projects/api";
 import { nativeProjectFacade } from "../projects/nativeApi";
+import type { RelationshipsFacade, UsageEnvironmentStatisticsSummary } from "../relationships/api";
+import { relationshipsKeys } from "../relationships/api";
+import { nativeRelationshipsFacade } from "../relationships/nativeApi";
 import { agentBrandKey, inferAgentKindKey, type AgentKindKey } from "../../ui/AgentPresentation";
 import { normalizeBrandKey } from "../../ui/BrandTag";
 
@@ -94,15 +97,10 @@ export function useOverviewDeploymentNames(
   return names;
 }
 
-/**
- * 验收反馈（2026-09-25）：概览「已发现」数量必须与 Agent 页卡片数量一致。
- * 2026-09-30 裁决：直接取统一卡片模型（与 Agent 页同一数据源、同一合卡
- * 规则），不再维护旧清单口径的兜底；数据未就绪时返回 undefined，由指标层
- * 回退到发现快照口径。
- */
-export function useDiscoveredAgentCardCount(
-  agentFacade: AgentFacade = nativeAgentFacade,
-): number | undefined {
+/** Uses the backend's shared scan and object-count projection for overview/detail statistics. */
+export function useUsageEnvironmentStatistics(
+  relationshipsFacade: RelationshipsFacade = nativeRelationshipsFacade,
+): UsageEnvironmentStatisticsSummary | undefined {
   const contextClient = useContext(QueryClientContext);
   const fallbackClientRef = useRef<QueryClient | null>(null);
   if (fallbackClientRef.current === null) {
@@ -111,16 +109,17 @@ export function useDiscoveredAgentCardCount(
     });
   }
   const queryClient = contextClient ?? fallbackClientRef.current;
-  const enabled = contextClient !== undefined;
+  const enabled = contextClient !== undefined
+    && typeof relationshipsFacade.getUsageEnvironmentStatistics === "function";
 
-  const modelsQuery = useQuery(
+  const statisticsQuery = useQuery(
     {
       enabled,
-      queryFn: () => agentFacade.listCardModels?.() ?? Promise.resolve([]),
-      queryKey: ["overview", "deployment-names", "agent-card-models"],
+      queryFn: () => relationshipsFacade.getUsageEnvironmentStatistics!(),
+      queryKey: relationshipsKeys.usageStatistics(),
       staleTime: 30_000,
     },
     queryClient,
   );
-  return modelsQuery.data?.length;
+  return statisticsQuery.data;
 }

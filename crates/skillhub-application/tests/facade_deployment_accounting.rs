@@ -1,17 +1,21 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::{
-    ClientInstance, ClientKind, ClientPresence, DirectoryPrecedence, DiscoverySnapshot,
-    LogicalTarget, OperatingSystem, TargetScope,
+    AgentRootObservation, ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus,
+    DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem, TargetScope,
 };
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, CommitDeployment, CommitUndeploy, GetDeploymentPlan,
-    ListDeployments, PrepareDeployment, PrepareUndeploy,
+    AppCommandResult, AppQueryResult, CommitDeployment, CommitUsageChange, GetDeploymentPlan,
+    ListDeployments, PrepareDeployment, PrepareUsageChange,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, TargetChange};
+use skillhub_core::relationship::{
+    AgentDirectoryCapabilityFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
+    UsageChangeAction, UsageCopyDisposition,
+};
 use skillhub_core::{
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, BootstrapSnapshot, ErrorCode,
-    OperationId, OperationPhase, RecoveryAction, RemovalDecision, StartupRecoveryState,
+    OperationId, OperationPhase, RecoveryAction, StartupRecoveryState,
 };
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 
@@ -48,9 +52,19 @@ async fn harness(client_id: &str, markdown_name: &str) -> Harness {
     .expect("write skill markdown");
     let library_root = tempfile::tempdir().expect("library root");
     let library = CentralLibrary::initialize(library_root.path()).expect("central library");
-    let version = VersionStore::from_library(&library)
+    let version_store = VersionStore::from_library(&library);
+    let version = version_store
         .capture(skill.id(), source.path())
         .expect("capture version");
+    version_store
+        .set_current(skill.id(), &version.id)
+        .expect("set current version");
+    library
+        .materialize_current_skill(&skill, &version.id)
+        .expect("materialize central skill");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable skill");
     database
         .connection_for_test()
         .execute(
@@ -72,6 +86,19 @@ async fn harness(client_id: &str, markdown_name: &str) -> Harness {
             supported_os: vec![OperatingSystem::Windows],
             client_presence: ClientPresence::Unknown,
         }],
+        agent_roots: vec![AgentRootObservation {
+            id: "fixture-root".into(),
+            profile_id: "anthropic".into(),
+            client_id: client_id.into(),
+            scope: TargetScope::Global,
+            path: target_root.path().to_string_lossy().into_owned(),
+            status: DirectoryObservationStatus::Existing,
+            exists: true,
+            readable: true,
+            writable: true,
+            physical_id: Some(physical_id.clone()),
+            physical_identity_verified: true,
+        }],
         logical_targets: vec![LogicalTarget {
             id: "claude-global".into(),
             profile_id: "anthropic".into(),
@@ -92,12 +119,37 @@ async fn harness(client_id: &str, markdown_name: &str) -> Harness {
             physical_identity_verified: true,
         }],
         physical_targets: Vec::new(),
-        agent_roots: Vec::new(),
     };
     database
         .agent_repository()
         .replace(&snapshot)
         .expect("save discovery");
+    database
+        .directory_repository()
+        .upsert_node(&DirectoryNodeFact {
+            node_id: "fixture-target-directory".into(),
+            path: target_root.path().to_string_lossy().into_owned(),
+            path_key: String::new(),
+            role: DirectoryRole::AgentNative,
+            profile_id: Some("anthropic".into()),
+            agent_client_id: Some(client_id.into()),
+            exists: true,
+            observed_at: 1,
+            scan_source: Some("deployment-accounting-test".into()),
+        })
+        .expect("save target directory");
+    database
+        .relationship_repository()
+        .upsert_capability(&AgentDirectoryCapabilityFact {
+            agent_client_id: client_id.into(),
+            directory_node_id: "fixture-target-directory".into(),
+            recognition: DirectoryRecognition::Supported,
+            precedence: DirectoryPrecedence::Preferred,
+            evidence_reference: Some("deployment-accounting-test".into()),
+            researched_at: Some("2026-10-09".into()),
+            applicable_platforms: vec!["windows".into(), "macos".into()],
+        })
+        .expect("save target directory capability");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
     Harness {
         facade,
@@ -178,26 +230,53 @@ async fn commit(harness: &Harness, plan: skillhub_core::DeploymentPlan) -> Commi
 }
 
 /// Removes a deployment through the production undeploy flow.
-async fn undeploy(harness: &Harness, deployment_id: skillhub_core::DeploymentId) {
+async fn release_with_disposition(
+    harness: &Harness,
+    deployment_id: skillhub_core::DeploymentId,
+    copy_disposition: UsageCopyDisposition,
+) {
+    let request = PrepareUsageChange {
+        operation_id: OperationId::new(),
+        action: UsageChangeAction::Release,
+        relation_ids: vec![format!("managed:{deployment_id}")],
+        problem_id: None,
+        skill_id: None,
+        requested_form: None,
+        copy_disposition: Some(copy_disposition),
+        content_basis: None,
+        retain_entry_key: None,
+        selected_entry_keys: Vec::new(),
+        runtime_name: None,
+        base_version_id: None,
+        selected_relation_ids: Vec::new(),
+        confirmed_shared_relation_ids: Vec::new(),
+        non_recognized_destination: None,
+    };
     let prepared = harness
         .facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id,
-        }))
+        .execute(AppCommand::PrepareUsageChange(request))
         .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(impact) = prepared else {
-        panic!("expected removal impact");
+        .expect("prepare release");
+    let AppCommandResult::PreparedUsageChange(prepared) = prepared else {
+        panic!("expected prepared usage change");
     };
     harness
         .facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: impact.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
+        .execute(AppCommand::CommitUsageChange(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
         }))
         .await
-        .expect("commit undeploy");
+        .expect("commit release");
+}
+
+async fn undeploy(harness: &Harness, deployment_id: skillhub_core::DeploymentId) {
+    release_with_disposition(
+        harness,
+        deployment_id,
+        UsageCopyDisposition::RemoveWithBackup,
+    )
+    .await;
 }
 
 async fn bootstrap(harness: &Harness) -> BootstrapSnapshot {
@@ -455,6 +534,41 @@ async fn re_adding_a_removed_skill_reuses_the_same_position() {
         StartupRecoveryState::Clean,
         "a successful re-add must not leave the app in the recovery gate"
     );
+}
+
+#[tokio::test]
+async fn keeping_a_managed_copy_ends_deployment_management_but_keeps_the_file() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let deployed = harness.target_root.path().join("find-skills");
+    commit(&harness, managed_copy_plan(&harness).await).await;
+    let records = harness
+        .facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(harness.skill.id()),
+        }))
+        .await
+        .expect("deployment records");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+
+    release_with_disposition(
+        &harness,
+        records[0].id,
+        UsageCopyDisposition::KeepIndependent,
+    )
+    .await;
+
+    assert!(deployed.join("SKILL.md").is_file());
+    let connection = side_connection(&harness);
+    let managed: bool = connection
+        .query_row(
+            "SELECT managed FROM deployments WHERE id=?1",
+            [records[0].id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("deployment management state");
+    assert!(!managed, "kept copy must no longer be tracked as managed");
 }
 
 /// D-12/R-10 regression: a deployment that is rejected before anything is

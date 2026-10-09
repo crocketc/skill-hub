@@ -64,6 +64,12 @@ export function ProjectDetailPage({
     queryFn: () => governanceFacade.listGovernance({ project_id: projectId }),
     queryKey: relationshipsKeys.governance({ project_id: projectId }),
   });
+  const usageStatisticsQuery = useQuery({
+    enabled: Boolean(governanceFacade.getUsageEnvironmentStatistics),
+    queryFn: () => governanceFacade.getUsageEnvironmentStatistics!(),
+    queryKey: relationshipsKeys.usageStatistics(),
+    staleTime: 30_000,
+  });
   const governedRelationIds = (governanceLedgerQuery.data?.rows ?? []).map((row) =>
     relationIdOf(row.relation),
   );
@@ -95,6 +101,9 @@ export function ProjectDetailPage({
   }, [facade, projectId]);
   if (error) return <DataState message={t("projects.unavailable")} state="unavailable" />;
   if (!project) return <DataState message={t("projects.loading")} state="loading" />;
+  const projectUsageEnvironments = usageStatisticsQuery.data?.environments.filter(
+    (environment) => environment.environment.project_id === project.id,
+  ) ?? [];
   const saveAgentAssociations = async () => {
     setSavingAgents(true);
     setSaveError(false);
@@ -125,6 +134,50 @@ export function ProjectDetailPage({
         {saved ? <p aria-live="polite" role="status">{t("projects.detail.agentAssociations.saved")}</p> : null}
         {saveError ? <p aria-live="polite" role="status">{t("projects.detail.agentAssociations.saveFailed")}</p> : null}
       </section>
+      {governanceFacade.getUsageEnvironmentStatistics ? (
+        <section
+          aria-label={t("projects.detail.usageStatistics.title")}
+          className="sh-project-detail__panel sh-project-usage-statistics"
+        >
+          <div className="sh-project-section-heading">
+            <div>
+              <p className="sh-project-eyebrow">{t("projects.detail.usageStatistics.eyebrow")}</p>
+              <h2>{t("projects.detail.usageStatistics.title")}</h2>
+            </div>
+          </div>
+          <p>{t("projects.detail.usageStatistics.description")}</p>
+          {usageStatisticsQuery.isError ? (
+            <p role="status">{t("projects.detail.usageStatistics.unavailable")}</p>
+          ) : usageStatisticsQuery.isPending ? (
+            <p role="status">{t("projects.detail.usageStatistics.loading")}</p>
+          ) : projectUsageEnvironments.length > 0 ? (
+            <ul>
+              {projectUsageEnvironments.map((environment, index) => {
+                const candidate = agentCandidates.find((agent) =>
+                  agent.agentId === environment.environment.agent_client_id
+                    || agent.id === environment.environment.agent_client_id,
+                );
+                return (
+                  <li key={`${environment.environment.agent_client_id}:${environment.environment.project_id ?? ""}`}>
+                    <strong>
+                      {candidate
+                        ? <AgentPresentation agentId={candidate.agentId} brand={candidate.brand} kinds={candidate.kinds} sharedDirectory={candidate.sharedDirectory} />
+                        : t("projects.detail.usageStatistics.agentFallback", { index: index + 1 })}
+                    </strong>
+                    <span>{t("agents.detail.usageStatistics.discovered", { count: environment.discovered_item_count })}</span>
+                    <span>{t("agents.detail.usageStatistics.shared", { count: environment.shared_item_count })}</span>
+                    <span>{t("agents.detail.usageStatistics.builtin", { count: environment.builtin_item_count })}</span>
+                    <span>{t("agents.detail.usageStatistics.sameSkillProblems", { count: environment.same_skill_problem_count })}</span>
+                    <span>{t("agents.detail.usageStatistics.nameProblems", { count: environment.name_problem_count })}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p>{t("projects.detail.usageStatistics.empty")}</p>
+          )}
+        </section>
+      ) : null}
       <SharedConfigPanel config={project.sharedConfig} />
       <ProjectAssemblyPlanGroups failed={assemblyPlanFailed} plan={assemblyPlan} />
       {managedDeploymentOps ? <ProjectManagedDeployments

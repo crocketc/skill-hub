@@ -52,6 +52,9 @@ function facadeWith(agent: AgentView, overrides: Partial<AgentFacade> = {}): Age
 async function renderDetailPage(facade: AgentFacade, governanceFacade?: RelationGovernanceFacade) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const testGovernanceFacade = governanceFacade ?? {
+    listGovernance: vi.fn(async () => ({ rows: [] })),
+  } as unknown as RelationGovernanceFacade;
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/agents/custom-reviewer"]}>
@@ -59,7 +62,7 @@ async function renderDetailPage(facade: AgentFacade, governanceFacade?: Relation
           <AgentDetailPage
             agentId="custom-reviewer"
             facade={facade}
-            governanceFacade={governanceFacade}
+            governanceFacade={testGovernanceFacade}
             picker={pickingPicker}
           />
         </I18nextProvider>
@@ -80,6 +83,35 @@ it("shows discovered directory facts without trust or usability status", async (
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
   expect(screen.getByText("实验功能，仅供参考")).toBeVisible();
   expect(screen.getByText("研发中")).toBeVisible();
+});
+
+it("shows discovery counts and problem groups for this Agent environment", async () => {
+  const governanceFacade = {
+    listGovernance: vi.fn(async () => ({ rows: [] })),
+    getUsageEnvironmentStatistics: vi.fn(async () => ({
+      real_agent_count: 2,
+      shared_directory_count: 1,
+      project_count: 1,
+      physical_usage_count: 3,
+      subject_count: 4,
+      environments: [{
+        environment: { agent_client_id: "Codex family", project_id: null },
+        discovered_item_count: 8,
+        shared_item_count: 2,
+        builtin_item_count: 3,
+        same_skill_problem_count: 1,
+        name_problem_count: 1,
+      }],
+    })),
+  } as unknown as RelationGovernanceFacade;
+  await renderDetailPage(facadeWith(agentFixture()), governanceFacade);
+
+  const statistics = await screen.findByRole("region", { name: "Agent 使用统计" });
+  await waitFor(() => expect(statistics).toHaveTextContent("发现 Skill 8 项"));
+  expect(statistics).toHaveTextContent("共享目录 2 项");
+  expect(statistics).toHaveTextContent("内置目录 3 项");
+  expect(statistics).toHaveTextContent("同一 Skill 1 组");
+  expect(statistics).toHaveTextContent("重名 Skill 1 组");
 });
 
 it("explains abnormal directory states with the same labels as the list cards", async () => {

@@ -7,13 +7,15 @@
 //! one transaction per relation. Per-item failures are reported; they never
 //! abort the batch.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
-use skillhub_core::agent::{AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole};
+use skillhub_core::agent::{
+    AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole, ClientKind,
+};
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, RelationshipOverviewScope, RunRelationshipCheck,
 };
@@ -21,11 +23,12 @@ use skillhub_core::project::Project;
 use skillhub_core::relationship::{
     analyze_environment_problems, evaluate_relationship_probe, merge_environment_problem_analyses,
     update_is_meaningful, AgentDirectoryCapabilityFact, DirectoryNodeFact, DirectoryRecognition,
-    DirectoryRole, EnvironmentProblemAnalysis, RelationshipCheckItem, RelationshipCheckItemStatus,
-    RelationshipCheckLevel, RelationshipCheckReport, RelationshipCheckScope, RelationshipPathProbe,
-    SourceCopyRelationFact, SourceCopyTransition, UsageEnvironmentDirectory, UsageEnvironmentEntry,
-    UsageEnvironmentKey, UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
-    UsageEnvironmentSnapshot,
+    DirectoryRole, EnvironmentProblemAnalysis, EnvironmentProblemKind, RelationshipCheckItem,
+    RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
+    RelationshipCheckScope, RelationshipPathProbe, SourceCopyRelationFact, SourceCopyTransition,
+    UsageEnvironmentDirectory, UsageEnvironmentEntry, UsageEnvironmentKey,
+    UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
+    UsageEnvironmentSnapshot, UsageEnvironmentStatistics, UsageEnvironmentStatisticsSummary,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, OperationId, ProjectId};
@@ -57,6 +60,63 @@ impl LocalApplicationFacade {
     pub(crate) fn get_usage_environment_problems(&self) -> AppResult<AppQueryResult> {
         let (analysis, _) = self.scan_usage_environment_state()?;
         Ok(AppQueryResult::UsageEnvironmentProblems(analysis))
+    }
+
+    pub(crate) fn get_usage_environment_statistics(&self) -> AppResult<AppQueryResult> {
+        let (_, snapshots) = self.scan_usage_environment_state()?;
+        let (discovery, projects, custom_agents, shared_nodes, subject_count) = self
+            .with_database("query.usage_environment_statistics.summary", |database| {
+                Ok((
+                    database
+                        .agent_repository()
+                        .load()?
+                        .unwrap_or_else(crate::empty_discovery),
+                    database.project_repository().list()?,
+                    database.custom_agent_repository().list()?,
+                    database
+                        .directory_repository()
+                        .list_nodes()?
+                        .into_iter()
+                        .filter(|node| node.role == DirectoryRole::SharedDirectory)
+                        .collect::<Vec<_>>(),
+                    database.catalog_repository()?.list_ids_sync()?.len(),
+                ))
+            })?;
+
+        let mut agent_ids = discovery
+            .instances
+            .iter()
+            .filter(|instance| !matches!(&instance.kind, ClientKind::SharedDirectory))
+            .map(|instance| instance.client_id.clone())
+            .collect::<BTreeSet<_>>();
+        agent_ids.extend(custom_agents.into_iter().map(|agent| agent.id));
+
+        // One configured shared-directory identity can be projected into many
+        // Agent environments. Count it once in the object summary.
+        let shared_identities = shared_nodes
+            .iter()
+            .map(|node| {
+                skillhub_core::physical_id_for_path(&node.path)
+                    .map(|identity| format!("physical:{identity}"))
+                    .unwrap_or_else(|| format!("directory:{}", node.node_id))
+            })
+            .collect::<BTreeSet<_>>();
+
+        let environments = snapshots
+            .iter()
+            .map(environment_statistics)
+            .collect::<Vec<_>>();
+        let physical_usage_count = count_physical_usage_entries(&snapshots);
+        Ok(AppQueryResult::UsageEnvironmentStatistics(
+            UsageEnvironmentStatisticsSummary {
+                real_agent_count: count_u32(agent_ids.len()),
+                shared_directory_count: count_u32(shared_identities.len().min(1)),
+                project_count: count_u32(projects.len()),
+                physical_usage_count,
+                subject_count: count_u32(subject_count),
+                environments,
+            },
+        ))
     }
 
     /// Returns the same fresh scan used by the read query together with the
@@ -142,8 +202,101 @@ impl LocalApplicationFacade {
         }
         Ok((merge_environment_problem_analyses(&analyses), snapshots))
     }
+}
 
-    /// 仅供测试：注入受控探测结果（权限/离线卷等无法跨平台模拟的场景）。
+fn environment_statistics(snapshot: &UsageEnvironmentSnapshot) -> UsageEnvironmentStatistics {
+    let unique_entry_count = |entries: Vec<&UsageEnvironmentEntry>| {
+        entries
+            .into_iter()
+            .map(|entry| {
+                entry
+                    .physical_identity
+                    .as_ref()
+                    .map(|identity| format!("physical:{identity}"))
+                    .unwrap_or_else(|| {
+                        format!("entry:{}:{}", entry.directory_id, entry.relative_entry_path)
+                    })
+            })
+            .collect::<BTreeSet<_>>()
+            .len()
+    };
+    let entries = snapshot.discovered_entries.iter().collect::<Vec<_>>();
+    let shared_entries = entries
+        .iter()
+        .copied()
+        .filter(|entry| entry.directory_role == Some(AgentDirectoryRole::SharedDirectory))
+        .collect::<Vec<_>>();
+    let builtin_entries = entries
+        .iter()
+        .copied()
+        .filter(|entry| entry.directory_role == Some(AgentDirectoryRole::Builtin))
+        .collect::<Vec<_>>();
+    let problem_analysis = analyze_environment_problems(snapshot);
+
+    UsageEnvironmentStatistics {
+        environment: snapshot.environment.clone(),
+        discovered_item_count: count_u32(unique_entry_count(entries)),
+        shared_item_count: count_u32(unique_entry_count(shared_entries)),
+        builtin_item_count: count_u32(unique_entry_count(builtin_entries)),
+        same_skill_problem_count: count_u32(
+            problem_analysis
+                .problems
+                .iter()
+                .filter(|problem| problem.kind == EnvironmentProblemKind::SameSkill)
+                .count(),
+        ),
+        name_problem_count: count_u32(
+            problem_analysis
+                .problems
+                .iter()
+                .filter(|problem| problem.kind == EnvironmentProblemKind::NameConflict)
+                .count(),
+        ),
+    }
+}
+
+fn count_physical_usage_entries(snapshots: &[UsageEnvironmentSnapshot]) -> u32 {
+    let mut physical_entries = BTreeSet::new();
+    for snapshot in snapshots {
+        let directories = snapshot
+            .recognized_directories
+            .iter()
+            .map(|directory| (directory.directory_id.as_str(), directory))
+            .collect::<BTreeMap<_, _>>();
+        for relation in snapshot
+            .usage_relations
+            .iter()
+            .filter(|relation| relation.active)
+        {
+            let key = match relation.entry_key.as_ref() {
+                Some(entry_key) => {
+                    let physical_directory = directories
+                        .get(entry_key.directory_id.as_str())
+                        .and_then(|directory| directory.physical_identity.as_deref());
+                    match physical_directory {
+                        Some(identity) => {
+                            format!("physical:{identity}:{}", entry_key.relative_entry_path)
+                        }
+                        None => format!(
+                            "entry:{}:{}",
+                            entry_key.directory_id, entry_key.relative_entry_path
+                        ),
+                    }
+                }
+                None => format!("relation:{}", relation.relation_id),
+            };
+            physical_entries.insert(key);
+        }
+    }
+    count_u32(physical_entries.len())
+}
+
+fn count_u32(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+/// 仅供测试：注入受控探测结果（权限/离线卷等无法跨平台模拟的场景）。
+impl LocalApplicationFacade {
     #[doc(hidden)]
     pub fn set_relationship_probe_for_tests(&self, probe: Arc<dyn RelationshipPathProbing>) {
         *self.relationship_probe.lock().expect("relationship probe") = probe;

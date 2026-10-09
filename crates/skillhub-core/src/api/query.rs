@@ -20,7 +20,7 @@ use crate::relationship::{
     DirectoryNodeFact, EnvironmentProblemAnalysis, GovernanceTaskFact, RelationGovernanceFilters,
     RelationGovernanceLedger, RelationshipGraphFactCounts, RelationshipGraphFilters,
     SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
-    UsageDecisionRecord, UsageEntryKey, UsageRelationView,
+    UsageDecisionRecord, UsageEntryKey, UsageEnvironmentStatisticsSummary, UsageRelationView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1053,6 +1053,12 @@ pub struct GetRelationshipOverview {
 #[serde(deny_unknown_fields)]
 pub struct GetUsageEnvironmentProblems;
 
+/// Reads environment discovery counts and relationship object totals from the
+/// same recognized-directory scan; it never implies runtime execution.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetUsageEnvironmentStatistics;
+
 /// Reads durable decisions for a confirmed skill/entry identity.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
@@ -1363,6 +1369,8 @@ pub enum AppQuery {
     GetRelationshipOverview(GetRelationshipOverview),
     #[serde(rename = "get_usage_environment_problems")]
     GetUsageEnvironmentProblems(GetUsageEnvironmentProblems),
+    #[serde(rename = "get_usage_environment_statistics")]
+    GetUsageEnvironmentStatistics(GetUsageEnvironmentStatistics),
     #[serde(rename = "list_usage_decisions")]
     ListUsageDecisions(ListUsageDecisions),
     #[serde(rename = "get_relationship_removal_impact")]
@@ -1500,6 +1508,8 @@ pub enum AppQueryResult {
     RelationshipOverview(RelationshipOverview),
     #[serde(rename = "usage_environment_problems")]
     UsageEnvironmentProblems(EnvironmentProblemAnalysis),
+    #[serde(rename = "usage_environment_statistics")]
+    UsageEnvironmentStatistics(UsageEnvironmentStatisticsSummary),
     #[serde(rename = "usage_decision_history")]
     UsageDecisionHistory(Vec<UsageDecisionRecord>),
     #[serde(rename = "relationship_removal_impact")]

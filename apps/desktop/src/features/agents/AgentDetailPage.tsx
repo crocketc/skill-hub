@@ -23,7 +23,11 @@ import {
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { useRelationshipContextCheck } from "../relationships/governance/useRelationshipContextCheck";
 import { type AgentFacade, type AgentStatus, type AgentView, unavailableAgentFacade } from "./api";
-import { directoryStatusLabel, directoryStatusSuggestion } from "./agentCardModel";
+import {
+  directoryStatusLabel,
+  directoryStatusSuggestion,
+  usageEnvironmentStatisticsForAgent,
+} from "./agentCardModel";
 import { DirectoryMatrix } from "./DirectoryMatrix";
 import { CustomAgentForm } from "./CustomAgentForm";
 import { RelationsView } from "./RelationsView";
@@ -56,6 +60,16 @@ export function AgentDetailPage({
   const [relationshipOverview, setRelationshipOverview] = useState<RelationshipOverview>();
   const [relationshipUnavailable, setRelationshipUnavailable] = useState(false);
   const agentClientId = agent?.client;
+
+  const usageStatisticsQuery = useQuery({
+    enabled: Boolean(agentClientId && governanceFacade.getUsageEnvironmentStatistics),
+    queryFn: () => governanceFacade.getUsageEnvironmentStatistics!(),
+    queryKey: relationshipsKeys.usageStatistics(),
+    staleTime: 30_000,
+  });
+  const agentUsageStatistics = usageStatisticsQuery.data && agentClientId
+    ? usageEnvironmentStatisticsForAgent(usageStatisticsQuery.data, agentClientId)
+    : undefined;
 
   // 任务 12C（12.7/12.14）：页面顶层对该 Agent 的可管理关系做一次 Light check。
   const governanceLedgerQuery = useQuery({
@@ -194,6 +208,31 @@ export function AgentDetailPage({
           <dd>{[t("agents.managedSkillsCount", { count: agent.managedDeploymentCount }), t("agents.managedRelationsCount", { count: agent.managedDeploymentRelationCount })].join(" · ")}</dd>
         </div>
       </section>
+      {governanceFacade.getUsageEnvironmentStatistics ? (
+        <section
+          aria-label={t("agents.detail.usageStatistics.title")}
+          className="sh-agent-facts sh-agent-usage-facts"
+        >
+          <div>
+            <dt>{t("agents.detail.usageStatistics.title")}</dt>
+            <dd>
+              {usageStatisticsQuery.isError
+                ? t("agents.detail.usageStatistics.unavailable")
+                : agentUsageStatistics
+                  ? [
+                    t("agents.detail.usageStatistics.discovered", { count: agentUsageStatistics.discovered_item_count }),
+                    t("agents.detail.usageStatistics.shared", { count: agentUsageStatistics.shared_item_count }),
+                    t("agents.detail.usageStatistics.builtin", { count: agentUsageStatistics.builtin_item_count }),
+                    t("agents.detail.usageStatistics.sameSkillProblems", { count: agentUsageStatistics.same_skill_problem_count }),
+                    t("agents.detail.usageStatistics.nameProblems", { count: agentUsageStatistics.name_problem_count }),
+                  ].join(" · ")
+                  : usageStatisticsQuery.isSuccess
+                    ? t("agents.detail.usageStatistics.environmentUnavailable")
+                    : t("agents.detail.usageStatistics.loading")}
+            </dd>
+          </div>
+        </section>
+      ) : null}
       {!agent.builtin && facade.recordCompatibility ? <section>
         <h2>{t("agents.compatibility.title")}</h2>
         {(agent.directoryMembers ?? []).map((member) => <div key={member.logical_target_id}>
