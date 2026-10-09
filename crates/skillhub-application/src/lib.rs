@@ -9072,6 +9072,23 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::ResolveRecovery(request) => {
                 if self
+                    .resolve_subject_rename_recovery(request.operation_id, request.action)
+                    .await?
+                {
+                    return Ok(AppCommandResult::OperationSummary(
+                        skillhub_core::OperationSummary {
+                            operation_id: request.operation_id,
+                            phase: if request.action == RecoveryAction::CompleteOperation {
+                                skillhub_core::OperationPhase::Committed
+                            } else {
+                                skillhub_core::OperationPhase::RolledBack
+                            },
+                            message_code: "recovery.resolved".to_owned(),
+                            error_code: None,
+                        },
+                    ));
+                }
+                if self
                     .resolve_shared_usage_migration_recovery(request.operation_id, request.action)
                     .await?
                 {
@@ -18634,18 +18651,24 @@ impl RecoveryBackend for LocalRecoveryBackend {
         let mut statement = database
             .connection_for_test()
             .prepare(
-                "SELECT operation_id, kind FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') AND NOT (kind='usage_duplicate_cleanup' AND phase='prepared') ORDER BY operation_id",
+                "SELECT operation_id, kind, recovery_data FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') AND NOT (kind IN ('usage_duplicate_cleanup','subject_runtime_rename') AND phase='prepared') ORDER BY operation_id",
             )
             .map_err(|error| database_error("recovery.list", error.to_string()))?;
         let rows = statement
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .map_err(|error| database_error("recovery.list", error.to_string()))?;
         let mut candidates = Vec::new();
         for row in rows {
-            let (id, kind) =
+            let (id, kind, recovery_data) =
                 row.map_err(|error| database_error("recovery.list", error.to_string()))?;
+            let recovery_data: serde_json::Value = serde_json::from_str(&recovery_data)
+                .map_err(|error| database_error("recovery.list", error.to_string()))?;
             let id = id
                 .parse()
                 .map_err(|_| database_error("recovery.list", "invalid operation id".to_owned()))?;
@@ -18654,6 +18677,15 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 actions: match kind.as_str() {
                     "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
                     "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
+                    "subject_runtime_rename"
+                        if recovery_data
+                            .get("metadata_committed")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false) =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
+                    "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
                     _ => vec![
                         RecoveryAction::CompleteOperation,
                         RecoveryAction::RollbackOperation,

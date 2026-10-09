@@ -22,7 +22,7 @@ pub use database::{
 };
 pub use library::{
     CentralLibrary, ManifestFaultHandler, MarkdownDraftRecord, MarkdownDraftStore,
-    PortableManifestStore, VisibleTreeReplacement,
+    PortableManifestStore, VisibleSkillRename, VisibleTreeReplacement,
 };
 pub use skillhub_core::{LibraryManifest, LibraryPaths, PortableSkillRecord};
 pub use version_store::VersionStore;

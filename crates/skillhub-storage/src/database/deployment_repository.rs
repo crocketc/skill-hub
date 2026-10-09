@@ -250,6 +250,87 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         transaction.commit().map_err(database_error)
     }
 
+    /// Updates the runtime path and pinned version of one existing managed
+    /// deployment without reusing another row that happens to own the new
+    /// `(target, runtime_name)` pair.
+    pub fn rename_runtime_sync(
+        &self,
+        deployment: &DeploymentRecord,
+        previous_runtime_name: &str,
+    ) -> AppResult<()> {
+        if !deployment.managed || deployment.state != DeploymentState::Deployed {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "managed_deployment_not_renameable")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let collision = transaction
+            .query_row(
+                "SELECT id FROM deployments WHERE target_id=?1 AND runtime_name=?2 AND id<>?3",
+                params![
+                    deployment.target_id,
+                    deployment.runtime_name,
+                    deployment.id.to_string()
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        if collision.is_some() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "subject_rename_deployment_name_conflict")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE deployments SET runtime_name=?1,version_id=?2,expected_hash=?3,observed_hash=?4,updated_at=?5 WHERE id=?6 AND target_id=?7 AND runtime_name=?8 AND state='deployed' AND managed=1",
+                params![
+                    deployment.runtime_name,
+                    deployment.version_id.to_string(),
+                    deployment.expected_hash,
+                    deployment.observed_hash,
+                    now(),
+                    deployment.id.to_string(),
+                    deployment.target_id,
+                    previous_runtime_name,
+                ],
+            )
+            .map_err(database_error)?;
+        if changed != 1 {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "subject_rename_deployment_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let target_path = transaction
+            .query_row(
+                "SELECT path FROM targets WHERE id=?1",
+                [deployment.target_id.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(database_error)?;
+        let relationship_changed = self
+            .database
+            .relationship_repository()
+            .rename_managed_deployment_tx(
+                &transaction,
+                &deployment.id.to_string(),
+                &super::relationship_repository::deployment_entry_path(
+                    &target_path,
+                    &deployment.runtime_name,
+                ),
+                &deployment.expected_hash,
+                now(),
+            )?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
+        transaction.commit().map_err(database_error)
+    }
+
     /// Keeps a failed managed usage change visible while leaving deployment
     /// ownership, its pinned version, and the last observed target anomaly intact.
     pub fn mark_managed_usage_change_failed(&self, id: DeploymentId) -> AppResult<()> {

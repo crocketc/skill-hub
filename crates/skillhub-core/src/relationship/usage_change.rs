@@ -19,6 +19,30 @@ pub enum UsageChangeAction {
     Restore,
     ResolveDuplicate,
     MigrateSharedUsage,
+    RenameSubject,
+}
+
+/// One managed target whose directory entry will move when a skill subject is
+/// renamed. Paths are descriptive preview facts; commit resolves them again
+/// from the stored deployment and target records.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SubjectRenameTargetPreview {
+    pub deployment_id: String,
+    pub target_id: String,
+    pub previous_path: String,
+    pub path: String,
+    pub mode: crate::deployment::DeploymentMode,
+}
+
+/// Complete impact snapshot for an explicit, subject-wide runtime rename.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SubjectRenamePreview {
+    pub skill_id: SkillId,
+    pub previous_runtime_name: String,
+    pub runtime_name: String,
+    pub targets: Vec<SubjectRenameTargetPreview>,
 }
 
 /// The verified environmental issue and the exact user selection frozen into
@@ -147,6 +171,7 @@ pub enum UsageChangeImpactAction {
     Synchronize,
     Repair,
     Restore,
+    RenameSubject,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -204,6 +229,8 @@ pub struct PreparedUsageChange {
     pub duplicate_cleanup: Option<DuplicateCleanupPreview>,
     #[serde(default)]
     pub shared_usage_migration: Option<SharedUsageMigrationPreview>,
+    #[serde(default)]
+    pub subject_rename: Option<SubjectRenamePreview>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

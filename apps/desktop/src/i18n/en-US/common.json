@@ -1800,6 +1800,36 @@
       "securityHandling": "Security handling",
       "reclaim": "Reclaim skill"
     },
+    "runtimeRename": {
+      "button": "Change runtime name",
+      "eyebrow": "Skill runtime name",
+      "title": "Change skill runtime name",
+      "description": "This changes name in SKILL.md, creates a new skill version, and synchronizes every managed use. The display alias stays unchanged.",
+      "input": "New runtime name",
+      "preview": "Preview all impact",
+      "previewing": "Checking all impact",
+      "submitting": "Synchronizing managed targets",
+      "previewTitle": "Runtime name change preview",
+      "previewMissing": "The preview did not include runtime-name details. Check the impact again.",
+      "change": "The runtime name will change from “{{previous}}” to “{{next}}”.",
+      "targetsHeading": "Managed targets to update ({{count}})",
+      "noTargets": "There are no managed uses. This changes only the skill subject and creates a new version.",
+      "modes": {
+        "managed_copy": "Managed copy",
+        "symbolic_link": "Symbolic link",
+        "directory_junction": "Directory junction"
+      },
+      "edit": "Edit name",
+      "confirm": "Confirm runtime-name change",
+      "close": "Close",
+      "completed": "Runtime name changed and synchronized to {{count}} managed targets.",
+      "partial": "The runtime name change did not finish everywhere. Completed: {{applied}}. Needs attention: {{failed}}.",
+      "recovery": "The change needs recovery. Review the operation in Recovery Center.",
+      "openRecovery": "Open Recovery Center",
+      "failed": "The runtime name change failed. Check the target state and try again.",
+      "trackerLabel": "Change skill runtime name",
+      "trackerSaved": "Skill runtime name changed"
+    },
     "versions": {
       "rename": "Rename version",
       "renameAria": "Rename version {{version}}",

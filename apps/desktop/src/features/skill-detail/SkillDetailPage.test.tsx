@@ -375,6 +375,51 @@ function usageReleaseResult(): UsageChangeResult {
   };
 }
 
+function usageRenamePrepared(): PreparedUsageChange {
+  return {
+    operation_id: "op-rename",
+    prepared_id: "prepared-rename",
+    action: "rename_subject",
+    relationship_revision: "rev-rename",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+    subject_rename: {
+      skill_id: "skill-pdf",
+      previous_runtime_name: "pdf-reader",
+      runtime_name: "pdf-reader-next",
+      targets: [
+        {
+          deployment_id: "deployment-codex",
+          target_id: "target-codex",
+          previous_path: "/agents/codex/skills/pdf-reader",
+          path: "/agents/codex/skills/pdf-reader-next",
+          mode: "managed_copy",
+        },
+        {
+          deployment_id: "deployment-claude",
+          target_id: "target-claude",
+          previous_path: "/agents/claude/skills/pdf-reader",
+          path: "/agents/claude/skills/pdf-reader-next",
+          mode: "symbolic_link",
+        },
+      ],
+    },
+  };
+}
+
+function usageRenameResult(): UsageChangeResult {
+  return {
+    operation_id: "op-rename",
+    prepared_id: "prepared-rename",
+    recovery_required: false,
+    item_results: [],
+  };
+}
+
 function usageManagePrepared(): PreparedUsageChange {
   return {
     operation_id: "op-manage",
@@ -531,6 +576,56 @@ describe("SkillDetailPage shell", () => {
       "来源更新",
       "版本历史",
     ]);
+  });
+
+  it("previews every managed target before committing a subject runtime rename", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(usageRenamePrepared()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageRenameResult()),
+    };
+    await renderDetail({ locale: "zh-CN", usageChangeFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "修改运行名" }));
+    const dialog = await screen.findByRole("dialog", { name: "修改技能运行名" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "新运行名称" }), "pdf-reader-next");
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览全部影响" }));
+
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "rename_subject",
+      relation_ids: [],
+      runtime_name: "pdf-reader-next",
+      skill_id: "skill-pdf",
+    })));
+    expect(await within(dialog).findByText("/agents/codex/skills/pdf-reader → /agents/codex/skills/pdf-reader-next")).toBeVisible();
+    expect(within(dialog).getByText("/agents/claude/skills/pdf-reader → /agents/claude/skills/pdf-reader-next")).toBeVisible();
+    expect(usageChangeFacade.commitUsageChange).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认修改运行名" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-rename",
+      prepared_id: "prepared-rename",
+    }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("运行名修改完成");
+  });
+
+  it("requires a fresh impact preview after a runtime rename commit fails", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(usageRenamePrepared()),
+      commitUsageChange: vi.fn().mockRejectedValueOnce(new Error("Preview is stale")),
+    };
+    await renderDetail({ locale: "zh-CN", usageChangeFacade });
+
+    fireEvent.click(await screen.findByRole("button", { name: "修改运行名" }));
+    const dialog = await screen.findByRole("dialog", { name: "修改技能运行名" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "新运行名称" }), "pdf-reader-next");
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览全部影响" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "确认修改运行名" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Preview is stale");
+    expect(within(dialog).getByRole("textbox", { name: "新运行名称" })).toHaveValue("pdf-reader-next");
+    expect(within(dialog).queryByRole("button", { name: "确认修改运行名" })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览全部影响" }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledTimes(2));
   });
 
   it("releases uses from a library reclaim link through the prepared unified flow", async () => {

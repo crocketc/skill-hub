@@ -1129,3 +1129,56 @@
   gap: var(--space-2);
   font-size: var(--font-size-sm);
 }
+
+.sh-runtime-name-rename__field {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 36rem;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.sh-runtime-name-rename__field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.sh-runtime-name-rename__preview {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sh-runtime-name-rename__preview h3,
+.sh-runtime-name-rename__preview p {
+  margin: 0;
+}
+
+.sh-runtime-name-rename__targets {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-runtime-name-rename__targets li {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+}
+
+.sh-runtime-name-rename__targets code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 48rem) {
+  .sh-runtime-name-rename__targets li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

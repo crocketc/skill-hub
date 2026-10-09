@@ -130,7 +130,7 @@ export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener
   );
 }
 
-export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDelete, onReclaim }: {
+export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDelete, onReclaim, onRenameRuntimeName }: {
   /**
    * §7.8 生产承载：转为集中管理保留一次确认入口，承载与治理页共用的真实
    * 批次契约（候选行/确认绑定/影响预览都来自治理门面）；无待接管关系时不
@@ -145,6 +145,8 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
   onDelete: () => void;
   /** T05：回收技能的全部可用去向，进入统一使用关系释放流程。 */
   onReclaim?: () => void;
+  /** T15：显式修改技能主体运行名，提交前预览全部受管目标。 */
+  onRenameRuntimeName?: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -154,6 +156,9 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
       ) : null}
       {onReclaim ? (
         <Button onClick={onReclaim} size="sm" variant="secondary">{t("skillDetail.actions.reclaim")}</Button>
+      ) : null}
+      {onRenameRuntimeName ? (
+        <Button onClick={onRenameRuntimeName} size="sm" variant="secondary">{t("skillDetail.runtimeRename.button")}</Button>
       ) : null}
       <Button onClick={onDispatch} size="sm">派发</Button>
       <Button onClick={onExport} size="sm" variant="secondary">导出</Button>

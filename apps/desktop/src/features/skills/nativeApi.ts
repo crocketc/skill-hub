@@ -407,7 +407,7 @@ export const nativeSkillLibraryFacade: SkillLibraryFacade = {
   // QA-007：抽屉别名/备注/标签通过 set_metadata 持久化；该命令是整体覆盖，
   // 必须先读取当前值合并补丁，避免丢失作者或许可证。
   // P1-10 红线：display_name 只取补丁别名或回退 runtime_name，
-  // 原名在任何路径下都不会被该命令修改（改名只能走 rename_skill，此处不使用）。
+  // 此画像命令不修改运行名；运行名变更通过带全目标预览的统一使用关系流程执行。
   async saveSkillMetadata(skillId, patch) {
     const result = await queryApplication({
       type: "get_skill",

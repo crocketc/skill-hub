@@ -51,6 +51,7 @@ import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { UsageManageDialog } from "../relationships/governance/UsageManageDialog";
 import { usageDestinationCards, type UsageDestinationsState } from "./usageDestinations";
 import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
+import { RuntimeNameRenameDialog } from "./RuntimeNameRenameDialog";
 
 interface SkillDetailPageProps {
   facade: SkillDetailFacade;
@@ -164,6 +165,7 @@ export function SkillDetailPage({
     [skillId, usageOverviewQuery.data],
   );
   const [usageReleaseOpen, setUsageReleaseOpen] = useState(false);
+  const [runtimeRenameOpen, setRuntimeRenameOpen] = useState(false);
   const reclaimIntentLocationKey = useRef<string | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -181,6 +183,45 @@ export function SkillDetailPage({
       effectiveUsageChangeFacade.prepareUsageChange(request),
     [effectiveUsageChangeFacade],
   );
+  const prepareRuntimeRename = useCallback(
+    (request: PrepareUsageChange): Promise<PreparedUsageChange> =>
+      effectiveUsageChangeFacade.prepareUsageChange(request),
+    [effectiveUsageChangeFacade],
+  );
+  const commitRuntimeRename = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> =>
+    runTrackedOperation<UsageChangeResult>({
+      describeError: (reason) => describeNativeError(
+        reason,
+        (key, options) => String(t(key as never, options as never)),
+        "skillDetail.runtimeRename.failed",
+      ),
+      invalidateQueryKeys: [[relationshipsKeys.root], [skillDetailKeys.root], [skillLibraryKeys.root]],
+      kind: "skill_runtime_rename",
+      label: t("skillDetail.runtimeRename.trackerLabel"),
+      notifications,
+      operationId: request.operation_id,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
+      },
+      source: "library",
+      successNotice: (result) => !result.recovery_required
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: t("skillDetail.runtimeRename.trackerSaved"), tone: "success" as const }
+        : null,
+      summarize: (result) => {
+        const failed = result.item_results.filter((item) => item.status !== "applied").length;
+        return {
+          failed: result.recovery_required ? Math.max(1, failed) : failed,
+          skipped: 0,
+          succeeded: Math.max(0, result.item_results.length - failed),
+        };
+      },
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    }), [effectiveUsageChangeFacade, notifications, queryClient, t, tracker]);
   const commitUsageRelease = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => {
     return runTrackedOperation<UsageChangeResult>({
       describeError: (reason) => describeNativeError(
@@ -470,6 +511,7 @@ export function SkillDetailPage({
         // §7.8：入口只在存在真实待接管关系时出现（隐藏而非禁用）。
         onCentralize={takeoverCandidates.length > 0 ? openTakeover : undefined}
         onReclaim={usageReleaseCandidates.length > 0 ? () => setUsageReleaseOpen(true) : undefined}
+        onRenameRuntimeName={() => setRuntimeRenameOpen(true)}
         onDelete={() => void startRemoval()}
         onOpenGovernanceDestination={openGovernanceDestination}
         provenance={provenanceQuery.data}
@@ -489,6 +531,14 @@ export function SkillDetailPage({
           onCommit={commitUsageRelease}
           onPrepare={prepareUsageRelease}
           scope={{ kind: "skill", skillId }}
+        />
+      ) : null}
+      {runtimeRenameOpen ? (
+        <RuntimeNameRenameDialog
+          onCancel={() => setRuntimeRenameOpen(false)}
+          onCommit={commitRuntimeRename}
+          onPrepare={prepareRuntimeRename}
+          skillId={skillId}
         />
       ) : null}
       {removalLoading ? <p role="status">{t("removal.loading")}</p> : null}

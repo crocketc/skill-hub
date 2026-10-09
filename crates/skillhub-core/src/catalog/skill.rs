@@ -233,7 +233,15 @@ impl Skill {
         if name.trim().is_empty() {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error));
         }
-        self.display_name = name.clone();
+        self.display_name = name;
+        Ok(())
+    }
+
+    /// Changes the runtime identifier while preserving the user's display
+    /// alias. Subject-wide renames must use the versioned relationship flow.
+    pub fn set_runtime_name(&mut self, name: impl Into<String>) -> Result<(), AppError> {
+        let name = name.into();
+        crate::deployment::validate_runtime_name(&name)?;
         self.runtime_name = name;
         Ok(())
     }
@@ -262,9 +270,7 @@ impl Skill {
     ) -> Result<(), AppError> {
         if let Some(name) = display_name {
             // M-21 根因修复：display_name 是别名（展示名），别名编辑只覆盖
-            // 展示名；runtime_name 是稳定身份，只能经 rename_skill 的
-            // Self::rename 修改。此前此处调用 rename() 把别名写进了
-            // runtime_name，导致别名编辑改掉原名。
+            // 展示名；运行名由统一关系变更的主体改名流程单独处理。
             if name.trim().is_empty() {
                 return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error));
             }
@@ -325,5 +331,19 @@ fn patch_optional<T>(field: &mut Option<T>, patch: PatchField<T>) {
         PatchField::Unchanged => {}
         PatchField::Clear => *field = None,
         PatchField::Set(value) => *field = Some(value),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rename_changes_display_alias_without_changing_runtime_name() {
+        let mut skill = Skill::new(SkillId::new(), "original-runtime");
+        skill.rename("Display alias").expect("rename display alias");
+
+        assert_eq!(skill.display_name(), "Display alias");
+        assert_eq!(skill.runtime_name(), "original-runtime");
     }
 }

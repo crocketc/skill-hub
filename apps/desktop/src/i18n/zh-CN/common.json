@@ -1800,6 +1800,36 @@
       "securityHandling": "安全处理",
       "reclaim": "回收技能"
     },
+    "runtimeRename": {
+      "button": "修改运行名",
+      "eyebrow": "技能运行名",
+      "title": "修改技能运行名",
+      "description": "这会修改 SKILL.md 中的 name、创建新的技能版本，并同步全部受管使用目标。展示别名保持不变。",
+      "input": "新运行名称",
+      "preview": "预览全部影响",
+      "previewing": "正在检查全部影响",
+      "submitting": "正在同步受管目标",
+      "previewTitle": "运行名改动预览",
+      "previewMissing": "预览没有返回运行名变更详情，请重新检查。",
+      "change": "运行名将从「{{previous}}」改为「{{next}}」。",
+      "targetsHeading": "将同步的受管目标（{{count}}）",
+      "noTargets": "当前没有受管使用目标；本次只修改技能主体并创建新版本。",
+      "modes": {
+        "managed_copy": "受管拷贝",
+        "symbolic_link": "符号链接",
+        "directory_junction": "目录联接"
+      },
+      "edit": "返回修改名称",
+      "confirm": "确认修改运行名",
+      "close": "关闭",
+      "completed": "运行名修改完成，已同步 {{count}} 个受管目标。",
+      "partial": "运行名修改未能全部完成，已完成 {{applied}} 项，仍需处理 {{failed}} 项。",
+      "recovery": "修改需要恢复处理。请先检查恢复中心中的操作记录。",
+      "openRecovery": "打开恢复中心",
+      "failed": "运行名修改失败。请检查目标状态后重试。",
+      "trackerLabel": "修改技能运行名",
+      "trackerSaved": "技能运行名已修改"
+    },
     "versions": {
       "rename": "命名版本",
       "renameAria": "命名版本 {{version}}",

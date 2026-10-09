@@ -840,8 +840,8 @@ pub struct CommitUndeploy {
     pub confirm_shared_target_removal: bool,
 }
 
-/// Prepares a usage-relation change. Release is currently the only supported
-/// action; all fields belonging to later actions must remain empty.
+/// Prepares a usage-relation change. Fields not used by the selected action
+/// must remain empty.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareUsageChange {

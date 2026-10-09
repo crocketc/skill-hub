@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use skillhub_core::catalog::Skill;
 use skillhub_core::{
     AppError, AppResult, ErrorCode, LibraryManifest, LibraryPaths, PortableSkillRecord,
@@ -27,6 +28,23 @@ pub struct VisibleTreeReplacement {
     backup: Option<std::path::PathBuf>,
     expected_tree_hash: String,
     expected_backup_tree_hash: Option<String>,
+}
+
+/// A two-path visible-tree move retained for a journaled runtime rename.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct VisibleSkillRename {
+    pub skill_id: SkillId,
+    pub previous_output: std::path::PathBuf,
+    pub output: std::path::PathBuf,
+    pub backup: std::path::PathBuf,
+    pub expected_tree_hash: String,
+    pub expected_backup_tree_hash: String,
+}
+
+impl VisibleSkillRename {
+    pub fn backup_path(&self) -> &Path {
+        &self.backup
+    }
 }
 
 impl VisibleTreeReplacement {
@@ -297,6 +315,181 @@ impl CentralLibrary {
     pub fn materialize_current_skill(&self, skill: &Skill, version: &VersionId) -> AppResult<()> {
         let replacement = self.prepare_visible_tree_replacement(skill, version)?;
         self.finalize_visible_tree_replacement(replacement)
+    }
+
+    /// Installs the selected immutable version under a new runtime-derived
+    /// visible path and retains the old tree until every usage target commits.
+    pub fn prepare_visible_skill_rename_with_backup(
+        &self,
+        previous_skill: &Skill,
+        renamed_skill: &Skill,
+        version: &VersionId,
+        backup: &Path,
+        expected_previous_tree_hash: &str,
+    ) -> AppResult<VisibleSkillRename> {
+        if previous_skill.id() != renamed_skill.id()
+            || previous_skill.runtime_name() == renamed_skill.runtime_name()
+        {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "runtime_name")
+                .with_action(RecoveryAction::Retry));
+        }
+        let previous_output = self.visible_skill_path(previous_skill);
+        let output = self.visible_skill_path(renamed_skill);
+        self.validate_visible_paths(previous_skill.id(), &previous_output)?;
+        self.validate_visible_paths(renamed_skill.id(), &output)?;
+        self.validate_runtime_rename_backup(previous_skill.id(), backup)?;
+        if !path_entry_exists(&previous_output)?
+            || !is_real_directory(&previous_output)?
+            || path_entry_exists(&output)?
+            || path_entry_exists(backup)?
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_runtime_rename_paths_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let observed_previous_hash =
+            VersionStore::from_library(self).hash_tree_read_only(&previous_output)?;
+        if observed_previous_hash != expected_previous_tree_hash {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let manifest = VersionStore::from_library(self).load_manifest(version)?;
+        if manifest.skill_id != renamed_skill.id() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "version_id")
+                .with_action(RecoveryAction::Retry));
+        }
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        let staging = self.paths.tmp_dir.join(format!(
+            "visible-runtime-rename-{}-{nonce}",
+            renamed_skill.id()
+        ));
+        VersionStore::from_library(self).materialize(version, &staging)?;
+        if let Err(error) = fs::rename(&previous_output, backup) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(io_error(error));
+        }
+        if let Err(error) = fs::rename(&staging, &output) {
+            let restore = fs::rename(backup, &previous_output);
+            let _ = fs::remove_dir_all(&staging);
+            if let Err(restore_error) = restore {
+                return Err(io_error(error)
+                    .with_param("reason", "visible_runtime_rename_restore_failed")
+                    .with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    )
+                    .with_param("recovery_restore_error", restore_error.to_string())
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            return Err(io_error(error));
+        }
+        Ok(VisibleSkillRename {
+            skill_id: renamed_skill.id(),
+            previous_output,
+            output,
+            backup: backup.to_path_buf(),
+            expected_tree_hash: manifest.tree_hash,
+            expected_backup_tree_hash: expected_previous_tree_hash.to_owned(),
+        })
+    }
+
+    /// Restores the previous visible path after a failed runtime rename.
+    pub fn rollback_visible_skill_rename(&self, rename: &VisibleSkillRename) -> AppResult<()> {
+        self.validate_visible_paths(rename.skill_id, &rename.previous_output)?;
+        self.validate_visible_paths(rename.skill_id, &rename.output)?;
+        self.validate_runtime_rename_backup(rename.skill_id, &rename.backup)?;
+        if path_entry_exists(&rename.previous_output)? || !path_entry_exists(&rename.backup)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_runtime_rename_recovery_paths_changed")
+                .with_param(
+                    "recovery_backup_path",
+                    rename.backup.to_string_lossy().into_owned(),
+                )
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if path_entry_exists(&rename.output)? {
+            if !is_real_directory(&rename.output)?
+                || VersionStore::from_library(self).hash_tree_read_only(&rename.output)?
+                    != rename.expected_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_runtime_rename_output_changed")
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            fs::remove_dir_all(&rename.output).map_err(io_error)?;
+        }
+        if !is_real_directory(&rename.backup)?
+            || VersionStore::from_library(self).hash_tree_read_only(&rename.backup)?
+                != rename.expected_backup_tree_hash
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_runtime_rename_backup_changed")
+                .with_param(
+                    "recovery_backup_path",
+                    rename.backup.to_string_lossy().into_owned(),
+                )
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        fs::rename(&rename.backup, &rename.previous_output).map_err(io_error)
+    }
+
+    /// Removes the retained old tree only after all runtime-rename consumers
+    /// and metadata projections are committed.
+    pub fn finalize_visible_skill_rename(&self, rename: VisibleSkillRename) -> AppResult<()> {
+        self.validate_visible_paths(rename.skill_id, &rename.previous_output)?;
+        self.validate_visible_paths(rename.skill_id, &rename.output)?;
+        self.validate_runtime_rename_backup(rename.skill_id, &rename.backup)?;
+        if !is_real_directory(&rename.output)?
+            || VersionStore::from_library(self).hash_tree_read_only(&rename.output)?
+                != rename.expected_tree_hash
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_runtime_rename_output_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if path_entry_exists(&rename.backup)? {
+            if !is_real_directory(&rename.backup)?
+                || VersionStore::from_library(self).hash_tree_read_only(&rename.backup)?
+                    != rename.expected_backup_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_runtime_rename_backup_changed")
+                    .with_param(
+                        "recovery_backup_path",
+                        rename.backup.to_string_lossy().into_owned(),
+                    )
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            fs::remove_dir_all(&rename.backup).map_err(io_error)?;
+        }
+        Ok(())
+    }
+
+    fn validate_runtime_rename_backup(&self, skill_id: SkillId, backup: &Path) -> AppResult<()> {
+        let expected_prefix = format!("visible-runtime-rename-{skill_id}-");
+        let valid_name = backup
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name.strip_prefix(&expected_prefix).is_some_and(|suffix| {
+                    !suffix.is_empty()
+                        && suffix
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                })
+            });
+        if backup.parent() != Some(self.paths.tmp_dir.as_path()) || !valid_name {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_runtime_rename_backup")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        Ok(())
     }
 
     /// Replaces the visible tree but keeps its previous directory available

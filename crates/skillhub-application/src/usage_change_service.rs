@@ -20,23 +20,25 @@ use skillhub_core::api::{
     PrepareRelationMigration, PrepareUsageChange, RelationMigrationTargetMode,
     RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
+use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::{observed_path_key, DeploymentPlan};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, DuplicateCleanupPreview,
-    EnvironmentProblemKind, FileRepresentation, PreparedUsageChange, RelationGovernanceTargetKind,
-    SharedUsageMigrationPreview, SharedUsageReplacement, SourceCopyRelationFact, UsageChangeAction,
-    UsageChangeConsumer, UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult,
-    UsageChangeItemStatus, UsageChangeResult, UsageContentBasis, UsageCopyDisposition,
-    UsageDecision, UsageDecisionRecord, UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry,
-    UsageEnvironmentKey, UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement,
-    UsageRecoveryPoint, UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
+    EnvironmentProblemKind, FileRepresentation, OwnershipState, PreparedUsageChange,
+    RelationGovernanceTargetKind, SharedUsageMigrationPreview, SharedUsageReplacement,
+    SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
+    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
+    UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
+    UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry, UsageEnvironmentKey,
+    UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement, UsageRecoveryPoint,
+    UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
 };
 use skillhub_core::{
     reparse_physical_id_for_path, symlink_physical_id_for_path, AppCommandResult, AppError,
     AppResult, DeploymentMode, ErrorCode, OperationId, OperationPhase, OperationProgress,
     OperationRecord, RecoveryAction, Severity, SkillId, TargetChange, TargetPlan, VersionId,
 };
-use skillhub_storage::{CentralLibrary, Database, VersionStore};
+use skillhub_storage::{CentralLibrary, Database, VersionStore, VisibleSkillRename};
 
 use crate::relationship_governance_service::{
     capture_path_chain, create_dir_link, PathChainSnapshot,
@@ -49,6 +51,48 @@ const MANAGE_BATCH_OPERATION_KIND: &str = "usage_manage_batch";
 const MANAGED_USAGE_CHANGE_KIND: &str = "managed_usage_change";
 const DUPLICATE_CLEANUP_KIND: &str = "usage_duplicate_cleanup";
 const SHARED_USAGE_MIGRATION_KIND: &str = "shared_usage_migration";
+const SUBJECT_RENAME_KIND: &str = "subject_runtime_rename";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct SubjectRenameJournal {
+    request: PrepareUsageChange,
+    prepared: PreparedUsageChange,
+    original_skill: skillhub_core::catalog::Skill,
+    previous_version_id: skillhub_core::VersionId,
+    original_visible_hash: String,
+    plans: Vec<SubjectRenamePlan>,
+    new_version_id: Option<skillhub_core::VersionId>,
+    new_version_hash: Option<String>,
+    new_target_hash: Option<String>,
+    staging_path: Option<String>,
+    visible_rename: Option<VisibleSkillRename>,
+    catalog_updated: bool,
+    store_pointer_updated: bool,
+    database_pointer_updated: bool,
+    portable_updated: bool,
+    metadata_committed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct SubjectRenamePlan {
+    original_deployment: skillhub_core::DeploymentRecord,
+    deployment_id: String,
+    target_id: String,
+    previous_runtime_name: String,
+    runtime_name: String,
+    previous_path: String,
+    path: String,
+    backup_path: String,
+    mode: DeploymentMode,
+    expected_hash: String,
+    observed_before: Option<String>,
+    observed_identity: Option<String>,
+    target_root_identity: String,
+    created_new_entry: bool,
+    moved_previous_entry: bool,
+    deployment_record_updated: bool,
+    backup_finalized: bool,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ReleaseJournal {
@@ -269,6 +313,9 @@ impl LocalApplicationFacade {
         &self,
         request: PrepareUsageChange,
     ) -> AppResult<PreparedUsageChange> {
+        if request.action == UsageChangeAction::RenameSubject {
+            return self.prepare_subject_rename(request);
+        }
         if request.action == UsageChangeAction::Manage {
             validate_manage_request(&request)?;
             return self.prepare_usage_manage(request);
@@ -353,6 +400,340 @@ impl LocalApplicationFacade {
         Ok(journal.prepared)
     }
 
+    fn prepare_subject_rename(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
+        validate_subject_rename_request(&request)?;
+        let fingerprint = request_fingerprint(&request)?;
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.prepare.database"))?;
+            if let Some(record) = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+            {
+                if record.kind != SUBJECT_RENAME_KIND {
+                    return Err(operation_conflict("operation_id_reused"));
+                }
+                if record.request_fingerprint != fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", request.operation_id.to_string()));
+                }
+                let journal: SubjectRenameJournal = serde_json::from_value(record.recovery_data)
+                    .map_err(|_| operation_conflict("subject_rename_journal_invalid"))?;
+                return Ok(journal.prepared);
+            }
+        }
+
+        let skill_id = request
+            .skill_id
+            .ok_or_else(|| operation_conflict("subject_rename_skill_required"))?;
+        let runtime_name = request
+            .runtime_name
+            .as_deref()
+            .ok_or_else(|| operation_conflict("subject_rename_runtime_name_required"))?;
+        skillhub_core::deployment::validate_runtime_name(runtime_name)?;
+        let library = self.library_runtime.snapshot()?;
+        let skill = self.with_database("subject_rename.load_skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| operation_conflict("usage_subject_missing"))
+        })?;
+        let previous_runtime_name = skill.runtime_name().to_owned();
+        if previous_runtime_name.eq_ignore_ascii_case(runtime_name) {
+            return Err(operation_conflict("subject_rename_runtime_name_unchanged"));
+        }
+        let current_version = library
+            .current(skill_id)?
+            .ok_or_else(|| operation_conflict("usage_subject_version_missing"))?;
+        let old_visible_path = library.central.visible_skill_path(&skill);
+        let old_visible_deployment_hash = DeploymentFilesystem::hash_tree(&old_visible_path)?;
+        let old_visible_hash = library.store.hash_tree_read_only(&old_visible_path)?;
+
+        let (deployments, relations, revision, scopes) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.prepare.database"))?;
+            let deployments = database.deployment_repository().list_all()?;
+            let relations = database.relationship_repository().list_relations()?;
+            let revision = database.relationship_repository().relationship_revision()?;
+            let mut scopes = BTreeMap::new();
+            for deployment in deployments.iter().filter(|deployment| {
+                deployment.skill_id == skill_id
+                    && deployment.state == skillhub_core::DeploymentState::Deployed
+            }) {
+                let scope = database
+                    .connection_for_test()
+                    .query_row(
+                        "SELECT scope FROM targets WHERE id=?1",
+                        [&deployment.target_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .map_err(|_| operation_conflict("subject_rename_target_missing"))?;
+                scopes.insert(deployment.target_id.clone(), scope);
+            }
+            (deployments, relations, revision, scopes)
+        };
+        let active_deployments = deployments
+            .iter()
+            .filter(|deployment| {
+                deployment.skill_id == skill_id
+                    && deployment.state == skillhub_core::DeploymentState::Deployed
+            })
+            .collect::<Vec<_>>();
+        if active_deployments
+            .iter()
+            .any(|deployment| !deployment.managed)
+        {
+            return Err(operation_conflict("subject_rename_unmanaged_use"));
+        }
+        let expected_relations = active_deployments
+            .iter()
+            .map(|deployment| format!("managed:{}", deployment.id))
+            .collect::<BTreeSet<_>>();
+        if relations.iter().any(|relation| {
+            relation.active
+                && relation.skill_id == Some(skill_id)
+                && !expected_relations.contains(&relation.relation_id)
+        }) || expected_relations.iter().any(|relation_id| {
+            !relations.iter().any(|relation| {
+                relation.active
+                    && relation.skill_id == Some(skill_id)
+                    && relation.relation_id == *relation_id
+                    && relation.ownership == OwnershipState::SkillhubManaged
+            })
+        }) {
+            return Err(operation_conflict("subject_rename_usage_scope_unverified"));
+        }
+
+        let prepared_id = OperationId::new();
+        let mut prepared = PreparedUsageChange {
+            operation_id: request.operation_id,
+            prepared_id,
+            action: UsageChangeAction::RenameSubject,
+            relationship_revision: revision.to_string(),
+            affected_skill_ids: vec![skill_id],
+            subject_versions: vec![UsageSubjectVersion {
+                skill_id,
+                version_id: Some(current_version.clone()),
+            }],
+            entry_evidence: Vec::new(),
+            consumers: Vec::new(),
+            impacts: Vec::new(),
+            limitations: Vec::new(),
+            duplicate_cleanup: None,
+            shared_usage_migration: None,
+            subject_rename: None,
+        };
+        let mut preview_targets = Vec::new();
+        let mut plans = Vec::new();
+        for deployment in active_deployments {
+            if deployment.runtime_name != previous_runtime_name {
+                return Err(operation_conflict(
+                    "subject_rename_deployment_name_mismatch",
+                ));
+            }
+            let target_root = self.backend.target_root(deployment)?;
+            let target_root_identity = skillhub_core::physical_id_for_path(&target_root)
+                .ok_or_else(|| operation_conflict("subject_rename_target_identity_missing"))?;
+            if target_root_identity != deployment.target_id {
+                return Err(operation_conflict("subject_rename_target_identity_changed"));
+            }
+            let previous_path = target_root.join(&previous_runtime_name);
+            let path = target_root.join(runtime_name);
+            if fs::symlink_metadata(&path).is_ok()
+                || deployments.iter().any(|candidate| {
+                    candidate.target_id == deployment.target_id
+                        && candidate.runtime_name.eq_ignore_ascii_case(runtime_name)
+                        && candidate.id != deployment.id
+                })
+            {
+                return Err(operation_conflict("subject_rename_target_name_conflict"));
+            }
+            let observed_before = entry_fingerprint(&previous_path)?
+                .ok_or_else(|| operation_conflict("subject_rename_target_missing"))?;
+            let observed_identity = entry_identity(&previous_path)?;
+            match deployment.mode {
+                DeploymentMode::ManagedCopy if observed_before != deployment.expected_hash => {
+                    return Err(operation_conflict("subject_rename_target_copy_diverged"));
+                }
+                DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                    let points_to_library = fs::canonicalize(&previous_path)
+                        .ok()
+                        .zip(fs::canonicalize(&old_visible_path).ok())
+                        .is_some_and(|(target, visible)| target == visible);
+                    if !points_to_library || observed_before != old_visible_deployment_hash {
+                        return Err(operation_conflict("subject_rename_target_link_unverified"));
+                    }
+                }
+                _ => {}
+            }
+            let backup_path = target_root.join(format!(
+                ".skillhub-runtime-rename-{}-{}",
+                request.operation_id, deployment.id
+            ));
+            if fs::symlink_metadata(&backup_path).is_ok() {
+                return Err(operation_conflict("subject_rename_backup_path_occupied"));
+            }
+            let relation_id = format!("managed:{}", deployment.id);
+            let relation = relations
+                .iter()
+                .find(|relation| relation.relation_id == relation_id && relation.active)
+                .ok_or_else(|| operation_conflict("subject_rename_usage_scope_unverified"))?;
+            let target_scope = scopes
+                .get(&deployment.target_id)
+                .ok_or_else(|| operation_conflict("subject_rename_target_missing"))?;
+            let target_kind = if target_scope == "project" {
+                RelationGovernanceTargetKind::Project
+            } else {
+                RelationGovernanceTargetKind::Agent
+            };
+            let target = UsageRelationTarget {
+                kind: target_kind,
+                directory_id: Some(deployment.target_id.clone()),
+                agent_client_id: Some(relation.agent_client_id.clone()),
+                directory_role: None,
+                recognition: None,
+            };
+            let form = match deployment.mode {
+                DeploymentMode::ManagedCopy => UsageForm::FullCopy,
+                DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => UsageForm::Link,
+            };
+            let representation = match deployment.mode {
+                DeploymentMode::ManagedCopy => FileRepresentation::Copy,
+                DeploymentMode::SymbolicLink => FileRepresentation::SymbolicLink,
+                DeploymentMode::DirectoryJunction => FileRepresentation::DirectoryJunction,
+            };
+            let relation_ids = vec![relation_id.clone()];
+            prepared.entry_evidence.push(UsageEntryEvidence {
+                skill_id,
+                entry_key: UsageEntryKey {
+                    directory_id: deployment.target_id.clone(),
+                    relative_entry_path: previous_runtime_name.clone(),
+                },
+                relation_ids: relation_ids.clone(),
+                physical_source_ids: vec![deployment.target_id.clone()],
+                path: previous_path.to_string_lossy().into_owned(),
+                directory_role: None,
+                form: Some(form),
+                management: UsageManagement::Managed,
+                representation,
+                content_fingerprint: Some(observed_before.clone()),
+                physical_identity: observed_identity.clone(),
+                link_target_path: fs::canonicalize(&previous_path)
+                    .ok()
+                    .map(|value| value.to_string_lossy().into_owned()),
+                exists: true,
+            });
+            prepared.consumers.push(UsageChangeConsumer {
+                relation_ids: relation_ids.clone(),
+                skill_id: Some(skill_id),
+                entry_key: Some(UsageEntryKey {
+                    directory_id: deployment.target_id.clone(),
+                    relative_entry_path: previous_runtime_name.clone(),
+                }),
+                target: target.clone(),
+                path: Some(previous_path.to_string_lossy().into_owned()),
+                form: Some(form),
+                management: UsageManagement::Managed,
+                representation,
+                health_reasons: vec![UsageHealthReason::Normal],
+                physical_source_ids: vec![deployment.target_id.clone()],
+                content_fingerprint: Some(observed_before.clone()),
+            });
+            prepared.impacts.push(UsageChangeImpact {
+                relation_ids,
+                skill_id,
+                target,
+                action: UsageChangeImpactAction::RenameSubject,
+                description: "按技能主体新运行名同步受管目标目录。".to_owned(),
+            });
+            preview_targets.push(skillhub_core::relationship::SubjectRenameTargetPreview {
+                deployment_id: deployment.id.to_string(),
+                target_id: deployment.target_id.clone(),
+                previous_path: previous_path.to_string_lossy().into_owned(),
+                path: path.to_string_lossy().into_owned(),
+                mode: deployment.mode,
+            });
+            plans.push(SubjectRenamePlan {
+                original_deployment: deployment.clone(),
+                deployment_id: deployment.id.to_string(),
+                target_id: deployment.target_id.clone(),
+                previous_runtime_name: previous_runtime_name.clone(),
+                runtime_name: runtime_name.to_owned(),
+                previous_path: previous_path.to_string_lossy().into_owned(),
+                path: path.to_string_lossy().into_owned(),
+                backup_path: backup_path.to_string_lossy().into_owned(),
+                mode: deployment.mode,
+                expected_hash: deployment.expected_hash.clone(),
+                observed_before: Some(observed_before),
+                observed_identity,
+                target_root_identity,
+                created_new_entry: false,
+                moved_previous_entry: false,
+                deployment_record_updated: false,
+                backup_finalized: false,
+            });
+        }
+        preview_targets.sort_by(|left, right| left.previous_path.cmp(&right.previous_path));
+        plans.sort_by(|left, right| left.previous_path.cmp(&right.previous_path));
+        prepared.subject_rename = Some(skillhub_core::relationship::SubjectRenamePreview {
+            skill_id,
+            previous_runtime_name,
+            runtime_name: runtime_name.to_owned(),
+            targets: preview_targets,
+        });
+        let journal = SubjectRenameJournal {
+            request: request.clone(),
+            prepared: prepared.clone(),
+            original_skill: skill.clone(),
+            previous_version_id: current_version,
+            original_visible_hash: old_visible_hash,
+            plans,
+            new_version_id: None,
+            new_version_hash: None,
+            new_target_hash: None,
+            staging_path: None,
+            visible_rename: None,
+            catalog_updated: false,
+            store_pointer_updated: false,
+            database_pointer_updated: false,
+            portable_updated: false,
+            metadata_committed: false,
+        };
+        let mut record =
+            OperationRecord::planned(request.operation_id, SUBJECT_RENAME_KIND, fingerprint);
+        set_phase(
+            &mut record,
+            OperationPhase::Prepared,
+            0,
+            journal.plans.len() as u32,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.result = Some(serde_json::to_value(&journal.prepared).map_err(serialization_error)?);
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("subject_rename.prepare.database"))?;
+        if database
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some()
+        {
+            return Err(operation_conflict("operation_id_reused"));
+        }
+        database.operation_repository().insert_sync(&record)?;
+        Ok(prepared)
+    }
+
     fn prepare_managed_usage_change(
         &self,
         request: PrepareUsageChange,
@@ -396,6 +777,7 @@ impl LocalApplicationFacade {
             limitations: Vec::new(),
             duplicate_cleanup: None,
             shared_usage_migration: None,
+            subject_rename: None,
         };
         let mut plans = Vec::new();
         let library = self.library_runtime.snapshot()?;
@@ -507,6 +889,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::Manage
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
+                UsageChangeAction::RenameSubject => unreachable!(),
             }
             let observed_before = entry_fingerprint(&destination)?;
             let observed_identity = entry_identity(&destination)?;
@@ -628,6 +1011,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::Manage
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
+                UsageChangeAction::RenameSubject => unreachable!(),
             };
             prepared.impacts.push(UsageChangeImpact {
                 relation_ids,
@@ -642,6 +1026,7 @@ impl LocalApplicationFacade {
                     | UsageChangeAction::Manage
                     | UsageChangeAction::ResolveDuplicate
                     | UsageChangeAction::MigrateSharedUsage => unreachable!(),
+                    UsageChangeAction::RenameSubject => unreachable!(),
                 },
             });
             plans.push(ManagedUsageChangePlan {
@@ -1396,21 +1781,562 @@ impl LocalApplicationFacade {
         Ok(result)
     }
 
+    async fn commit_subject_rename(
+        &self,
+        request: CommitUsageChange,
+    ) -> AppResult<UsageChangeResult> {
+        let _mutation = self
+            .relation_migration_lock
+            .lock()
+            .map_err(|_| internal("subject_rename.commit.mutation_lock"))?;
+        let (mut record, mut journal) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.commit.database"))?;
+            let record = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+                .ok_or_else(|| operation_conflict("subject_rename_preview_missing"))?;
+            if record.kind != SUBJECT_RENAME_KIND {
+                return Err(operation_conflict("operation_id_reused"));
+            }
+            let journal: SubjectRenameJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("subject_rename_journal_invalid"))?;
+            if journal.prepared.prepared_id != request.prepared_id {
+                return Err(operation_conflict("usage_change_preview_mismatch"));
+            }
+            if record.phase == OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(serialization_error)?
+                    .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
+            }
+            if record.phase == OperationPhase::NeedsRecovery {
+                if journal.metadata_committed {
+                    drop(database);
+                    return self.finish_subject_rename(record, journal);
+                }
+                return Err(operation_conflict("subject_rename_rollback_required"));
+            }
+            if record.phase != OperationPhase::Prepared {
+                return Err(operation_conflict("usage_change_preview_not_prepared"));
+            }
+            (record, journal)
+        };
+
+        if let Err(error) = self.validate_subject_rename_snapshot(&journal) {
+            return Err(error);
+        }
+        persist_subject_rename(self, &mut record, &journal, OperationPhase::Applying)?;
+        if let Err(error) = self.apply_subject_rename(&mut record, &mut journal) {
+            return self.fail_subject_rename(record, journal, error);
+        }
+        journal.metadata_committed = true;
+        persist_subject_rename(self, &mut record, &journal, OperationPhase::Applying)?;
+        self.finish_subject_rename(record, journal)
+    }
+
+    fn validate_subject_rename_snapshot(&self, journal: &SubjectRenameJournal) -> AppResult<()> {
+        let library = self.library_runtime.snapshot()?;
+        let skill_id = journal.original_skill.id();
+        let current_skill = self.with_database("subject_rename.validate.skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| operation_conflict("usage_change_preview_stale"))
+        })?;
+        if current_skill != journal.original_skill
+            || library.current(skill_id)?.as_ref() != Some(&journal.previous_version_id)
+            || self
+                .with_database("subject_rename.validate.version", |database| {
+                    database.current_version(skill_id)
+                })?
+                .as_ref()
+                != Some(&journal.previous_version_id)
+        {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        let old_visible = library.central.visible_skill_path(&journal.original_skill);
+        if library.store.hash_tree_read_only(&old_visible)? != journal.original_visible_hash {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        let renamed_skill = renamed_skill(journal)?;
+        let new_visible = library.central.visible_skill_path(&renamed_skill);
+        if fs::symlink_metadata(&new_visible).is_ok() {
+            return Err(operation_conflict("subject_rename_visible_name_conflict"));
+        }
+
+        let (deployments, relations, revision) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.validate.database"))?;
+            (
+                database.deployment_repository().list_all()?,
+                database.relationship_repository().list_relations()?,
+                database.relationship_repository().relationship_revision()?,
+            )
+        };
+        if revision.to_string() != journal.prepared.relationship_revision {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        let actual = deployments
+            .iter()
+            .filter(|deployment| {
+                deployment.skill_id == skill_id
+                    && deployment.state == skillhub_core::DeploymentState::Deployed
+            })
+            .collect::<Vec<_>>();
+        if actual.len() != journal.plans.len()
+            || journal.plans.iter().any(|plan| {
+                actual
+                    .iter()
+                    .find(|deployment| deployment.id.to_string() == plan.deployment_id)
+                    .is_none_or(|deployment| **deployment != plan.original_deployment)
+            })
+        {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        let expected_relations = journal
+            .plans
+            .iter()
+            .map(|plan| format!("managed:{}", plan.deployment_id))
+            .collect::<BTreeSet<_>>();
+        if relations.iter().any(|relation| {
+            relation.active
+                && relation.skill_id == Some(skill_id)
+                && !expected_relations.contains(&relation.relation_id)
+        }) || expected_relations.iter().any(|relation_id| {
+            !relations
+                .iter()
+                .any(|relation| relation.active && relation.relation_id == *relation_id)
+        }) {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+
+        for plan in &journal.plans {
+            let root = self.backend.target_root(&plan.original_deployment)?;
+            if skillhub_core::physical_id_for_path(&root).as_deref()
+                != Some(plan.target_root_identity.as_str())
+                || fs::symlink_metadata(&Path::new(&plan.path)).is_ok()
+                || fs::symlink_metadata(&Path::new(&plan.backup_path)).is_ok()
+                || entry_fingerprint(Path::new(&plan.previous_path))?.as_deref()
+                    != plan.observed_before.as_deref()
+                || entry_identity(Path::new(&plan.previous_path))? != plan.observed_identity
+            {
+                return Err(operation_conflict("usage_change_preview_stale"));
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_subject_rename(
+        &self,
+        record: &mut OperationRecord,
+        journal: &mut SubjectRenameJournal,
+    ) -> AppResult<()> {
+        let skill_id = journal.original_skill.id();
+        let library = self.library_runtime.snapshot()?;
+        if journal.new_version_id.is_none() {
+            let staging = skillhub_core::LibraryPaths::from_root(library.root.clone())
+                .tmp_dir
+                .join(format!(
+                    "subject-runtime-rename-{skill_id}-{}",
+                    journal.request.operation_id
+                ));
+            if fs::symlink_metadata(&staging).is_ok() {
+                return Err(operation_conflict("subject_rename_staging_path_occupied"));
+            }
+            journal.staging_path = Some(staging.to_string_lossy().into_owned());
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+            fs::create_dir(&staging).map_err(subject_rename_io_error)?;
+            let result = (|| -> AppResult<_> {
+                library
+                    .store
+                    .materialize(&journal.previous_version_id, &staging)?;
+                rename_skill_frontmatter(
+                    &staging.join("SKILL.md"),
+                    &journal
+                        .prepared
+                        .subject_rename
+                        .as_ref()
+                        .expect("rename preview")
+                        .runtime_name,
+                )?;
+                let version = library.store.capture(skill_id, &staging)?;
+                let target_hash = DeploymentFilesystem::hash_tree(&staging)?;
+                self.with_database("subject_rename.record_version", |database| {
+                    database.record_version(skill_id, &version)
+                })?;
+                Ok((version, target_hash))
+            })();
+            let cleanup = fs::remove_dir_all(&staging).map_err(subject_rename_io_error);
+            if let Err(error) = cleanup {
+                if result.is_ok() {
+                    return Err(error);
+                }
+            }
+            let (version, target_hash) = result?;
+            journal.new_version_hash = Some(version.manifest.tree_hash.clone());
+            journal.new_target_hash = Some(target_hash);
+            journal.new_version_id = Some(version.id.clone());
+            journal.staging_path = None;
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+
+        let new_version_id = journal
+            .new_version_id
+            .clone()
+            .ok_or_else(|| operation_conflict("subject_rename_version_missing"))?;
+        let new_hash = journal
+            .new_target_hash
+            .clone()
+            .ok_or_else(|| operation_conflict("subject_rename_version_hash_missing"))?;
+        let renamed_skill = renamed_skill(journal)?;
+        if journal.visible_rename.is_none() {
+            let previous_output = library.central.visible_skill_path(&journal.original_skill);
+            let output = library.central.visible_skill_path(&renamed_skill);
+            let backup = skillhub_core::LibraryPaths::from_root(library.root.clone())
+                .tmp_dir
+                .join(format!(
+                    "visible-runtime-rename-{skill_id}-{}",
+                    journal.request.operation_id
+                ));
+            journal.visible_rename = Some(VisibleSkillRename {
+                skill_id,
+                previous_output,
+                output,
+                backup,
+                expected_tree_hash: journal
+                    .new_version_hash
+                    .clone()
+                    .ok_or_else(|| operation_conflict("subject_rename_version_hash_missing"))?,
+                expected_backup_tree_hash: journal.original_visible_hash.clone(),
+            });
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+        let visible_rename = journal
+            .visible_rename
+            .clone()
+            .ok_or_else(|| operation_conflict("subject_rename_visible_journal_missing"))?;
+        if fs::symlink_metadata(&visible_rename.previous_output).is_ok()
+            && fs::symlink_metadata(&visible_rename.backup).is_err()
+        {
+            library.central.prepare_visible_skill_rename_with_backup(
+                &journal.original_skill,
+                &renamed_skill,
+                &new_version_id,
+                &visible_rename.backup,
+                &journal.original_visible_hash,
+            )?;
+        } else if fs::symlink_metadata(&visible_rename.output).is_err()
+            || fs::symlink_metadata(&visible_rename.backup).is_err()
+        {
+            return Err(operation_conflict("subject_rename_visible_paths_changed"));
+        }
+
+        for index in 0..journal.plans.len() {
+            let plan = journal.plans[index].clone();
+            let previous = Path::new(&plan.previous_path);
+            let destination = Path::new(&plan.path);
+            let backup = Path::new(&plan.backup_path);
+            let root = self.backend.target_root(&plan.original_deployment)?;
+            if skillhub_core::physical_id_for_path(&root).as_deref()
+                != Some(plan.target_root_identity.as_str())
+            {
+                return Err(operation_conflict("subject_rename_target_identity_changed"));
+            }
+            if fs::symlink_metadata(destination).is_err() && !plan.created_new_entry {
+                match plan.mode {
+                    DeploymentMode::ManagedCopy => {
+                        super::copy_directory_tree(&visible_rename.output, destination)?;
+                    }
+                    DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                        create_dir_link(&visible_rename.output, destination)?;
+                    }
+                }
+                if DeploymentFilesystem::hash_tree(destination)? != new_hash {
+                    return Err(operation_conflict(
+                        "subject_rename_target_verification_failed",
+                    ));
+                }
+                journal.plans[index].created_new_entry = true;
+                persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+            } else if fs::symlink_metadata(destination).is_ok() {
+                if entry_fingerprint(destination)?.as_deref() != Some(new_hash.as_str()) {
+                    return Err(operation_conflict("subject_rename_target_changed"));
+                }
+                journal.plans[index].created_new_entry = true;
+            }
+            if fs::symlink_metadata(backup).is_err() && !plan.moved_previous_entry {
+                if entry_identity(previous)? != plan.observed_identity {
+                    return Err(operation_conflict("subject_rename_target_identity_changed"));
+                }
+                if plan.mode == DeploymentMode::ManagedCopy
+                    && entry_fingerprint(previous)?.as_deref() != plan.observed_before.as_deref()
+                {
+                    return Err(operation_conflict("subject_rename_target_changed"));
+                }
+                fs::rename(previous, backup).map_err(subject_rename_io_error)?;
+                journal.plans[index].moved_previous_entry = true;
+                persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+            } else if fs::symlink_metadata(backup).is_ok() {
+                if entry_identity(backup)? != plan.observed_identity {
+                    return Err(operation_conflict("subject_rename_backup_changed"));
+                }
+                journal.plans[index].moved_previous_entry = true;
+            }
+
+            if !plan.deployment_record_updated {
+                let mut updated = plan.original_deployment.clone();
+                updated.runtime_name = plan.runtime_name.clone();
+                updated.version_id = new_version_id.clone();
+                updated.expected_hash = new_hash.clone();
+                updated.observed_hash = Some(new_hash.clone());
+                self.with_database("subject_rename.record_deployment", |database| {
+                    database
+                        .deployment_repository()
+                        .rename_runtime_sync(&updated, &plan.previous_runtime_name)
+                })?;
+                journal.plans[index].deployment_record_updated = true;
+                persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+            }
+        }
+
+        if !journal.store_pointer_updated {
+            library.store.set_current(skill_id, &new_version_id)?;
+            journal.store_pointer_updated = true;
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+        if !journal.database_pointer_updated {
+            let manifest = library.store.load_manifest(&new_version_id)?;
+            let version = skillhub_core::VersionRecord {
+                id: new_version_id,
+                manifest,
+            };
+            self.with_database("subject_rename.record_current_version", |database| {
+                database.record_current_version(skill_id, &version)
+            })?;
+            journal.database_pointer_updated = true;
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+        if !journal.portable_updated {
+            library
+                .central
+                .save_portable_skill(&renamed_skill, journal.new_version_id.as_ref())?;
+            journal.portable_updated = true;
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+        if !journal.catalog_updated {
+            self.with_database("subject_rename.update_catalog", |database| {
+                database.catalog_repository()?.insert_sync(&renamed_skill)
+            })?;
+            journal.catalog_updated = true;
+            persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
+        }
+        Ok(())
+    }
+
+    fn finish_subject_rename(
+        &self,
+        mut record: OperationRecord,
+        mut journal: SubjectRenameJournal,
+    ) -> AppResult<UsageChangeResult> {
+        let result = (|| -> AppResult<UsageChangeResult> {
+            let library = self.library_runtime.snapshot()?;
+            let filesystem = DeploymentFilesystem::new();
+            for index in 0..journal.plans.len() {
+                if journal.plans[index].backup_finalized {
+                    continue;
+                }
+                let plan = &journal.plans[index];
+                let backup = Path::new(&plan.backup_path);
+                if fs::symlink_metadata(backup).is_ok() {
+                    if entry_identity(backup)? != plan.observed_identity {
+                        return Err(operation_conflict("subject_rename_backup_changed"));
+                    }
+                    if plan.mode == DeploymentMode::ManagedCopy
+                        && entry_fingerprint(backup)?.as_deref() != plan.observed_before.as_deref()
+                    {
+                        return Err(operation_conflict("subject_rename_backup_changed"));
+                    }
+                    filesystem.remove_residue(backup, plan.mode)?;
+                }
+                journal.plans[index].backup_finalized = true;
+                persist_subject_rename(self, &mut record, &journal, OperationPhase::Applying)?;
+            }
+            if let Some(visible_rename) = journal.visible_rename.clone() {
+                library
+                    .central
+                    .finalize_visible_skill_rename(visible_rename)?;
+            }
+            let result = subject_rename_result(&journal);
+            record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            set_phase(
+                &mut record,
+                OperationPhase::Committed,
+                journal.plans.len() as u32,
+                journal.plans.len() as u32,
+            );
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.finish.database"))?;
+            database.operation_repository().update_sync(&record)?;
+            Ok(result)
+        })();
+        match result {
+            Ok(result) => Ok(result),
+            Err(error) => self.mark_subject_rename_needs_recovery(record, journal, error),
+        }
+    }
+
+    fn mark_subject_rename_needs_recovery<T>(
+        &self,
+        mut record: OperationRecord,
+        journal: SubjectRenameJournal,
+        error: AppError,
+    ) -> AppResult<T> {
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.error_code = Some(error.code);
+        set_phase(
+            &mut record,
+            OperationPhase::NeedsRecovery,
+            journal
+                .plans
+                .iter()
+                .filter(|plan| plan.backup_finalized)
+                .count() as u32,
+            journal.plans.len() as u32,
+        );
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("subject_rename.recovery.database"))?;
+        database.operation_repository().update_sync(&record)?;
+        Err(error)
+    }
+
+    fn fail_subject_rename(
+        &self,
+        mut record: OperationRecord,
+        mut journal: SubjectRenameJournal,
+        error: AppError,
+    ) -> AppResult<UsageChangeResult> {
+        let rollback = rollback_subject_rename_state(self, &mut journal);
+        record.error_code = Some(error.code);
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        set_phase(
+            &mut record,
+            if rollback.is_ok() {
+                OperationPhase::RolledBack
+            } else {
+                OperationPhase::NeedsRecovery
+            },
+            journal.plans.len() as u32,
+            journal.plans.len() as u32,
+        );
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("subject_rename.fail.database"))?;
+        database.operation_repository().update_sync(&record)?;
+        match rollback {
+            Ok(()) => Err(error),
+            Err(_) => Err(
+                operation_conflict("subject_rename_rollback_incomplete").with_param(
+                    "original_reason",
+                    error
+                        .params
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .unwrap_or("subject_rename_failed"),
+                ),
+            ),
+        }
+    }
+
+    pub(crate) async fn resolve_subject_rename_recovery(
+        &self,
+        operation_id: OperationId,
+        action: RecoveryAction,
+    ) -> AppResult<bool> {
+        let _mutation = self
+            .relation_migration_lock
+            .lock()
+            .map_err(|_| internal("subject_rename.recovery.mutation_lock"))?;
+        let (mut record, mut journal) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("subject_rename.recovery.database"))?;
+            let Some(record) = database.operation_repository().get_sync(operation_id)? else {
+                return Ok(false);
+            };
+            if record.kind != SUBJECT_RENAME_KIND {
+                return Ok(false);
+            }
+            let journal: SubjectRenameJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("subject_rename_journal_invalid"))?;
+            (record, journal)
+        };
+        match action {
+            RecoveryAction::RollbackOperation if !journal.metadata_committed => {
+                rollback_subject_rename_state(self, &mut journal)?;
+                record.recovery_data =
+                    serde_json::to_value(&journal).map_err(serialization_error)?;
+                set_phase(
+                    &mut record,
+                    OperationPhase::RolledBack,
+                    journal.plans.len() as u32,
+                    journal.plans.len() as u32,
+                );
+            }
+            RecoveryAction::CompleteOperation if journal.metadata_committed => {
+                self.finish_subject_rename(record, journal)?;
+                return Ok(true);
+            }
+            RecoveryAction::RollbackOperation => {
+                return Err(operation_conflict("subject_rename_cleanup_must_complete"));
+            }
+            RecoveryAction::CompleteOperation => {
+                return Err(operation_conflict("subject_rename_rollback_required"));
+            }
+            _ => {
+                return Err(operation_conflict(
+                    "subject_rename.recovery_action_unsupported",
+                ))
+            }
+        }
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("subject_rename.recovery.database"))?;
+        database.operation_repository().update_sync(&record)?;
+        Ok(true)
+    }
+
     pub(crate) async fn commit_usage_change_command(
         &self,
         request: CommitUsageChange,
     ) -> AppResult<UsageChangeResult> {
-        let is_shared_migration = self
+        let kind = self
             .database
             .lock()
             .map_err(|_| internal("usage_change.commit.database"))?
             .operation_repository()
             .get_sync(request.operation_id)?
-            .is_some_and(|record| record.kind == SHARED_USAGE_MIGRATION_KIND);
-        if is_shared_migration {
-            self.commit_shared_usage_migration(request).await
-        } else {
-            self.commit_usage_change(request)
+            .map(|record| record.kind);
+        match kind.as_deref() {
+            Some(SHARED_USAGE_MIGRATION_KIND) => self.commit_shared_usage_migration(request).await,
+            Some(SUBJECT_RENAME_KIND) => self.commit_subject_rename(request).await,
+            _ => self.commit_usage_change(request),
         }
     }
 
@@ -2083,6 +3009,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::Manage
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
+                UsageChangeAction::RenameSubject => unreachable!(),
             }
         }
 
@@ -2852,6 +3779,7 @@ fn merge_manage_entry_previews(
         limitations: limitations.into_iter().collect(),
         duplicate_cleanup: None,
         shared_usage_migration: None,
+        subject_rename: None,
     })
 }
 
@@ -3235,6 +4163,7 @@ fn build_usage_manage_entry_preview(
                 .unwrap_or_default(),
             duplicate_cleanup: None,
             shared_usage_migration: None,
+            subject_rename: None,
         },
         relation_facts,
     ))
@@ -3636,6 +4565,7 @@ fn build_release_journal(
             UsageChangeImpactAction::Synchronize => "同步受管目标到技能库当前版本。",
             UsageChangeImpactAction::Repair => "备份占用项并修复受管入口。",
             UsageChangeImpactAction::Restore => "按目标原受管方式恢复入口。",
+            UsageChangeImpactAction::RenameSubject => "按主体新运行名同步所有受管入口。",
         };
         let impact = UsageChangeImpact {
             relation_ids: evidence_ids,
@@ -3739,6 +4669,7 @@ fn build_release_journal(
         limitations,
         duplicate_cleanup: None,
         shared_usage_migration: None,
+        subject_rename: None,
     };
     Ok(ReleaseJournal {
         request,
@@ -4157,6 +5088,7 @@ fn build_shared_usage_migration_journal(
             problem,
             replacements,
         }),
+        subject_rename: None,
     };
     Ok(SharedUsageMigrationJournal {
         request,
@@ -4766,6 +5698,7 @@ fn build_duplicate_cleanup_journal(
                 .map(|path| path.to_string_lossy().into_owned()),
         }),
         shared_usage_migration: None,
+        subject_rename: None,
     };
     Ok(DuplicateCleanupJournal {
         request,
@@ -6665,6 +7598,29 @@ fn validate_request(request: &PrepareUsageChange) -> AppResult<()> {
     Ok(())
 }
 
+fn validate_subject_rename_request(request: &PrepareUsageChange) -> AppResult<()> {
+    let fields_match = request.action == UsageChangeAction::RenameSubject
+        && request.skill_id.is_some()
+        && request
+            .runtime_name
+            .as_deref()
+            .is_some_and(|name| !name.trim().is_empty())
+        && request.relation_ids.is_empty()
+        && request.problem_id.is_none()
+        && request.requested_form.is_none()
+        && request.copy_disposition.is_none()
+        && request.content_basis.is_none()
+        && request.retain_entry_key.is_none()
+        && request.selected_entry_keys.is_empty()
+        && request.base_version_id.is_none()
+        && request.non_recognized_destination.is_none();
+    if fields_match {
+        Ok(())
+    } else {
+        Err(operation_conflict("subject_rename_request_invalid"))
+    }
+}
+
 fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppResult<()> {
     let mut relation_ids = BTreeSet::new();
     let content_basis_valid = match request.action {
@@ -6677,6 +7633,7 @@ fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppRes
         | UsageChangeAction::Manage
         | UsageChangeAction::ResolveDuplicate
         | UsageChangeAction::MigrateSharedUsage => false,
+        UsageChangeAction::RenameSubject => false,
     };
     if !matches!(
         request.action,
@@ -6904,6 +7861,303 @@ fn request_fingerprint(request: &PrepareUsageChange) -> AppResult<String> {
     Ok(format!("sha256:{digest:x}"))
 }
 
+fn renamed_skill(journal: &SubjectRenameJournal) -> AppResult<skillhub_core::catalog::Skill> {
+    let runtime_name = journal
+        .prepared
+        .subject_rename
+        .as_ref()
+        .ok_or_else(|| operation_conflict("subject_rename_preview_missing"))?
+        .runtime_name
+        .clone();
+    let mut skill = journal.original_skill.clone();
+    skill.set_runtime_name(runtime_name)?;
+    Ok(skill)
+}
+
+fn rename_skill_frontmatter(path: &Path, runtime_name: &str) -> AppResult<()> {
+    let content = fs::read_to_string(path).map_err(subject_rename_io_error)?;
+    let mut lines = content
+        .split_inclusive('\n')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if lines.is_empty() || lines[0].trim_end_matches(['\r', '\n']) != "---" {
+        return Err(operation_conflict("subject_rename_frontmatter_missing"));
+    }
+    let closing = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, line)| line.trim_end_matches(['\r', '\n']) == "---")
+        .map(|(index, _)| index)
+        .ok_or_else(|| operation_conflict("subject_rename_frontmatter_unclosed"))?;
+    let name_lines = (1..closing)
+        .filter(|index| {
+            let content = lines[*index].trim_end_matches(['\r', '\n']);
+            let key = content.trim_start();
+            key.strip_prefix("name:").is_some_and(|value| {
+                value.is_empty() || value.chars().next().is_some_and(char::is_whitespace)
+            })
+        })
+        .collect::<Vec<_>>();
+    if name_lines.len() != 1 {
+        return Err(operation_conflict(
+            "subject_rename_frontmatter_name_ambiguous",
+        ));
+    }
+    let index = name_lines[0];
+    let line = &lines[index];
+    let line_ending = if line.ends_with("\r\n") {
+        "\r\n"
+    } else if line.ends_with('\n') {
+        "\n"
+    } else {
+        ""
+    };
+    let content = line.trim_end_matches(['\r', '\n']);
+    let indent_len = content.len() - content.trim_start().len();
+    let simple_scalar = !runtime_name.is_empty()
+        && runtime_name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        && !runtime_name.starts_with('-')
+        && !runtime_name.bytes().all(|byte| byte.is_ascii_digit())
+        && !matches!(
+            runtime_name.to_ascii_lowercase().as_str(),
+            "true" | "false" | "null"
+        );
+    let scalar = if simple_scalar {
+        runtime_name.to_owned()
+    } else {
+        serde_json::to_string(runtime_name).map_err(serialization_error)?
+    };
+    lines[index] = format!("{}name: {scalar}{line_ending}", &content[..indent_len]);
+    fs::write(path, lines.concat()).map_err(subject_rename_io_error)
+}
+
+fn persist_subject_rename(
+    facade: &LocalApplicationFacade,
+    record: &mut OperationRecord,
+    journal: &SubjectRenameJournal,
+    phase: OperationPhase,
+) -> AppResult<()> {
+    record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+    let completed = journal
+        .plans
+        .iter()
+        .filter(|plan| {
+            plan.created_new_entry || plan.moved_previous_entry || plan.deployment_record_updated
+        })
+        .count() as u32;
+    set_phase(record, phase, completed, journal.plans.len() as u32);
+    let database = facade
+        .database
+        .lock()
+        .map_err(|_| internal("subject_rename.persist.database"))?;
+    database.operation_repository().update_sync(record)
+}
+
+fn subject_rename_result(journal: &SubjectRenameJournal) -> UsageChangeResult {
+    UsageChangeResult {
+        operation_id: journal.prepared.operation_id,
+        prepared_id: journal.prepared.prepared_id,
+        item_results: journal
+            .prepared
+            .impacts
+            .iter()
+            .map(|impact| UsageChangeItemResult {
+                relation_ids: impact.relation_ids.clone(),
+                skill_id: impact.skill_id,
+                target: impact.target.clone(),
+                action: impact.action,
+                status: UsageChangeItemStatus::Applied,
+                reason: None,
+                recovery_point: None,
+            })
+            .collect(),
+        recovery_required: false,
+    }
+}
+
+fn rollback_subject_rename_state(
+    facade: &LocalApplicationFacade,
+    journal: &mut SubjectRenameJournal,
+) -> AppResult<()> {
+    let library = facade.library_runtime.snapshot()?;
+    let restored_skill = &journal.original_skill;
+    let renamed = renamed_skill(journal)?;
+    let renamed_visible = library.central.visible_skill_path(&renamed);
+    let filesystem = DeploymentFilesystem::new();
+    let new_hash = journal.new_target_hash.as_deref();
+
+    for plan in journal.plans.iter().rev() {
+        let previous = Path::new(&plan.previous_path);
+        let destination = Path::new(&plan.path);
+        let backup = Path::new(&plan.backup_path);
+        let root = facade.backend.target_root(&plan.original_deployment)?;
+        if skillhub_core::physical_id_for_path(&root).as_deref()
+            != Some(plan.target_root_identity.as_str())
+        {
+            return Err(operation_conflict("subject_rename_target_identity_changed"));
+        }
+
+        if fs::symlink_metadata(destination).is_ok() {
+            let expected_hash = new_hash
+                .ok_or_else(|| operation_conflict("subject_rename_version_hash_missing"))?;
+            if entry_fingerprint(destination)?.as_deref() != Some(expected_hash) {
+                return Err(operation_conflict("subject_rename_target_changed"));
+            }
+            if matches!(
+                plan.mode,
+                DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction
+            ) && fs::canonicalize(destination).ok() != fs::canonicalize(&renamed_visible).ok()
+            {
+                return Err(operation_conflict("subject_rename_target_link_changed"));
+            }
+            filesystem.remove_residue(destination, plan.mode)?;
+        }
+
+        if fs::symlink_metadata(backup).is_ok() {
+            if entry_identity(backup)? != plan.observed_identity {
+                return Err(operation_conflict("subject_rename_backup_changed"));
+            }
+            if plan.mode == DeploymentMode::ManagedCopy
+                && entry_fingerprint(backup)?.as_deref() != plan.observed_before.as_deref()
+            {
+                return Err(operation_conflict("subject_rename_backup_changed"));
+            }
+            if fs::symlink_metadata(previous).is_ok() {
+                return Err(operation_conflict("subject_rename_previous_path_occupied"));
+            }
+            fs::rename(backup, previous).map_err(subject_rename_io_error)?;
+        } else if fs::symlink_metadata(previous).is_err()
+            || entry_identity(previous)? != plan.observed_identity
+            || (plan.mode == DeploymentMode::ManagedCopy
+                && entry_fingerprint(previous)?.as_deref() != plan.observed_before.as_deref())
+        {
+            return Err(operation_conflict(
+                "subject_rename_previous_entry_unavailable",
+            ));
+        }
+
+        let current =
+            facade.with_database("subject_rename.rollback.deployment_read", |database| {
+                Ok(database
+                    .deployment_repository()
+                    .list_all()?
+                    .into_iter()
+                    .find(|deployment| deployment.id.to_string() == plan.deployment_id))
+            })?;
+        let current =
+            current.ok_or_else(|| operation_conflict("subject_rename_deployment_missing"))?;
+        if current.runtime_name == plan.runtime_name {
+            facade.with_database("subject_rename.rollback.deployment", |database| {
+                database
+                    .deployment_repository()
+                    .rename_runtime_sync(&plan.original_deployment, &plan.runtime_name)
+            })?;
+        } else if current != plan.original_deployment {
+            return Err(operation_conflict("subject_rename_deployment_changed"));
+        }
+    }
+
+    if let Some(rename) = journal.visible_rename.as_ref() {
+        let previous_exists = fs::symlink_metadata(&rename.previous_output).is_ok();
+        let backup_exists = fs::symlink_metadata(&rename.backup).is_ok();
+        match (previous_exists, backup_exists) {
+            (true, false) => {
+                if library.store.hash_tree_read_only(&rename.previous_output)?
+                    != journal.original_visible_hash
+                {
+                    return Err(operation_conflict(
+                        "subject_rename_visible_original_changed",
+                    ));
+                }
+            }
+            (false, true) => library.central.rollback_visible_skill_rename(rename)?,
+            _ => {
+                return Err(operation_conflict(
+                    "subject_rename_visible_recovery_paths_changed",
+                ))
+            }
+        }
+    }
+
+    if let Some(new_version_id) = journal.new_version_id.as_ref() {
+        let store_current = library.current(restored_skill.id())?;
+        if store_current.as_ref() == Some(new_version_id) {
+            library
+                .store
+                .set_current(restored_skill.id(), &journal.previous_version_id)?;
+        } else if store_current.as_ref() != Some(&journal.previous_version_id) {
+            return Err(operation_conflict("subject_rename_store_pointer_changed"));
+        }
+        facade.with_database(
+            "subject_rename.rollback.version_pointer",
+            |database| match database.current_version(restored_skill.id())? {
+                Some(current) if &current == new_version_id => database
+                    .restore_current_version_pointer(
+                        restored_skill.id(),
+                        Some(&journal.previous_version_id),
+                    ),
+                Some(current) if current == journal.previous_version_id => Ok(()),
+                _ => Err(operation_conflict(
+                    "subject_rename_database_pointer_changed",
+                )),
+            },
+        )?;
+    }
+
+    facade.with_database("subject_rename.rollback.catalog", |database| {
+        let repository = database.catalog_repository()?;
+        match repository.get_sync(restored_skill.id())? {
+            Some(current) if current.runtime_name() == renamed.runtime_name() => {
+                repository.insert_sync(restored_skill)
+            }
+            Some(current) if current == *restored_skill => Ok(()),
+            _ => Err(operation_conflict("subject_rename_catalog_changed")),
+        }
+    })?;
+    let portable = library.central.load_portable_skill(restored_skill.id())?;
+    if portable
+        .as_ref()
+        .is_none_or(|(record, _)| record.runtime_name == renamed.runtime_name())
+    {
+        library
+            .central
+            .save_portable_skill(restored_skill, Some(&journal.previous_version_id))?;
+    } else if portable.as_ref().is_some_and(|(record, current)| {
+        record.runtime_name != restored_skill.runtime_name()
+            || current.as_ref() != Some(&journal.previous_version_id)
+    }) {
+        return Err(operation_conflict(
+            "subject_rename_portable_catalog_changed",
+        ));
+    }
+    if let Some(staging_path) = journal.staging_path.as_ref() {
+        let expected = skillhub_core::LibraryPaths::from_root(library.root.clone())
+            .tmp_dir
+            .join(format!(
+                "subject-runtime-rename-{}-{}",
+                restored_skill.id(),
+                journal.request.operation_id
+            ));
+        if Path::new(staging_path) != expected {
+            return Err(operation_conflict("subject_rename_staging_path_changed"));
+        }
+        if fs::symlink_metadata(&expected).is_ok() {
+            if !fs::symlink_metadata(&expected)
+                .map_err(subject_rename_io_error)?
+                .is_dir()
+            {
+                return Err(operation_conflict("subject_rename_staging_path_changed"));
+            }
+            fs::remove_dir_all(expected).map_err(subject_rename_io_error)?;
+        }
+        journal.staging_path = None;
+    }
+    Ok(())
+}
+
 fn set_phase(record: &mut OperationRecord, phase: OperationPhase, completed: u32, total: u32) {
     record.phase = phase;
     record.progress = OperationProgress {
@@ -6931,6 +8185,13 @@ fn operation_conflict(reason: &str) -> AppError {
     AppError::new(ErrorCode::OperationConflict, Severity::Error)
         .with_param("reason", reason)
         .with_action(RecoveryAction::Retry)
+}
+
+fn subject_rename_io_error(error: std::io::Error) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("reason", "subject_rename_io_failed")
+        .with_param("detail", error.to_string())
+        .with_action(RecoveryAction::InspectTarget)
 }
 
 fn internal(operation: &str) -> AppError {

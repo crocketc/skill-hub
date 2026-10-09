@@ -326,7 +326,7 @@ fn names_equal(left: &str, right: &str, case_sensitive: bool) -> bool {
     }
 }
 
-fn validate_runtime_name(value: &str) -> AppResult<()> {
+pub fn validate_runtime_name(value: &str) -> AppResult<()> {
     if value.trim().is_empty()
         || value == "."
         || value == ".."

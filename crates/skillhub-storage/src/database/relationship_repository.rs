@@ -655,6 +655,61 @@ impl<'a> RelationshipRepository<'a> {
         Ok(changed)
     }
 
+    pub(crate) fn rename_managed_deployment_tx(
+        &self,
+        transaction: &Transaction<'_>,
+        id: &str,
+        path: &str,
+        content_fingerprint: &str,
+        observed_at: i64,
+    ) -> AppResult<bool> {
+        let relation_id = format!("managed:{id}");
+        let agent_client_id = transaction
+            .query_row(
+                "SELECT agent_client_id FROM deployment_relations WHERE relation_id=?1 AND active=1 AND ownership='skillhub_managed'",
+                [&relation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(database_error)?
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "managed_deployment_relation_missing")
+                    .with_action(RecoveryAction::InspectTarget)
+            })?;
+        let path_key = observed_path_key(path);
+        let collision = transaction
+            .query_row(
+                "SELECT relation_id FROM deployment_relations WHERE agent_client_id=?1 AND path_key=?2 AND relation_id<>?3 AND active=1",
+                params![agent_client_id, path_key, relation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        if collision.is_some() {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "managed_deployment_path_conflict")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        let directory_node_id = directory_node_id_for_path_tx(transaction, path)?;
+        let changed = transaction
+            .execute(
+                "UPDATE deployment_relations SET path=?1,path_key=?2,directory_node_id=?3,content_fingerprint=?4,match_state='content_verified',health_reasons_json='[]',observed_at=?5 WHERE relation_id=?6 AND active=1 AND ownership='skillhub_managed'",
+                params![path, path_key, directory_node_id, content_fingerprint, observed_at, relation_id],
+            )
+            .map_err(database_error)?;
+        if changed != 1 {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "managed_deployment_relation_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        super::usage_decision_repository::sync_deployment_usage_evidence_tx(
+            transaction,
+            &relation_id,
+        )?;
+        Ok(true)
+    }
+
     pub(crate) fn detach_managed_deployment_tx(
         &self,
         transaction: &Transaction<'_>,

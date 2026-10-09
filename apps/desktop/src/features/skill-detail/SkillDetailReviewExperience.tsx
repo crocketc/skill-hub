@@ -66,6 +66,8 @@ interface SkillDetailReviewExperienceProps {
   onCentralize?: () => void;
   /** T05：统一使用关系释放入口，仅在该技能存在活动去向时传入。 */
   onReclaim?: () => void;
+  /** T15：运行名只通过主体级预览与提交流程修改。 */
+  onRenameRuntimeName?: () => void;
   /** W3-2：头部「删除」触发详情页既有的真实删除影响确认（K2 两段式）。 */
   onDelete: () => void;
   provenance?: SkillProvenance;
@@ -103,6 +105,7 @@ export function SkillDetailReviewExperience({
   metadata,
   onCentralize,
   onReclaim,
+  onRenameRuntimeName,
   onDelete,
   provenance,
   refreshSnapshot,
@@ -171,6 +174,7 @@ export function SkillDetailReviewExperience({
               <ReviewHeaderActions
                 onCentralize={onCentralize}
                 onReclaim={onReclaim}
+                onRenameRuntimeName={onRenameRuntimeName}
                 onDispatch={() => navigate(`/library/${skillId}/deploy`)}
                 onExport={() => navigate("/settings/data-protection", { state: { exportSkillIds: [skillId] } })}
                 onDelete={onDelete}

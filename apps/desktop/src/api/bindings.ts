@@ -3061,8 +3061,8 @@ export type PrepareUninstall = {
 };
 
 /**
- *  Prepares a usage-relation change. Release is currently the only supported
- *  action; all fields belonging to later actions must remain empty.
+ *  Prepares a usage-relation change. Fields not used by the selected action
+ *  must remain empty.
  */
 export type PrepareUsageChange = {
 	operation_id: OperationId,
@@ -3141,6 +3141,7 @@ export type PreparedUsageChange = {
 	limitations: string[],
 	duplicate_cleanup?: DuplicateCleanupPreview | null,
 	shared_usage_migration?: SharedUsageMigrationPreview | null,
+	subject_rename?: SubjectRenamePreview | null,
 };
 
 /**
@@ -5053,6 +5054,27 @@ export type StructuredCheckResult = {
 	latency_ms: number | null,
 };
 
+/**  Complete impact snapshot for an explicit, subject-wide runtime rename. */
+export type SubjectRenamePreview = {
+	skill_id: SkillId,
+	previous_runtime_name: string,
+	runtime_name: string,
+	targets: SubjectRenameTargetPreview[],
+};
+
+/**
+ *  One managed target whose directory entry will move when a skill subject is
+ *  renamed. Paths are descriptive preview facts; commit resolves them again
+ *  from the stored deployment and target records.
+ */
+export type SubjectRenameTargetPreview = {
+	deployment_id: string,
+	target_id: string,
+	previous_path: string,
+	path: string,
+	mode: DeploymentMode,
+};
+
 /**  Per-tag skill counts so the overview can drill down into the library by tag. */
 export type TagChartCategory = {
 	key: string,
@@ -5277,7 +5299,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate" | "migrate_shared_usage";
+export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate" | "migrate_shared_usage" | "rename_subject";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize
@@ -5305,7 +5327,7 @@ export type UsageChangeImpact = {
 	description: string,
 };
 
-export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy" | "synchronize" | "repair" | "restore";
+export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy" | "synchronize" | "repair" | "restore" | "rename_subject";
 
 export type UsageChangeItemResult = {
 	relation_ids: string[],

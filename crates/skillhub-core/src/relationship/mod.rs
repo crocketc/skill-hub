@@ -28,10 +28,10 @@ pub use usage::{
 };
 pub use usage_change::{
     DuplicateCleanupPreview, PreparedUsageChange, SharedUsageMigrationPreview,
-    SharedUsageReplacement, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
-    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
-    UsageContentBasis, UsageCopyDisposition, UsageDecisionRecord, UsageEntryEvidence,
-    UsageRecoveryPoint, UsageSubjectVersion,
+    SharedUsageReplacement, SubjectRenamePreview, SubjectRenameTargetPreview, UsageChangeAction,
+    UsageChangeConsumer, UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult,
+    UsageChangeItemStatus, UsageChangeResult, UsageContentBasis, UsageCopyDisposition,
+    UsageDecisionRecord, UsageEntryEvidence, UsageRecoveryPoint, UsageSubjectVersion,
 };
 pub use validation::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
