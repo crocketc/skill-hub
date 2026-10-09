@@ -48,6 +48,8 @@ impl<'a> SourceRepository<'a> {
                 rusqlite::params![skill_id.to_string(), source_id],
             )
             .map_err(error)?;
+        clear_update_state(&transaction, skill_id)?;
+        set_association_revision(&transaction, skill_id)?;
         transaction.commit().map_err(error)
     }
 
@@ -219,6 +221,46 @@ impl<'a> SourceRepository<'a> {
             .map(|row| row.flatten())
     }
 
+    /// Stable token for the source association currently attached to a Skill.
+    /// It changes when the association is re-established or its source facts
+    /// change, and is safe to expose as an optimistic-concurrency token.
+    pub fn association_revision(&self, skill_id: SkillId) -> AppResult<Option<String>> {
+        association_revision_from(&self.database.connection, skill_id)
+    }
+
+    /// Removes the active update-source association and its derived check data.
+    /// Import provenance and the source row are immutable historical evidence.
+    /// A missing association is already the desired state and is idempotent.
+    pub fn unlink(&self, skill_id: SkillId, expected_revision: &str) -> AppResult<bool> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let Some(current_revision) = association_revision_from(&transaction, skill_id)? else {
+            clear_update_state(&transaction, skill_id)?;
+            transaction.commit().map_err(error)?;
+            return Ok(false);
+        };
+        if current_revision != expected_revision {
+            return Err(
+                AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                    .with_param("reason", "update_source_changed")
+                    .with_action(skillhub_core::RecoveryAction::Retry),
+            );
+        }
+
+        transaction
+            .execute(
+                "DELETE FROM skill_sources WHERE skill_id=?1",
+                [skill_id.to_string()],
+            )
+            .map_err(error)?;
+        clear_update_state(&transaction, skill_id)?;
+        transaction.commit().map_err(error)?;
+        Ok(true)
+    }
+
     pub fn set_revision(&self, skill_id: SkillId, revision: Option<&str>) -> AppResult<()> {
         self.database
             .connection
@@ -354,6 +396,106 @@ impl<'a> SourceRepository<'a> {
             .map(|_| ())
             .map_err(error)
     }
+}
+
+fn clear_update_state(transaction: &rusqlite::Transaction<'_>, skill_id: SkillId) -> AppResult<()> {
+    transaction
+        .execute(
+            "DELETE FROM source_update_checks WHERE skill_id=?1",
+            [skill_id.to_string()],
+        )
+        .map_err(error)?;
+    transaction
+        .execute(
+            "DELETE FROM settings WHERE key IN (?1, ?2, ?3)",
+            rusqlite::params![
+                format!("source.observation.{skill_id}"),
+                format!("source.ignored_updates.{skill_id}"),
+                format!("source.association_revision.{skill_id}"),
+            ],
+        )
+        .map_err(error)?;
+    Ok(())
+}
+
+fn set_association_revision(
+    transaction: &rusqlite::Transaction<'_>,
+    skill_id: SkillId,
+) -> AppResult<()> {
+    let revision = serde_json::to_string(&skillhub_core::OperationId::new().to_string())
+        .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))?;
+    transaction
+        .execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,strftime('%s','now')) \
+             ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at",
+            rusqlite::params![format!("source.association_revision.{skill_id}"), revision],
+        )
+        .map_err(error)?;
+    Ok(())
+}
+
+struct SourceAssociationRevisionRow {
+    id: String,
+    kind: String,
+    locator: String,
+    role: String,
+    metadata_json: String,
+    revision: Option<String>,
+    nonce_json: Option<String>,
+}
+
+fn association_revision_from(
+    connection: &rusqlite::Connection,
+    skill_id: SkillId,
+) -> AppResult<Option<String>> {
+    let row = connection
+        .query_row(
+            "SELECT s.id, s.kind, s.locator, s.role, s.metadata_json, s.revision, a.value_json \
+             FROM sources s JOIN skill_sources ss ON ss.source_id=s.id \
+             LEFT JOIN settings a ON a.key=?2 \
+             WHERE ss.skill_id=?1 ORDER BY s.id ASC LIMIT 1",
+            rusqlite::params![
+                skill_id.to_string(),
+                format!("source.association_revision.{skill_id}"),
+            ],
+            |row| {
+                Ok(SourceAssociationRevisionRow {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    locator: row.get(2)?,
+                    role: row.get(3)?,
+                    metadata_json: row.get(4)?,
+                    revision: row.get(5)?,
+                    nonce_json: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(error)?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let nonce = row
+        .nonce_json
+        .map(|value| {
+            serde_json::from_str::<String>(&value)
+                .map_err(|_| AppError::new(ErrorCode::InternalError, Severity::Error))
+        })
+        .transpose()?;
+    let mut hasher = Sha256::new();
+    for part in [
+        row.id,
+        row.kind,
+        row.locator,
+        row.role,
+        row.metadata_json,
+        row.revision.unwrap_or_default(),
+        nonce.unwrap_or_default(),
+    ] {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    Ok(Some(format!("sha256:{:x}", hasher.finalize())))
 }
 
 /// Unix 秒（忽略记录的落库时刻；与仓库其他 epoch 时间戳同一口径）。

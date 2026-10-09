@@ -535,8 +535,7 @@ function UsageDestinationCardView({
 // W3-4：来源更新区接真实五命令——getSourceUpdateStatus（持久化状态投影）、
 // checkSourceUpdate（只读检查）、prepareSourceUpdate+commitSourceUpdate（K6
 // 预览绑定采用流）、ignoreSourceUpdate（按候选身份忽略）、relinkSource（G-15
-// 显式来源类型）。状态、候选与谱系全部来自门面事实；后端没有「解除来源关联」
-// 命令，界面不提供该入口（登记为契约缺口待开发项）。
+// 显式来源类型）；T17 增加独立的解除更新来源入口。状态、候选与谱系全部来自门面事实。
 const SOURCE_KIND_LABELS: Record<string, string> = {
   local: "本机目录导入",
   https: "网络 HTTPS 导入",
@@ -560,6 +559,14 @@ function checkResultNotice(state: SourceState): string {
   }
 }
 
+function sourceKindLabel(kind: "local" | "https" | "git"): string {
+  switch (kind) {
+    case "local": return "本机目录";
+    case "https": return "HTTPS（安全超文本传输协议）来源";
+    case "git": return "Git（版本控制）仓库";
+  }
+}
+
 function ReviewSourceUpdates({ facade, skillId, summary }: {
   facade: SkillDetailFacade;
   skillId: string;
@@ -573,6 +580,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
     retry: false,
   });
   const [relinkOpen, setRelinkOpen] = useState(false);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
   const [relinkKind, setRelinkKind] = useState<SourceRelinkInput["kind"]>("https");
   const [relinkValue, setRelinkValue] = useState("");
   const [relinkError, setRelinkError] = useState<string | null>(null);
@@ -659,20 +667,52 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
     },
     onError: (reason: unknown) => setRelinkError(describeError(reason)),
   });
+  const unlinkMutation = useMutation({
+    mutationFn: (expectedSourceRevision: string) =>
+      facade.unlinkUpdateSource(skillId, expectedSourceRevision),
+    onSuccess: () => {
+      setUnlinkOpen(false);
+      setNotice("已解除更新来源；技能内容、版本和导入来源记录保持不变。");
+      setActionError(null);
+      invalidateSourceFacts();
+    },
+    onError: (reason: unknown) => {
+      setNotice(null);
+      setActionError(describeError(reason));
+    },
+  });
 
   const status = statusQuery.data;
-  const hasSource = status !== undefined && status.state !== null && status.state !== "no_upstream";
+  const hasSource = status !== undefined && status.association !== null;
   const candidateAvailable = status !== undefined
+    && status.check_capability === "git_repository"
     && (status.state === "update_available" || status.state === "update_available_with_local_changes")
     && !status.candidate_ignored
     && status.candidate_identity !== null;
   let stateText: string;
   if (statusQuery.isPending) stateText = "正在获取来源更新状态。";
   else if (statusQuery.isError || status === undefined) stateText = "来源更新状态暂时无法获取。";
+  else if (status.state === null) {
+    if (!status.association) stateText = "尚未关联更新来源。";
+    else if (status.check_capability === "local_directory") {
+      stateText = "本机目录已关联；该来源不支持 Git（版本控制）更新检查。";
+    } else if (status.check_capability === "unsupported") {
+      stateText = "已关联的来源暂不支持更新检查。";
+    } else {
+      stateText = "已关联 Git（版本控制）更新来源，尚未检查更新。";
+    }
+  }
   else {
     switch (status.state) {
-      case null: stateText = "尚未检查更新来源。"; break;
-      case "no_upstream": stateText = "没有可检查更新的上游来源；本地创建或仅本机目录导入的技能没有网络更新来源。"; break;
+      case "no_upstream":
+        if (status.check_capability === "local_directory") {
+          stateText = "本机目录已关联；该来源不支持 Git（版本控制）更新检查。";
+        } else if (status.association === null) {
+          stateText = "当前没有关联更新来源。";
+        } else {
+          stateText = "已关联来源没有可检查的上游。";
+        }
+        break;
       case "up_to_date": stateText = "来源为最新状态。"; break;
       case "update_available": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}。`; break;
       case "update_available_with_local_changes": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}；本机内容有未同步修改，采用前会说明覆盖影响。`; break;
@@ -691,11 +731,17 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
           {status?.checked_at ? <p className="sh-skill-detail-review__secondary">最近检查：{formatTimestamp(status.checked_at, locale)}</p> : null}
         </div>
       </div>
+      {status?.association ? (
+        <p className="sh-skill-detail-review__source-association">
+          当前更新来源：{sourceKindLabel(status.association.source.kind)}。
+        </p>
+      ) : null}
       <p>关联来源只建立更新关系，不会替换当前内容或自动升级。</p>
       {notice ? <p role="status">{notice}</p> : null}
       {actionError ? <p role="alert">{actionError}</p> : null}
       <div className="sh-skill-detail-review__source-actions">
         <Button
+          disabled={status?.check_capability !== "git_repository"}
           loading={checkMutation.isPending}
           onClick={() => checkMutation.mutate()}
           size="sm"
@@ -715,6 +761,18 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
             variant="ghost"
           >
             {hasSource ? "更换来源" : "关联更新来源"}
+          </Button>
+        ) : null}
+        {hasSource && status?.association_revision ? (
+          <Button
+            onClick={() => {
+              setActionError(null);
+              setUnlinkOpen(true);
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            解除更新来源
           </Button>
         ) : null}
         {candidateAvailable ? (
@@ -769,6 +827,42 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
                 variant="secondary"
               >
                 {hasSource ? "确认更换" : "确认关联"}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+      <Dialog.Root
+        open={unlinkOpen}
+        onOpenChange={(open) => {
+          setUnlinkOpen(open);
+          if (!open) setActionError(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="sh-dialog__overlay" />
+          <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
+            <Dialog.Title>解除更新来源</Dialog.Title>
+            <Dialog.Description>
+              这会解除当前更新来源关联并清除对应的检查结果和已忽略候选。技能内容、版本与导入来源记录不会改变。
+            </Dialog.Description>
+            {actionError ? <p role="alert">{actionError}</p> : null}
+            <div className="sh-dialog__actions">
+              <Button onClick={() => setUnlinkOpen(false)} size="sm" variant="ghost">
+                保留关联
+              </Button>
+              <Button
+                disabled={!status?.association_revision}
+                loading={unlinkMutation.isPending}
+                onClick={() => {
+                  if (status?.association_revision) {
+                    unlinkMutation.mutate(status.association_revision);
+                  }
+                }}
+                size="sm"
+                variant="secondary"
+              >
+                确认解除
               </Button>
             </div>
           </Dialog.Content>

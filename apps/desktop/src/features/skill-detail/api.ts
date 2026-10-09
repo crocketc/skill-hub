@@ -357,6 +357,11 @@ export interface SkillDetailFacade {
     skillId: string,
     source: SourceRelinkInput,
   ): Promise<{ messageCode: string }>;
+  /** T17：解除当前更新来源关系；技能内容与导入存证保持不变。 */
+  unlinkUpdateSource(
+    skillId: string,
+    expectedSourceRevision: string,
+  ): Promise<{ messageCode: string }>;
   /** Optional AI layer over deterministic duplicate candidates (US-018). */
   analyzeSemanticDuplicates(skillId: string): Promise<SemanticDuplicateReport>;
   /** Task 8：AI 可用性真实信号——已配置并启用的供应商存在即为 true。 */
@@ -433,6 +438,7 @@ export const unavailableSkillDetailFacade: SkillDetailFacade = {
   ignoreSourceUpdate: unavailable,
   getSourceUpdateStatus: unavailable,
   relinkSource: unavailable,
+  unlinkUpdateSource: unavailable,
   analyzeSemanticDuplicates: unavailable,
   isAiAvailable: async () => false,
   analyzeConflicts: unavailable,

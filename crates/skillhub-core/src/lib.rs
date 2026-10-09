@@ -109,8 +109,8 @@ pub use api::{
     RunRollingBackup, SaveMarkdownDraft, SaveUserTranslationRevision, SearchOnlineSources,
     SearchOnlineSourcesAssisted, SetApplicationUpdatePolicy, SetUiPreference, SkillListItem,
     SkillListPage, SkillOperationEntry, SkillOperationsResult, SkillVersionFilter,
-    SourceUpdateStatus, TranslateDescription, TranslateDescriptionsBatch, ValidateMarkdown,
-    VerifyBackup,
+    SourceUpdateCheckCapability, SourceUpdateStatus, TranslateDescription,
+    TranslateDescriptionsBatch, UnlinkUpdateSource, ValidateMarkdown, VerifyBackup,
 };
 pub use app_update::{
     install_action_for, select_artifact, validate_official_artifact_url,

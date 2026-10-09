@@ -214,6 +214,11 @@ fn source_update_commands_have_stable_wire_shapes() {
         skill_id,
         candidate_identity: "sha256:candidate".into(),
     });
+    let unlink = AppCommand::UnlinkUpdateSource(skillhub_core::UnlinkUpdateSource {
+        skill_id,
+        operation_id: OperationId::new(),
+        expected_source_revision: "sha256:source".into(),
+    });
     let status = AppQuery::GetSourceUpdateStatus(skillhub_core::GetSourceUpdateStatus { skill_id });
     assert_eq!(
         serde_json::to_value(relink).unwrap()["type"],
@@ -234,6 +239,12 @@ fn source_update_commands_have_stable_wire_shapes() {
     assert_eq!(
         serde_json::to_value(ignore).unwrap()["type"],
         "ignore_source_update"
+    );
+    let unlink_value = serde_json::to_value(unlink).unwrap();
+    assert_eq!(unlink_value["type"], "unlink_update_source");
+    assert_eq!(
+        unlink_value["payload"]["expected_source_revision"],
+        "sha256:source"
     );
     assert_eq!(
         serde_json::to_value(status).unwrap()["type"],

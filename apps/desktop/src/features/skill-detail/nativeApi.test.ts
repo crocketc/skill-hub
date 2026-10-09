@@ -1409,6 +1409,9 @@ describe("K6 source update preview bindings", () => {
     vi.clearAllMocks();
     const status = {
       skill_id: "skill-1",
+      association: null,
+      association_revision: null,
+      check_capability: "not_associated",
       state: null,
       checked_at: null,
       upstream_label: null,
@@ -1425,6 +1428,30 @@ describe("K6 source update preview bindings", () => {
     expect(queryApplication).toHaveBeenCalledWith({
       type: "get_source_update_status",
       payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("unlinks only the update-source association using the current revision", async () => {
+    vi.clearAllMocks();
+    vi.mocked(executeCommand).mockResolvedValue({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-1",
+        phase: "committed",
+        message_code: "source.unlinked",
+        error_code: null,
+      },
+    } as never);
+
+    await nativeSkillDetailFacade.unlinkUpdateSource("skill-1", "sha256:source-revision");
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "unlink_update_source",
+      payload: expect.objectContaining({
+        skill_id: "skill-1",
+        expected_source_revision: "sha256:source-revision",
+        operation_id: expect.any(String),
+      }),
     });
   });
 

@@ -850,6 +850,12 @@
   gap: var(--space-2);
 }
 
+.sh-skill-detail-review__source-association {
+  color: var(--ui-ink-muted);
+  margin-block: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
 /* 来源状态徽标：形态/平台是短事实，用轻徽标呈现（§6.3） */
 .sh-skill-detail-review__source-badges {
   display: inline-flex;

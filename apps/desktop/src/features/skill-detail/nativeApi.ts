@@ -447,6 +447,27 @@ async function relinkSource(skillId: string, sourceInput: SourceRelinkInput) {  
   return { messageCode: result.payload.message_code };
 }
 
+function sourceUnlinkOperationId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `source-unlink-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function unlinkUpdateSource(
+  skillId: string,
+  expectedSourceRevision: string,
+): Promise<{ messageCode: string }> {
+  const result = await executeCommand({
+    type: "unlink_update_source",
+    payload: {
+      skill_id: skillId,
+      operation_id: sourceUnlinkOperationId(),
+      expected_source_revision: expectedSourceRevision,
+    },
+  });
+  if (result.type !== "operation_summary") throw unavailableResult();
+  return { messageCode: result.payload.message_code };
+}
+
 export const nativeSkillDetailFacade: SkillDetailFacade = {
   ...unavailableSkillDetailFacade,
   checkSourceUpdate,
@@ -455,6 +476,7 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
   ignoreSourceUpdate,
   getSourceUpdateStatus,
   relinkSource,
+  unlinkUpdateSource,
   analyzeSemanticDuplicates: analyzeNativeSemanticDuplicates,
   isAiAvailable: isNativeAiAvailable,
   analyzeConflicts: analyzeNativeConflicts,

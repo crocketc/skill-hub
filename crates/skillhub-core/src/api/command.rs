@@ -706,6 +706,17 @@ pub struct RelinkSource {
     pub source: SourceDescriptor,
 }
 
+/// Removes only the active update-source association. The revision token is
+/// read with the source status and prevents unlinking a source that changed
+/// while the user was deciding.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct UnlinkUpdateSource {
+    pub skill_id: SkillId,
+    pub operation_id: OperationId,
+    pub expected_source_revision: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct CheckSourceUpdate {
@@ -1508,6 +1519,8 @@ pub enum AppCommand {
     RollbackRelationGovernanceBatch(RollbackRelationGovernanceBatch),
     #[serde(rename = "relink_source")]
     RelinkSource(RelinkSource),
+    #[serde(rename = "unlink_update_source")]
+    UnlinkUpdateSource(UnlinkUpdateSource),
     #[serde(rename = "check_source_update")]
     CheckSourceUpdate(CheckSourceUpdate),
     #[serde(rename = "prepare_source_update")]

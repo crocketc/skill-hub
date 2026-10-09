@@ -383,6 +383,22 @@ export function SkillDetailPreview() {
       // W3-4：预览呈现有候选、有谱系的来源更新形态（静态真实形状，不执行命令）。
       sourceUpdateStatus: {
         skill_id: "skill-pdf",
+        association: {
+          skill_id: "skill-pdf",
+          source: {
+            kind: "git",
+            locator: { git_url: "https://github.com/example/skill" },
+          },
+          role: "verified_upstream",
+          upstream: {
+            url: "https://github.com/example/skill",
+            branch: "main",
+            directory: "skills/pdf",
+          },
+          created_at: "1791489600",
+        },
+        association_revision: "sha256:preview-source-revision",
+        check_capability: "git_repository",
         state: "update_available_with_local_changes",
         checked_at: "2026-10-05T08:00:00Z",
         upstream_label: "v2.5.0",

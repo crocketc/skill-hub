@@ -50,7 +50,7 @@ use skillhub_core::api::{
     SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent, SavedSkillContent,
     SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetTrial, SourceUpdateCheckOutcome, TestLlmConnection,
-    TranslateDescriptionsBatch, UpdateCombination,
+    TranslateDescriptionsBatch, UnlinkUpdateSource, UpdateCombination,
 };
 use skillhub_core::application::{
     CallPolicyBackend, CallPolicyService, DeploymentBackend, DeploymentService,
@@ -5555,6 +5555,35 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn unlink_update_source(&self, request: UnlinkUpdateSource) -> AppResult<AppCommandResult> {
+        let operation_id = request.operation_id;
+        self.journal_begin(operation_id, "unlink_update_source");
+        let result = self.with_database("execute.unlink_update_source", |database| {
+            if database
+                .catalog_repository()?
+                .get_sync(request.skill_id)?
+                .is_none()
+            {
+                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("skill_id", request.skill_id.to_string())
+                    .with_action(RecoveryAction::ChooseAnotherName));
+            }
+            database
+                .source_repository()
+                .unlink(request.skill_id, &request.expected_source_revision)?;
+            Ok(AppCommandResult::OperationSummary(
+                skillhub_core::OperationSummary {
+                    operation_id,
+                    phase: skillhub_core::OperationPhase::Committed,
+                    message_code: "source.unlinked".to_owned(),
+                    error_code: None,
+                },
+            ))
+        });
+        self.journal_settle(operation_id, "unlink_update_source", result.as_ref().err());
+        result
+    }
+
     fn persist_upstream_check(
         &self,
         result: AppResult<AppCommandResult>,
@@ -6152,8 +6181,26 @@ impl LocalApplicationFacade {
                 .as_ref()
                 .map(|identity| ignored_candidates.contains(identity))
                 .unwrap_or(false);
+            let association = repository.source_record_for_skill(skill_id)?;
+            let association_revision = repository.association_revision(skill_id)?;
+            let check_capability = match association.as_ref() {
+                None => skillhub_core::api::SourceUpdateCheckCapability::NotAssociated,
+                Some(record) if record.source.kind == skillhub_core::SourceKind::Local => {
+                    skillhub_core::api::SourceUpdateCheckCapability::LocalDirectory
+                }
+                Some(record)
+                    if record.source.kind == skillhub_core::SourceKind::Git
+                        && record.upstream.is_some() =>
+                {
+                    skillhub_core::api::SourceUpdateCheckCapability::GitRepository
+                }
+                Some(_) => skillhub_core::api::SourceUpdateCheckCapability::Unsupported,
+            };
             Ok(skillhub_core::api::SourceUpdateStatus {
                 skill_id,
+                association,
+                association_revision,
+                check_capability,
                 state: last.as_ref().map(|check| check.state),
                 checked_at,
                 upstream_label: last.as_ref().and_then(|check| check.upstream_label.clone()),
@@ -9291,6 +9338,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.pin_project_skill_version(request)
             }
             AppCommand::RelinkSource(request) => return self.relink_source(request),
+            AppCommand::UnlinkUpdateSource(request) => return self.unlink_update_source(request),
             AppCommand::SetUiPreference(request) => {
                 return self.with_database("execute.set_ui_preference", |database| {
                     database

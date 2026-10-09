@@ -1220,6 +1220,11 @@ pub struct GetSourceUpdateStatus {
 #[serde(deny_unknown_fields)]
 pub struct SourceUpdateStatus {
     pub skill_id: SkillId,
+    /// Current update-source association. This is independent of check outcome.
+    pub association: Option<crate::source::SourceRecord>,
+    /// Opaque revision for safe update-source removal.
+    pub association_revision: Option<String>,
+    pub check_capability: SourceUpdateCheckCapability,
     pub state: Option<crate::SourceState>,
     /// 最近一次检查时刻，RFC3339 UTC；从未检查过为 None。
     pub checked_at: Option<String>,
@@ -1229,6 +1234,15 @@ pub struct SourceUpdateStatus {
     pub ignored_candidates: Vec<String>,
     /// 当前候选是否被忽略。
     pub candidate_ignored: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceUpdateCheckCapability {
+    NotAssociated,
+    LocalDirectory,
+    GitRepository,
+    Unsupported,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

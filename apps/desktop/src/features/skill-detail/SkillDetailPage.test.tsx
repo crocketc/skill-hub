@@ -1508,6 +1508,18 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
 
   const candidateStatus: SourceUpdateStatus = {
     skill_id: "skill-pdf",
+    association: {
+      skill_id: "skill-pdf",
+      source: {
+        kind: "git",
+        locator: { git_url: "https://github.com/example/skill" },
+      },
+      role: "verified_upstream",
+      upstream: { url: "https://github.com/example/skill", branch: "main", directory: "skills/pdf" },
+      created_at: "1791489600",
+    },
+    association_revision: "sha256:source-revision",
+    check_capability: "git_repository",
     state: "update_available",
     checked_at: "2026-10-05T08:00:00Z",
     upstream_label: "v2.5.0",
@@ -1515,6 +1527,57 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     ignored_candidates: [],
     candidate_ignored: false,
   };
+
+  it("keeps a local source associated before checks and confirms unlink without touching content", async () => {
+    const facade = createMockSkillDetailFacade({
+      sourceUpdateStatus: {
+        ...candidateStatus,
+        association: {
+          skill_id: "skill-pdf",
+          source: {
+            kind: "local",
+            locator: { local_path: "/tmp/skills/pdf-reader" },
+          },
+          role: "local_only",
+          upstream: null,
+          created_at: "1791489600",
+        },
+        association_revision: "sha256:local-source-revision",
+        check_capability: "local_directory",
+        state: null,
+        checked_at: null,
+        upstream_label: null,
+        candidate_identity: null,
+      },
+    });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    expect(await section.findByText("当前更新来源：本机目录。"))
+      .toBeVisible();
+    expect(section.getByRole("button", { name: "更换来源" })).toBeVisible();
+    expect(section.getByRole("button", { name: "解除更新来源" })).toBeVisible();
+    expect(section.getByRole("button", { name: "检查更新" })).toBeDisabled();
+
+    fireEvent.click(section.getByRole("button", { name: "解除更新来源" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/技能内容、版本与导入来源记录不会改变/)).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "保留关联" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(facade.calls.unlinkedUpdateSources).toEqual([]);
+
+    fireEvent.click(section.getByRole("button", { name: "解除更新来源" }));
+    const confirmation = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmation).getByRole("button", { name: "确认解除" }));
+    await waitFor(() => {
+      expect(facade.calls.unlinkedUpdateSources).toEqual([{
+        expectedSourceRevision: "sha256:local-source-revision",
+        skillId: "skill-pdf",
+      }]);
+    });
+    expect(await section.findByText("已解除更新来源；技能内容、版本和导入来源记录保持不变。"))
+      .toBeVisible();
+  });
 
   it("renders the persisted status and candidate actions without fabricated source names", async () => {
     const facade = createMockSkillDetailFacade({ sourceUpdateStatus: candidateStatus });
@@ -1531,6 +1594,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
 
   it("runs a real check through the facade and reports the result", async () => {
     const facade = createMockSkillDetailFacade({
+      sourceUpdateStatus: candidateStatus,
       sourceUpdateResult: {
         skill_id: "skill-pdf",
         state: "up_to_date",
@@ -1584,14 +1648,39 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     });
   });
 
-  it("relinks an update source with an explicit user-chosen kind", async () => {
+  it("does not present a failed check label as the latest upstream version", async () => {
     const facade = createMockSkillDetailFacade({
-      sourceUpdateStatus: { ...candidateStatus, state: "no_upstream", checked_at: null, upstream_label: null, candidate_identity: null },
+      sourceUpdateStatus: {
+        ...candidateStatus,
+        state: "source_unavailable",
+        upstream_label: "v9.9.9",
+        candidate_identity: null,
+      },
     });
     await renderDetail({ facade });
 
     const section = await sourcesSection();
-    expect(await section.findByText(/没有可检查更新的上游来源/)).toBeVisible();
+    expect(await section.findByText(/来源暂不可用/)).toBeVisible();
+    expect(section.queryByText("v9.9.9")).not.toBeInTheDocument();
+  });
+
+  it("relinks an update source with an explicit user-chosen kind", async () => {
+    const facade = createMockSkillDetailFacade({
+      sourceUpdateStatus: {
+        ...candidateStatus,
+        association: null,
+        association_revision: null,
+        check_capability: "not_associated",
+        state: "no_upstream",
+        checked_at: null,
+        upstream_label: null,
+        candidate_identity: null,
+      },
+    });
+    await renderDetail({ facade });
+
+    const section = await sourcesSection();
+    expect(await section.findByText("当前没有关联更新来源。")).toBeVisible();
     fireEvent.click(section.getByRole("button", { name: "关联更新来源" }));
 
     expect(await screen.findByRole("dialog", { name: "关联网络更新来源" })).toBeVisible();
@@ -1610,7 +1699,16 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
 
   it("keeps the relink dialog open with a readable error when the command fails", async () => {
     const facade = createMockSkillDetailFacade({
-      sourceUpdateStatus: { ...candidateStatus, state: "no_upstream", checked_at: null, upstream_label: null, candidate_identity: null },
+      sourceUpdateStatus: {
+        ...candidateStatus,
+        association: null,
+        association_revision: null,
+        check_capability: "not_associated",
+        state: "no_upstream",
+        checked_at: null,
+        upstream_label: null,
+        candidate_identity: null,
+      },
       failRelinkSource: true,
     });
     await renderDetail({ facade });

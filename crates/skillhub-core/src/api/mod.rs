@@ -55,8 +55,9 @@ pub use command::{
     ScanTargets, SetCurrentVersion, SetDefaultLlmProvider, SetFindingDisposition, SetLifecycle,
     SetLlmProviderEnabled, SetMetadata, SetProfileOverride, SetProjectTags, SetTrial,
     SetUiPreference, SetVersionLabel, TestLlmConnection, TranslateDescription,
-    TranslateDescriptionsBatch, TrustSkillSecurity, TrustSkillSecurityOutcome, UpdateCombination,
-    UpdateCustomAgent, UpdateProject, ValidateMarkdown, VerifyBackup, WriteSharedProjectConfig,
+    TranslateDescriptionsBatch, TrustSkillSecurity, TrustSkillSecurityOutcome, UnlinkUpdateSource,
+    UpdateCombination, UpdateCustomAgent, UpdateProject, ValidateMarkdown, VerifyBackup,
+    WriteSharedProjectConfig,
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
@@ -86,8 +87,8 @@ pub use query::{
     SkillListItem, SkillListPage, SkillListSort, SkillOperationEntry, SkillOperationsResult,
     SkillProvenanceResult, SkillRelationshipCandidate, SkillRelationshipGraphResult, SkillResult,
     SkillSortColumn, SkillSortDirection, SkillUpstreamLineage, SkillVersionFilter,
-    SourceUpdateCheckOutcome, SourceUpdateStatus, VersionAdoptionRelationImpact, VersionDiffResult,
-    VersionResult,
+    SourceUpdateCheckCapability, SourceUpdateCheckOutcome, SourceUpdateStatus,
+    VersionAdoptionRelationImpact, VersionDiffResult, VersionResult,
 };
 
 use crate::AppResult;

@@ -48,6 +48,8 @@ export interface MockSkillDetailCalls {
   committedSourceUpdates: Array<{ decision: UpdateDecision; previewId: string }>;
   /** K6/D3：按候选身份忽略。 */
   ignoredSourceUpdates: Array<{ candidateIdentity: string; skillId: string }>;
+  /** T17：解除当前更新来源关联并使用状态查询给出的版本令牌。 */
+  unlinkedUpdateSources: Array<{ expectedSourceRevision: string; skillId: string }>;
   relinkSourceInputs: Array<{ skillId: string; source: SourceRelinkInput }>;
   checkedSourceUpdates: Array<{ skillId: string }>;
   committedRollbacks: Array<{ skillId: string; versionId: string }>;
@@ -343,6 +345,7 @@ export function createMockSkillDetailFacade(
     preparedSourceUpdates: [],
     committedSourceUpdates: [],
     ignoredSourceUpdates: [],
+    unlinkedUpdateSources: [],
     checkedSourceUpdates: [],
     relinkSourceInputs: [],
     committedRollbacks: [],
@@ -533,6 +536,9 @@ export function createMockSkillDetailFacade(
     async getSourceUpdateStatus(skillId): Promise<SourceUpdateStatus> {
       const status = options.sourceUpdateStatus ?? {
         skill_id: skillId,
+        association: null,
+        association_revision: null,
+        check_capability: "not_associated",
         state: null,
         checked_at: null,
         upstream_label: null,
@@ -550,7 +556,11 @@ export function createMockSkillDetailFacade(
       calls.relinkSourceInputs.push({ skillId, source });
       return { messageCode: "source.relinked" };
     },
-        async setTrial(skillId, due) {
+    async unlinkUpdateSource(skillId, expectedSourceRevision) {
+      calls.unlinkedUpdateSources.push({ expectedSourceRevision, skillId });
+      return { messageCode: "source.unlinked" };
+    },
+    async setTrial(skillId, due) {
       calls.trials.push({ due, skillId });
       if (options.failTrialSave) throw new Error("trial save failed");
       // W3-7：与原生 set_trial 派生规则一致——试用是 trial_due 的派生态。
