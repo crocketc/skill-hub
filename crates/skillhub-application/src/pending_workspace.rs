@@ -40,13 +40,12 @@ fn work(kind: WorkKind, subject: String, occurrence: &str) -> WorkItem {
 }
 
 fn environment_problem_context(problem: &EnvironmentProblemView) -> Option<UsageGovernanceContext> {
-    let environment = problem.consumers.first().or_else(|| {
-        problem
-            .environment_results
-            .iter()
-            .find(|result| !result.closed)
-            .map(|result| &result.environment)
-    })?;
+    let environment = problem
+        .environment_results
+        .iter()
+        .find(|result| !result.closed)
+        .map(|result| &result.environment)
+        .or_else(|| problem.consumers.first())?;
     let relation_ids = problem
         .entries
         .iter()
@@ -656,5 +655,41 @@ mod tests {
             &problem,
             &conflict(vec![member("directory-a")]),
         ));
+    }
+
+    #[test]
+    fn environment_context_prefers_open_environment_after_partial_success() {
+        let problem = EnvironmentProblemView {
+            problem_id: "problem:notes".into(),
+            kind: EnvironmentProblemKind::SameSkill,
+            entries: Vec::new(),
+            consumers: vec![skillhub_core::relationship::UsageEnvironmentKey {
+                agent_client_id: "already-closed-agent".into(),
+                project_id: None,
+            }],
+            environment_results: vec![
+                skillhub_core::relationship::EnvironmentProblemEnvironmentResult {
+                    environment: skillhub_core::relationship::UsageEnvironmentKey {
+                        agent_client_id: "already-closed-agent".into(),
+                        project_id: None,
+                    },
+                    closed: true,
+                    relationship_revision: "r1".into(),
+                },
+                skillhub_core::relationship::EnvironmentProblemEnvironmentResult {
+                    environment: skillhub_core::relationship::UsageEnvironmentKey {
+                        agent_client_id: "still-open-agent".into(),
+                        project_id: None,
+                    },
+                    closed: false,
+                    relationship_revision: "r1".into(),
+                },
+            ],
+            closed: false,
+        };
+
+        let context = environment_problem_context(&problem).expect("open problem context");
+
+        assert_eq!(context.agent_id, "still-open-agent");
     }
 }

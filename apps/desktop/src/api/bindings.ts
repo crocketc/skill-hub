@@ -1605,7 +1605,13 @@ export type ExportSkillSummary = {
  */
 export type ExternalChangeState = "unchanged" | "modified" | "missing" | "ignored";
 
-export type FactsChanged = Record<string, never>;
+export type FactsChanged = {
+	operation_id?: OperationId | null,
+	skill_ids?: SkillId[],
+	entry_keys?: UsageEntryKey[],
+	environment_keys?: UsageEnvironmentKey[],
+	problem_ids?: string[],
+};
 
 export type FetchLlmModels = {
 	provider: FetchLlmProvider,

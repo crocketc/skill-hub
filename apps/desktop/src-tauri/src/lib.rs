@@ -322,7 +322,7 @@ impl RelationshipWatchLifecycle {
             }
             match self.pump.executor().compensate() {
                 Ok(report) => {
-                    Self::emit_if_items_changed(&report.items, emit);
+                    Self::emit_if_items_changed(&report, self.pump.executor(), emit);
                 }
                 Err(error) => {
                     eprintln!("relationship watcher startup light check failed: {error:?}")
@@ -332,7 +332,7 @@ impl RelationshipWatchLifecycle {
         match self.pump.tick() {
             Ok(report) => {
                 if report.facts_changed {
-                    emit(AppEvent::FactsChanged(FactsChanged::new()));
+                    emit(AppEvent::FactsChanged(report.facts));
                 }
             }
             Err(error) => eprintln!("relationship watch tick failed: {error:?}"),
@@ -341,17 +341,24 @@ impl RelationshipWatchLifecycle {
     }
 
     fn emit_if_items_changed(
-        items: &[skillhub_core::relationship::RelationshipCheckItem],
+        report: &skillhub_core::relationship::RelationshipCheckReport,
+        executor: &dyn RelationshipCheckExecuting,
         emit: &dyn Fn(AppEvent),
     ) {
-        if items.iter().any(|item| {
+        if report.items.iter().any(|item| {
             matches!(
                 item.status,
                 skillhub_core::relationship::RelationshipCheckItemStatus::Checked
                     | skillhub_core::relationship::RelationshipCheckItemStatus::Archived
             )
         }) {
-            emit(AppEvent::FactsChanged(FactsChanged::new()));
+            let facts = executor
+                .facts_changed_for_compensation(report)
+                .unwrap_or_else(|error| {
+                    eprintln!("relationship startup fact scope failed: {error:?}");
+                    FactsChanged::new()
+                });
+            emit(AppEvent::FactsChanged(facts));
         }
     }
 

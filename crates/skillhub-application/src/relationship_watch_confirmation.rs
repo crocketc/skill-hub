@@ -19,7 +19,7 @@ use skillhub_adapters::watcher::{
     NativeRelationshipWatcher, NativeWatchBackend, NotifyWatchBackend, SystemWatchClock,
     WatchClock, WatchHint,
 };
-use skillhub_core::api::{AppCommandResult, RunRelationshipCheck};
+use skillhub_core::api::{AppCommandResult, FactsChanged, RunRelationshipCheck};
 use skillhub_core::relationship::{
     RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
     RelationshipCheckScope,
@@ -39,6 +39,26 @@ pub trait RelationshipCheckExecuting: Send + Sync {
 
     /// Light compensation scan over every active relation.
     fn compensate(&self) -> AppResult<RelationshipCheckReport>;
+
+    /// Maps a confirmed file hint to its changed usage projections. Fake and
+    /// non-facade executors retain a report-only default for deterministic tests.
+    fn facts_changed_for_path(
+        &self,
+        _path: &Path,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<Option<FactsChanged>> {
+        let facts = facts_changed_from_report(report);
+        Ok((!facts.is_empty()).then_some(facts))
+    }
+
+    /// Compensation can observe changes across any watched environment, so
+    /// executors may return a broader scope than the changed relation rows.
+    fn facts_changed_for_compensation(
+        &self,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<FactsChanged> {
+        Ok(facts_changed_from_report(report))
+    }
 }
 
 /// Real executor bound to the application facade.
@@ -65,12 +85,43 @@ impl RelationshipCheckExecuting for FacadeRelationshipCheckExecutor {
     fn active_roots(&self) -> AppResult<Vec<PathBuf>> {
         self.facade
             .with_database("watch.confirm.active_roots", |database| {
-                Ok(database
+                let mut roots = database
                     .relationship_repository()
                     .list_source_copy_relations(true)?
                     .into_iter()
                     .map(|relation| PathBuf::from(&relation.source_path))
-                    .collect())
+                    .collect::<std::collections::BTreeSet<_>>();
+                roots.extend(
+                    database
+                        .relationship_repository()
+                        .list_relations()?
+                        .into_iter()
+                        .filter(|relation| relation.active && relation.released_at.is_none())
+                        .map(|relation| PathBuf::from(relation.path)),
+                );
+
+                // Usage-environment scans are filesystem-derived facts too. Watch
+                // only directories with persisted, supported recognition; finding
+                // an arbitrary directory must never silently make it an Agent.
+                let nodes = database.directory_repository().list_nodes()?;
+                let capabilities = database.relationship_repository().list_capabilities()?;
+                roots.extend(nodes.into_iter().filter_map(|node| {
+                    let recognized = capabilities.iter().any(|capability| {
+                        capability.directory_node_id == node.node_id
+                            && capability.recognition
+                                == skillhub_core::relationship::DirectoryRecognition::Supported
+                    });
+                    (recognized
+                        && matches!(
+                            node.role,
+                            skillhub_core::relationship::DirectoryRole::AgentNative
+                                | skillhub_core::relationship::DirectoryRole::SharedDirectory
+                                | skillhub_core::relationship::DirectoryRole::Project
+                        ))
+                    .then(|| PathBuf::from(node.path))
+                }));
+
+                Ok(roots.into_iter().collect())
             })
     }
 
@@ -106,10 +157,25 @@ impl RelationshipCheckExecuting for FacadeRelationshipCheckExecutor {
             scope: RelationshipCheckScope::AllActive,
         })
     }
+
+    fn facts_changed_for_path(
+        &self,
+        path: &Path,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<Option<FactsChanged>> {
+        self.facade.watcher_facts_for_path(path, report)
+    }
+
+    fn facts_changed_for_compensation(
+        &self,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<FactsChanged> {
+        self.facade.watcher_facts_for_all(report)
+    }
 }
 
 /// Outcome of one confirmation pass over the pending queue.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WatchConfirmationReport {
     /// Hints whose mapped-relation check completed with results.
@@ -123,6 +189,8 @@ pub struct WatchConfirmationReport {
     /// Whether any completed check changed a relationship fact; the pump
     /// forwards this as the existing FactsChanged app event.
     pub facts_changed: bool,
+    /// Confirmed facts and the exact projections they can invalidate.
+    pub facts: FactsChanged,
 }
 
 /// Owns the native watcher and the pending hint queue.
@@ -277,28 +345,33 @@ impl RelationshipWatchRuntime {
         let mut remaining = VecDeque::new();
         while let Some(hint) = self.pending.pop_front() {
             let outcome = if hint.is_compensation() {
-                executor.compensate().map(|check| (check, true))
+                executor.compensate().and_then(|check| {
+                    executor
+                        .facts_changed_for_compensation(&check)
+                        .map(|facts| (check, true, Some(facts)))
+                })
             } else {
-                executor
-                    .check_path(&hint.path())
-                    .map(|check| (check, false))
+                let path = hint.path();
+                executor.check_path(&path).and_then(|check| {
+                    executor
+                        .facts_changed_for_path(&path, &check)
+                        .map(|facts| (check, false, facts))
+                })
             };
             match outcome {
-                Ok((check, is_compensation)) => {
+                Ok((check, is_compensation, facts)) => {
+                    let changed = facts.as_ref().is_some_and(|facts| !facts.is_empty());
                     if is_compensation {
                         report.compensation_scans += 1;
-                    } else if check.items.is_empty() {
+                    } else if check.items.is_empty() && !changed {
                         report.dropped_unmapped += 1;
                     } else {
                         report.confirmed_file_hints += 1;
                     }
-                    report.facts_changed |= check.items.iter().any(|item| {
-                        matches!(
-                            item.status,
-                            RelationshipCheckItemStatus::Checked
-                                | RelationshipCheckItemStatus::Archived
-                        )
-                    });
+                    if let Some(facts) = facts {
+                        report.facts.merge(facts);
+                    }
+                    report.facts_changed |= changed;
                 }
                 Err(_) => {
                     report.retained_hints += 1;
@@ -309,6 +382,21 @@ impl RelationshipWatchRuntime {
         self.pending = remaining;
         report
     }
+}
+
+fn facts_changed_from_report(report: &RelationshipCheckReport) -> FactsChanged {
+    let skill_ids = report
+        .items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.status,
+                RelationshipCheckItemStatus::Checked | RelationshipCheckItemStatus::Archived
+            )
+        })
+        .map(|item| item.skill_id)
+        .collect::<Vec<_>>();
+    FactsChanged::scoped(None, skill_ids, Vec::new(), Vec::new(), Vec::new())
 }
 
 /// The pump binds a runtime to the real facade executor. Desktop managed

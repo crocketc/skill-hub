@@ -85,6 +85,20 @@ it("shows discovered directory facts without trust or usability status", async (
   expect(screen.getByText("研发中")).toBeVisible();
 });
 
+it("does not show a normal Agent status before the initial fact query completes", async () => {
+  let resolveAgent: ((value: AgentView) => void) | undefined;
+  const facade = facadeWith(agentFixture(), {
+    get: vi.fn(() => new Promise<AgentView>((resolve) => { resolveAgent = resolve; })),
+  });
+  await renderDetailPage(facade);
+
+  expect(screen.getByText("正在加载 Agent 事实")).toBeVisible();
+  expect(screen.queryByText("正常")).not.toBeInTheDocument();
+
+  resolveAgent?.(agentFixture());
+  expect(await screen.findByText("可访问")).toBeVisible();
+});
+
 it("shows discovery counts and problem groups for this Agent environment", async () => {
   const governanceFacade = {
     listGovernance: vi.fn(async () => ({ rows: [] })),

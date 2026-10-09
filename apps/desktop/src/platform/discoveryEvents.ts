@@ -1,3 +1,5 @@
+import { emitPendingFactsChanged } from "./pendingEvents";
+
 /**
  * 发现事实变更的应用内广播（2026-09-26）：启动期后台 Agent 重扫完成后，
  * 关心的视图各自刷新——Agent 页是本地 state 拉取（无 react-query key），
@@ -9,6 +11,7 @@ const DISCOVERY_FACTS_CHANGED = "skillhub:discovery-facts-changed";
 
 export function notifyDiscoveryFactsChanged(): void {
   window.dispatchEvent(new CustomEvent(DISCOVERY_FACTS_CHANGED));
+  emitPendingFactsChanged();
 }
 
 /** 订阅发现事实变更；返回取消订阅函数（供 useEffect 清理）。 */

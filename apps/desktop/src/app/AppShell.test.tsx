@@ -8,11 +8,18 @@ import { createSkillHubI18n } from "../i18n";
 import baseCss from "../styles/base.css?raw";
 import type { BootstrapSnapshot, ScanResult } from "../api/bindings";
 import type { BootstrapVerificationState } from "../features/bootstrap/api";
+import { overviewKeys } from "../features/overview/api";
+import { relationshipsKeys } from "../features/relationships/api";
+import { skillDetailKeys } from "../features/skill-detail/api";
+import { skillLibraryKeys } from "../features/skills/api";
+import { onDeploymentFactsChanged } from "../platform/deploymentEvents";
+import { runTrackedOperation } from "../platform/runTrackedOperation";
 import {
   beginBackgroundScan,
   resetBackgroundScan,
 } from "../features/bootstrap/backgroundScan";
 import { useRelationshipsReturnState } from "../features/relationships/returnState";
+import { queryClient } from "./queryClient";
 import { AppShell } from "./AppShell";
 
 // D5 一体化标题栏：平台能力与 macOS 类标记经 mock 注入，既让默认用例
@@ -48,13 +55,13 @@ afterEach(() => {
   relationshipsLibraryRows = 0;
 });
 
-async function renderShell(initialPath = "/") {
+async function renderShell(initialPath = "/", refreshSnapshot = async () => undefined) {
   const i18n = await createSkillHubI18n(["en-US"]);
   render(
     <MemoryRouter initialEntries={[initialPath]}>
       <I18nextProvider i18n={i18n}>
         <AppShell
-          refreshSnapshot={async () => undefined}
+          refreshSnapshot={refreshSnapshot}
           snapshot={{} as unknown as BootstrapSnapshot}
           verification={{ kind: "idle" } as unknown as BootstrapVerificationState}
         />
@@ -161,6 +168,38 @@ async function renderShellWithRelationshipPages(initialPath: string) {
 }
 
 describe("AppShell", () => {
+  it("refreshes all fact views after a completed command", async () => {
+    const refreshSnapshot = vi.fn(async () => undefined);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    const refreshAgentViews = vi.fn();
+    const stopListening = onDeploymentFactsChanged(refreshAgentViews);
+    await renderShell("/", refreshSnapshot);
+
+    await act(async () => {
+      await runTrackedOperation({
+        kind: "relationship_update",
+        label: "更新关系",
+        mode: "instant",
+        run: async () => undefined,
+      });
+    });
+
+    await waitFor(() => expect(refreshSnapshot).toHaveBeenCalledTimes(1));
+    expect(refreshAgentViews).toHaveBeenCalledTimes(1);
+    expect(invalidate.mock.calls.map(([request]) => request?.queryKey)).toEqual(
+      expect.arrayContaining([
+        overviewKeys.root,
+        relationshipsKeys.root,
+        skillDetailKeys.root,
+        skillLibraryKeys.root,
+      ]),
+    );
+
+    stopListening();
+    invalidate.mockRestore();
+    queryClient.clear();
+  });
+
   it("exposes exactly one main landmark inside the sidebar/workspace shell columns", async () => {
     await renderShell();
 

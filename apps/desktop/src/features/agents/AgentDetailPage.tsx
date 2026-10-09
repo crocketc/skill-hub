@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { desktopDirectoryPicker, type DirectoryPicker } from "../../platform/directoryPicker";
+import { onDeploymentFactsChanged } from "../../platform/deploymentEvents";
 import type { RelationshipOverview } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import {
@@ -96,6 +97,10 @@ export function AgentDetailPage({
     });
     return () => { active = false; };
   }, [agentId, facade, revision, t]);
+
+  useEffect(() => onDeploymentFactsChanged(() => {
+    setRevision((current) => current + 1);
+  }), []);
 
   useEffect(() => {
     // 目录矩阵是独立于 Agent 事实的只读查询；失败只降级矩阵本身，不拖垮详情页。

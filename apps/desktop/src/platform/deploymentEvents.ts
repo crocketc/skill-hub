@@ -1,3 +1,5 @@
+import { emitPendingFactsChanged } from "./pendingEvents";
+
 /**
  * DEV-22：部署事实变更的应用内广播。
  *
@@ -11,6 +13,12 @@
 const DEPLOYMENT_FACTS_CHANGED = "skillhub:deployment-facts-changed";
 
 export function notifyDeploymentFactsChanged(): void {
+  notifyAgentViewsForFactsChanged();
+  emitPendingFactsChanged();
+}
+
+/** 刷新本地 state 的 Agent 视图；仅用于已进入统一广播的事实变化。 */
+export function notifyAgentViewsForFactsChanged(): void {
   window.dispatchEvent(new CustomEvent(DEPLOYMENT_FACTS_CHANGED));
 }
 

@@ -17,6 +17,10 @@ import { BrandLogo } from "../ui/BrandLogo";
 import { IconButton } from "../ui/IconButton";
 import { WindowControls } from "../ui/WindowControls";
 import { useSkillHubReducedMotion } from "../ui/reducedMotion";
+import { queryClient } from "./queryClient";
+import { onPendingFactsChanged, emitPendingFactsChanged } from "../platform/pendingEvents";
+import { onUsageFactsChanged, refreshAllFactViews } from "../platform/usageFactsEvents";
+import { notifyAgentViewsForFactsChanged } from "../platform/deploymentEvents";
 import {
   AppNotificationsProvider,
   NotificationBell,
@@ -194,6 +198,34 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   // 自绘窗口控制的平台适配只在挂载时做一次（macOS 红绿灯避让类标记）。
   useEffect(() => {
     applyWindowChromePlatformClass();
+  }, []);
+
+  // 原生 watcher 与长操作共用 FactsChanged 刷新通道。这里同时失效所有共享
+  // 投影、拉取 bootstrap 快照，并通知使用本地 state 的 Agent 详情与列表。
+  useEffect(() => onPendingFactsChanged(() => {
+    notifyAgentViewsForFactsChanged();
+    void refreshAllFactViews(queryClient, refreshSnapshot).catch(() => {
+      // 查询各自呈现失败状态；一个事实源暂不可用不阻止其余视图刷新。
+    });
+  }), [refreshSnapshot]);
+
+  // Tauri 的原生 FactsChanged 先转入既有本地广播，命令完成与 watcher 变化
+  // 再走同一个跨页面刷新入口。异步订阅在壳卸载后立即释放。
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onUsageFactsChanged((facts) => emitPendingFactsChanged(facts))
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {
+        // 浏览器预览或原生桥不可用时，页面仍可使用各自的本地操作回执。
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   // 原生最大化状态决定概览是否进入“无滚动、填满页面”的布局；普通窗口

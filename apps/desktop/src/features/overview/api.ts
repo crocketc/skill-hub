@@ -14,6 +14,10 @@ import { agentKindLabel, type AgentKindKey } from "../../ui/AgentPresentation";
 import { brandDisplayName } from "../../ui/BrandTag";
 import type { OverviewDeploymentName } from "./deploymentNames";
 
+export const overviewKeys = {
+  root: ["overview"] as const,
+};
+
 export type OverviewDimension = DeploymentDimension;
 
 /** Agent 图表类别的呈现事实（品牌 + 展示类型），由统一 presenter 语义组合。 */

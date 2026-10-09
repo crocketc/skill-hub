@@ -17,7 +17,7 @@ use skillhub_core::agent::{
     AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole, ClientKind,
 };
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, RelationshipOverviewScope, RunRelationshipCheck,
+    AppCommandResult, AppQueryResult, FactsChanged, RelationshipOverviewScope, RunRelationshipCheck,
 };
 use skillhub_core::project::Project;
 use skillhub_core::relationship::{
@@ -26,7 +26,7 @@ use skillhub_core::relationship::{
     DirectoryRole, EnvironmentProblemAnalysis, EnvironmentProblemKind, RelationshipCheckItem,
     RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
     RelationshipCheckScope, RelationshipPathProbe, SourceCopyRelationFact, SourceCopyTransition,
-    UsageEnvironmentDirectory, UsageEnvironmentEntry, UsageEnvironmentKey,
+    UsageEntryKey, UsageEnvironmentDirectory, UsageEnvironmentEntry, UsageEnvironmentKey,
     UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
     UsageEnvironmentSnapshot, UsageEnvironmentStatistics, UsageEnvironmentStatisticsSummary,
 };
@@ -55,6 +55,171 @@ pub(crate) fn default_relationship_probe() -> Arc<dyn RelationshipPathProbing> {
 }
 
 impl LocalApplicationFacade {
+    /// Maps a confirmed filesystem hint to every current usage projection it can
+    /// affect. Environment scans are query facts, so a mapped hint still
+    /// invalidates those projections even when no persisted source-copy row
+    /// changed.
+    pub(crate) fn watcher_facts_for_path(
+        &self,
+        path: &Path,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<Option<FactsChanged>> {
+        let (analysis, snapshots) = self.scan_usage_environment_state()?;
+        let mut skill_ids = changed_check_skill_ids(report);
+        let mut entry_keys = Vec::new();
+        let mut environment_keys = Vec::<UsageEnvironmentKey>::new();
+        let mut problem_ids = Vec::new();
+        let mut mapped = !skill_ids.is_empty();
+
+        for snapshot in &snapshots {
+            let mut matched_entries = Vec::<UsageEntryKey>::new();
+            for directory in &snapshot.recognized_directories {
+                if !paths_overlap(path, Path::new(&directory.path)) {
+                    continue;
+                }
+                mapped = true;
+                push_unique(&mut environment_keys, snapshot.environment.clone());
+                if let Some(key) = entry_key_for_watched_path(
+                    &directory.directory_id,
+                    Path::new(&directory.path),
+                    path,
+                ) {
+                    push_unique(&mut matched_entries, key);
+                }
+
+                for entry in &snapshot.discovered_entries {
+                    if entry.directory_id != directory.directory_id {
+                        continue;
+                    }
+                    let key = UsageEntryKey {
+                        directory_id: entry.directory_id.clone(),
+                        relative_entry_path: entry.relative_entry_path.clone(),
+                    };
+                    let entry_path = Path::new(&directory.path).join(&entry.relative_entry_path);
+                    if paths_overlap(path, &entry_path) {
+                        push_unique(&mut matched_entries, key);
+                        if let Some(skill_id) = entry.skill_id {
+                            push_unique(&mut skill_ids, skill_id);
+                        }
+                    }
+                }
+            }
+
+            if matched_entries.is_empty() {
+                continue;
+            }
+            for relation in &snapshot.usage_relations {
+                if relation
+                    .entry_key
+                    .as_ref()
+                    .is_some_and(|key| matched_entries.contains(key))
+                {
+                    if let Some(skill_id) = relation.skill_id {
+                        push_unique(&mut skill_ids, skill_id);
+                    }
+                }
+            }
+            for problem in &analysis.problems {
+                let matches_entry = problem.entries.iter().any(|entry| {
+                    matched_entries.iter().any(|key| {
+                        key.directory_id == entry.directory_id
+                            && key.relative_entry_path == entry.relative_entry_path
+                    })
+                });
+                if matches_entry || problem.consumers.contains(&snapshot.environment) {
+                    mapped = true;
+                    push_unique(&mut problem_ids, problem.problem_id.clone());
+                    for consumer in &problem.consumers {
+                        push_unique(&mut environment_keys, consumer.clone());
+                    }
+                    for entry in &problem.entries {
+                        if let Some(skill_id) = entry.skill_id {
+                            push_unique(&mut skill_ids, skill_id);
+                        }
+                    }
+                }
+            }
+            for key in matched_entries {
+                push_unique(&mut entry_keys, key);
+            }
+        }
+
+        if !mapped {
+            return Ok(None);
+        }
+        Ok(Some(FactsChanged::scoped(
+            None,
+            skill_ids,
+            entry_keys,
+            environment_keys,
+            problem_ids,
+        )))
+    }
+
+    /// A compensation scan can follow changes while the app was suspended.
+    /// It therefore invalidates the complete current usage projection after a
+    /// successful scan instead of assuming the original hint scope is current.
+    pub(crate) fn watcher_facts_for_all(
+        &self,
+        report: &RelationshipCheckReport,
+    ) -> AppResult<FactsChanged> {
+        let (analysis, snapshots) = self.scan_usage_environment_state()?;
+        let mut skill_ids = changed_check_skill_ids(report);
+        let mut entry_keys = Vec::new();
+        let mut environment_keys = Vec::new();
+        let mut problem_ids = Vec::new();
+        for snapshot in &snapshots {
+            push_unique(&mut environment_keys, snapshot.environment.clone());
+            for entry in &snapshot.discovered_entries {
+                push_unique(
+                    &mut entry_keys,
+                    UsageEntryKey {
+                        directory_id: entry.directory_id.clone(),
+                        relative_entry_path: entry.relative_entry_path.clone(),
+                    },
+                );
+                if let Some(skill_id) = entry.skill_id {
+                    push_unique(&mut skill_ids, skill_id);
+                }
+            }
+            for relation in &snapshot.usage_relations {
+                if let Some(skill_id) = relation.skill_id {
+                    push_unique(&mut skill_ids, skill_id);
+                }
+                if let Some(key) = &relation.entry_key {
+                    push_unique(&mut entry_keys, key.clone());
+                }
+            }
+        }
+        for problem in analysis.problems {
+            push_unique(&mut problem_ids, problem.problem_id);
+            for consumer in problem.consumers {
+                push_unique(&mut environment_keys, consumer);
+            }
+            for entry in problem.entries {
+                if let Some(skill_id) = entry.skill_id {
+                    push_unique(&mut skill_ids, skill_id);
+                }
+            }
+        }
+        self.with_database("watch.confirm.all_source_skills", |database| {
+            for relation in database
+                .relationship_repository()
+                .list_source_copy_relations(true)?
+            {
+                push_unique(&mut skill_ids, relation.skill_id);
+            }
+            Ok(())
+        })?;
+        Ok(FactsChanged::scoped(
+            None,
+            skill_ids,
+            entry_keys,
+            environment_keys,
+            problem_ids,
+        ))
+    }
+
     /// 扫描所有 Agent 自身与 Agent × 已注册项目环境。只有数据库确认过的
     /// 目录识别关系会进入文件扫描；发现文件不代表 Agent 已加载或执行文件。
     pub(crate) fn get_usage_environment_problems(&self) -> AppResult<AppQueryResult> {
@@ -591,6 +756,97 @@ fn usage_environment_sort_key(environment: &UsageEnvironmentKey) -> String {
             .map(|id| id.to_string())
             .unwrap_or_default()
     )
+}
+
+fn changed_check_skill_ids(report: &RelationshipCheckReport) -> Vec<skillhub_core::SkillId> {
+    let mut skill_ids = Vec::new();
+    for item in &report.items {
+        if matches!(
+            item.status,
+            RelationshipCheckItemStatus::Checked | RelationshipCheckItemStatus::Archived
+        ) {
+            push_unique(&mut skill_ids, item.skill_id);
+        }
+    }
+    skill_ids
+}
+
+fn push_unique<T: PartialEq>(values: &mut Vec<T>, value: T) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    let left = left.to_string_lossy();
+    let right = right.to_string_lossy();
+    let left_key = skillhub_core::deployment::observed_path_key(&left);
+    let right_key = skillhub_core::deployment::observed_path_key(&right);
+    left_key == right_key
+        || skillhub_core::deployment::path_lives_under(&left, &right)
+        || skillhub_core::deployment::path_lives_under(&right, &left)
+}
+
+fn entry_key_for_watched_path(
+    directory_id: &str,
+    root: &Path,
+    watched_path: &Path,
+) -> Option<UsageEntryKey> {
+    let root_components = root.components().collect::<Vec<_>>();
+    let watched_components = watched_path.components().collect::<Vec<_>>();
+    if watched_components.len() <= root_components.len() {
+        return None;
+    }
+
+    let root_matches =
+        root_components
+            .iter()
+            .zip(watched_components.iter())
+            .all(|(root, watched)| {
+                skillhub_core::deployment::observed_path_key(&root.as_os_str().to_string_lossy())
+                    == skillhub_core::deployment::observed_path_key(
+                        &watched.as_os_str().to_string_lossy(),
+                    )
+            });
+    if !root_matches {
+        return None;
+    }
+
+    let relative_components = &watched_components[root_components.len()..];
+    if relative_components
+        .iter()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let first_entry = watched_components
+        .iter()
+        .skip(root_components.len())
+        .find_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })?;
+    Some(UsageEntryKey {
+        directory_id: directory_id.to_owned(),
+        relative_entry_path: first_entry,
+    })
+}
+
+#[cfg(test)]
+mod watcher_path_tests {
+    use super::*;
+
+    #[test]
+    fn watched_path_with_parent_component_is_not_mapped_to_an_entry() {
+        assert_eq!(
+            entry_key_for_watched_path(
+                "recognized-agent-skills",
+                Path::new("/agent/skills"),
+                Path::new("/agent/skills/../outside/SKILL.md"),
+            ),
+            None,
+        );
+    }
 }
 
 fn select_relations_for_scope(
