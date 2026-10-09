@@ -6,6 +6,7 @@ pub mod impact;
 pub mod resolution;
 pub mod source_copy;
 pub mod usage;
+pub mod usage_change;
 pub mod validation;
 
 pub use source_copy::{
@@ -16,6 +17,12 @@ pub use usage::{
     project_usage_relations, UsageDecision, UsageDecisionEvidence, UsageEntryKey, UsageForm,
     UsageHealthReason, UsageManagement, UsageManagementEvidence, UsageProjectionInput,
     UsageRelationTarget, UsageRelationView,
+};
+pub use usage_change::{
+    PreparedUsageChange, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
+    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
+    UsageContentBasis, UsageCopyDisposition, UsageDecisionRecord, UsageEntryEvidence,
+    UsageRecoveryPoint, UsageSubjectVersion,
 };
 pub use validation::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,

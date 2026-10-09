@@ -10,6 +10,7 @@ mod relationship_governance_service;
 pub mod relationship_validation_service;
 pub mod relationship_watch_confirmation;
 mod update_service;
+mod usage_change_service;
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -8570,6 +8571,19 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CommitDeployment(request) => {
                 return self.commit_deployment(request.prepared_deployment_id).await
             }
+            AppCommand::PrepareUsageChange(request) => {
+                return self
+                    .prepare_usage_change(request)
+                    .map(AppCommandResult::PreparedUsageChange)
+            }
+            AppCommand::CommitUsageChange(request) => {
+                return self
+                    .commit_usage_change(request)
+                    .map(AppCommandResult::UsageChangeResult)
+            }
+            AppCommand::PrepareUndeploy(_) | AppCommand::CommitUndeploy(_) => {
+                return Err(usage_change_service::legacy_release_endpoint_error())
+            }
             AppCommand::PrepareImport(request) => return self.prepare_import(request),
             AppCommand::BeginImportBatch(_) => return self.begin_import_batch(),
             AppCommand::FinalizeImportBatch(request) => return self.finalize_import_batch(request),
@@ -8580,9 +8594,12 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::PrepareOriginalMigration(request) => {
                 return self.prepare_original_migration(request)
             }
-            AppCommand::RetainSourceCopy(request) => return self.retain_source_copy(request),
-            AppCommand::RevokeRetention(request) => return self.revoke_retention(request),
-            AppCommand::EndRelationship(request) => return self.end_relationship(request),
+            AppCommand::RetainSourceCopy(_) | AppCommand::RevokeRetention(_) => {
+                return Err(usage_change_service::legacy_release_endpoint_error())
+            }
+            AppCommand::EndRelationship(_) => {
+                return Err(usage_change_service::legacy_release_endpoint_error())
+            }
             AppCommand::RelinkSourceCopy(request) => return self.relink_source_copy(request),
             AppCommand::CommitOriginalMigration(request) => {
                 return self.commit_original_migration(request)
@@ -8611,9 +8628,6 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::CancelImport { prepared_import_id } => {
                 return self.cancel_import(prepared_import_id)
             }
-            AppCommand::PrepareUndeploy(request) => {
-                return self.prepare_undeploy(request.deployment_id).await;
-            }
             AppCommand::PrepareDeleteSkill(request) => {
                 return self.prepare_delete_skill(request.skill_id).await;
             }
@@ -8622,17 +8636,8 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .commit_delete_skill(request.prepared_delete_id, request.decisions)
                     .await;
             }
-            AppCommand::CommitUndeploy(request) => {
-                return self
-                    .commit_undeploy(
-                        request.prepared_undeploy_id,
-                        request.decision,
-                        request.confirm_shared_target_removal,
-                    )
-                    .await;
-            }
-            AppCommand::DetachManagement(request) => {
-                return self.detach_management(request.deployment_id).await;
+            AppCommand::DetachManagement(_) => {
+                return Err(usage_change_service::legacy_release_endpoint_error())
             }
             AppCommand::RunHealthCheck(_) => {
                 return self
@@ -8743,8 +8748,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::RestoreDeployment(request) => {
                 return self.reconcile_restore(request.deployment_id).await;
             }
-            AppCommand::KeepIndependentCopy(request) => {
-                return self.reconcile_keep_independent(request.deployment_id).await;
+            AppCommand::KeepIndependentCopy(_) => {
+                return Err(usage_change_service::legacy_release_endpoint_error())
             }
             AppCommand::IgnoreExternalChange(request) => {
                 return self
@@ -9527,6 +9532,13 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .map(AppQueryResult::RemovalImpact),
             AppQuery::GetRelationshipOverview(request) => {
                 self.get_relationship_overview(request.scope)
+            }
+            AppQuery::ListUsageDecisions(request) => {
+                self.with_database("query.list_usage_decisions", |database| {
+                    database
+                        .list_usage_decisions(&request.skill_id, &request.entry_key)
+                        .map(AppQueryResult::UsageDecisionHistory)
+                })
             }
             AppQuery::GetRelationshipRemovalImpact(request) => {
                 self.get_relationship_removal_impact(&request.relation_id)
@@ -14531,24 +14543,6 @@ fn io_conflict(path: &Path) -> impl Fn(std::io::Error) -> AppError + '_ {
 }
 
 impl LocalApplicationFacade {
-    async fn prepare_undeploy(
-        &self,
-        deployment_id: skillhub_core::DeploymentId,
-    ) -> AppResult<AppCommandResult> {
-        let result = self.removal_service.prepare_undeploy(deployment_id).await;
-        // 成功路径由 RemovalService 通过 backend 持久化 prepared 记录
-        // （含影响载荷）；这里只补记验证失败的终态行。
-        if let Err(error) = result.as_ref() {
-            self.journal_advance(
-                OperationId::new(),
-                "undeploy_skill",
-                skillhub_core::OperationPhase::RolledBack,
-                Some(error.code),
-            );
-        }
-        result.map(AppCommandResult::RemovalImpact)
-    }
-
     async fn prepare_delete_skill(
         &self,
         skill_id: skillhub_core::SkillId,
@@ -14567,24 +14561,6 @@ impl LocalApplicationFacade {
         result.map(AppCommandResult::RemovalImpact)
     }
 
-    async fn commit_undeploy(
-        &self,
-        operation_id: OperationId,
-        decision: skillhub_core::RemovalDecision,
-        confirm_shared_target_removal: bool,
-    ) -> AppResult<AppCommandResult> {
-        let result = self
-            .removal_service
-            .commit_undeploy(operation_id, decision, confirm_shared_target_removal)
-            .await;
-        // 成功（含部分失败的结构化结果）由 service 结算 journal；只有
-        // Err 路径仍走 K1c 的 removal 结算语义。
-        if let Err(error) = result.as_ref() {
-            self.journal_removal_outcome(operation_id, "undeploy_skill", Some(error));
-        }
-        result.map(AppCommandResult::RemovalResult)
-    }
-
     async fn commit_delete_skill(
         &self,
         operation_id: OperationId,
@@ -14599,24 +14575,6 @@ impl LocalApplicationFacade {
         if let Err(error) = result.as_ref() {
             self.journal_removal_outcome(operation_id, "delete_skill", Some(error));
         }
-        result.map(AppCommandResult::RemovalResult)
-    }
-
-    async fn detach_management(
-        &self,
-        deployment_id: skillhub_core::DeploymentId,
-    ) -> AppResult<AppCommandResult> {
-        let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "detach_management");
-        let result = self
-            .removal_service
-            .undeploy(
-                deployment_id,
-                skillhub_core::RemovalDecision::DetachManagement,
-                false,
-            )
-            .await;
-        self.journal_settle(operation_id, "detach_management", result.as_ref().err());
         result.map(AppCommandResult::RemovalResult)
     }
 
@@ -14668,25 +14626,6 @@ impl LocalApplicationFacade {
         self.journal_settle(
             operation_id,
             "reconcile_restore_deployment",
-            result.as_ref().err(),
-        );
-        result
-    }
-
-    async fn reconcile_keep_independent(
-        &self,
-        deployment_id: skillhub_core::DeploymentId,
-    ) -> AppResult<AppCommandResult> {
-        let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "reconcile_keep_independent");
-        let result = self
-            .reconcile_service
-            .keep_independent(deployment_id)
-            .await
-            .map(AppCommandResult::ReconcileResult);
-        self.journal_settle(
-            operation_id,
-            "reconcile_keep_independent",
             result.as_ref().err(),
         );
         result
@@ -16568,6 +16507,7 @@ fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
             | AppCommand::CommitSourceUpdate(_)
             | AppCommand::CommitDeploymentPreview(_)
             | AppCommand::CommitDeployment(_)
+            | AppCommand::CommitUsageChange(_)
             | AppCommand::CollectDeploymentChanges(_)
             | AppCommand::RestoreDeployment(_)
             | AppCommand::KeepIndependentCopy(_)
@@ -17981,6 +17921,31 @@ impl RecoveryBackend for LocalRecoveryBackend {
     }
 
     async fn resolve(&self, operation_id: OperationId, action: RecoveryAction) -> AppResult<()> {
+        let operation_kind = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve"))?;
+            database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .map(|record| record.kind)
+        };
+        if operation_kind.as_deref() == Some("usage_release") {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.usage_release"))?;
+            return match action {
+                RecoveryAction::CompleteOperation => {
+                    usage_change_service::complete_release_operation(&database, operation_id)
+                }
+                RecoveryAction::RollbackOperation => {
+                    usage_change_service::rollback_release_operation(&database, operation_id)
+                }
+                _ => Err(unsupported("recovery.resolve")),
+            };
+        }
         let (phase, state, rolls_back) = match action {
             RecoveryAction::CompleteOperation => ("committed", "completed", false),
             RecoveryAction::RollbackOperation => ("rolled_back", "rolled_back", true),

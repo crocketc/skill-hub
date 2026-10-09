@@ -43,6 +43,14 @@ use skillhub_storage::{CentralLibrary, Database};
 
 const BODY: &str = "# Notes\n\nrelationship governance\n";
 
+fn assert_usage_preview_required(error: &skillhub_core::AppError) {
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("reason").and_then(Value::as_str),
+        Some("usage_change_preview_required"),
+    );
+}
+
 #[tokio::test]
 async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts() {
     let database = Database::open_in_memory().expect("database");
@@ -5524,9 +5532,9 @@ mod retain_and_cleanup_prepare {
             .count()
     }
 
-    // 8.6：保留只改决策并记录历史，绝不读写来源目录。
+    // 8.6 旧 retain 不再写结构化决定；必须进入统一预览流程。
     #[tokio::test]
-    async fn retain_source_copy_updates_decision_records_history_and_keeps_files() {
+    async fn legacy_retain_requires_usage_preview_and_preserves_evidence() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
@@ -5546,59 +5554,30 @@ mod retain_and_cleanup_prepare {
                 .expect("reset decision to pending");
         }
 
-        let retained = facade
+        let error = facade
             .execute(AppCommand::RetainSourceCopy(
                 skillhub_core::api::RetainSourceCopy {
                     source_relation_id: relation_id.clone(),
                 },
             ))
             .await
-            .expect("retain source copy");
-        let AppCommandResult::SourceCopyRelationUpdated(fact) = retained else {
-            panic!("expected updated relation");
-        };
-        assert_eq!(fact.relation_id, relation_id);
-        assert_eq!(fact.decision, SourceCopyDecision::Retained);
-        assert_eq!(fact.health, SourceCopyHealth::Normal);
-        assert!(fact.active);
+            .expect_err("legacy retain must require the unified usage preview");
+        assert_usage_preview_required(&error);
 
         let reloaded = relation_fact(&facade, &relation_id).await;
-        assert_eq!(reloaded.decision, SourceCopyDecision::Retained);
+        assert_eq!(reloaded.decision, SourceCopyDecision::Pending);
+        assert_eq!(reloaded.health, SourceCopyHealth::Normal);
+        assert!(reloaded.active);
         assert!(
             source.join("SKILL.md").is_file(),
-            "retain never touches disk"
+            "rejected legacy retain never touches disk"
         );
-
-        // 历史固定写时快照：动作、展示名、路径、Agent 呈现。
-        let AppQueryResult::GovernanceHistoryPage(page) = facade
-            .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
-                page: 1,
-                page_size: 50,
-                relation_id: Some(relation_id.clone()),
-                skill_id: None,
-                agent_client_id: None,
-                project_id: None,
-                result: None,
-            }))
-            .await
-            .expect("governance history")
-        else {
-            panic!("expected governance history page");
-        };
-        let event = page
-            .items
-            .iter()
-            .find(|entry| entry.action == "retain")
-            .expect("retain history event");
-        assert_eq!(event.result, "retained");
-        assert_eq!(event.skill_display_name, "Notes");
-        assert_eq!(event.path, source.to_string_lossy());
-        assert_eq!(event.agent.client_id.as_deref(), Some(CLIENT_ID));
+        assert_eq!(retain_history_count(&facade, &relation_id).await, 0);
     }
 
-    // 8.6：保留幂等——重复保留不重复写历史。
+    // 重复旧 retain 仍明确要求预览，不能在后台改写决策或生成历史。
     #[tokio::test]
-    async fn retain_is_idempotent_without_duplicate_history() {
+    async fn repeated_legacy_retain_stays_read_only() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
@@ -5619,31 +5598,32 @@ mod retain_and_cleanup_prepare {
         }
 
         for _ in 0..2 {
-            let retained = facade
+            let error = facade
                 .execute(AppCommand::RetainSourceCopy(
                     skillhub_core::api::RetainSourceCopy {
                         source_relation_id: relation_id.clone(),
                     },
                 ))
                 .await
-                .expect("retain source copy");
-            let AppCommandResult::SourceCopyRelationUpdated(fact) = retained else {
-                panic!("expected updated relation");
-            };
-            assert_eq!(fact.decision, SourceCopyDecision::Retained);
+                .expect_err("legacy retain cannot bypass preview");
+            assert_usage_preview_required(&error);
         }
-        assert_eq!(retain_history_count(&facade, &relation_id).await, 1);
+        let fact = relation_fact(&facade, &relation_id).await;
+        assert_eq!(fact.decision, SourceCopyDecision::Pending);
+        assert!(fact.active);
+        assert!(source.join("SKILL.md").is_file());
+        assert_eq!(retain_history_count(&facade, &relation_id).await, 0);
     }
 
     #[tokio::test]
-    async fn revoke_retention_preserves_health_and_is_idempotent() {
+    async fn legacy_revoke_requires_preview_and_preserves_health() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
         write_skill(&source);
+        let original_contents = std::fs::read(source.join("SKILL.md")).expect("source bytes");
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
 
-        // FB-④：导入即已自动保留，无需再显式调用 retain。
         let mut retained = relation_fact(&facade, &relation_id).await;
         retained.health = SourceCopyHealth::ContentChanged;
         retained.health_reasons = Some(vec![
@@ -5659,112 +5639,59 @@ mod retain_and_cleanup_prepare {
                 .upsert_source_copy_relation(&retained, "fs", 1)
                 .expect("record source health");
         }
-        let revision = match facade
+        let before = match facade
             .query(AppQuery::ListRelationGovernance(
                 skillhub_core::api::ListRelationGovernance::default(),
             ))
             .await
-            .expect("governance ledger before revoke")
-        {
-            AppQueryResult::RelationGovernanceLedger(ledger) => ledger.relationship_revision,
-            other => panic!("expected relationship governance ledger, got {other:?}"),
-        };
-        let operation_id = skillhub_core::OperationId::new();
-        let request = || skillhub_core::api::RevokeRetention {
-            operation_id,
-            relation_id: relation_id.clone(),
-            expected_relationship_revision: revision.clone(),
-        };
-
-        let first_result = facade
-            .execute(AppCommand::RevokeRetention(request()))
-            .await
-            .expect("revoke retention");
-        let AppCommandResult::RelationshipGovernanceMutation(first_result) = first_result else {
-            panic!("expected relationship governance mutation result");
-        };
-        assert!(!first_result.replayed);
-        assert_eq!(first_result.relation_id, relation_id);
-        let after_first = match facade
-            .query(AppQuery::ListRelationGovernance(
-                skillhub_core::api::ListRelationGovernance::default(),
-            ))
-            .await
-            .expect("governance ledger after revoke")
+            .expect("governance ledger before legacy revoke")
         {
             AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
             other => panic!("expected relationship governance ledger, got {other:?}"),
         };
-        assert_ne!(after_first.relationship_revision, revision);
-        let row = after_first
+        let error = facade
+            .execute(AppCommand::RevokeRetention(
+                skillhub_core::api::RevokeRetention {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: relation_id.clone(),
+                    expected_relationship_revision: before.relationship_revision.clone(),
+                },
+            ))
+            .await
+            .expect_err("legacy revoke must require unified preview");
+        assert_usage_preview_required(&error);
+
+        let after = match facade
+            .query(AppQuery::ListRelationGovernance(
+                skillhub_core::api::ListRelationGovernance::default(),
+            ))
+            .await
+            .expect("governance ledger after rejected revoke")
+        {
+            AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
+            other => panic!("expected relationship governance ledger, got {other:?}"),
+        };
+        assert_eq!(after.relationship_revision, before.relationship_revision);
+        let row = after
             .rows
             .iter()
             .find(|row| row.evidence_relation_ids.contains(&relation_id))
-            .expect("source relationship remains active");
+            .expect("source relationship stays active");
         let skillhub_core::relationship::GovernableRelationFact::SourceCopy(fact) = &row.relation
         else {
             panic!("expected source-copy representative");
         };
-        assert_eq!(fact.decision, SourceCopyDecision::Pending);
+        assert_eq!(fact.decision, SourceCopyDecision::Retained);
         assert_eq!(fact.health, SourceCopyHealth::ContentChanged);
         assert_eq!(fact.health_reasons, retained.health_reasons);
         assert_eq!(fact.current_fingerprint, retained.current_fingerprint);
         assert_eq!(fact.last_verified_at, retained.last_verified_at);
+        assert!(relation_fact(&facade, &relation_id).await.active);
         assert_eq!(
-            row.governance.governance_status,
-            skillhub_core::relationship::RelationGovernanceClassification::Pending
-        );
-        assert!(
-            source.join("SKILL.md").is_file(),
-            "revoke never touches files"
+            std::fs::read(source.join("SKILL.md")).expect("source remains"),
+            original_contents
         );
 
-        drop(facade);
-        let database =
-            Database::open(workspace.path().join("db.sqlite")).expect("reopen mutation database");
-        let facade =
-            LocalApplicationFacade::new_with_library(database, workspace.path().join("library"));
-        let replay_result = facade
-            .execute(AppCommand::RevokeRetention(request()))
-            .await
-            .expect("same operation replays successfully after reopening");
-        let AppCommandResult::RelationshipGovernanceMutation(replay_result) = replay_result else {
-            panic!("expected relationship governance mutation result");
-        };
-        assert!(replay_result.replayed);
-        let after_replay = match facade
-            .query(AppQuery::ListRelationGovernance(
-                skillhub_core::api::ListRelationGovernance::default(),
-            ))
-            .await
-            .expect("governance ledger after replay")
-        {
-            AppQueryResult::RelationGovernanceLedger(ledger) => ledger,
-            other => panic!("expected relationship governance ledger, got {other:?}"),
-        };
-        assert_eq!(
-            after_replay.relationship_revision,
-            after_first.relationship_revision
-        );
-        let reused_with_changed_revision = facade
-            .execute(AppCommand::RevokeRetention(
-                skillhub_core::api::RevokeRetention {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: after_first.relationship_revision.clone(),
-                },
-            ))
-            .await
-            .expect_err("an operation ID cannot be reused with a changed payload");
-        assert_eq!(
-            reused_with_changed_revision.code,
-            skillhub_core::ErrorCode::OperationConflict
-        );
-        assert_eq!(
-            retain_history_count(&facade, &relation_id).await,
-            0,
-            "FB-④：导入自动保留不写治理历史；撤销也不得补写 retain 事件"
-        );
         let AppQueryResult::GovernanceHistoryPage(history) = facade
             .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
                 page: 1,
@@ -5780,32 +5707,20 @@ mod retain_and_cleanup_prepare {
         else {
             panic!("expected governance history page");
         };
-        assert_eq!(
-            history
-                .items
-                .iter()
-                .filter(|entry| entry.action == "revoke_retention")
-                .count(),
-            1,
-            "a replay must not duplicate the revoke event"
-        );
+        assert!(!history
+            .items
+            .iter()
+            .any(|entry| entry.action == "revoke_retention"));
     }
 
     #[tokio::test]
-    async fn revoke_retention_refuses_a_stale_relationship_revision() {
+    async fn legacy_revoke_requires_preview_for_stale_and_current_revisions() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
         write_skill(&source);
+        let original_contents = std::fs::read(source.join("SKILL.md")).expect("source bytes");
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
-        facade
-            .execute(AppCommand::RetainSourceCopy(
-                skillhub_core::api::RetainSourceCopy {
-                    source_relation_id: relation_id.clone(),
-                },
-            ))
-            .await
-            .expect("retain source copy");
         let stale_revision = match facade
             .query(AppQuery::ListRelationGovernance(
                 skillhub_core::api::ListRelationGovernance::default(),
@@ -5843,49 +5758,38 @@ mod retain_and_cleanup_prepare {
         };
         assert_ne!(latest_revision, stale_revision);
 
-        let operation_id = skillhub_core::OperationId::new();
-        let stale = facade
-            .execute(AppCommand::RevokeRetention(
-                skillhub_core::api::RevokeRetention {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: stale_revision,
-                },
-            ))
-            .await
-            .expect_err("the newly observed health makes the prior revision stale");
-        assert_eq!(stale.code, skillhub_core::ErrorCode::OperationConflict);
-        let still_retained = relation_fact(&facade, &relation_id).await;
-        assert_eq!(still_retained.decision, SourceCopyDecision::Retained);
-        assert_eq!(still_retained.health, SourceCopyHealth::ContentChanged);
-        assert!(source.join("SKILL.md").is_file());
-
-        // A rejected stale attempt must not consume its operation ID. Reusing
-        // the same intent with the revision now in view can still succeed.
-        facade
-            .execute(AppCommand::RevokeRetention(
-                skillhub_core::api::RevokeRetention {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: latest_revision,
-                },
-            ))
-            .await
-            .expect("fresh revision with the same operation ID");
+        for revision in [stale_revision, latest_revision] {
+            let error = facade
+                .execute(AppCommand::RevokeRetention(
+                    skillhub_core::api::RevokeRetention {
+                        operation_id: skillhub_core::OperationId::new(),
+                        relation_id: relation_id.clone(),
+                        expected_relationship_revision: revision,
+                    },
+                ))
+                .await
+                .expect_err("legacy revoke must route through unified preview");
+            assert_usage_preview_required(&error);
+        }
+        let unchanged = relation_fact(&facade, &relation_id).await;
+        assert_eq!(unchanged.decision, SourceCopyDecision::Retained);
+        assert_eq!(unchanged.health, SourceCopyHealth::ContentChanged);
+        assert_eq!(unchanged.health_reasons, retained.health_reasons);
+        assert_eq!(unchanged.current_fingerprint, retained.current_fingerprint);
+        assert!(unchanged.active);
         assert_eq!(
-            relation_fact(&facade, &relation_id).await.decision,
-            SourceCopyDecision::Pending
+            std::fs::read(source.join("SKILL.md")).expect("source remains"),
+            original_contents
         );
     }
 
     #[tokio::test]
-    async fn end_relationship_keeps_source_files_and_replays_after_database_reopen() {
+    async fn legacy_end_relationship_requires_preview_after_database_reopen() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
         write_skill(&source);
-        let original_markdown =
-            std::fs::read_to_string(source.join("SKILL.md")).expect("original source markdown");
+        let original_contents = std::fs::read(source.join("SKILL.md")).expect("source bytes");
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
         let revision = match facade
             .query(AppQuery::ListRelationGovernance(
@@ -5904,73 +5808,49 @@ mod retain_and_cleanup_prepare {
             expected_relationship_revision: revision.clone(),
         };
 
-        let ended = facade
+        let error = facade
             .execute(AppCommand::EndRelationship(request()))
             .await
-            .expect("end independent-copy relationship");
-        let AppCommandResult::RelationshipGovernanceMutation(ended) = ended else {
-            panic!("expected relationship governance mutation result");
-        };
-        assert!(!ended.replayed);
-        assert_eq!(ended.relation_id, relation_id);
+            .expect_err("legacy end must require unified preview");
+        assert_usage_preview_required(&error);
+        assert!(relation_fact(&facade, &relation_id).await.active);
         assert_eq!(
-            std::fs::read_to_string(source.join("SKILL.md")).expect("source remains"),
-            original_markdown,
-            "ending a relationship must not modify or remove the independent source"
-        );
-        let archived = relation_fact(&facade, &relation_id).await;
-        assert!(!archived.active);
-        assert_eq!(
-            archived.archive_reason,
-            Some(skillhub_core::relationship::SourceCopyArchiveReason::UserEnded)
+            std::fs::read(source.join("SKILL.md")).expect("source remains"),
+            original_contents
         );
         let current_rows = match facade
             .query(AppQuery::ListRelationGovernance(
                 skillhub_core::api::ListRelationGovernance::default(),
             ))
             .await
-            .expect("governance ledger after end")
+            .expect("governance ledger after rejected end")
         {
             AppQueryResult::RelationGovernanceLedger(ledger) => ledger.rows,
             other => panic!("expected relationship governance ledger, got {other:?}"),
         };
-        assert!(!current_rows
+        assert!(current_rows
             .iter()
             .any(|row| row.evidence_relation_ids.contains(&relation_id)));
 
         drop(facade);
-        let database =
-            Database::open(workspace.path().join("db.sqlite")).expect("reopen mutation database");
+        let database = Database::open(workspace.path().join("db.sqlite")).expect("reopen database");
         let facade =
             LocalApplicationFacade::new_with_library(database, workspace.path().join("library"));
-        let replayed = facade
+        let replay = facade
             .execute(AppCommand::EndRelationship(request()))
             .await
-            .expect("same end operation replays after reopening");
-        let AppCommandResult::RelationshipGovernanceMutation(replayed) = replayed else {
-            panic!("expected relationship governance mutation result");
-        };
-        assert!(replayed.replayed);
-        let reused_with_changed_revision = facade
-            .execute(AppCommand::EndRelationship(
-                skillhub_core::api::EndRelationship {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: replayed.relationship_revision.clone(),
-                },
-            ))
-            .await
-            .expect_err("an end operation ID cannot be reused with a changed payload");
+            .expect_err("legacy end remains blocked after reopening");
+        assert_usage_preview_required(&replay);
+        assert!(relation_fact(&facade, &relation_id).await.active);
         assert_eq!(
-            reused_with_changed_revision.code,
-            skillhub_core::ErrorCode::OperationConflict
+            std::fs::read(source.join("SKILL.md")).expect("source remains"),
+            original_contents
         );
-
         let AppQueryResult::GovernanceHistoryPage(history) = facade
             .query(AppQuery::ListGovernanceHistory(ListGovernanceHistory {
                 page: 1,
                 page_size: 50,
-                relation_id: Some(relation_id.clone()),
+                relation_id: Some(relation_id),
                 skill_id: None,
                 agent_client_id: None,
                 project_id: None,
@@ -5981,23 +5861,19 @@ mod retain_and_cleanup_prepare {
         else {
             panic!("expected governance history page");
         };
-        assert_eq!(
-            history
-                .items
-                .iter()
-                .filter(|entry| entry.action == "end_relationship" && entry.result == "ended")
-                .count(),
-            1,
-            "replaying a committed end must not duplicate history"
-        );
+        assert!(!history
+            .items
+            .iter()
+            .any(|entry| entry.action == "end_relationship"));
     }
 
     #[tokio::test]
-    async fn end_relationship_refuses_a_stale_relationship_revision() {
+    async fn legacy_end_relationship_requires_preview_for_stale_and_current_revisions() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
         write_skill(&source);
+        let original_contents = std::fs::read(source.join("SKILL.md")).expect("source bytes");
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
         let stale_revision = match facade
             .query(AppQuery::ListRelationGovernance(
@@ -6032,49 +5908,37 @@ mod retain_and_cleanup_prepare {
             AppQueryResult::RelationGovernanceLedger(ledger) => ledger.relationship_revision,
             other => panic!("expected relationship governance ledger, got {other:?}"),
         };
-        let operation_id = skillhub_core::OperationId::new();
-        let stale = facade
-            .execute(AppCommand::EndRelationship(
-                skillhub_core::api::EndRelationship {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: stale_revision,
-                },
-            ))
-            .await
-            .expect_err("new health evidence makes the prior revision stale");
-        assert_eq!(stale.code, skillhub_core::ErrorCode::OperationConflict);
-        assert!(relation_fact(&facade, &relation_id).await.active);
-        assert!(source.join("SKILL.md").is_file());
+        assert_ne!(latest_revision, stale_revision);
 
-        facade
-            .execute(AppCommand::EndRelationship(
-                skillhub_core::api::EndRelationship {
-                    operation_id,
-                    relation_id: relation_id.clone(),
-                    expected_relationship_revision: latest_revision,
-                },
-            ))
-            .await
-            .expect("same intent succeeds at the latest revision");
-        assert!(!relation_fact(&facade, &relation_id).await.active);
+        for revision in [stale_revision, latest_revision] {
+            let error = facade
+                .execute(AppCommand::EndRelationship(
+                    skillhub_core::api::EndRelationship {
+                        operation_id: skillhub_core::OperationId::new(),
+                        relation_id: relation_id.clone(),
+                        expected_relationship_revision: revision,
+                    },
+                ))
+                .await
+                .expect_err("legacy end must require unified preview");
+            assert_usage_preview_required(&error);
+        }
+        let unchanged = relation_fact(&facade, &relation_id).await;
+        assert!(unchanged.active);
+        assert_eq!(unchanged.health, SourceCopyHealth::ContentChanged);
+        assert_eq!(
+            std::fs::read(source.join("SKILL.md")).expect("source remains"),
+            original_contents
+        );
     }
 
     #[tokio::test]
-    async fn revoke_retention_rolls_back_decision_and_receipt_when_history_write_fails() {
+    async fn legacy_revoke_is_rejected_before_history_or_decision_write() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let source = agent_root.join("notes");
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
-        facade
-            .execute(AppCommand::RetainSourceCopy(
-                skillhub_core::api::RetainSourceCopy {
-                    source_relation_id: relation_id.clone(),
-                },
-            ))
-            .await
-            .expect("retain source copy");
         let revision = match facade
             .query(AppQuery::ListRelationGovernance(
                 skillhub_core::api::ListRelationGovernance::default(),
@@ -6085,15 +5949,6 @@ mod retain_and_cleanup_prepare {
             AppQueryResult::RelationGovernanceLedger(ledger) => ledger.relationship_revision,
             other => panic!("expected relationship governance ledger, got {other:?}"),
         };
-        let operation_id = skillhub_core::OperationId::new();
-        let command = || {
-            AppCommand::RevokeRetention(skillhub_core::api::RevokeRetention {
-                operation_id,
-                relation_id: relation_id.clone(),
-                expected_relationship_revision: revision.clone(),
-            })
-        };
-
         {
             let database = facade.database_for_tests().clone();
             let database = database.lock().expect("database lock");
@@ -6107,23 +5962,33 @@ mod retain_and_cleanup_prepare {
                 )
                 .expect("install history failure trigger");
         }
-        assert!(facade.execute(command()).await.is_err());
+        let error = facade
+            .execute(AppCommand::RevokeRetention(
+                skillhub_core::api::RevokeRetention {
+                    operation_id: skillhub_core::OperationId::new(),
+                    relation_id: relation_id.clone(),
+                    expected_relationship_revision: revision.clone(),
+                },
+            ))
+            .await
+            .expect_err("legacy revoke is blocked before touching governance history");
+        assert_usage_preview_required(&error);
         assert_eq!(
             relation_fact(&facade, &relation_id).await.decision,
             SourceCopyDecision::Retained
         );
-        let revision_after_failure = match facade
+        let after_revision = match facade
             .query(AppQuery::ListRelationGovernance(
                 skillhub_core::api::ListRelationGovernance::default(),
             ))
             .await
-            .expect("governance ledger after rollback")
+            .expect("governance ledger after rejected revoke")
         {
             AppQueryResult::RelationGovernanceLedger(ledger) => ledger.relationship_revision,
             other => panic!("expected relationship governance ledger, got {other:?}"),
         };
-        assert_eq!(revision_after_failure, revision);
-
+        assert_eq!(after_revision, revision);
+        assert!(source.join("SKILL.md").is_file());
         {
             let database = facade.database_for_tests().clone();
             let database = database.lock().expect("database lock");
@@ -6132,18 +5997,10 @@ mod retain_and_cleanup_prepare {
                 .execute_batch("DROP TRIGGER reject_revoke_history;")
                 .expect("remove history failure trigger");
         }
-        facade
-            .execute(command())
-            .await
-            .expect("the rolled-back operation ID can be retried");
-        assert_eq!(
-            relation_fact(&facade, &relation_id).await.decision,
-            SourceCopyDecision::Pending
-        );
+        assert_eq!(retain_history_count(&facade, &relation_id).await, 0);
     }
 
-    // 8.6/8.11：保留后清理准备直接可用；决策保持 Retained（不伪造
-    // Pending 过渡）；计划携带关系身份与 Agent 呈现/目标上下文。
+    // 导入默认标记保持兼容；独立的原件迁移准备仍携带关系身份与上下文。
     #[tokio::test]
     async fn retained_relation_enters_cleanup_prepare_without_pending_rewrite() {
         let workspace = tempfile::tempdir().expect("workspace");
@@ -6151,14 +6008,11 @@ mod retain_and_cleanup_prepare {
         let source = agent_root.join("notes");
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
-        facade
-            .execute(AppCommand::RetainSourceCopy(
-                skillhub_core::api::RetainSourceCopy {
-                    source_relation_id: relation_id.clone(),
-                },
-            ))
-            .await
-            .expect("retain source copy");
+        assert_eq!(
+            relation_fact(&facade, &relation_id).await.decision,
+            SourceCopyDecision::Retained,
+            "the imported legacy marker remains readable"
+        );
 
         let planned = facade
             .execute(AppCommand::PrepareOriginalMigration(
@@ -6700,14 +6554,11 @@ mod cleanup_commit_recovery {
         let source = agent_root.join("notes");
         write_skill(&source);
         let relation_id = import_source_copy(&facade, &source, "Notes").await;
-        facade
-            .execute(AppCommand::RetainSourceCopy(
-                skillhub_core::api::RetainSourceCopy {
-                    source_relation_id: relation_id.clone(),
-                },
-            ))
-            .await
-            .expect("retain");
+        assert_eq!(
+            relation_fact(&facade, &relation_id).await.decision,
+            SourceCopyDecision::Retained,
+            "import history retains its compatible marker"
+        );
         let plan = prepare_cleanup(&facade, &relation_id).await;
         let committed = facade
             .execute(AppCommand::CommitOriginalMigration(
@@ -6936,8 +6787,10 @@ mod source_copy_batches {
 
     // 8.9：retain 批次逐行复用单条保留语义；每行一条治理历史，子操作
     // 记录在自己的 operation kind 下。
+    // Legacy retain batches are rejected before child operations can mutate
+    // the imported decision or write governance history.
     #[tokio::test]
-    async fn retain_batch_commits_each_row_and_records_history() {
+    async fn legacy_retain_batch_requires_usage_preview_and_preserves_rows() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = agent_facade(workspace.path());
         let first = agent_root.join("batch-retain-a");
@@ -6947,8 +6800,6 @@ mod source_copy_batches {
         let first_id = import_source_copy(&facade, &first, "RetainA").await;
         let second_id = import_source_copy(&facade, &second, "RetainB").await;
 
-        // FB-④：导入默认自动保留；retain 批次的对象是仍是 Pending 的
-        // 行，先把两行决策改回 Pending 再准备批次。
         for relation_id in [&first_id, &second_id] {
             let mut pending = relation_fact(&facade, relation_id).await;
             pending.decision = SourceCopyDecision::Pending;
@@ -6957,60 +6808,29 @@ mod source_copy_batches {
             database
                 .relationship_repository()
                 .upsert_source_copy_relation(&pending, "fs", 1)
-                .expect("reset decision to pending");
+                .expect("reset legacy decision to pending");
         }
 
-        let outcome = prepare_batch(
-            &facade,
-            RelationGovernanceBatchAction::RetainSourceCopy,
-            vec![first_id.clone(), second_id.clone()],
-            BTreeMap::new(),
-        )
-        .await;
-        assert_eq!(outcome.state, RelationGovernanceBatchState::Prepared);
-        assert_eq!(outcome.prepared_count, 2);
-        assert!(outcome
-            .items
-            .iter()
-            .all(|item| item.state == RelationGovernanceBatchItemState::Prepared));
-        let child_ops: Vec<OperationId> = outcome
-            .items
-            .iter()
-            .filter_map(|item| item.operation_id)
-            .collect();
-        assert_eq!(child_ops.len(), 2);
+        let error = facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action: RelationGovernanceBatchAction::RetainSourceCopy,
+                    relation_ids: vec![first_id.clone(), second_id.clone()],
+                    confirmations: BTreeMap::new(),
+                },
+            ))
+            .await
+            .expect_err("legacy retain batch must route through unified preview");
+        assert_usage_preview_required(&error);
 
-        let outcome = commit_batch(
-            &facade,
-            outcome.batch_id,
-            vec![first_id.clone(), second_id.clone()],
-        )
-        .await;
-        assert_eq!(outcome.state, RelationGovernanceBatchState::Committed);
-        assert_eq!(outcome.committed_count, 2);
-        assert!(outcome
-            .items
-            .iter()
-            .all(|item| item.state == RelationGovernanceBatchItemState::Committed));
-
-        for relation_id in [&first_id, &second_id] {
+        for (relation_id, source) in [(&first_id, &first), (&second_id, &second)] {
             let fact = relation_fact(&facade, relation_id).await;
-            assert_eq!(fact.decision, SourceCopyDecision::Retained);
+            assert_eq!(fact.decision, SourceCopyDecision::Pending);
+            assert!(fact.active);
+            assert!(source.join("SKILL.md").is_file());
             assert_eq!(
                 history_count(&facade, relation_id, "retain", "retained").await,
-                1,
-                "one retained history event per relation"
-            );
-            assert!(
-                first.exists() && second.exists(),
-                "retain never touches the source directories"
-            );
-        }
-        for operation_id in child_ops {
-            assert_eq!(
-                child_operation_kind(&facade, operation_id),
-                "retain_source_copy",
-                "retain children run under their own operation kind"
+                0
             );
         }
     }
@@ -7044,11 +6864,19 @@ mod source_copy_batches {
                 ))
                 .await
                 .expect_err("deployment edges are refused in source batches");
-            assert_eq!(
-                error.code.as_str(),
-                ErrorCode::InvalidInput.as_str(),
-                "action {action:?} rejects mixed kinds"
-            );
+            match action {
+                RelationGovernanceBatchAction::RetainSourceCopy => {
+                    assert_usage_preview_required(&error);
+                }
+                RelationGovernanceBatchAction::CleanSourceCopy => {
+                    assert_eq!(
+                        error.code.as_str(),
+                        ErrorCode::InvalidInput.as_str(),
+                        "original migration still rejects mixed source/deployment kinds"
+                    );
+                }
+                _ => unreachable!("only source-copy actions are tested here"),
+            }
         }
     }
 
@@ -7635,7 +7463,7 @@ mod read_only_original_exit {
     }
 
     #[tokio::test]
-    async fn healthy_read_only_original_completes_and_unhealthy_exit_only_cleans_records() {
+    async fn healthy_read_only_original_has_no_legacy_exit_and_unhealthy_exit_requires_preview() {
         let workspace = tempfile::tempdir().expect("workspace");
         let (facade, agent_root) = builtin_facade(workspace.path());
         let source = agent_root.join("notes");
@@ -7703,7 +7531,7 @@ mod read_only_original_exit {
             ))
             .await
             .expect_err("healthy read-only original offers no ending action");
-        assert_eq!(healthy_error.code, ErrorCode::OperationConflict);
+        assert_usage_preview_required(&healthy_error);
 
         // 异常阶段：来源内容变化后回到待处理，给出两个出口。
         let mut changed = copy.clone();
@@ -7737,8 +7565,8 @@ mod read_only_original_exit {
         assert!(end_condition.available);
         assert!(end_condition.reasons.is_empty());
 
-        // 结束关系：只归档来源事实并释放未受管观察记录。
-        facade
+        // 旧结束入口必须转统一预览；异常只读原件仍保留账本与文件。
+        let end_error = facade
             .execute(AppCommand::EndRelationship(
                 skillhub_core::api::EndRelationship {
                     operation_id: skillhub_core::OperationId::new(),
@@ -7747,17 +7575,18 @@ mod read_only_original_exit {
                 },
             ))
             .await
-            .expect("record exit ends the read-only original relationship");
+            .expect_err("legacy record exit requires unified preview");
+        assert_usage_preview_required(&end_error);
         assert!(source.join("SKILL.md").is_file(), "user files stay");
 
         let archived = relation_fact(&facade, &copy_id).await;
-        assert!(!archived.active, "source copy fact is archived");
-        assert_eq!(
-            archived.archive_reason,
-            Some(skillhub_core::relationship::SourceCopyArchiveReason::UserEnded)
+        assert!(
+            archived.active,
+            "rejected legacy command does not archive fact"
         );
+        assert_eq!(archived.archive_reason, None);
         let after = ledger(&facade).await;
-        assert!(after.rows.is_empty(), "ended edge leaves the ledger");
+        assert_eq!(after.rows.len(), 1, "active relation remains in the ledger");
         let database = facade.database_for_tests().clone();
         let database = database.lock().expect("database lock");
         let released = database
@@ -7767,8 +7596,11 @@ mod read_only_original_exit {
             .into_iter()
             .find(|relation| relation.relation_id == deployment_id)
             .expect("deployment record stays queryable");
-        assert!(!released.active, "observed evidence is released");
-        assert!(released.released_at.is_some());
+        assert!(
+            released.active,
+            "legacy command leaves observed evidence active"
+        );
+        assert!(released.released_at.is_none());
     }
 
     #[tokio::test]
@@ -7951,7 +7783,7 @@ mod read_only_original_exit {
     }
 
     /// 来源建档缺失的部署侧导入原件行（现场 150 条观察行的形状）同样
-    /// 被只读边界识别；异常行仍能走纯记录出口，文件不动。
+    /// 被只读边界识别；旧入口要求统一预览，用户文件与活动事实保持不变。
     #[tokio::test]
     async fn deployment_only_read_only_originals_exit_through_the_record_path() {
         let workspace = tempfile::tempdir().expect("workspace");
@@ -8030,7 +7862,7 @@ mod read_only_original_exit {
             .expect("record exit is offered without a source-copy fact");
         assert!(end_condition.available);
 
-        facade
+        let end_error = facade
             .execute(AppCommand::EndRelationship(
                 skillhub_core::api::EndRelationship {
                     operation_id: skillhub_core::OperationId::new(),
@@ -8039,11 +7871,12 @@ mod read_only_original_exit {
                 },
             ))
             .await
-            .expect("record exit ends the deployment-only original");
+            .expect_err("legacy deployment-only exit requires unified preview");
+        assert_usage_preview_required(&end_error);
         assert!(source.join("SKILL.md").is_file(), "user files stay");
 
         let after = ledger(&facade).await;
-        assert!(after.rows.is_empty(), "ended edge leaves the ledger");
+        assert_eq!(after.rows.len(), 1, "active relation remains in the ledger");
         let database = facade.database_for_tests().clone();
         let database = database.lock().expect("database lock");
         let released = database
@@ -8053,7 +7886,7 @@ mod read_only_original_exit {
             .into_iter()
             .find(|relation| relation.relation_id == relation_id)
             .expect("deployment record stays queryable");
-        assert!(!released.active, "observed evidence is released");
-        assert!(released.released_at.is_some());
+        assert!(released.active, "legacy command leaves evidence active");
+        assert!(released.released_at.is_none());
     }
 }

@@ -837,6 +837,34 @@ pub struct CommitUndeploy {
     pub confirm_shared_target_removal: bool,
 }
 
+/// Prepares a usage-relation change. Release is currently the only supported
+/// action; all fields belonging to later actions must remain empty.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareUsageChange {
+    pub operation_id: crate::OperationId,
+    pub action: crate::relationship::UsageChangeAction,
+    pub relation_ids: Vec<String>,
+    pub problem_id: Option<String>,
+    pub skill_id: Option<crate::SkillId>,
+    pub requested_form: Option<crate::relationship::UsageForm>,
+    pub copy_disposition: Option<crate::relationship::UsageCopyDisposition>,
+    pub content_basis: Option<crate::relationship::UsageContentBasis>,
+    pub retain_entry_key: Option<crate::relationship::UsageEntryKey>,
+    pub selected_entry_keys: Vec<crate::relationship::UsageEntryKey>,
+    pub runtime_name: Option<String>,
+    pub base_version_id: Option<crate::VersionId>,
+    pub non_recognized_destination: Option<String>,
+}
+
+/// Commit is bound to the persisted preview. It carries no path or new choice.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct CommitUsageChange {
+    pub operation_id: crate::OperationId,
+    pub prepared_id: crate::OperationId,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareDeleteSkill {
@@ -1494,6 +1522,10 @@ pub enum AppCommand {
     PrepareUndeploy(PrepareUndeploy),
     #[serde(rename = "commit_undeploy")]
     CommitUndeploy(CommitUndeploy),
+    #[serde(rename = "prepare_usage_change")]
+    PrepareUsageChange(PrepareUsageChange),
+    #[serde(rename = "commit_usage_change")]
+    CommitUsageChange(CommitUsageChange),
     #[serde(rename = "prepare_delete_skill")]
     PrepareDeleteSkill(PrepareDeleteSkill),
     #[serde(rename = "commit_delete_skill")]
@@ -1726,6 +1758,10 @@ pub enum AppCommandResult {
     RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "removal_result")]
     RemovalResult(crate::RemovalResult),
+    #[serde(rename = "prepared_usage_change")]
+    PreparedUsageChange(crate::relationship::PreparedUsageChange),
+    #[serde(rename = "usage_change_result")]
+    UsageChangeResult(crate::relationship::UsageChangeResult),
     #[serde(rename = "health_report")]
     HealthReport(crate::HealthReport),
     #[serde(rename = "repair_plan")]

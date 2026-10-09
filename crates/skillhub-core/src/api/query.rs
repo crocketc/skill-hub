@@ -19,7 +19,8 @@ use crate::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictWorkspace, DeploymentRelationFact,
     DirectoryNodeFact, GovernanceTaskFact, RelationGovernanceFilters, RelationGovernanceLedger,
     RelationshipGraphFactCounts, RelationshipGraphFilters, SkillRelationshipEdge,
-    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact, UsageRelationView,
+    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact, UsageDecisionRecord,
+    UsageEntryKey, UsageRelationView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -989,6 +990,14 @@ pub struct GetRelationshipOverview {
     pub scope: RelationshipOverviewScope,
 }
 
+/// Reads durable decisions for a confirmed skill/entry identity.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ListUsageDecisions {
+    pub skill_id: SkillId,
+    pub entry_key: UsageEntryKey,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct GetRelationshipRemovalImpact {
@@ -1275,6 +1284,8 @@ pub enum AppQuery {
     GetRemovalImpact(GetRemovalImpact),
     #[serde(rename = "get_relationship_overview")]
     GetRelationshipOverview(GetRelationshipOverview),
+    #[serde(rename = "list_usage_decisions")]
+    ListUsageDecisions(ListUsageDecisions),
     #[serde(rename = "get_relationship_removal_impact")]
     GetRelationshipRemovalImpact(GetRelationshipRemovalImpact),
     #[serde(rename = "get_skill_relationship_graph")]
@@ -1408,6 +1419,8 @@ pub enum AppQueryResult {
     RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "relationship_overview")]
     RelationshipOverview(RelationshipOverview),
+    #[serde(rename = "usage_decision_history")]
+    UsageDecisionHistory(Vec<UsageDecisionRecord>),
     #[serde(rename = "relationship_removal_impact")]
     RelationshipRemovalImpact(crate::relationship::RemovalImpactFact),
     #[serde(rename = "skill_relationship_graph")]

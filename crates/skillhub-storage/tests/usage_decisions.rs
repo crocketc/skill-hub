@@ -7,6 +7,7 @@ use skillhub_core::relationship::{
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{ObservedMatchState, ObservedOrigin, OwnershipState, SkillId};
 use skillhub_storage::{Database, GovernanceHistoryEvent, UsageDecisionRecord};
+use std::collections::BTreeMap;
 use tempfile::tempdir;
 
 fn insert_skill(db: &Database, skill_id: SkillId) {
@@ -856,6 +857,110 @@ fn unknown_fingerprint_does_not_match_recorded_content() {
         .list_usage_decisions(&skill_id, &record.entry_key)
         .expect("read decisions after unknown fingerprint")
         .is_empty());
+}
+
+#[test]
+fn decision_time_fingerprint_uses_separate_per_relation_cas_evidence() {
+    let db = Database::open_in_memory().expect("database");
+    insert_shared_directory(&db);
+    let skill_id = SkillId::new();
+    insert_skill(&db, skill_id);
+    db.relationship_repository()
+        .upsert_deployment_relation(&deployment_relation(
+            "deployment:decision-fingerprint",
+            skill_id,
+            "agent-a",
+        ))
+        .expect("persist active deployment");
+
+    let record = UsageDecisionRecord {
+        decision_id: "decision:changed-at-release".into(),
+        skill_id,
+        entry_key: UsageEntryKey {
+            directory_id: "directory:shared".into(),
+            relative_entry_path: "notes".into(),
+        },
+        relation_ids: vec!["deployment:decision-fingerprint".into()],
+        physical_source_ids: Vec::new(),
+        decision: UsageDecision::RetainedIndependentCopy,
+        content_fingerprint: Some("sha256:decision-time".into()),
+        decided_at: 41,
+        operation_id: Some("operation:changed-at-release".into()),
+    };
+    let expected = BTreeMap::from([(
+        "deployment:decision-fingerprint".to_owned(),
+        Some("sha256:notes".to_owned()),
+    )]);
+    db.record_usage_decision_with_expected_evidence_fingerprints(&record, &expected)
+        .expect("CAS against stored evidence while persisting current decision fingerprint");
+    assert_eq!(
+        db.list_usage_decisions(&skill_id, &record.entry_key)
+            .expect("decision history")[0]
+            .content_fingerprint
+            .as_deref(),
+        Some("sha256:decision-time"),
+    );
+}
+
+#[test]
+fn per_relation_fingerprint_cas_rejects_any_drift_including_expected_none() {
+    let db = Database::open_in_memory().expect("database");
+    insert_shared_directory(&db);
+    let skill_id = SkillId::new();
+    insert_skill(&db, skill_id);
+    for (relation_id, agent_id) in [
+        ("deployment:cas-a", "agent-a"),
+        ("deployment:cas-b", "agent-b"),
+    ] {
+        db.relationship_repository()
+            .upsert_deployment_relation(&deployment_relation(relation_id, skill_id, agent_id))
+            .expect("persist active deployment");
+    }
+    db.connection_for_test()
+        .execute(
+            "UPDATE active_usage_evidence SET content_fingerprint='sha256:drift'
+             WHERE relation_kind='deployment' AND relation_id='deployment:cas-b'",
+            [],
+        )
+        .expect("simulate changed per-relation evidence");
+
+    let record = UsageDecisionRecord {
+        decision_id: "decision:cas-drift".into(),
+        skill_id,
+        entry_key: UsageEntryKey {
+            directory_id: "directory:shared".into(),
+            relative_entry_path: "notes".into(),
+        },
+        relation_ids: vec!["deployment:cas-a".into(), "deployment:cas-b".into()],
+        physical_source_ids: Vec::new(),
+        decision: UsageDecision::Released,
+        content_fingerprint: Some("sha256:decision-time".into()),
+        decided_at: 42,
+        operation_id: Some("operation:cas-drift".into()),
+    };
+    let expected = BTreeMap::from([
+        (
+            "deployment:cas-a".to_owned(),
+            Some("sha256:notes".to_owned()),
+        ),
+        ("deployment:cas-b".to_owned(), None),
+    ]);
+    assert!(db
+        .record_usage_decision_with_expected_evidence_fingerprints(&record, &expected)
+        .is_err());
+    assert!(db
+        .list_usage_decisions(&skill_id, &record.entry_key)
+        .expect("no decision on CAS failure")
+        .is_empty());
+    assert_eq!(
+        db.relationship_repository()
+            .list_relations()
+            .expect("active deployments")
+            .iter()
+            .filter(|relation| relation.active)
+            .count(),
+        2,
+    );
 }
 
 #[test]

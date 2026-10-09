@@ -1,24 +1,12 @@
 use super::relationship_repository::{bump_relationship_revision_tx, RelationshipRepository};
 use super::Database;
 use rusqlite::{params, OptionalExtension, Transaction};
-use serde::{Deserialize, Serialize};
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::relationship::{SourceCopyArchiveReason, UsageDecision, UsageEntryKey};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
+use std::collections::{BTreeMap, BTreeSet};
 
-/// A durable user decision for one skill and one confirmed usage entry.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct UsageDecisionRecord {
-    pub decision_id: String,
-    pub skill_id: SkillId,
-    pub entry_key: UsageEntryKey,
-    pub relation_ids: Vec<String>,
-    pub physical_source_ids: Vec<String>,
-    pub decision: UsageDecision,
-    pub content_fingerprint: Option<String>,
-    pub decided_at: i64,
-    pub operation_id: Option<String>,
-}
+pub use skillhub_core::relationship::UsageDecisionRecord;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveEvidence {
@@ -32,6 +20,26 @@ impl Database {
     /// Stores a usage decision and archives every active fact for the same
     /// skill and canonical entry in one SQLite transaction.
     pub fn record_usage_decision(&self, record: &UsageDecisionRecord) -> AppResult<()> {
+        self.record_usage_decision_inner(record, None)
+    }
+
+    /// Stores the actual decision-time fingerprint while comparing the active
+    /// evidence against a separate per-relation snapshot captured at prepare.
+    /// A missing expected fingerprint is checked as missing; it never disables
+    /// the evidence comparison.
+    pub fn record_usage_decision_with_expected_evidence_fingerprints(
+        &self,
+        record: &UsageDecisionRecord,
+        expected_fingerprints: &BTreeMap<String, Option<String>>,
+    ) -> AppResult<()> {
+        self.record_usage_decision_inner(record, Some(expected_fingerprints))
+    }
+
+    fn record_usage_decision_inner(
+        &self,
+        record: &UsageDecisionRecord,
+        expected_fingerprints: Option<&BTreeMap<String, Option<String>>>,
+    ) -> AppResult<()> {
         validate_record(record)?;
         let transaction = self
             .connection
@@ -66,7 +74,7 @@ impl Database {
         }
 
         let evidence = list_active_evidence(&transaction, &record.skill_id, &record.entry_key)?;
-        validate_evidence(record, &evidence)?;
+        validate_evidence(record, &evidence, expected_fingerprints)?;
 
         let relation_ids_json =
             serde_json::to_string(&record.relation_ids).map_err(serialization_error)?;
@@ -862,7 +870,11 @@ fn list_active_evidence(
     rows.collect::<Result<Vec<_>, _>>().map_err(database_error)
 }
 
-fn validate_evidence(record: &UsageDecisionRecord, evidence: &[ActiveEvidence]) -> AppResult<()> {
+fn validate_evidence(
+    record: &UsageDecisionRecord,
+    evidence: &[ActiveEvidence],
+    expected_fingerprints: Option<&BTreeMap<String, Option<String>>>,
+) -> AppResult<()> {
     let mut actual_relation_ids = evidence
         .iter()
         .map(|item| item.relation_id.clone())
@@ -886,7 +898,21 @@ fn validate_evidence(record: &UsageDecisionRecord, evidence: &[ActiveEvidence]) 
     if actual_physical_ids != requested_physical_ids {
         return Err(operation_conflict("physical_source_evidence_changed"));
     }
-    if let Some(fingerprint) = record.content_fingerprint.as_deref() {
+    if let Some(expected_fingerprints) = expected_fingerprints {
+        let requested_ids = record.relation_ids.iter().collect::<BTreeSet<_>>();
+        let expected_ids = expected_fingerprints.keys().collect::<BTreeSet<_>>();
+        if requested_ids != expected_ids {
+            return Err(invalid_record("expected_evidence_fingerprints"));
+        }
+        if evidence.iter().any(|item| {
+            expected_fingerprints
+                .get(&item.relation_id)
+                .map(|expected| expected.as_deref())
+                != Some(item.content_fingerprint.as_deref())
+        }) {
+            return Err(operation_conflict("content_fingerprint_changed"));
+        }
+    } else if let Some(fingerprint) = record.content_fingerprint.as_deref() {
         if evidence
             .iter()
             .any(|item| item.content_fingerprint.as_deref() != Some(fingerprint))

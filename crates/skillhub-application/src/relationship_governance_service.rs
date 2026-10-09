@@ -54,14 +54,14 @@ struct RelationSafetySnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct PathChainSnapshot {
-    nodes: Vec<PathNodeSnapshot>,
+pub(crate) struct PathChainSnapshot {
+    pub(crate) nodes: Vec<PathNodeSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct PathNodeSnapshot {
-    path: String,
-    physical_id: String,
+pub(crate) struct PathNodeSnapshot {
+    pub(crate) path: String,
+    pub(crate) physical_id: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -1985,7 +1985,7 @@ fn validate_relation_entity_binding(
     Ok(())
 }
 
-fn capture_path_chain(path: &Path) -> AppResult<PathChainSnapshot> {
+pub(crate) fn capture_path_chain(path: &Path) -> AppResult<PathChainSnapshot> {
     let mut nodes = Vec::new();
     for ancestor in path.ancestors() {
         // macOS commonly exposes `/var` and `/tmp` as symlinked system
@@ -2418,18 +2418,18 @@ fn ownership_mismatch(path: impl AsRef<Path>) -> AppError {
 }
 
 #[cfg(unix)]
-fn create_dir_link(source: &Path, destination: &Path) -> AppResult<()> {
+pub(crate) fn create_dir_link(source: &Path, destination: &Path) -> AppResult<()> {
     std::os::unix::fs::symlink(source, destination).map_err(|error| io_conflict(destination, error))
 }
 
 #[cfg(windows)]
-fn create_dir_link(source: &Path, destination: &Path) -> AppResult<()> {
+pub(crate) fn create_dir_link(source: &Path, destination: &Path) -> AppResult<()> {
     std::os::windows::fs::symlink_dir(source, destination)
         .map_err(|error| io_conflict(destination, error))
 }
 
 #[cfg(not(any(unix, windows)))]
-fn create_dir_link(_source: &Path, destination: &Path) -> AppResult<()> {
+pub(crate) fn create_dir_link(_source: &Path, destination: &Path) -> AppResult<()> {
     Err(
         AppError::new(ErrorCode::SymlinkNotSupported, Severity::Warning)
             .with_param("path", destination.to_string_lossy().into_owned()),

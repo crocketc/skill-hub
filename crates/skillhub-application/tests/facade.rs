@@ -11,16 +11,16 @@ use skillhub_core::{
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
-        CommitUndeploy, CreateBackup, CreateSkill, DiffVersions, DiscardMarkdownDraft,
-        DiscoverImportCandidates, GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations,
-        GetMarkdownDraft, GetReconcilePlan, GetRemovalImpact, GetRollbackImpact, GetSkill,
-        KeepIndependentCopy, ListDeployments, ListFindings, ListMarkdownFiles, ListProjects,
-        ListSkills, ListVersions, PrepareDeleteSkill, PrepareDeployment, PrepareImport,
-        PrepareRestore, PrepareUndeploy, PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic,
-        RenameSkill, RestoreDecision, RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup,
-        SaveAsCopyInheritance, SaveMarkdownAsCopy, SaveMarkdownContent, SaveMarkdownDraft,
-        SaveSkillContent, SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata,
-        SetTrial, SetVersionLabel, ValidateMarkdown, VerifyBackup,
+        CreateBackup, CreateSkill, DiffVersions, DiscardMarkdownDraft, DiscoverImportCandidates,
+        GetBasicCheckResult, GetDeploymentPlan, GetDeploymentRelations, GetMarkdownDraft,
+        GetReconcilePlan, GetRemovalImpact, GetRollbackImpact, GetSkill, KeepIndependentCopy,
+        ListDeployments, ListFindings, ListMarkdownFiles, ListProjects, ListSkills, ListVersions,
+        PrepareDeleteSkill, PrepareDeployment, PrepareImport, PrepareRestore, PrepareUndeploy,
+        PreviewProjectDirectory, ReadMarkdownFile, RecheckBasic, RenameSkill, RestoreDecision,
+        RunBasicCheck, RunLlmSafetyCheck, RunRollingBackup, SaveAsCopyInheritance,
+        SaveMarkdownAsCopy, SaveMarkdownContent, SaveMarkdownDraft, SaveSkillContent,
+        SetCurrentVersion, SetFindingDisposition, SetLifecycle, SetMetadata, SetTrial,
+        SetVersionLabel, ValidateMarkdown, VerifyBackup,
     },
     backup::{
         BackupRetentionPolicy, BackupScope, RestoreConflictDecision, SensitiveContentDecision,
@@ -41,7 +41,7 @@ use skillhub_core::{
     search::{SearchDocument, SearchQuery},
     source::{SourceDescriptor, SourceKind, SourceLocator},
     AppCommand, AppQuery as RootAppQuery, ApplicationFacade, DeploymentCapability, ErrorCode,
-    ExternalChangeState, PathPolicy, ReconcileAction, RemovalDecision, Severity, SkillId,
+    ExternalChangeState, PathPolicy, ReconcileAction, Severity, SkillId,
 };
 
 struct SymlinkUndeployFixture {
@@ -52,6 +52,22 @@ struct SymlinkUndeployFixture {
     skill_id: SkillId,
     deployment_id: skillhub_core::DeploymentId,
     destination: std::path::PathBuf,
+}
+
+async fn assert_legacy_undeploy_requires_usage_preview(
+    facade: &LocalApplicationFacade,
+    deployment_id: skillhub_core::DeploymentId,
+) {
+    let error = facade
+        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
+            deployment_id,
+        }))
+        .await
+        .expect_err("legacy undeploy must require the unified usage preview");
+    assert_eq!(
+        error.params.get("reason").and_then(|value| value.as_str()),
+        Some("usage_change_preview_required"),
+    );
 }
 
 fn create_test_directory_link(source: &Path, destination: &Path) -> std::io::Result<()> {
@@ -2048,6 +2064,9 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
              DROP TABLE relationship_governance_mutation_receipts;
              DROP TABLE skill_lineage;
              DROP TABLE security_alerts;
+             DROP TABLE active_usage_evidence;
+             DROP TABLE active_usage_slots;
+             DROP TABLE usage_decisions;
              PRAGMA user_version=22;",
         )
         .expect("simulate legacy database");
@@ -6119,29 +6138,8 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
     assert_eq!(impact.deployments, records);
     assert!(!impact.requires_shared_target_choice);
 
-    let prepared = facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id: impact.deployments[0].id,
-        }))
-        .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(prepared) = prepared else {
-        panic!("expected prepared removal impact");
-    };
-    let removed = facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: prepared.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
-        }))
-        .await
-        .expect("commit undeploy");
-    let AppCommandResult::RemovalResult(removed) = removed else {
-        panic!("expected removal result");
-    };
-    assert!(removed.decisions[0].target_removed);
-    assert!(removed.decisions[0].relation_removed);
-    assert!(!target.path().join("deployable").exists());
+    assert_legacy_undeploy_requires_usage_preview(&facade, impact.deployments[0].id).await;
+    assert!(target.path().join("deployable/SKILL.md").is_file());
     let after_removal = facade
         .query(RootAppQuery::ListDeployments(ListDeployments {
             skill_id: Some(skill.id()),
@@ -6152,7 +6150,7 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
         panic!("expected deployment records after removal");
     };
     assert_eq!(after_removal.len(), 1);
-    assert_eq!(after_removal[0].state, DeploymentState::Removed);
+    assert_eq!(after_removal[0].state, DeploymentState::Deployed);
 }
 
 #[tokio::test]
@@ -6309,26 +6307,13 @@ async fn undeploy_preserves_modified_target_and_relation_for_review() {
 
     let library_root = tempfile::tempdir().expect("library root");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
-    let prepared = facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id,
-        }))
-        .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(prepared) = prepared else {
-        panic!("expected prepared removal impact");
-    };
     std::fs::write(destination.join("SKILL.md"), "# changed\n").expect("modify destination");
-    let error = facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: prepared.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
-        }))
-        .await
-        .expect_err("modified target must be protected");
-    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert_legacy_undeploy_requires_usage_preview(&facade, deployment_id).await;
     assert!(destination.is_dir());
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("modified file remains"),
+        "# changed\n",
+    );
     let records = facade
         .query(RootAppQuery::ListDeployments(ListDeployments {
             skill_id: Some(skill.id()),
@@ -6346,32 +6331,12 @@ async fn undeploy_fails_closed_when_managed_link_is_replaced_by_an_ordinary_dire
     let Some(fixture) = symlink_undeploy_fixture().await else {
         return;
     };
-    let prepared = fixture
-        .facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id: fixture.deployment_id,
-        }))
-        .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(prepared) = prepared else {
-        panic!("expected prepared removal impact");
-    };
-
     remove_test_directory_link(&fixture.destination).expect("remove original managed link");
     std::fs::create_dir(&fixture.destination).expect("replace link with ordinary directory");
     std::fs::write(fixture.destination.join("user-data.txt"), "keep me")
         .expect("write replacement data");
-
-    let error = fixture
-        .facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: prepared.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
-        }))
-        .await
-        .expect_err("an ordinary replacement must not be treated as the managed link");
-    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert_legacy_undeploy_requires_usage_preview(&fixture.facade, fixture.deployment_id).await;
+    assert!(fixture.destination.is_dir());
     assert_eq!(
         std::fs::read_to_string(fixture.destination.join("user-data.txt"))
             .expect("replacement data remains"),
@@ -6384,34 +6349,13 @@ async fn undeploy_fails_closed_when_managed_link_is_replaced_by_a_different_link
     let Some(fixture) = symlink_undeploy_fixture().await else {
         return;
     };
-    let prepared = fixture
-        .facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id: fixture.deployment_id,
-        }))
-        .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(prepared) = prepared else {
-        panic!("expected prepared removal impact");
-    };
-
     let replacement_body = tempfile::tempdir().expect("replacement link target");
     std::fs::write(replacement_body.path().join("user-data.txt"), "keep me")
         .expect("write replacement target data");
     remove_test_directory_link(&fixture.destination).expect("remove original managed link");
     create_test_directory_link(replacement_body.path(), &fixture.destination)
         .expect("replace with a different directory link");
-
-    let error = fixture
-        .facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: prepared.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
-        }))
-        .await
-        .expect_err("a different link must not be treated as the managed link");
-    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert_legacy_undeploy_requires_usage_preview(&fixture.facade, fixture.deployment_id).await;
     assert!(
         is_test_directory_link(&fixture.destination),
         "the replacement link entry must remain in place"
@@ -6565,16 +6509,6 @@ async fn old_physical_identity_cannot_authorize_removal_from_recreated_directory
 
     let library_root = tempfile::tempdir().expect("library root");
     let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
-    let prepared = facade
-        .execute(AppCommand::PrepareUndeploy(PrepareUndeploy {
-            deployment_id,
-        }))
-        .await
-        .expect("prepare undeploy");
-    let AppCommandResult::RemovalImpact(prepared) = prepared else {
-        panic!("expected removal impact");
-    };
-
     std::fs::rename(&target_path, &old_target_path).expect("preserve old target");
     std::fs::create_dir(&target_path).expect("create replacement target");
     let replacement = target_path.join("managed-skill");
@@ -6585,16 +6519,7 @@ async fn old_physical_identity_cannot_authorize_removal_from_recreated_directory
         skillhub_core::physical_id_for_path(&target_path).as_deref(),
         Some(old_identity.as_str())
     );
-
-    let error = facade
-        .execute(AppCommand::CommitUndeploy(CommitUndeploy {
-            prepared_undeploy_id: prepared.operation_id,
-            decision: RemovalDecision::RemoveOwnedTarget,
-            confirm_shared_target_removal: false,
-        }))
-        .await
-        .expect_err("old physical identity must not authorize replacement removal");
-    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+    assert_legacy_undeploy_requires_usage_preview(&facade, deployment_id).await;
     assert_eq!(
         std::fs::read_to_string(replacement.join("SKILL.md")).expect("replacement retained"),
         "# user data\n"
@@ -6665,18 +6590,27 @@ async fn reconcile_query_detects_modified_target_and_keep_independent_updates_re
         .allowed_actions
         .contains(&ReconcileAction::KeepIndependentCopy));
 
-    let result = facade
+    let error = facade
         .execute(AppCommand::KeepIndependentCopy(KeepIndependentCopy {
             deployment_id,
         }))
         .await
-        .expect("keep independent copy");
-    let AppCommandResult::ReconcileResult(result) = result else {
-        panic!("expected reconcile result");
-    };
-    assert_eq!(result.action, ReconcileAction::KeepIndependentCopy);
-    assert!(!result.management_retained);
+        .expect_err("legacy independent-copy exit requires usage preview");
+    assert_eq!(
+        error.params.get("reason").and_then(|value| value.as_str()),
+        Some("usage_change_preview_required"),
+    );
     assert!(destination.join("SKILL.md").is_file());
+    let records = facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill.id()),
+        }))
+        .await
+        .expect("deployments remain active");
+    let AppQueryResult::Deployments(records) = records else {
+        panic!("expected deployment records");
+    };
+    assert_eq!(records[0].state, DeploymentState::Deployed);
 }
 
 #[tokio::test]
