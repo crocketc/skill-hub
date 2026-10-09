@@ -18620,24 +18620,31 @@ impl RecoveryBackend for LocalRecoveryBackend {
         let mut statement = database
             .connection_for_test()
             .prepare(
-                "SELECT operation_id FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') ORDER BY operation_id",
+                "SELECT operation_id, kind FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') AND NOT (kind='usage_duplicate_cleanup' AND phase='prepared') ORDER BY operation_id",
             )
             .map_err(|error| database_error("recovery.list", error.to_string()))?;
         let rows = statement
-            .query_map([], |row| row.get::<_, String>(0))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|error| database_error("recovery.list", error.to_string()))?;
         let mut candidates = Vec::new();
         for row in rows {
-            let id = row
-                .map_err(|error| database_error("recovery.list", error.to_string()))?
+            let (id, kind) =
+                row.map_err(|error| database_error("recovery.list", error.to_string()))?;
+            let id = id
                 .parse()
                 .map_err(|_| database_error("recovery.list", "invalid operation id".to_owned()))?;
             candidates.push(RecoveryCandidate {
                 operation_id: id,
-                actions: vec![
-                    RecoveryAction::CompleteOperation,
-                    RecoveryAction::RollbackOperation,
-                ],
+                actions: if kind == "usage_duplicate_cleanup" {
+                    vec![RecoveryAction::RollbackOperation]
+                } else {
+                    vec![
+                        RecoveryAction::CompleteOperation,
+                        RecoveryAction::RollbackOperation,
+                    ]
+                },
             });
         }
         Ok(candidates)
@@ -18665,6 +18672,21 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 }
                 RecoveryAction::RollbackOperation => {
                     usage_change_service::rollback_release_operation(&database, operation_id)
+                }
+                _ => Err(unsupported("recovery.resolve")),
+            };
+        }
+        if operation_kind.as_deref() == Some("usage_duplicate_cleanup") {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.duplicate_cleanup"))?;
+            return match action {
+                RecoveryAction::RollbackOperation => {
+                    usage_change_service::rollback_duplicate_cleanup_operation(
+                        &database,
+                        operation_id,
+                    )
                 }
                 _ => Err(unsupported("recovery.resolve")),
             };

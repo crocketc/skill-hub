@@ -1,14 +1,23 @@
-import type { JSX } from "react";
+import { useCallback, useEffect, useState, type JSX } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import type { ConflictResolutionRecord, ConflictWorkspaceCase } from "../../../api/bindings";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import type { CommitUsageChange, ConflictResolutionRecord, ConflictWorkspaceCase, EnvironmentProblemView, UsageChangeResult } from "../../../api/bindings";
 import { formatTimestamp, readableTailOfId, resolveLocale } from "../../../i18n";
 import { Button } from "../../../ui/Button";
 import { DataState } from "../../../ui/DataState";
+import { describeNativeError } from "../../../api/nativeErrors";
 import {
   useOptionalAppNotifications,
   type AppNotifications,
 } from "../../../ui/notifications";
+import { runTrackedOperation } from "../../../platform/runTrackedOperation";
+import { relationshipsKeys } from "../api";
+import { nativeGovernanceFacade } from "../governance/nativeApi";
+import type { RelationGovernanceFacade } from "../governance/api";
+import { DuplicateCleanupDialog } from "../governance/DuplicateCleanupDialog";
+import type { UsageChangeFacade } from "../../removal/api";
+import { nativeUsageChangeFacade } from "../../removal/nativeApi";
 import {
   conflictDecisionLabelKey,
   conflictGovernanceHref,
@@ -30,6 +39,7 @@ import {
   useConflictWorkspace,
   useResolveConflict,
 } from "./useConflictDecisions";
+import "../governance/governance.css";
 
 export interface ConflictDecisionPageProps {
   /** 缺省为原生只读投影 + 显式命令门面；测试注入替身。 */
@@ -38,6 +48,10 @@ export interface ConflictDecisionPageProps {
   tracker?: OperationTracker;
   /** 通知中心；缺省取上下文（AppShell 内存在 Provider）。 */
   notifications?: AppNotifications | null;
+  /** 当前 Agent／项目问题的只读重扫门面；测试可注入。 */
+  environmentFacade?: Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems">;
+  /** 重复清理仍使用统一 prepare／commit 契约。 */
+  usageChangeFacade?: UsageChangeFacade;
 }
 
 const KIND_CHIP_LABEL_KEYS: Record<string, string> = {
@@ -52,17 +66,36 @@ const KIND_CHIP_LABEL_KEYS: Record<string, string> = {
  */
 export function ConflictDecisionPage({
   facade = nativeConflictDecisionsFacade,
+  environmentFacade = nativeGovernanceFacade,
   notifications,
   tracker = operationTracker,
+  usageChangeFacade = nativeUsageChangeFacade,
 }: ConflictDecisionPageProps): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const contextNotifications = useOptionalAppNotifications();
   const effectiveNotifications: AppNotifications | null =
     notifications !== undefined ? notifications : contextNotifications;
 
   const workspaceQuery = useConflictWorkspace(facade);
+  const problemIdParam = searchParams.get("problemId");
+  const environmentProblemQuery = useQuery({
+    queryFn: () => environmentFacade.getUsageEnvironmentProblems(),
+    queryKey: relationshipsKeys.governanceUsageProblems(problemIdParam),
+    enabled: Boolean(problemIdParam?.trim()),
+  });
+  const environmentProblem = environmentProblemQuery.data?.problems.find(
+    (problem) => problem.problem_id === problemIdParam && !problem.closed,
+  ) ?? null;
+  const [duplicateCleanupOpen, setDuplicateCleanupOpen] = useState(false);
+  const [cleanupProblemSnapshot, setCleanupProblemSnapshot] = useState<EnvironmentProblemView | null>(null);
+  useEffect(() => {
+    setDuplicateCleanupOpen(false);
+    setCleanupProblemSnapshot(null);
+  }, [problemIdParam]);
   const { available: aiAvailable } = useConflictAiAvailability(facade);
   const ai = useConflictAiAnalysis({ facade, tracker });
   const workspace = workspaceQuery.data;
@@ -109,6 +142,120 @@ export function ConflictDecisionPage({
     tracker,
   });
 
+  const describeError = useCallback((reason: unknown) => describeNativeError(
+    reason,
+    (key, options) => String(t(key as never, options as never)),
+    "tasks.notices.failureUnknown",
+  ), [t]);
+
+  const commitDuplicateCleanup = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => (
+    runTrackedOperation<UsageChangeResult>({
+      targetHref: `${location.pathname}${location.search}`,
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "usage_duplicate_cleanup",
+      label: t("relationships.governance.duplicateCleanup.title"),
+      notifications: effectiveNotifications,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return usageChangeFacade.commitUsageChange(request);
+      },
+      successNotice: (result) => result.recovery_required
+        ? null
+        : { title: t("relationships.governance.duplicateCleanup.title"), tone: "success" as const },
+      summarize: (result) => ({
+        failed: result.recovery_required ? 1 : 0,
+        skipped: 0,
+        succeeded: result.recovery_required ? 0 : 1,
+      }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    })
+  ), [describeError, effectiveNotifications, location.pathname, location.search, queryClient, t, tracker, usageChangeFacade]);
+
+  const safeReturnTo = (() => {
+    const value = searchParams.get("returnTo");
+    return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+      ? value
+      : null;
+  })();
+  const returnToIssue = () => {
+    setDuplicateCleanupOpen(false);
+    if (safeReturnTo) navigate(safeReturnTo);
+  };
+
+  const renderEnvironmentProblem = () => {
+    if (!problemIdParam) return null;
+    const displayedProblem = environmentProblem
+      ?? (duplicateCleanupOpen && cleanupProblemSnapshot?.problem_id === problemIdParam
+        ? cleanupProblemSnapshot
+        : null);
+    if (environmentProblemQuery.isPending && !displayedProblem) {
+      return <p role="status">{t("relationships.governance.problemContext.loading")}</p>;
+    }
+    if (environmentProblemQuery.isError && !displayedProblem) {
+      return <p role="alert">{t("relationships.governance.problemContext.unavailable")}</p>;
+    }
+    if (!displayedProblem) {
+      return <p role="status">{t("relationships.governance.problemContext.stale")}</p>;
+    }
+    return (
+      <section aria-labelledby="environment-problem-heading" className="sh-conflict-environment">
+        <div className="sh-conflict-workbench">
+          <div className="sh-conflict-environment__facts">
+            <h2 id="environment-problem-heading">
+              {t(displayedProblem.kind === "same_skill"
+                ? "pending.environmentProblemTitles.sameSkill"
+                : "pending.environmentProblemTitles.nameConflict")}
+            </h2>
+            <p>{t(`pending.reasons.environment_problem.${displayedProblem.kind}` as never)}</p>
+            <ul className="sh-governance__duplicate-entries">
+              {displayedProblem.entries.map((entry, index) => {
+                const path = fullEntryPath(entry.directory_path, entry.relative_entry_path);
+                return (
+                  <li key={`${entry.directory_id}:${entry.relative_entry_path}:${index}`}>
+                    <span className="sh-governance__duplicate-entry-role">
+                      {directoryRoleLabel(entry.directory_role, (key) => String(t(key as never)))}
+                    </span>
+                    <code className="sh-governance__duplicate-entry-path" title={path}>{path}</code>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <ConflictActions
+            mode="environment_problem"
+            onNotNow={() => {
+              setDuplicateCleanupOpen(false);
+              setCleanupProblemSnapshot(null);
+              returnToIssue();
+            }}
+            onResolveDuplicate={() => {
+              setCleanupProblemSnapshot(displayedProblem);
+              setDuplicateCleanupOpen(true);
+            }}
+            problem={displayedProblem}
+          />
+        </div>
+        {duplicateCleanupOpen && displayedProblem.kind === "same_skill" ? (
+          <DuplicateCleanupDialog
+            onClose={() => {
+              setDuplicateCleanupOpen(false);
+              setCleanupProblemSnapshot(null);
+            }}
+            onCommit={commitDuplicateCleanup}
+            onCompleted={() => undefined}
+            onPrepare={usageChangeFacade.prepareUsageChange}
+            problem={displayedProblem}
+          />
+        ) : null}
+      </section>
+    );
+  };
+
   const selectEntry = (conflictId: string) => patchParams({ conflictId });
   const selectCategory = (kind: string) => {
     const firstOfKind = cases.find((entry) => conflictKindGroup(entry) === kind);
@@ -150,17 +297,20 @@ export function ConflictDecisionPage({
   if (cases.length === 0) {
     return (
       <div className="sh-conflict-page">
-        <DataState
-          message={
-            historyCount > 0
-              ? t("relationships.decisions.empty.allDone", {
-                  count: historyCount,
-                })
-              : t("relationships.decisions.empty.none")
-          }
-          hint={t("relationships.decisions.empty.hint")}
-          state="empty"
-        />
+        {renderEnvironmentProblem()}
+        {!problemIdParam ? (
+          <DataState
+            message={
+              historyCount > 0
+                ? t("relationships.decisions.empty.allDone", {
+                    count: historyCount,
+                  })
+                : t("relationships.decisions.empty.none")
+            }
+            hint={t("relationships.decisions.empty.hint")}
+            state="empty"
+          />
+        ) : null}
         {historyCount > 0 ? (
           <ConflictHistory deterministic={deterministicHistory} handled={handled} />
         ) : null}
@@ -172,6 +322,7 @@ export function ConflictDecisionPage({
 
   return (
     <div className="sh-conflict-page">
+      {renderEnvironmentProblem()}
       <p className="sh-conflict-page__status">
         <span className="sh-conflict-page__count">
           {t("relationships.decisions.status.pending", { count: cases.length })}
@@ -211,6 +362,7 @@ export function ConflictDecisionPage({
             ai={ai}
             aiAvailable={aiAvailable}
             caseEntry={selectedEntry}
+            mode="case"
             onCentralize={centralize}
             onFollowSuggestion={() => {
               if (selectedEntry.recommended_decision === "confirm_same_skill"
@@ -298,6 +450,20 @@ export function ConflictDecisionPage({
       <ConflictHistory deterministic={deterministicHistory} handled={handled} />
     </div>
   );
+}
+
+function fullEntryPath(directoryPath: string | null | undefined, relativePath: string): string {
+  if (!directoryPath) return relativePath;
+  const separator = directoryPath.includes("\\") ? "\\" : "/";
+  return `${directoryPath.replace(/[\\/]+$/, "")}${separator}${relativePath.replace(/[\\/]+/g, separator)}`;
+}
+
+function directoryRoleLabel(role: string | null | undefined, translate: (key: string) => string): string {
+  if (role === "builtin") return translate("agents.directoryRole.builtin");
+  if (role === "agent_user" || role === "agent_native") return translate("agents.directoryRole.user");
+  if (role === "agent_workspace" || role === "project") return translate("agents.directoryRole.workspace");
+  if (role === "shared_directory") return translate("relationships.governance.duplicateCleanup.sharedDirectory");
+  return translate("relationships.governance.duplicateCleanup.unknownDirectory");
 }
 
 function ConflictHistory({

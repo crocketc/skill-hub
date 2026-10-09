@@ -704,6 +704,60 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByRole("button", { name: "返回待处理列表" })).toBeVisible();
   });
 
+  it("routes active same-skill issues into the shared conflict workflow with a return path", async () => {
+    const problem: EnvironmentProblemAnalysis = {
+      problems: [{
+        problem_id: "problem-duplicate",
+        kind: "same_skill",
+        entries: [
+          { directory_id: "dir-a", relative_entry_path: "formatter", runtime_name: "Formatter", content_fingerprint: "sha256:formatter", physical_identity: "physical:a", skill_id: null, relation_ids: [] },
+          { directory_id: "dir-b", relative_entry_path: "formatter", runtime_name: "Formatter", content_fingerprint: "sha256:formatter", physical_identity: "physical:b", skill_id: null, relation_ids: [] },
+        ],
+        consumers: [{ agent_client_id: "codex", project_id: null }],
+        environment_results: [],
+        closed: false,
+      }],
+      probe_limitations: [],
+    };
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue(problem),
+    });
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-duplicate"],
+    });
+
+    fireEvent.click(await screen.findByTestId("governance-resolve-duplicate"));
+    expect(await screen.findByText("DECISIONS_ORIGIN")).toBeVisible();
+    expect(screen.getByTestId("location-path")).toHaveTextContent("/relationships/decisions");
+    expect(screen.getByTestId("location-search").textContent).toContain("problemId=problem-duplicate");
+    expect(screen.getByTestId("location-search").textContent).toContain("returnTo=");
+    expect(screen.queryByRole("dialog", { name: "清理重复副本" })).not.toBeInTheDocument();
+  });
+
+  it("does not offer duplicate cleanup for a same-name conflict", async () => {
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue({
+        problems: [{
+          problem_id: "problem-conflict",
+          kind: "name_conflict",
+          entries: [],
+          consumers: [{ agent_client_id: "codex", project_id: null }],
+          environment_results: [],
+          closed: false,
+        }],
+        probe_limitations: [],
+      }),
+    });
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-conflict"],
+    });
+
+    await screen.findByTestId("governance-current-problem");
+    expect(screen.queryByTestId("governance-resolve-duplicate")).not.toBeInTheDocument();
+  });
+
   it("blocks a current issue when its anchor Agent scope has changed", async () => {
     const facade = createFacade(FULL_LEDGER, {
       getUsageEnvironmentProblems: vi.fn().mockResolvedValue({

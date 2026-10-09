@@ -3,6 +3,7 @@ import {
   allConflictScope,
   caseConflictScope,
   categoryConflictScope,
+  conflictEnvironmentProblemHref,
   conflictGovernanceHref,
   conflictKindGroup,
   conflictWorkspaceHref,
@@ -31,6 +32,15 @@ describe("conflict decision helpers", () => {
     expect(conflictWorkspaceHref()).toBe("/relationships/decisions");
     expect(conflictWorkspaceHref("conflict:a")).toBe(
       "/relationships/decisions?conflictId=conflict:a",
+    );
+  });
+
+  it("opens one active environment problem in the shared workflow and preserves only local return paths", () => {
+    expect(conflictEnvironmentProblemHref("problem:1", "/relationships/governance?problem_id=problem:1")).toBe(
+      "/relationships/decisions?problemId=problem%3A1&returnTo=%2Frelationships%2Fgovernance%3Fproblem_id%3Dproblem%3A1",
+    );
+    expect(conflictEnvironmentProblemHref("problem:1", "//outside.example/path")).toBe(
+      "/relationships/decisions?problemId=problem%3A1",
     );
   });
 

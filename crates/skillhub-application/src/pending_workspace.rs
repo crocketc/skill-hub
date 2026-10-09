@@ -614,6 +614,8 @@ mod tests {
             .into_iter()
             .map(|directory_id| UsageEnvironmentEntry {
                 directory_id: directory_id.into(),
+                directory_path: None,
+                directory_role: None,
                 relative_entry_path: "notes".into(),
                 runtime_name: Some("Notes".into()),
                 content_fingerprint: Some("sha256:notes".into()),

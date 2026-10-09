@@ -1395,6 +1395,18 @@ export type DuplicateCandidate = {
 	locally_modified: boolean,
 };
 
+/**
+ *  The verified environmental issue and the exact user selection frozen into
+ *  a duplicate-cleanup preview. The application still re-scans these facts at
+ *  commit time before touching files.
+ */
+export type DuplicateCleanupPreview = {
+	problem: EnvironmentProblemView,
+	retain_entry_key: UsageEntryKey,
+	selected_entry_keys: UsageEntryKey[],
+	non_recognized_destination: string | null,
+};
+
 /**  The strongest deterministic relationship found for an imported candidate. */
 export type DuplicateKind = "exact_content" | "same_source" | "same_runtime_name_different_content" | "search_candidate";
 
@@ -3127,6 +3139,7 @@ export type PreparedUsageChange = {
 	consumers: UsageChangeConsumer[],
 	impacts: UsageChangeImpact[],
 	limitations: string[],
+	duplicate_cleanup?: DuplicateCleanupPreview | null,
 };
 
 /**
@@ -5241,7 +5254,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore";
+export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize
@@ -5344,6 +5357,8 @@ export type UsageEntryKey = {
 
 export type UsageEnvironmentEntry = {
 	directory_id: string,
+	directory_path?: string | null,
+	directory_role?: AgentDirectoryRole | null,
 	relative_entry_path: string,
 	runtime_name: string | null,
 	content_fingerprint: string | null,

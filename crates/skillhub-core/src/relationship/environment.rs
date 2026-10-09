@@ -32,6 +32,10 @@ pub struct UsageEnvironmentDirectory {
 #[serde(deny_unknown_fields)]
 pub struct UsageEnvironmentEntry {
     pub directory_id: String,
+    #[serde(default)]
+    pub directory_path: Option<String>,
+    #[serde(default)]
+    pub directory_role: Option<AgentDirectoryRole>,
     pub relative_entry_path: String,
     pub runtime_name: Option<String>,
     pub content_fingerprint: Option<String>,
@@ -316,6 +320,8 @@ fn merge_entry(existing: &mut UsageEnvironmentEntry, other: &UsageEnvironmentEnt
     existing.relation_ids.dedup();
     if entry_sort_key(other) < entry_sort_key(existing) {
         existing.directory_id = other.directory_id.clone();
+        existing.directory_path = other.directory_path.clone();
+        existing.directory_role = other.directory_role;
         existing.relative_entry_path = other.relative_entry_path.clone();
     }
 }

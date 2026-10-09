@@ -55,6 +55,15 @@ impl LocalApplicationFacade {
     /// 扫描所有 Agent 自身与 Agent × 已注册项目环境。只有数据库确认过的
     /// 目录识别关系会进入文件扫描；发现文件不代表 Agent 已加载或执行文件。
     pub(crate) fn get_usage_environment_problems(&self) -> AppResult<AppQueryResult> {
+        let (analysis, _) = self.scan_usage_environment_state()?;
+        Ok(AppQueryResult::UsageEnvironmentProblems(analysis))
+    }
+
+    /// Returns the same fresh scan used by the read query together with the
+    /// per-environment snapshots needed to validate a cleanup decision.
+    pub(crate) fn scan_usage_environment_state(
+        &self,
+    ) -> AppResult<(EnvironmentProblemAnalysis, Vec<UsageEnvironmentSnapshot>)> {
         let directory_projection = match self.get_agent_directory_projection()? {
             AppQueryResult::AgentDirectoryProjection(projection) => projection,
             _ => unreachable!("get_agent_directory_projection returns its projection"),
@@ -97,6 +106,7 @@ impl LocalApplicationFacade {
         environments.dedup();
 
         let mut analyses = Vec::<EnvironmentProblemAnalysis>::with_capacity(environments.len());
+        let mut snapshots = Vec::with_capacity(environments.len());
         for environment in environments {
             let snapshot = build_usage_environment_snapshot(
                 environment,
@@ -109,10 +119,9 @@ impl LocalApplicationFacade {
                 revision,
             );
             analyses.push(analyze_environment_problems(&snapshot));
+            snapshots.push(snapshot);
         }
-        Ok(AppQueryResult::UsageEnvironmentProblems(
-            merge_environment_problem_analyses(&analyses),
-        ))
+        Ok((merge_environment_problem_analyses(&analyses), snapshots))
     }
 
     /// 仅供测试：注入受控探测结果（权限/离线卷等无法跨平台模拟的场景）。
@@ -296,6 +305,8 @@ fn build_usage_environment_snapshot(
             }
             discovered_entries.push(UsageEnvironmentEntry {
                 directory_id: node.node_id.clone(),
+                directory_path: Some(node.path.clone()),
+                directory_role: Some(role),
                 relative_entry_path: candidate.relative_root,
                 runtime_name: Some(candidate.runtime_name),
                 content_fingerprint,

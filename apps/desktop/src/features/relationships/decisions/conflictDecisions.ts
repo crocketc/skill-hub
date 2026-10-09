@@ -33,6 +33,15 @@ export function conflictWorkspaceHref(conflictId?: string | null): string {
   return `/relationships/decisions?conflictId=${encoded}`;
 }
 
+/** Deep link to one freshly-reloaded Agent/project environment problem. */
+export function conflictEnvironmentProblemHref(problemId: string, returnTo?: string | null): string {
+  const params = new URLSearchParams({ problemId });
+  if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")) {
+    params.set("returnTo", returnTo);
+  }
+  return `/relationships/decisions?${params.toString()}`;
+}
+
 /** 三个 AI 分析范围（设计 §3.4：全部/分类/冲突组）。 */
 export function allConflictScope(): AnalyzeConflictScope {
   return { type: "all" };

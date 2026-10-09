@@ -17,6 +17,19 @@ pub enum UsageChangeAction {
     Sync,
     Repair,
     Restore,
+    ResolveDuplicate,
+}
+
+/// The verified environmental issue and the exact user selection frozen into
+/// a duplicate-cleanup preview. The application still re-scans these facts at
+/// commit time before touching files.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DuplicateCleanupPreview {
+    pub problem: super::EnvironmentProblemView,
+    pub retain_entry_key: UsageEntryKey,
+    pub selected_entry_keys: Vec<UsageEntryKey>,
+    pub non_recognized_destination: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -164,6 +177,8 @@ pub struct PreparedUsageChange {
     pub consumers: Vec<UsageChangeConsumer>,
     pub impacts: Vec<UsageChangeImpact>,
     pub limitations: Vec<String>,
+    #[serde(default)]
+    pub duplicate_cleanup: Option<DuplicateCleanupPreview>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

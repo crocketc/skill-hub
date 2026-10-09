@@ -1,15 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type {
   AnalyzeConflictScope,
+  CommitUsageChange,
   ConflictAnalysis,
   ConflictResolutionOutcome,
   ConflictWorkspace,
   ConflictWorkspaceCase,
+  EnvironmentProblemAnalysis,
+  EnvironmentProblemView,
+  PrepareUsageChange,
+  PreparedUsageChange,
   ResolveConflictCase,
+  UsageChangeResult,
 } from "../../../api/bindings";
 import { createSkillHubI18n } from "../../../i18n";
 import {
@@ -17,8 +23,10 @@ import {
   type OperationTracker,
 } from "../../../platform/operationTracker";
 import type { AppNotifications } from "../../../ui/notifications";
+import type { UsageChangeFacade } from "../../removal/api";
 import { ConflictDecisionPage } from "./ConflictDecisionPage";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
+import type { RelationGovernanceFacade } from "../governance/api";
 
 // --- 夹具：完全按任务 2 的 ConflictWorkspace DTO 形状构造 ---
 
@@ -172,6 +180,46 @@ function createFacade(workspace: ConflictWorkspace) {
   return facade;
 }
 
+function duplicateProblem(overrides: Partial<EnvironmentProblemView> = {}): EnvironmentProblemView {
+  return {
+    problem_id: "problem-duplicate",
+    kind: "same_skill",
+    entries: [
+      { directory_id: "dir-a", directory_path: "/agents/codex/skills", directory_role: "agent_user", relative_entry_path: "formatter", runtime_name: "Formatter", content_fingerprint: "sha256:formatter", physical_identity: "physical:a", skill_id: null, relation_ids: [] },
+      { directory_id: "dir-b", directory_path: "/agents/cursor/skills", directory_role: "agent_user", relative_entry_path: "formatter", runtime_name: "Formatter", content_fingerprint: "sha256:formatter", physical_identity: "physical:b", skill_id: null, relation_ids: [] },
+    ],
+    consumers: [{ agent_client_id: "codex", project_id: null }],
+    environment_results: [],
+    closed: false,
+    ...overrides,
+  };
+}
+
+function duplicateCleanupPrepared(problem: EnvironmentProblemView): PreparedUsageChange {
+  return {
+    operation_id: "op-duplicate-cleanup",
+    prepared_id: "prepared-duplicate-cleanup",
+    action: "resolve_duplicate",
+    relationship_revision: "r8",
+    affected_skill_ids: [],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+    duplicate_cleanup: {
+      problem,
+      retain_entry_key: { directory_id: "dir-a", relative_entry_path: "formatter" },
+      selected_entry_keys: problem.entries.map(({ directory_id, relative_entry_path }) => ({ directory_id, relative_entry_path })),
+      non_recognized_destination: null,
+    },
+  };
+}
+
+function createProblemFacade(analysis: EnvironmentProblemAnalysis): Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems"> {
+  return { getUsageEnvironmentProblems: vi.fn(async () => analysis) };
+}
+
 function makeNotifications(): AppNotifications & { notify: ReturnType<typeof vi.fn> } {
   return {
     notify: vi.fn(() => "notice-1"),
@@ -197,7 +245,12 @@ function LocationProbe() {
 
 async function renderPage(
   facade: ConflictDecisionsFacade,
-  options: { initialEntry?: string; tracker?: OperationTracker } = {},
+  options: {
+    initialEntry?: string;
+    tracker?: OperationTracker;
+    problemFacade?: Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems">;
+    usageChangeFacade?: UsageChangeFacade;
+  } = {},
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const queryClient = new QueryClient({
@@ -211,7 +264,13 @@ async function renderPage(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[options.initialEntry ?? "/relationships/decisions"]}>
           <LocationProbe />
-          <ConflictDecisionPage facade={facade} notifications={notifications} tracker={tracker} />
+          <ConflictDecisionPage
+            environmentFacade={options.problemFacade}
+            facade={facade}
+            notifications={notifications}
+            tracker={tracker}
+            usageChangeFacade={options.usageChangeFacade}
+          />
         </MemoryRouter>
       </QueryClientProvider>
     </I18nextProvider>,
@@ -222,6 +281,89 @@ async function renderPage(
 // --- 用例 ---
 
 describe("ConflictDecisionPage", () => {
+  it("handles a current same-skill environment problem in the shared conflict workflow", async () => {
+    const problem = duplicateProblem();
+    const prepared = duplicateCleanupPrepared(problem);
+    const problemFacade: Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems"> = {
+      getUsageEnvironmentProblems: vi.fn()
+        .mockResolvedValueOnce({ problems: [problem], probe_limitations: [] })
+        .mockResolvedValue({ problems: [{ ...problem, closed: true }], probe_limitations: [] }),
+    };
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn(async (_request: PrepareUsageChange) => prepared),
+      commitUsageChange: vi.fn(async (_request: CommitUsageChange): Promise<UsageChangeResult> => ({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+        item_results: [],
+        recovery_required: false,
+      })),
+    };
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-duplicate&returnTo=%2Frelationships%2Fgovernance%3Fagent_id%3Dcodex%26problem_id%3Dproblem-duplicate",
+      problemFacade,
+      usageChangeFacade,
+    });
+
+    expect(await screen.findByRole("heading", { name: "同一技能出现在多个目录" })).toBeVisible();
+    expect(screen.getByText("/agents/codex/skills/formatter")).toBeVisible();
+    expect(screen.getByText("/agents/cursor/skills/formatter")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "整理重复副本" }));
+    const dialog = await screen.findByRole("dialog", { name: "清理重复副本" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览清理影响" }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "resolve_duplicate",
+      problem_id: "problem-duplicate",
+      selected_entry_keys: [
+        { directory_id: "dir-a", relative_entry_path: "formatter" },
+        { directory_id: "dir-b", relative_entry_path: "formatter" },
+      ],
+    })));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "我已核对保留副本和清理范围，了解其他副本将先备份再移除。" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认清理" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: prepared.operation_id,
+      prepared_id: prepared.prepared_id,
+    }));
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("操作已完成，相关目录已重新扫描。");
+    expect(problemFacade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a stale or same-name environment issue out of duplicate cleanup actions", async () => {
+    const problemFacade = createProblemFacade({
+      problems: [duplicateProblem({ problem_id: "problem-name", kind: "name_conflict" })],
+      probe_limitations: [],
+    });
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-missing",
+      problemFacade,
+    });
+    expect(await screen.findByText(/此问题已解决或发生变化。旧链接不能继续操作/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "清理重复副本" })).not.toBeInTheDocument();
+  });
+
+  it("shows a current same-name environment issue without offering duplicate cleanup", async () => {
+    const problem = duplicateProblem({ problem_id: "problem-name", kind: "name_conflict" });
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-name",
+      problemFacade: createProblemFacade({ problems: [problem], probe_limitations: [] }),
+    });
+
+    expect(await screen.findByRole("heading", { name: "多个目录中存在重名技能" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "整理重复副本" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("多个使用位置出现同名但内容不同的 Skill，需要分别确认。");
+  });
+
+  it("does not offer duplicate cleanup for a same-skill issue with fewer than two entries", async () => {
+    const problem = duplicateProblem({ entries: duplicateProblem().entries.slice(0, 1) });
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-duplicate",
+      problemFacade: createProblemFacade({ problems: [problem], probe_limitations: [] }),
+    });
+
+    expect(await screen.findByRole("heading", { name: "同一技能出现在多个目录" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "整理重复副本" })).not.toBeInTheDocument();
+  });
+
   it("renders only the pending uncertain queue and keeps handled items in history", async () => {
     const { facade } = await renderPage(createFacade(workspaceFixture()));
 

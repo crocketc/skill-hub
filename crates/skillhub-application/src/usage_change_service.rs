@@ -22,19 +22,21 @@ use skillhub_core::api::{
 };
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::relationship::{
-    AgentDirectoryCapabilityFact, DeploymentRelationFact, FileRepresentation, PreparedUsageChange,
-    RelationGovernanceTargetKind, SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer,
-    UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus,
-    UsageChangeResult, UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
-    UsageEntryEvidence, UsageEntryKey, UsageForm, UsageHealthReason, UsageManagement,
-    UsageRecoveryPoint, UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
+    AgentDirectoryCapabilityFact, DeploymentRelationFact, DuplicateCleanupPreview,
+    EnvironmentProblemKind, FileRepresentation, PreparedUsageChange, RelationGovernanceTargetKind,
+    SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
+    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
+    UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
+    UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry, UsageEnvironmentKey,
+    UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement, UsageRecoveryPoint,
+    UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
 };
 use skillhub_core::{
     reparse_physical_id_for_path, symlink_physical_id_for_path, AppCommandResult, AppError,
     AppResult, DeploymentMode, ErrorCode, OperationId, OperationPhase, OperationProgress,
     OperationRecord, RecoveryAction, Severity, SkillId, TargetChange, TargetPlan, VersionId,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{CentralLibrary, Database, VersionStore};
 
 use crate::relationship_governance_service::{
     capture_path_chain, create_dir_link, PathChainSnapshot,
@@ -45,6 +47,7 @@ const OPERATION_KIND: &str = "usage_release";
 const MANAGE_OPERATION_KIND: &str = "usage_manage";
 const MANAGE_BATCH_OPERATION_KIND: &str = "usage_manage_batch";
 const MANAGED_USAGE_CHANGE_KIND: &str = "managed_usage_change";
+const DUPLICATE_CLEANUP_KIND: &str = "usage_duplicate_cleanup";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ReleaseJournal {
@@ -52,6 +55,33 @@ struct ReleaseJournal {
     prepared: PreparedUsageChange,
     plans: Vec<ReleasePlan>,
     completed: Vec<UsageChangeItemResult>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct DuplicateCleanupJournal {
+    request: PrepareUsageChange,
+    prepared: PreparedUsageChange,
+    backup_anchor_chain: PathChainSnapshot,
+    plans: Vec<DuplicateCleanupPlan>,
+    completed: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct DuplicateCleanupPlan {
+    entry_key: UsageEntryKey,
+    source_path: String,
+    fingerprint: String,
+    physical_identity: String,
+    retained: bool,
+    source_parent_chain: PathChainSnapshot,
+    backup_path: String,
+    backup_created: bool,
+    removal_started: bool,
+    removed: bool,
+    destination_path: Option<String>,
+    destination_parent_chain: Option<PathChainSnapshot>,
+    destination_started: bool,
+    destination_created: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -196,6 +226,10 @@ impl LocalApplicationFacade {
             validate_manage_request(&request)?;
             return self.prepare_usage_manage(request);
         }
+        if request.action == UsageChangeAction::ResolveDuplicate {
+            validate_duplicate_cleanup_request(&request)?;
+            return self.prepare_duplicate_cleanup(request);
+        }
         if matches!(
             request.action,
             UsageChangeAction::Sync | UsageChangeAction::Repair | UsageChangeAction::Restore
@@ -309,6 +343,7 @@ impl LocalApplicationFacade {
             consumers: Vec::new(),
             impacts: Vec::new(),
             limitations: Vec::new(),
+            duplicate_cleanup: None,
         };
         let mut plans = Vec::new();
         let library = self.library_runtime.snapshot()?;
@@ -416,7 +451,9 @@ impl LocalApplicationFacade {
                         return Err(operation_conflict("usage_restore_target_already_exists"));
                     }
                 }
-                UsageChangeAction::Release | UsageChangeAction::Manage => unreachable!(),
+                UsageChangeAction::Release
+                | UsageChangeAction::Manage
+                | UsageChangeAction::ResolveDuplicate => unreachable!(),
             }
             let observed_before = entry_fingerprint(&destination)?;
             let observed_identity = entry_identity(&destination)?;
@@ -534,7 +571,9 @@ impl LocalApplicationFacade {
                 UsageChangeAction::Sync => UsageChangeImpactAction::Synchronize,
                 UsageChangeAction::Repair => UsageChangeImpactAction::Repair,
                 UsageChangeAction::Restore => UsageChangeImpactAction::Restore,
-                UsageChangeAction::Release | UsageChangeAction::Manage => unreachable!(),
+                UsageChangeAction::Release
+                | UsageChangeAction::Manage
+                | UsageChangeAction::ResolveDuplicate => unreachable!(),
             };
             prepared.impacts.push(UsageChangeImpact {
                 relation_ids,
@@ -545,7 +584,9 @@ impl LocalApplicationFacade {
                     UsageChangeAction::Sync => "同步受管目标到技能库当前版本".to_owned(),
                     UsageChangeAction::Repair => "备份占用项并修复受管链接".to_owned(),
                     UsageChangeAction::Restore => "按原受管方式恢复目标".to_owned(),
-                    UsageChangeAction::Release | UsageChangeAction::Manage => unreachable!(),
+                    UsageChangeAction::Release
+                    | UsageChangeAction::Manage
+                    | UsageChangeAction::ResolveDuplicate => unreachable!(),
                 },
             });
             plans.push(ManagedUsageChangePlan {
@@ -862,6 +903,199 @@ impl LocalApplicationFacade {
         Ok(prepared)
     }
 
+    fn prepare_duplicate_cleanup(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
+        let fingerprint = request_fingerprint(&request)?;
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("duplicate_cleanup.prepare.database"))?;
+            if let Some(record) = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+            {
+                if record.kind != DUPLICATE_CLEANUP_KIND {
+                    return Err(operation_conflict("operation_id_reused"));
+                }
+                if record.request_fingerprint != fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", request.operation_id.to_string()));
+                }
+                let journal: DuplicateCleanupJournal = serde_json::from_value(record.recovery_data)
+                    .map_err(|_| operation_conflict("duplicate_cleanup_journal_invalid"))?;
+                return Ok(journal.prepared);
+            }
+        }
+
+        let journal = build_duplicate_cleanup_journal(self, request.clone(), OperationId::new())?;
+        let mut record =
+            OperationRecord::planned(request.operation_id, DUPLICATE_CLEANUP_KIND, fingerprint);
+        set_phase(
+            &mut record,
+            OperationPhase::Prepared,
+            0,
+            journal.plans.len() as u32,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.result = Some(serde_json::to_value(&journal.prepared).map_err(serialization_error)?);
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("duplicate_cleanup.prepare.database"))?;
+        if database
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some()
+        {
+            return Err(operation_conflict("operation_id_reused"));
+        }
+        database.operation_repository().insert_sync(&record)?;
+        Ok(journal.prepared)
+    }
+
+    fn commit_duplicate_cleanup(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
+        let _mutation = self
+            .relation_migration_lock
+            .lock()
+            .map_err(|_| internal("duplicate_cleanup.commit.mutation_lock"))?;
+        let (mut record, mut journal) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("duplicate_cleanup.commit.database"))?;
+            let record = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+                .ok_or_else(|| operation_conflict("usage_change_preview_missing"))?;
+            if record.kind != DUPLICATE_CLEANUP_KIND {
+                return Err(operation_conflict("operation_id_reused"));
+            }
+            let journal: DuplicateCleanupJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("duplicate_cleanup_journal_invalid"))?;
+            if journal.prepared.prepared_id != request.prepared_id {
+                return Err(operation_conflict("usage_change_preview_mismatch"));
+            }
+            if record.phase == OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(serialization_error)?
+                    .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
+            }
+            if record.phase != OperationPhase::Prepared {
+                return Err(operation_conflict("usage_change_preview_not_prepared"));
+            }
+            (record, journal)
+        };
+
+        let current = build_duplicate_cleanup_journal(
+            self,
+            journal.request.clone(),
+            journal.prepared.prepared_id,
+        )?;
+        if current.prepared != journal.prepared || current.plans != journal.plans {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        for plan in &journal.plans {
+            validate_duplicate_cleanup_plan(self, plan)?;
+        }
+
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("duplicate_cleanup.commit.database"))?;
+            set_phase(
+                &mut record,
+                OperationPhase::Applying,
+                0,
+                journal.plans.len() as u32,
+            );
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            database.operation_repository().update_sync(&record)?;
+        }
+
+        let apply_result = apply_duplicate_cleanup_files(self, &mut record, &mut journal);
+        if let Err(error) = apply_result {
+            let rollback_result = rollback_duplicate_cleanup_files(self, &mut record, &mut journal);
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("duplicate_cleanup.commit.database"))?;
+            if rollback_result.is_ok() {
+                set_phase(
+                    &mut record,
+                    OperationPhase::RolledBack,
+                    journal.completed.len() as u32,
+                    journal.plans.len() as u32,
+                );
+            } else {
+                set_phase(
+                    &mut record,
+                    OperationPhase::NeedsRecovery,
+                    journal.completed.len() as u32,
+                    journal.plans.len() as u32,
+                );
+            }
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            record.error_code = Some(error.code);
+            database.operation_repository().update_sync(&record)?;
+            return Err(error);
+        }
+
+        let verified = verify_duplicate_cleanup_rescan(self, &journal);
+        if let Err(error) = verified {
+            let rollback_result = rollback_duplicate_cleanup_files(self, &mut record, &mut journal);
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("duplicate_cleanup.verify.database"))?;
+            set_phase(
+                &mut record,
+                if rollback_result.is_ok() {
+                    OperationPhase::RolledBack
+                } else {
+                    OperationPhase::NeedsRecovery
+                },
+                journal.completed.len() as u32,
+                journal.plans.len() as u32,
+            );
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            record.error_code = Some(error.code);
+            database.operation_repository().update_sync(&record)?;
+            return Err(error);
+        }
+
+        let result = UsageChangeResult {
+            operation_id: journal.prepared.operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            item_results: Vec::new(),
+            recovery_required: false,
+        };
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("duplicate_cleanup.commit.database"))?;
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        set_phase(
+            &mut record,
+            OperationPhase::Committed,
+            journal.plans.len() as u32,
+            journal.plans.len() as u32,
+        );
+        database.operation_repository().update_sync(&record)?;
+        Ok(result)
+    }
+
     pub fn commit_usage_change(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
         let operation_kind = {
             let database = self
@@ -881,6 +1115,9 @@ impl LocalApplicationFacade {
         }
         if operation_kind.as_deref() == Some(MANAGED_USAGE_CHANGE_KIND) {
             return self.commit_managed_usage_change(request);
+        }
+        if operation_kind.as_deref() == Some(DUPLICATE_CLEANUP_KIND) {
+            return self.commit_duplicate_cleanup(request);
         }
 
         // Serialize against relationship migration and other usage changes in
@@ -1123,7 +1360,9 @@ impl LocalApplicationFacade {
                 UsageChangeAction::Sync
                 | UsageChangeAction::Repair
                 | UsageChangeAction::Restore => {}
-                UsageChangeAction::Release | UsageChangeAction::Manage => unreachable!(),
+                UsageChangeAction::Release
+                | UsageChangeAction::Manage
+                | UsageChangeAction::ResolveDuplicate => unreachable!(),
             }
         }
 
@@ -1891,6 +2130,7 @@ fn merge_manage_entry_previews(
         consumers: consumers.into_values().collect(),
         impacts: impacts.into_values().collect(),
         limitations: limitations.into_iter().collect(),
+        duplicate_cleanup: None,
     })
 }
 
@@ -2272,6 +2512,7 @@ fn build_usage_manage_entry_preview(
                         .collect()
                 })
                 .unwrap_or_default(),
+            duplicate_cleanup: None,
         },
         relation_facts,
     ))
@@ -2774,6 +3015,7 @@ fn build_release_journal(
         consumers,
         impacts,
         limitations,
+        duplicate_cleanup: None,
     };
     Ok(ReleaseJournal {
         request,
@@ -2781,6 +3023,699 @@ fn build_release_journal(
         plans,
         completed: Vec::new(),
     })
+}
+
+fn validate_duplicate_cleanup_request(request: &PrepareUsageChange) -> AppResult<()> {
+    let Some(problem_id) = request.problem_id.as_deref() else {
+        return Err(operation_conflict("duplicate_cleanup_problem_required"));
+    };
+    let Some(retain_entry_key) = request.retain_entry_key.as_ref() else {
+        return Err(operation_conflict(
+            "duplicate_cleanup_retained_entry_required",
+        ));
+    };
+    let selected = request
+        .selected_entry_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if request.action != UsageChangeAction::ResolveDuplicate
+        || problem_id.trim().is_empty()
+        || !request.relation_ids.is_empty()
+        || request.skill_id.is_some()
+        || request.selected_entry_keys.len() < 2
+        || selected.len() != request.selected_entry_keys.len()
+        || !selected.contains(retain_entry_key)
+        || request.requested_form.is_some()
+        || request.copy_disposition.is_some()
+        || request.content_basis.is_some()
+        || request.runtime_name.is_some()
+        || request.base_version_id.is_some()
+        || request
+            .non_recognized_destination
+            .as_ref()
+            .is_some_and(|path| path.trim().is_empty())
+    {
+        return Err(operation_conflict("duplicate_cleanup_selection_invalid"));
+    }
+    Ok(())
+}
+
+fn build_duplicate_cleanup_journal(
+    facade: &LocalApplicationFacade,
+    request: PrepareUsageChange,
+    prepared_id: OperationId,
+) -> AppResult<DuplicateCleanupJournal> {
+    validate_duplicate_cleanup_request(&request)?;
+    let (analysis, snapshots) = facade.scan_usage_environment_state()?;
+    let library = facade.library_runtime.snapshot()?;
+    let problem_id = request
+        .problem_id
+        .as_deref()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_problem_required"))?;
+    let problem = analysis
+        .problems
+        .into_iter()
+        .find(|problem| problem.problem_id == problem_id)
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_problem_stale"))?;
+    if problem.closed || problem.kind != EnvironmentProblemKind::SameSkill {
+        return Err(operation_conflict("duplicate_cleanup_not_same_skill"));
+    }
+    let expected_keys = problem
+        .entries
+        .iter()
+        .map(|entry| usage_entry_key(entry))
+        .collect::<BTreeSet<_>>();
+    let selected_keys = request
+        .selected_entry_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if expected_keys.len() < 2 || selected_keys != expected_keys {
+        return Err(operation_conflict("duplicate_cleanup_selection_stale"));
+    }
+
+    let affected_environments = problem
+        .environment_results
+        .iter()
+        .map(|result| usage_environment_identity(&result.environment))
+        .collect::<BTreeSet<_>>();
+    for snapshot in snapshots.iter().filter(|snapshot| {
+        affected_environments.contains(&usage_environment_identity(&snapshot.environment))
+    }) {
+        if !snapshot.probe_limitations.is_empty() {
+            return Err(operation_conflict(
+                "duplicate_cleanup_environment_incomplete",
+            ));
+        }
+    }
+
+    let mut entries =
+        BTreeMap::<UsageEntryKey, (UsageEnvironmentEntry, String, AgentDirectoryRole)>::new();
+    for entry in &problem.entries {
+        let key = usage_entry_key(entry);
+        let observations = snapshots
+            .iter()
+            .filter(|snapshot| {
+                affected_environments.contains(&usage_environment_identity(&snapshot.environment))
+            })
+            .filter_map(|snapshot| {
+                let observed = snapshot.discovered_entries.iter().find(|observed| {
+                    observed.directory_id == key.directory_id
+                        && observed.relative_entry_path == key.relative_entry_path
+                })?;
+                let directory = snapshot
+                    .recognized_directories
+                    .iter()
+                    .find(|directory| directory.directory_id == key.directory_id)?;
+                Some((
+                    observed.clone(),
+                    directory.path.clone(),
+                    directory.role,
+                    directory.recognition,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let Some((first, root, role, recognition)) = observations.first().cloned() else {
+            return Err(operation_conflict("duplicate_cleanup_entry_stale"));
+        };
+        if recognition != skillhub_core::relationship::DirectoryRecognition::Supported
+            || first.content_fingerprint != entry.content_fingerprint
+            || first.physical_identity != entry.physical_identity
+            || observations
+                .iter()
+                .any(|(other, other_root, other_role, other_recognition)| {
+                    other.content_fingerprint != first.content_fingerprint
+                        || other.physical_identity != first.physical_identity
+                        || other_root != &root
+                        || other_role != &role
+                        || *other_recognition != recognition
+                })
+        {
+            return Err(operation_conflict("duplicate_cleanup_entry_changed"));
+        }
+        let relative = safe_relative_entry_path(&key.relative_entry_path)?;
+        let root_path = fs::canonicalize(&root)
+            .map_err(|_| operation_conflict("duplicate_cleanup_directory_unavailable"))?;
+        let source = root_path.join(relative);
+        let canonical_source = fs::canonicalize(&source)
+            .map_err(|_| operation_conflict("duplicate_cleanup_entry_unavailable"))?;
+        if !canonical_source.starts_with(&root_path) {
+            return Err(operation_conflict(
+                "duplicate_cleanup_entry_outside_directory",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&source)
+            .map_err(|_| operation_conflict("duplicate_cleanup_entry_unavailable"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(operation_conflict("duplicate_cleanup_entry_changed"));
+        }
+        if skillhub_core::physical_id_for_path(&source).as_deref()
+            != entry.physical_identity.as_deref()
+        {
+            return Err(operation_conflict(
+                "duplicate_cleanup_entry_identity_changed",
+            ));
+        }
+        if library.store.hash_tree_read_only(&source).ok().as_deref()
+            != entry.content_fingerprint.as_deref()
+        {
+            return Err(operation_conflict(
+                "duplicate_cleanup_entry_fingerprint_changed",
+            ));
+        }
+        entries.insert(key, (first, source.to_string_lossy().into_owned(), role));
+    }
+
+    let retain = request
+        .retain_entry_key
+        .as_ref()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_retained_entry_required"))?;
+    let builtin_keys = entries
+        .iter()
+        .filter(|(_, (_, _, role))| *role == AgentDirectoryRole::Builtin)
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    if !builtin_keys.is_empty() && (builtin_keys.len() != 1 || builtin_keys[0] != *retain) {
+        return Err(operation_conflict(
+            "duplicate_cleanup_builtin_must_be_retained",
+        ));
+    }
+
+    let destination = request
+        .non_recognized_destination
+        .as_deref()
+        .map(PathBuf::from);
+    let destination_parent_chain = if let Some(destination) = destination.as_ref() {
+        validate_duplicate_destination(destination, &snapshots, &entries)?;
+        Some(capture_path_chain(destination.parent().ok_or_else(
+            || operation_conflict("duplicate_cleanup_destination_invalid"),
+        )?)?)
+    } else {
+        None
+    };
+    if destination.is_some() && !builtin_keys.is_empty() {
+        return Err(operation_conflict("duplicate_cleanup_builtin_cannot_move"));
+    }
+
+    let backup_anchor_chain =
+        capture_backup_anchor(&library.root, &library.central.paths().management_dir)?;
+    let management = backup_anchor_chain
+        .nodes
+        .first()
+        .map(|node| PathBuf::from(&node.path))
+        .ok_or_else(|| operation_conflict("usage_backup_anchor_unverified"))?;
+    let mut plans = Vec::with_capacity(entries.len());
+    for (index, (entry_key, (entry, source, _role))) in entries.iter().enumerate() {
+        let source_path = PathBuf::from(source);
+        let source_parent_chain = capture_path_chain(
+            source_path
+                .parent()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_entry_parent_missing"))?,
+        )?;
+        let backup_path = management
+            .join("usage-duplicate-backups")
+            .join(request.operation_id.to_string())
+            .join(index.to_string())
+            .join("entry");
+        if fs::symlink_metadata(&backup_path).is_ok() {
+            return Err(operation_conflict("duplicate_cleanup_backup_occupied"));
+        }
+        plans.push(DuplicateCleanupPlan {
+            entry_key: entry_key.clone(),
+            source_path: source.clone(),
+            fingerprint: entry
+                .content_fingerprint
+                .clone()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_fingerprint_missing"))?,
+            physical_identity: entry
+                .physical_identity
+                .clone()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_identity_missing"))?,
+            retained: entry_key == retain,
+            source_parent_chain,
+            backup_path: backup_path.to_string_lossy().into_owned(),
+            backup_created: false,
+            removal_started: false,
+            removed: false,
+            destination_path: if entry_key == retain {
+                destination
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+            } else {
+                None
+            },
+            destination_parent_chain: if entry_key == retain {
+                destination_parent_chain.clone()
+            } else {
+                None
+            },
+            destination_started: false,
+            destination_created: false,
+        });
+    }
+
+    let mut affected_skill_ids = problem
+        .entries
+        .iter()
+        .filter_map(|entry| entry.skill_id)
+        .collect::<Vec<_>>();
+    affected_skill_ids.sort_by_key(ToString::to_string);
+    affected_skill_ids.dedup();
+    let selected_entry_keys = entries.keys().cloned().collect::<Vec<_>>();
+    let prepared = PreparedUsageChange {
+        operation_id: request.operation_id,
+        prepared_id,
+        action: UsageChangeAction::ResolveDuplicate,
+        relationship_revision: problem
+            .environment_results
+            .iter()
+            .map(|result| result.relationship_revision.clone())
+            .min()
+            .unwrap_or_default(),
+        affected_skill_ids,
+        subject_versions: Vec::new(),
+        entry_evidence: Vec::new(),
+        consumers: Vec::new(),
+        impacts: Vec::new(),
+        limitations: Vec::new(),
+        duplicate_cleanup: Some(DuplicateCleanupPreview {
+            problem,
+            retain_entry_key: retain.clone(),
+            selected_entry_keys,
+            non_recognized_destination: destination
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned()),
+        }),
+    };
+    Ok(DuplicateCleanupJournal {
+        request,
+        prepared,
+        backup_anchor_chain,
+        plans,
+        completed: Vec::new(),
+    })
+}
+
+fn usage_entry_key(entry: &UsageEnvironmentEntry) -> UsageEntryKey {
+    UsageEntryKey {
+        directory_id: entry.directory_id.clone(),
+        relative_entry_path: entry.relative_entry_path.clone(),
+    }
+}
+
+fn usage_environment_identity(environment: &UsageEnvironmentKey) -> String {
+    format!(
+        "{}:{}",
+        environment.agent_client_id,
+        environment
+            .project_id
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    )
+}
+
+fn safe_relative_entry_path(relative: &str) -> AppResult<PathBuf> {
+    let path = Path::new(relative);
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(operation_conflict("duplicate_cleanup_entry_path_invalid"));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn validate_duplicate_destination(
+    destination: &Path,
+    snapshots: &[UsageEnvironmentSnapshot],
+    entries: &BTreeMap<UsageEntryKey, (UsageEnvironmentEntry, String, AgentDirectoryRole)>,
+) -> AppResult<()> {
+    if !destination.is_absolute()
+        || destination
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || destination.file_name().is_none()
+        || fs::symlink_metadata(destination).is_ok()
+    {
+        return Err(operation_conflict("duplicate_cleanup_destination_invalid"));
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?;
+    let parent_metadata = fs::symlink_metadata(parent)
+        .map_err(|_| operation_conflict("duplicate_cleanup_destination_parent_unavailable"))?;
+    if !parent_metadata.is_dir() || parent_metadata.file_type().is_symlink() {
+        return Err(operation_conflict(
+            "duplicate_cleanup_destination_parent_unavailable",
+        ));
+    }
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|_| operation_conflict("duplicate_cleanup_destination_parent_unavailable"))?;
+    let canonical_destination = canonical_parent.join(
+        destination
+            .file_name()
+            .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?,
+    );
+    for snapshot in snapshots {
+        for directory in &snapshot.recognized_directories {
+            let registered = fs::canonicalize(&directory.path)
+                .map_err(|_| operation_conflict("duplicate_cleanup_environment_incomplete"))?;
+            if canonical_destination.starts_with(&registered) {
+                return Err(operation_conflict(
+                    "duplicate_cleanup_destination_recognized",
+                ));
+            }
+        }
+    }
+    if entries.values().any(|(_, source, _)| {
+        let source = Path::new(source);
+        canonical_destination == source || canonical_destination.starts_with(source)
+    }) {
+        return Err(operation_conflict("duplicate_cleanup_destination_conflict"));
+    }
+    Ok(())
+}
+
+fn validate_duplicate_cleanup_plan(
+    facade: &LocalApplicationFacade,
+    plan: &DuplicateCleanupPlan,
+) -> AppResult<()> {
+    let source = Path::new(&plan.source_path);
+    let parent = source
+        .parent()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_entry_parent_missing"))?;
+    if capture_path_chain(parent)? != plan.source_parent_chain {
+        return Err(operation_conflict("duplicate_cleanup_entry_parent_changed"));
+    }
+    let metadata = fs::symlink_metadata(source)
+        .map_err(|_| operation_conflict("duplicate_cleanup_entry_unavailable"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || skillhub_core::physical_id_for_path(source).as_deref()
+            != Some(plan.physical_identity.as_str())
+        || duplicate_entry_fingerprint(facade, source)?.as_str() != plan.fingerprint
+        || fs::symlink_metadata(&plan.backup_path).is_ok()
+    {
+        return Err(operation_conflict("duplicate_cleanup_entry_changed"));
+    }
+    if let Some(parent_chain) = &plan.destination_parent_chain {
+        let destination = Path::new(
+            plan.destination_path
+                .as_deref()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?,
+        );
+        let destination_parent = destination
+            .parent()
+            .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?;
+        if capture_path_chain(destination_parent)? != *parent_chain
+            || fs::symlink_metadata(destination).is_ok()
+        {
+            return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+        }
+    }
+    Ok(())
+}
+
+fn apply_duplicate_cleanup_files(
+    facade: &LocalApplicationFacade,
+    record: &mut OperationRecord,
+    journal: &mut DuplicateCleanupJournal,
+) -> AppResult<()> {
+    let backup_anchor = verify_duplicate_backup_anchor(journal)?;
+    for index in 0..journal.plans.len() {
+        let removes_source =
+            !journal.plans[index].retained || journal.plans[index].destination_path.is_some();
+        if !removes_source {
+            continue;
+        }
+        let plan = &journal.plans[index];
+        verify_duplicate_backup_path(plan, &backup_anchor)?;
+        backup_entry(Path::new(&plan.source_path), Path::new(&plan.backup_path))?;
+        if duplicate_entry_fingerprint(facade, Path::new(&plan.backup_path))?.as_str()
+            != plan.fingerprint
+        {
+            return Err(operation_conflict(
+                "duplicate_cleanup_backup_verification_failed",
+            ));
+        }
+        journal.plans[index].backup_created = true;
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+    }
+
+    for index in 0..journal.plans.len() {
+        let destination = journal.plans[index].destination_path.clone();
+        let Some(destination) = destination else {
+            continue;
+        };
+        let plan = journal.plans[index].clone();
+        if !plan.retained || !plan.backup_created {
+            return Err(operation_conflict("duplicate_cleanup_journal_invalid"));
+        }
+        verify_duplicate_destination_parent(&plan)?;
+        journal.plans[index].destination_started = true;
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+        restore_entry(Path::new(&plan.backup_path), Path::new(&destination))?;
+        journal.plans[index].destination_created = true;
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+    }
+
+    for index in 0..journal.plans.len() {
+        let plan = &journal.plans[index];
+        let removes_source = !plan.retained || plan.destination_path.is_some();
+        if !removes_source {
+            continue;
+        }
+        validate_duplicate_cleanup_plan_after_backup(facade, plan)?;
+        journal.plans[index].removal_started = true;
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+        remove_plain_entry(Path::new(&journal.plans[index].source_path))?;
+        journal.plans[index].removed = true;
+        journal.completed.push(format!(
+            "{}:{}",
+            journal.plans[index].entry_key.directory_id,
+            journal.plans[index].entry_key.relative_entry_path
+        ));
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+    }
+    Ok(())
+}
+
+fn validate_duplicate_cleanup_plan_after_backup(
+    facade: &LocalApplicationFacade,
+    plan: &DuplicateCleanupPlan,
+) -> AppResult<()> {
+    let source = Path::new(&plan.source_path);
+    let parent = source
+        .parent()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_entry_parent_missing"))?;
+    if capture_path_chain(parent)? != plan.source_parent_chain
+        || !plan.backup_created
+        || duplicate_entry_fingerprint(facade, Path::new(&plan.backup_path))?.as_str()
+            != plan.fingerprint
+    {
+        return Err(operation_conflict(
+            "duplicate_cleanup_backup_verification_failed",
+        ));
+    }
+    let metadata = fs::symlink_metadata(source)
+        .map_err(|_| operation_conflict("duplicate_cleanup_entry_unavailable"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || skillhub_core::physical_id_for_path(source).as_deref()
+            != Some(plan.physical_identity.as_str())
+        || duplicate_entry_fingerprint(facade, source)?.as_str() != plan.fingerprint
+    {
+        return Err(operation_conflict("duplicate_cleanup_entry_changed"));
+    }
+    Ok(())
+}
+
+fn rollback_duplicate_cleanup_files(
+    facade: &LocalApplicationFacade,
+    record: &mut OperationRecord,
+    journal: &mut DuplicateCleanupJournal,
+) -> AppResult<()> {
+    let _backup_anchor = verify_duplicate_backup_anchor(journal)?;
+    for index in (0..journal.plans.len()).rev() {
+        let plan = journal.plans[index].clone();
+        if plan.destination_started || plan.destination_created {
+            let destination = Path::new(
+                plan.destination_path
+                    .as_deref()
+                    .ok_or_else(|| operation_conflict("duplicate_cleanup_journal_invalid"))?,
+            );
+            if fs::symlink_metadata(destination).is_ok() {
+                if plan.destination_parent_chain.as_ref()
+                    != destination
+                        .parent()
+                        .map(capture_path_chain)
+                        .transpose()?
+                        .as_ref()
+                {
+                    return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+                }
+                let metadata = fs::symlink_metadata(destination)
+                    .map_err(|_| operation_conflict("duplicate_cleanup_destination_changed"))?;
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+                }
+                if duplicate_entry_fingerprint(facade, destination)?.as_str() != plan.fingerprint {
+                    return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+                }
+                remove_plain_entry(destination)?;
+            }
+            journal.plans[index].destination_started = false;
+            journal.plans[index].destination_created = false;
+        }
+        if plan.removal_started && plan.backup_created {
+            let source = Path::new(&plan.source_path);
+            match fs::symlink_metadata(source) {
+                Ok(_) => {
+                    if duplicate_entry_fingerprint(facade, source)?.as_str() != plan.fingerprint {
+                        return Err(operation_conflict(
+                            "duplicate_cleanup_rollback_source_changed",
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let parent = source.parent().ok_or_else(|| {
+                        operation_conflict("duplicate_cleanup_entry_parent_missing")
+                    })?;
+                    if capture_path_chain(parent)? != plan.source_parent_chain {
+                        return Err(operation_conflict("duplicate_cleanup_entry_parent_changed"));
+                    }
+                    restore_entry(Path::new(&plan.backup_path), source)?;
+                }
+                Err(_) => {
+                    return Err(operation_conflict(
+                        "duplicate_cleanup_rollback_source_unavailable",
+                    ))
+                }
+            }
+            journal.plans[index].removed = false;
+            journal.plans[index].removal_started = false;
+        }
+        persist_duplicate_cleanup(facade, record, journal, OperationPhase::Applying)?;
+    }
+    Ok(())
+}
+
+fn verify_duplicate_cleanup_rescan(
+    facade: &LocalApplicationFacade,
+    journal: &DuplicateCleanupJournal,
+) -> AppResult<()> {
+    let (analysis, snapshots) = facade.scan_usage_environment_state()?;
+    let preview = journal
+        .prepared
+        .duplicate_cleanup
+        .as_ref()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_preview_missing"))?;
+    let environments = preview
+        .problem
+        .environment_results
+        .iter()
+        .map(|result| usage_environment_identity(&result.environment))
+        .collect::<BTreeSet<_>>();
+    for snapshot in snapshots.iter().filter(|snapshot| {
+        environments.contains(&usage_environment_identity(&snapshot.environment))
+    }) {
+        if !snapshot.probe_limitations.is_empty() {
+            return Err(operation_conflict("duplicate_cleanup_rescan_incomplete"));
+        }
+    }
+    let selected = preview
+        .selected_entry_keys
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if analysis.problems.iter().any(|problem| {
+        problem
+            .entries
+            .iter()
+            .any(|entry| selected.contains(&usage_entry_key(entry)))
+    }) {
+        return Err(operation_conflict("duplicate_cleanup_still_pending"));
+    }
+    Ok(())
+}
+
+fn persist_duplicate_cleanup(
+    facade: &LocalApplicationFacade,
+    record: &mut OperationRecord,
+    journal: &DuplicateCleanupJournal,
+    phase: OperationPhase,
+) -> AppResult<()> {
+    let database = facade
+        .database
+        .lock()
+        .map_err(|_| internal("duplicate_cleanup.persist.database"))?;
+    record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+    set_phase(
+        record,
+        phase,
+        journal.completed.len() as u32,
+        journal.plans.len() as u32,
+    );
+    database.operation_repository().update_sync(record)
+}
+
+fn verify_duplicate_backup_anchor(journal: &DuplicateCleanupJournal) -> AppResult<PathBuf> {
+    let anchor = journal
+        .backup_anchor_chain
+        .nodes
+        .first()
+        .map(|node| PathBuf::from(&node.path))
+        .ok_or_else(|| operation_conflict("usage_backup_anchor_unverified"))?;
+    let metadata = fs::symlink_metadata(&anchor)
+        .map_err(|_| operation_conflict("usage_backup_anchor_identity_changed"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || capture_path_chain(&anchor)? != journal.backup_anchor_chain
+        || anchor.file_name().and_then(|name| name.to_str()) != Some(".skillhub")
+    {
+        return Err(operation_conflict("usage_backup_anchor_identity_changed"));
+    }
+    Ok(anchor)
+}
+
+fn verify_duplicate_backup_path(plan: &DuplicateCleanupPlan, anchor: &Path) -> AppResult<()> {
+    let backup = Path::new(&plan.backup_path);
+    let parent = backup
+        .parent()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_backup_path_invalid"))?;
+    if !backup.starts_with(anchor) || parent.exists() || fs::symlink_metadata(backup).is_ok() {
+        return Err(operation_conflict("duplicate_cleanup_backup_path_invalid"));
+    }
+    Ok(())
+}
+
+fn verify_duplicate_destination_parent(plan: &DuplicateCleanupPlan) -> AppResult<()> {
+    let destination = Path::new(
+        plan.destination_path
+            .as_deref()
+            .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?,
+    );
+    let parent = destination
+        .parent()
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?;
+    if plan.destination_parent_chain.as_ref() != Some(&capture_path_chain(parent)?)
+        || fs::symlink_metadata(destination).is_ok()
+    {
+        return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+    }
+    Ok(())
+}
+
+fn duplicate_entry_fingerprint(facade: &LocalApplicationFacade, path: &Path) -> AppResult<String> {
+    facade
+        .library_runtime
+        .snapshot()?
+        .store
+        .hash_tree_read_only(path)
+        .map_err(|_| operation_conflict("duplicate_cleanup_fingerprint_unavailable"))
 }
 
 fn classify_release_action(
@@ -3832,6 +4767,146 @@ pub(crate) fn rollback_release_operation(
     database.operation_repository().update_sync(&record)
 }
 
+pub(crate) fn rollback_duplicate_cleanup_operation(
+    database: &Database,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let mut record = database
+        .operation_repository()
+        .get_sync(operation_id)?
+        .ok_or_else(|| operation_conflict("duplicate_cleanup_recovery_missing"))?;
+    if record.kind != DUPLICATE_CLEANUP_KIND {
+        return Ok(());
+    }
+    if !matches!(
+        record.phase,
+        OperationPhase::Prepared
+            | OperationPhase::Applying
+            | OperationPhase::Verifying
+            | OperationPhase::NeedsRecovery
+    ) {
+        return Err(operation_conflict("duplicate_cleanup_not_recoverable"));
+    }
+    let mut journal: DuplicateCleanupJournal = serde_json::from_value(record.recovery_data.clone())
+        .map_err(|_| operation_conflict("duplicate_cleanup_journal_invalid"))?;
+    let anchor = verify_duplicate_backup_anchor(&journal)?;
+    let library_root = anchor
+        .parent()
+        .ok_or_else(|| operation_conflict("usage_backup_anchor_identity_changed"))?;
+    let library = CentralLibrary::open_existing(library_root)
+        .map_err(|_| operation_conflict("usage_backup_anchor_identity_changed"))?;
+    let store = VersionStore::from_library(&library);
+
+    for index in (0..journal.plans.len()).rev() {
+        let plan = journal.plans[index].clone();
+        let fingerprint = |path: &Path| -> AppResult<String> {
+            store
+                .hash_tree_read_only(path)
+                .map_err(|_| operation_conflict("duplicate_cleanup_fingerprint_unavailable"))
+        };
+        if plan.destination_started || plan.destination_created {
+            let destination = Path::new(
+                plan.destination_path
+                    .as_deref()
+                    .ok_or_else(|| operation_conflict("duplicate_cleanup_journal_invalid"))?,
+            );
+            let parent = destination
+                .parent()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?;
+            if plan.destination_parent_chain.as_ref() != Some(&capture_path_chain(parent)?) {
+                return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+            }
+            match fs::symlink_metadata(destination) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink()
+                        || !metadata.is_dir()
+                        || fingerprint(destination)?.as_str() != plan.fingerprint
+                    {
+                        return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+                    }
+                    remove_plain_entry(destination)?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(operation_conflict("duplicate_cleanup_destination_changed")),
+            }
+            journal.plans[index].destination_started = false;
+            journal.plans[index].destination_created = false;
+        }
+
+        if plan.removal_started {
+            if !plan.backup_created {
+                return Err(operation_conflict("duplicate_cleanup_backup_missing"));
+            }
+            let backup = Path::new(&plan.backup_path);
+            if fingerprint(backup)?.as_str() != plan.fingerprint {
+                return Err(operation_conflict(
+                    "duplicate_cleanup_backup_verification_failed",
+                ));
+            }
+            let source = Path::new(&plan.source_path);
+            let parent = source
+                .parent()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_entry_parent_missing"))?;
+            if capture_path_chain(parent)? != plan.source_parent_chain {
+                return Err(operation_conflict("duplicate_cleanup_entry_parent_changed"));
+            }
+            match fs::symlink_metadata(source) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink()
+                        || !metadata.is_dir()
+                        || fingerprint(source)?.as_str() != plan.fingerprint
+                    {
+                        return Err(operation_conflict(
+                            "duplicate_cleanup_rollback_source_changed",
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    restore_entry(backup, source)?;
+                }
+                Err(_) => {
+                    return Err(operation_conflict(
+                        "duplicate_cleanup_rollback_source_unavailable",
+                    ))
+                }
+            }
+            journal.plans[index].removed = false;
+            journal.plans[index].removal_started = false;
+        }
+        persist_duplicate_cleanup_database(
+            database,
+            &mut record,
+            &journal,
+            OperationPhase::NeedsRecovery,
+        )?;
+    }
+
+    set_phase(
+        &mut record,
+        OperationPhase::RolledBack,
+        journal.plans.len() as u32,
+        journal.plans.len() as u32,
+    );
+    record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+    database.operation_repository().update_sync(&record)
+}
+
+fn persist_duplicate_cleanup_database(
+    database: &Database,
+    record: &mut OperationRecord,
+    journal: &DuplicateCleanupJournal,
+    phase: OperationPhase,
+) -> AppResult<()> {
+    record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+    set_phase(
+        record,
+        phase,
+        journal.completed.len() as u32,
+        journal.plans.len() as u32,
+    );
+    database.operation_repository().update_sync(record)
+}
+
 pub(crate) fn complete_release_operation(
     database: &Database,
     operation_id: OperationId,
@@ -4139,7 +5214,9 @@ fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppRes
             None | Some(UsageContentBasis::LibraryCurrent)
         ),
         UsageChangeAction::Restore => request.content_basis.is_none(),
-        UsageChangeAction::Release | UsageChangeAction::Manage => false,
+        UsageChangeAction::Release
+        | UsageChangeAction::Manage
+        | UsageChangeAction::ResolveDuplicate => false,
     };
     if !matches!(
         request.action,

@@ -27,10 +27,10 @@ pub use usage::{
     UsageRelationTarget, UsageRelationView,
 };
 pub use usage_change::{
-    PreparedUsageChange, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
-    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
-    UsageContentBasis, UsageCopyDisposition, UsageDecisionRecord, UsageEntryEvidence,
-    UsageRecoveryPoint, UsageSubjectVersion,
+    DuplicateCleanupPreview, PreparedUsageChange, UsageChangeAction, UsageChangeConsumer,
+    UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus,
+    UsageChangeResult, UsageContentBasis, UsageCopyDisposition, UsageDecisionRecord,
+    UsageEntryEvidence, UsageRecoveryPoint, UsageSubjectVersion,
 };
 pub use validation::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,

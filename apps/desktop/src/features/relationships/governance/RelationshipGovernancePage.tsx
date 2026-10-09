@@ -51,6 +51,7 @@ import {
   summarizeRowExecutability,
 } from "./api";
 import { createGovernanceBatchRunner } from "./governanceBatchOperation";
+import { conflictEnvironmentProblemHref } from "../decisions/conflictDecisions";
 import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
@@ -773,6 +774,21 @@ export function RelationshipGovernancePage({
               </li>
             ))}
           </ul>
+          {currentEnvironmentProblem.kind === "same_skill" && currentEnvironmentProblem.entries.length > 1 ? (
+            <div className="sh-governance__problem-actions">
+              <Button
+                data-testid="governance-resolve-duplicate"
+                onClick={() => navigate(conflictEnvironmentProblemHref(
+                  currentEnvironmentProblem.problem_id,
+                  `${location.pathname}${location.search}`,
+                ))}
+                size="sm"
+                variant="secondary"
+              >
+                {t("relationships.governance.duplicateCleanup.open")}
+              </Button>
+            </div>
+          ) : null}
         </section>
       ) : null}
       {usageOverviewQuery.isSuccess && requestedRelationId && !matchingDeepLinkRow && (usageContextStatus === "active" || usageContextStatus === null) ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}

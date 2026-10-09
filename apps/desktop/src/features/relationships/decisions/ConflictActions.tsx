@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import { useTranslation } from "react-i18next";
-import type { ConflictWorkspaceCase } from "../../../api/bindings";
+import type { ConflictWorkspaceCase, EnvironmentProblemView } from "../../../api/bindings";
 import { describeNativeError } from "../../../api/nativeErrors";
 import { Button } from "../../../ui/Button";
 import {
@@ -12,7 +12,8 @@ import {
 import type { ConflictAiAnalysisState, ResolvableConflictDecision } from "./useConflictDecisions";
 import { ConflictAiConclusion } from "./ConflictAiConclusion";
 
-export interface ConflictActionsProps {
+interface ConflictCaseActionsProps {
+  mode?: "case";
   caseEntry: ConflictWorkspaceCase;
   ai: ConflictAiAnalysisState;
   aiAvailable: boolean | null;
@@ -24,22 +25,57 @@ export interface ConflictActionsProps {
   resolving: boolean;
 }
 
+interface EnvironmentProblemActionsProps {
+  mode: "environment_problem";
+  problem: EnvironmentProblemView;
+  onResolveDuplicate: () => void;
+  onNotNow: () => void;
+  resolving?: boolean;
+}
+
+export type ConflictActionsProps = ConflictCaseActionsProps | EnvironmentProblemActionsProps;
+
 /**
  * 处理决定区（任务 7）：可选 AI 分析（三个范围）+ 三个明确决定入口。
  * 「按建议」执行的是映射后的具体人工决定，绝不只写 adopted；
  * 「纳入集中库管理」只跳治理预览；「暂不处理」不写任何东西。
  */
-export function ConflictActions({
-  ai,
-  aiAvailable,
-  caseEntry,
-  onCentralize,
-  onFollowSuggestion,
-  onNotNow,
-  onResolve,
-  resolving,
-}: ConflictActionsProps): JSX.Element {
+export function ConflictActions(props: ConflictActionsProps): JSX.Element {
   const { t } = useTranslation();
+  if (props.mode === "environment_problem") {
+    const canResolveDuplicate = props.problem.kind === "same_skill" && props.problem.entries.length > 1;
+    return (
+      <section aria-label={t("relationships.decisions.actions.heading")} className="sh-conflict-actions">
+        <h3>{t("relationships.decisions.actions.heading")}</h3>
+        <div className="sh-conflict-actions__buttons">
+          {canResolveDuplicate ? (
+            <Button disabled={props.resolving} onClick={props.onResolveDuplicate} size="sm">
+              {t("relationships.governance.duplicateCleanup.open")}
+            </Button>
+          ) : null}
+          <Button disabled={props.resolving} onClick={props.onNotNow} size="sm" variant="ghost">
+            {t("relationships.decisions.actions.notNow")}
+          </Button>
+        </div>
+        {props.problem.kind === "name_conflict" ? (
+          <p className="sh-settings-local-note" role="status">
+            {t("pending.reasons.environment_problem.name_conflict")}
+          </p>
+        ) : null}
+      </section>
+    );
+  }
+
+  const {
+    ai,
+    aiAvailable,
+    caseEntry,
+    onCentralize,
+    onFollowSuggestion,
+    onNotNow,
+    onResolve,
+    resolving,
+  } = props;
   const { case: caseFact, latest_analysis: latestAnalysis, recommended_decision } = caseEntry;
   const aiUsable = aiAvailable === true;
   const { lastRun } = ai;

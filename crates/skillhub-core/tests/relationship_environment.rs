@@ -41,6 +41,8 @@ fn entry(
 ) -> UsageEnvironmentEntry {
     UsageEnvironmentEntry {
         directory_id: directory_id.to_owned(),
+        directory_path: Some(format!("/targets/{directory_id}")),
+        directory_role: None,
         relative_entry_path: relative_entry_path.to_owned(),
         runtime_name: Some(runtime_name.to_owned()),
         content_fingerprint: Some(fingerprint.to_owned()),
