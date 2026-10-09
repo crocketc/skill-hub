@@ -18,12 +18,13 @@ use skillhub_core::api::{
     CommitUsageChange, CreateSkill, GetRelationshipOverview, ListSkills, PrepareRelationMigration,
     PrepareUsageChange, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
+use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
     DirectoryRole, FileRepresentation, OwnershipState, RelationHealthReason, RelationshipType,
-    UsageChangeAction, UsageChangeImpactAction, UsageChangeItemStatus, UsageCopyDisposition,
-    UsageDecision, UsageEntryKey, UsageForm,
+    UsageChangeAction, UsageChangeImpactAction, UsageChangeItemStatus, UsageContentBasis,
+    UsageCopyDisposition, UsageDecision, UsageEntryKey, UsageForm,
 };
 use skillhub_core::{
     AppCommand, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode, OperationId,
@@ -98,6 +99,11 @@ fn skip_if_link_creation_unavailable() -> bool {
 fn write_skill(path: &Path) {
     std::fs::create_dir_all(path).expect("create skill directory");
     std::fs::write(path.join("SKILL.md"), SKILL_BODY).expect("write skill body");
+}
+
+fn write_skill_body(path: &Path, body: &str) {
+    std::fs::create_dir_all(path).expect("create skill directory");
+    std::fs::write(path.join("SKILL.md"), body).expect("write skill body");
 }
 
 #[cfg(unix)]
@@ -346,22 +352,179 @@ fn prepare_manage(
     form: UsageForm,
 ) -> skillhub_core::relationship::PreparedUsageChange {
     facade
-        .prepare_usage_change(PrepareUsageChange {
-            operation_id: OperationId::new(),
-            action: UsageChangeAction::Manage,
-            relation_ids: vec![relation_id.to_owned()],
-            problem_id: None,
-            skill_id: None,
-            requested_form: Some(form),
-            copy_disposition: None,
-            content_basis: None,
-            retain_entry_key: None,
-            selected_entry_keys: Vec::new(),
-            runtime_name: None,
-            base_version_id: None,
-            non_recognized_destination: None,
-        })
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![relation_id.to_owned()],
+            form,
+            UsageContentBasis::LibraryCurrent,
+        ))
         .expect("prepare manage")
+}
+
+fn manage_request(
+    operation_id: OperationId,
+    relation_ids: Vec<String>,
+    form: UsageForm,
+    content_basis: UsageContentBasis,
+) -> PrepareUsageChange {
+    PrepareUsageChange {
+        operation_id,
+        action: UsageChangeAction::Manage,
+        relation_ids,
+        problem_id: None,
+        skill_id: None,
+        requested_form: Some(form),
+        copy_disposition: None,
+        content_basis: Some(content_basis),
+        retain_entry_key: None,
+        selected_entry_keys: Vec::new(),
+        runtime_name: None,
+        base_version_id: None,
+        non_recognized_destination: None,
+    }
+}
+
+fn add_usage_relation(
+    fixture: &Fixture,
+    relation_id: &str,
+    name: &str,
+    body: &str,
+    managed: bool,
+) -> PathBuf {
+    let path = fixture
+        .entry_path
+        .parent()
+        .expect("Agent entries directory")
+        .join(name);
+    write_skill_body(&path, body);
+    let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&path)
+        .expect("usage entry fingerprint");
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let mut relation = database
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .into_iter()
+        .find(|relation| relation.relation_id == RELATION_ID)
+        .expect("fixture relationship")
+        .clone();
+    relation.relation_id = relation_id.to_owned();
+    relation.path = path.to_string_lossy().into_owned();
+    relation.path_key.clear();
+    relation.relationship = RelationshipType::ManagedCopy;
+    relation.file_representation = FileRepresentation::Copy;
+    relation.ownership = if managed {
+        OwnershipState::SkillhubManaged
+    } else {
+        OwnershipState::ObservedUnmanaged
+    };
+    relation.link_target_path = None;
+    relation.content_fingerprint = fingerprint;
+    relation.match_state = ObservedMatchState::ContentVerified;
+    relation.health_reasons = Some(Vec::new());
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("add usage relation");
+    path
+}
+
+fn add_managed_usage_copy(fixture: &Fixture, body: &str) -> (String, PathBuf) {
+    let target_root = fixture
+        .entry_path
+        .parent()
+        .expect("registered Agent skill directory")
+        .to_path_buf();
+    let runtime_name = fixture
+        .facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .catalog_repository()
+        .expect("catalog repository")
+        .get_sync(fixture.skill_id)
+        .expect("skill lookup")
+        .expect("subject skill")
+        .runtime_name()
+        .to_owned();
+    let destination = target_root.join(&runtime_name);
+    write_skill_body(&destination, body);
+    let fingerprint = skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&destination)
+        .expect("managed target fingerprint");
+    let target_id =
+        skillhub_core::physical_id_for_path(&target_root).expect("managed target identity");
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT OR IGNORE INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, ?2, 'global', ?3, 0)",
+            rusqlite::params![target_id, CLIENT_ID, target_root.to_string_lossy().to_string()],
+        )
+        .expect("seed managed target row");
+    let version_id = database
+        .current_version(fixture.skill_id)
+        .expect("current subject version")
+        .expect("subject has current version");
+    drop(database);
+    let library = fixture
+        .facade
+        .library_runtime()
+        .snapshot()
+        .expect("library snapshot");
+    let version = library
+        .store
+        .list(fixture.skill_id)
+        .expect("version list")
+        .into_iter()
+        .find(|version| version.id == version_id)
+        .expect("current version record");
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    database
+        .record_version(fixture.skill_id, &version)
+        .expect("register deployment version");
+    let deployment_id = skillhub_core::DeploymentId::new();
+    database
+        .deployment_repository()
+        .insert_sync(&skillhub_core::DeploymentRecord {
+            id: deployment_id,
+            skill_id: fixture.skill_id,
+            version_id,
+            target_id,
+            state: skillhub_core::DeploymentState::Deployed,
+            mode: skillhub_core::DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name,
+            expected_hash: fingerprint.clone(),
+            observed_hash: Some(fingerprint),
+        })
+        .expect("seed managed-copy deployment");
+    (format!("managed:{deployment_id}"), destination)
+}
+
+fn change_usage_entry_body(fixture: &Fixture, relation_id: &str, body: &str) {
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let mut relation = database
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .into_iter()
+        .find(|relation| relation.relation_id == relation_id)
+        .expect("usage relation");
+    let path = PathBuf::from(&relation.path);
+    std::fs::write(path.join("SKILL.md"), body).expect("write changed entry body");
+    relation.content_fingerprint =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&path)
+            .expect("changed entry fingerprint");
+    relation.match_state = ObservedMatchState::Diverged;
+    relation.health_reasons = Some(vec![RelationHealthReason::ContentChanged]);
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("update usage relation facts");
 }
 
 #[tokio::test]
@@ -384,7 +547,7 @@ async fn copy_only_conversion_creates_managed_copy_without_creating_a_second_sub
             prepared_id: prepared.prepared_id,
         })
         .expect("commit explicit full-copy conversion");
-    assert!(!result.recovery_required);
+    assert!(!result.recovery_required, "{result:#?}");
     assert_eq!(result.item_results.len(), 1);
     assert_eq!(
         result.item_results[0].status,
@@ -423,6 +586,257 @@ async fn copy_only_conversion_creates_managed_copy_without_creating_a_second_sub
 }
 
 #[tokio::test]
+async fn manage_batch_uses_the_requested_full_copy_form_for_every_entry() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let second_path = add_usage_relation(
+        &fixture,
+        SECOND_TARGET_RELATION_ID,
+        "notes-second",
+        SKILL_BODY,
+        false,
+    );
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into(), SECOND_TARGET_RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::LibraryCurrent,
+        ))
+        .expect("prepare full-copy conversion for both entries");
+    assert_eq!(prepared.impacts.len(), 2);
+    let result = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("commit both full-copy conversions");
+    assert_eq!(result.item_results.len(), 2);
+    assert!(result
+        .item_results
+        .iter()
+        .all(|item| item.status == UsageChangeItemStatus::Applied));
+    assert!(!std::fs::symlink_metadata(&fixture.entry_path)
+        .expect("first converted entry")
+        .file_type()
+        .is_symlink());
+    assert!(!std::fs::symlink_metadata(&second_path)
+        .expect("second converted entry")
+        .file_type()
+        .is_symlink());
+}
+
+#[tokio::test]
+async fn original_entry_preview_covers_every_managed_target_and_commit_versions_the_subject_once() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let (managed_relation_id, managed_path) = add_managed_usage_copy(&fixture, SKILL_BODY);
+    change_usage_entry_body(&fixture, RELATION_ID, "# Original entry\n");
+    let library = fixture
+        .facade
+        .library_runtime()
+        .snapshot()
+        .expect("library snapshot");
+    let previous_version = library.current(fixture.skill_id).expect("current version");
+    let previous_version_count = library.list(fixture.skill_id).expect("versions").len();
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::OriginalEntry,
+        ))
+        .expect("prepare original-entry adoption preview");
+    assert_eq!(prepared.affected_skill_ids, vec![fixture.skill_id]);
+    assert_eq!(prepared.subject_versions.len(), 1);
+    assert_eq!(
+        prepared.impacts.len(),
+        2,
+        "the other managed target is affected"
+    );
+    assert!(prepared
+        .impacts
+        .iter()
+        .any(|impact| impact.relation_ids.contains(&managed_relation_id)));
+
+    let result = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("commit original-entry adoption and conversion");
+    assert!(!result.recovery_required, "{result:#?}");
+    assert!(result
+        .item_results
+        .iter()
+        .all(|item| item.status == UsageChangeItemStatus::Applied));
+    let current = library.current(fixture.skill_id).expect("adopted version");
+    assert_ne!(current, previous_version);
+    assert_eq!(
+        library.list(fixture.skill_id).expect("versions").len(),
+        previous_version_count + 1
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.subject_path.join("SKILL.md"))
+            .expect("adopted subject content"),
+        "# Original entry\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(managed_path.join("SKILL.md")).expect("updated managed target"),
+        "# Original entry\n"
+    );
+    assert!(
+        fixture.original_path.is_dir(),
+        "the original source is preserved"
+    );
+}
+
+#[tokio::test]
+async fn library_current_basis_replaces_a_diverged_entry_and_keeps_its_backup() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    change_usage_entry_body(&fixture, RELATION_ID, "# Keep in backup\n");
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::LibraryCurrent,
+        ))
+        .expect("prepare library-current conversion");
+
+    let result = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("commit selected library-current content");
+    assert!(!result.recovery_required, "{result:#?}");
+    assert_eq!(
+        result.item_results[0].status,
+        UsageChangeItemStatus::Applied
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.entry_path.join("SKILL.md"))
+            .expect("managed entry content"),
+        SKILL_BODY
+    );
+    let recovery = result.item_results[0]
+        .recovery_point
+        .as_ref()
+        .expect("previous original has a recovery copy");
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&recovery.path).join("SKILL.md"))
+            .expect("backup content"),
+        "# Keep in backup\n"
+    );
+}
+
+#[tokio::test]
+async fn original_entry_batch_rejects_different_content_baselines() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    add_usage_relation(
+        &fixture,
+        SECOND_TARGET_RELATION_ID,
+        "notes-different",
+        "# Different original\n",
+        false,
+    );
+    change_usage_entry_body(&fixture, RELATION_ID, "# First original\n");
+    let error = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into(), SECOND_TARGET_RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::OriginalEntry,
+        ))
+        .expect_err("different original bodies cannot pick a version silently");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("reason").and_then(Value::as_str),
+        Some("usage_change_original_basis_ambiguous")
+    );
+}
+
+#[tokio::test]
+async fn changed_subject_version_invalidates_a_prepared_manage_preview() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::LibraryCurrent,
+        ))
+        .expect("prepare management preview");
+    let library = fixture
+        .facade
+        .library_runtime()
+        .snapshot()
+        .expect("library snapshot");
+    let next_source = fixture._workspace.path().join("next-version");
+    write_skill_body(&next_source, "# Next version\n");
+    let next_version = library
+        .capture(fixture.skill_id, &next_source)
+        .expect("capture next subject version");
+    let skill = fixture
+        .facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .catalog_repository()
+        .expect("catalog repository")
+        .get_sync(fixture.skill_id)
+        .expect("skill lookup")
+        .expect("subject skill");
+    library
+        .central
+        .materialize_current_skill(&skill, &next_version.id)
+        .expect("materialize changed subject version");
+    library
+        .store
+        .set_current(fixture.skill_id, &next_version.id)
+        .expect("advance current version");
+    fixture
+        .facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .record_current_version(fixture.skill_id, &next_version)
+        .expect("advance database current version");
+
+    let error = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect_err("subject version drift invalidates the preview");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error.params.get("reason").and_then(Value::as_str),
+        Some("usage_change_preview_stale")
+    );
+    let relation = fixture
+        .facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .into_iter()
+        .find(|relation| relation.relation_id == RELATION_ID)
+        .expect("usage relation");
+    assert_eq!(relation.ownership, OwnershipState::ObservedUnmanaged);
+}
+
+#[tokio::test]
 async fn manage_preview_rebuilds_when_persisted_preview_attachment_is_missing() {
     let fixture = fixture(EntryKind::FullCopy, false).await;
     let request = PrepareUsageChange {
@@ -433,7 +847,7 @@ async fn manage_preview_rebuilds_when_persisted_preview_attachment_is_missing() 
         skill_id: None,
         requested_form: Some(UsageForm::FullCopy),
         copy_disposition: None,
-        content_basis: None,
+        content_basis: Some(UsageContentBasis::LibraryCurrent),
         retain_entry_key: None,
         selected_entry_keys: Vec::new(),
         runtime_name: None,
@@ -486,7 +900,7 @@ async fn shared_link_conversion_is_rejected_by_usage_and_legacy_entrypoints() {
             skill_id: None,
             requested_form: Some(UsageForm::Link),
             copy_disposition: None,
-            content_basis: None,
+            content_basis: Some(UsageContentBasis::LibraryCurrent),
             retain_entry_key: None,
             selected_entry_keys: Vec::new(),
             runtime_name: None,
@@ -643,7 +1057,7 @@ async fn builtin_relationship_cannot_be_managed_into_a_deployment() {
             skill_id: None,
             requested_form: Some(UsageForm::FullCopy),
             copy_disposition: None,
-            content_basis: None,
+            content_basis: Some(UsageContentBasis::LibraryCurrent),
             retain_entry_key: None,
             selected_entry_keys: Vec::new(),
             runtime_name: None,
@@ -690,7 +1104,7 @@ async fn permission_failure_during_manage_keeps_original_entry() {
         skill_id: None,
         requested_form: Some(UsageForm::FullCopy),
         copy_disposition: None,
-        content_basis: None,
+        content_basis: Some(UsageContentBasis::LibraryCurrent),
         retain_entry_key: None,
         selected_entry_keys: Vec::new(),
         runtime_name: None,
@@ -895,7 +1309,7 @@ async fn manage_shared_entry_converts_all_relation_evidence_once() {
             skill_id: None,
             requested_form: Some(UsageForm::FullCopy),
             copy_disposition: None,
-            content_basis: None,
+            content_basis: Some(UsageContentBasis::LibraryCurrent),
             retain_entry_key: None,
             selected_entry_keys: Vec::new(),
             runtime_name: None,
@@ -3017,6 +3431,7 @@ async fn legacy_release_and_detach_commands_require_usage_preview() {
             skillhub_core::api::PrepareRelationGovernanceBatch {
                 action: skillhub_core::api::RelationGovernanceBatchAction::RetainSourceCopy,
                 relation_ids: vec![RELATION_ID.into()],
+                requested_form: None,
                 confirmations: Default::default(),
             },
         ),

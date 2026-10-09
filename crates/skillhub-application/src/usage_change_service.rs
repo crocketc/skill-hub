@@ -25,7 +25,7 @@ use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, FileRepresentation, PreparedUsageChange,
     RelationGovernanceTargetKind, SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer,
     UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus,
-    UsageChangeResult, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
+    UsageChangeResult, UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
     UsageEntryEvidence, UsageEntryKey, UsageForm, UsageHealthReason, UsageManagement,
     UsageRecoveryPoint, UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
 };
@@ -43,6 +43,7 @@ use crate::LocalApplicationFacade;
 
 const OPERATION_KIND: &str = "usage_release";
 const MANAGE_OPERATION_KIND: &str = "usage_manage";
+const MANAGE_BATCH_OPERATION_KIND: &str = "usage_manage_batch";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ReleaseJournal {
@@ -78,6 +79,49 @@ struct ReleasePlan {
     target_removed: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ManageBatchJournal {
+    request: PrepareUsageChange,
+    prepared: PreparedUsageChange,
+    plans: Vec<ManageBatchPlan>,
+    adoptions: Vec<ManageOriginalEntryPlan>,
+    adoption_results: Vec<UsageOriginalEntryAdoptionResult>,
+    completed: Vec<UsageChangeItemResult>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct UsageOriginalEntryAdoptionResult {
+    pub(crate) skill_id: SkillId,
+    pub(crate) version_id: Option<VersionId>,
+    pub(crate) rewrites: Vec<UsageOriginalEntryRewriteResult>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct UsageOriginalEntryRewriteResult {
+    pub(crate) relation_id: String,
+    pub(crate) path: String,
+    pub(crate) rewritten: bool,
+    pub(crate) reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ManageBatchPlan {
+    relation_id: String,
+    child_operation_id: OperationId,
+    target_mode: RelationMigrationTargetMode,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ManageOriginalEntryPlan {
+    skill_id: SkillId,
+    operation_id: OperationId,
+    path: String,
+    fingerprint: String,
+    previous_version_id: Option<VersionId>,
+    #[serde(default)]
+    completed: bool,
+}
+
 #[derive(Clone)]
 struct RawFacts {
     deployments: Vec<DeploymentRelationFact>,
@@ -111,6 +155,14 @@ pub(crate) fn legacy_release_endpoint_error() -> AppError {
     AppError::new(ErrorCode::OperationConflict, Severity::Error)
         .with_param("reason", "usage_change_preview_required")
         .with_action(RecoveryAction::Retry)
+}
+
+pub(crate) fn manage_form_required_error() -> AppError {
+    operation_conflict("usage_manage_form_required")
+}
+
+pub(crate) fn manage_form_not_applicable_error() -> AppError {
+    operation_conflict("usage_change_field_not_applicable")
 }
 
 impl LocalApplicationFacade {
@@ -189,6 +241,46 @@ impl LocalApplicationFacade {
     }
 
     fn prepare_usage_manage(&self, request: PrepareUsageChange) -> AppResult<PreparedUsageChange> {
+        if request.relation_ids.len() != 1
+            || request.content_basis == Some(UsageContentBasis::OriginalEntry)
+            || (request.content_basis == Some(UsageContentBasis::LibraryCurrent)
+                && !self.usage_entry_matches_library_current(&request.relation_ids[0])?)
+        {
+            return self.prepare_usage_manage_batch(request);
+        }
+        self.prepare_usage_manage_single_current(request)
+    }
+
+    fn usage_entry_matches_library_current(&self, relation_id: &str) -> AppResult<bool> {
+        let relation = self
+            .database
+            .lock()
+            .map_err(|_| internal("usage_manage.prepare.database"))?
+            .relationship_repository()
+            .list_relations()?
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .ok_or_else(|| operation_conflict("usage_change_relation_missing"))?;
+        let skill_id = relation
+            .skill_id
+            .ok_or_else(|| operation_conflict("usage_subject_unverified"))?;
+        let library = self.library_runtime.snapshot()?;
+        let Some((record, Some(_current_version))) =
+            library.central.load_portable_skill(skill_id)?
+        else {
+            return Err(operation_conflict("usage_subject_version_missing"));
+        };
+        let current_path = library
+            .central
+            .visible_skill_path_for_runtime(skill_id, &record.runtime_name);
+        let current_fingerprint = DeploymentFilesystem::hash_tree(&current_path)?;
+        Ok(relation.content_fingerprint == current_fingerprint)
+    }
+
+    fn prepare_usage_manage_single_current(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
         let fingerprint = request_fingerprint(&request)?;
         let existing = {
             let database = self
@@ -230,10 +322,184 @@ impl LocalApplicationFacade {
                 confirmation_token: None,
             },
             fingerprint,
+            request.content_basis == Some(UsageContentBasis::LibraryCurrent),
         )?;
         let (preview, relation_facts) = build_usage_manage_preview(self, &request, &relation)?;
         self.attach_usage_manage_preview(request.operation_id, preview.clone(), relation_facts)?;
         Ok(preview)
+    }
+
+    fn prepare_usage_manage_batch(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
+        let fingerprint = request_fingerprint(&request)?;
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("usage_manage_batch.prepare.database"))?;
+            if let Some(record) = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+            {
+                if record.kind != MANAGE_BATCH_OPERATION_KIND {
+                    return Err(operation_conflict("operation_id_reused"));
+                }
+                if record.request_fingerprint != fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", request.operation_id.to_string()));
+                }
+                let journal: ManageBatchJournal = serde_json::from_value(record.recovery_data)
+                    .map_err(|_| operation_conflict("usage_manage_batch_journal_invalid"))?;
+                return Ok(journal.prepared);
+            }
+        }
+
+        let prepared_id = OperationId::new();
+        let action = match request.requested_form {
+            Some(UsageForm::Link) => RelationMigrationTargetMode::ManagedLink,
+            Some(UsageForm::FullCopy) => RelationMigrationTargetMode::ManagedCopy,
+            None => return Err(operation_conflict("usage_manage_form_required")),
+        };
+        let mut plans = Vec::new();
+        let mut entry_previews = Vec::new();
+        let mut seen_entries = BTreeSet::new();
+        for relation_id in &request.relation_ids {
+            let single_request = request_for_manage_entry(&request, relation_id);
+            let (preview, _) = build_usage_manage_entry_preview(
+                self,
+                &single_request,
+                relation_id,
+                request.operation_id,
+                prepared_id,
+                None,
+            )?;
+            let evidence = preview
+                .entry_evidence
+                .first()
+                .ok_or_else(|| operation_conflict("usage_change_evidence_missing"))?;
+            let identity = (
+                evidence.skill_id.to_string(),
+                evidence.path.clone(),
+                evidence.relation_ids.clone(),
+            );
+            if !seen_entries.insert(identity) {
+                continue;
+            }
+
+            let child_operation_id = OperationId::new();
+            if request.content_basis == Some(UsageContentBasis::LibraryCurrent) {
+                let mut child = request_for_relation_migration(relation_id, action);
+                child.confirmation_token = None;
+                let child_fingerprint = request_fingerprint(&single_request)?;
+                let migration = self.prepare_usage_relation_migration(
+                    child_operation_id,
+                    child,
+                    child_fingerprint,
+                    request.content_basis == Some(UsageContentBasis::LibraryCurrent),
+                )?;
+                if migration.relation.relation_id != *relation_id {
+                    return Err(operation_conflict("usage_change_identity_conflict"));
+                }
+                entry_previews.push(preview);
+            } else {
+                entry_previews.push(preview);
+            }
+            plans.push(ManageBatchPlan {
+                relation_id: relation_id.clone(),
+                child_operation_id,
+                target_mode: action,
+            });
+        }
+        if plans.is_empty() {
+            return Err(operation_conflict("usage_change_relation_missing"));
+        }
+
+        let mut prepared =
+            merge_manage_entry_previews(request.operation_id, prepared_id, &entry_previews)?;
+        let adoptions = if request.content_basis == Some(UsageContentBasis::OriginalEntry) {
+            let mut by_skill = HashMap::<SkillId, (String, String, Option<VersionId>)>::new();
+            for evidence in &prepared.entry_evidence {
+                let fingerprint = evidence
+                    .content_fingerprint
+                    .clone()
+                    .ok_or_else(|| operation_conflict("usage_change_original_basis_unverified"))?;
+                let version_id = prepared
+                    .subject_versions
+                    .iter()
+                    .find(|version| version.skill_id == evidence.skill_id)
+                    .and_then(|version| version.version_id.clone());
+                match by_skill.get(&evidence.skill_id) {
+                    Some((_, previous_fingerprint, _)) if previous_fingerprint != &fingerprint => {
+                        return Err(operation_conflict("usage_change_original_basis_ambiguous"));
+                    }
+                    Some(_) => {}
+                    None => {
+                        by_skill.insert(
+                            evidence.skill_id,
+                            (evidence.path.clone(), fingerprint, version_id),
+                        );
+                    }
+                }
+            }
+            let mut adoptions = by_skill
+                .into_iter()
+                .map(|(skill_id, (path, fingerprint, previous_version_id))| {
+                    ManageOriginalEntryPlan {
+                        skill_id,
+                        operation_id: OperationId::new(),
+                        path,
+                        fingerprint,
+                        previous_version_id,
+                        completed: false,
+                    }
+                })
+                .collect::<Vec<_>>();
+            adoptions.sort_by_key(|adoption| adoption.skill_id.to_string());
+            add_original_entry_impacts(&mut prepared, &entry_previews);
+            adoptions
+        } else {
+            Vec::new()
+        };
+
+        let journal = ManageBatchJournal {
+            request: request.clone(),
+            prepared: prepared.clone(),
+            plans,
+            adoptions,
+            adoption_results: Vec::new(),
+            completed: Vec::new(),
+        };
+        let mut record = OperationRecord::planned(
+            request.operation_id,
+            MANAGE_BATCH_OPERATION_KIND,
+            fingerprint,
+        );
+        set_phase(
+            &mut record,
+            OperationPhase::Prepared,
+            0,
+            journal.plans.len() as u32,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.result = Some(serde_json::to_value(&journal.prepared).map_err(serialization_error)?);
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("usage_manage_batch.prepare.database"))?;
+        if database
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some()
+        {
+            return Err(operation_conflict("operation_id_reused"));
+        }
+        database.operation_repository().insert_sync(&record)?;
+        Ok(prepared)
     }
 
     pub fn commit_usage_change(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
@@ -249,6 +515,9 @@ impl LocalApplicationFacade {
         };
         if operation_kind.as_deref() == Some(MANAGE_OPERATION_KIND) {
             return self.commit_usage_manage(request);
+        }
+        if operation_kind.as_deref() == Some(MANAGE_BATCH_OPERATION_KIND) {
+            return self.commit_usage_manage_batch(request);
         }
 
         // Serialize against relationship migration and other usage changes in
@@ -423,6 +692,21 @@ impl LocalApplicationFacade {
         if let Some(result) = self.usage_manage_result(request.operation_id)? {
             return Ok(result);
         }
+        let library = self.library_runtime.snapshot()?;
+        for subject in &preview.subject_versions {
+            if library.current(subject.skill_id)? != subject.version_id {
+                return Err(operation_conflict("usage_change_preview_stale"));
+            }
+        }
+        let current_revision = self
+            .database
+            .lock()
+            .map_err(|_| internal("usage_manage.commit.revision"))?
+            .relationship_repository()
+            .relationship_revision()?;
+        if current_revision.to_string() != preview.relationship_revision {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
         let migration = self.commit_relation_migration(CommitRelationMigration {
             prepared_relation_migration_id: request.operation_id,
         })?;
@@ -480,6 +764,477 @@ impl LocalApplicationFacade {
         self.store_usage_manage_result(request.operation_id, result.clone())?;
         Ok(result)
     }
+
+    fn commit_usage_manage_batch(
+        &self,
+        request: CommitUsageChange,
+    ) -> AppResult<UsageChangeResult> {
+        let (mut record, mut journal) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("usage_manage_batch.commit.database"))?;
+            let record = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+                .ok_or_else(|| operation_conflict("usage_change_preview_missing"))?;
+            if record.kind != MANAGE_BATCH_OPERATION_KIND {
+                return Err(operation_conflict("operation_id_reused"));
+            }
+            let journal: ManageBatchJournal = serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| operation_conflict("usage_manage_batch_journal_invalid"))?;
+            if journal.prepared.prepared_id != request.prepared_id {
+                return Err(operation_conflict("usage_change_preview_mismatch"));
+            }
+            if record.phase == OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(serialization_error)?
+                    .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
+            }
+            if record.phase == OperationPhase::NeedsRecovery {
+                return Err(operation_conflict("usage_change_needs_recovery"));
+            }
+            if !matches!(
+                record.phase,
+                OperationPhase::Prepared | OperationPhase::Applying
+            ) {
+                return Err(operation_conflict("usage_change_preview_not_prepared"));
+            }
+            (record, journal)
+        };
+
+        if record.phase == OperationPhase::Prepared {
+            let refreshed = build_manage_batch_snapshot(
+                self,
+                &journal.request,
+                &journal.plans,
+                journal.prepared.prepared_id,
+            )?;
+            if refreshed != journal.prepared {
+                return Err(operation_conflict("usage_change_preview_stale"));
+            }
+            record.phase = OperationPhase::Applying;
+            record.progress.phase = OperationPhase::Applying;
+            record.progress.total = journal.plans.len() as u32;
+            record.progress.message_code = "operation.usage_manage_batch.applying".to_owned();
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            self.database
+                .lock()
+                .map_err(|_| internal("usage_manage_batch.commit.database"))?
+                .operation_repository()
+                .update_sync(&record)?;
+        }
+
+        for adoption_index in 0..journal.adoptions.len() {
+            let adoption = journal.adoptions[adoption_index].clone();
+            if journal
+                .adoption_results
+                .iter()
+                .any(|result| result.skill_id == adoption.skill_id)
+            {
+                journal.adoptions[adoption_index].completed = true;
+                continue;
+            }
+            let result = match self.adopt_original_entry_for_usage_change(
+                adoption.skill_id,
+                Path::new(&adoption.path),
+                &adoption.fingerprint,
+                adoption.previous_version_id.as_ref(),
+                adoption.operation_id,
+            ) {
+                Ok(result) => result,
+                Err(error) => {
+                    record.error_code = Some(error.code);
+                    record.phase = if self.operation_needs_recovery(adoption.operation_id) {
+                        OperationPhase::NeedsRecovery
+                    } else {
+                        OperationPhase::RolledBack
+                    };
+                    record.progress.phase = record.phase;
+                    record.progress.message_code =
+                        format!("operation.usage_manage_batch.{}", phase_code(record.phase));
+                    record.recovery_data =
+                        serde_json::to_value(&journal).map_err(serialization_error)?;
+                    self.database
+                        .lock()
+                        .map_err(|_| internal("usage_manage_batch.commit.database"))?
+                        .operation_repository()
+                        .update_sync(&record)?;
+                    return Err(error);
+                }
+            };
+            journal.adoptions[adoption_index].completed = true;
+            journal.adoption_results.push(result);
+            self.persist_manage_batch_progress(&mut record, &journal)?;
+        }
+
+        for impact in &journal.prepared.impacts {
+            if impact.action != UsageChangeImpactAction::RecordOnly
+                || journal
+                    .completed
+                    .iter()
+                    .any(|item| item.relation_ids == impact.relation_ids)
+            {
+                continue;
+            }
+            let relation_id = impact.relation_ids.first().cloned().unwrap_or_default();
+            let rewrite = journal
+                .adoption_results
+                .iter()
+                .find(|result| result.skill_id == impact.skill_id)
+                .and_then(|result| {
+                    result
+                        .rewrites
+                        .iter()
+                        .find(|rewrite| rewrite.relation_id == relation_id)
+                });
+            let status = match rewrite {
+                Some(rewrite) if rewrite.rewritten => UsageChangeItemStatus::Applied,
+                Some(_) => UsageChangeItemStatus::Failed,
+                None => UsageChangeItemStatus::Applied,
+            };
+            journal.completed.push(UsageChangeItemResult {
+                relation_ids: impact.relation_ids.clone(),
+                skill_id: impact.skill_id,
+                target: impact.target.clone(),
+                action: impact.action,
+                status,
+                reason: rewrite.and_then(|rewrite| rewrite.reason.clone()),
+                recovery_point: None,
+            });
+            self.persist_manage_batch_progress(&mut record, &journal)?;
+        }
+
+        for (index, plan) in journal.plans.iter().enumerate() {
+            let impact = journal
+                .prepared
+                .impacts
+                .iter()
+                .find(|impact| impact.relation_ids.contains(&plan.relation_id))
+                .ok_or_else(|| operation_conflict("usage_manage_impact_missing"))?;
+            if journal
+                .completed
+                .iter()
+                .any(|item| item.relation_ids == impact.relation_ids)
+            {
+                continue;
+            }
+            if journal.request.content_basis == Some(UsageContentBasis::OriginalEntry) {
+                let single_request = request_for_manage_entry(&journal.request, &plan.relation_id);
+                let child = request_for_relation_migration(&plan.relation_id, plan.target_mode);
+                let child_fingerprint = request_fingerprint(&single_request)?;
+                if let Err(error) = self.prepare_usage_relation_migration(
+                    plan.child_operation_id,
+                    child,
+                    child_fingerprint,
+                    journal.request.content_basis.is_some(),
+                ) {
+                    journal.completed.push(failed_manage_item(impact, &error));
+                    self.persist_manage_batch_progress(&mut record, &journal)?;
+                    continue;
+                }
+            }
+            let result = self.commit_relation_migration(CommitRelationMigration {
+                prepared_relation_migration_id: plan.child_operation_id,
+            });
+            match result {
+                Ok(AppCommandResult::RelationMigrationResult(migration)) => {
+                    journal
+                        .completed
+                        .push(manage_migration_item(impact, migration));
+                }
+                Ok(_) => {
+                    return Err(operation_conflict("usage_manage_result_invalid"));
+                }
+                Err(error) => {
+                    let item = failed_manage_item(impact, &error);
+                    let needs_recovery = item.status == UsageChangeItemStatus::RecoveryRequired;
+                    journal.completed.push(item);
+                    self.persist_manage_batch_progress(&mut record, &journal)?;
+                    if needs_recovery {
+                        record.phase = OperationPhase::NeedsRecovery;
+                        record.error_code = Some(error.code);
+                        record.progress.phase = record.phase;
+                        record.progress.message_code =
+                            "operation.usage_manage_batch.needs_recovery".to_owned();
+                        record.recovery_data =
+                            serde_json::to_value(&journal).map_err(serialization_error)?;
+                        self.database
+                            .lock()
+                            .map_err(|_| internal("usage_manage_batch.commit.database"))?
+                            .operation_repository()
+                            .update_sync(&record)?;
+                        return Err(error);
+                    }
+                }
+            }
+            record.progress.completed = (index + 1) as u32;
+            self.persist_manage_batch_progress(&mut record, &journal)?;
+        }
+
+        let result = UsageChangeResult {
+            operation_id: journal.prepared.operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            recovery_required: journal
+                .completed
+                .iter()
+                .any(|item| item.status == UsageChangeItemStatus::RecoveryRequired),
+            item_results: journal.completed.clone(),
+        };
+        record.phase = OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = journal.plans.len() as u32;
+        record.progress.total = journal.plans.len() as u32;
+        record.progress.message_code = "operation.usage_manage_batch.committed".to_owned();
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        self.database
+            .lock()
+            .map_err(|_| internal("usage_manage_batch.commit.database"))?
+            .operation_repository()
+            .update_sync(&record)?;
+        Ok(result)
+    }
+
+    fn operation_needs_recovery(&self, operation_id: OperationId) -> bool {
+        self.database
+            .lock()
+            .ok()
+            .and_then(|database| {
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)
+                    .ok()
+                    .flatten()
+            })
+            .is_some_and(|record| record.phase == OperationPhase::NeedsRecovery)
+    }
+
+    fn persist_manage_batch_progress(
+        &self,
+        record: &mut OperationRecord,
+        journal: &ManageBatchJournal,
+    ) -> AppResult<()> {
+        record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("usage_manage_batch.commit.database"))?;
+        database.operation_repository().update_sync(record)
+    }
+}
+
+fn request_for_manage_entry(request: &PrepareUsageChange, relation_id: &str) -> PrepareUsageChange {
+    let mut entry_request = request.clone();
+    entry_request.relation_ids = vec![relation_id.to_owned()];
+    entry_request
+}
+
+fn request_for_relation_migration(
+    relation_id: &str,
+    target_mode: RelationMigrationTargetMode,
+) -> PrepareRelationMigration {
+    PrepareRelationMigration {
+        relation_id: relation_id.to_owned(),
+        target_mode,
+        backup_policy: RelationshipMigrationBackupPolicy::Required,
+        confirmation_token: None,
+    }
+}
+
+fn merge_manage_entry_previews(
+    operation_id: OperationId,
+    prepared_id: OperationId,
+    previews: &[PreparedUsageChange],
+) -> AppResult<PreparedUsageChange> {
+    let first = previews
+        .first()
+        .ok_or_else(|| operation_conflict("usage_change_relation_missing"))?;
+    if previews
+        .iter()
+        .any(|preview| preview.relationship_revision != first.relationship_revision)
+    {
+        return Err(operation_conflict(
+            "usage_change_facts_changed_during_prepare",
+        ));
+    }
+    let mut affected_skill_ids = HashSet::new();
+    let mut subject_versions = HashMap::new();
+    let mut entries = BTreeMap::new();
+    let mut consumers = BTreeMap::new();
+    let mut impacts = BTreeMap::new();
+    let mut limitations = BTreeSet::new();
+    for preview in previews {
+        affected_skill_ids.extend(preview.affected_skill_ids.iter().copied());
+        for version in &preview.subject_versions {
+            if subject_versions
+                .insert(version.skill_id, version.clone())
+                .is_some_and(|existing| existing != *version)
+            {
+                return Err(operation_conflict("usage_change_preview_stale"));
+            }
+        }
+        for evidence in &preview.entry_evidence {
+            entries.insert(evidence.relation_ids.clone(), evidence.clone());
+        }
+        for consumer in &preview.consumers {
+            consumers.insert(consumer.relation_ids.clone(), consumer.clone());
+        }
+        for impact in &preview.impacts {
+            impacts.insert(impact.relation_ids.clone(), impact.clone());
+        }
+        limitations.extend(preview.limitations.iter().cloned());
+    }
+    let mut affected_skill_ids = affected_skill_ids.into_iter().collect::<Vec<_>>();
+    affected_skill_ids.sort_by_key(ToString::to_string);
+    let mut subject_versions = subject_versions.into_values().collect::<Vec<_>>();
+    subject_versions.sort_by_key(|version: &UsageSubjectVersion| version.skill_id.to_string());
+    Ok(PreparedUsageChange {
+        operation_id,
+        prepared_id,
+        action: UsageChangeAction::Manage,
+        relationship_revision: first.relationship_revision.clone(),
+        affected_skill_ids,
+        subject_versions,
+        entry_evidence: entries.into_values().collect(),
+        consumers: consumers.into_values().collect(),
+        impacts: impacts.into_values().collect(),
+        limitations: limitations.into_iter().collect(),
+    })
+}
+
+fn add_original_entry_impacts(
+    prepared: &mut PreparedUsageChange,
+    entry_previews: &[PreparedUsageChange],
+) {
+    let selected_ids = entry_previews
+        .iter()
+        .flat_map(|preview| preview.entry_evidence.iter())
+        .flat_map(|evidence| evidence.relation_ids.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let selected_skill_ids = prepared
+        .entry_evidence
+        .iter()
+        .map(|evidence| evidence.skill_id)
+        .collect::<HashSet<_>>();
+    let mut impacts = prepared
+        .impacts
+        .iter()
+        .map(|impact| (impact.relation_ids.clone(), impact.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for consumer in &prepared.consumers {
+        let Some(skill_id) = consumer.skill_id else {
+            continue;
+        };
+        if !selected_skill_ids.contains(&skill_id)
+            || consumer.management != UsageManagement::Managed
+            || consumer
+                .relation_ids
+                .iter()
+                .any(|relation_id| selected_ids.contains(relation_id))
+        {
+            continue;
+        }
+        impacts
+            .entry(consumer.relation_ids.clone())
+            .or_insert_with(|| UsageChangeImpact {
+                relation_ids: consumer.relation_ids.clone(),
+                skill_id,
+                target: consumer.target.clone(),
+                action: UsageChangeImpactAction::RecordOnly,
+                description: "采用原使用位置内容后同步更新此受管目标。".to_owned(),
+            });
+    }
+    prepared.impacts = impacts.into_values().collect();
+}
+
+fn build_manage_batch_snapshot(
+    facade: &LocalApplicationFacade,
+    request: &PrepareUsageChange,
+    plans: &[ManageBatchPlan],
+    prepared_id: OperationId,
+) -> AppResult<PreparedUsageChange> {
+    let mut previews = Vec::with_capacity(plans.len());
+    for plan in plans {
+        let single_request = request_for_manage_entry(request, &plan.relation_id);
+        let (preview, _) = build_usage_manage_entry_preview(
+            facade,
+            &single_request,
+            &plan.relation_id,
+            request.operation_id,
+            prepared_id,
+            None,
+        )?;
+        previews.push(preview);
+    }
+    let mut prepared = merge_manage_entry_previews(request.operation_id, prepared_id, &previews)?;
+    // prepared_id participates in the frozen snapshot; callers replace the
+    // ephemeral value with the persisted one before comparing.
+    if request.content_basis == Some(UsageContentBasis::OriginalEntry) {
+        add_original_entry_impacts(&mut prepared, &previews);
+    }
+    Ok(prepared)
+}
+
+fn manage_migration_item(
+    impact: &UsageChangeImpact,
+    migration: skillhub_core::RelationMigrationResult,
+) -> UsageChangeItemResult {
+    let status = match migration.state {
+        skillhub_core::RelationMigrationState::Committed => UsageChangeItemStatus::Applied,
+        skillhub_core::RelationMigrationState::Failed
+            if migration
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.starts_with("recovery_required:")) =>
+        {
+            UsageChangeItemStatus::RecoveryRequired
+        }
+        skillhub_core::RelationMigrationState::Failed
+        | skillhub_core::RelationMigrationState::RolledBack
+        | skillhub_core::RelationMigrationState::Cancelled
+        | skillhub_core::RelationMigrationState::Prepared => UsageChangeItemStatus::Failed,
+    };
+    UsageChangeItemResult {
+        relation_ids: impact.relation_ids.clone(),
+        skill_id: impact.skill_id,
+        target: impact.target.clone(),
+        action: impact.action,
+        status,
+        reason: migration.error_code.map(|error| error.as_str().to_owned()),
+        recovery_point: migration.backup_path.map(|path| UsageRecoveryPoint {
+            path,
+            fingerprint: None,
+            representation: FileRepresentation::Unknown,
+        }),
+    }
+}
+
+fn failed_manage_item(impact: &UsageChangeImpact, error: &AppError) -> UsageChangeItemResult {
+    let reason = error
+        .params
+        .get("reason")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    UsageChangeItemResult {
+        relation_ids: impact.relation_ids.clone(),
+        skill_id: impact.skill_id,
+        target: impact.target.clone(),
+        action: impact.action,
+        status: if reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("recovery"))
+        {
+            UsageChangeItemStatus::RecoveryRequired
+        } else {
+            UsageChangeItemStatus::Failed
+        },
+        reason,
+        recovery_point: None,
+    }
 }
 
 fn build_usage_manage_preview(
@@ -491,6 +1246,24 @@ fn build_usage_manage_preview(
         .relation_ids
         .first()
         .ok_or_else(|| operation_conflict("usage_change_relation_missing"))?;
+    build_usage_manage_entry_preview(
+        facade,
+        request,
+        relation_id,
+        request.operation_id,
+        migration.operation_id,
+        Some(migration),
+    )
+}
+
+fn build_usage_manage_entry_preview(
+    facade: &LocalApplicationFacade,
+    request: &PrepareUsageChange,
+    relation_id: &str,
+    operation_id: OperationId,
+    prepared_id: OperationId,
+    migration: Option<&skillhub_core::PreparedRelationMigration>,
+) -> AppResult<(PreparedUsageChange, Vec<DeploymentRelationFact>)> {
     let revision_before = facade
         .database
         .lock()
@@ -557,7 +1330,7 @@ fn build_usage_manage_preview(
     let skill_id = view
         .skill_id
         .ok_or_else(|| operation_conflict("usage_subject_unverified"))?;
-    if Some(skill_id) != migration.relation.skill_id {
+    if migration.is_some_and(|migration| Some(skill_id) != migration.relation.skill_id) {
         return Err(operation_conflict("usage_change_identity_conflict"));
     }
     let evidence_ids = sorted_unique(view.evidence_relation_ids.clone())?;
@@ -576,7 +1349,7 @@ fn build_usage_manage_preview(
         .get(relation_id)
         .ok_or_else(|| operation_conflict("usage_change_evidence_missing"))?;
     let path = PathBuf::from(&entry.path);
-    if entry.path != migration.relation.path {
+    if migration.is_some_and(|migration| entry.path != migration.relation.path) {
         return Err(operation_conflict("usage_change_identity_conflict"));
     }
     fs::symlink_metadata(&path).map_err(|_| operation_conflict("usage_entry_access_unverified"))?;
@@ -588,7 +1361,7 @@ fn build_usage_manage_preview(
         return Err(operation_conflict("usage_entry_representation_changed"));
     }
     let fingerprint = DeploymentFilesystem::hash_tree(&path)?;
-    if fingerprint != migration.current_content_fingerprint {
+    if migration.is_some_and(|migration| fingerprint != migration.current_content_fingerprint) {
         return Err(operation_conflict("usage_change_preview_stale"));
     }
     let relation_facts = evidence_ids
@@ -687,8 +1460,8 @@ fn build_usage_manage_preview(
     };
     Ok((
         PreparedUsageChange {
-            operation_id: migration.operation_id,
-            prepared_id: migration.operation_id,
+            operation_id,
+            prepared_id,
             action: UsageChangeAction::Manage,
             relationship_revision: facts.revision.to_string(),
             affected_skill_ids: vec![skill_id],
@@ -703,10 +1476,14 @@ fn build_usage_manage_preview(
                 description: description.to_owned(),
             }],
             limitations: migration
-                .governance_tasks
-                .iter()
-                .map(|task| task.detail.clone())
-                .collect(),
+                .map(|migration| {
+                    migration
+                        .governance_tasks
+                        .iter()
+                        .map(|task| task.detail.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
         },
         relation_facts,
     ))
@@ -2564,15 +3341,18 @@ fn validate_request(request: &PrepareUsageChange) -> AppResult<()> {
 }
 
 fn validate_manage_request(request: &PrepareUsageChange) -> AppResult<()> {
-    let relation_id = request.relation_ids.first();
+    let mut relation_ids = BTreeSet::new();
     if request.action != UsageChangeAction::Manage
-        || request.relation_ids.len() != 1
-        || relation_id.is_none_or(|relation_id| relation_id.trim().is_empty())
+        || request.relation_ids.is_empty()
+        || request
+            .relation_ids
+            .iter()
+            .any(|relation_id| relation_id.trim().is_empty() || !relation_ids.insert(relation_id))
         || request.requested_form.is_none()
         || request.problem_id.is_some()
         || request.skill_id.is_some()
         || request.copy_disposition.is_some()
-        || request.content_basis.is_some()
+        || request.content_basis.is_none()
         || request.retain_entry_key.is_some()
         || !request.selected_entry_keys.is_empty()
         || request.runtime_name.is_some()

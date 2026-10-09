@@ -40,17 +40,15 @@ import type {
   CommitUsageChange,
   PrepareUsageChange,
   PreparedUsageChange,
-  RelationGovernanceBatchOutcome,
   UsageChangeResult,
   UsageRelationView,
 } from "../../api/bindings";
 import { relationshipsKeys } from "../relationships/api";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
-import { mergeBatchItemOutcome, relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
+import { relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
 import { buildGovernanceLibraryReturnTo } from "../relationships/governance/libraryReturnContext";
-import { createGovernanceBatchRunner } from "../relationships/governance/governanceBatchOperation";
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
-import { GovernanceBatchDialog } from "../relationships/governance/GovernanceBatchDialog";
+import { UsageManageDialog } from "../relationships/governance/UsageManageDialog";
 import { usageDestinationCards, type UsageDestinationsState } from "./usageDestinations";
 import { SkillDetailReviewExperience } from "./SkillDetailReviewExperience";
 
@@ -239,129 +237,76 @@ export function SkillDetailPage({
       },
     });
   }, [backSearch, libraryReturn, navigate, skillId]);
-  // §7.8：详情面板承载与治理页同一套批次流程——面板状态只管选择与呈现，
-  // 执行走共享的批次编排（prepare → commit，逐项结果 + 重试/回退）。
+  // 详情入口与关系治理页复用同一使用关系准备、预览和提交流程。
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [takeoverCheckedIds, setTakeoverCheckedIds] = useState<ReadonlySet<string>>(new Set());
   const [takeoverSharedConfirmedIds, setTakeoverSharedConfirmedIds] = useState<ReadonlySet<string>>(new Set());
-  const [takeoverRunning, setTakeoverRunning] = useState(false);
-  const [takeoverResult, setTakeoverResult] = useState<RelationGovernanceBatchOutcome | null>(null);
-  const [takeoverError, setTakeoverError] = useState<string | null>(null);
-  const describeTakeoverError = useCallback(
-    (reason: unknown) => describeNativeError(
-      reason,
-      (key, options) => String(t(key as never, options as never)),
-      "tasks.notices.failureUnknown",
-    ),
-    [t],
-  );
-  const translateTakeover = useCallback(
-    (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never)),
-    [t],
-  );
 
   const openTakeover = () => {
     setTakeoverCheckedIds(new Set(takeoverCandidates.map((row) => relationIdOf(row.relation))));
     setTakeoverSharedConfirmedIds(new Set());
-    setTakeoverResult(null);
-    setTakeoverError(null);
     setTakeoverOpen(true);
   };
   const closeTakeover = () => {
     setTakeoverOpen(false);
     setTakeoverCheckedIds(new Set());
     setTakeoverSharedConfirmedIds(new Set());
-    setTakeoverResult(null);
-    setTakeoverError(null);
   };
 
-  const runTakeoverBatch = useMemo(() => {
-    if (!effectiveGovernanceFacade) return null;
-    return createGovernanceBatchRunner({
-      describeError: describeTakeoverError,
-      facade: effectiveGovernanceFacade,
-      notifications,
-      queryClient,
-      tracker,
-      translate: translateTakeover,
-    });
-  }, [describeTakeoverError, effectiveGovernanceFacade, notifications, queryClient, tracker, translateTakeover]);
-
-  const confirmTakeover = () => {
-    const relationIds = [...takeoverCheckedIds];
-    if (!runTakeoverBatch || relationIds.length === 0) return;
-    setTakeoverRunning(true);
-    setTakeoverError(null);
-    runTakeoverBatch(
-      "centralize_management",
-      relationIds,
-      takeoverSharedConfirmedIds,
-      (outcome) => {
-        setTakeoverRunning(false);
-        setTakeoverResult(outcome);
-      },
-      (message) => {
-        setTakeoverRunning(false);
-        setTakeoverError(message);
-      },
-      t("relationships.governance.batch.running"),
-    );
-  };
-
-  const retryTakeoverItem = (relationId: string) => {
-    if (!runTakeoverBatch) return;
-    setTakeoverRunning(true);
-    setTakeoverError(null);
-    runTakeoverBatch(
-      "centralize_management",
-      [relationId],
-      takeoverSharedConfirmedIds,
-      (outcome) => {
-        setTakeoverRunning(false);
-        // 逐项重试后原位替换该项，计数与终态按合并后的事实重算。
-        setTakeoverResult((current) => current
-          ? mergeBatchItemOutcome(current, relationId, outcome)
-          : current);
-      },
-      (message) => {
-        setTakeoverRunning(false);
-        setTakeoverError(message);
-      },
-      t("relationships.governance.batch.running"),
-    );
-  };
-
-  const rollbackTakeoverItem = (relationId: string) => {
-    if (!effectiveGovernanceFacade || !takeoverResult) return;
-    const batchId = takeoverResult.batch_id;
-    setTakeoverRunning(true);
-    setTakeoverError(null);
-    void runTrackedOperation<RelationGovernanceBatchOutcome>({
+  const prepareTakeover = useCallback(
+    (request: PrepareUsageChange): Promise<PreparedUsageChange> =>
+      effectiveUsageChangeFacade.prepareUsageChange(request),
+    [effectiveUsageChangeFacade],
+  );
+  const commitTakeover = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> =>
+    runTrackedOperation<UsageChangeResult>({
       canCancel: false,
-      describeError: describeTakeoverError,
+      describeError: (reason) => describeNativeError(
+        reason,
+        (key, options) => String(t(key as never, options as never)),
+        "tasks.notices.failureUnknown",
+      ),
       invalidateQueryKeys: [[relationshipsKeys.root]],
-      kind: "relation_governance_batch",
-      label: t("relationships.governance.batch.trackerLabel"),
+      kind: "usage_manage",
+      label: t("relationships.governance.manage.title"),
       notifications,
+      operationId: request.operation_id,
       queryClient,
       run: async (handle) => {
-        const outcome = await effectiveGovernanceFacade.rollbackGovernanceBatch(batchId, [relationId]);
-        handle.correlate(batchId);
-        return outcome;
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
       },
-      successNotice: () => null,
-      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
-      total: 1,
+      source: "governance",
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: t("relationships.governance.manage.title"), tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.length === 0
+          ? 1
+          : result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
+      }),
+      total: takeoverCheckedIds.size,
       tracker,
-      translate: translateTakeover,
-    }).then((outcome) => {
-      setTakeoverRunning(false);
-      setTakeoverResult((current) => current
-        ? mergeBatchItemOutcome(current, relationId, outcome)
-        : current);
-    }).catch((reason: unknown) => {
-      setTakeoverRunning(false);
-      setTakeoverError(describeTakeoverError(reason));
+      translate: (key, options) => String(t(key as never, options as never)),
+    }), [effectiveUsageChangeFacade, notifications, queryClient, t, takeoverCheckedIds.size, tracker]);
+
+  const toggleTakeoverItem = (relationId: string, checked: boolean) => {
+    setTakeoverCheckedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(relationId);
+      else next.delete(relationId);
+      return next;
+    });
+  };
+  const confirmTakeoverSharedImpact = (relationId: string, checked: boolean) => {
+    setTakeoverSharedConfirmedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(relationId);
+      else next.delete(relationId);
+      return next;
     });
   };
   const [removalImpact, setRemovalImpact] = useState<RemovalImpact | null>(null);
@@ -568,28 +513,15 @@ export function SkillDetailPage({
         />
       ) : null}
       {takeoverOpen && effectiveGovernanceFacade ? (
-        <GovernanceBatchDialog
+        <UsageManageDialog
+          allowSelection
           checkedIds={takeoverCheckedIds}
-          error={takeoverError}
+          onCommit={commitTakeover}
           onClose={closeTakeover}
-          onConfirm={confirmTakeover}
-          onRetry={retryTakeoverItem}
-          onRollback={rollbackTakeoverItem}
-          onSharedImpactConfirm={(relationId, checked) => setTakeoverSharedConfirmedIds((current) => {
-            const next = new Set(current);
-            if (checked) next.add(relationId);
-            else next.delete(relationId);
-            return next;
-          })}
-          onToggleItem={(relationId, checked) => setTakeoverCheckedIds((current) => {
-            const next = new Set(current);
-            if (checked) next.add(relationId);
-            else next.delete(relationId);
-            return next;
-          })}
-          result={takeoverResult}
+          onPrepare={prepareTakeover}
+          onSharedImpactConfirm={confirmTakeoverSharedImpact}
+          onToggleItem={toggleTakeoverItem}
           rows={takeoverCandidates}
-          running={takeoverRunning}
           sharedConfirmedIds={takeoverSharedConfirmedIds}
         />
       ) : null}

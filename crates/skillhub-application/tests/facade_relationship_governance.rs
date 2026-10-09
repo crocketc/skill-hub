@@ -4549,6 +4549,7 @@ async fn prepare_batch(
                 PrepareRelationGovernanceBatch {
                     action: RelationGovernanceBatchAction::CentralizeManagement,
                     relation_ids,
+                    requested_form: Some(skillhub_core::relationship::UsageForm::Link),
                     confirmations: confirmations.into_iter().collect(),
                 },
             ))
@@ -4743,6 +4744,57 @@ async fn governance_batch_cancelling_one_row_leaves_the_others_untouched() {
         !fixture.entry_is_symlink(1),
         "cancelling a row does not convert it"
     );
+}
+
+#[tokio::test]
+async fn governance_batch_uses_the_requested_full_copy_form() {
+    let fixture = batch_fixture(&["agent.demo"]).await;
+    let relation_id = fixture.relation_id(0);
+    let prepared = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::PrepareRelationGovernanceBatch(
+                PrepareRelationGovernanceBatch {
+                    action: RelationGovernanceBatchAction::CentralizeManagement,
+                    relation_ids: vec![relation_id.clone()],
+                    confirmations: Default::default(),
+                    requested_form: Some(skillhub_core::relationship::UsageForm::FullCopy),
+                },
+            ))
+            .await
+            .expect("prepare full-copy governance batch"),
+    );
+    assert_eq!(prepared.prepared_count, 1);
+
+    let committed = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id: prepared.batch_id,
+                    relation_ids: vec![relation_id.clone()],
+                },
+            ))
+            .await
+            .expect("commit full-copy governance batch"),
+    );
+    assert_eq!(committed.committed_count, 1);
+    assert!(
+        !fixture.entry_is_symlink(0),
+        "the requested complete copy must remain a directory"
+    );
+
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let fact = database
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .into_iter()
+        .find(|fact| fact.relation_id == relation_id)
+        .expect("centralized relation");
+    assert_eq!(fact.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(fact.file_representation, FileRepresentation::Copy);
 }
 
 #[tokio::test]
@@ -5065,6 +5117,7 @@ async fn governance_batch_rejects_an_empty_selection() {
             PrepareRelationGovernanceBatch {
                 action: RelationGovernanceBatchAction::CentralizeManagement,
                 relation_ids: Vec::new(),
+                requested_form: Some(skillhub_core::relationship::UsageForm::Link),
                 confirmations: Default::default(),
             },
         ))
@@ -5254,6 +5307,7 @@ mod unified_and_history {
                 PrepareRelationGovernanceBatch {
                     action: RelationGovernanceBatchAction::CentralizeManagement,
                     relation_ids: vec![relation_id.clone(), relation_id],
+                    requested_form: Some(skillhub_core::relationship::UsageForm::Link),
                     confirmations: BTreeMap::new(),
                 },
             ))
@@ -6714,6 +6768,8 @@ mod source_copy_batches {
                 PrepareRelationGovernanceBatch {
                     action,
                     relation_ids,
+                    requested_form: (action == RelationGovernanceBatchAction::CentralizeManagement)
+                        .then_some(skillhub_core::relationship::UsageForm::Link),
                     confirmations,
                 },
             ))
@@ -6816,6 +6872,7 @@ mod source_copy_batches {
                 PrepareRelationGovernanceBatch {
                     action: RelationGovernanceBatchAction::RetainSourceCopy,
                     relation_ids: vec![first_id.clone(), second_id.clone()],
+                    requested_form: None,
                     confirmations: BTreeMap::new(),
                 },
             ))
@@ -6859,6 +6916,7 @@ mod source_copy_batches {
                     PrepareRelationGovernanceBatch {
                         action,
                         relation_ids: vec![fixture.relation_id.clone(), copy_id.clone()],
+                        requested_form: None,
                         confirmations: BTreeMap::new(),
                     },
                 ))
@@ -6900,6 +6958,7 @@ mod source_copy_batches {
                 PrepareRelationGovernanceBatch {
                     action: RelationGovernanceBatchAction::CentralizeManagement,
                     relation_ids: vec![fixture.relation_id.clone(), copy_id],
+                    requested_form: Some(skillhub_core::relationship::UsageForm::Link),
                     confirmations: BTreeMap::new(),
                 },
             ))

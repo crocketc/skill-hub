@@ -193,6 +193,7 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
       payload: {
         action: request.action,
         relation_ids: request.relationIds,
+        requested_form: null,
         confirmations: confirmations.length > 0 ? Object.fromEntries(confirmations) : undefined,
       },
     });

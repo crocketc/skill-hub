@@ -374,6 +374,47 @@ function usageReleaseResult(): UsageChangeResult {
   };
 }
 
+function usageManagePrepared(): PreparedUsageChange {
+  return {
+    operation_id: "op-manage",
+    prepared_id: "prepared-manage",
+    action: "manage",
+    relationship_revision: "rev-1",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [{
+      relation_ids: ["managed:dep-1"],
+      skill_id: "skill-pdf",
+      target: {
+        kind: "agent",
+        directory_id: "node-codex",
+        agent_client_id: "codex",
+        directory_role: "agent_user",
+        recognition: "supported",
+      },
+      action: "manage_link",
+      description: "The selected relationship will use the skill library subject.",
+    }],
+    limitations: [],
+  };
+}
+
+function usageManageResult(): UsageChangeResult {
+  return {
+    operation_id: "op-manage",
+    prepared_id: "prepared-manage",
+    recovery_required: false,
+    item_results: [{
+      ...usageManagePrepared().impacts[0]!,
+      status: "applied",
+      reason: null,
+      recovery_point: null,
+    }],
+  };
+}
+
 function batchOutcome(
   state: RelationGovernanceBatchOutcome["state"],
   relationId: string,
@@ -605,62 +646,72 @@ describe("SkillDetailPage shell", () => {
     expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
   });
 
-  // W3-3（§7.8 生产承载）：头部「转为集中管理」打开真实治理批次面板，
-  // 经 prepare/commit 批命令执行；演示状态机（前端翻转徽标）已移除。
-  it("runs the header takeover through the real governance batch contract", async () => {
+  // 详情头部与关系治理页共用使用关系 prepare/commit 契约。
+  it("runs the header takeover through the unified usage-change contract", async () => {
     const tracker = createOperationTracker();
     const governanceFacade = createTestGovernanceFacade([
       governanceRow({ relationId: "managed:dep-1" }),
     ]);
-    await renderDetail({ governanceFacade, tracker });
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(usageManagePrepared()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult()),
+    };
+    await renderDetail({ governanceFacade, tracker, usageChangeFacade });
 
     fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring the selection under skill library management",
+      name: "Bring under skill library management",
     });
-    fireEvent.click(within(dialog).getByTestId("governance-batch-confirm"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview conversion impact" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bring under management" }));
 
-    await waitFor(() => expect(governanceFacade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: {},
-      relationIds: ["managed:dep-1"],
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-1"],
+      content_basis: "library_current",
+    })));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-manage",
+      prepared_id: "prepared-manage",
     }));
-    await waitFor(() => expect(governanceFacade.commitGovernanceBatch).toHaveBeenCalledWith("batch-1", ["managed:dep-1"]));
-    expect(await screen.findByTestId("governance-batch-result")).toBeVisible();
+    expect(await screen.findByTestId("usage-manage-result")).toBeVisible();
     const trackerEntries = tracker.getSnapshot();
-    // 父批次 + 逐项子任务都进 tracker；父批次对齐后端 batch_id 且成功。
     expect(trackerEntries).toEqual(expect.arrayContaining([
-      expect.objectContaining({ operationId: "batch-1", status: "success" }),
+      expect.objectContaining({ operationId: "op-manage", kind: "usage_manage", status: "success" }),
     ]));
-    // 演示确认弹层不再出现：接管确认绑定真实契约。
-    expect(screen.queryByRole("button", { name: "确认转为集中管理" })).not.toBeInTheDocument();
-    expect(screen.queryByText("接管内容基准")).not.toBeInTheDocument();
+    expect(governanceFacade.prepareGovernanceBatch).not.toHaveBeenCalled();
+    expect(governanceFacade.commitGovernanceBatch).not.toHaveBeenCalled();
   });
 
-  it("requires the shared impact confirmation before committing the takeover", async () => {
+  it("requires shared-impact confirmation before preparing the takeover", async () => {
     const governanceFacade = createTestGovernanceFacade([
       governanceRow({ relationId: "managed:dep-shared", sharedImpactOnly: true }),
     ]);
-    await renderDetail({ governanceFacade });
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(usageManagePrepared()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult()),
+    };
+    await renderDetail({ governanceFacade, usageChangeFacade });
 
     fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring the selection under skill library management",
+      name: "Bring under skill library management",
     });
-    const confirm = within(dialog).getByTestId("governance-batch-confirm");
+    const confirm = within(dialog).getByRole("button", { name: "Preview conversion impact" });
     expect(confirm).toBeDisabled();
 
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /I confirm the shared-directory impact for PDF Reader/ }));
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
 
-    await waitFor(() => expect(governanceFacade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
-      relationIds: ["managed:dep-shared"],
-    }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-shared"],
+    })));
+    expect(governanceFacade.prepareGovernanceBatch).not.toHaveBeenCalled();
   });
 
   it("hides the header takeover entry when the skill has no pending takeover relations", async () => {

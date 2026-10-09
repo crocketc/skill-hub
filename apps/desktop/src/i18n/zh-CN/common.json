@@ -2367,7 +2367,9 @@
         "remove_link": "移除该入口中已核实的链接。",
         "keep_independent_copy": "目标拷贝留在原处，并与技能库主体分离。",
         "remove_copy_with_backup": "创建恢复备份后移除目标拷贝。",
-        "record_only": "此操作只结束关系记录，Agent 仍可能读取该文件。"
+        "record_only": "此操作只结束关系记录，Agent 仍可能读取该文件。",
+        "manage_link": "将此入口改为指向技能主体的链接。",
+        "manage_copy": "保留目标文件，并将其纳入技能库同步管理。"
       },
       "confirm": "确认解除",
       "submitting": "正在解除使用关系…",
@@ -2383,7 +2385,9 @@
         "remove_link": "移除链接",
         "keep_independent_copy": "保留为独立拷贝",
         "remove_copy_with_backup": "备份后移除拷贝",
-        "record_only": "只结束跟踪记录"
+        "record_only": "只结束跟踪记录",
+        "manage_link": "转为管理链接",
+        "manage_copy": "转为管理拷贝"
       },
       "recoveryPoint": "恢复备份：{{path}}",
       "close": "关闭"
@@ -3041,6 +3045,28 @@
         "link": "链接",
         "full_copy": "完整拷贝",
         "unknown": "形式待确认"
+      },
+      "manage": {
+        "title": "转为集中管理",
+        "description": "选择采用的内容和目标形式。确认前会列出所选关系、技能版本变化及其他受管目标的影响。",
+        "contentBasis": "采用哪处内容",
+        "libraryCurrent": "技能库当前版本（推荐）",
+        "originalEntry": "使用位置原件",
+        "form": "目标位置的使用形式",
+        "itemCheck": "选择 {{name}} 的关系",
+        "sharedCopyRequired": "共享目录使用完整拷贝方式管理。",
+        "subjectVersions": "技能主体版本变化",
+        "originalVersionNote": "采用原件内容后，将为 {{count}} 个技能主体新增版本；原版本与校验依据保留。",
+        "preview": "预览转换影响",
+        "preparing": "正在准备转换预览…",
+        "confirm": "确认转为集中管理",
+        "committing": "正在转换关系…",
+        "changeSelection": "修改选择并重新预览",
+        "resultHeading": "转换结果",
+        "resultComplete": "已完成 {{applied}} 项关系转换。",
+        "resultPartial": "已完成 {{applied}} 项；{{failed}} 项仍需处理。",
+        "resultReason": "原因：{{reason}}",
+        "close": "关闭"
       },
       "healthMessages": {
         "normal": "使用状态正常。",

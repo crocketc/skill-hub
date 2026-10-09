@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, type InitialEntry } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
@@ -293,6 +293,76 @@ function preparedUsageChange(): PreparedUsageChange {
     consumers: [],
     impacts: [],
     limitations: [],
+  };
+}
+
+function preparedUsageManageChange(): PreparedUsageChange {
+  return {
+    operation_id: "op-manage-1",
+    prepared_id: "prepared-manage-1",
+    action: "manage",
+    relationship_revision: "rev-1",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [{ skill_id: "skill-pdf", version_id: "version-next" }],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [
+      {
+        relation_ids: ["managed:dep-eligible"],
+        skill_id: "skill-pdf",
+        target: {
+          kind: "agent",
+          directory_id: "node-codex",
+          agent_client_id: "codex",
+          directory_role: "agent_user",
+          recognition: "supported",
+        },
+        action: "manage_copy",
+        description: "将选中的技能原件转换为完整复制，并建立管理关系。",
+      },
+      {
+        relation_ids: ["managed:dep-other"],
+        skill_id: "skill-pdf",
+        target: {
+          kind: "project",
+          directory_id: "node-project",
+          agent_client_id: null,
+          directory_role: "project",
+          recognition: "supported",
+        },
+        action: "record_only",
+        description: "采用原件内容后同步更新此受管目标。",
+      },
+    ],
+    limitations: [],
+  };
+}
+
+function preparedUsageManageBatchChange(): PreparedUsageChange {
+  const prepared = preparedUsageManageChange();
+  return {
+    ...prepared,
+    impacts: [
+      { ...prepared.impacts[0]!, relation_ids: ["managed:dep-eligible"] },
+      { ...prepared.impacts[1]!, relation_ids: ["managed:dep-shared"] },
+    ],
+  };
+}
+
+function usageManageResult(
+  itemResults: UsageChangeResult["item_results"] = preparedUsageManageChange().impacts.map((impact) => ({
+    ...impact,
+    status: "applied",
+    reason: null,
+    recovery_point: null,
+  })),
+  recoveryRequired = false,
+): UsageChangeResult {
+  return {
+    operation_id: "op-manage-1",
+    prepared_id: "prepared-manage-1",
+    item_results: itemResults,
+    recovery_required: recoveryRequired,
   };
 }
 
@@ -1001,55 +1071,67 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
 });
 
 describe("RelationshipGovernancePage 单条治理", () => {
-  it("runs single centralize as preview → confirm → run → verify → result", async () => {
-    const { facade, tracker } = await renderGovernanceApp();
+  it("previews a single conversion with the chosen content basis and copy form before commit", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockResolvedValue({
+        operation_id: "op-manage-1",
+        prepared_id: "prepared-manage-1",
+        item_results: [
+          { ...preparedUsageManageChange().impacts[0], status: "applied", reason: null, recovery_point: null },
+          { ...preparedUsageManageChange().impacts[1], status: "applied", reason: null, recovery_point: null },
+        ],
+        recovery_required: false,
+      }),
+    };
+    const { facade, tracker } = await renderGovernanceApp({ usageChangeFacade });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "使用位置原件" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "完整拷贝" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
 
-    // 预览：解释用户语义并加载影响事实（备份/共享影响/回退）。
-    expect(await screen.findByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
-    expect(screen.getByText(/保留当前位置的可用入口，改为使用技能库中的统一版本/)).toBeVisible();
-    await screen.findByTestId("removal-impact-facts");
-
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
-
-    await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: {},
-      relationIds: ["managed:dep-eligible"],
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-eligible"],
+      requested_form: "full_copy",
+      content_basis: "original_entry",
+    })));
+    expect(await screen.findByTestId("removal-impact-facts")).toBeVisible();
+    expect(screen.getByText("采用原件内容后同步更新此受管目标。" )).toBeVisible();
+    expect(screen.getByText("采用原件内容后，将为 1 个技能主体新增版本；原版本与校验依据保留。" )).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-manage-1",
+      prepared_id: "prepared-manage-1",
     }));
-    await waitFor(() => expect(facade.commitGovernanceBatch).toHaveBeenCalledWith("batch-1", ["managed:dep-eligible"]));
-
-    // 结果 + 校验：清单被重新读取以反映执行结果。
-    await screen.findByText(/已纳入技能库管理/);
+    expect(await screen.findByTestId("usage-manage-result")).toBeVisible();
     await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
 
-    // 父子任务进 tracker：父批次 + 子迁移任务关联持久化 operation id。
-    const parent = tracker.getSnapshot().find((operation) => operation.kind === "relation_governance_batch");
-    expect(parent).toBeDefined();
-    const child = tracker.getSnapshot().find((operation) => operation.kind === "migrate_relation");
-    expect(child?.parentId).toBe(parent?.id);
-    expect(child?.operationId).toBe("op-child-1");
+    const managed = tracker.getSnapshot().find((operation) => operation.kind === "usage_manage");
+    expect(managed?.operationId).toBe("op-manage-1");
   });
 
-  it("keeps the preview and never flips to success when the backend rejects", async () => {
-    const facade = createFacade(FULL_LEDGER, {
-      prepareGovernanceBatch: vi.fn().mockRejectedValue(new Error("operation.conflict")),
-    });
-    await renderGovernanceApp({ facade });
+  it("keeps a single conversion preview open when the backend rejects the commit", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockRejectedValue(new Error("operation.conflict")),
+    };
+    await renderGovernanceApp({ usageChangeFacade });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    await screen.findByRole("dialog", { name: "纳入技能库管理预览" });
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await screen.findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
 
-    // 预览保持打开：错误可见、没有成功文案、没有调用 commit。
+    // 预览保持打开：错误可见，没有虚构已完成结果。
     await screen.findByRole("alert");
-    expect(screen.getByText(/预览保持不变/)).toBeVisible();
-    expect(screen.queryByText(/已纳入技能库管理/)).not.toBeInTheDocument();
-    expect(facade.commitGovernanceBatch).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
+    expect(screen.queryByTestId("usage-manage-result")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "转为集中管理" })).toBeVisible();
   });
 
   it("runs single relation release through the unified prepare → confirm → commit receipt", async () => {
@@ -1112,97 +1194,112 @@ describe("RelationshipGovernancePage 单条治理", () => {
     expect(usageChangeFacade.commitUsageChange).toHaveBeenCalled();
   });
 
-  it("reports a rejected governance batch in the notification center while keeping the preview", async () => {
-    const facade = createFacade(FULL_LEDGER, {
-      prepareGovernanceBatch: vi.fn().mockRejectedValue({ code: "io.denied" }),
-    });
-    await renderGovernanceApp({ facade, notifications: true });
+  it("reports a rejected single conversion in the notification center while keeping the preview", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockRejectedValue({ code: "io.denied" }),
+    };
+    await renderGovernanceApp({ usageChangeFacade, notifications: true });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    await screen.findByRole("dialog", { name: "纳入技能库管理预览" });
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
 
     const readable = "操作未能完成（io.denied）。若持续出现请记录该错误码。";
     const toast = await screen.findByTestId("notice-danger");
     expect(toast).toHaveTextContent(readable);
-    // 既有行内契约不变：预览保持打开、错误可见、不翻成成功。
-    expect(screen.getByText(/预览保持不变/)).toBeVisible();
-    expect(facade.commitGovernanceBatch).not.toHaveBeenCalled();
+    expect(within(screen.getByRole("dialog", { name: "转为集中管理" })).getByRole("alert")).toHaveTextContent(readable);
+    expect(screen.queryByTestId("usage-manage-result")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "转为集中管理" })).toBeVisible();
   });
 
   it("locks only the busy relation and keeps other rows operable", async () => {
-    await renderGovernanceApp({ entries: ["/relationships/governance?governance=all"] });
+    let resolveCommit!: (result: UsageChangeResult) => void;
+    const commit = new Promise<UsageChangeResult>((resolve) => { resolveCommit = resolve; });
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockReturnValue(commit),
+    };
+    await renderGovernanceApp({ entries: ["/relationships/governance?governance=all"], usageChangeFacade });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    await screen.findByRole("dialog", { name: "纳入技能库管理预览" });
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalled());
 
     // 同一条关系的按钮互斥（禁用），其他关系的按钮仍然可用。
     expect(rowAction("managed:dep-eligible")).toBeDisabled();
     expect(rowAction("managed:dep-shared")).toBeEnabled();
     expect(rowAction("managed:dep-undeploy")).toBeEnabled();
+    await act(async () => {
+      const appliedResult = usageManageResult(preparedUsageManageChange().impacts.slice(0, 1).map((impact) => ({
+        ...impact,
+        status: "applied",
+        reason: null,
+        recovery_point: null,
+      })));
+      resolveCommit(appliedResult);
+      await commit;
+    });
   });
 
-  it("surfaces a failed single centralize per item instead of success", async () => {
-    // 后端在单项失败时仍 Ok 返回批次结果（state=failed + failed 项）：
-    // 页面必须逐项如实呈现，绝不翻成成功文案。
-    const facade = createFacade(FULL_LEDGER, {
-      prepareGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
-        items: [batchItem({ relation_id: "managed:dep-eligible", state: "prepared", operation_id: "op-child-9" })],
-        prepared_count: 1,
-      })),
-      commitGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
-        state: "failed",
-        items: [batchItem({
-          relation_id: "managed:dep-eligible",
-          operation_id: "op-child-9",
-          state: "failed",
-          error_code: "operation.conflict",
-          detail: "内容在中途发生变化",
-        })],
-        prepared_count: 1,
-        failed_count: 1,
-      })),
-    });
-    const { tracker } = await renderGovernanceApp({ facade });
+  it("surfaces a failed target in the single conversion result instead of success", async () => {
+    const impact = preparedUsageManageChange().impacts[0]!;
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult([{
+        ...impact,
+        status: "failed",
+        reason: "内容在中途发生变化",
+        recovery_point: null,
+      }])),
+    };
+    const { tracker } = await renderGovernanceApp({ usageChangeFacade });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    await screen.findByRole("dialog", { name: "纳入技能库管理预览" });
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
 
-    // 如实的失败终态：逐项失败信息 + 重试/回退入口。
-    await screen.findByText("本次没有成功，请逐条查看失败原因");
-    expect(screen.queryByText(/已纳入技能库管理：/)).not.toBeInTheDocument();
-    const failedItem = screen.getByTestId("governance-batch-result-managed:dep-eligible");
-    expect(failedItem).toHaveTextContent("失败");
-    expect(failedItem).toHaveTextContent("内容在中途发生变化");
-    expect(screen.getByRole("button", { name: "重试 managed:dep-eligible" })).toBeEnabled();
-    expect(failedItem).toHaveTextContent("可回退");
+    const result = await screen.findByTestId("usage-manage-result");
+    expect(result).toHaveTextContent("0 项；1 项仍需处理");
+    expect(result).toHaveTextContent("需要处理");
+    expect(result).toHaveTextContent("内容在中途发生变化");
+    expect(result).not.toHaveTextContent("已完成 1 项关系转换");
 
-    // tracker 父任务同样落 failed 终态。
-    const parent = tracker.getSnapshot().find((operation) => operation.kind === "relation_governance_batch");
+    const parent = tracker.getSnapshot().find((operation) => operation.kind === "usage_manage");
     expect(parent?.status).toBe("failed");
   });
 
   it("requires explicit shared-impact confirmation before centralizing a needs-validation row", async () => {
-    const { facade } = await renderGovernanceApp();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult()),
+    };
+    await renderGovernanceApp({ usageChangeFacade });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-shared"));
-    await screen.findByRole("dialog", { name: "纳入技能库管理预览" });
+    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
 
     // 未勾选共享影响确认前，确认按钮保持禁用。
-    expect(screen.getByRole("button", { name: "确认执行" })).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("我已确认共享目录影响"));
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    expect(within(dialog).getByRole("button", { name: "预览转换影响" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByLabelText("我已确认共享目录影响"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
 
-    await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
-      relationIds: ["managed:dep-shared"],
-    }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-shared"],
+      requested_form: "link",
+    })));
   });
 });
 
@@ -1212,7 +1309,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
     await waitRows();
     fireEvent.click(screen.getByLabelText("全选本页关系"));
     fireEvent.click(screen.getByRole("button", { name: "批量纳入技能库管理" }));
-    await screen.findByRole("dialog", { name: "批量纳入技能库管理" });
+    await screen.findByRole("dialog", { name: "转为集中管理" });
     return context;
   }
 
@@ -1237,140 +1334,138 @@ describe("RelationshipGovernancePage 批量治理", () => {
   });
 
   it("excludes unavailable rows from batch scope and allows cancelling one selected item", async () => {
-    const { facade } = await openBatchDialog();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageBatchChange()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult(preparedUsageManageBatchChange().impacts.slice(0, 1).map((impact) => ({
+        ...impact,
+        status: "applied",
+        reason: null,
+        recovery_point: null,
+      })))),
+    };
+    await openBatchDialog({ usageChangeFacade });
 
-    expect(screen.queryByTestId("governance-batch-item-observed:agent.codex:notes")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("usage-manage-item-observed:agent.codex:notes")).not.toBeInTheDocument();
 
     // 逐项取消：取消共享影响行后，prepare 只带剩余一条。
-    const sharedCheckbox = screen.getByTestId("governance-batch-check-managed:dep-shared") as HTMLInputElement;
+    const sharedRow = screen.getByTestId("usage-manage-item-managed:dep-shared");
+    const sharedCheckbox = within(sharedRow).getAllByRole("checkbox")[0] as HTMLInputElement;
     expect(sharedCheckbox.checked).toBe(true);
     fireEvent.click(sharedCheckbox);
     expect(sharedCheckbox.checked).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "确认执行 1 条" }));
-    await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: {},
-      relationIds: ["managed:dep-eligible"],
-    }));
-    expect(facade.commitGovernanceBatch).toHaveBeenCalledWith("batch-1", ["managed:dep-eligible"]);
+    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-eligible"],
+    })));
+    expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-manage-1",
+      prepared_id: "prepared-manage-1",
+    });
   });
 
   it("requires shared-impact confirmation inside the batch before confirming", async () => {
-    const { facade } = await openBatchDialog();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageBatchChange()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult()),
+    };
+    await openBatchDialog({ usageChangeFacade });
 
-    const confirmButton = screen.getByRole("button", { name: "确认执行 2 条" });
+    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    const confirmButton = within(dialog).getByRole("button", { name: "预览转换影响" });
     // 共享影响未确认时不能执行。
     expect(confirmButton).toBeDisabled();
     fireEvent.click(confirmButton);
-    expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
+    expect(usageChangeFacade.prepareUsageChange).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
-    fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
+    fireEvent.click(within(dialog).getByLabelText(/我已确认 共享 PDF 对共享目录的影响/));
+    fireEvent.click(confirmButton);
+    await within(dialog).findByTestId("removal-impact-facts");
 
-    await waitFor(() => expect(facade.prepareGovernanceBatch).toHaveBeenCalledWith({
-      action: "centralize_management",
-      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
-      relationIds: ["managed:dep-eligible", "managed:dep-shared"],
-    }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "manage",
+      requested_form: "link",
+      relation_ids: ["managed:dep-eligible", "managed:dep-shared"],
+    })));
   });
 
-  it("reports partial failure per item with retry and rollback info, never as full success", async () => {
-    const facade = createFacade(FULL_LEDGER, {
-      prepareGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
-        items: [
-          batchItem({ relation_id: "managed:dep-eligible", state: "prepared" }),
-          batchItem({ relation_id: "managed:dep-shared", state: "prepared", operation_id: "op-child-2" }),
-        ],
-        prepared_count: 2,
-      })),
-      commitGovernanceBatch: vi.fn().mockResolvedValue(batchOutcome({
-        state: "partially_committed",
-        items: [
-          batchItem({ relation_id: "managed:dep-eligible", state: "committed" }),
-          batchItem({
-            relation_id: "managed:dep-shared",
-            operation_id: "op-child-2",
-            state: "failed",
-            error_code: "operation.conflict",
-            detail: "内容已变化，需要重新校验",
-          }),
-        ],
-        prepared_count: 2,
-        committed_count: 1,
-        failed_count: 1,
-      })),
-    });
-    const { tracker } = await openBatchDialog({ facade });
+  it("reports per-target partial results and recovery info, never as full success", async () => {
+    const prepared = preparedUsageManageBatchChange();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(prepared),
+      commitUsageChange: vi.fn().mockResolvedValue(usageManageResult([
+        { ...prepared.impacts[0]!, status: "applied", reason: null, recovery_point: null },
+        {
+          ...prepared.impacts[1]!,
+          status: "recovery_required",
+          reason: "内容已变化，需要重新校验",
+          recovery_point: { path: "D:/backups/shared-pdf", fingerprint: null, representation: "copy" },
+        },
+      ], true)),
+    };
+    const { tracker } = await openBatchDialog({ usageChangeFacade });
 
-    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
-    fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
+    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(dialog).getByLabelText(/我已确认 共享 PDF 对共享目录的影响/));
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
+    await within(dialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
 
     // 部分成功必须逐项呈现：成功一条、失败一条（含错误明细与重试/回退信息）。
-    await screen.findByText("部分成功：1 条成功，1 条失败");
-    expect(screen.queryByText(/已全部纳入技能库管理/)).not.toBeInTheDocument();
-    const failedItem = screen.getByTestId("governance-batch-result-managed:dep-shared");
-    expect(failedItem).toHaveTextContent("失败");
-    expect(failedItem).toHaveTextContent("内容已变化，需要重新校验");
-    expect(screen.getByRole("button", { name: "重试 managed:dep-shared" })).toBeEnabled();
-    expect(failedItem).toHaveTextContent("可回退");
+    const result = await screen.findByTestId("usage-manage-result");
+    expect(result).toHaveTextContent("已完成 1 项；1 项仍需处理");
+    expect(result).toHaveTextContent("需要恢复");
+    expect(result).toHaveTextContent("内容已变化，需要重新校验");
+    expect(result).toHaveTextContent("恢复备份：D:\\backups\\shared-pdf");
 
     // 父任务终态是 partial，不汇总成成功。
-    const parent = tracker.getSnapshot().find((operation) => operation.kind === "relation_governance_batch");
+    const parent = tracker.getSnapshot().find((operation) => operation.kind === "usage_manage");
     expect(parent?.status).toBe("partial");
   });
 
-  it("retries a failed item as its own tracked run", async () => {
-    const facade = createFacade(FULL_LEDGER, {
-      prepareGovernanceBatch: vi.fn()
-        .mockResolvedValueOnce(batchOutcome({
-          items: [
-            batchItem({ relation_id: "managed:dep-eligible", state: "prepared" }),
-            batchItem({ relation_id: "managed:dep-shared", state: "prepared", operation_id: "op-child-2" }),
-          ],
-          prepared_count: 2,
-        }))
-        .mockResolvedValue(batchOutcome({
-          items: [batchItem({ relation_id: "managed:dep-shared", state: "prepared", operation_id: "op-child-3" })],
-          prepared_count: 1,
-        })),
-      commitGovernanceBatch: vi.fn()
-        .mockResolvedValueOnce(batchOutcome({
-          state: "partially_committed",
-          items: [
-            batchItem({ relation_id: "managed:dep-eligible", state: "committed" }),
-            batchItem({
-              relation_id: "managed:dep-shared",
-              operation_id: "op-child-2",
-              state: "failed",
-              error_code: "operation.conflict",
-            }),
-          ],
-          prepared_count: 2,
-          committed_count: 1,
-          failed_count: 1,
-        }))
-        .mockResolvedValue(batchOutcome({
-          state: "committed",
-          items: [batchItem({ relation_id: "managed:dep-shared", operation_id: "op-child-3", state: "committed" })],
-          prepared_count: 1,
-          committed_count: 1,
-        })),
-    });
-    await openBatchDialog({ facade });
+  it("previews a failed target separately when the user starts a new conversion", async () => {
+    const prepared = preparedUsageManageBatchChange();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn()
+        .mockResolvedValueOnce(prepared)
+        .mockResolvedValue(preparedUsageManageChange()),
+      commitUsageChange: vi.fn()
+        .mockResolvedValueOnce(usageManageResult([
+          { ...prepared.impacts[0]!, status: "applied", reason: null, recovery_point: null },
+          { ...prepared.impacts[1]!, status: "failed", reason: "目标内容已变化", recovery_point: null },
+        ]))
+        .mockResolvedValue(usageManageResult([{
+          ...preparedUsageManageChange().impacts[0]!,
+          relation_ids: ["managed:dep-shared"],
+          status: "applied",
+          reason: null,
+          recovery_point: null,
+        }])),
+    };
+    await openBatchDialog({ usageChangeFacade });
+    const batchDialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(batchDialog).getByLabelText(/我已确认 共享 PDF 对共享目录的影响/));
+    fireEvent.click(within(batchDialog).getByRole("button", { name: "预览转换影响" }));
+    await within(batchDialog).findByTestId("removal-impact-facts");
+    fireEvent.click(within(batchDialog).getByRole("button", { name: "确认转为集中管理" }));
+    await screen.findByText("原因：目标内容已变化");
+    fireEvent.click(within(screen.getByRole("dialog", { name: "转为集中管理" })).getByRole("button", { name: "关闭" }));
 
-    fireEvent.click(screen.getByLabelText("我已确认 共享 PDF 对共享目录的影响"));
-    fireEvent.click(screen.getByRole("button", { name: "确认执行 2 条" }));
-    await screen.findByText("部分成功：1 条成功，1 条失败");
-
-    fireEvent.click(screen.getByRole("button", { name: "重试 managed:dep-shared" }));
-
-    await screen.findByText("已全部纳入技能库管理（2 条）");
-    expect(facade.prepareGovernanceBatch).toHaveBeenLastCalledWith({
-      action: "centralize_management",
-      confirmations: { "managed:dep-shared": "shared_impact_confirmed" },
-      relationIds: ["managed:dep-shared"],
-    });
+    fireEvent.click(rowAction("managed:dep-shared"));
+    const singleDialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(within(singleDialog).getByLabelText("我已确认共享目录影响"));
+    fireEvent.click(within(singleDialog).getByRole("button", { name: "预览转换影响" }));
+    await within(singleDialog).findByTestId("removal-impact-facts");
+    expect(usageChangeFacade.prepareUsageChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: "manage",
+      relation_ids: ["managed:dep-shared"],
+    }));
+    fireEvent.click(within(singleDialog).getByRole("button", { name: "确认转为集中管理" }));
+    await screen.findByText("已完成 1 项关系转换。");
   });
 });
 
@@ -1545,7 +1640,7 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       entries: ["/relationships/governance?from=conflict&conflictId=case-1&relationId=managed:dep-shared"],
     });
     await waitRows();
-    expect(await screen.findByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
   });
 
   it("re-fetches the Skill ledger row and does not authorize from stale target identity state", async () => {
@@ -1566,7 +1661,7 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       facade,
     });
 
-    expect(await screen.findByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
     expect(facade.listGovernance).toHaveBeenCalledTimes(1);
     expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
   });
@@ -2180,12 +2275,11 @@ describe("RelationshipGovernancePage 批次收敛（任务 11.10/11.15）", () =
     fireEvent.click(screen.getByTestId("governance-open-batch"));
 
     // 来源副本没有旧 retain 批量入口；受阻部署也不能进入可执行项。
-    const dialog = await screen.findByTestId("governance-batch-dialog");
-    expect(within(dialog).getByRole("heading", { name: "批量纳入技能库管理" })).toBeVisible();
-    expect(within(dialog).queryByTestId("governance-batch-mixing")).not.toBeInTheDocument();
-    expect(within(dialog).getByTestId("governance-batch-confirm")).toBeEnabled();
-    expect(within(dialog).getByTestId("governance-batch-item-managed:dep-eligible")).toBeVisible();
-    expect(within(dialog).queryByTestId("governance-batch-item-src-pending")).not.toBeInTheDocument();
+    const dialog = await screen.findByTestId("usage-manage-dialog");
+    expect(within(dialog).getByRole("heading", { name: "转为集中管理" })).toBeVisible();
+    expect(within(dialog).getByTestId("usage-manage-item-managed:dep-eligible")).toBeVisible();
+    expect(within(dialog).queryByTestId("usage-manage-item-src-pending")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "预览转换影响" })).toBeEnabled();
   });
 
   it("keeps legacy Retained source rows out of T03 batch actions", async () => {

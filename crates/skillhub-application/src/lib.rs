@@ -6924,6 +6924,45 @@ impl LocalApplicationFacade {
                     );
                 }
             };
+            let adopted_hash = match DeploymentFilesystem::hash_tree(visible_path) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("adopted version is unreadable: {error}"),
+                    );
+                }
+            };
+            if observed_before == adopted_hash {
+                let recorded = self.with_database("version_adoption.rerecord_copy", |database| {
+                    database
+                        .deployment_repository()
+                        .update_reconcile_facts_sync(
+                            record.id,
+                            version_id,
+                            &observed_before,
+                            Some(&observed_before),
+                        )
+                });
+                return match recorded {
+                    Ok(()) => ManagedDeploymentRewriteOutcome::rewritten(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                    ),
+                    Err(error) => ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!("copy accounting failed after verifying adopted content: {error}"),
+                    ),
+                };
+            }
             if observed_before != record.expected_hash {
                 let marking_failed = self
                     .mark_managed_copy_diverged(record, &observed_before)
@@ -6948,14 +6987,51 @@ impl LocalApplicationFacade {
                 "managed-copy-backup-{}-{}-{operation_id}",
                 record.skill_id, record.id
             ));
-            if let Err(error) = copy_directory_tree(&destination, &backup_path) {
-                return ManagedDeploymentRewriteOutcome::failed(
-                    relation_id,
-                    &deployment_id,
-                    &destination_text,
-                    mode,
-                    format!("managed copy backup failed, rewrite skipped: {error}"),
-                );
+            match std::fs::symlink_metadata(&backup_path) {
+                Ok(_) => match DeploymentFilesystem::hash_tree(&backup_path) {
+                    Ok(backup_hash) if backup_hash == observed_before => {}
+                    Ok(_) => {
+                        return ManagedDeploymentRewriteOutcome::failed(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                            "managed copy backup does not match the verified source; rewrite skipped"
+                                .to_owned(),
+                        );
+                    }
+                    Err(error) => {
+                        return ManagedDeploymentRewriteOutcome::failed(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                            format!("managed copy backup is unreadable, rewrite skipped: {error}"),
+                        );
+                    }
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    if let Err(error) = copy_directory_tree(&destination, &backup_path) {
+                        return ManagedDeploymentRewriteOutcome::failed(
+                            relation_id,
+                            &deployment_id,
+                            &destination_text,
+                            mode,
+                            format!("managed copy backup failed, rewrite skipped: {error}"),
+                        );
+                    }
+                }
+                Err(error) => {
+                    return ManagedDeploymentRewriteOutcome::failed(
+                        relation_id,
+                        &deployment_id,
+                        &destination_text,
+                        mode,
+                        format!(
+                            "managed copy backup cannot be inspected, rewrite skipped: {error}"
+                        ),
+                    );
+                }
             }
             let write_result = (|| -> AppResult<String> {
                 let proof = self.backend.deployment_proof(record)?;
@@ -7405,6 +7481,210 @@ impl LocalApplicationFacade {
             self.journal_write(record);
         }
         error
+    }
+
+    pub(crate) fn adopt_original_entry_for_usage_change(
+        &self,
+        skill_id: skillhub_core::SkillId,
+        source_path: &Path,
+        expected_fingerprint: &str,
+        expected_previous_version: Option<&skillhub_core::VersionId>,
+        operation_id: OperationId,
+    ) -> AppResult<usage_change_service::UsageOriginalEntryAdoptionResult> {
+        const KIND: &str = "usage_original_entry_adoption";
+        if let Some(record) = self
+            .with_database("usage_original_adoption.read_journal", |database| {
+                database.operation_repository().get_sync(operation_id)
+            })?
+        {
+            if record.kind != KIND {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "operation_id_reused"));
+            }
+            if record.phase == skillhub_core::OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|error| {
+                        AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                            .with_param("reason", "usage_original_entry_result_invalid")
+                            .with_param("source", error.to_string())
+                    })?
+                    .ok_or_else(|| {
+                        AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                            .with_param("reason", "usage_original_entry_result_missing")
+                    });
+            }
+            if record.phase == skillhub_core::OperationPhase::NeedsRecovery {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "usage_change_needs_recovery")
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            if record.phase == skillhub_core::OperationPhase::RolledBack {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "usage_original_entry_adoption_rolled_back")
+                    .with_action(RecoveryAction::Retry));
+            }
+        }
+
+        let context = self.library_runtime.snapshot()?;
+        let skill = self.with_database("usage_original_adoption.load_skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .ok_or_else(|| {
+                    AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                        .with_param("skill_id", skill_id.to_string())
+                        .with_action(RecoveryAction::Retry)
+                })
+        })?;
+        let current_version = context.store.current(skill_id)?;
+        let database_current_version = self
+            .with_database("usage_original_adoption.current_version", |database| {
+                database.current_version(skill_id)
+            })?;
+        if current_version.as_ref() != expected_previous_version
+            || database_current_version.as_ref() != expected_previous_version
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "usage_change_preview_stale")
+                .with_action(RecoveryAction::Retry));
+        }
+        let actual_fingerprint = DeploymentFilesystem::hash_tree(source_path)?;
+        if actual_fingerprint != expected_fingerprint {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "usage_change_preview_stale")
+                .with_action(RecoveryAction::Retry));
+        }
+
+        let mut operation_record = skillhub_core::OperationRecord::planned(
+            operation_id,
+            KIND,
+            format!("{skill_id}:{expected_fingerprint}"),
+        );
+        self.with_database("usage_original_adoption.begin", |database| {
+            database
+                .operation_repository()
+                .insert_sync(&operation_record)
+        })?;
+        let snapshot = match self.content_adoption_snapshot(&context, &skill, operation_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error))
+            }
+        };
+        if snapshot.previous_version_id.as_ref() != expected_previous_version
+            || snapshot.database_previous_version_id.as_ref() != expected_previous_version
+        {
+            let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "usage_change_preview_stale")
+                .with_action(RecoveryAction::Retry);
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+            return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+        }
+        let captured = match context.store.capture_with_status(skill_id, source_path) {
+            Ok(captured) => captured,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error))
+            }
+        };
+        let version = captured.record;
+        if current_version.as_ref() == Some(&version.id) {
+            let result = usage_change_service::UsageOriginalEntryAdoptionResult {
+                skill_id,
+                version_id: Some(version.id.clone()),
+                rewrites: Vec::new(),
+            };
+            operation_record.phase = skillhub_core::OperationPhase::Committed;
+            operation_record.progress.phase = operation_record.phase;
+            operation_record.progress.message_code =
+                "operation.usage_original_entry_adoption.unchanged".to_owned();
+            operation_record.result = Some(serde_json::to_value(&result).map_err(|error| {
+                AppError::new(ErrorCode::InternalError, Severity::Error)
+                    .with_param("source", error.to_string())
+            })?);
+            self.persist_version_adoption_record(&operation_record)?;
+            return Ok(result);
+        }
+        let replacement =
+            match self.adopt_captured_version(&context, &skill, &snapshot, &version, false) {
+                Ok(replacement) => replacement,
+                Err((error, replacement)) => {
+                    return Err(self.settle_content_adoption_failure(
+                        &context,
+                        &skill,
+                        operation_id,
+                        KIND,
+                        &snapshot,
+                        replacement.as_ref(),
+                        Some((&version, captured.created)),
+                        false,
+                        error,
+                    ));
+                }
+            };
+
+        let mut progress = usage_change_service::UsageOriginalEntryAdoptionResult {
+            skill_id,
+            version_id: Some(version.id.clone()),
+            rewrites: Vec::new(),
+        };
+        operation_record.phase = skillhub_core::OperationPhase::Applying;
+        operation_record.progress.phase = operation_record.phase;
+        operation_record.progress.message_code =
+            "operation.usage_original_entry_adoption.rewriting_targets".to_owned();
+        operation_record.result = Some(serde_json::to_value(&progress).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?);
+        if let Err(error) = self.persist_version_adoption_record(&operation_record) {
+            return Err(self.settle_content_adoption_failure(
+                &context,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                Some(&replacement),
+                Some((&version, captured.created)),
+                false,
+                error,
+            ));
+        }
+
+        progress.rewrites = self
+            .rewrite_managed_deployments_for_adoption(&context, &skill, &version.id, &operation_id)
+            .into_iter()
+            .map(
+                |outcome| usage_change_service::UsageOriginalEntryRewriteResult {
+                    relation_id: outcome.relation_id,
+                    path: outcome.path,
+                    rewritten: outcome.rewritten,
+                    reason: outcome.reason,
+                },
+            )
+            .collect();
+        operation_record.phase = skillhub_core::OperationPhase::Committed;
+        operation_record.progress.phase = operation_record.phase;
+        operation_record.progress.completed = 1;
+        operation_record.progress.total = 1;
+        operation_record.progress.message_code =
+            if progress.rewrites.iter().any(|rewrite| !rewrite.rewritten) {
+                "operation.usage_original_entry_adoption.partial".to_owned()
+            } else {
+                "operation.usage_original_entry_adoption.committed".to_owned()
+            };
+        operation_record.result = Some(serde_json::to_value(&progress).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?);
+        self.persist_version_adoption_record(&operation_record)?;
+        let _ = context
+            .central
+            .finalize_visible_tree_replacement(replacement);
+        Ok(progress)
     }
 
     fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {

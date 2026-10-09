@@ -297,6 +297,17 @@ impl LocalApplicationFacade {
         if request.action == RelationGovernanceBatchAction::RetainSourceCopy {
             return Err(super::usage_change_service::legacy_release_endpoint_error());
         }
+        match (request.action, request.requested_form) {
+            (RelationGovernanceBatchAction::CentralizeManagement, Some(_))
+            | (RelationGovernanceBatchAction::CleanSourceCopy, None) => {}
+            (RelationGovernanceBatchAction::CentralizeManagement, None) => {
+                return Err(super::usage_change_service::manage_form_required_error());
+            }
+            (_, Some(_)) => {
+                return Err(super::usage_change_service::manage_form_not_applicable_error());
+            }
+            (RelationGovernanceBatchAction::RetainSourceCopy, None) => unreachable!(),
+        }
         let batch_id = OperationId::new();
         let requested_relation_ids = dedupe_preserving_order(&request.relation_ids)?;
 
@@ -404,9 +415,13 @@ impl LocalApplicationFacade {
                 .cloned();
             // 8.16：按 action 分派到各自的逐行状态机；批处理本身只做编排。
             let (child, item) = match request.action {
-                RelationGovernanceBatchAction::CentralizeManagement => {
-                    self.prepare_centralize_item(relation_id.clone(), row, confirmation_token)
-                }
+                RelationGovernanceBatchAction::CentralizeManagement => self
+                    .prepare_centralize_item(
+                        relation_id.clone(),
+                        row,
+                        request.requested_form.expect("validated management form"),
+                        confirmation_token,
+                    ),
                 RelationGovernanceBatchAction::RetainSourceCopy => {
                     self.prepare_retain_item(relation_id.clone(), row)
                 }
@@ -454,6 +469,7 @@ impl LocalApplicationFacade {
         &self,
         relation_id: String,
         row: &RelationGovernanceRow,
+        requested_form: skillhub_core::relationship::UsageForm,
         confirmation_token: Option<String>,
     ) -> (Option<GovernanceBatchChild>, RelationGovernanceBatchItem) {
         if !batch_row_is_executable(row, confirmation_token.as_deref()) {
@@ -469,7 +485,14 @@ impl LocalApplicationFacade {
         }
         match self.prepare_relation_migration(PrepareRelationMigration {
             relation_id: relation_id.clone(),
-            target_mode: RelationMigrationTargetMode::ManagedLink,
+            target_mode: match requested_form {
+                skillhub_core::relationship::UsageForm::Link => {
+                    RelationMigrationTargetMode::ManagedLink
+                }
+                skillhub_core::relationship::UsageForm::FullCopy => {
+                    RelationMigrationTargetMode::ManagedCopy
+                }
+            },
             backup_policy: RelationshipMigrationBackupPolicy::Required,
             confirmation_token,
         }) {

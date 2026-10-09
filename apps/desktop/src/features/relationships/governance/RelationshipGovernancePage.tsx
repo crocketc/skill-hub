@@ -50,10 +50,9 @@ import { createGovernanceBatchRunner } from "./governanceBatchOperation";
 import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
-import { governanceSkillDisplayName } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
-import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
-import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { UsageManageDialog } from "./UsageManageDialog";
 import { UndeployDialog } from "../../removal/UndeployDialog";
 import type { UsageChangeFacade } from "../../removal/api";
 import { nativeUsageChangeFacade, unavailableUsageChangeFacade } from "../../removal/nativeApi";
@@ -77,13 +76,6 @@ interface SingleFlowState {
   kind: "centralize" | "undeploy";
   row: RelationGovernanceRow;
   usage: UsageRelationView | null;
-  relationshipRevision: string;
-  busy: boolean;
-  error: string | null;
-  /** committed 终态的成功文案；其余终态为 null（改由逐项结果面板呈现）。 */
-  resultText: string | null;
-  /** 纳入集中库管理的批次结果：committed 以外也必须保留逐项事实。 */
-  outcome: RelationGovernanceBatchOutcome | null;
   sharedImpactConfirmed: boolean;
 }
 
@@ -365,17 +357,12 @@ export function RelationshipGovernancePage({
     const resolvedUsage = usage ?? relationRows.find((candidate) => candidate.usage.relation_id === relationId
       || candidate.usage.evidence_relation_ids.includes(relationId))?.usage ?? null;
     setSingle({
-      busy: false,
-      error: null,
       kind,
-      outcome: null,
-      resultText: null,
       row,
       usage: resolvedUsage,
-      relationshipRevision: ledgerQuery.data?.relationship_revision ?? "",
       sharedImpactConfirmed: false,
     });
-  }, [ledgerQuery.data?.relationship_revision, relationRows]);
+  }, [relationRows]);
 
   // —— 批量流程 ——
   const selectedUsageRows = useMemo(
@@ -396,6 +383,15 @@ export function RelationshipGovernancePage({
   );
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchFlow, setBatchFlow] = useState<BatchFlowState>(INITIAL_BATCH_FLOW);
+  const checkedBatchRows = useMemo(
+    () => selectedRows.filter((row) => batchFlow.checkedIds.includes(relationIdOf(row.relation))),
+    [batchFlow.checkedIds, selectedRows],
+  );
+  const batchUsesUsageManage = batchOpen && summarizeBatchSelection(checkedBatchRows).kind === "deployment";
+  const batchDeploymentRows = useMemo(
+    () => selectedRows.filter((row) => row.relation.kind === "deployment"),
+    [selectedRows],
+  );
 
   const openBatchDialog = useCallback(() => {
     setBatchFlow({
@@ -488,111 +484,37 @@ export function RelationshipGovernancePage({
     [describeError, facade, notifications, queryClient, tracker, translate],
   );
 
-  /** 单条成功文案；committed 以外的终态一律走逐项结果面板，不冒充成功。 */
-  const centralizeDoneText = useCallback((flow: SingleFlowState) => t(
-    "relationships.governance.centralize.done",
-    {
-      skill: governanceSkillDisplayName(flow.row, t),
-    },
-  ), [t]);
-
-  const confirmSingleCentralize = useCallback((flow: SingleFlowState) => {
-    const relationId = relationIdOf(flow.row.relation);
-    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    runGovernanceBatch(
-      "centralize_management",
-      [relationId],
-      flow.sharedImpactConfirmed ? new Set([relationId]) : new Set(),
-      (outcome) => {
-        // 后端在单项失败/受阻时同样 Ok 返回批次结果：只有 committed 才是成功，
-        // 其余终态交由逐项结果面板如实呈现（复用批量结果组件，不另造语义）。
-        setSingle((current) => current ? {
-          ...current,
-          busy: false,
-          outcome,
-          resultText: outcome.state === "committed"
-            ? centralizeDoneText(flow)
-            : null,
-        } : current);
-      },
-      (message) => {
-        // 后端拒绝：预览保持打开，错误原样呈现，绝不更新为成功。
-        setSingle((current) => current ? { ...current, busy: false, error: message } : current);
-      },
-      t("relationships.governance.batch.running"),
-    );
-  }, [centralizeDoneText, runGovernanceBatch, t]);
-
-  /** 单条结果的逐项重试：与批量重试共用同一合并语义。 */
-  const retrySingleItem = useCallback((relationId: string) => {
-    if (!single?.outcome) return;
-    const confirmed = single.sharedImpactConfirmed ? new Set([relationId]) : new Set<string>();
-    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    runGovernanceBatch(
-      "centralize_management",
-      [relationId],
-      confirmed,
-      (outcome) => {
-        setSingle((current) => {
-          if (!current?.outcome) return current;
-          const merged = mergeBatchItemOutcome(current.outcome, relationId, outcome);
-          return {
-            ...current,
-            busy: false,
-            outcome: merged,
-            resultText: merged.state === "committed" && current.row
-              ? centralizeDoneText(current)
-              : null,
-          };
-        });
-      },
-      (message) => setSingle((current) => current
-        ? { ...current, busy: false, error: message }
-        : current),
-      t("relationships.governance.batch.running"),
-    );
-  }, [centralizeDoneText, runGovernanceBatch, single, t]);
-
-  /** 单条结果的逐项回退：回退必须针对发起批次（子任务挂在该批次下）。 */
-  const rollbackSingleItem = useCallback((relationId: string) => {
-    if (!single?.outcome) return;
-    const batchId = single.outcome.batch_id;
-    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    void runTrackedOperation<RelationGovernanceBatchOutcome>({
-      targetHref: governanceDestination([relationId]),
+  const commitUsageManage = useCallback((request: CommitUsageChange) => {
+    const relationIds = single?.kind === "centralize"
+      ? [relationIdOf(single.row.relation)]
+      : [...batchFlow.checkedIds];
+    return runTrackedOperation<UsageChangeResult>({
+      targetHref: governanceDestination(relationIds),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
-      kind: "relation_governance_batch",
-      label: t("relationships.governance.batch.trackerLabel"),
+      kind: "usage_manage",
+      label: t("relationships.governance.manage.title"),
       notifications,
       queryClient,
       run: async (handle) => {
-        const outcome = await facade.rollbackGovernanceBatch(batchId, [relationId]);
-        // 与批量回退一致：回退完成后对齐发起批次（时机裁定沿用复审登记项）。
-        handle.correlate(batchId);
-        return outcome;
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
       },
-      successNotice: () => null,
-      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
-      total: 1,
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: t("relationships.governance.manage.title"), tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
+      }),
+      total: relationIds.length,
       tracker,
       translate: (key, options) => String(t(key as never, options as never)),
-    }).then((outcome) => {
-      setSingle((current) => {
-        if (!current?.outcome) return current;
-        return {
-          ...current,
-          busy: false,
-          outcome: mergeBatchItemOutcome(current.outcome, relationId, outcome),
-        };
-      });
-    }).catch((reason: unknown) => {
-      setSingle((current) => current
-        ? { ...current, busy: false, error: describeError(reason) }
-        : current);
     });
-  }, [describeError, facade, notifications, queryClient, single, t, tracker]);
+  }, [batchFlow.checkedIds, describeError, effectiveUsageChangeFacade, notifications, queryClient, single, t, tracker]);
 
   const commitSingleRelease = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => {
     const relationId = single ? relationIdOf(single.row.relation) : "";
@@ -628,7 +550,7 @@ export function RelationshipGovernancePage({
 
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
-    const selection = summarizeBatchSelection(selectedRows);
+    const selection = summarizeBatchSelection(selectedRows.filter((row) => relationIds.includes(relationIdOf(row.relation))));
     if (!selection.action) return;
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
     const confirmed = new Set(batchFlow.sharedConfirmedIds);
@@ -643,7 +565,7 @@ export function RelationshipGovernancePage({
   }, [batchFlow.checkedIds, batchFlow.sharedConfirmedIds, runGovernanceBatch, selectedRows, t]);
 
   const retryBatchItem = useCallback((relationId: string) => {
-    const selection = summarizeBatchSelection(selectedRows);
+    const selection = summarizeBatchSelection(selectedRows.filter((row) => batchFlow.checkedIds.includes(relationIdOf(row.relation))));
     if (!selection.action) return;
     setBatchFlow((current) => ({ ...current, running: true, error: null }));
     runGovernanceBatch(
@@ -976,80 +898,71 @@ export function RelationshipGovernancePage({
           ) : (
             <DataState message={t("relationships.governance.deepLink.relationUnavailable")} state="unavailable" />
           )
-        ) : single.resultText ? (
-          <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
-            <h3>{t("relationships.governance.batch.resultTitle")}</h3>
-            <p role="status">{single.resultText}</p>
-            <div className="sh-governance__dialog-actions">
-              <Button onClick={closeSingle} variant="secondary">
-                {t("relationships.governance.batch.close")}
-              </Button>
-            </div>
-          </div>
-        ) : single.outcome ? (
-          // committed 以外的终态：与批量共用同一套逐项结果组件，
-          // 标题/失败明细/重试/回退语义完全一致，不冒充成功。
-          <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
-            <h3>{t("relationships.governance.batch.resultTitle")}</h3>
-            {single.error ? (
-              <div role="alert">
-                <p>{t("relationships.governance.preview.rejectedNote")}</p>
-                <p>{single.error}</p>
-              </div>
-            ) : null}
-            <BatchResult
-              onRetry={retrySingleItem}
-              onRollback={rollbackSingleItem}
-              result={single.outcome}
-            />
-            <div className="sh-governance__dialog-actions">
-              <Button onClick={closeSingle} variant="secondary">
-                {t("relationships.governance.batch.close")}
-              </Button>
-            </div>
-          </div>
         ) : (
-            <GovernanceImpactPreview
-              busy={single.busy}
-              error={single.error}
-              loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
-              mode={single.kind}
-              onCancel={closeSingle}
-              onConfirm={() => confirmSingleCentralize(single)}
-              onSharedImpactConfirmChange={(checked) => setSingle((current) => current
-                ? { ...current, sharedImpactConfirmed: checked }
-                : current)}
-              row={single.row}
-              sharedImpactConfirmed={single.sharedImpactConfirmed}
-            />
+          <UsageManageDialog
+            checkedIds={new Set([relationIdOf(single.row.relation)])}
+            onClose={closeSingle}
+            onCommit={commitUsageManage}
+            onPrepare={effectiveUsageChangeFacade.prepareUsageChange}
+            onSharedImpactConfirm={(_relationId, checked) => setSingle((current) => current
+              ? { ...current, sharedImpactConfirmed: checked }
+              : current)}
+            rows={[single.row]}
+            sharedConfirmedIds={single.sharedImpactConfirmed ? new Set([relationIdOf(single.row.relation)]) : new Set()}
+          />
         )
       ) : null}
 
       {batchOpen ? (
-        <GovernanceBatchDialog
-          checkedIds={new Set(batchFlow.checkedIds)}
-          error={batchFlow.error}
-          onClose={closeBatchDialog}
-          onConfirm={confirmBatch}
-          onRetry={retryBatchItem}
-          onRollback={rollbackBatchItem}
-          onSharedImpactConfirm={(relationId, checked) => setBatchFlow((current) => ({
-            ...current,
-            sharedConfirmedIds: checked
-              ? [...current.sharedConfirmedIds, relationId]
-              : current.sharedConfirmedIds.filter((id) => id !== relationId),
-          }))}
-          onToggleItem={(relationId, checked) => setBatchFlow((current) => ({
-            ...current,
-            checkedIds: checked
-              ? [...current.checkedIds, relationId]
-              : current.checkedIds.filter((id) => id !== relationId),
-          }))}
-          result={batchFlow.result}
-          rows={selectedRows}
-          running={batchFlow.running}
-          sharedConfirmedIds={new Set(batchFlow.sharedConfirmedIds)}
-        />
+        batchUsesUsageManage ? (
+          <UsageManageDialog
+            allowSelection
+            checkedIds={new Set(batchFlow.checkedIds.filter((id) => batchDeploymentRows.some((row) => relationIdOf(row.relation) === id)))}
+            onBusyChange={(running) => setBatchFlow((current) => ({ ...current, running }))}
+            onClose={closeBatchDialog}
+            onCommit={commitUsageManage}
+            onPrepare={effectiveUsageChangeFacade.prepareUsageChange}
+            onSharedImpactConfirm={(relationId, checked) => setBatchFlow((current) => ({
+              ...current,
+              sharedConfirmedIds: checked
+                ? [...new Set([...current.sharedConfirmedIds, relationId])]
+                : current.sharedConfirmedIds.filter((id) => id !== relationId),
+            }))}
+            onToggleItem={(relationId, checked) => setBatchFlow((current) => ({
+              ...current,
+              checkedIds: checked
+                ? [...new Set([...current.checkedIds, relationId])]
+                : current.checkedIds.filter((id) => id !== relationId),
+            }))}
+            rows={batchDeploymentRows}
+            sharedConfirmedIds={new Set(batchFlow.sharedConfirmedIds)}
+          />
+        ) : (
+          <GovernanceBatchDialog
+            checkedIds={new Set(batchFlow.checkedIds)}
+            error={batchFlow.error}
+            onClose={closeBatchDialog}
+            onConfirm={confirmBatch}
+            onRetry={retryBatchItem}
+            onRollback={rollbackBatchItem}
+            onSharedImpactConfirm={(relationId, checked) => setBatchFlow((current) => ({
+              ...current,
+              sharedConfirmedIds: checked
+                ? [...new Set([...current.sharedConfirmedIds, relationId])]
+                : current.sharedConfirmedIds.filter((id) => id !== relationId),
+            }))}
+            onToggleItem={(relationId, checked) => setBatchFlow((current) => ({
+              ...current,
+              checkedIds: checked
+                ? [...new Set([...current.checkedIds, relationId])]
+                : current.checkedIds.filter((id) => id !== relationId),
+            }))}
+            result={batchFlow.result}
+            rows={selectedRows}
+            running={batchFlow.running}
+            sharedConfirmedIds={new Set(batchFlow.sharedConfirmedIds)}
+          />
+        )
         ) : null}
       </div>
       </div>

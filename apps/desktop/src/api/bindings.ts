@@ -2973,6 +2973,8 @@ export type PrepareProjectAssembly = {
 export type PrepareRelationGovernanceBatch = {
 	action: RelationGovernanceBatchAction,
 	relation_ids: string[],
+	/**  管理转换必须显式选择受管链接或完整拷贝；来源副本动作不适用。 */
+	requested_form: UsageForm | null,
 	confirmations?: { [key in string]: string },
 };
 

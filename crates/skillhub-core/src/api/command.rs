@@ -616,6 +616,8 @@ pub enum RelationGovernanceBatchAction {
 pub struct PrepareRelationGovernanceBatch {
     pub action: RelationGovernanceBatchAction,
     pub relation_ids: Vec<String>,
+    /// 管理转换必须显式选择受管链接或完整拷贝；来源副本动作不适用。
+    pub requested_form: Option<crate::relationship::UsageForm>,
     #[serde(default)]
     pub confirmations: std::collections::BTreeMap<String, String>,
 }

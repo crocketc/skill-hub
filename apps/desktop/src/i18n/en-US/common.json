@@ -2367,7 +2367,9 @@
         "remove_link": "The verified link at this entry will be removed.",
         "keep_independent_copy": "The target copy stays in place and becomes independent of the library Skill.",
         "remove_copy_with_backup": "The target copy will be removed after a recovery copy is created.",
-        "record_only": "Only the relationship record will end. The file may remain readable by the Agent."
+        "record_only": "Only the relationship record will end. The file may remain readable by the Agent.",
+        "manage_link": "Change this entry into a link to the skill subject.",
+        "manage_copy": "Keep the target files and bring them under skill library synchronization."
       },
       "confirm": "Confirm release",
       "submitting": "Releasing usage…",
@@ -2383,7 +2385,9 @@
         "remove_link": "Remove the link",
         "keep_independent_copy": "Keep as an independent copy",
         "remove_copy_with_backup": "Remove the copy with a backup",
-        "record_only": "End tracking only"
+        "record_only": "End tracking only",
+        "manage_link": "Convert to a managed link",
+        "manage_copy": "Convert to a managed copy"
       },
       "recoveryPoint": "Recovery copy: {{path}}",
       "close": "Close"
@@ -3041,6 +3045,28 @@
         "link": "Link",
         "full_copy": "Full copy",
         "unknown": "Form not confirmed"
+      },
+      "manage": {
+        "title": "Bring under skill library management",
+        "description": "Choose which content to use and how the target should receive it. The preview lists selected relationships, subject version changes, and other managed targets affected.",
+        "contentBasis": "Choose the content to use",
+        "libraryCurrent": "Current skill library version (recommended)",
+        "originalEntry": "Content at the usage location",
+        "form": "How the target will receive it",
+        "itemCheck": "Select the relationship for {{name}}",
+        "sharedCopyRequired": "Shared directories are managed through a full copy.",
+        "subjectVersions": "Skill subject version changes",
+        "originalVersionNote": "Using the original content will create a new version for {{count}} skill subject(s); existing versions and verification evidence are retained.",
+        "preview": "Preview conversion impact",
+        "preparing": "Preparing conversion preview…",
+        "confirm": "Bring under management",
+        "committing": "Converting relationships…",
+        "changeSelection": "Change selection and preview again",
+        "resultHeading": "Conversion results",
+        "resultComplete": "Completed {{applied}} relationship conversion(s).",
+        "resultPartial": "Completed {{applied}}; {{failed}} still need attention.",
+        "resultReason": "Reason: {{reason}}",
+        "close": "Close"
       },
       "healthMessages": {
         "normal": "The usage state is healthy.",

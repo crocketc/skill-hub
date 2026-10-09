@@ -43,6 +43,7 @@ struct RelationMigrationJournal {
     operation_kind: String,
     request_fingerprint: String,
     expected_target_fingerprint: String,
+    allow_content_replacement: bool,
     expected_link_representation: FileRepresentation,
     source_relations: Vec<SourceRelationFact>,
     safety: RelationSafetySnapshot,
@@ -100,6 +101,7 @@ impl RelationMigrationJournal {
         operation_kind: String,
         request_fingerprint: String,
         expected_target_fingerprint: String,
+        allow_content_replacement: bool,
         source_relations: Vec<SourceRelationFact>,
         safety: RelationSafetySnapshot,
         original_entity_identity: String,
@@ -109,6 +111,7 @@ impl RelationMigrationJournal {
             operation_kind,
             request_fingerprint,
             expected_target_fingerprint,
+            allow_content_replacement,
             expected_link_representation: representation_for_mode(prepared.target_mode),
             source_relations,
             safety,
@@ -610,6 +613,7 @@ impl LocalApplicationFacade {
             "migrate_relation",
             request_fingerprint,
             false,
+            false,
         )?;
         Ok(AppCommandResult::PreparedRelationMigration(prepared))
     }
@@ -619,6 +623,7 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
         request: PrepareRelationMigration,
         request_fingerprint: String,
+        allow_content_replacement: bool,
     ) -> AppResult<skillhub_core::PreparedRelationMigration> {
         self.prepare_relation_migration_for_operation(
             request,
@@ -626,6 +631,7 @@ impl LocalApplicationFacade {
             "usage_manage",
             request_fingerprint,
             true,
+            allow_content_replacement,
         )
     }
 
@@ -636,6 +642,7 @@ impl LocalApplicationFacade {
         operation_kind: &'static str,
         request_fingerprint: String,
         manage_commit_confirms_shared_impact: bool,
+        allow_content_replacement: bool,
     ) -> AppResult<skillhub_core::PreparedRelationMigration> {
         {
             let database = self
@@ -744,7 +751,7 @@ impl LocalApplicationFacade {
             }
             validate_non_symlink_directory(&target_path)?;
             let target_fingerprint = DeploymentFilesystem::hash_tree(&target_path)?;
-            if target_fingerprint != current_fingerprint {
+            if target_fingerprint != current_fingerprint && !allow_content_replacement {
                 return Err(AppError::new(ErrorCode::TargetChanged, Severity::Error)
                     .with_param("path", target_path.to_string_lossy().into_owned())
                     .with_param("detail", "central target fingerprint differs")
@@ -752,7 +759,7 @@ impl LocalApplicationFacade {
             }
 
             let permission_limited = relation_path_is_inaccessible(&relation.path);
-            let impact = calculate_removal_impact(
+            let mut impact = calculate_removal_impact(
                 &request.relation_id,
                 &RemovalFacts::new(
                     snapshot.deployments.clone(),
@@ -760,6 +767,18 @@ impl LocalApplicationFacade {
                 )
                 .with_permission_limited(permission_limited),
             );
+            if allow_content_replacement
+                && relation.match_state == skillhub_core::deployment::ObservedMatchState::Diverged
+                && relation.skill_id.is_some()
+                && relation.relationship != RelationshipType::Unknown
+                && relation.file_representation != FileRepresentation::Unknown
+            {
+                impact.governance_tasks.retain(|task| {
+                    !(task.kind == GovernanceTaskKind::UnknownDirectoryRecognition
+                        && task.detail
+                            == "relationship or Skill identity is not deterministically confirmed")
+                });
+            }
             // The technical link form is decided by platform capability at
             // the exact volume that must host the replacement entry.  A
             // conversion whose link cannot be created there fails up front
@@ -883,6 +902,7 @@ impl LocalApplicationFacade {
                     operation_kind.to_owned(),
                     request_fingerprint,
                     DeploymentFilesystem::hash_tree(&prepared.target_path)?,
+                    allow_content_replacement,
                     source_relations,
                     safety,
                     original_entity_identity,
@@ -967,7 +987,7 @@ impl LocalApplicationFacade {
             Ok(value) => value,
             Err(error) => return self.failed_relation_result(&journal, error),
         };
-        if target_fingerprint != current_fingerprint
+        if (!journal.allow_content_replacement && target_fingerprint != current_fingerprint)
             || target_fingerprint != journal.expected_target_fingerprint
         {
             return self.failed_relation_result(&journal, target_changed(&prepared.target_path));
@@ -1806,6 +1826,10 @@ impl LocalApplicationFacade {
                 .ok_or_else(|| {
                     invalid_relation_migration("relationship journal target fingerprint is missing")
                 })?;
+            let allow_content_replacement = journal_value
+                .get("allow_content_replacement")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
             let expected_link_representation = journal_value
                 .get("expected_link_representation")
                 .cloned()
@@ -1892,6 +1916,7 @@ impl LocalApplicationFacade {
                 operation_kind: record.kind.clone(),
                 request_fingerprint: record.request_fingerprint.clone(),
                 expected_target_fingerprint,
+                allow_content_replacement,
                 expected_link_representation,
                 source_relations,
                 safety,
@@ -1941,6 +1966,7 @@ impl LocalApplicationFacade {
                 "migrate_relation".into(),
                 relation_id_fingerprint(&relation.relation_id),
                 target_fingerprint,
+                false,
                 snapshot.source_relations,
                 safety,
                 original_entity_identity,
@@ -2142,6 +2168,7 @@ impl LocalApplicationFacade {
             "journal": {
                 "prepared": prepared,
                 "expected_target_fingerprint": journal.expected_target_fingerprint,
+                "allow_content_replacement": journal.allow_content_replacement,
                 "expected_link_representation": journal.expected_link_representation,
                 "source_relations": journal.source_relations,
                 "safety": journal.safety,
@@ -2804,7 +2831,7 @@ fn validate_relation_for_rollback(
             }
         || current.ownership != OwnershipState::SkillhubManaged
         || current.file_representation != journal.expected_link_representation
-        || current.content_fingerprint != prepared.current_content_fingerprint
+        || current.content_fingerprint != journal.expected_target_fingerprint
         || current.link_target_path.as_deref()
             != if prepared.target_mode == DeploymentMode::ManagedCopy {
                 None

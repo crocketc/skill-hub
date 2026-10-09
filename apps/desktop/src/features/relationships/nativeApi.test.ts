@@ -248,6 +248,7 @@ describe("nativeRelationshipsFacade", () => {
       payload: {
         action: "clean_source_copy",
         relation_ids: ["rel-1"],
+        requested_form: null,
         confirmations: { "rel-1": "confirmed" },
       },
     });

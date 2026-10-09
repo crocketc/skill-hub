@@ -70,10 +70,20 @@ export function RelationshipRemovalImpactView({
               <li key={`${item.relation_ids.join(":")}-${index}`}>
                 <strong>{usageTargetLabel(item.target, (key) => String(t(key as never)))}</strong>
                 <span> · {usageActionLabel(item.action, (key) => String(t(key as never)))}</span>
-                <p>{t(`undeploy.flow.actionNotes.${item.action}` as never)}</p>
+                <p>{usageChange.action === "manage"
+                  ? item.description
+                  : t(`undeploy.flow.actionNotes.${item.action}` as never)}</p>
               </li>
             ))}
           </ul>
+          {usageChange.subject_versions.length > 0 ? (
+            <>
+              <h4>{t("relationships.governance.manage.subjectVersions")}</h4>
+              <ul className="sh-usage-release-impact__items" data-testid="usage-manage-subject-versions">
+                <li>{t("relationships.governance.manage.originalVersionNote", { count: usageChange.subject_versions.length })}</li>
+              </ul>
+            </>
+          ) : null}
           {usageChange.entry_evidence.length > 0 ? (
             <>
               <h4>{t("undeploy.flow.entriesHeading")}</h4>
