@@ -1738,6 +1738,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
           source_skill_id: "skill-doc",
           source_version_id: "version-100",
           source_display_name: "DOCX Writer",
+          source_exists: true,
           created_at: null,
         },
       },
@@ -1746,6 +1747,24 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
 
     const lineageLink = await screen.findByRole("link", { name: /DOCX Writer/ });
     expect(lineageLink).toHaveAttribute("href", "/library/skill-doc");
+  });
+
+  it("keeps a deleted lineage source as a visible snapshot without linking to it", async () => {
+    const facade = createMockSkillDetailFacade({
+      summary: {
+        upstreamLineage: {
+          source_skill_id: "skill-deleted",
+          source_version_id: "version-100",
+          source_display_name: "Notebook",
+          source_exists: false,
+          created_at: null,
+        },
+      },
+    });
+    await renderDetail({ facade });
+
+    expect(await screen.findByText(/Notebook（来源主体已删除，保留为只读追溯）/)).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Notebook" })).not.toBeInTheDocument();
   });
 
   it("keeps no DEV demo buttons in the source updates section", async () => {

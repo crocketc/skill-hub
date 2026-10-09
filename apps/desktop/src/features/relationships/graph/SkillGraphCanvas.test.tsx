@@ -143,7 +143,7 @@ function sparseProjection(): GraphProjection {
   return projectGraph({ ...graph, nodes, edges }, NO_FILTERS, ALL_DISPLAY_ON);
 }
 
-const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [], governance: [], management: [] };
+const NO_FILTERS: GraphFactFilters = { relationshipKinds: [], statuses: [], governance: [], management: [] };
 
 async function renderCanvas(options: {
   onBeforeJump?: () => void;
@@ -262,6 +262,32 @@ describe("SkillGraphCanvas interaction", () => {
     expect(screen.getByRole("button", { name: "Skill" })).toBeVisible();
     expect(screen.queryByText("skill-id-internal-42")).not.toBeInTheDocument();
     expect(screen.queryByText("skill-node-internal-42")).not.toBeInTheDocument();
+  });
+
+  it("shows the frozen display name for a deleted upstream Skill node", async () => {
+    const graph = graphFixture();
+    graph.nodes = [
+      node({ node_id: "n-center", kind: "skill", skill_id: graph.center_skill_id }),
+      node({
+        node_id: "deleted-upstream-node",
+        kind: "skill",
+        skill_id: "deleted-upstream-id",
+        display_name: "Notebook snapshot",
+        reference_only: true,
+      }),
+    ];
+    graph.edges = [{
+      ...graph.edges[0]!,
+      edge_id: "derived-reference-edge",
+      from_node_id: "n-center",
+      to_node_id: "deleted-upstream-node",
+      relationship_kind: "derived_from",
+    }];
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    await renderCanvas({ projection, resolveSkillName: () => undefined });
+
+    expect(screen.getByRole("button", { name: /Notebook snapshot/ })).toBeVisible();
+    expect(screen.queryByText("deleted-upstream-id")).not.toBeInTheDocument();
   });
 
   it("labels shared directory nodes without exposing IDs and keeps the intermediate topology", async () => {

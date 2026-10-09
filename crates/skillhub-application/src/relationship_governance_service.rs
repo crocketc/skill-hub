@@ -20,13 +20,14 @@ use skillhub_core::deployment::reconcile::normalized_path_key;
 use skillhub_core::deployment::{DeploymentMode, TargetChange, TargetPlan};
 use skillhub_core::relationship::{
     build_conflict_workspace, calculate_removal_impact, plan_conflict_decision,
-    plan_conflict_governance_handoff, project_skill_relationship_graph_with_governance,
+    plan_conflict_governance_handoff, project_skill_relationship_graph_with_facts,
     project_unified_governance_ledger_with_context, project_usage_relations, ConflictCaseFact,
     ConflictClassification, ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact,
     FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState,
-    PreparedUsageChange, RelationGovernanceDecision, RelationManagementStatus, RelationshipType,
-    RemovalFacts, SourceCopyRelationFact, SourceRelationFact, UsageChangeResult, UsageDecision,
-    UsageDecisionEvidence, UsageManagement, UsageManagementEvidence, UsageProjectionInput,
+    PreparedUsageChange, RelationGovernanceDecision, RelationManagementStatus,
+    RelationshipGraphAdditionalFacts, RelationshipType, RemovalFacts, SourceCopyRelationFact,
+    SourceRelationFact, UsageChangeResult, UsageDecision, UsageDecisionEvidence, UsageManagement,
+    UsageManagementEvidence, UsageProjectionInput,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
@@ -215,17 +216,77 @@ impl LocalApplicationFacade {
         &self,
         request: GetSkillRelationshipGraph,
     ) -> AppResult<AppQueryResult> {
+        let agent_directories = match self.get_agent_directory_projection()? {
+            AppQueryResult::AgentDirectoryProjection(projection) => projection,
+            _ => unreachable!("get_agent_directory_projection returns its projection"),
+        };
         let graph = self.with_database("query.skill_relationship_graph", |database| {
             let relationship_repository = database.relationship_repository();
             let revision = relationship_repository.relationship_revision()?;
             let last_verified_at = relationship_repository.last_verified_at()?;
             let deployments = relationship_repository.list_relations()?;
-            let source_relations = relationship_repository.list_source_relations()?;
+            let mut source_relations = relationship_repository.list_source_relations()?;
+            let import_events = database
+                .provenance_repository()
+                .list_provenance_events_for_skill(request.skill_id)?;
+            let import_event_ids = import_events
+                .iter()
+                .map(|event| event.provenance_id.as_str())
+                .collect::<HashSet<_>>();
+            source_relations
+                .retain(|relation| !import_event_ids.contains(relation.provenance_id.as_str()));
+            let update_sources = database
+                .source_repository()
+                .source_record_for_skill(request.skill_id)?
+                .into_iter()
+                .collect::<Vec<_>>();
+            let catalog = database.catalog_repository()?;
+            let existing_skill_ids = catalog.list_ids_sync()?;
+            let mut lineage = Vec::new();
+            for skill_id in &existing_skill_ids {
+                if let Some(fact) = database.lineage_repository().for_skill(*skill_id)? {
+                    lineage.push(fact);
+                }
+            }
             let directory_nodes = database.directory_repository().list_nodes()?;
             let directory_capabilities = relationship_repository.list_capabilities()?;
-            let mut governance_facts = relationship_repository
-                .list_source_copy_relations(true)?
-                .into_iter()
+            let source_copies = relationship_repository.list_source_copy_relations(true)?;
+            let confirmations = relationship_repository.list_relation_governance_confirmations()?;
+            let management_evidence = confirmations
+                .iter()
+                .filter(|fact| fact.confirmed_at.is_some())
+                .map(|fact| UsageManagementEvidence {
+                    relation_id: fact.relation_id.clone(),
+                    management: match fact.management_status {
+                        RelationManagementStatus::TakenOver => UsageManagement::Managed,
+                        RelationManagementStatus::NotTakenOver => UsageManagement::Unmanaged,
+                    },
+                })
+                .collect::<Vec<_>>();
+            let decision_evidence = confirmations
+                .iter()
+                .filter(|fact| {
+                    fact.confirmed_at.is_some()
+                        && fact.decision == RelationGovernanceDecision::RetainedIndependentCopy
+                })
+                .map(|fact| UsageDecisionEvidence {
+                    relation_id: fact.relation_id.clone(),
+                    decision: UsageDecision::RetainedIndependentCopy,
+                    history_id: None,
+                })
+                .collect::<Vec<_>>();
+            let usage_relations = project_usage_relations(&UsageProjectionInput {
+                deployments: &deployments,
+                source_copies: &source_copies,
+                directory_nodes: &directory_nodes,
+                directory_recognition: &directory_capabilities,
+                agent_directories: &agent_directories,
+                decision_evidence: &decision_evidence,
+                management_evidence: &management_evidence,
+            });
+            let mut governance_facts = source_copies
+                .iter()
+                .cloned()
                 .map(skillhub_core::relationship::GovernableRelationFact::SourceCopy)
                 .collect::<Vec<_>>();
             governance_facts.extend(
@@ -239,22 +300,30 @@ impl LocalApplicationFacade {
                 &governance_facts,
                 &directory_capabilities,
                 &directory_nodes,
-                &relationship_repository.list_relation_governance_confirmations()?,
+                &confirmations,
                 &std::collections::BTreeSet::new(),
                 &Self::read_only_source_relation_ids(database)?,
                 &Vec::new(),
                 revision,
                 last_verified_at,
             );
-            let projection = project_skill_relationship_graph_with_governance(
+            let conflict_cases = database.conflict_repository().list_cases()?;
+            let projection = project_skill_relationship_graph_with_facts(
                 request.skill_id,
                 &deployments,
                 &source_relations,
                 &governance.rows,
                 &directory_nodes,
                 &directory_capabilities,
-                &database.conflict_repository().list_cases()?,
+                &conflict_cases,
                 &request.filters,
+                RelationshipGraphAdditionalFacts {
+                    active_usage_relations: Some(&usage_relations),
+                    import_events: &import_events,
+                    update_sources: &update_sources,
+                    lineage: &lineage,
+                    existing_skill_ids: &existing_skill_ids,
+                },
             );
             Ok(SkillRelationshipGraphResult::from_projection(
                 projection,

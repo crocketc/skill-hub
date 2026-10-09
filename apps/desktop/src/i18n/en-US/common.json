@@ -2886,6 +2886,12 @@
         "unknown": "Other item"
       },
       "edgeType": {
+        "usage": "Usage",
+        "import_origin": "Import origin",
+        "update_source": "Update source",
+        "derived_from": "Derived from",
+        "directory_ownership": "Directory ownership",
+        "directory_recognition": "Directory recognition",
         "import_copy": "Import copy",
         "shared_directory_read": "Shared directory read",
         "shared_directory_reference": "Shared directory link reference",
@@ -2911,6 +2917,7 @@
         "diverged": "Diverged"
       },
       "detailsLabel": "Graph details",
+      "referenceOnly": "Deleted Skill snapshot; reference only.",
       "detailsFacts": "Relation facts",
       "centerFacts": "Deployment relations {{deployments}}, sources {{sources}}, conflicts {{conflicts}}",
       "lastVerifiedLabel": "Last verified",

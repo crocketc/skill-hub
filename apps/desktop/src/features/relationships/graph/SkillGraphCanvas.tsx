@@ -115,8 +115,11 @@ function nodeLabel(
 ): string {
   switch (node.kind) {
     case "skill": {
-      if (node.skill_id) return resolveSkillName?.(node.skill_id) ?? fallback;
-      return fallback;
+      if (node.reference_only) return node.display_name ?? fallback;
+      if (node.skill_id) {
+        return resolveSkillName?.(node.skill_id) ?? node.display_name ?? fallback;
+      }
+      return node.display_name ?? fallback;
     }
     case "directory":
       return node.path ? presentRelationshipPath(node.path).label : fallback;

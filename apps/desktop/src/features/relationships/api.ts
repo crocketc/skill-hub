@@ -5,6 +5,7 @@ import type {
   RelationGovernanceLedger,
   RelationshipGraphFilters,
   RelationshipGraphStatus,
+  RelationshipKind,
   RelationshipType,
   SkillRelationshipCandidate,
   SkillRelationshipGraphResult,
@@ -18,6 +19,7 @@ export type {
   RelationGovernanceLedger,
   RelationshipGraphFilters,
   RelationshipGraphStatus,
+  RelationshipKind,
   RelationshipType,
   SkillRelationshipCandidate,
   SkillRelationshipGraphResult,
@@ -27,7 +29,7 @@ export type {
 /** 图谱筛选（任务 6 消费）：URL 与 query key 都必须携带同一份筛选事实。 */
 export interface RelationshipGraphParams {
   skillId: string;
-  relationshipTypes?: RelationshipType[];
+  relationshipKinds?: RelationshipKind[];
   statuses?: RelationshipGraphStatus[];
   /** 图谱事实快照修订号；键中携带修订号可避免陈旧缓存回流。 */
   relationshipRevision?: string;

@@ -37,7 +37,10 @@ function nodeLabel(
 ): string {
   switch (node.kind) {
     case "skill":
-      return node.skill_id ? resolveSkillName?.(node.skill_id) ?? fallback : fallback;
+      if (node.reference_only) return node.display_name ?? fallback;
+      return node.skill_id
+        ? resolveSkillName?.(node.skill_id) ?? node.display_name ?? fallback
+        : node.display_name ?? fallback;
     case "directory":
       return node.path ? presentRelationshipPath(node.path).label : fallback;
     case "conflict":
@@ -317,6 +320,11 @@ export function GraphDetailsPanel({
             <p className="sh-graph-details__kind">
               {nodeKindLabel(selectedNodeEntry.node, translateGraphKind)}
             </p>
+            {selectedNodeEntry.node.reference_only ? (
+              <p className="sh-graph-details__kind" role="status">
+                {t("relationships.graph.referenceOnly")}
+              </p>
+            ) : null}
             {selectedNodeEdge ? (
               <dl>
                 <EdgeFacts projected={selectedNodeEdge} />
@@ -327,7 +335,9 @@ export function GraphDetailsPanel({
               </dl>
             )}
             <div className="sh-graph-details__actions">
-              {selectedNodeEntry.node.kind === "skill" && selectedNodeEntry.node.skill_id ? (
+              {selectedNodeEntry.node.kind === "skill"
+                && selectedNodeEntry.node.skill_id
+                && !selectedNodeEntry.node.reference_only ? (
                 <Link
                   className="sh-button sh-button--secondary sh-button--sm"
                   to={`/library/${selectedNodeEntry.node.skill_id}?from=relationships`}

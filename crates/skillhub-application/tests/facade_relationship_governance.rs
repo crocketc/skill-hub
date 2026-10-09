@@ -24,14 +24,17 @@ use skillhub_core::duplicate::{
     build_conflict_analysis_input, AnalyzeConflictScope, ConflictAnalysisAction,
     ConflictAnalysisRecord, ConflictCaseAnalysis, DuplicateAnalysisSource,
 };
-use skillhub_core::import::{ImportGovernanceAction, ImportGovernanceDecision};
+use skillhub_core::import::{
+    ImportGovernanceAction, ImportGovernanceDecision, ImportProvenanceEvent, ImportSourceClass,
+};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictDecision,
     ConflictEvidence, ConflictGovernanceIntent, ConflictKind, ConflictMemberFact,
     ConflictWorkspace, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
     DirectoryRole, FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, IdentityDirection,
     OwnershipState, RelationGovernanceAction, RelationGovernanceBlocker, RelationGovernanceBucket,
-    RelationGovernanceFilters, RelationGovernanceReadiness, RelationshipType, SourceRelationFact,
+    RelationGovernanceFilters, RelationGovernanceReadiness, RelationshipKind, RelationshipType,
+    SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -60,6 +63,8 @@ async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts
     let facade = LocalApplicationFacade::new_with_library(database, &library_root);
     let center: SkillId = "00000000-0000-0000-0000-0000000000a1".parse().unwrap();
     let empty: SkillId = "00000000-0000-0000-0000-0000000000a2".parse().unwrap();
+    let import_path = workspace.path().join("incoming/graph");
+    let import_path_text = import_path.to_string_lossy().into_owned();
     {
         let database = facade.database_for_tests();
         let database = database.lock().expect("database");
@@ -74,27 +79,35 @@ async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts
             ))
             .expect("skills");
         database
-            .relationship_repository()
-            .upsert_source_relation(&SourceRelationFact {
+            .provenance_repository()
+            .ensure_batch("batch:graph", 9)
+            .expect("import batch");
+        database
+            .provenance_repository()
+            .append_provenance_event(&ImportProvenanceEvent {
                 provenance_id: "provenance:graph".into(),
+                batch_id: "batch:graph".into(),
                 skill_id: center,
-                directory_node_id: None,
-                agent_client_id: None,
-                source_path: "C:/incoming/graph".into(),
-                source_path_key: String::new(),
-                relationship: RelationshipType::ImportCopy,
-                file_representation: FileRepresentation::Directory,
-                ownership: OwnershipState::ObservedUnmanaged,
-                link_target_path: None,
-                link_target_directory_id: None,
-                content_fingerprint: "sha256:graph".into(),
+                source_class: ImportSourceClass::UserLocal,
                 source: SourceDescriptor::new(
                     SourceKind::Local,
-                    SourceLocator::local_path("C:/incoming/graph"),
+                    SourceLocator::local_path(&import_path),
                 ),
+                local_source_path: Some(import_path_text),
+                source_container_id: None,
+                physical_source_id: None,
+                agent_client_id: None,
+                content_fingerprint: "sha256:graph".into(),
                 imported_at: 9,
             })
-            .expect("source relation");
+            .expect("import event");
+        database
+            .source_repository()
+            .relink(
+                center,
+                SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(&import_path)),
+            )
+            .unwrap_or_else(|error| panic!("current update source: {error:?}"));
     }
 
     let candidates = facade
@@ -163,7 +176,21 @@ async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts
         panic!("expected relationship graph");
     };
     assert_eq!(graph.center_skill_id, center);
-    assert!(graph.has_node("source:provenance:graph"));
+    let import_edge = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::ImportOrigin))
+        .expect("immutable import origin");
+    let update_edge = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::UpdateSource))
+        .expect("current update source");
+    assert_eq!(
+        import_edge.provenance_id.as_deref(),
+        Some("provenance:graph")
+    );
+    assert_eq!(import_edge.to_node_id, update_edge.to_node_id);
     assert_eq!(
         graph.relationship_revision,
         candidates[0].relationship_revision
@@ -175,7 +202,7 @@ async fn relationship_graph_and_candidates_use_only_queryable_relationship_facts
             GetSkillRelationshipGraph {
                 skill_id: center,
                 filters: RelationshipGraphFilters {
-                    relationship_types: vec![RelationshipType::ManagedCopy],
+                    relationship_kinds: vec![RelationshipKind::Usage],
                     statuses: Vec::new(),
                 },
             },

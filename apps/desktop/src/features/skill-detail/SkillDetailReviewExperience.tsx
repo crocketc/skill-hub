@@ -901,12 +901,15 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
           <h3>复用修改的原技能</h3>
           <p>
             从{" "}
-            {summary.upstreamLineage.source_display_name ? (
-              <Link to={`/library/${encodeURIComponent(summary.upstreamLineage.source_skill_id)}`}>
-                {summary.upstreamLineage.source_display_name}
-              </Link>
+            {summary.upstreamLineage.source_exists === false ? (
+              <span>
+                {summary.upstreamLineage.source_display_name ?? "来源主体（名称不可解析）"}
+                （来源主体已删除，保留为只读追溯）
+              </span>
             ) : (
-              "来源主体（名称不可解析）"
+              <Link to={`/library/${encodeURIComponent(summary.upstreamLineage.source_skill_id)}`}>
+                {summary.upstreamLineage.source_display_name ?? "来源主体（名称不可解析）"}
+              </Link>
             )}
             {" "}复用修改创建，两个主体独立维护。此追溯不会自动建立网络更新来源。
           </p>

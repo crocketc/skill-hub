@@ -12,6 +12,8 @@ function fixture(): SkillRelationshipGraphResult {
     node_id,
     kind,
     skill_id: null,
+    display_name: null,
+    reference_only: false,
     relation_id: null,
     provenance_id: null,
     conflict_id: null,
@@ -41,6 +43,7 @@ function fixture(): SkillRelationshipGraphResult {
         from_node_id: "center",
         to_node_id: "dir",
         kind: "located_in",
+        relationship_kind: "usage",
         relationship: "shared_directory_read",
         relation_id: null,
         provenance_id: null,
@@ -57,6 +60,7 @@ function fixture(): SkillRelationshipGraphResult {
         from_node_id: "center",
         to_node_id: "source",
         kind: "source",
+        relationship_kind: "import_origin",
         relationship: null,
         relation_id: null,
         provenance_id: null,
@@ -79,7 +83,7 @@ function fixture(): SkillRelationshipGraphResult {
 describe("GraphDetailsPanel path presentation", () => {
   it("removes Windows internal prefixes from directory and source details", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
-    const projection = projectGraph(fixture(), { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(fixture(), { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -101,6 +105,56 @@ describe("GraphDetailsPanel path presentation", () => {
     expect(screen.queryByText(/\\\\\?\\/)).not.toBeInTheDocument();
   });
 
+  it("shows a deleted lineage parent as a read-only snapshot without a Skill link", async () => {
+    const i18n = await createSkillHubI18n(["en-US"]);
+    const graph = fixture();
+    graph.nodes.push({
+      ...graph.nodes[0],
+      node_id: "deleted-parent",
+      skill_id: "skill-deleted",
+      display_name: "Notebook snapshot",
+      reference_only: true,
+    });
+    graph.edges.push({
+      edge_id: "derived-from-deleted-parent",
+      from_node_id: "center",
+      to_node_id: "deleted-parent",
+      kind: "related_skill",
+      relationship_kind: "derived_from",
+      relationship: null,
+      relation_id: null,
+      provenance_id: null,
+      conflict_id: null,
+      match_state: null,
+      active: null,
+      last_verified_at: null,
+      governance: null,
+      target_identity: null,
+      evidence_relation_ids: [],
+    });
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <GraphDetailsPanel
+            centerSkillId="pdf-reader"
+            displayName="PDF Reader"
+            factCounts={projection.factCounts}
+            lastVerifiedAt={null}
+            onBeforeNavigate={() => undefined}
+            projection={projection}
+            selectedEdgeId={null}
+            selectedNodeId="deleted-parent"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Notebook snapshot" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Deleted Skill snapshot; reference only.");
+    expect(screen.queryByRole("link", { name: "Notebook snapshot" })).not.toBeInTheDocument();
+  });
+
   it("labels a shared directory without exposing its internal node ID when the path is missing", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
     const graph = fixture();
@@ -110,7 +164,7 @@ describe("GraphDetailsPanel path presentation", () => {
       path: null,
       role: "shared_directory",
     };
-    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -145,7 +199,7 @@ describe("GraphDetailsPanel path presentation", () => {
       edge_id: "e-related",
       to_node_id: "related-skill",
     });
-    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -180,7 +234,7 @@ describe("GraphDetailsPanel path presentation", () => {
       edge_id: "edge-skill-internal-42",
       to_node_id: "skill-node-internal-42",
     });
-    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -222,7 +276,7 @@ describe("GraphDetailsPanel path presentation", () => {
       relation_id: null,
       conflict_id: "conflict-case-opaque-42",
     });
-    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -255,7 +309,7 @@ describe("GraphDetailsPanel path presentation", () => {
       source: null,
     };
     graph.edges[1] = { ...graph.edges[1]!, to_node_id: "source-node-internal-77" };
-    const projection = projectGraph(graph, { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(graph, { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -279,7 +333,7 @@ describe("GraphDetailsPanel path presentation", () => {
 
   it("does not display an internal relationship revision in the details panel", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
-    const projection = projectGraph(fixture(), { relationshipTypes: [], statuses: [] }, ALL_DISPLAY_ON);
+    const projection = projectGraph(fixture(), { relationshipKinds: [], statuses: [] }, ALL_DISPLAY_ON);
     render(
       <I18nextProvider i18n={i18n}>
         <MemoryRouter>
@@ -398,7 +452,7 @@ async function renderSelection(options: {
   const i18n = await createSkillHubI18n([options.language ?? "en-US"]);
   const projection = projectGraph(
     options.graph ?? governanceFixture(),
-    { relationshipTypes: [], statuses: [], governance: [], management: [] },
+    { relationshipKinds: [], statuses: [], governance: [], management: [] },
     ALL_DISPLAY_ON,
   );
   const selectedNodeId = options.selectNodeId?.(projection) ?? null;

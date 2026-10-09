@@ -5,7 +5,7 @@ import type {
   RelationshipGraphStatus,
   RelationGovernanceClassification,
   RelationManagementStatus,
-  RelationshipType,
+  RelationshipKind,
   SkillRelationshipEdge,
   SkillRelationshipGraphResult,
   SkillRelationshipNode,
@@ -21,7 +21,7 @@ export const CANVAS_SIZE = { width: 960, height: 640 } as const;
 
 /** 事实筛选：与 URL/query key 携带同一份筛选事实；空数组表示不筛选。 */
 export interface GraphFactFilters {
-  relationshipTypes: RelationshipType[];
+  relationshipKinds: RelationshipKind[];
   /** Current relationship health (active/released/content evidence). */
   statuses: RelationshipGraphStatus[];
   governance?: RelationGovernanceClassification[];
@@ -96,10 +96,13 @@ const CONTEXT_X = CANVAS_SIZE.width - 150;
 const COLLAPSED_ROW_Y = CANVAS_SIZE.height - 44;
 
 function edgeStatus(edge: SkillRelationshipEdge): RelationshipGraphStatus {
+  if (edge.active === false) {
+    return "released";
+  }
   if (edge.match_state !== null) {
     return edge.match_state;
   }
-  return edge.active === false ? "released" : "active";
+  return "active";
 }
 
 /** 边的事实状态标签键（节点/边详情共用）；字面量联合保证 i18n 键可查。 */
@@ -111,13 +114,14 @@ export function edgeStatusLabelKey(edge: SkillRelationshipEdge): GraphStatusLabe
 
 /** 边的关系类型标签键；结构边（related_skill/conflict）退回按 kind 命名。 */
 export type GraphEdgeLabelKey =
-  | `relationships.graph.edgeType.${RelationshipType}`
+  | `relationships.graph.edgeType.${RelationshipKind}`
   | `relationships.graph.edgeKind.${RelationshipGraphEdgeKind}`;
 
 export function edgeTypeLabelKey(edge: SkillRelationshipEdge): GraphEdgeLabelKey {
-  return edge.relationship !== null
-    ? `relationships.graph.edgeType.${edge.relationship}`
-    : `relationships.graph.edgeKind.${edge.kind}`;
+  if (edge.relationship_kind) {
+    return `relationships.graph.edgeType.${edge.relationship_kind}`;
+  }
+  return `relationships.graph.edgeKind.${edge.kind}`;
 }
 
 /** 线型/颜色状态：实线=已验证，虚线=不可访问，点线=待校验（含 name_only/diverged）。 */
@@ -139,9 +143,9 @@ function edgeHiddenByFactFilters(
   filters: GraphFactFilters,
 ): boolean {
   // 结构边（relationship 为 null，如冲突边）从不被事实筛选删除。
-  if (edge.relationship !== null
-    && filters.relationshipTypes.length > 0
-    && !filters.relationshipTypes.includes(edge.relationship)) {
+  if (edge.relationship_kind
+    && filters.relationshipKinds.length > 0
+    && !filters.relationshipKinds.includes(edge.relationship_kind)) {
     return true;
   }
   if (filters.statuses.length > 0 && !filters.statuses.includes(edgeStatus(edge))) {

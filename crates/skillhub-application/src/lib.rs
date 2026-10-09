@@ -9837,6 +9837,28 @@ impl ApplicationFacade for LocalApplicationFacade {
                             independent_copy_count += 1;
                         }
                     }
+                    let upstream_lineage =
+                        match database.lineage_repository().for_skill(skill_id)? {
+                            Some(fact) => {
+                                let origin_skill = database
+                                    .catalog_repository()?
+                                    .get_sync(fact.origin_skill_id)?;
+                                Some(skillhub_core::api::SkillUpstreamLineage {
+                                    source_skill_id: fact.origin_skill_id,
+                                    source_version_id: fact.origin_version_id,
+                                    source_display_name: fact.origin_display_name.clone().or_else(
+                                        || {
+                                            origin_skill
+                                                .as_ref()
+                                                .map(|skill| skill.display_name().to_owned())
+                                        },
+                                    ),
+                                    source_exists: origin_skill.is_some(),
+                                    created_at: Some(format_rfc3339_utc(fact.created_at)),
+                                })
+                            }
+                            None => None,
+                        };
                     Ok(AppQueryResult::Skill(skillhub_core::api::SkillResult {
                         skill_id: skill.skill_id,
                         display_name: skill.display_name,
@@ -9869,25 +9891,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                         upstream_state: skill.upstream_state,
                         // K5/MS-04：上游谱系——「来源 skill+version → 新 skill
                         // 首版本」的有向事实，仅在详情投影暴露。
-                        upstream_lineage: database.lineage_repository().for_skill(skill_id)?.map(
-                            |fact| skillhub_core::api::SkillUpstreamLineage {
-                                source_skill_id: fact.origin_skill_id,
-                                source_version_id: fact.origin_version_id,
-                                source_display_name: fact.origin_display_name.clone().or_else(
-                                    || {
-                                        database
-                                            .catalog_repository()
-                                            .and_then(|repository| {
-                                                repository.get_sync(fact.origin_skill_id)
-                                            })
-                                            .ok()
-                                            .flatten()
-                                            .map(|skill| skill.display_name().to_owned())
-                                    },
-                                ),
-                                created_at: Some(format_rfc3339_utc(fact.created_at)),
-                            },
-                        ),
+                        upstream_lineage,
                     }))
                 })
             }

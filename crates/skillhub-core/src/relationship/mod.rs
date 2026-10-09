@@ -58,9 +58,10 @@ pub use governance::{
     RelationGovernanceTargetKind, RelationManagementStatus, RelationTargetIdentity,
 };
 pub use graph::{
-    project_skill_relationship_graph, project_skill_relationship_graph_with_governance,
+    project_skill_relationship_graph, project_skill_relationship_graph_with_facts,
+    project_skill_relationship_graph_with_governance, RelationshipGraphAdditionalFacts,
     RelationshipGraphEdgeKind, RelationshipGraphFactCounts, RelationshipGraphFilters,
-    RelationshipGraphNodeKind, RelationshipGraphStatus, SkillRelationshipEdge,
+    RelationshipGraphNodeKind, RelationshipGraphStatus, RelationshipKind, SkillRelationshipEdge,
     SkillRelationshipGraph, SkillRelationshipNode,
 };
 pub use history::{

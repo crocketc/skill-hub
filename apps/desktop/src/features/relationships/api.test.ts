@@ -15,7 +15,7 @@ describe("relationships query keys", () => {
     expect(
       relationshipsKeys.graph({
         skillId: "pdf-reader",
-        relationshipTypes: ["shared_directory_read"],
+        relationshipKinds: ["usage"],
         statuses: ["active"],
         relationshipRevision: "r42",
       }),
@@ -24,7 +24,7 @@ describe("relationships query keys", () => {
       "graph",
       {
         skillId: "pdf-reader",
-        relationshipTypes: ["shared_directory_read"],
+        relationshipKinds: ["usage"],
         statuses: ["active"],
         relationshipRevision: "r42",
       },

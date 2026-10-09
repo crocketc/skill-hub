@@ -6,7 +6,7 @@ import { DataState } from "../../../ui/DataState";
 import type {
   RelationshipGraphParams,
   RelationshipGraphStatus,
-  RelationshipType,
+  RelationshipKind,
   RelationshipsFacade,
   SkillRelationshipCandidate,
 } from "../api";
@@ -35,15 +35,13 @@ import { GraphSearch } from "./GraphSearch";
 import { SkillGraphCanvas, type GraphViewport } from "./SkillGraphCanvas";
 import "./graph.css";
 
-const RELATIONSHIP_TYPES: RelationshipType[] = [
-  "import_copy",
-  "shared_directory_read",
-  "shared_directory_reference",
-  "managed_copy",
-  "managed_link",
-  "observed_copy",
-  "observed_link",
-  "unknown",
+const RELATIONSHIP_KINDS: RelationshipKind[] = [
+  "usage",
+  "import_origin",
+  "update_source",
+  "derived_from",
+  "directory_ownership",
+  "directory_recognition",
 ];
 
 const GRAPH_STATUSES: RelationshipGraphStatus[] = [
@@ -67,7 +65,7 @@ function restoreGraphDisplay(
 
 export interface GraphUrlState {
   skillId: string | null;
-  types: RelationshipType[];
+  types: RelationshipKind[];
   statuses: RelationshipGraphStatus[];
   governance: RelationGovernanceClassification[];
   management: RelationManagementStatus[];
@@ -88,7 +86,9 @@ export function parseGraphSearchParams(params: URLSearchParams): GraphUrlState {
   );
   return {
     skillId: params.get("skillId") || null,
-    types: list("types") as RelationshipType[],
+    types: list("types").filter(
+      (item): item is RelationshipKind => RELATIONSHIP_KINDS.includes(item as RelationshipKind),
+    ),
     statuses: list("statuses") as RelationshipGraphStatus[],
     governance,
     management,
@@ -355,7 +355,7 @@ export function SkillGraphPage({
   const graphParams: RelationshipGraphParams = useMemo(
     () => ({
       skillId: skillId ?? "",
-      relationshipTypes: urlState.types,
+      relationshipKinds: urlState.types,
       statuses: urlState.statuses,
       ...(knownRevision !== undefined ? { relationshipRevision: knownRevision } : {}),
     }),
@@ -384,7 +384,7 @@ export function SkillGraphPage({
         ? projectGraph(
             graph,
             {
-              relationshipTypes: urlState.types,
+              relationshipKinds: urlState.types,
               statuses: urlState.statuses,
               governance: urlState.governance,
               management: urlState.management,
@@ -579,7 +579,7 @@ export function SkillGraphPage({
     <>
       <fieldset>
         <legend>{t("relationships.graph.filterTypes")}</legend>
-        {RELATIONSHIP_TYPES.map((type) => (
+        {RELATIONSHIP_KINDS.map((type) => (
           <label key={type}>
             <input
               type="checkbox"

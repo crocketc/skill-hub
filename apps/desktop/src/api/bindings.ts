@@ -3719,13 +3719,19 @@ export type RelationshipGraphFactCounts = {
 };
 
 export type RelationshipGraphFilters = {
-	relationship_types?: RelationshipType[],
+	relationship_kinds?: RelationshipKind[],
 	statuses?: RelationshipGraphStatus[],
 };
 
 export type RelationshipGraphNodeKind = "skill" | "source" | "agent" | "project" | "directory" | "conflict" | "collapsed";
 
 export type RelationshipGraphStatus = "active" | "released" | "content_verified" | "name_only" | "diverged";
+
+/**
+ *  User-facing relation kinds used by graph edges and filters. Structural
+ *  connections such as conflicts remain represented by `kind` only.
+ */
+export type RelationshipKind = "usage" | "import_origin" | "update_source" | "derived_from" | "directory_ownership" | "directory_recognition";
 
 export type RelationshipMigrationBackupPolicy = "required";
 
@@ -4759,6 +4765,7 @@ export type SkillRelationshipEdge = {
 	from_node_id: string,
 	to_node_id: string,
 	kind: RelationshipGraphEdgeKind,
+	relationship_kind?: RelationshipKind | null,
 	/**
 	 *  RelatedSkill and Conflict edges are structural connections, so they
 	 *  have no relationship/status fact and are never removed by fact filters.
@@ -4797,6 +4804,8 @@ export type SkillRelationshipNode = {
 	node_id: string,
 	kind: RelationshipGraphNodeKind,
 	skill_id: SkillId | null,
+	display_name?: string | null,
+	reference_only?: boolean,
 	relation_id: string | null,
 	provenance_id: string | null,
 	conflict_id: string | null,
@@ -4910,6 +4919,11 @@ export type SkillUpstreamLineage = {
 	source_skill_id: SkillId,
 	source_version_id: VersionId,
 	source_display_name: string | null,
+	/**
+	 *  Whether the origin Skill is still present in the catalog. A deleted
+	 *  origin remains a reference-only snapshot and must not be linked.
+	 */
+	source_exists?: boolean,
 	/**  登记时间（Unix 秒的十进制字符串，Specta 不放行 64 位整数）。 */
 	created_at?: string | null,
 };

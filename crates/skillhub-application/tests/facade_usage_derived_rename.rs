@@ -502,6 +502,7 @@ async fn lineage_records_starting_version_once() {
         .expect("lineage is queryable");
     assert_eq!(lineage.source_skill_id, source.id);
     assert_eq!(lineage.source_version_id, source.version_id);
+    assert!(lineage.source_exists);
 }
 
 #[tokio::test]
@@ -590,6 +591,7 @@ async fn parent_deletion_keeps_child_without_parent_body() {
     assert_eq!(lineage.source_skill_id, source.id);
     assert_eq!(lineage.source_version_id, source.version_id);
     assert_eq!(lineage.source_display_name.as_deref(), Some("Notebook"));
+    assert!(!lineage.source_exists);
     let parent_body = facade
         .query(AppQuery::ReadMarkdownFile(ReadMarkdownFile {
             skill_id: source.id,

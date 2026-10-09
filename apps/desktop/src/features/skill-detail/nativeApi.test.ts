@@ -167,6 +167,7 @@ describe("native skill detail facade", () => {
       source_display_name: "Source skill",
       source_skill_id: "skill-src",
       source_version_id: "ver-src",
+      source_exists: true,
     };
     vi.mocked(queryApplication).mockResolvedValue({
       type: "skill",

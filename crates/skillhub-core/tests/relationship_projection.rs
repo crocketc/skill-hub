@@ -1,17 +1,23 @@
 use skillhub_core::agent::DirectoryPrecedence;
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
+use skillhub_core::import::{ImportProvenanceEvent, ImportSourceClass};
 use skillhub_core::relationship::{
-    project_skill_relationship_graph, project_skill_relationship_graph_with_governance,
+    project_skill_relationship_graph, project_skill_relationship_graph_with_facts,
+    project_skill_relationship_graph_with_governance,
     project_unified_governance_ledger_with_context, AgentDirectoryCapabilityFact, ConflictCaseFact,
     ConflictClassification, ConflictEvidence, ConflictKind, DeploymentRelationFact,
     DirectoryNodeFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
     GovernableRelationFact, RelationGovernanceConfirmationFact, RelationGovernanceDecision,
-    RelationGovernanceFilters, RelationManagementStatus, RelationshipGraphEdgeKind,
-    RelationshipGraphFilters, RelationshipGraphNodeKind, RelationshipGraphStatus, RelationshipType,
-    SourceRelationFact,
+    RelationGovernanceFilters, RelationManagementStatus, RelationshipGraphAdditionalFacts,
+    RelationshipGraphEdgeKind, RelationshipGraphFilters, RelationshipGraphNodeKind,
+    RelationshipGraphStatus, RelationshipKind, RelationshipType, SkillLineageFact,
+    SourceRelationFact, UsageEntryKey, UsageForm, UsageHealthReason, UsageManagement,
+    UsageRelationTarget, UsageRelationView,
 };
-use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
-use skillhub_core::SkillId;
+use skillhub_core::source::{
+    SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole,
+};
+use skillhub_core::{SkillId, VersionId};
 
 fn deployment(
     relation_id: &str,
@@ -89,6 +95,62 @@ fn directory(node_id: &str, role: DirectoryRole) -> DirectoryNodeFact {
     }
 }
 
+fn import_event(skill_id: SkillId, provenance_id: &str, path: &str) -> ImportProvenanceEvent {
+    ImportProvenanceEvent {
+        provenance_id: provenance_id.into(),
+        batch_id: "batch:test".into(),
+        skill_id,
+        source_class: ImportSourceClass::UserLocal,
+        source: SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(path)),
+        local_source_path: Some(path.into()),
+        source_container_id: None,
+        physical_source_id: None,
+        agent_client_id: None,
+        content_fingerprint: format!("sha256:{provenance_id}"),
+        imported_at: 20,
+    }
+}
+
+fn update_source(skill_id: SkillId, path: &str) -> SourceRecord {
+    SourceRecord {
+        skill_id,
+        source: SourceDescriptor::new(SourceKind::Local, SourceLocator::local_path(path)),
+        role: SourceRole::LocalOnly,
+        upstream: None,
+        created_at: "30".into(),
+    }
+}
+
+fn usage_view(skill_id: SkillId, relation_id: &str, directory_id: &str) -> UsageRelationView {
+    UsageRelationView {
+        relation_id: relation_id.into(),
+        skill_id: Some(skill_id),
+        target: UsageRelationTarget {
+            kind: skillhub_core::relationship::RelationGovernanceTargetKind::SharedDirectory,
+            directory_id: Some(directory_id.into()),
+            agent_client_id: None,
+            directory_role: Some(skillhub_core::agent::AgentDirectoryRole::SharedDirectory),
+            recognition: Some(DirectoryRecognition::Supported),
+        },
+        entry_key: Some(UsageEntryKey {
+            directory_id: directory_id.into(),
+            relative_entry_path: "notes".into(),
+        }),
+        form: Some(UsageForm::FullCopy),
+        management: UsageManagement::Unmanaged,
+        health_reasons: vec![UsageHealthReason::Normal],
+        decision: None,
+        decision_history_ids: Vec::new(),
+        active: true,
+        file_representation: FileRepresentation::Directory,
+        link_target_path: None,
+        link_target_path_key: None,
+        link_target_directory_id: None,
+        physical_source_ids_evidence: Vec::new(),
+        evidence_relation_ids: vec![relation_id.into()],
+    }
+}
+
 #[test]
 fn projects_one_center_and_one_hop_skill_context_without_reverse_traversal() {
     let center = SkillId::new();
@@ -162,7 +224,7 @@ fn only_unconfirmed_conflicts_are_projected_and_filters_only_hide_edges() {
         &[],
         &[resolved],
         &RelationshipGraphFilters {
-            relationship_types: vec![RelationshipType::ImportCopy],
+            relationship_kinds: vec![RelationshipKind::ImportOrigin],
             statuses: Vec::new(),
         },
     );
@@ -629,7 +691,7 @@ fn source_relationship_filter_applies_but_unknown_status_does_not_hide_source() 
         &[],
         &[],
         &RelationshipGraphFilters {
-            relationship_types: Vec::new(),
+            relationship_kinds: Vec::new(),
             statuses: vec![RelationshipGraphStatus::Diverged],
         },
     );
@@ -647,7 +709,7 @@ fn source_relationship_filter_applies_but_unknown_status_does_not_hide_source() 
         &[],
         &[],
         &RelationshipGraphFilters {
-            relationship_types: vec![RelationshipType::ObservedCopy],
+            relationship_kinds: vec![RelationshipKind::Usage],
             statuses: Vec::new(),
         },
     );
@@ -676,7 +738,7 @@ fn fact_filters_keep_structural_skill_and_conflict_edges() {
         &[],
         &[uncertain_case(center, related)],
         &RelationshipGraphFilters {
-            relationship_types: vec![RelationshipType::ImportCopy],
+            relationship_kinds: vec![RelationshipKind::ImportOrigin],
             statuses: vec![RelationshipGraphStatus::Diverged],
         },
     );
@@ -961,4 +1023,289 @@ fn reversed_source_and_conflict_inputs_have_stable_output_order() {
     );
     assert_eq!(first.nodes, second.nodes);
     assert_eq!(first.edges, second.edges);
+}
+
+#[test]
+fn same_object_has_distinct_import_and_update_edges() {
+    let skill_id = SkillId::new();
+    let events = [import_event(skill_id, "import-1", "C:/skills/shared")];
+    let sources = [update_source(skill_id, "C:/skills/shared")];
+    let ids = [skill_id];
+    let graph = project_skill_relationship_graph_with_facts(
+        skill_id,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&[]),
+            import_events: &events,
+            update_sources: &sources,
+            lineage: &[],
+            existing_skill_ids: &ids,
+        },
+    );
+
+    let import = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::ImportOrigin))
+        .expect("import origin edge");
+    let update = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::UpdateSource))
+        .expect("current update source edge");
+    assert_eq!(import.to_node_id, update.to_node_id);
+    assert_eq!(import.provenance_id.as_deref(), Some("import-1"));
+    assert!(import.governance.is_none());
+    assert!(update.provenance_id.is_none());
+}
+
+#[test]
+fn shared_path_is_skill_shared_agent() {
+    let skill_id = SkillId::new();
+    let mut shared_use = deployment(
+        "shared-use",
+        Some(skill_id),
+        "agent.alpha",
+        "C:/shared/notes",
+        RelationshipType::ManagedCopy,
+    );
+    shared_use.directory_node_id = Some("directory:shared".into());
+    let directories = [directory(
+        "directory:shared",
+        DirectoryRole::SharedDirectory,
+    )];
+    let capabilities = ["agent.alpha", "agent.beta"].map(|agent| AgentDirectoryCapabilityFact {
+        agent_client_id: agent.into(),
+        directory_node_id: "directory:shared".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: DirectoryPrecedence::Preferred,
+        evidence_reference: None,
+        researched_at: None,
+        applicable_platforms: Vec::new(),
+    });
+    let deployments = [shared_use];
+    let usages = [usage_view(skill_id, "shared-use", "directory:shared")];
+    let ids = [skill_id];
+    let graph = project_skill_relationship_graph_with_facts(
+        skill_id,
+        &deployments,
+        &[],
+        &[],
+        &directories,
+        &capabilities,
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&usages),
+            import_events: &[],
+            update_sources: &[],
+            lineage: &[],
+            existing_skill_ids: &ids,
+        },
+    );
+
+    let usage_edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.relationship_kind == Some(RelationshipKind::Usage))
+        .collect::<Vec<_>>();
+    assert_eq!(usage_edges.len(), 1);
+    assert_eq!(usage_edges[0].from_node_id, skill_id.to_string());
+    assert_eq!(usage_edges[0].to_node_id, "directory:directory:shared");
+    assert!(!usage_edges
+        .iter()
+        .any(|edge| edge.to_node_id.starts_with("agent:")));
+    let recognition_edges = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.relationship_kind == Some(RelationshipKind::DirectoryRecognition))
+        .collect::<Vec<_>>();
+    assert_eq!(recognition_edges.len(), 2);
+    assert!(recognition_edges.iter().all(|edge| {
+        edge.from_node_id == "directory:directory:shared" && edge.to_node_id.starts_with("agent:")
+    }));
+}
+
+#[test]
+fn derived_deleted_parent_is_reference_only() {
+    let child = SkillId::new();
+    let deleted_parent = SkillId::new();
+    let lineage = [SkillLineageFact {
+        skill_id: child,
+        version_id: VersionId::parse(&format!("sha256:{}", "1".repeat(64))).unwrap(),
+        origin_skill_id: deleted_parent,
+        origin_version_id: VersionId::parse(&format!("sha256:{}", "2".repeat(64))).unwrap(),
+        origin_display_name: Some("Deleted source skill".into()),
+        created_at: 40,
+    }];
+    let ids = [child];
+    let graph = project_skill_relationship_graph_with_facts(
+        child,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&[]),
+            import_events: &[],
+            update_sources: &[],
+            lineage: &lineage,
+            existing_skill_ids: &ids,
+        },
+    );
+
+    let parent = graph
+        .nodes
+        .iter()
+        .find(|node| node.skill_id == Some(deleted_parent))
+        .unwrap();
+    assert!(parent.reference_only);
+    assert_eq!(parent.display_name.as_deref(), Some("Deleted source skill"));
+    let derived = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::DerivedFrom))
+        .unwrap();
+    assert_eq!(derived.from_node_id, deleted_parent.to_string());
+    assert_eq!(derived.to_node_id, child.to_string());
+    assert_eq!(
+        graph
+            .edges
+            .iter()
+            .filter(|edge| {
+                (edge.from_node_id == deleted_parent.to_string()
+                    && edge.to_node_id == child.to_string())
+                    || (edge.from_node_id == child.to_string()
+                        && edge.to_node_id == deleted_parent.to_string())
+            })
+            .count(),
+        1,
+        "the derived relationship must not be duplicated by a structural related-skill edge"
+    );
+}
+
+#[test]
+fn released_usage_not_active_edge() {
+    let skill_id = SkillId::new();
+    let mut released = deployment(
+        "released-use",
+        Some(skill_id),
+        "agent.alpha",
+        "C:/agent/notes",
+        RelationshipType::ManagedLink,
+    );
+    released.active = false;
+    released.released_at = Some(50);
+    let ids = [skill_id];
+    let graph = project_skill_relationship_graph_with_facts(
+        skill_id,
+        &[released],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&[]),
+            import_events: &[],
+            update_sources: &[],
+            lineage: &[],
+            existing_skill_ids: &ids,
+        },
+    );
+
+    let released_edge = graph
+        .edges
+        .iter()
+        .find(|edge| edge.relationship_kind == Some(RelationshipKind::Usage))
+        .expect("historical usage edge");
+    assert_eq!(released_edge.active, Some(false));
+    assert_eq!(
+        released_edge.match_state,
+        Some(ObservedMatchState::ContentVerified)
+    );
+}
+
+#[test]
+fn ordinary_import_folder_has_no_usage_edge() {
+    let skill_id = SkillId::new();
+    let events = [import_event(
+        skill_id,
+        "ordinary-import",
+        "C:/downloads/notes",
+    )];
+    let ids = [skill_id];
+    let graph = project_skill_relationship_graph_with_facts(
+        skill_id,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&[]),
+            import_events: &events,
+            update_sources: &[],
+            lineage: &[],
+            existing_skill_ids: &ids,
+        },
+    );
+
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| { edge.relationship_kind == Some(RelationshipKind::ImportOrigin) }));
+    assert!(!graph
+        .edges
+        .iter()
+        .any(|edge| { edge.relationship_kind == Some(RelationshipKind::Usage) }));
+}
+
+#[test]
+fn source_unlink_removes_only_current_edge() {
+    let skill_id = SkillId::new();
+    let events = [import_event(
+        skill_id,
+        "history-after-unlink",
+        "C:/skills/original",
+    )];
+    let ids = [skill_id];
+    let graph = project_skill_relationship_graph_with_facts(
+        skill_id,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &RelationshipGraphFilters::default(),
+        RelationshipGraphAdditionalFacts {
+            active_usage_relations: Some(&[]),
+            import_events: &events,
+            update_sources: &[],
+            lineage: &[],
+            existing_skill_ids: &ids,
+        },
+    );
+
+    assert!(graph.edges.iter().any(|edge| {
+        edge.relationship_kind == Some(RelationshipKind::ImportOrigin)
+            && edge.provenance_id.as_deref() == Some("history-after-unlink")
+    }));
+    assert!(!graph
+        .edges
+        .iter()
+        .any(|edge| { edge.relationship_kind == Some(RelationshipKind::UpdateSource) }));
 }

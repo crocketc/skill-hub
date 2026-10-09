@@ -2886,6 +2886,12 @@
         "unknown": "其他项目"
       },
       "edgeType": {
+        "usage": "使用关系",
+        "import_origin": "导入来源",
+        "update_source": "更新来源",
+        "derived_from": "复用修改",
+        "directory_ownership": "目录归属",
+        "directory_recognition": "目录识别",
         "import_copy": "导入副本",
         "shared_directory_read": "共享目录直接读取",
         "shared_directory_reference": "共享目录链接引用",
@@ -2911,6 +2917,7 @@
         "diverged": "内容已分叉"
       },
       "detailsLabel": "图谱详情",
+      "referenceOnly": "来源 Skill 已删除；此节点仅为只读追溯快照。",
       "detailsFacts": "关系事实",
       "centerFacts": "部署关系 {{deployments}}，来源 {{sources}}，冲突 {{conflicts}}",
       "lastVerifiedLabel": "最后验证",

@@ -32,7 +32,7 @@ export const nativeRelationshipsFacade: RelationshipsFacade = {
       payload: {
         skill_id: params.skillId,
         filters: {
-          relationship_types: params.relationshipTypes,
+          relationship_kinds: params.relationshipKinds,
           statuses: params.statuses,
         },
       },

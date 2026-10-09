@@ -26,7 +26,7 @@ describe("nativeRelationshipsFacade", () => {
     await expect(
       nativeRelationshipsFacade.getGraph({
         skillId: "pdf-reader",
-        relationshipTypes: ["shared_directory_read"],
+        relationshipKinds: ["usage"],
         statuses: ["active"],
       }),
     ).resolves.toBe(graph);
@@ -35,7 +35,7 @@ describe("nativeRelationshipsFacade", () => {
       type: "get_skill_relationship_graph",
       payload: {
         skill_id: "pdf-reader",
-        filters: { relationship_types: ["shared_directory_read"], statuses: ["active"] },
+        filters: { relationship_kinds: ["usage"], statuses: ["active"] },
       },
     });
   });

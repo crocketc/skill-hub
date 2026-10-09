@@ -13,7 +13,7 @@ import type {
   SkillRelationshipCandidate,
   SkillRelationshipGraphResult,
 } from "../api";
-import { pickNextCenter, SkillGraphPage } from "./SkillGraphPage";
+import { parseGraphSearchParams, pickNextCenter, SkillGraphPage } from "./SkillGraphPage";
 
 const CANDIDATES: SkillRelationshipCandidate[] = [
   {
@@ -119,6 +119,7 @@ function graphFor(skillId: string, revision = REVISIONS[skillId] ?? "r42"): Skil
         from_node_id: `n-center-${skillId}`,
         to_node_id: `n-rel-${skillId}`,
         kind: "related_skill",
+        relationship_kind: "derived_from",
         relationship: "managed_copy",
         relation_id: "rel-1",
         provenance_id: null,
@@ -135,6 +136,7 @@ function graphFor(skillId: string, revision = REVISIONS[skillId] ?? "r42"): Skil
         from_node_id: `n-center-${skillId}`,
         to_node_id: `n-agent-${skillId}`,
         kind: "deployment",
+        relationship_kind: "usage",
         relationship: "managed_link",
         relation_id: "rel-2",
         provenance_id: null,
@@ -246,12 +248,21 @@ async function renderPage(url: string, options: PageOptions = {}) {
 }
 
 describe("first-load center selection", () => {
+  it("accepts only the six business relation kinds from URL filters", () => {
+    expect(parseGraphSearchParams(new URLSearchParams(
+      "skillId=pdf-reader&types=usage,managed_link,derived_from",
+    ))).toMatchObject({
+      skillId: "pdf-reader",
+      types: ["usage", "derived_from"],
+    });
+  });
+
   it("explains relationship edge state and type encodings in a visible legend", async () => {
     await renderPage("/relationships?skillId=pdf-reader");
 
     expect(await screen.findByRole("region", { name: "Graph legend" })).toBeVisible();
     expect(screen.getByText("Content verified")).toBeVisible();
-    expect(screen.getByText("Managed link")).toBeVisible();
+    expect(screen.getByText("Usage")).toBeVisible();
   });
 
   it("keeps the legend inside the canvas and expands its detailed reading hint on demand", async () => {
@@ -499,7 +510,7 @@ describe("tags and query facts", () => {
     const params = graphKeys.at(-1)?.[2] as Record<string, unknown>;
     expect(params).toMatchObject({
       skillId: "pdf-reader",
-      relationshipTypes: [],
+      relationshipKinds: [],
       statuses: [],
       relationshipRevision: "r42",
     });
@@ -615,7 +626,7 @@ describe("jumps and return state", () => {
 
   // #13：折叠摘要区的「前往关系治理」同样携带 skillId，两处入口行为一致。
   it("carries the center Skill to governance from the collapsed summary too", async () => {
-    await renderPage("/relationships?skillId=pdf-reader&types=related_skill");
+    await renderPage("/relationships?skillId=pdf-reader&types=usage");
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();

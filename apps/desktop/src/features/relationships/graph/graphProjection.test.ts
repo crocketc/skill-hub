@@ -23,6 +23,8 @@ function centerNode(): SkillRelationshipNode {
     node_id: "n-center",
     kind: "skill",
     skill_id: "pdf-reader",
+    display_name: null,
+    reference_only: false,
     relation_id: null,
     provenance_id: null,
     conflict_id: null,
@@ -61,6 +63,7 @@ function edge(overrides: Partial<SkillRelationshipEdge>): SkillRelationshipEdge 
     from_node_id: "n-center",
     to_node_id: "n-other",
     kind: "related_skill",
+    relationship_kind: null,
     relationship: null,
     relation_id: null,
     provenance_id: null,
@@ -92,6 +95,7 @@ function baseEdges(): SkillRelationshipEdge[] {
     edge({
       edge_id: "e1",
       to_node_id: "n-rel-1",
+      relationship_kind: "usage",
       relationship: "managed_copy",
       match_state: "content_verified",
       active: true,
@@ -100,6 +104,7 @@ function baseEdges(): SkillRelationshipEdge[] {
     edge({
       edge_id: "e2",
       to_node_id: "n-rel-2",
+      relationship_kind: "derived_from",
       relationship: "import_copy",
       match_state: "name_only",
       last_verified_at: null,
@@ -108,6 +113,7 @@ function baseEdges(): SkillRelationshipEdge[] {
       edge_id: "e3",
       to_node_id: "n-agent-1",
       kind: "deployment",
+      relationship_kind: "usage",
       relationship: "managed_link",
       active: true,
       last_verified_at: LAST_VERIFIED,
@@ -116,6 +122,7 @@ function baseEdges(): SkillRelationshipEdge[] {
       edge_id: "e4",
       to_node_id: "n-dir-1",
       kind: "located_in",
+      relationship_kind: "usage",
       relationship: "shared_directory_read",
       active: false,
       last_verified_at: LAST_VERIFIED,
@@ -124,6 +131,7 @@ function baseEdges(): SkillRelationshipEdge[] {
       edge_id: "e5",
       to_node_id: "n-src-1",
       kind: "source",
+      relationship_kind: "import_origin",
       relationship: "observed_copy",
       last_verified_at: LAST_VERIFIED,
     }),
@@ -149,7 +157,7 @@ function baseGraph(): SkillRelationshipGraphResult {
   };
 }
 
-const NO_FILTERS: GraphFactFilters = { relationshipTypes: [], statuses: [], governance: [], management: [] };
+const NO_FILTERS: GraphFactFilters = { relationshipKinds: [], statuses: [], governance: [], management: [] };
 const ALL_DISPLAY_ON: GraphDisplaySettings = {
   showSources: true,
   showAgentsProjects: true,
@@ -264,9 +272,14 @@ describe("projectGraph layer boundaries", () => {
 });
 
 describe("edge display states", () => {
-  it("derives label keys from the relationship or from the structural kind", () => {
+  it("uses business relation labels and keeps structural kinds separate", () => {
+    expect(edgeTypeLabelKey({
+      ...edge({}),
+      relationship_kind: "usage",
+      relationship: "managed_copy",
+    })).toBe("relationships.graph.edgeType.usage");
     expect(edgeTypeLabelKey({ ...edge({}), relationship: "managed_copy" })).toBe(
-      "relationships.graph.edgeType.managed_copy",
+      "relationships.graph.edgeKind.related_skill",
     );
     expect(edgeTypeLabelKey({ ...edge({}), relationship: null, kind: "conflict" })).toBe(
       "relationships.graph.edgeKind.conflict",
@@ -301,6 +314,14 @@ describe("edge display states", () => {
       "relationships.graph.status.content_verified",
     );
   });
+
+  it("keeps a released usage out of the active status even when its last probe verified content", () => {
+    expect(edgeStatusLabelKey(edge({
+      relationship: "managed_link",
+      active: false,
+      match_state: "content_verified",
+    }))).toBe("relationships.graph.status.released");
+  });
 });
 
 describe("collapse and hidden counts", () => {
@@ -325,21 +346,18 @@ describe("collapse and hidden counts", () => {
   it("counts edges and nodes hidden by fact filters instead of silently deleting them", () => {
     const projection = projectGraph(
       baseGraph(),
-      { relationshipTypes: ["managed_copy"], statuses: [] },
+      { relationshipKinds: ["usage"], statuses: [] },
       ALL_DISPLAY_ON,
     );
 
-    // e2 (import_copy), e3 (managed_link), e4 (shared_directory_read), e5 (observed_copy) 被筛选隐藏。
-    expect(projection.hiddenEdgeCount).toBe(4);
-    // 结构边 e1、e6 永远不被事实筛选删除。
+    // 导入来源与复用血缘不是使用关系；冲突结构边不受关系筛选影响。
+    expect(projection.hiddenEdgeCount).toBe(2);
     const visibleEdgeIds = projection.edges.map((projected) => projected.edge.edge_id);
-    expect(visibleEdgeIds.sort()).toEqual(["e1", "e6"]);
+    expect(visibleEdgeIds.sort()).toEqual(["e1", "e3", "e4", "e6"]);
 
     const filteredChips = projection.collapsed.filter((chip) => chip.reason === "filtered");
     const byKind = new Map(filteredChips.map((chip) => [chip.kind, chip.count]));
     expect(byKind.get("skill")).toBe(1);
-    expect(byKind.get("agent")).toBe(1);
-    expect(byKind.get("directory")).toBe(1);
     expect(byKind.get("source")).toBe(1);
   });
 
@@ -350,6 +368,7 @@ describe("collapse and hidden counts", () => {
         edge_id: "e7",
         to_node_id: "n-agent-1",
         kind: "deployment",
+        relationship_kind: "usage",
         relationship: "managed_link",
         active: true,
       }),
@@ -357,11 +376,11 @@ describe("collapse and hidden counts", () => {
 
     const projection = projectGraph(
       graph,
-      { relationshipTypes: ["managed_link"], statuses: [] },
+      { relationshipKinds: ["usage"], statuses: [] },
       ALL_DISPLAY_ON,
     );
     const visibleIds = projection.edges.map((projected) => projected.edge.edge_id);
-    expect(visibleIds.sort()).toEqual(["e3", "e6", "e7"]);
+    expect(visibleIds.sort()).toEqual(["e1", "e3", "e4", "e6", "e7"]);
     const agent = projection.nodes.find((node) => node.node.node_id === "n-agent-1");
     expect(agent?.layer).toBe("context");
     expect(projection.collapsed.filter((chip) => chip.kind === "agent" && chip.reason === "filtered")).toEqual([]);
@@ -392,7 +411,7 @@ describe("filter purity", () => {
 
     const projection = projectGraph(
       graph,
-      { relationshipTypes: ["managed_copy"], statuses: ["content_verified"] },
+      { relationshipKinds: ["usage"], statuses: ["content_verified"] },
       ALL_DISPLAY_ON,
     );
 

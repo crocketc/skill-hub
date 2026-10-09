@@ -412,6 +412,7 @@ export function SkillDetailPreview() {
           source_skill_id: "skill-doc",
           source_version_id: "version-100",
           source_display_name: "DOCX Writer",
+          source_exists: true,
           created_at: "1757808000",
         },
       },

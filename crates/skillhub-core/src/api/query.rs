@@ -567,6 +567,10 @@ pub struct SkillUpstreamLineage {
     pub source_skill_id: SkillId,
     pub source_version_id: VersionId,
     pub source_display_name: Option<String>,
+    /// Whether the origin Skill is still present in the catalog. A deleted
+    /// origin remains a reference-only snapshot and must not be linked.
+    #[serde(default)]
+    pub source_exists: bool,
     /// 登记时间（Unix 秒的十进制字符串，Specta 不放行 64 位整数）。
     #[serde(default)]
     pub created_at: Option<String>,
