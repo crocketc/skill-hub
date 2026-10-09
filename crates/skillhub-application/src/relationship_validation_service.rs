@@ -7,17 +7,28 @@
 //! one transaction per relation. Per-item failures are reported; they never
 //! abort the batch.
 
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use skillhub_adapters::import::SkillDetector;
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
-use skillhub_core::api::{AppCommandResult, RunRelationshipCheck};
-use skillhub_core::relationship::{
-    evaluate_relationship_probe, update_is_meaningful, RelationshipCheckItem,
-    RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
-    RelationshipCheckScope, RelationshipPathProbe, SourceCopyRelationFact, SourceCopyTransition,
+use skillhub_core::agent::{AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole};
+use skillhub_core::api::{
+    AppCommandResult, AppQueryResult, RelationshipOverviewScope, RunRelationshipCheck,
 };
-use skillhub_core::{AppError, AppResult, OperationId};
+use skillhub_core::project::Project;
+use skillhub_core::relationship::{
+    analyze_environment_problems, evaluate_relationship_probe, merge_environment_problem_analyses,
+    update_is_meaningful, AgentDirectoryCapabilityFact, DirectoryNodeFact, DirectoryRecognition,
+    DirectoryRole, EnvironmentProblemAnalysis, RelationshipCheckItem, RelationshipCheckItemStatus,
+    RelationshipCheckLevel, RelationshipCheckReport, RelationshipCheckScope, RelationshipPathProbe,
+    SourceCopyRelationFact, SourceCopyTransition, UsageEnvironmentDirectory, UsageEnvironmentEntry,
+    UsageEnvironmentKey, UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
+    UsageEnvironmentSnapshot,
+};
+use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
+use skillhub_core::{AppError, AppResult, OperationId, ProjectId};
 use skillhub_storage::Database;
 
 use crate::ClassifiedImportSource;
@@ -41,6 +52,69 @@ pub(crate) fn default_relationship_probe() -> Arc<dyn RelationshipPathProbing> {
 }
 
 impl LocalApplicationFacade {
+    /// 扫描所有 Agent 自身与 Agent × 已注册项目环境。只有数据库确认过的
+    /// 目录识别关系会进入文件扫描；发现文件不代表 Agent 已加载或执行文件。
+    pub(crate) fn get_usage_environment_problems(&self) -> AppResult<AppQueryResult> {
+        let directory_projection = match self.get_agent_directory_projection()? {
+            AppQueryResult::AgentDirectoryProjection(projection) => projection,
+            _ => unreachable!("get_agent_directory_projection returns its projection"),
+        };
+        let overview = match self.get_relationship_overview(RelationshipOverviewScope::All)? {
+            AppQueryResult::RelationshipOverview(overview) => overview,
+            _ => unreachable!("get_relationship_overview returns its projection"),
+        };
+        let library = self.library_runtime.snapshot()?;
+        let (discovery, projects, revision) =
+            self.with_database("query.usage_environment_problems.facts", |database| {
+                Ok((
+                    database
+                        .agent_repository()
+                        .load()?
+                        .unwrap_or_else(crate::empty_discovery),
+                    database.project_repository().list()?,
+                    database.relationship_repository().relationship_revision()?,
+                ))
+            })?;
+        let mut environments = Vec::new();
+        let agent_ids = discovery
+            .instances
+            .iter()
+            .map(|instance| instance.client_id.clone())
+            .collect::<BTreeSet<_>>();
+        for agent_client_id in &agent_ids {
+            environments.push(UsageEnvironmentKey {
+                agent_client_id: agent_client_id.clone(),
+                project_id: None,
+            });
+            for project in &projects {
+                environments.push(UsageEnvironmentKey {
+                    agent_client_id: agent_client_id.clone(),
+                    project_id: Some(project.id),
+                });
+            }
+        }
+        environments.sort_by_key(usage_environment_sort_key);
+        environments.dedup();
+
+        let mut analyses = Vec::<EnvironmentProblemAnalysis>::with_capacity(environments.len());
+        for environment in environments {
+            let snapshot = build_usage_environment_snapshot(
+                environment,
+                &projects,
+                &overview.directory_nodes,
+                &overview.agent_directory_capabilities,
+                &directory_projection,
+                &overview.usage_relations,
+                &library.store,
+                revision,
+            );
+            analyses.push(analyze_environment_problems(&snapshot));
+        }
+        Ok(AppQueryResult::UsageEnvironmentProblems(
+            merge_environment_problem_analyses(&analyses),
+        ))
+    }
+
     /// 仅供测试：注入受控探测结果（权限/离线卷等无法跨平台模拟的场景）。
     #[doc(hidden)]
     pub fn set_relationship_probe_for_tests(&self, probe: Arc<dyn RelationshipPathProbing>) {
@@ -83,6 +157,257 @@ impl LocalApplicationFacade {
             },
         ))
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_usage_environment_snapshot(
+    environment: UsageEnvironmentKey,
+    projects: &[Project],
+    directory_nodes: &[DirectoryNodeFact],
+    capabilities: &[AgentDirectoryCapabilityFact],
+    directory_projection: &AgentDirectoryProjection,
+    usage_relations: &[skillhub_core::relationship::UsageRelationView],
+    store: &skillhub_storage::VersionStore,
+    relationship_revision: i64,
+) -> UsageEnvironmentSnapshot {
+    let mut recognized_directories = Vec::new();
+    let mut discovered_entries = Vec::new();
+    let mut probe_limitations = Vec::<UsageEnvironmentProbeLimitation>::new();
+
+    for node in directory_nodes {
+        if node.role == DirectoryRole::CentralLibrary {
+            continue;
+        }
+        let project_owner = registered_project_containing(&node.path, projects);
+        if node.role == DirectoryRole::Project {
+            match (environment.project_id, project_owner) {
+                (Some(current), Some(owner)) if current == owner => {}
+                (None, None) => {}
+                _ => continue,
+            }
+        }
+        if node.role != DirectoryRole::SharedDirectory
+            && node.agent_client_id.as_deref() != Some(environment.agent_client_id.as_str())
+        {
+            continue;
+        }
+
+        let capability = capabilities.iter().find(|capability| {
+            capability.agent_client_id == environment.agent_client_id
+                && capability.directory_node_id == node.node_id
+        });
+        if node.role == DirectoryRole::SharedDirectory && capability.is_none() {
+            continue;
+        }
+        let recognition = capability
+            .map(|capability| capability.recognition)
+            .unwrap_or(DirectoryRecognition::Unknown);
+        let physical_identity = skillhub_core::physical_id_for_path(&node.path);
+        if physical_identity.is_none() {
+            probe_limitations.push(UsageEnvironmentProbeLimitation {
+                directory_id: Some(node.node_id.clone()),
+                relative_entry_path: None,
+                reason: UsageEnvironmentProbeLimitationReason::DirectoryIdentityUnavailable,
+            });
+        }
+        let role = projected_directory_role(
+            node,
+            physical_identity.as_deref(),
+            directory_projection,
+            project_owner,
+        );
+        let mut consumers = if node.role == DirectoryRole::SharedDirectory {
+            capabilities
+                .iter()
+                .filter(|candidate| {
+                    candidate.directory_node_id == node.node_id
+                        && candidate.recognition == DirectoryRecognition::Supported
+                })
+                .map(|candidate| UsageEnvironmentKey {
+                    agent_client_id: candidate.agent_client_id.clone(),
+                    project_id: None,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![environment.clone()]
+        };
+        consumers.sort_by_key(usage_environment_sort_key);
+        consumers.dedup();
+        let directory = UsageEnvironmentDirectory {
+            directory_id: node.node_id.clone(),
+            path: node.path.clone(),
+            role,
+            recognition,
+            physical_identity,
+            consumers,
+        };
+        recognized_directories.push(directory);
+
+        if recognition != DirectoryRecognition::Supported {
+            continue;
+        }
+        let root = Path::new(&node.path);
+        if !root.is_dir() {
+            probe_limitations.push(UsageEnvironmentProbeLimitation {
+                directory_id: Some(node.node_id.clone()),
+                relative_entry_path: None,
+                reason: UsageEnvironmentProbeLimitationReason::DirectoryUnavailable,
+            });
+            continue;
+        }
+        let candidates = match SkillDetector::default().detect(
+            root,
+            SourceDescriptor::new(
+                SourceKind::Local,
+                SourceLocator::local_path(PathBuf::from(&node.path)),
+            ),
+        ) {
+            Ok(candidates) => candidates,
+            Err(_) => {
+                probe_limitations.push(UsageEnvironmentProbeLimitation {
+                    directory_id: Some(node.node_id.clone()),
+                    relative_entry_path: None,
+                    reason: UsageEnvironmentProbeLimitationReason::ScanFailed,
+                });
+                continue;
+            }
+        };
+        for candidate in candidates {
+            let entry_path = PathBuf::from(&candidate.absolute_root);
+            let content_fingerprint = match store.hash_tree_read_only(&entry_path) {
+                Ok(fingerprint) => Some(fingerprint),
+                Err(_) => {
+                    probe_limitations.push(UsageEnvironmentProbeLimitation {
+                        directory_id: Some(node.node_id.clone()),
+                        relative_entry_path: Some(candidate.relative_root.clone()),
+                        reason:
+                            UsageEnvironmentProbeLimitationReason::ContentFingerprintUnavailable,
+                    });
+                    None
+                }
+            };
+            let physical_identity = skillhub_core::physical_id_for_path(&entry_path);
+            if physical_identity.is_none() {
+                probe_limitations.push(UsageEnvironmentProbeLimitation {
+                    directory_id: Some(node.node_id.clone()),
+                    relative_entry_path: Some(candidate.relative_root.clone()),
+                    reason: UsageEnvironmentProbeLimitationReason::EntryIdentityUnavailable,
+                });
+            }
+            discovered_entries.push(UsageEnvironmentEntry {
+                directory_id: node.node_id.clone(),
+                relative_entry_path: candidate.relative_root,
+                runtime_name: Some(candidate.runtime_name),
+                content_fingerprint,
+                physical_identity,
+                skill_id: None,
+                relation_ids: Vec::new(),
+            });
+        }
+    }
+
+    recognized_directories.sort_by(|left, right| left.directory_id.cmp(&right.directory_id));
+    discovered_entries.sort_by(|left, right| {
+        left.directory_id
+            .cmp(&right.directory_id)
+            .then_with(|| left.relative_entry_path.cmp(&right.relative_entry_path))
+    });
+    probe_limitations.sort_by_key(|limitation| {
+        (
+            limitation.directory_id.clone(),
+            limitation.relative_entry_path.clone(),
+            format!("{:?}", limitation.reason),
+        )
+    });
+    probe_limitations.dedup();
+
+    UsageEnvironmentSnapshot {
+        environment,
+        recognized_directories,
+        discovered_entries,
+        usage_relations: usage_relations.to_vec(),
+        probe_limitations,
+        relationship_revision: relationship_revision.to_string(),
+    }
+}
+
+fn projected_directory_role(
+    node: &DirectoryNodeFact,
+    physical_identity: Option<&str>,
+    projection: &AgentDirectoryProjection,
+    project_owner: Option<ProjectId>,
+) -> AgentDirectoryRole {
+    let projected = projection.directories.iter().find(|directory| {
+        let same_physical_identity = match (&directory.identity, physical_identity) {
+            (AgentDirectoryIdentity::VerifiedPhysical(expected), Some(actual)) => {
+                expected == actual
+            }
+            _ => false,
+        };
+        same_physical_identity || paths_resolve_to_same_directory(&directory.path, &node.path)
+    });
+    if let Some(projected) = projected {
+        if projected.is_shared_directory {
+            return AgentDirectoryRole::SharedDirectory;
+        }
+        if projected.role == AgentDirectoryRole::Project {
+            return if project_owner.is_some() {
+                AgentDirectoryRole::Project
+            } else {
+                AgentDirectoryRole::AgentWorkspace
+            };
+        }
+        return projected.role;
+    }
+    match node.role {
+        DirectoryRole::AgentNative => AgentDirectoryRole::AgentUser,
+        DirectoryRole::SharedDirectory => AgentDirectoryRole::SharedDirectory,
+        DirectoryRole::Project => {
+            if project_owner.is_some() {
+                AgentDirectoryRole::Project
+            } else {
+                AgentDirectoryRole::AgentWorkspace
+            }
+        }
+        DirectoryRole::CentralLibrary => AgentDirectoryRole::AgentUser,
+    }
+}
+
+fn registered_project_containing(path: &str, projects: &[Project]) -> Option<ProjectId> {
+    projects
+        .iter()
+        .find(|project| path_is_within(&project.device_path, path))
+        .map(|project| project.id)
+}
+
+fn path_is_within(root: &str, candidate: &str) -> bool {
+    let root_path = Path::new(root);
+    let candidate_path = Path::new(candidate);
+    match (
+        std::fs::canonicalize(root_path),
+        std::fs::canonicalize(candidate_path),
+    ) {
+        (Ok(root), Ok(candidate)) => candidate.starts_with(root),
+        _ => candidate_path.starts_with(root_path),
+    }
+}
+
+fn paths_resolve_to_same_directory(left: &str, right: &str) -> bool {
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn usage_environment_sort_key(environment: &UsageEnvironmentKey) -> String {
+    format!(
+        "{}:{}",
+        environment.agent_client_id,
+        environment
+            .project_id
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    )
 }
 
 fn select_relations_for_scope(

@@ -9962,6 +9962,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetRelationshipOverview(request) => {
                 self.get_relationship_overview(request.scope)
             }
+            AppQuery::GetUsageEnvironmentProblems(_) => self.get_usage_environment_problems(),
             AppQuery::ListUsageDecisions(request) => {
                 self.with_database("query.list_usage_decisions", |database| {
                     database

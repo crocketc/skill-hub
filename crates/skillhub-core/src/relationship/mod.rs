@@ -1,4 +1,5 @@
 pub mod classifier;
+pub mod environment;
 pub mod governance;
 pub mod graph;
 pub mod history;
@@ -9,6 +10,13 @@ pub mod usage;
 pub mod usage_change;
 pub mod validation;
 
+pub use environment::{
+    analyze_environment_problems, detect_environment_problems, EnvironmentProblemAnalysis,
+    EnvironmentProblemEnvironmentResult, EnvironmentProblemKind, EnvironmentProblemView,
+    UsageEnvironmentDirectory, UsageEnvironmentEntry, UsageEnvironmentKey,
+    UsageEnvironmentProbeLimitation, UsageEnvironmentProbeLimitationReason,
+    UsageEnvironmentSnapshot,
+};
 pub use source_copy::{
     validate_source_copy_transition, SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth,
     SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
@@ -62,9 +70,10 @@ pub use impact::{
 };
 pub use resolution::{
     build_conflict_workspace, conflict_analysis_is_stale, decision_for_analysis_action,
-    plan_conflict_decision, plan_conflict_governance_handoff, ConflictDecision,
-    ConflictGovernanceHandoff, ConflictGovernanceIntent, ConflictResolutionOutcome,
-    ConflictResolutionRecord, ConflictWorkspace, ConflictWorkspaceCase, PlannedConflictResolution,
+    merge_environment_problem_analyses, plan_conflict_decision, plan_conflict_governance_handoff,
+    ConflictDecision, ConflictGovernanceHandoff, ConflictGovernanceIntent,
+    ConflictResolutionOutcome, ConflictResolutionRecord, ConflictWorkspace, ConflictWorkspaceCase,
+    PlannedConflictResolution,
 };
 
 /// K5/MS-04：复用修改血缘——「来源 skill+version → 新 skill 首版本」的

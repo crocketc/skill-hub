@@ -9,14 +9,148 @@
 //! The AI layer stays advisory: a recommendation only ever maps onto one of
 //! those explicit actions, and never onto a silent "adopted" state.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::duplicate::{
     build_conflict_analysis_input, conflict_case_matches_scope, ConflictAnalysisAction,
     ConflictAnalysisRecord,
 };
-use crate::relationship::{ConflictCaseFact, ConflictClassification};
+use crate::relationship::{
+    ConflictCaseFact, ConflictClassification, EnvironmentProblemAnalysis, EnvironmentProblemView,
+    UsageEnvironmentEntry, UsageEnvironmentKey, UsageEnvironmentProbeLimitation,
+};
 use crate::{AppError, AppResult, ErrorCode, Severity};
+
+/// 合并多个 Agent／项目环境的同一问题根因，并保留逐环境核验结果。
+pub fn merge_environment_problem_analyses(
+    analyses: &[EnvironmentProblemAnalysis],
+) -> EnvironmentProblemAnalysis {
+    let mut problems = BTreeMap::<String, EnvironmentProblemView>::new();
+    let mut probe_limitations = Vec::<UsageEnvironmentProbeLimitation>::new();
+
+    for analysis in analyses {
+        probe_limitations.extend(analysis.probe_limitations.iter().cloned());
+        for problem in &analysis.problems {
+            problems
+                .entry(problem.problem_id.clone())
+                .and_modify(|existing| merge_problem(existing, problem))
+                .or_insert_with(|| problem.clone());
+        }
+    }
+
+    probe_limitations.sort_by_key(limitation_sort_key);
+    probe_limitations.dedup();
+    EnvironmentProblemAnalysis {
+        problems: problems.into_values().collect(),
+        probe_limitations,
+    }
+}
+
+fn merge_problem(existing: &mut EnvironmentProblemView, other: &EnvironmentProblemView) {
+    let mut entries = BTreeMap::<String, UsageEnvironmentEntry>::new();
+    for entry in existing.entries.iter().chain(other.entries.iter()) {
+        let key = entry.physical_identity.clone().unwrap_or_else(|| {
+            format!(
+                "path:{}:{}",
+                entry.directory_id,
+                entry.relative_entry_path.to_lowercase()
+            )
+        });
+        entries
+            .entry(key)
+            .and_modify(|current| merge_problem_entry(current, entry))
+            .or_insert_with(|| entry.clone());
+    }
+    existing.entries = entries.into_values().collect();
+
+    let mut consumers = BTreeMap::<String, UsageEnvironmentKey>::new();
+    for consumer in existing.consumers.iter().chain(other.consumers.iter()) {
+        consumers.insert(environment_problem_sort_key(consumer), consumer.clone());
+    }
+    existing.consumers = consumers.into_values().collect();
+
+    let mut results =
+        BTreeMap::<String, crate::relationship::EnvironmentProblemEnvironmentResult>::new();
+    for result in existing
+        .environment_results
+        .iter()
+        .chain(other.environment_results.iter())
+    {
+        let key = environment_problem_sort_key(&result.environment);
+        results
+            .entry(key)
+            .and_modify(|current| {
+                if revision_is_newer(
+                    &result.relationship_revision,
+                    &current.relationship_revision,
+                ) {
+                    *current = result.clone();
+                } else if result.relationship_revision == current.relationship_revision {
+                    current.closed &= result.closed;
+                }
+            })
+            .or_insert_with(|| result.clone());
+    }
+    existing.environment_results = results.into_values().collect();
+    existing.closed = !existing.environment_results.is_empty()
+        && existing
+            .environment_results
+            .iter()
+            .all(|result| result.closed);
+}
+
+fn merge_problem_entry(existing: &mut UsageEnvironmentEntry, other: &UsageEnvironmentEntry) {
+    if existing.skill_id != other.skill_id {
+        existing.skill_id = None;
+    }
+    existing
+        .relation_ids
+        .extend(other.relation_ids.iter().cloned());
+    existing.relation_ids.sort();
+    existing.relation_ids.dedup();
+    if (
+        other.directory_id.as_str(),
+        other.relative_entry_path.to_lowercase(),
+    ) < (
+        existing.directory_id.as_str(),
+        existing.relative_entry_path.to_lowercase(),
+    ) {
+        existing.directory_id = other.directory_id.clone();
+        existing.relative_entry_path = other.relative_entry_path.clone();
+    }
+}
+
+fn environment_problem_sort_key(environment: &UsageEnvironmentKey) -> String {
+    format!(
+        "{}:{}",
+        environment.agent_client_id,
+        environment
+            .project_id
+            .map(|id| id.to_string())
+            .unwrap_or_default()
+    )
+}
+
+fn revision_is_newer(candidate: &str, current: &str) -> bool {
+    match (candidate.parse::<u64>(), current.parse::<u64>()) {
+        (Ok(candidate), Ok(current)) => candidate > current,
+        _ => candidate > current,
+    }
+}
+
+fn limitation_sort_key(limitation: &UsageEnvironmentProbeLimitation) -> String {
+    format!(
+        "{}\0{}\0{:?}",
+        limitation.directory_id.as_deref().unwrap_or_default(),
+        limitation
+            .relative_entry_path
+            .as_deref()
+            .unwrap_or_default(),
+        limitation.reason
+    )
+}
 
 /// 用户在冲突处理页面做出的明确决定。
 ///

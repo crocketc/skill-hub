@@ -17,10 +17,10 @@ use crate::{
 
 use crate::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictWorkspace, DeploymentRelationFact,
-    DirectoryNodeFact, GovernanceTaskFact, RelationGovernanceFilters, RelationGovernanceLedger,
-    RelationshipGraphFactCounts, RelationshipGraphFilters, SkillRelationshipEdge,
-    SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact, UsageDecisionRecord,
-    UsageEntryKey, UsageRelationView,
+    DirectoryNodeFact, EnvironmentProblemAnalysis, GovernanceTaskFact, RelationGovernanceFilters,
+    RelationGovernanceLedger, RelationshipGraphFactCounts, RelationshipGraphFilters,
+    SkillRelationshipEdge, SkillRelationshipGraph, SkillRelationshipNode, SourceRelationFact,
+    UsageDecisionRecord, UsageEntryKey, UsageRelationView,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1046,6 +1046,13 @@ pub struct GetRelationshipOverview {
     pub scope: RelationshipOverviewScope,
 }
 
+/// Scans only explicitly recognized Agent and registered-project directories
+/// and reports actual duplicate/name-conflict facts. It does not infer runtime
+/// loading from directory presence.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetUsageEnvironmentProblems;
+
 /// Reads durable decisions for a confirmed skill/entry identity.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
@@ -1340,6 +1347,8 @@ pub enum AppQuery {
     GetRemovalImpact(GetRemovalImpact),
     #[serde(rename = "get_relationship_overview")]
     GetRelationshipOverview(GetRelationshipOverview),
+    #[serde(rename = "get_usage_environment_problems")]
+    GetUsageEnvironmentProblems(GetUsageEnvironmentProblems),
     #[serde(rename = "list_usage_decisions")]
     ListUsageDecisions(ListUsageDecisions),
     #[serde(rename = "get_relationship_removal_impact")]
@@ -1475,6 +1484,8 @@ pub enum AppQueryResult {
     RemovalImpact(crate::RemovalImpact),
     #[serde(rename = "relationship_overview")]
     RelationshipOverview(RelationshipOverview),
+    #[serde(rename = "usage_environment_problems")]
+    UsageEnvironmentProblems(EnvironmentProblemAnalysis),
     #[serde(rename = "usage_decision_history")]
     UsageDecisionHistory(Vec<UsageDecisionRecord>),
     #[serde(rename = "relationship_removal_impact")]
