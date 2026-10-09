@@ -1,3 +1,10 @@
+import type {
+  CommitUsageChange,
+  PreparedUsageChange,
+  PrepareUsageChange,
+  UsageChangeResult,
+} from "../../api/bindings";
+
 export type RemovalChoice = "keep_deployed" | "remove_deployment" | "convert_to_copy";
 /** 生成绑定 DeploymentMode：部署形态决定删除确认里的分组（链接/拷贝）。 */
 export type RemovalDeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
@@ -61,17 +68,7 @@ export type RemovalResult = {
   items?: RemovalItemOutcome[];
 };
 
-export type UndeployDecision = "remove_owned_target" | "keep_shared_deployment" | "remove_relation_only";
-export type UndeployImpact = {
-  deploymentId: string;
-  label: string;
-  operationId: string;
-  sharedTarget: boolean;
-};
-
 export interface RemovalFacade {
-  prepareUndeploy(deploymentId: string, label: string): Promise<UndeployImpact>;
-  commitUndeploy(operationId: string, decision: UndeployDecision): Promise<void>;
   prepareDelete(skillId: string, skillName?: string): Promise<RemovalImpact>;
   commitDelete(
     operationId: string,
@@ -79,6 +76,12 @@ export interface RemovalFacade {
     /** 选择删除共享物理目标的部署 id 集合（逐项显式确认，K2/G-09）。 */
     confirmSharedTargetRemoval?: ReadonlySet<string>,
   ): Promise<RemovalResult>;
+}
+
+/** T04 的预览与提交门面；文件系统动作只由 prepared_id 指定的快照执行。 */
+export interface UsageChangeFacade {
+  prepareUsageChange(request: PrepareUsageChange): Promise<PreparedUsageChange>;
+  commitUsageChange(request: CommitUsageChange): Promise<UsageChangeResult>;
 }
 
 export function removalImpactFixture(): RemovalImpact {

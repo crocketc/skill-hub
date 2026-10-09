@@ -209,6 +209,7 @@ interface DrawerHarnessProps {
   onDelete?: (skill: { id: string; name: string }) => void;
   onDispatch?: (skillId: string) => void;
   onExport?: (skillId: string) => void;
+  onReclaim?: (skillId: string) => void;
   onLocationChange?: (location: ReturnType<typeof useLocation>) => void;
   open?: boolean;
   preferences?: SkillDrawerPreferences;
@@ -225,6 +226,7 @@ function DrawerHarness({
   onDelete,
   onDispatch,
   onExport,
+  onReclaim,
   onLocationChange,
   open = true,
   preferences = DEFAULT_DRAWER_PREFERENCES,
@@ -257,6 +259,7 @@ function DrawerHarness({
         onDelete={onDelete ?? (() => undefined)}
         onDispatch={onDispatch ?? (() => undefined)}
         onExport={onExport ?? (() => undefined)}
+        onReclaim={onReclaim}
         onOpenChange={() => undefined}
         onPreferencesChange={setControlledPreferences}
         open={open}
@@ -1491,6 +1494,15 @@ describe("drawer primary actions wired to real flows", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Export" }));
     expect(onExport).toHaveBeenCalledWith("skill-pdf");
+  });
+
+  it("hands reclaim to the host unified usage release flow", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const onReclaim = vi.fn();
+    await renderDrawer({ facade, onReclaim });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Reclaim skill" }));
+    expect(onReclaim).toHaveBeenCalledWith("skill-pdf");
   });
 
   it("hands delete to the unified removal flow with the skill identity", async () => {

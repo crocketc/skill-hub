@@ -19,10 +19,11 @@ import type { MarkdownFacade } from "../markdown/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
-import type { RemovalFacade } from "../removal/api";
+import type { RemovalFacade, UsageChangeFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
 import type {
   DeploymentRelationFact,
+  PreparedUsageChange,
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
   RelationGovernanceRow,
@@ -30,6 +31,7 @@ import type {
   SourceUpdateStatus,
   UsageRelationView,
   UpstreamCheckResult,
+  UsageChangeResult,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -46,6 +48,7 @@ interface RenderDetailOptions {
   locale?: "en-US" | "zh-CN";
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+  usageChangeFacade?: UsageChangeFacade;
   tracker?: OperationTracker;
   securityFacade?: SecurityFacade;
 }
@@ -98,6 +101,7 @@ async function renderDetail({
   locale = "en-US",
   markdownFacade = createMockMarkdownFacade(),
   removalFacade,
+  usageChangeFacade,
   tracker,
   securityFacade = createTestSecurityFacade(),
 }: RenderDetailOptions = {}) {
@@ -112,11 +116,11 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -320,6 +324,56 @@ function governanceOverview(rows: RelationGovernanceRow[]): RelationshipOverview
   };
 }
 
+function usageReleasePrepared(): PreparedUsageChange {
+  return {
+    operation_id: "op-release",
+    prepared_id: "prepared-release",
+    action: "release",
+    relationship_revision: "rev-1",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [{
+      relation_ids: ["relation:release"],
+      skill_id: "skill-pdf",
+      target: {
+        kind: "agent",
+        directory_id: "node-relation:release",
+        agent_client_id: "codex",
+        directory_role: "agent_user",
+        recognition: null,
+      },
+      action: "keep_independent_copy",
+      description: "The target copy stays in place.",
+    }],
+    limitations: [],
+  };
+}
+
+function usageReleaseResult(): UsageChangeResult {
+  return {
+    operation_id: "op-release",
+    prepared_id: "prepared-release",
+    recovery_required: false,
+    item_results: [{
+      relation_ids: ["relation:release"],
+      skill_id: "skill-pdf",
+      target: {
+        kind: "agent",
+        directory_id: "node-relation:release",
+        agent_client_id: "codex",
+        directory_role: "agent_user",
+        recognition: null,
+      },
+      action: "keep_independent_copy",
+      status: "applied",
+      reason: null,
+      recovery_point: null,
+    }],
+  };
+}
+
 function batchOutcome(
   state: RelationGovernanceBatchOutcome["state"],
   relationId: string,
@@ -436,6 +490,56 @@ describe("SkillDetailPage shell", () => {
     ]);
   });
 
+  it("releases uses from a library reclaim link through the prepared unified flow", async () => {
+    const row = governanceRow({ relationId: "relation:release" });
+    if (row.relation.kind !== "deployment") throw new Error("Expected a deployment relationship fixture");
+    row.relation.fact.relationship = "managed_copy";
+    row.relation.fact.file_representation = "copy";
+    row.relation.fact.ownership = "skillhub_managed";
+    row.governance.management_status = "taken_over";
+    const governanceFacade = createTestGovernanceFacade([row]);
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(usageReleasePrepared()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageReleaseResult()),
+    };
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 34 };
+
+    await renderDetail({
+      entry: {
+        pathname: "/library/skill-pdf",
+        search: "?reclaim=1&tag=documents",
+        state: { libraryReturn, origin: "drawer" },
+      },
+      governanceFacade,
+      usageChangeFacade,
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Reclaim selected uses (0 selected)" });
+    expect(dialog).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByTestId("route-location").textContent).toContain("/library/skill-pdf?tag=documents|");
+      expect(screen.getByTestId("route-location").textContent).toContain(JSON.stringify({ libraryReturn, origin: "drawer" }));
+    });
+
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Keep as an independent copy" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview release" }));
+
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "release",
+      copy_disposition: "keep_independent",
+      relation_ids: [],
+      selected_entry_keys: [{ directory_id: "node-codex", relative_entry_path: "pdf-reader" }],
+      skill_id: "skill-pdf",
+    })));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Confirm release" }));
+    expect(await within(dialog).findByText("Usage release complete. Applied: 1.")).toBeVisible();
+    expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-release",
+      prepared_id: "prepared-release",
+    });
+  });
+
   // #14：详情头部缺版本时渲染统一占位文案，不得回退英文 "unknown"。
   it("shows the unified empty-version copy when the Skill has no version yet", async () => {
     const facade = createMockSkillDetailFacade({ summary: { currentVersion: undefined } });
@@ -482,8 +586,6 @@ describe("SkillDetailPage shell", () => {
 
   it("opens the real removal confirmation from the header delete action", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -758,8 +860,6 @@ describe("SkillDetailPage shell", () => {
   it("loads deletion impact from the W3-1 removal request and returns to the library after confirmation", async () => {
     const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -796,8 +896,6 @@ describe("SkillDetailPage shell", () => {
   it("renders the per-target outcome panel with a recovery entry when the central delete fails", async () => {
     const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -853,8 +951,6 @@ describe("SkillDetailPage shell", () => {
   // 继续处理入口：按契约先重新 prepare（原确认已消费），再重新确认。
   it("re-prepares the deletion impact from the outcome panel continue entry", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -890,8 +986,6 @@ describe("SkillDetailPage shell", () => {
 
   it("cancels deletion without committing a prepared operation", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
         skillId: "skill-pdf",
@@ -917,8 +1011,6 @@ describe("SkillDetailPage shell", () => {
   // 确认对话框（含确认按钮）完全不出现，commit 不被调用。
   it("shows the load failure visibly and never opens the confirm dialog when impact preparation fails", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockRejectedValue({
         code: "removal.deployment_target_unavailable", severity: "error", params: {}, actions: [],
       }),
@@ -940,8 +1032,6 @@ describe("SkillDetailPage shell", () => {
   // 用户看到「预览已失效，请重新确认」，绝不静默 no-op。
   it("rejects the commit with re-preview guidance when the prepared operation is missing", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: undefined,
         skillId: "skill-pdf",
@@ -967,8 +1057,6 @@ describe("SkillDetailPage shell", () => {
   // W3-1（FB-003 裁决第 1 节）：只响应当前 Skill 的 removalRequest。
   it("ignores a removal request addressed to another skill", async () => {
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn(),
       commitDelete: vi.fn(),
     };

@@ -5,11 +5,14 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { describeNativeError } from "../../../api/nativeErrors";
 import type {
-    RelationGovernanceBatchOutcome,
+  CommitUsageChange,
+  RelationGovernanceBatchOutcome,
   RelationGovernanceRow,
   RelationshipCheckItem,
   RelationshipCheckReport,
   RelationshipOverview,
+  UsageChangeResult,
+  UsageRelationView,
 } from "../../../api/bindings";
 import {
   operationTracker,
@@ -38,7 +41,6 @@ import {
   mergeBatchItemOutcome,
   parseGovernanceSearchParams,
   relationIdOf,
-  relationPathOf,
   rowIsBatchExecutable,
   rowIsNaturallyExecutable,
   summarizeBatchSelection,
@@ -52,6 +54,9 @@ import { governanceSkillDisplayName } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
 import { GovernanceImpactPreview } from "./GovernanceImpactPreview";
 import { BatchResult, GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { UndeployDialog } from "../../removal/UndeployDialog";
+import type { UsageChangeFacade } from "../../removal/api";
+import { nativeUsageChangeFacade, unavailableUsageChangeFacade } from "../../removal/nativeApi";
 import { readGovernanceLibraryReturnTarget } from "./libraryReturnContext";
 import "./governance.css";
 
@@ -60,6 +65,8 @@ export type { RelationGovernanceFacade } from "./api";
 export interface RelationshipGovernancePageProps {
   /** 治理门面；缺省用原生实现，测试/预览注入替身。 */
   facade?: RelationGovernanceFacade;
+  /** T04 统一释放门面；预览路由不允许写入本机目录。 */
+  usageChangeFacade?: UsageChangeFacade;
   /** 统一执行桥的在途投影；测试注入独立实例，默认模块级单例。 */
   tracker?: OperationTracker;
   /** 仅 DEV 预览注入：显式标记夹具数据，不连接本机 Skill/Agent 目录。 */
@@ -69,6 +76,7 @@ export interface RelationshipGovernancePageProps {
 interface SingleFlowState {
   kind: "centralize" | "undeploy";
   row: RelationGovernanceRow;
+  usage: UsageRelationView | null;
   relationshipRevision: string;
   busy: boolean;
   error: string | null;
@@ -104,6 +112,7 @@ const INITIAL_BATCH_FLOW: BatchFlowState = {
  */
 export function RelationshipGovernancePage({
   facade = nativeGovernanceFacade,
+  usageChangeFacade,
   previewNotice,
   tracker = operationTracker,
 }: RelationshipGovernancePageProps) {
@@ -112,6 +121,8 @@ export function RelationshipGovernancePage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
+  const effectiveUsageChangeFacade = usageChangeFacade
+    ?? (previewNotice ? unavailableUsageChangeFacade : nativeUsageChangeFacade);
   const layoutFacade = useMemo(() => ({
     ...nativeRelationshipsFacade,
     listGovernance: (params: Parameters<RelationGovernanceFacade["listGovernance"]>[0]) => facade.listGovernance(params),
@@ -349,7 +360,10 @@ export function RelationshipGovernancePage({
   // —— 单条流程 ——
   const [single, setSingle] = useState<SingleFlowState | null>(null);
 
-  const openSingle = useCallback((kind: SingleFlowState["kind"], row: RelationGovernanceRow) => {
+  const openSingle = useCallback((kind: SingleFlowState["kind"], row: RelationGovernanceRow, usage?: UsageRelationView) => {
+    const relationId = relationIdOf(row.relation);
+    const resolvedUsage = usage ?? relationRows.find((candidate) => candidate.usage.relation_id === relationId
+      || candidate.usage.evidence_relation_ids.includes(relationId))?.usage ?? null;
     setSingle({
       busy: false,
       error: null,
@@ -357,10 +371,11 @@ export function RelationshipGovernancePage({
       outcome: null,
       resultText: null,
       row,
+      usage: resolvedUsage,
       relationshipRevision: ledgerQuery.data?.relationship_revision ?? "",
       sharedImpactConfirmed: false,
     });
-  }, [ledgerQuery.data?.relationship_revision]);
+  }, [ledgerQuery.data?.relationship_revision, relationRows]);
 
   // —— 批量流程 ——
   const selectedUsageRows = useMemo(
@@ -579,10 +594,10 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, facade, notifications, queryClient, single, t, tracker]);
 
-  const confirmSingleUndeploy = useCallback((flow: SingleFlowState) => {
-    setSingle((current) => current ? { ...current, busy: true, error: null } : current);
-    void runTrackedOperation({
-      targetHref: governanceDestination([relationIdOf(flow.row.relation)]),
+  const commitSingleRelease = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => {
+    const relationId = single ? relationIdOf(single.row.relation) : "";
+    return runTrackedOperation<UsageChangeResult>({
+      targetHref: governanceDestination(relationId ? [relationId] : []),
       canCancel: false,
       describeError,
       invalidateQueryKeys: [[relationshipsKeys.root]],
@@ -591,33 +606,25 @@ export function RelationshipGovernancePage({
       notifications,
       queryClient,
       run: async (handle) => {
-        const prepared = await facade.prepareRelationUndeploy(flow.row.relation);
-        handle.correlate(prepared.operationId);
-        // K2/G-07：预览对话框里的共享目标决定必须随提交透传，不得丢弃。
-        return await facade.commitRelationUndeploy(prepared.operationId, {
-          confirmSharedTargetRemoval: flow.sharedImpactConfirmed,
-        });
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
       },
-      successNotice: () => ({
-        title: t("relationships.governance.actions.undeploy"),
-        tone: "success" as const,
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: t("relationships.governance.actions.undeploy"), tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.length === 0
+          ? 1
+          : result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
       }),
-      summarize: () => ({ failed: 0, skipped: 0, succeeded: 1 }),
       total: 1,
       tracker,
       translate: (key, options) => String(t(key as never, options as never)),
-    }).then(() => {
-      setSingle((current) => current ? {
-        ...current,
-        busy: false,
-        resultText: t("relationships.governance.undeployResult.done", { path: relationPathOf(flow.row.relation) }),
-      } : current);
-    }).catch((reason: unknown) => {
-      setSingle((current) => current
-        ? { ...current, busy: false, error: describeError(reason) }
-        : current);
     });
-  }, [describeError, facade, notifications, queryClient, t, tracker]);
+  }, [describeError, effectiveUsageChangeFacade, notifications, queryClient, single, t, tracker]);
 
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
@@ -719,11 +726,11 @@ export function RelationshipGovernancePage({
       row.usage.management === "unmanaged"
       && classifyUsageRelation(row.usage) === "pending"
       && rowIsBatchExecutable(actionRow)
-    ) openSingle("centralize", actionRow);
+    ) openSingle("centralize", actionRow, row.usage);
     else if (
       row.usage.management === "managed"
       && isGovernanceActionAvailable(actionRow, "undeploy")
-    ) openSingle("undeploy", actionRow);
+    ) openSingle("undeploy", actionRow, row.usage);
   }, [ledgerQuery.isSuccess, matchingDeepLinkRow, openSingle, usageOverviewQuery.isSuccess]);
 
   const closeSingle = useCallback(() => setSingle(null), []);
@@ -957,7 +964,19 @@ export function RelationshipGovernancePage({
           清单收缩让位，面板始终紧跟工具条可见，不必滚动寻找。 */}
       <div className="sh-governance__flows">
       {single ? (
-        single.resultText ? (
+        single.kind === "undeploy" ? (
+          single.usage ? (
+            <UndeployDialog
+              candidates={[single.usage]}
+              onCancel={closeSingle}
+              onCommit={commitSingleRelease}
+              onPrepare={effectiveUsageChangeFacade.prepareUsageChange}
+              scope={{ kind: "relation", relationId: relationIdOf(single.row.relation) }}
+            />
+          ) : (
+            <DataState message={t("relationships.governance.deepLink.relationUnavailable")} state="unavailable" />
+          )
+        ) : single.resultText ? (
           <div aria-label={t("relationships.governance.batch.resultTitle")} className="sh-governance__dialog" role="dialog">
             <h3>{t("relationships.governance.batch.resultTitle")}</h3>
             <p role="status">{single.resultText}</p>
@@ -996,9 +1015,7 @@ export function RelationshipGovernancePage({
               loadImpact={() => facade.getRelationshipRemovalImpact(relationIdOf(single.row.relation))}
               mode={single.kind}
               onCancel={closeSingle}
-              onConfirm={() => (single.kind === "centralize"
-                ? confirmSingleCentralize(single)
-                : confirmSingleUndeploy(single))}
+              onConfirm={() => confirmSingleCentralize(single)}
               onSharedImpactConfirmChange={(checked) => setSingle((current) => current
                 ? { ...current, sharedImpactConfirmed: checked }
                 : current)}

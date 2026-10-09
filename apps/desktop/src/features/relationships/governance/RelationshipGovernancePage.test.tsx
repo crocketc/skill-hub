@@ -14,12 +14,15 @@ import type {
   RelationshipCheckReport,
   RelationshipOverview,
   SourceCopyRelationFact,
+  PreparedUsageChange,
+  UsageChangeResult,
   UsageHealthReason,
   UsageRelationView,
 } from "../../../api/bindings";
 import { createOperationTracker, type OperationTracker } from "../../../platform/operationTracker";
 import { createSkillHubI18n } from "../../../i18n";
 import { AppNotificationsProvider } from "../../../ui/notifications";
+import type { UsageChangeFacade } from "../../removal/api";
 import {
   RelationshipGovernancePage,
   type RelationGovernanceFacade,
@@ -73,6 +76,7 @@ interface RowSpec {
   primaryAction: RelationGovernanceRow["primary_action"];
   blockers?: RelationGovernanceRow["blockers"];
   relationship?: DeploymentRelationFact["relationship"];
+  fileRepresentation?: DeploymentRelationFact["file_representation"];
   ownership?: DeploymentRelationFact["ownership"];
   agentClientId?: string;
   path?: string;
@@ -121,6 +125,7 @@ function makeRow(spec: RowSpec): RelationGovernanceRow {
         agent_client_id: spec.agentClientId ?? "codex",
         path: spec.path ?? "C:/agents/codex/skills/pdf-reader",
         relationship: spec.relationship ?? "managed_copy",
+        file_representation: spec.fileRepresentation ?? "copy",
         ownership: spec.ownership ?? "skillhub_managed",
       }),
     },
@@ -182,42 +187,9 @@ const MANAGED_ROW = makeRow({
   readiness: "already_centralized",
   primaryAction: "undeploy",
   relationship: "managed_link",
+  fileRepresentation: "symbolic_link",
   path: "C:/agents/codex/skills/link-reader",
 });
-
-/** K2/G-07：可执行「从 Agent/项目移除」且需要共享影响显式确认的部署边。 */
-const SHARED_UNDEPLOY_ROW = makeRow({
-  relationId: "managed:dep-shared-undeploy",
-  readiness: "needs_validation",
-  primaryAction: "undeploy",
-  blockers: ["shared_impact_confirmation_required"],
-  displayName: "共享移除 PDF",
-  path: "C:/agents/codex/skills/shared-reader",
-});
-
-/** 共享目标移除行的独立台账：不影响 FULL_LEDGER 的计数断言。 */
-function sharedUndeployLedger(): RelationGovernanceLedger {
-  return {
-    rows: [SHARED_UNDEPLOY_ROW],
-    counts: {
-      all: 1,
-      eligible_to_centralize: 0,
-      needs_validation: 1,
-      blocked: 0,
-      status_normal: 0,
-      status_retained: 0,
-      status_needs_validation: 1,
-      status_needs_attention: 0,
-      status_blocked: 0,
-      source_copies: 0,
-      deployments: 1,
-    },
-    bucket: "all",
-    total: 1,
-    relationship_revision: "rev-1",
-    last_verified_at: "2026-09-17T08:00:00Z",
-  };
-}
 
 const FULL_LEDGER: RelationGovernanceLedger = {
   rows: [ELIGIBLE_ROW, SHARED_IMPACT_ROW, STALE_VERIFICATION_ROW, BLOCKED_ROW, MANAGED_ROW],
@@ -306,6 +278,44 @@ function undeployResult(): RemovalResult {
       },
     ],
     central_skill_deleted: false,
+  };
+}
+
+function preparedUsageChange(): PreparedUsageChange {
+  return {
+    operation_id: "op-unified-release-1",
+    prepared_id: "prepared-unified-release-1",
+    action: "release",
+    relationship_revision: "rev-1",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+  };
+}
+
+function usageChangeResult(): UsageChangeResult {
+  return {
+    operation_id: "op-unified-release-1",
+    prepared_id: "prepared-unified-release-1",
+    item_results: [{
+      relation_ids: ["managed:dep-undeploy"],
+      skill_id: "skill-pdf",
+      target: {
+        kind: "agent",
+        directory_id: "node-codex",
+        agent_client_id: "codex",
+        directory_role: "agent_user",
+        recognition: "supported",
+      },
+      action: "remove_link",
+      status: "applied",
+      reason: null,
+      recovery_point: null,
+    }],
+    recovery_required: false,
   };
 }
 
@@ -452,6 +462,7 @@ interface RenderOptions {
   initialIndex?: number;
   locale?: "en-US" | "zh-CN";
   facade?: RelationGovernanceFacade;
+  usageChangeFacade?: UsageChangeFacade;
   tracker?: OperationTracker;
   /** 包上 AppNotificationsProvider：桥接失败通知只有在真实通知服务下才会发出。 */
   notifications?: boolean;
@@ -470,6 +481,7 @@ async function renderGovernanceApp(options: RenderOptions = {}): Promise<Rendere
     entries = ["/relationships/governance"],
     initialIndex = 0,
     facade = createFacade(),
+    usageChangeFacade,
     tracker = createOperationTracker(),
     notifications = false,
   } = options;
@@ -477,7 +489,7 @@ async function renderGovernanceApp(options: RenderOptions = {}): Promise<Rendere
     <>
       <Routes>
         <Route
-          element={<RelationshipGovernancePage facade={facade} tracker={tracker} />}
+          element={<RelationshipGovernancePage facade={facade} tracker={tracker} usageChangeFacade={usageChangeFacade} />}
           path="/relationships/governance"
         />
         <Route element={<p>OPERATION_PAGE</p>} path="/operations/:operationId" />
@@ -1040,77 +1052,64 @@ describe("RelationshipGovernancePage 单条治理", () => {
     expect(screen.getByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
   });
 
-  it("runs single undeploy through preview → confirm → run → result", async () => {
+  it("runs single relation release through the unified prepare → confirm → commit receipt", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageChange()),
+      commitUsageChange: vi.fn().mockResolvedValue(usageChangeResult()),
+    };
     const { facade, tracker } = await renderGovernanceApp({
       entries: ["/relationships/governance?governance=all"],
+      usageChangeFacade,
     });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-undeploy"));
-    expect(await screen.findByRole("dialog", { name: "从 Agent/项目移除预览" })).toBeVisible();
-    await screen.findByTestId("removal-impact-facts");
+    expect(await screen.findByRole("dialog", { name: "解除这条使用关系？" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    fireEvent.click(screen.getByRole("button", { name: "预览解除影响" }));
 
-    await waitFor(() => expect(facade.prepareRelationUndeploy).toHaveBeenCalledWith(MANAGED_ROW.relation));
-    // K2/G-07：共享决定始终随提交透传；该行无需共享确认时为显式 false。
-    await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1", { confirmSharedTargetRemoval: false }));
-    await screen.findByText(/已从目标移除/);
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "release",
+      relation_ids: ["managed:dep-undeploy"],
+      skill_id: null,
+      selected_entry_keys: [],
+    })));
+    expect(await screen.findByTestId("removal-impact-facts")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "确认解除" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-unified-release-1",
+      prepared_id: "prepared-unified-release-1",
+    }));
+    await screen.findByTestId("usage-release-result");
     await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
     const undeployOp = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
-    expect(undeployOp?.operationId).toBe("op-undeploy-1");
+    expect(undeployOp?.operationId).toBe("op-unified-release-1");
   });
 
-  it("passes the confirmed shared-target decision into the undeploy commit", async () => {
-    // K2/G-07：共享目标行在预览里勾选显式确认后，提交载荷必须携带
-    // confirmSharedTargetRemoval=true，不得丢弃用户的共享决定。
-    const facade = createFacade(sharedUndeployLedger(), {
-      commitRelationUndeploy: vi.fn().mockResolvedValue(undeployResult()),
-    });
+  it("reports a unified relation release failure in the notification center", async () => {
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageChange()),
+      commitUsageChange: vi.fn().mockRejectedValue({ code: "io.denied" }),
+    };
     await renderGovernanceApp({
       entries: ["/relationships/governance?governance=all"],
-      facade,
-    });
-    await screen.findByTestId("governance-row-list");
-    await waitRows();
-    await screen.findByText("共享移除 PDF");
-
-    // 该行第一个动作槽位是「纳入技能库管理」（仅差共享确认）；「从
-    // Agent/项目移除」用带动作名的独立 testid 定位。
-    fireEvent.click(screen.getByTestId("governance-action-undeploy-managed:dep-shared-undeploy"));
-    expect(await screen.findByRole("dialog", { name: "从 Agent/项目移除预览" })).toBeVisible();
-    fireEvent.click(await screen.findByRole("checkbox", { name: "我已确认共享目录影响" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
-
-    await waitFor(() => expect(facade.commitRelationUndeploy).toHaveBeenCalledWith("op-undeploy-1", { confirmSharedTargetRemoval: true }));
-  });
-
-  it("reports a single undeploy failure in the notification center with the inline description", async () => {
-    // 用户裁决「写入失败也留痕」：单条解除部署关系失败必须同时进通知中心；
-    // 通知详情与页面行内提示是同一份可读描述（带原始错误码，绝不 [object Object]）。
-    const facade = createFacade(FULL_LEDGER, {
-      commitRelationUndeploy: vi.fn().mockRejectedValue({ code: "io.denied" }),
-    });
-    const { tracker } = await renderGovernanceApp({
-      entries: ["/relationships/governance?governance=all"],
-      facade,
+      usageChangeFacade,
       notifications: true,
     });
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-undeploy"));
-    await screen.findByRole("dialog", { name: "从 Agent/项目移除预览" });
-    fireEvent.click(screen.getByRole("button", { name: "确认执行" }));
+    await screen.findByRole("dialog", { name: "解除这条使用关系？" });
+    fireEvent.click(screen.getByRole("button", { name: "预览解除影响" }));
+    await screen.findByTestId("removal-impact-facts");
+    fireEvent.click(screen.getByRole("button", { name: "确认解除" }));
 
     const readable = "操作未能完成（io.denied）。若持续出现请记录该错误码。";
-    // 桥先发通知、rethrow 后行内才 setState：等两个通道都出现同一份描述。
     await waitFor(() => expect(screen.getAllByText(readable).length).toBeGreaterThanOrEqual(2));
     const toast = await screen.findByTestId("notice-danger");
     expect(toast).toHaveTextContent(readable);
     expect(toast).not.toHaveTextContent("[object Object]");
-    const failed = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
-    expect(failed?.status).toBe("failed");
-    expect(failed?.error).toBe(readable);
+    expect(usageChangeFacade.commitUsageChange).toHaveBeenCalled();
   });
 
   it("reports a rejected governance batch in the notification center while keeping the preview", async () => {

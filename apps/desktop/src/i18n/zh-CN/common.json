@@ -1496,6 +1496,7 @@
         "editTranslation": "修订译文",
         "delete": "删除",
         "dispatch": "派发",
+        "reclaim": "回收技能",
         "noCollections": "未加入任何组合",
         "openGovernanceSample": "打开关系治理",
         "openLocation": "打开位置",
@@ -1790,7 +1791,8 @@
   "skillDetail": {
     "trialSaveFailed": "复核日期保存失败。",
     "actions": {
-      "securityHandling": "安全处理"
+      "securityHandling": "安全处理",
+      "reclaim": "回收技能"
     },
     "versions": {
       "rename": "命名版本",
@@ -2328,7 +2330,58 @@
     "loadError": "无法读取移除影响。",
     "commitError": "从目标移除未完成，请检查目标后重试。",
     "retained": "保留：库中的 Skill、版本历史与其他部署关系不受影响。",
-    "recovery": "恢复：重新添加同一 Skill 即可在目标处重建拷贝。"
+    "recovery": "恢复：重新添加同一 Skill 即可在目标处重建拷贝。",
+    "flow": {
+      "eyebrow": "解除使用关系",
+      "heading": "回收已选使用入口（已选 {{target}} 个）",
+      "relationHeading": "解除这条使用关系？",
+      "description": "选择要解除的 Agent、共享目录或项目入口。技能主体与库中的其他使用关系会保留。",
+      "relationDescription": "查看解除此 {{target}} 使用关系的影响。",
+      "unknownTarget": "尚未核实目标",
+      "entriesHeading": "受影响的入口",
+      "groups": { "agent": "Agent", "shared": "共享目录", "project": "项目" },
+      "forms": { "link": "链接", "full_copy": "完整拷贝", "unknown": "形式尚未核实" },
+      "noTargets": "此分组没有可解除的入口。",
+      "copyHandling": "完整拷贝的处理方式",
+      "copyChoices": {
+        "keep": "保留为独立拷贝",
+        "remove": "备份后同时移除拷贝"
+      },
+      "preview": "预览解除影响",
+      "preparing": "正在准备预览…",
+      "previewHeading": "本次操作影响",
+      "consumerHeading": "全部受影响的使用方",
+      "noOtherConsumers": "没有其他使用方。",
+      "entry": "入口：{{path}}",
+      "consumerManagement": { "managed": "由 SkillHub 管理", "unmanaged": "未由 SkillHub 管理" },
+      "consumerHealth": { "normal": "已核实", "attention": "需要检查" },
+      "unmanagedWarning": "此位置未由 SkillHub 管理。关系记录结束后，Agent 仍可能读取该文件。",
+      "recordOnlyNote": "此操作只结束关系记录，不会更改目标文件。",
+      "actionNotes": {
+        "remove_link": "移除该入口中已核实的链接。",
+        "keep_independent_copy": "目标拷贝留在原处，并与技能库主体分离。",
+        "remove_copy_with_backup": "创建恢复备份后移除目标拷贝。",
+        "record_only": "此操作只结束关系记录，Agent 仍可能读取该文件。"
+      },
+      "confirm": "确认解除",
+      "submitting": "正在解除使用关系…",
+      "resultHeading": "解除结果",
+      "results": {
+        "applied": "已完成",
+        "failed": "需要处理",
+        "recovery_required": "需要恢复",
+        "partial": "部分入口仍需处理。已完成：{{applied}}；仍需处理：{{failed}}。",
+        "complete": "使用关系已解除。完成：{{applied}}。"
+      },
+      "actions": {
+        "remove_link": "移除链接",
+        "keep_independent_copy": "保留为独立拷贝",
+        "remove_copy_with_backup": "备份后移除拷贝",
+        "record_only": "只结束跟踪记录"
+      },
+      "recoveryPoint": "恢复备份：{{path}}",
+      "close": "关闭"
+    }
   },
   "pending": {
     "eyebrow": "待处理事项",

@@ -1,93 +1,271 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
+import { useState } from "react";
 import { expect, it, vi } from "vitest";
+import type {
+  PreparedUsageChange,
+  UsageChangeResult,
+  UsageRelationView,
+} from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { UndeployDialog } from "./UndeployDialog";
 
-it("keeps shared files and commits only after an explicit undeploy choice", async () => {
-  const user = userEvent.setup();
-  const i18n = await createSkillHubI18n(["en-US"]);
-  const onConfirm = vi.fn();
-
-  render(
-    <I18nextProvider i18n={i18n}>
-      <UndeployDialog
-        impact={{
-          deploymentId: "deployment-1",
-          label: "Codex CLI",
-          operationId: "op-2",
-          sharedTarget: true,
-        }}
-        onCancel={vi.fn()}
-        onConfirm={onConfirm}
-      />
-    </I18nextProvider>,
-  );
-
-  expect(screen.getByText(/This target is shared by several deployment relations/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "Confirm removal from target" })).toBeDisabled();
-  await user.selectOptions(screen.getByRole("combobox", { name: "Removal handling" }), "keep_shared_deployment");
-  await user.click(screen.getByRole("button", { name: "Confirm removal from target" }));
-
-  expect(onConfirm).toHaveBeenCalledWith("keep_shared_deployment");
+const entry = (directoryId: string) => ({
+  directory_id: directoryId,
+  relative_entry_path: "skills/reviewer",
 });
 
-it("names the object as undeploying and states retention and recovery in Chinese", async () => {
-  const user = userEvent.setup();
-  const i18n = await createSkillHubI18n(["zh-CN"]);
-  const onConfirm = vi.fn();
+function usageRelation(
+  relationId: string,
+  kind: UsageRelationView["target"]["kind"],
+  form: UsageRelationView["form"],
+  directoryId: string,
+): UsageRelationView {
+  return {
+    relation_id: relationId,
+    skill_id: "skill-reviewer",
+    target: {
+      kind,
+      directory_id: directoryId,
+      agent_client_id: kind === "agent" ? `agent-${directoryId}` : null,
+      directory_role: kind === "project" ? "project" : "agent_user",
+      recognition: "supported",
+    },
+    entry_key: entry(directoryId),
+    form,
+    management: "managed",
+    health_reasons: ["normal"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: form === "link" ? "symbolic_link" : "copy",
+    link_target_path: form === "link" ? "/library/reviewer" : null,
+    link_target_path_key: null,
+    link_target_directory_id: null,
+    physical_source_ids_evidence: [`physical-${directoryId}`],
+    evidence_relation_ids: [relationId],
+  };
+}
 
-  render(
+function preparedUsageChange(overrides: Partial<PreparedUsageChange> = {}): PreparedUsageChange {
+  return {
+    operation_id: "release-operation-1",
+    prepared_id: "prepared-release-1",
+    action: "release",
+    relationship_revision: "revision-1",
+    affected_skill_ids: ["skill-reviewer"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+    ...overrides,
+  };
+}
+
+function usageChangeResult(itemResults: UsageChangeResult["item_results"]): UsageChangeResult {
+  return {
+    operation_id: "release-operation-1",
+    prepared_id: "prepared-release-1",
+    item_results: itemResults,
+    recovery_required: false,
+  };
+}
+
+async function renderDialog(props: Record<string, unknown>) {
+  const i18n = await createSkillHubI18n(["en-US"]);
+  return render(
     <I18nextProvider i18n={i18n}>
       <UndeployDialog
-        impact={{
-          deploymentId: "deployment-1",
-          label: "Codex CLI",
-          operationId: "op-2",
-          sharedTarget: false,
-        }}
+        candidates={[]}
         onCancel={vi.fn()}
-        onConfirm={onConfirm}
+        onCommit={vi.fn().mockResolvedValue(usageChangeResult([]))}
+        onPrepare={vi.fn().mockResolvedValue(preparedUsageChange())}
+        scope={{ kind: "skill", skillId: "skill-reviewer" }}
+        {...props}
       />
     </I18nextProvider>,
   );
+}
 
-  // 对象 2 唯一名称“从目标移除”：标题、决策名不复用“移除托管部署”。
-  expect(screen.getByRole("heading", { name: "要从 Codex CLI 移除吗？" })).toBeVisible();
-  const options = [...screen.getAllByRole("option")].map((option) => option.textContent);
-  expect(options).toContain("删除目标目录中的拷贝");
-  expect(options).toContain("转为独立拷贝（保留目标文件，移除部署关系）");
-  expect(options).not.toContain("移除托管部署");
+it("reclaim_groups_are_agent_shared_project", async () => {
+  await renderDialog({
+    candidates: [
+      usageRelation("agent-relation", "agent", "link", "agent-dir"),
+      usageRelation("shared-relation", "shared_directory", "full_copy", "shared-dir"),
+      usageRelation("project-relation", "project", "link", "project-dir"),
+    ],
+  });
 
-  // 固定两行：保留什么 + 恢复方式。
-  expect(screen.getByText(/保留：库中的 Skill、版本历史与其他部署关系不受影响/)).toBeVisible();
-  expect(screen.getByText(/恢复：重新添加同一 Skill/)).toBeVisible();
-
-  await user.selectOptions(screen.getByRole("combobox", { name: "移除处理方式" }), "remove_owned_target");
-  await user.click(screen.getByRole("button", { name: "确认从目标移除" }));
-  expect(onConfirm).toHaveBeenCalledWith("remove_owned_target");
+  expect(screen.getByRole("group", { name: "Agent" })).toBeVisible();
+  expect(screen.getByRole("group", { name: "Shared directory" })).toBeVisible();
+  expect(screen.getByRole("group", { name: "Project" })).toBeVisible();
 });
 
-it("announces the submitting state through the persistent status region", async () => {
+it("builtin_read_only_entries_are_never_reclaimable_even_when_unhealthy", async () => {
+  const builtin = usageRelation("builtin-relation", "agent", "link", "builtin-dir");
+  builtin.target.directory_role = "builtin";
+  builtin.health_reasons = ["file_missing"];
+  await renderDialog({ candidates: [builtin] });
+
+  expect(screen.queryByRole("checkbox", { name: /Agent/ })).not.toBeInTheDocument();
+  expect(within(screen.getByRole("group", { name: "Agent" })).getByText("No releasable entries in this group.")).toBeVisible();
+});
+
+it("link_has_no_keep_copy_choice", async () => {
+  const user = userEvent.setup();
+  const onPrepare = vi.fn().mockResolvedValue(preparedUsageChange());
+  await renderDialog({
+    candidates: [usageRelation("link-relation", "agent", "link", "agent-dir")],
+    onPrepare,
+  });
+
+  await user.click(screen.getByRole("checkbox", { name: /Agent/ }));
+  expect(screen.queryByRole("group", { name: "Copy handling" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Preview release" }));
+
+  await waitFor(() => expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({
+    copy_disposition: null,
+    selected_entry_keys: [entry("agent-dir")],
+  })));
+});
+
+it("copy_has_keep_and_remove_choices", async () => {
+  const user = userEvent.setup();
+  await renderDialog({
+    candidates: [usageRelation("copy-relation", "shared_directory", "full_copy", "shared-dir")],
+  });
+
+  await user.click(screen.getByRole("checkbox", { name: /Shared directory/ }));
+  expect(screen.getByRole("radio", { name: "Keep as an independent copy" })).toBeVisible();
+  expect(screen.getByRole("radio", { name: "Remove the copy with a backup" })).toBeVisible();
+});
+
+it("shared_consumer_is_routed_to_shared_object", async () => {
+  const user = userEvent.setup();
+  const onPrepare = vi.fn().mockResolvedValue(preparedUsageChange({
+    consumers: [{
+      relation_ids: ["shared-relation"],
+      skill_id: "skill-reviewer",
+      entry_key: entry("shared-dir"),
+      target: {
+        kind: "shared_directory",
+        directory_id: "shared-dir",
+        agent_client_id: null,
+        directory_role: "shared_directory",
+        recognition: "supported",
+      },
+      path: "/shared/skills/reviewer",
+      form: "full_copy",
+      management: "managed",
+      representation: "copy",
+      health_reasons: ["normal"],
+      physical_source_ids: ["physical-shared"],
+      content_fingerprint: "hash-1",
+    }],
+  }));
+  await renderDialog({
+    candidates: [usageRelation("shared-relation", "shared_directory", "full_copy", "shared-dir")],
+    onPrepare,
+  });
+
+  await user.click(screen.getByRole("checkbox", { name: /Shared directory/ }));
+  await user.click(screen.getByRole("radio", { name: "Keep as an independent copy" }));
+  await user.click(screen.getByRole("button", { name: "Preview release" }));
+
+  await waitFor(() => expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({
+    relation_ids: [],
+    selected_entry_keys: [entry("shared-dir")],
+    skill_id: "skill-reviewer",
+  })));
+  expect(screen.getByTestId("removal-impact-facts")).toHaveTextContent("/shared/skills/reviewer");
+});
+
+it("partial_result_is_not_all_success", async () => {
+  const user = userEvent.setup();
+  const onCommit = vi.fn().mockResolvedValue(usageChangeResult([
+    {
+      relation_ids: ["agent-relation"],
+      skill_id: "skill-reviewer",
+      target: { kind: "agent", directory_id: "agent-dir", agent_client_id: "agent-x", directory_role: "agent_user", recognition: "supported" },
+      action: "remove_link",
+      status: "applied",
+      reason: null,
+      recovery_point: null,
+    },
+    {
+      relation_ids: ["project-relation"],
+      skill_id: "skill-reviewer",
+      target: { kind: "project", directory_id: "project-dir", agent_client_id: null, directory_role: "project", recognition: "supported" },
+      action: "remove_link",
+      status: "failed",
+      reason: "permission_denied",
+      recovery_point: null,
+    },
+  ]));
+  await renderDialog({
+    candidates: [
+      usageRelation("agent-relation", "agent", "link", "agent-dir"),
+      usageRelation("project-relation", "project", "link", "project-dir"),
+    ],
+    onCommit,
+  });
+
+  await user.click(screen.getByRole("checkbox", { name: /Agent/ }));
+  await user.click(screen.getByRole("checkbox", { name: /Project/ }));
+  await user.click(screen.getByRole("button", { name: "Preview release" }));
+  await user.click(await screen.findByRole("button", { name: "Confirm release" }));
+
+  expect(await screen.findByText("Applied")).toBeVisible();
+  expect(screen.getByText("Needs attention")).toBeVisible();
+  expect(screen.getByText(/permission_denied/)).toBeVisible();
+  expect(screen.queryByText("All uses released")).not.toBeInTheDocument();
+});
+
+it("empty_result_is_not_reported_as_success", async () => {
+  const user = userEvent.setup();
+  const onCommit = vi.fn().mockResolvedValue(usageChangeResult([]));
+  await renderDialog({
+    candidates: [usageRelation("agent-relation", "agent", "link", "agent-dir")],
+    onCommit,
+  });
+
+  await user.click(screen.getByRole("checkbox", { name: /Agent/ }));
+  await user.click(screen.getByRole("button", { name: "Preview release" }));
+  await user.click(await screen.findByRole("button", { name: "Confirm release" }));
+
+  expect(await screen.findByText(/Some entries need attention/)).toBeVisible();
+  expect(screen.queryByText(/Usage release complete/)).not.toBeInTheDocument();
+});
+
+it("cancel_restores_focus", async () => {
+  const user = userEvent.setup();
+  const onPrepare = vi.fn();
+  function Harness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open reclaim</button>
+        {open ? (
+          <UndeployDialog
+            candidates={[usageRelation("link-relation", "agent", "link", "agent-dir")]}
+            onCancel={() => setOpen(false)}
+            onCommit={vi.fn()}
+            onPrepare={onPrepare}
+            scope={{ kind: "skill", skillId: "skill-reviewer" }}
+          />
+        ) : null}
+      </>
+    );
+  }
   const i18n = await createSkillHubI18n(["en-US"]);
+  render(<I18nextProvider i18n={i18n}><Harness /></I18nextProvider>);
 
-  render(
-    <I18nextProvider i18n={i18n}>
-      <UndeployDialog
-        impact={{
-          deploymentId: "deployment-1",
-          label: "Codex CLI",
-          operationId: "op-2",
-          sharedTarget: false,
-        }}
-        onCancel={vi.fn()}
-        onConfirm={vi.fn()}
-        submitting
-      />
-    </I18nextProvider>,
-  );
+  const trigger = screen.getByRole("button", { name: "Open reclaim" });
+  await user.click(trigger);
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
 
-  expect(screen.getByRole("status")).toHaveTextContent("Removing from target…");
-  expect(screen.getByRole("button", { name: "Removing from target…" })).toBeDisabled();
+  await waitFor(() => expect(trigger).toHaveFocus());
+  expect(onPrepare).not.toHaveBeenCalled();
 });

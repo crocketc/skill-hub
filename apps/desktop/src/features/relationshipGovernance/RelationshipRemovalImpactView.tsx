@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { displayPath } from "../../platform/displayPath";
 import { useTranslation } from "react-i18next";
-import type { RemovalImpactFact } from "../../api/bindings";
+import type { PreparedUsageChange, RemovalImpactFact, UsageRelationTarget } from "../../api/bindings";
 import { Button } from "../../ui/Button";
 import { AgentPresentation } from "../../ui/AgentPresentation";
 import {
@@ -12,10 +12,20 @@ import {
 
 export interface RelationshipRemovalImpactViewProps {
   /** 只读加载既有 RemovalImpact 事实；本组件不执行任何变更。 */
-  loadImpact: () => Promise<RemovalImpactFact>;
-  triggerLabel: string;
+  loadImpact?: () => Promise<RemovalImpactFact>;
+  triggerLabel?: string;
+  /** 统一释放流程传入与最终提交同源的 T04 准备快照。 */
+  usageChange?: PreparedUsageChange;
   /** 挂载即展开（治理预览等已处于确认上下文时）；缺省保持原折叠行为。 */
   defaultOpen?: boolean;
+}
+
+function usageTargetLabel(target: UsageRelationTarget, t: (key: string) => string) {
+  return t(`undeploy.flow.groups.${target.kind === "shared_directory" ? "shared" : target.kind}`);
+}
+
+function usageActionLabel(action: PreparedUsageChange["impacts"][number]["action"], t: (key: string) => string) {
+  return t(`undeploy.flow.actions.${action}`);
 }
 
 /**
@@ -27,6 +37,7 @@ export function RelationshipRemovalImpactView({
   defaultOpen = false,
   loadImpact,
   triggerLabel,
+  usageChange,
 }: RelationshipRemovalImpactViewProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
@@ -36,7 +47,7 @@ export function RelationshipRemovalImpactView({
 
   // 展开且尚无事实时加载一次；默认展开（治理预览）也走同一条只读加载路径。
   useEffect(() => {
-    if (!open || impact || failed || loadingRef.current) return;
+    if (!open || impact || failed || loadingRef.current || !loadImpact || usageChange) return;
     loadingRef.current = true;
     loadImpact().then((value) => {
       setImpact(value);
@@ -51,11 +62,60 @@ export function RelationshipRemovalImpactView({
 
   return (
     <div className="sh-removal-impact" data-testid="removal-impact">
-      <Button aria-expanded={open} onClick={toggle} size="sm" variant="secondary">
-        {open ? t("relationshipGovernance.removalImpact.hide") : triggerLabel}
-      </Button>
-      {failed ? <p role="alert">{t("relationshipGovernance.removalImpact.loadError")}</p> : null}
-      {open && impact ? (
+      {usageChange ? (
+        <div data-testid="removal-impact-facts">
+          <h4>{t("undeploy.flow.previewHeading")}</h4>
+          <ul className="sh-usage-release-impact__items">
+            {usageChange.impacts.map((item, index) => (
+              <li key={`${item.relation_ids.join(":")}-${index}`}>
+                <strong>{usageTargetLabel(item.target, (key) => String(t(key as never)))}</strong>
+                <span> · {usageActionLabel(item.action, (key) => String(t(key as never)))}</span>
+                <p>{t(`undeploy.flow.actionNotes.${item.action}` as never)}</p>
+              </li>
+            ))}
+          </ul>
+          {usageChange.entry_evidence.length > 0 ? (
+            <>
+              <h4>{t("undeploy.flow.entriesHeading")}</h4>
+              <ul className="sh-usage-release-impact__items">
+                {usageChange.entry_evidence.map((entry, index) => (
+                  <li key={`${entry.entry_key.directory_id}-${entry.entry_key.relative_entry_path}-${index}`}>
+                    {t("undeploy.flow.entry", { path: displayPath(entry.path) })}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <h4>{t("undeploy.flow.consumerHeading")}</h4>
+          {usageChange.consumers.length > 0 ? (
+            <ul className="sh-usage-release-impact__items">
+              {usageChange.consumers.map((consumer, index) => (
+                <li key={`${consumer.relation_ids.join(":")}-${index}`}>
+                  <div className="sh-usage-release-impact__consumer">
+                    <strong>{usageTargetLabel(consumer.target, (key) => String(t(key as never)))}</strong>
+                    {consumer.target.agent_client_id ? <AgentPresentation agentId={consumer.target.agent_client_id} /> : null}
+                    <span>{t(`undeploy.flow.consumerManagement.${consumer.management}` as never)}</span>
+                    <span>{t(`undeploy.flow.consumerHealth.${consumer.health_reasons.length === 1 && consumer.health_reasons[0] === "normal" ? "normal" : "attention"}` as never)}</span>
+                  </div>
+                  {consumer.path ? <span>{displayPath(consumer.path)}</span> : null}
+                  {consumer.management === "unmanaged" ? <p>{t("undeploy.flow.unmanagedWarning")}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p>{t("undeploy.flow.noOtherConsumers")}</p>}
+          {usageChange.limitations.length > 0 ? (
+            <p role="note">{t("undeploy.flow.recordOnlyNote")}</p>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <Button aria-expanded={open} onClick={toggle} size="sm" variant="secondary">
+            {open ? t("relationshipGovernance.removalImpact.hide") : triggerLabel ?? t("relationshipGovernance.matrix.viewRemovalImpact")}
+          </Button>
+          {failed ? <p role="alert">{t("relationshipGovernance.removalImpact.loadError")}</p> : null}
+        </>
+      )}
+      {!usageChange && open && impact ? (
         <div data-testid="removal-impact-facts">
           <h4>{t("relationshipGovernance.removalImpact.heading")}</h4>
           <p>{t("relationshipGovernance.removalImpact.description")}</p>

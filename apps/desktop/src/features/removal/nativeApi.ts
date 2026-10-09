@@ -3,10 +3,14 @@ import {
   queryApplication,
   type AppCommandResult,
   type AppQueryResult,
+  type CommitUsageChange,
   type DeploymentTarget,
+  type PreparedUsageChange,
+  type PrepareUsageChange,
   type RemovalDecision,
   type RemovalImpact as NativeRemovalImpact,
   type RemovalResult as NativeRemovalResult,
+  type UsageChangeResult as NativeUsageChangeResult,
 } from "../../api/bindings";
 import { indexTargetsByAnyId } from "../deployment/targetProjection";
 import type {
@@ -14,8 +18,7 @@ import type {
   RemovalFacade,
   RemovalImpact as DesktopRemovalImpact,
   RemovalResult as DesktopRemovalResult,
-  UndeployDecision,
-  UndeployImpact,
+  UsageChangeFacade,
 } from "./api";
 
 function impactResult(result: AppQueryResult | AppCommandResult): NativeRemovalImpact {
@@ -80,37 +83,6 @@ export const nativeRemovalFacade = {
     return impactResult(await queryApplication({
       type: "get_removal_impact",
       payload: { skill_id: skillId },
-    }));
-  },
-
-  async undeploy(deploymentId: string, decision: RemovalDecision): Promise<NativeRemovalResult> {
-    const prepared = impactResult(await executeCommand({
-      type: "prepare_undeploy",
-      payload: { deployment_id: deploymentId },
-    }));
-    return removalResult(await executeCommand({
-      type: "commit_undeploy",
-      payload: { prepared_undeploy_id: prepared.operation_id, decision },
-    }));
-  },
-
-  async prepareUndeploy(deploymentId: string, label: string): Promise<UndeployImpact> {
-    const impact = impactResult(await executeCommand({
-      type: "prepare_undeploy",
-      payload: { deployment_id: deploymentId },
-    }));
-    return {
-      deploymentId,
-      label,
-      operationId: impact.operation_id,
-      sharedTarget: impact.requires_shared_target_choice,
-    };
-  },
-
-  async commitUndeploy(operationId: string, decision: UndeployDecision): Promise<void> {
-    removalResult(await executeCommand({
-      type: "commit_undeploy",
-      payload: { prepared_undeploy_id: operationId, decision },
     }));
   },
 
@@ -233,13 +205,47 @@ export const nativeRemovalFacade = {
   },
 };
 
+function preparedUsageChangeResult(result: AppCommandResult): PreparedUsageChange {
+  if (result.type !== "prepared_usage_change") {
+    throw new Error("removal.usage_change_prepare_unexpected_result");
+  }
+  return result.payload;
+}
+
+function usageChangeResult(result: AppCommandResult): NativeUsageChangeResult {
+  if (result.type !== "usage_change_result") {
+    throw new Error("removal.usage_change_commit_unexpected_result");
+  }
+  return result.payload;
+}
+
+/** 统一解除使用关系使用 T04 的同一 prepare/commit 契约。 */
+export const nativeUsageChangeFacade: UsageChangeFacade = {
+  async prepareUsageChange(request: PrepareUsageChange): Promise<PreparedUsageChange> {
+    return preparedUsageChangeResult(await executeCommand({
+      type: "prepare_usage_change",
+      payload: request,
+    }));
+  },
+
+  async commitUsageChange(request: CommitUsageChange): Promise<NativeUsageChangeResult> {
+    return usageChangeResult(await executeCommand({
+      type: "commit_usage_change",
+      payload: request,
+    }));
+  },
+};
+
+export const unavailableUsageChangeFacade: UsageChangeFacade = {
+  prepareUsageChange: async () => {
+    throw new Error("removal.usage_change_not_wired");
+  },
+  commitUsageChange: async () => {
+    throw new Error("removal.usage_change_not_wired");
+  },
+};
+
 export const unavailableRemovalFacade: RemovalFacade = {
-  prepareUndeploy: async () => {
-    throw new Error("removal.undeploy_not_wired");
-  },
-  commitUndeploy: async () => {
-    throw new Error("removal.undeploy_not_wired");
-  },
   prepareDelete: async () => {
     throw new Error("removal.delete_not_wired");
   },

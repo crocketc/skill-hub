@@ -130,7 +130,7 @@ export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener
   );
 }
 
-export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDelete }: {
+export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDelete, onReclaim }: {
   /**
    * §7.8 生产承载：转为集中管理保留一次确认入口，承载与治理页共用的真实
    * 批次契约（候选行/确认绑定/影响预览都来自治理门面）；无待接管关系时不
@@ -143,11 +143,17 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
   onExport: () => void;
   /** 删除接统一确认（W3-2/K2 两段式）：触发详情页既有的删除影响确认流程。 */
   onDelete: () => void;
+  /** T05：回收技能的全部可用去向，进入统一使用关系释放流程。 */
+  onReclaim?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       {onCentralize ? (
         <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">转为集中管理</Button>
+      ) : null}
+      {onReclaim ? (
+        <Button onClick={onReclaim} size="sm" variant="secondary">{t("skillDetail.actions.reclaim")}</Button>
       ) : null}
       <Button onClick={onDispatch} size="sm">派发</Button>
       <Button onClick={onExport} size="sm" variant="secondary">导出</Button>

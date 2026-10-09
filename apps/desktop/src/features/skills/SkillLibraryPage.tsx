@@ -832,6 +832,24 @@ export function SkillLibraryPage({
     });
   };
 
+  const openSkillReclaim = (nextSkillId: string) => {
+    const base = location.pathname.startsWith("/__preview")
+      ? "/__preview/skill-detail"
+      : "/library";
+    const params = new URLSearchParams(detailSearchFromLibrary(location.search));
+    params.set("reclaim", "1");
+    const currentPosition = scrollPositionRef.current ?? (libraryReturnState
+      ? { left: libraryReturnState.scrollLeft, top: libraryReturnState.scrollTop }
+      : undefined);
+    const returnState = currentPosition
+      ? { libraryReturn: { focusSkillId: nextSkillId, scrollLeft: currentPosition.left, scrollTop: currentPosition.top } }
+      : undefined;
+    navigate({
+      pathname: `${base}/${encodeURIComponent(nextSkillId)}`,
+      search: params.toString() ? `?${params.toString()}` : "",
+    }, { state: returnState });
+  };
+
   const closeDrawer = () => {
     const region = rootRef.current?.querySelector<HTMLElement>(
       ".sh-skill-table__region",
@@ -1666,6 +1684,7 @@ export function SkillLibraryPage({
         }}
         onDispatch={(id) => navigate(`/library/${id}/deploy`)}
         onExport={(id) => navigate("/settings/data-protection", { state: { exportSkillIds: [id] } })}
+        onReclaim={openSkillReclaim}
         onOpenChange={(open) => {
           if (!open) closeDrawer();
         }}

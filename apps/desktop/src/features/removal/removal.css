@@ -321,6 +321,38 @@
   margin-top: 0.2rem;
 }
 
+.sh-usage-release-impact__items {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sh-usage-release-impact__items > li {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--ui-surface-subtle);
+  overflow-wrap: anywhere;
+}
+
+.sh-usage-release-impact__items p {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: var(--font-size-xs);
+}
+
+.sh-usage-release-impact__consumer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
 .sh-removal-impact__choice-text {
   display: grid;
   gap: 0.125rem;

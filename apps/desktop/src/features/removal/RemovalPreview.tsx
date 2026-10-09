@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { BatchRemovalImpactDialog } from "./BatchRemovalImpactDialog";
 import { useTranslation } from "react-i18next";
+import type { UsageRelationView } from "../../api/bindings";
 import { RemovalImpactDialog } from "./RemovalImpactDialog";
 import { UndeployDialog } from "./UndeployDialog";
 import { Icon } from "../../ui/Icon";
@@ -49,6 +50,34 @@ function batchImpacts(count: number, withMatrix: boolean): RemovalImpact[] {
   }));
 }
 
+function releasePreviewCandidate(shared: boolean): UsageRelationView {
+  const directoryId = shared ? "preview-shared-directory" : "preview-agent-directory";
+  return {
+    relation_id: "preview-release-relation",
+    skill_id: "preview-skill",
+    target: {
+      kind: shared ? "shared_directory" : "agent",
+      directory_id: directoryId,
+      agent_client_id: shared ? null : "codex",
+      directory_role: shared ? "shared_directory" : "agent_user",
+      recognition: "supported",
+    },
+    entry_key: { directory_id: directoryId, relative_entry_path: "skills/preview" },
+    form: shared ? "full_copy" : "link",
+    management: "managed",
+    health_reasons: ["normal"],
+    decision: null,
+    decision_history_ids: [],
+    active: true,
+    file_representation: shared ? "copy" : "symbolic_link",
+    link_target_path: shared ? null : "/library/preview",
+    link_target_path_key: null,
+    link_target_directory_id: null,
+    physical_source_ids_evidence: [],
+    evidence_relation_ids: ["preview-release-relation"],
+  };
+}
+
 /**
  * DEV-only preview for the removal confirmations (T4-D). `?scenario=`
  * selects the single impact matrix, its error state, the batch matrix
@@ -64,9 +93,11 @@ export function RemovalPreview() {
   if (scenario.startsWith("undeploy")) {
     return (
       <UndeployDialog
-        impact={{ deploymentId: "dep-1", label: "Codex CLI", operationId: "op-undeploy-1", sharedTarget: scenario === "undeploy-shared" }}
         onCancel={noop}
-        onConfirm={noop}
+        onCommit={async () => { throw new Error("Preview mode does not execute local commands."); }}
+        onPrepare={async () => { throw new Error("Preview mode does not execute local commands."); }}
+        candidates={[releasePreviewCandidate(scenario === "undeploy-shared")]}
+        scope={{ kind: "skill", skillId: "preview-skill" }}
       />
     );
   }

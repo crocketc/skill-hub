@@ -78,7 +78,7 @@ function renderLibrary({
     [
       { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} securityFacade={securityFacade ?? createPreviewSecurityFacade()} tracker={tracker} /> },
       // P1-11：卡片“查看”按钮跳完整详情页。
-      { path: "/library/:skillId", element: <p>Skill detail page</p> },
+      { path: "/library/:skillId", element: <SkillDetailRouteProbe /> },
       { path: "/deploy", element: <p>Batch deployment</p> },
       { path: "/settings/data-protection", element: <p>Data protection export</p> },
       { path: "/library/combinations", element: <p>Combination manager</p> },
@@ -114,6 +114,18 @@ function lastPageCall(facade: MockSkillLibraryFacade) {
 function RecoveryProbe() {
   const location = useLocation();
   return <output data-testid="recovery-location">{`${location.pathname}${location.search}`}</output>;
+}
+
+function SkillDetailRouteProbe() {
+  const location = useLocation();
+  return (
+    <>
+      <p>Skill detail page</p>
+      <output data-testid="skill-detail-route-location">
+        {`${location.pathname}${location.search}|${JSON.stringify(location.state)}`}
+      </output>
+    </>
+  );
 }
 
 function skillNameCell(name: string): HTMLTableCellElement {
@@ -215,8 +227,6 @@ describe("SkillLibraryPage", () => {
   it("slides the batch deletion confirmation up from the bottom without moving the list (M-21)", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [{ id: "dep-1", label: "Codex CLI", path: "C:/codex", physicalId: "codex" }],
         dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
@@ -261,8 +271,6 @@ describe("SkillLibraryPage", () => {
   it("keeps the list selection when the batch confirmation drawer is cancelled", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
@@ -327,8 +335,6 @@ describe("SkillLibraryPage", () => {
   it("previews selected Skills and requires a forced-delete confirmation before committing", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
@@ -351,8 +357,6 @@ describe("SkillLibraryPage", () => {
     const facade = createMockSkillLibraryFacade();
     const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn()
         .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] })
         .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] }),
@@ -390,8 +394,6 @@ describe("SkillLibraryPage", () => {
   it("reports per-skill batch deletion outcomes instead of failing the whole batch", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn()
         .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] })
         .mockResolvedValueOnce({ deployments: [], dependentProjects: [], operationId: "delete-docx", skillId: "skill-docx", skillName: "DOCX Writer", declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [] }),
@@ -422,8 +424,6 @@ describe("SkillLibraryPage", () => {
     const facade = createMockSkillLibraryFacade();
     const tracker = createOperationTracker();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "delete-pdf",
         skillId: "skill-pdf",
@@ -482,8 +482,6 @@ describe("SkillLibraryPage", () => {
   it("navigates to the recovery center with the recorded operation from a batch outcome panel", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "delete-pdf",
         skillId: "skill-pdf",
@@ -522,8 +520,6 @@ describe("SkillLibraryPage", () => {
     await act(async () => { await skillHubI18n.changeLanguage("en-US"); });
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockRejectedValue({
         code: "removal.deployment_target_unavailable", severity: "error", params: {}, actions: [],
       }),
@@ -548,8 +544,6 @@ it("localizes failed deletion impact preparation and keeps confirmation closed i
     await act(async () => { await skillHubI18n.changeLanguage("zh-CN"); });
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockRejectedValue({
         code: "removal.deployment_target_unavailable", severity: "error", params: {}, actions: [],
       }),
@@ -573,8 +567,6 @@ it("routes the drawer's delete entry into the unified removal flow", async () =>
     // 不再有“仅展示”预览浮层。
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [{ id: "dep-1", label: "Codex CLI", path: "C:/codex", physicalId: "codex" }],
         dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
@@ -590,6 +582,20 @@ it("routes the drawer's delete entry into the unified removal flow", async () =>
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
+  });
+
+it("routes the drawer reclaim entry to skill detail with list context and auto-open intent", async () => {
+    const facade = createMockSkillLibraryFacade();
+    renderLibrary({ facade, initialEntry: "/library?tag=documents" });
+
+    await screen.findByText("PDF Reader");
+    fireEvent.click(skillNameCell("PDF Reader"));
+    fireEvent.click(await screen.findByRole("button", { name: "Reclaim skill" }));
+
+    expect(await screen.findByText("Skill detail page")).toBeVisible();
+    expect(screen.getByTestId("skill-detail-route-location")).toHaveTextContent(
+      /^\/library\/skill-pdf\?tag=documents&reclaim=1\|\{"libraryReturn":\{"focusSkillId":"skill-pdf","scrollLeft":0,"scrollTop":0\}\}$/,
+    );
   });
 
   it("keeps search visible while secondary filters collapse in the library", async () => {
@@ -794,8 +800,6 @@ it("routes the drawer's delete entry into the unified removal flow", async () =>
   it("downgrades batch deletion to a secondary action while keeping the force-delete flow", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
-      prepareUndeploy: vi.fn(),
-      commitUndeploy: vi.fn(),
       prepareDelete: vi.fn().mockResolvedValue({
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],

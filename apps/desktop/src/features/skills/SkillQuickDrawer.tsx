@@ -55,6 +55,8 @@ export interface SkillQuickDrawerProps {
   onDispatch: (skillId: string) => void;
   /** W4-2：导出交给宿主的标准导出流（数据保护页）。 */
   onExport: (skillId: string) => void;
+  /** T05：回收技能入口交给宿主详情页的统一使用关系释放流程。 */
+  onReclaim?: (skillId: string) => void;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: SkillDrawerPreferences) => void;
   open: boolean;
@@ -186,6 +188,7 @@ export function SkillQuickDrawer({
   onDelete,
   onDispatch,
   onExport,
+  onReclaim,
   onOpenChange,
   onPreferencesChange,
   open,
@@ -665,7 +668,7 @@ export function SkillQuickDrawer({
           {view ? (
             <div className="sh-skill-drawer__prototype-heading">
               <PinnedDrawerTitle name={view.name} />
-              <PrototypePrimaryActions onDelete={onDelete} onDispatch={onDispatch} onExport={onExport} view={view} />
+              <PrototypePrimaryActions onDelete={onDelete} onDispatch={onDispatch} onExport={onExport} onReclaim={onReclaim} view={view} />
             </div>
           ) : null}
         </div>
@@ -2000,6 +2003,8 @@ interface PrototypePrimaryActionsProps extends ModuleProps {
   onDispatch: (skillId: string) => void;
   /** W4-2：导出交给宿主的标准导出流（数据保护页）。 */
   onExport: (skillId: string) => void;
+  /** T05：回收技能入口交给详情页的统一释放流程。 */
+  onReclaim?: (skillId: string) => void;
 }
 
 
@@ -2007,6 +2012,7 @@ function PrototypePrimaryActions({
   onDelete,
   onDispatch,
   onExport,
+  onReclaim,
   view,
 }: PrototypePrimaryActionsProps) {
   const { t } = useTranslation();
@@ -2016,6 +2022,11 @@ function PrototypePrimaryActions({
         <Button className="sh-skill-drawer__dispatch" data-prototype-action="true" onClick={() => onDispatch(view.id)} size="sm" variant="primary">
           {t("skillLibrary.drawer.prototype.dispatch")}
         </Button>
+        {onReclaim ? (
+          <Button data-prototype-action="true" onClick={() => onReclaim(view.id)} size="sm" variant="secondary">
+            {t("skillLibrary.drawer.prototype.reclaim")}
+          </Button>
+        ) : null}
         <Button data-prototype-action="true" onClick={() => onExport(view.id)} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.export")}
         </Button>

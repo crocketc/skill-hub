@@ -332,13 +332,19 @@ test.describe("removal confirmations", () => {
     await expect(page.getByRole("button", { name: /Click again to confirm deleting 2 Skills/ })).toBeVisible();
   });
 
-  test("shows the shared-target undeploy notice and guards the confirm", async ({ page }) => {
+  test("routes shared full-copy release through the unified disposition flow", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/removal?scenario=undeploy-shared");
 
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("This target is shared");
-    await expect(page.getByRole("button", { name: "Confirm removal from target" })).toBeDisabled();
+    await expect(dialog).toContainText("Shared directory");
+    await expect(dialog).toContainText("Full copy");
+
+    const preview = dialog.getByRole("button", { name: "Preview release" });
+    await expect(preview).toBeDisabled();
+    await dialog.getByRole("checkbox", { name: /Shared directory.*Full copy/ }).check();
+    await dialog.getByRole("radio", { name: "Keep as an independent copy" }).check();
+    await expect(preview).toBeEnabled();
   });
 
   // K2/G-10：删除影响查询失败必须可见失败并停止流程——错误进 alert、

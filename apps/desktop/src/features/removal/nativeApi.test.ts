@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
-import { nativeRemovalFacade } from "./nativeApi";
+import { nativeRemovalFacade, nativeUsageChangeFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/bindings")>();
@@ -29,38 +29,56 @@ it("loads removal impact through the native query contract", async () => {
   });
 });
 
-it("prepares a shared-target undeploy before committing the explicit relation-only decision", async () => {
-  const impact = {
-    operation_id: "op-2",
+it("prepares and commits usage release with semantic ids and the prepared receipt", async () => {
+  const request = {
+    operation_id: "op-release",
+    action: "release" as const,
+    relation_ids: [],
+    problem_id: null,
     skill_id: "skill-pdf",
-    deployments: [],
-    requires_shared_target_choice: true,
-    dependencies: [],
+    requested_form: null,
+    copy_disposition: "remove_with_backup" as const,
+    content_basis: null,
+    retain_entry_key: null,
+    selected_entry_keys: [{ directory_id: "directory-1", relative_entry_path: "skills/pdf" }],
+    runtime_name: null,
+    base_version_id: null,
+    non_recognized_destination: null,
+  };
+  const prepared = {
+    operation_id: "op-release",
+    prepared_id: "prepared-release",
+    action: "release" as const,
+    relationship_revision: "rev-1",
+    affected_skill_ids: ["skill-pdf"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
   };
   const result = {
-    operation_id: "op-2",
-    skill_id: "skill-pdf",
-    decisions: [],
-    central_skill_deleted: false,
+    operation_id: "op-release",
+    prepared_id: "prepared-release",
+    item_results: [],
+    recovery_required: false,
   };
   vi.mocked(executeCommand)
-    .mockResolvedValueOnce({ type: "removal_impact", payload: impact })
-    .mockResolvedValueOnce({ type: "removal_result", payload: result });
+    .mockResolvedValueOnce({ type: "prepared_usage_change", payload: prepared })
+    .mockResolvedValueOnce({ type: "usage_change_result", payload: result });
 
-  await expect(nativeRemovalFacade.prepareUndeploy("deployment-1", "Codex CLI")).resolves.toEqual({
-    deploymentId: "deployment-1",
-    label: "Codex CLI",
-    operationId: "op-2",
-    sharedTarget: true,
-  });
-  await expect(nativeRemovalFacade.commitUndeploy("op-2", "keep_shared_deployment")).resolves.toBeUndefined();
+  await expect(nativeUsageChangeFacade.prepareUsageChange(request)).resolves.toEqual(prepared);
+  await expect(nativeUsageChangeFacade.commitUsageChange({
+    operation_id: "op-release",
+    prepared_id: "prepared-release",
+  })).resolves.toEqual(result);
   expect(executeCommand).toHaveBeenNthCalledWith(1, {
-    type: "prepare_undeploy",
-    payload: { deployment_id: "deployment-1" },
+    type: "prepare_usage_change",
+    payload: request,
   });
   expect(executeCommand).toHaveBeenNthCalledWith(2, {
-    type: "commit_undeploy",
-    payload: { prepared_undeploy_id: "op-2", decision: "keep_shared_deployment" },
+    type: "commit_usage_change",
+    payload: { operation_id: "op-release", prepared_id: "prepared-release" },
   });
 });
 

@@ -64,6 +64,8 @@ interface SkillDetailReviewExperienceProps {
    * 契约；无候选行时缺省隐藏入口。
    */
   onCentralize?: () => void;
+  /** T05：统一使用关系释放入口，仅在该技能存在活动去向时传入。 */
+  onReclaim?: () => void;
   /** W3-2：头部「删除」触发详情页既有的真实删除影响确认（K2 两段式）。 */
   onDelete: () => void;
   provenance?: SkillProvenance;
@@ -100,6 +102,7 @@ export function SkillDetailReviewExperience({
   markdownFacade,
   metadata,
   onCentralize,
+  onReclaim,
   onDelete,
   provenance,
   refreshSnapshot,
@@ -167,6 +170,7 @@ export function SkillDetailReviewExperience({
             <div aria-label="技能操作" className="sh-skill-detail-review__actions">
               <ReviewHeaderActions
                 onCentralize={onCentralize}
+                onReclaim={onReclaim}
                 onDispatch={() => navigate(`/library/${skillId}/deploy`)}
                 onExport={() => navigate("/settings/data-protection", { state: { exportSkillIds: [skillId] } })}
                 onDelete={onDelete}

@@ -23,6 +23,7 @@ import { operationTracker, type OperationTracker } from "../../platform/operatio
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import type { DirectoryOpener } from "../../platform/directoryOpener";
 import { RemovalImpactDialog } from "../removal/RemovalImpactDialog";
+import { UndeployDialog } from "../removal/UndeployDialog";
 import {
   RemovalOutcomeResult,
   type RemovalOutcomeTargetLabel,
@@ -32,9 +33,17 @@ import type {
   RemovalImpact,
   RemovalChoice,
   RemovalResult,
+  UsageChangeFacade,
 } from "../removal/api";
-import { nativeRemovalFacade, unavailableRemovalFacade } from "../removal/nativeApi";
-import type { RelationGovernanceBatchOutcome } from "../../api/bindings";
+import { nativeRemovalFacade, nativeUsageChangeFacade, unavailableRemovalFacade, unavailableUsageChangeFacade } from "../removal/nativeApi";
+import type {
+  CommitUsageChange,
+  PrepareUsageChange,
+  PreparedUsageChange,
+  RelationGovernanceBatchOutcome,
+  UsageChangeResult,
+  UsageRelationView,
+} from "../../api/bindings";
 import { relationshipsKeys } from "../relationships/api";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { mergeBatchItemOutcome, relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
@@ -55,6 +64,8 @@ interface SkillDetailPageProps {
   libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   markdownFacade?: MarkdownFacade;
   removalFacade?: RemovalFacade;
+  /** T05：技能详情与关系治理页共用 T04 使用关系释放门面。 */
+  usageChangeFacade?: UsageChangeFacade;
   securityFacade: SecurityFacade;
   refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
@@ -72,6 +83,7 @@ export function SkillDetailPage({
   libraryFacade,
   markdownFacade = nativeMarkdownFacade,
   removalFacade,
+  usageChangeFacade,
   securityFacade,
   refreshSnapshot,
   tracker = operationTracker,
@@ -84,6 +96,7 @@ export function SkillDetailPage({
   const { skillId = "" } = useParams();
   const isPreviewRoute = location.pathname.startsWith("/__preview/");
   const effectiveRemovalFacade = removalFacade ?? (isPreviewRoute ? unavailableRemovalFacade : nativeRemovalFacade);
+  const effectiveUsageChangeFacade = usageChangeFacade ?? (isPreviewRoute ? unavailableUsageChangeFacade : nativeUsageChangeFacade);
   // §7.8 生产承载：预览路由不接真实治理门面；生产默认原生门面。
   const effectiveGovernanceFacade = governanceFacade ?? (isPreviewRoute ? undefined : nativeGovernanceFacade);
   const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
@@ -134,10 +147,76 @@ export function SkillDetailPage({
     queryKey: relationshipsKeys.governance({ skill_id: skillId }),
     retry: false,
   });
+  const usageOverviewQuery = useQuery({
+    enabled: effectiveGovernanceFacade !== undefined,
+    queryFn: async () => {
+      if (!effectiveGovernanceFacade) throw new Error("governance.facade_unavailable");
+      return effectiveGovernanceFacade.getRelationshipOverview();
+    },
+    queryKey: relationshipsKeys.governanceUsageOverview(),
+    retry: false,
+  });
   const takeoverCandidates = useMemo(
     () => (takeoverLedgerQuery.data?.rows ?? []).filter(rowIsBatchExecutable),
     [takeoverLedgerQuery.data],
   );
+  const usageReleaseCandidates = useMemo<UsageRelationView[]>(
+    () => (usageOverviewQuery.data?.usage_relations ?? []).filter((relation) =>
+      relation.skill_id === skillId && relation.active && relation.decision === null),
+    [skillId, usageOverviewQuery.data],
+  );
+  const [usageReleaseOpen, setUsageReleaseOpen] = useState(false);
+  const reclaimIntentLocationKey = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("reclaim") !== "1" || reclaimIntentLocationKey.current === location.key) return;
+    reclaimIntentLocationKey.current = location.key;
+    params.delete("reclaim");
+    navigate({
+      pathname: location.pathname,
+      search: params.toString() ? `?${params.toString()}` : "",
+    }, { replace: true, state: location.state });
+    setUsageReleaseOpen(true);
+  }, [location.key, location.pathname, location.search, location.state, navigate]);
+  const prepareUsageRelease = useCallback(
+    (request: PrepareUsageChange): Promise<PreparedUsageChange> =>
+      effectiveUsageChangeFacade.prepareUsageChange(request),
+    [effectiveUsageChangeFacade],
+  );
+  const commitUsageRelease = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => {
+    return runTrackedOperation<UsageChangeResult>({
+      describeError: (reason) => describeNativeError(
+        reason,
+        (key, options) => String(t(key as never, options as never)),
+        "tasks.notices.failureUnknown",
+      ),
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "undeploy",
+      label: t("undeploy.flow.eyebrow"),
+      notifications,
+      operationId: request.operation_id,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
+      },
+      source: "governance",
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: t("undeploy.flow.eyebrow"), tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.length === 0
+          ? 1
+          : result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
+      }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    });
+  }, [effectiveUsageChangeFacade, notifications, queryClient, t, tracker]);
   // W3-5：使用去向卡与待接管候选共用同一份治理清单（单一事实来源），
   // 卡片状态、路径与关系身份都来自清单行，不在前端自备样例或翻转状态。
   const usageDestinations: UsageDestinationsState | undefined = useMemo(() => {
@@ -445,6 +524,7 @@ export function SkillDetailPage({
         metadata={metadataQuery.data}
         // §7.8：入口只在存在真实待接管关系时出现（隐藏而非禁用）。
         onCentralize={takeoverCandidates.length > 0 ? openTakeover : undefined}
+        onReclaim={usageReleaseCandidates.length > 0 ? () => setUsageReleaseOpen(true) : undefined}
         onDelete={() => void startRemoval()}
         onOpenGovernanceDestination={openGovernanceDestination}
         provenance={provenanceQuery.data}
@@ -457,6 +537,15 @@ export function SkillDetailPage({
         libraryReturn={libraryReturn}
         returnToLibrary={`${backPathname}?${reviewReturnParams.toString()}`}
       />
+      {usageReleaseOpen ? (
+        <UndeployDialog
+          candidates={usageReleaseCandidates}
+          onCancel={() => setUsageReleaseOpen(false)}
+          onCommit={commitUsageRelease}
+          onPrepare={prepareUsageRelease}
+          scope={{ kind: "skill", skillId }}
+        />
+      ) : null}
       {removalLoading ? <p role="status">{t("removal.loading")}</p> : null}
       {removalImpact ? (
         <RemovalImpactDialog

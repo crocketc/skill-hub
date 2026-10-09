@@ -28,10 +28,6 @@ const previewRemovalFacade: RemovalFacade = {
   async commitDelete() {
     return { centralSkillDeleted: true, state: "committed", recoveryOperationId: null, items: [] };
   },
-  async prepareUndeploy(deploymentId, label) {
-    return { deploymentId, label, operationId: `preview-undeploy-${deploymentId}`, sharedTarget: false };
-  },
-  async commitUndeploy() {},
 };
 
 /** State is local to this opt-in preview; production and other fixtures keep their contracts. */
