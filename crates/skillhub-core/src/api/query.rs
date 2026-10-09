@@ -24,6 +24,62 @@ use crate::relationship::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Classifies a discovered candidate against explicit release history. Callers
+/// must provide identity-bound decisions only; names and content hashes never
+/// establish the prior Skill identity by themselves.
+pub fn classify_import_usage_history(
+    skill_id: Option<&SkillId>,
+    entry_key: Option<&UsageEntryKey>,
+    current_fingerprint: Option<&str>,
+    decisions: &[UsageDecisionRecord],
+) -> crate::import::ImportCandidateUsageHistory {
+    use crate::import::{
+        ImportCandidateUsageHistory, ImportCandidateUsageHistoryClassification as Classification,
+    };
+    use crate::relationship::UsageDecision;
+
+    let (Some(skill_id), Some(entry_key), Some(current_fingerprint)) =
+        (skill_id, entry_key, current_fingerprint)
+    else {
+        return ImportCandidateUsageHistory::default();
+    };
+    if decisions
+        .iter()
+        .any(|decision| decision.skill_id != *skill_id || decision.entry_key != *entry_key)
+    {
+        return ImportCandidateUsageHistory::default();
+    }
+
+    let latest = decisions.iter().max_by(|left, right| {
+        left.decided_at
+            .cmp(&right.decided_at)
+            .then_with(|| left.decision_id.cmp(&right.decision_id))
+    });
+    let Some(latest) = latest else {
+        return ImportCandidateUsageHistory {
+            classification: Classification::NoKnownRelease,
+            retained_independent_copy: false,
+            decision_ids: Vec::new(),
+        };
+    };
+    let Some(released_fingerprint) = latest.content_fingerprint.as_deref() else {
+        return ImportCandidateUsageHistory::default();
+    };
+
+    ImportCandidateUsageHistory {
+        classification: if current_fingerprint == released_fingerprint {
+            Classification::PreviouslyReleased
+        } else {
+            Classification::PreviouslyReleasedChanged
+        },
+        retained_independent_copy: latest.decision == UsageDecision::RetainedIndependentCopy,
+        decision_ids: decisions
+            .iter()
+            .map(|decision| decision.decision_id.clone())
+            .collect(),
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetSkill {
     pub skill_id: SkillId,
@@ -1461,4 +1517,105 @@ pub enum AppQueryResult {
     Findings(Vec<FindingResult>),
     #[serde(rename = "assembly_plan")]
     AssemblyPlan(AssemblyPlan),
+}
+
+#[cfg(test)]
+mod import_usage_history_tests {
+    use super::*;
+    use crate::relationship::{UsageDecision, UsageDecisionRecord};
+
+    fn released_decision(
+        skill_id: SkillId,
+        entry_key: UsageEntryKey,
+        fingerprint: Option<&str>,
+    ) -> UsageDecisionRecord {
+        UsageDecisionRecord {
+            decision_id: "decision-release".into(),
+            skill_id,
+            entry_key,
+            relation_ids: vec!["relation-before-release".into()],
+            physical_source_ids: vec!["physical-entry-1".into()],
+            decision: UsageDecision::Released,
+            content_fingerprint: fingerprint.map(str::to_owned),
+            decided_at: 1,
+            operation_id: Some("operation-release".into()),
+        }
+    }
+
+    #[test]
+    fn release_history_is_classified_by_subject_entry_and_fingerprint() {
+        let skill_id = SkillId::new();
+        let entry_key = UsageEntryKey {
+            directory_id: "directory-1".into(),
+            relative_entry_path: "notes".into(),
+        };
+        let decisions = vec![released_decision(
+            skill_id,
+            entry_key.clone(),
+            Some("fingerprint-before"),
+        )];
+
+        let unchanged = classify_import_usage_history(
+            Some(&skill_id),
+            Some(&entry_key),
+            Some("fingerprint-before"),
+            &decisions,
+        );
+        assert_eq!(
+            unchanged.classification,
+            crate::import::ImportCandidateUsageHistoryClassification::PreviouslyReleased
+        );
+        assert_eq!(unchanged.decision_ids, vec!["decision-release"]);
+
+        let changed = classify_import_usage_history(
+            Some(&skill_id),
+            Some(&entry_key),
+            Some("fingerprint-after"),
+            &decisions,
+        );
+        assert_eq!(
+            changed.classification,
+            crate::import::ImportCandidateUsageHistoryClassification::PreviouslyReleasedChanged
+        );
+    }
+
+    #[test]
+    fn uncertain_identity_does_not_claim_no_release_history() {
+        let history = classify_import_usage_history(None, None, Some("fingerprint"), &[]);
+        assert_eq!(
+            history.classification,
+            crate::import::ImportCandidateUsageHistoryClassification::IdentityUncertain
+        );
+
+        let skill_id = SkillId::new();
+        let entry_key = UsageEntryKey {
+            directory_id: "directory-1".into(),
+            relative_entry_path: "notes".into(),
+        };
+        let history = classify_import_usage_history(Some(&skill_id), Some(&entry_key), None, &[]);
+        assert_eq!(
+            history.classification,
+            crate::import::ImportCandidateUsageHistoryClassification::IdentityUncertain
+        );
+    }
+
+    #[test]
+    fn no_release_is_reported_only_after_verified_identity() {
+        let skill_id = SkillId::new();
+        let entry_key = UsageEntryKey {
+            directory_id: "directory-1".into(),
+            relative_entry_path: "notes".into(),
+        };
+        let history = classify_import_usage_history(
+            Some(&skill_id),
+            Some(&entry_key),
+            Some("fingerprint"),
+            &[],
+        );
+        assert_eq!(
+            history.classification,
+            crate::import::ImportCandidateUsageHistoryClassification::NoKnownRelease
+        );
+        assert!(history.decision_ids.is_empty());
+    }
 }

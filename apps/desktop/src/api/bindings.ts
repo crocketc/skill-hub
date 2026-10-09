@@ -1936,6 +1936,11 @@ export type ImportCandidate = {
 	source_container_id?: string | null,
 	/**  获取工作区形态；TemporaryCache 只能由获取流程显式标记。 */
 	acquisition?: ImportAcquisitionContext | null,
+	/**
+	 *  Usage history is populated only by trusted candidate discovery. Direct
+	 *  callers remain uncertain until the application verifies the identity.
+	 */
+	usage_history?: ImportCandidateUsageHistory,
 };
 
 /**
@@ -1944,6 +1949,14 @@ export type ImportCandidate = {
  *  显示 not_checked。
  */
 export type ImportCandidateCheckState = "passed" | "warning" | "failed" | "unavailable";
+
+export type ImportCandidateUsageHistory = {
+	classification: ImportCandidateUsageHistoryClassification,
+	retained_independent_copy: boolean,
+	decision_ids: string[],
+};
+
+export type ImportCandidateUsageHistoryClassification = "no_known_release" | "previously_released" | "previously_released_changed" | "identity_uncertain";
 
 /**  Agent reading compatibility, independent of host creation capabilities. */
 export type ImportCompatibility = {

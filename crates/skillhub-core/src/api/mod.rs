@@ -60,14 +60,14 @@ pub use command::{
 };
 pub use event::{AppEvent, FactsChanged};
 pub use query::{
-    AnalyzeGlobalSkillEvidence, AnalyzeImport, AnalyzeImportBatch, AppQuery, AppQueryResult,
-    BasicCheckResult, CheckSourceUpdates, CombinationResult, DeploymentBatchPreview,
-    DeploymentBatchPreviewRequestItem, DeploymentPairPreview, DeploymentTarget,
-    DeterministicDuplicateEntry, DiffVersions, DiscoverImportCandidates, DiscoverRepoSkills,
-    FindingResult, GetAgentDirectoryProjection, GetBasicCheckResult, GetBootstrapSnapshot,
-    GetCallPolicy, GetConflictWorkspace, GetDeploymentBatchPreview, GetDeploymentPlan,
-    GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult, GetMarkdownDraft,
-    GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,
+    classify_import_usage_history, AnalyzeGlobalSkillEvidence, AnalyzeImport, AnalyzeImportBatch,
+    AppQuery, AppQueryResult, BasicCheckResult, CheckSourceUpdates, CombinationResult,
+    DeploymentBatchPreview, DeploymentBatchPreviewRequestItem, DeploymentPairPreview,
+    DeploymentTarget, DeterministicDuplicateEntry, DiffVersions, DiscoverImportCandidates,
+    DiscoverRepoSkills, FindingResult, GetAgentDirectoryProjection, GetBasicCheckResult,
+    GetBootstrapSnapshot, GetCallPolicy, GetConflictWorkspace, GetDeploymentBatchPreview,
+    GetDeploymentPlan, GetDeploymentRelations, GetDiscoverySnapshot, GetLlmSafetyCheckResult,
+    GetMarkdownDraft, GetProjectAssemblyPlan, GetReconcilePlan, GetRelationshipOverview,
     GetRelationshipRemovalImpact, GetRemovalImpact, GetRollbackImpact,
     GetSaveAsCopyReplacementPreview, GetSkill, GetSkillInsights, GetSkillProvenance,
     GetSkillRelationshipGraph, GetSourceUpdateStatus, GetUiPreference, GetUiPreferenceResult,

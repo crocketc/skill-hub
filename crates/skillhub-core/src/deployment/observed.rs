@@ -130,8 +130,17 @@ pub fn reconcile_observed_row(
     observation: Option<&ObservedPathObservation>,
     matched_library_skill: Option<SkillId>,
 ) -> ObservedRowAction {
-    if existing.is_some_and(|row| row.status == ObservedStatus::Released) {
-        return ObservedRowAction::Unchanged;
+    if let Some(row) = existing.filter(|row| row.status == ObservedStatus::Released) {
+        let (Some(observation), Some(skill_id)) = (observation, matched_library_skill) else {
+            return ObservedRowAction::Unchanged;
+        };
+        if skill_id == row.skill_id {
+            return ObservedRowAction::Unchanged;
+        }
+        return ObservedRowAction::EstablishVerified {
+            skill_id,
+            fingerprint: observation.fingerprint.clone(),
+        };
     }
     let Some(observation) = observation else {
         return ObservedRowAction::Unchanged;
@@ -333,6 +342,38 @@ mod tests {
         };
         assert_eq!(
             reconcile_observed_row(Some(&released), Some(&observation), Some(skill)),
+            ObservedRowAction::Unchanged
+        );
+    }
+
+    #[test]
+    fn released_row_allows_a_distinct_exact_skill_identity() {
+        let released_skill = SkillId::new();
+        let replacement_skill = SkillId::new();
+        let released = row(
+            released_skill,
+            FP_A,
+            ObservedMatchState::ContentVerified,
+            ObservedStatus::Released,
+        );
+        let observation = ObservedPathObservation {
+            path: "/tmp/agents/trae-cn/skills/demo".into(),
+            fingerprint: FP_B.into(),
+        };
+
+        assert_eq!(
+            reconcile_observed_row(Some(&released), Some(&observation), Some(replacement_skill)),
+            ObservedRowAction::EstablishVerified {
+                skill_id: replacement_skill,
+                fingerprint: FP_B.into(),
+            }
+        );
+        assert_eq!(
+            reconcile_observed_row(Some(&released), Some(&observation), Some(released_skill)),
+            ObservedRowAction::Unchanged
+        );
+        assert_eq!(
+            reconcile_observed_row(Some(&released), Some(&observation), None),
             ObservedRowAction::Unchanged
         );
     }

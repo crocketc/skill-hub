@@ -9466,6 +9466,18 @@ impl ApplicationFacade for LocalApplicationFacade {
                         candidate.source_container_id = classified.source_container_id.clone();
                         classified
                     };
+                    let candidate_fingerprint = self.candidate_tree_hash(candidate, None);
+                    candidate.usage_history = self.with_database(
+                        "query.discover_import_candidates.usage_history",
+                        |database| {
+                            Self::classify_discovered_import_usage_history(
+                                database,
+                                candidate,
+                                &classified,
+                                candidate_fingerprint.as_deref(),
+                            )
+                        },
+                    )?;
                     classifications.push((observed_path_key(&candidate.absolute_root), classified));
                 }
                 if let Ok(mut registry) = self.import_source_classifications.lock() {
@@ -11322,6 +11334,209 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn import_candidate_entry_key(
+        database: &Database,
+        candidate: &skillhub_core::ImportCandidate,
+        classification: Option<&ClassifiedImportSource>,
+    ) -> AppResult<Option<skillhub_core::relationship::UsageEntryKey>> {
+        let directory_id = classification
+            .and_then(|fact| fact.source_container_id.as_deref())
+            .or(candidate.source_container_id.as_deref());
+        let Some(directory_id) = directory_id else {
+            return Ok(None);
+        };
+        Self::usage_entry_key_for_path(database, directory_id, &candidate.absolute_root)
+    }
+
+    fn usage_entry_key_for_path(
+        database: &Database,
+        directory_id: &str,
+        path: &str,
+    ) -> AppResult<Option<skillhub_core::relationship::UsageEntryKey>> {
+        let Some(directory) = database
+            .directory_repository()
+            .list_nodes()?
+            .into_iter()
+            .find(|node| node.node_id == directory_id && node.exists)
+        else {
+            return Ok(None);
+        };
+        let candidate_path = Self::canonical_path_string(path);
+        let directory_path = Self::canonical_path_string(&directory.path);
+        let Ok(relative) = Path::new(&candidate_path).strip_prefix(Path::new(&directory_path))
+        else {
+            return Ok(None);
+        };
+        if relative.as_os_str().is_empty()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Ok(None);
+        }
+        let relative_entry_path = relative.to_string_lossy().replace('\\', "/");
+        Ok(Some(skillhub_core::relationship::UsageEntryKey {
+            directory_id: directory_id.to_owned(),
+            relative_entry_path,
+        }))
+    }
+
+    fn released_usage_decision_matches_observed_row(
+        database: &Database,
+        row: &skillhub_core::ObservedDeployment,
+        relation: &skillhub_core::relationship::DeploymentRelationFact,
+    ) -> AppResult<bool> {
+        if relation.active || relation.skill_id != Some(row.skill_id) {
+            return Ok(false);
+        }
+        let Some(directory_id) = relation.directory_node_id.as_deref() else {
+            return Ok(false);
+        };
+        let Some(entry_key) =
+            Self::usage_entry_key_for_path(database, directory_id, &row.original_path)?
+        else {
+            return Ok(false);
+        };
+        Ok(database
+            .list_usage_decisions(&row.skill_id, &entry_key)?
+            .iter()
+            .any(|decision| {
+                decision
+                    .relation_ids
+                    .iter()
+                    .any(|id| id == &relation.relation_id)
+            }))
+    }
+
+    fn classify_import_candidate_for_skill(
+        database: &Database,
+        candidate: &skillhub_core::ImportCandidate,
+        classification: Option<&ClassifiedImportSource>,
+        skill_id: Option<skillhub_core::SkillId>,
+        fingerprint: Option<&str>,
+    ) -> AppResult<skillhub_core::ImportCandidateUsageHistory> {
+        let (Some(skill_id), Some(fingerprint), Some(entry_key), Some(physical_source_id)) = (
+            skill_id,
+            fingerprint,
+            Self::import_candidate_entry_key(database, candidate, classification)?,
+            classification.and_then(|fact| fact.physical_source_id.as_deref()),
+        ) else {
+            return Ok(skillhub_core::ImportCandidateUsageHistory::default());
+        };
+        let decisions = database.list_usage_decisions(&skill_id, &entry_key)?;
+        let identity_bound_decisions = decisions
+            .into_iter()
+            .filter(|decision| {
+                decision.physical_source_ids.is_empty()
+                    || decision
+                        .physical_source_ids
+                        .iter()
+                        .any(|identity| identity == physical_source_id)
+            })
+            .collect::<Vec<_>>();
+        Ok(skillhub_core::api::classify_import_usage_history(
+            Some(&skill_id),
+            Some(&entry_key),
+            Some(fingerprint),
+            &identity_bound_decisions,
+        ))
+    }
+
+    fn classify_discovered_import_usage_history(
+        database: &Database,
+        candidate: &skillhub_core::ImportCandidate,
+        classification: &ClassifiedImportSource,
+        fingerprint: Option<&str>,
+    ) -> AppResult<skillhub_core::ImportCandidateUsageHistory> {
+        let (Some(fingerprint), Some(entry_key), Some(physical_source_id)) = (
+            fingerprint,
+            Self::import_candidate_entry_key(database, candidate, Some(classification))?,
+            classification.physical_source_id.as_deref(),
+        ) else {
+            return Ok(skillhub_core::ImportCandidateUsageHistory::default());
+        };
+        let matching_skills = Self::library_content_hashes(database)?
+            .into_iter()
+            .filter(|(_, hash)| hash == fingerprint)
+            .map(|(skill_id, _)| skill_id)
+            .collect::<Vec<_>>();
+        let skill_id = match matching_skills.as_slice() {
+            [skill_id] => *skill_id,
+            [] => {
+                let candidate_path =
+                    observed_path_key(&Self::canonical_path_string(&candidate.absolute_root));
+                let mut historical_skill_ids = Vec::new();
+                for skill_id in database
+                    .provenance_repository()
+                    .list_observed()?
+                    .into_iter()
+                    .filter(|row| {
+                        observed_path_key(&Self::canonical_path_string(&row.original_path))
+                            == candidate_path
+                    })
+                    .map(|row| row.skill_id)
+                    .chain(
+                        database
+                            .relationship_repository()
+                            .list_source_copy_relations(false)?
+                            .into_iter()
+                            .filter(|relation| {
+                                relation.physical_source_id == physical_source_id
+                                    && observed_path_key(&Self::canonical_path_string(
+                                        &relation.source_path,
+                                    )) == candidate_path
+                            })
+                            .map(|relation| relation.skill_id),
+                    )
+                {
+                    if !historical_skill_ids.contains(&skill_id) {
+                        historical_skill_ids.push(skill_id);
+                    }
+                }
+                let mut matching_histories = Vec::new();
+                for skill_id in historical_skill_ids {
+                    let matching = database
+                        .list_usage_decisions(&skill_id, &entry_key)?
+                        .into_iter()
+                        .filter(|decision| {
+                            decision.physical_source_ids.is_empty()
+                                || decision
+                                    .physical_source_ids
+                                    .iter()
+                                    .any(|identity| identity == physical_source_id)
+                        })
+                        .collect::<Vec<_>>();
+                    if !matching.is_empty() {
+                        matching_histories.push((skill_id, matching));
+                    }
+                }
+                if matching_histories.len() != 1 {
+                    return Ok(skillhub_core::ImportCandidateUsageHistory::default());
+                }
+                let (skill_id, decisions) = matching_histories.remove(0);
+                return Ok(skillhub_core::api::classify_import_usage_history(
+                    Some(&skill_id),
+                    Some(&entry_key),
+                    Some(fingerprint),
+                    &decisions,
+                ));
+            }
+            _ => return Ok(skillhub_core::ImportCandidateUsageHistory::default()),
+        };
+        Self::classify_import_candidate_for_skill(
+            database,
+            candidate,
+            Some(classification),
+            Some(skill_id),
+            Some(fingerprint),
+        )
+    }
+
     /// Materializes a remote import into a bounded temporary workspace. The
     /// workspace is retained because candidate paths are reused by analyze,
     /// prepare, and commit after discovery returns.
@@ -12790,6 +13005,18 @@ impl LocalApplicationFacade {
         .collect()
     }
 
+    fn unique_skill_for_fingerprint(
+        hashes: &[(skillhub_core::SkillId, String)],
+        fingerprint: &str,
+    ) -> Option<skillhub_core::SkillId> {
+        let mut matching = hashes
+            .iter()
+            .filter(|(_, hash)| hash == fingerprint)
+            .map(|(skill_id, _)| *skill_id);
+        let first = matching.next()?;
+        matching.next().is_none().then_some(first)
+    }
+
     /// 扫描指纹与库内 content_hash 是两种算法：关系比对必须使用与版本
     /// 清单一致的 canonical tree hash（复用 hash_tree_read_only），而不是
     /// scanner 的传输校验指纹。单个路径哈希失败只意味着"本次无法核验"，
@@ -12880,28 +13107,43 @@ impl LocalApplicationFacade {
                     .iter()
                     .find(|item| observed_path_key(&item.path) == observed_path_key(&row_path));
                 let matched = observation.as_ref().and_then(|item| {
-                    hashes
-                        .iter()
-                        .find(|(_, hash)| hash == &item.fingerprint)
-                        .map(|(skill_id, _)| *skill_id)
+                    Self::unique_skill_for_fingerprint(&hashes, &item.fingerprint)
                 });
-                let mut action = match observation {
-                    Some(observation) => {
+                let relation = relation_facts.iter().find(|fact| {
+                    fact.agent_client_id == row.client_id
+                        && fact.path_key == observed_path_key(&row_path)
+                });
+                let released_old_identity = match (observation.as_ref(), matched, relation) {
+                    (Some(_), Some(skill_id), Some(relation)) if skill_id != row.skill_id => {
+                        Self::released_usage_decision_matches_observed_row(
+                            database, row, relation,
+                        )?
+                    }
+                    _ => false,
+                };
+                let mut action = match (observation, matched, released_old_identity) {
+                    (Some(observation), Some(skill_id), true) => {
+                        skillhub_core::ObservedRowAction::EstablishVerified {
+                            skill_id,
+                            fingerprint: observation.fingerprint.clone(),
+                        }
+                    }
+                    (Some(observation), _, _) => {
                         reconcile_observed_row(Some(row), Some(observation), matched)
                     }
-                    None => reconcile_missing_observed_row(
+                    (None, _, _) => reconcile_missing_observed_row(
                         Some(row),
                         &FilesystemRelationshipProbe.probe(&row_path),
                     ),
                 };
-                if matches!(action, skillhub_core::ObservedRowAction::Unchanged) {
+                let released_identity_still_matches = row.status
+                    == skillhub_core::ObservedStatus::Released
+                    && matched == Some(row.skill_id);
+                if matches!(action, skillhub_core::ObservedRowAction::Unchanged)
+                    && !released_identity_still_matches
+                {
                     if let (Some(observation), Some(skill_id)) = (observation.as_ref(), matched) {
-                        let relation_needs_health_confirmation = relation_facts
-                            .iter()
-                            .find(|fact| {
-                                fact.agent_client_id == row.client_id
-                                    && fact.path_key == observed_path_key(&row_path)
-                            })
+                        let relation_needs_health_confirmation = relation
                             .is_none_or(|fact| {
                                 !matches!(fact.health_reasons.as_deref(), Some(reasons) if reasons.is_empty())
                             });
@@ -12937,10 +13179,7 @@ impl LocalApplicationFacade {
                 else {
                     continue;
                 };
-                let matched = hashes
-                    .iter()
-                    .find(|(_, hash)| hash == &observation.fingerprint)
-                    .map(|(skill_id, _)| *skill_id);
+                let matched = Self::unique_skill_for_fingerprint(&hashes, &observation.fingerprint);
                 if matched.is_none() {
                     // 盘账异常信号：盘上内容与库内任何 Skill 指纹不一致
                     //（#14 类不一致的来源之一），计数随完成事件进日志。
@@ -13144,6 +13383,18 @@ impl LocalApplicationFacade {
                     .ok()
                     .flatten()
             });
+        let usage_history = Self::classify_import_candidate_for_skill(
+            database,
+            candidate,
+            classification.as_ref(),
+            Some(final_skill_id),
+            Some(fingerprint),
+        )?;
+        let previously_released = matches!(
+            usage_history.classification,
+            skillhub_core::ImportCandidateUsageHistoryClassification::PreviouslyReleased
+                | skillhub_core::ImportCandidateUsageHistoryClassification::PreviouslyReleasedChanged
+        );
         let event = skillhub_core::import::ImportProvenanceEvent {
             provenance_id: format!("prov-{}", skillhub_core::OperationId::new()),
             batch_id: slot.batch_id.clone(),
@@ -13171,7 +13422,10 @@ impl LocalApplicationFacade {
         let transaction = database.begin_transaction()?;
         skillhub_storage::ProvenanceRepository::append_provenance_event_tx(&transaction, &event)?;
         let mut source_relation_id = None;
-        if let Some(physical_id) = physical_source_id.as_deref() {
+        if let Some(physical_id) = physical_source_id
+            .as_deref()
+            .filter(|_| !previously_released)
+        {
             let active = database
                 .relationship_repository()
                 .list_source_copy_relations(true)?;

@@ -25,6 +25,7 @@ pub use migration::{
 pub use model::{
     final_skill_for_import, legacy_managed_relation_rejected, AcquisitionWorkspaceKind,
     CandidateOwnership, ImportAcquisitionContext, ImportAction, ImportCandidate,
-    ImportOutcomeStatus, ImportSourceClass,
+    ImportCandidateUsageHistory, ImportCandidateUsageHistoryClassification, ImportOutcomeStatus,
+    ImportSourceClass,
 };
 pub use provenance::{ImportBatch, ImportProvenance, ImportProvenanceEvent};

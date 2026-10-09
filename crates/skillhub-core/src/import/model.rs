@@ -81,6 +81,24 @@ pub enum ImportAction {
     Skip,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportCandidateUsageHistoryClassification {
+    NoKnownRelease,
+    PreviouslyReleased,
+    PreviouslyReleasedChanged,
+    #[default]
+    IdentityUncertain,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct ImportCandidateUsageHistory {
+    pub classification: ImportCandidateUsageHistoryClassification,
+    pub retained_independent_copy: bool,
+    pub decision_ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ImportCandidate {
@@ -109,6 +127,10 @@ pub struct ImportCandidate {
     /// 获取工作区形态；TemporaryCache 只能由获取流程显式标记。
     #[serde(default)]
     pub acquisition: Option<ImportAcquisitionContext>,
+    /// Usage history is populated only by trusted candidate discovery. Direct
+    /// callers remain uncertain until the application verifies the identity.
+    #[serde(default)]
+    pub usage_history: ImportCandidateUsageHistory,
 }
 
 impl ImportCandidate {
@@ -133,6 +155,7 @@ impl ImportCandidate {
             source_class: None,
             source_container_id: None,
             acquisition: None,
+            usage_history: ImportCandidateUsageHistory::default(),
         }
     }
 
