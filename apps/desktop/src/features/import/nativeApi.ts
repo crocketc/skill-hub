@@ -122,6 +122,7 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
     // W2-2：相对根是批内候选键的稳定后缀，用于组键 → 前端候选的映射。
     relativeRoot: candidate.relative_root,
     source: candidateSource(candidate.source),
+    ...(candidate.usage_history ? { usageHistory: candidate.usage_history } : {}),
   };
 }
 

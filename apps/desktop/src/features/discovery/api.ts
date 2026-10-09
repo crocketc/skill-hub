@@ -6,6 +6,7 @@ import {
   type DiscoverableRepoSkill,
   type DiscoverySnapshot,
   type DownloadedRepoSkill,
+  type IgnoreRule,
   type OperationSummary,
   type RepoDiscoveryReport,
   type ScanResult,
@@ -53,6 +54,8 @@ export interface DiscoveryFacade {
    * 记录，绝不触碰目录中的用户文件；可通过既有忽略规则管理撤销。
    */
   createIgnoreRule: (path: string) => Promise<void>;
+  /** 持久化发现排除规则；缺失仅用于不支持原生规则查询的演示适配器。 */
+  listIgnoreRules?: () => Promise<IgnoreRule[]>;
   /**
    * P1-05：搜索候选确认闭环（四个能力都可选；任一缺失时结果卡如实隐藏
    * 登记/忽略动作，不渲染无效按钮）。候选确认只登记导入意向，成为来源
@@ -188,6 +191,13 @@ export const desktopDiscoveryFacade: DiscoveryFacade = {
     if (result.type !== "ignore_rule") {
       throw new Error("Unexpected ignore rule response from the native application.");
     }
+  },
+  async listIgnoreRules() {
+    const result = await queryApplication({ type: "list_ignore_rules" });
+    if (result.type !== "ignore_rules") {
+      throw new Error("Unexpected ignore rules response from the native application.");
+    }
+    return result.payload;
   },
   async listSearchCandidates() {
     const result = await queryApplication({ type: "list_search_candidates", payload: null });

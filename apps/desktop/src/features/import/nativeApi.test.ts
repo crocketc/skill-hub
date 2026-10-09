@@ -51,6 +51,11 @@ describe("native import facade", () => {
           ownership_detail: null,
           relative_root: "notes",
           runtime_name: "notes",
+          usage_history: {
+            classification: "previously_released",
+            retained_independent_copy: true,
+            decision_ids: ["decision-1"],
+          },
           source: { kind: "local", locator: { local_path: "C:/incoming" } },
         },
       ],
@@ -70,6 +75,11 @@ describe("native import facade", () => {
         name: "notes",
         ownership: "unknown",
         path: "C:/incoming/notes",
+        usageHistory: {
+          classification: "previously_released",
+          retained_independent_copy: true,
+          decision_ids: ["decision-1"],
+        },
       }),
     ]);
   });

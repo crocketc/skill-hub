@@ -11,6 +11,7 @@ import { AgentPresentation } from "../../ui/AgentPresentation";
 import { AgentDirectoryRoleBadge } from "../../ui/AgentDirectoryRoleBadge";
 import { DeploymentCapabilityIcons } from "../agents/DeploymentCapabilityIcons";
 import type { AgentDirectoryProjection, DiscoverySnapshot, DiscoveredSkill } from "../../api/bindings";
+import { normalizeWindowsPath } from "../../platform/directoryPicker";
 import {
   buildAgentGroups,
   classifyScan,
@@ -28,6 +29,22 @@ export interface LocalDiscoveryWorkbenchProps {
   tracker?: OperationTracker;
   /** C3 收口：待导入横幅的"审查"入口；未提供时横幅不渲染动作按钮。 */
   onReviewCandidates?: (candidates: DiscoveredSkill[]) => void;
+}
+
+function normalizedPath(path: string): string {
+  const withSlashes = normalizeWindowsPath(path).replace(/\\/g, "/");
+  const isRoot = withSlashes === "/" || /^[a-zA-Z]:\/+$/i.test(withSlashes);
+  const normalized = isRoot ? withSlashes.replace(/\/+$/, "/") : withSlashes.replace(/\/+$/, "");
+  return /^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized;
+}
+
+function pathMatchesExclusion(candidate: string, excludedRoot: string): boolean {
+  const candidatePath = normalizedPath(candidate);
+  const rootPath = normalizedPath(excludedRoot);
+  const rootPrefix = rootPath.endsWith("/") ? rootPath : `${rootPath}/`;
+  return candidatePath === rootPath || candidatePath.startsWith(rootPrefix);
 }
 
 interface SnapshotState {
@@ -56,6 +73,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
   const [error, setError] = useState<string | null>(null);
   // P1-06：安全排除——成功后从本次结果移除；规则可在设置中撤销。
   const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
+  const [ignoreRulesReady, setIgnoreRulesReady] = useState(false);
   const [excludedNotice, setExcludedNotice] = useState<string | null>(null);
   const [excludeError, setExcludeError] = useState<string | null>(null);
   // M-18：Agent 目录盘点是可折叠次级区；默认展开保持既有语义可见，
@@ -77,9 +95,14 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
     Promise.all([
       facade.getDiscoverySnapshot(),
       facade.getAgentDirectoryProjection?.() ?? Promise.resolve(null),
+      facade.listIgnoreRules?.() ?? Promise.resolve([]),
     ])
-      .then(([result, projection]) => {
+      .then(([result, projection, rules]) => {
         if (cancelled) return;
+        setExcludedPaths(new Set(
+          rules.flatMap((rule) => rule.subject.type === "exact_path" ? [rule.subject.value] : []),
+        ));
+        setIgnoreRulesReady(true);
         setSnapshot({
           observedAt: result.observed_at,
           clients: result.instances.length,
@@ -152,7 +175,7 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
       });
     const visible = (group: AgentBrandGroup): AgentBrandGroup => ({
       ...group,
-      cards: group.cards.filter((card) => !excludedPaths.has(card.path)),
+      cards: group.cards.filter((card) => ![...excludedPaths].some((path) => pathMatchesExclusion(card.path, path))),
     });
     const dropEmpty = (list: AgentBrandGroup[]) =>
       list.map(visible).filter((group) => group.cards.length > 0);
@@ -161,6 +184,15 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
       unavailable: dropEmpty(groups.unavailable),
     };
   }, [snapshot, excludedPaths]);
+
+  const reviewCandidates = useMemo(
+    () => ignoreRulesReady
+      ? candidates.filter((candidate) =>
+        ![...excludedPaths].some((path) => pathMatchesExclusion(candidate.path, path)),
+      )
+      : [],
+    [candidates, excludedPaths, ignoreRulesReady],
+  );
 
   const exclude = useCallback(
     async (path: string) => {
@@ -215,12 +247,12 @@ export function LocalDiscoveryWorkbench({ facade, onReviewCandidates, tracker = 
           </Button>
         </div>
         {error ? <p role="alert">{error}</p> : null}
-        {classification && classification.unmanaged > 0 ? (
+        {classification && reviewCandidates.length > 0 ? (
           <div className="sh-discovery-workbench__banner" role="status">
-            <strong>{t("discovery.workbench.bannerHeading", { count: classification.unmanaged })}</strong>
+            <strong>{t("discovery.workbench.bannerHeading", { count: reviewCandidates.length })}</strong>
             <small>{t("discovery.workbench.bannerHint")}</small>
             {onReviewCandidates ? (
-              <Button onClick={() => onReviewCandidates(candidates)} variant="primary">
+              <Button onClick={() => onReviewCandidates(reviewCandidates)} variant="primary">
                 {t("discovery.workbench.reviewAction")}
               </Button>
             ) : null}

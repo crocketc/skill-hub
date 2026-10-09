@@ -263,6 +263,60 @@ it("shows a pending-import banner and review entry when unmanaged candidates exi
   ]);
 });
 
+it("restores persisted path exclusions for review while keeping scan counts intact", async () => {
+  const onReviewCandidates = vi.fn();
+  const scanWithSibling: ScanResult = {
+    ...scanResult,
+    discovered: [
+      ...scanResult.discovered,
+      {
+        ...scanResult.discovered[0],
+        path: "C:/codex/skills/beta",
+        relative_path: "beta",
+        fingerprint: "beta",
+      },
+    ],
+  };
+  const listIgnoreRules = vi.fn(async () => [
+    {
+      id: "rule-alpha",
+      subject: { type: "exact_path" as const, value: "C:/codex/skills/alpha" },
+      reason: "discovery-exclude",
+      created_at: "2026-10-09T00:00:00Z",
+      defer_until: null,
+    },
+    {
+      id: "rule-pending",
+      subject: { type: "exact_pending" as const, value: "pending:alpha" },
+      reason: "later",
+      created_at: "2026-10-09T00:00:00Z",
+      defer_until: null,
+    },
+  ]);
+  render(
+    <I18nextProvider i18n={createSkillHubI18nSync()}>
+      <LocalDiscoveryWorkbench
+        facade={{
+          getDiscoverySnapshot: async () => snapshot,
+          scanTargets: async () => scanWithSibling,
+          searchOnlineSources: async () => searchPage([]),
+          listIgnoreRules,
+          ...repoDiscoveryStubs,
+        }}
+        onReviewCandidates={onReviewCandidates}
+      />
+    </I18nextProvider>,
+  );
+
+  await waitFor(() => expect(listIgnoreRules).toHaveBeenCalledOnce());
+  await click(await screen.findByRole("button", { name: "重新扫描" }));
+  expect(await screen.findByText("未纳管 2")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "审查并导入" }));
+  expect(onReviewCandidates).toHaveBeenCalledWith([
+    expect.objectContaining({ path: "C:/codex/skills/beta" }),
+  ]);
+});
+
 it("announces the scanning state while a scan is running", async () => {
   let resolveScan!: (value: ScanResult) => void;
   const scanTargets = vi.fn(

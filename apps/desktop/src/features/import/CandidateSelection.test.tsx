@@ -83,6 +83,48 @@ it("supports selecting every discovered candidate in one explicit step", async (
   expect(onSelectAll).toHaveBeenCalledOnce();
 });
 
+it("shows release history without selecting the candidate or restoring management", async () => {
+  const onSelectAll = vi.fn();
+  await renderCandidateSelection({
+    candidates: [
+      {
+        ...candidates[0],
+        usageHistory: {
+          classification: "previously_released",
+          retained_independent_copy: true,
+          decision_ids: ["decision-1"],
+        },
+      },
+      {
+        ...candidates[1],
+        usageHistory: {
+          classification: "previously_released_changed",
+          retained_independent_copy: false,
+          decision_ids: ["decision-2"],
+        },
+      },
+      {
+        ...candidates[1],
+        id: "sibling-skill",
+        name: "Sibling Skill",
+        path: "C:/skills/sibling-skill",
+      },
+    ],
+    onSelectAll,
+  });
+
+  expect(screen.getByRole("checkbox", { name: "PDF Reader" })).not.toBeChecked();
+  expect(screen.getByText("Previously released from managed use")).toBeVisible();
+  expect(screen.getByText("Previously released; content has changed")).toBeVisible();
+  expect(screen.getByText("An independent copy was kept")).toBeVisible();
+  expect(screen.getByRole("checkbox", { name: "Browser Helper" })).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Sibling Skill" })).not.toBeChecked();
+
+  fireEvent.click(screen.getByRole("button", { name: "Select all importable candidates" }));
+  expect(onSelectAll).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: /manage|restore/i })).not.toBeInTheDocument();
+});
+
 // ---- 第 24 节：候选行安全分级徽标（数据存在时展示，按级别着色） ----
 
 it("shows a security grade badge on each graded candidate row", async () => {

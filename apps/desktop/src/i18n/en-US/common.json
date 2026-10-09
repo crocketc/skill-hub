@@ -345,6 +345,12 @@
         "plugin": "Managed by a plugin",
         "other_tool": "Managed by another tool",
         "unknown": "Ownership unknown"
+      },
+      "usageHistory": {
+        "previouslyReleased": "Previously released from managed use",
+        "previouslyReleasedChanged": "Previously released; content has changed",
+        "identityUncertain": "Past release could not be confirmed",
+        "retainedCopy": "An independent copy was kept"
       }
     },
     "conflicts": {

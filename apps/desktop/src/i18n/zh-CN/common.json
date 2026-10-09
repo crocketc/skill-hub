@@ -345,6 +345,12 @@
         "plugin": "由插件管理",
         "other_tool": "由其他工具管理",
         "unknown": "所有权未知"
+      },
+      "usageHistory": {
+        "previouslyReleased": "曾解除使用关系",
+        "previouslyReleasedChanged": "曾解除使用关系，内容已变化",
+        "identityUncertain": "无法确认是否曾解除使用关系",
+        "retainedCopy": "此前保留过独立拷贝"
       }
     },
     "conflicts": {

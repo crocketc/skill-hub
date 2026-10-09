@@ -86,7 +86,27 @@ export function CandidateSelection({
                     <StatusBadge tone={ownershipTone[candidate.ownership]}>
                       {t(`importWorkflow.candidates.ownership.${candidate.ownership}`)}
                     </StatusBadge>
+                    {candidate.usageHistory?.classification === "previously_released" ? (
+                      <StatusBadge tone="neutral">
+                        {t("importWorkflow.candidates.usageHistory.previouslyReleased")}
+                      </StatusBadge>
+                    ) : null}
+                    {candidate.usageHistory?.classification === "previously_released_changed" ? (
+                      <StatusBadge tone="warning">
+                        {t("importWorkflow.candidates.usageHistory.previouslyReleasedChanged")}
+                      </StatusBadge>
+                    ) : null}
+                    {candidate.usageHistory?.classification === "identity_uncertain" ? (
+                      <StatusBadge tone="warning">
+                        {t("importWorkflow.candidates.usageHistory.identityUncertain")}
+                      </StatusBadge>
+                    ) : null}
                     <code title={displayPath(candidate.path)}>{displayPath(candidate.path)}</code>
+                    {candidate.usageHistory?.retained_independent_copy ? (
+                      <small className="sh-import-candidates__history-note">
+                        {t("importWorkflow.candidates.usageHistory.retainedCopy")}
+                      </small>
+                    ) : null}
                     {/* DEV-3：文件夹名 ≠ SKILL.md name 的非阻塞警告——不拦截导入，
                         只提示部署时 Agent 看到的名称以文件夹名为准。 */}
                     {candidate.frontmatterName && candidate.frontmatterName !== candidate.name ? (

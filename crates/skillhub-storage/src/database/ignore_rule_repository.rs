@@ -1,6 +1,8 @@
 use super::Database;
 use rusqlite::OptionalExtension;
-use skillhub_core::{AppError, AppResult, ErrorCode, IgnoreRule, RecoveryAction, Severity};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, IgnoreRule, IgnoreSubject, RecoveryAction, Severity,
+};
 
 const KEY: &str = "ignore_rules";
 
@@ -28,6 +30,19 @@ impl<'a> IgnoreRuleRepository<'a> {
             .map(|json| serde_json::from_str(&json).map_err(|_| invalid_record()))
             .transpose()
             .map(|rules| rules.unwrap_or_default())
+    }
+
+    /// Returns only persisted exact-path exclusions. Other ignore subjects have
+    /// different lifecycle semantics and must not suppress path candidates.
+    pub fn list_exact_paths(&self) -> AppResult<Vec<String>> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter_map(|rule| match rule.subject {
+                IgnoreSubject::ExactPath(path) => Some(path),
+                IgnoreSubject::ExactSkill(_) | IgnoreSubject::ExactPending(_) => None,
+            })
+            .collect())
     }
 
     pub fn create(&self, mut rule: IgnoreRule) -> AppResult<IgnoreRule> {
@@ -107,5 +122,34 @@ mod tests {
         );
         repository.remove(&created.id).expect("remove rule");
         assert!(repository.list().expect("list removed rules").is_empty());
+    }
+
+    #[test]
+    fn list_exact_paths_returns_only_exact_path_subjects() {
+        let database = Database::open_in_memory().expect("database");
+        let repository = database.ignore_rule_repository();
+        repository
+            .create(skillhub_core::IgnoreRule {
+                id: OperationId::new().to_string(),
+                subject: IgnoreSubject::exact_path("C:/agent/skills/alpha").expect("exact path"),
+                reason: "discovery-exclude".into(),
+                created_at: String::new(),
+                defer_until: None,
+            })
+            .expect("create path rule");
+        repository
+            .create(skillhub_core::IgnoreRule {
+                id: OperationId::new().to_string(),
+                subject: IgnoreSubject::exact_pending("trial_due:skill:trial.due"),
+                reason: "later".into(),
+                created_at: String::new(),
+                defer_until: None,
+            })
+            .expect("create pending rule");
+
+        assert_eq!(
+            repository.list_exact_paths().expect("list exact paths"),
+            vec!["C:/agent/skills/alpha".to_owned()]
+        );
     }
 }

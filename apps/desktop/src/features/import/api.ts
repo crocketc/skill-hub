@@ -62,6 +62,8 @@ export interface ImportCandidate {
    * 扫描结果填充；mock/预览可缺省。批内候选 key 的稳定后缀。
    */
   relativeRoot?: string | null;
+  /** T06/T07：发现时由原生层核验的解除使用历史；不改变导入选择或关系状态。 */
+  usageHistory?: import("../../api/bindings").ImportCandidateUsageHistory;
 }
 
 /** analyze_import_batch 的同内容组：后端建议保留项与其余应跳过项。 */

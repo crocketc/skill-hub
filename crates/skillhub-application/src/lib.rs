@@ -9485,6 +9485,18 @@ impl ApplicationFacade for LocalApplicationFacade {
                         registry.insert(key, classified);
                     }
                 }
+                let exact_path_exclusions = self.with_database(
+                    "query.discover_import_candidates.ignore_rules",
+                    |database| database.ignore_rule_repository().list_exact_paths(),
+                )?;
+                candidates.retain(|candidate| {
+                    let candidate_path = Self::canonical_path_string(&candidate.absolute_root);
+                    !exact_path_exclusions.iter().any(|excluded| {
+                        let excluded_path = Self::canonical_path_string(excluded);
+                        observed_path_key(&candidate_path) == observed_path_key(&excluded_path)
+                            || path_lives_under(&candidate_path, &excluded_path)
+                    })
+                });
                 Ok(AppQueryResult::ImportCandidates(candidates))
             }
             AppQuery::QueryOpenImportBatch(_) => {
