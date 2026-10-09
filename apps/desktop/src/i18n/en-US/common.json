@@ -3034,6 +3034,35 @@
         "close": "Close",
         "cancel": "Cancel"
       },
+      "sharedUsageMigration": {
+        "open": "Migrate shared-directory Skill",
+        "title": "Migrate shared-directory Skill",
+        "description": "Change the shared-directory Skill to direct use from the Skill library by each Agent or project. The preview includes every consumer; the shared entry remains until every replacement is verified and the source is backed up.",
+        "source": "This issue contains {{count}} shared-directory entries.",
+        "replacementsHeading": "Replacement plan for all {{count}} consumers",
+        "project": "Project: {{name}}",
+        "projectNameUnavailable": "Project name unavailable",
+        "directAgent": "Direct Agent use",
+        "reused": "Keep existing usage; no new dispatch",
+        "createDirect": "Create a direct relationship for this target",
+        "form": {
+          "link": "Link",
+          "full_copy": "Full copy"
+        },
+        "verifiedBeforeRemoval": "The app verifies every replacement first, then backs up and removes the selected shared Skill. Other shared Skills and directories remain.",
+        "previewUnavailable": "The backend did not return a complete migration plan. Reload the current issue and try again.",
+        "previewAction": "Preview migration plan",
+        "confirm": "Confirm migration",
+        "repreview": "Preview again",
+        "running": "Migrating and verifying replacements…",
+        "loadingProjects": "Loading project names. Migration cannot be confirmed until they are available.",
+        "projectsUnavailable": "Project names could not be loaded. Migration cannot be confirmed until they are available.",
+        "completed": "Verified {{count}} replacement relationships and migrated the shared entry.",
+        "partial": "Migration did not fully complete: {{succeeded}} completed and {{failed}} failed or need attention.",
+        "recoveryRequired": "A recovery item needs attention. Open the recovery center to continue.",
+        "reason": "Details: {{reason}}",
+        "close": "Close"
+      },
       "back": {
         "pending": "Back to pending work",
         "library": "Back to Skill library",

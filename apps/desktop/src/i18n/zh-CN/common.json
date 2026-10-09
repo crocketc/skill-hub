@@ -3034,6 +3034,35 @@
         "close": "关闭",
         "cancel": "取消"
       },
+      "sharedUsageMigration": {
+        "open": "迁移共享目录技能",
+        "title": "迁移共享目录技能",
+        "description": "将共享目录中的技能改为由技能库主体直接提供给每个 Agent（智能体）或项目。预览会汇总全部消费者；所有替代入口核验通过并且源文件完成备份前，共享项会保留。",
+        "source": "当前问题包含 {{count}} 个共享目录条目。",
+        "replacementsHeading": "全部 {{count}} 个消费者的替代方案",
+        "project": "项目：{{name}}",
+        "projectNameUnavailable": "项目名称不可用",
+        "directAgent": "Agent（智能体）直连",
+        "reused": "保留现有使用，不重新派发",
+        "createDirect": "为该目标建立直连关系",
+        "form": {
+          "link": "链接",
+          "full_copy": "完整拷贝"
+        },
+        "verifiedBeforeRemoval": "系统会先核验全部替代入口，再备份并移除选中的共享技能。其它共享技能和目录会保留。",
+        "previewUnavailable": "后端没有返回完整迁移方案。请重新读取当前问题后重试。",
+        "previewAction": "预览迁移方案",
+        "confirm": "确认迁移",
+        "repreview": "重新预览",
+        "running": "正在执行迁移并核验结果…",
+        "loadingProjects": "正在读取相关项目名称；读取完成前不能确认迁移。",
+        "projectsUnavailable": "无法读取相关项目名称；读取成功前不能确认迁移。",
+        "completed": "已核验 {{count}} 项替代关系并完成共享项迁移。",
+        "partial": "迁移未完整完成：{{succeeded}} 项完成，{{failed}} 项失败或需处理。",
+        "recoveryRequired": "存在待恢复事项，请前往恢复中心处理。",
+        "reason": "处理信息：{{reason}}",
+        "close": "关闭"
+      },
       "back": {
         "pending": "返回待处理列表",
         "library": "返回技能库",

@@ -3140,6 +3140,7 @@ export type PreparedUsageChange = {
 	impacts: UsageChangeImpact[],
 	limitations: string[],
 	duplicate_cleanup?: DuplicateCleanupPreview | null,
+	shared_usage_migration?: SharedUsageMigrationPreview | null,
 };
 
 /**
@@ -4476,6 +4477,28 @@ export type SharedSkillRequirement = {
 	note: string | null,
 };
 
+/**
+ *  Verified, backend-owned impact snapshot for moving a shared entry to direct
+ *  Agent/project deployments.
+ */
+export type SharedUsageMigrationPreview = {
+	problem: EnvironmentProblemView,
+	replacements: SharedUsageReplacement[],
+};
+
+/**
+ *  A complete replacement plan for one consumer of a shared skill entry.
+ *  `target_ids` are resolved by the application from registered Agent/project
+ *  targets; callers cannot supply destination paths or remove consumers.
+ */
+export type SharedUsageReplacement = {
+	environment: UsageEnvironmentKey,
+	target_ids: string[],
+	form: UsageForm | null,
+	reused_existing: boolean,
+	relationship_revision: string,
+};
+
 export type SkillCallPolicy =
 /**  The Skill can be selected by the model or explicitly by the user. */
 "AutomaticAndManual" |
@@ -5254,7 +5277,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate";
+export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate" | "migrate_shared_usage";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize

@@ -56,12 +56,13 @@ import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
-import { GovernanceBatchDialog } from "./GovernanceBatchDialog";
+import { GovernanceBatchDialog, SharedUsageMigrationDialog } from "./GovernanceBatchDialog";
 import { UsageManageDialog } from "./UsageManageDialog";
 import { ManagedUsageChangeDialog, type ManagedUsageChangeAction } from "./ManagedUsageChangeDialog";
 import { UndeployDialog } from "../../removal/UndeployDialog";
 import type { UsageChangeFacade } from "../../removal/api";
 import { nativeUsageChangeFacade, unavailableUsageChangeFacade } from "../../removal/nativeApi";
+import { nativeProjectFacade } from "../../projects/nativeApi";
 import { readGovernanceLibraryReturnTarget } from "./libraryReturnContext";
 import "./governance.css";
 
@@ -126,6 +127,7 @@ export function RelationshipGovernancePage({
     listGovernance: (params: Parameters<RelationGovernanceFacade["listGovernance"]>[0]) => facade.listGovernance(params),
   }), [facade]);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [sharedMigrationProblemId, setSharedMigrationProblemId] = useState<string | null>(null);
   const usageContext = useMemo(
     () => parseUsageGovernanceContext(searchParams),
     [searchParams],
@@ -203,6 +205,19 @@ export function RelationshipGovernancePage({
   const currentEnvironmentProblem = usageProblemResolution?.status === "active"
     ? usageProblemResolution.problem
     : null;
+  const sharedMigrationProjectIds = currentEnvironmentProblem?.problem_id === sharedMigrationProblemId
+    ? [...new Set(currentEnvironmentProblem.consumers.flatMap((consumer) => consumer.project_id ? [consumer.project_id] : []))]
+    : [];
+  const sharedMigrationProjectsQuery = useQuery({
+    enabled: sharedMigrationProjectIds.length > 0,
+    queryFn: () => nativeProjectFacade.list(),
+    queryKey: [relationshipsKeys.root, "shared-usage-migration-project-names"],
+    staleTime: 30_000,
+  });
+  const sharedMigrationProjectNames = useMemo(
+    () => new Map((sharedMigrationProjectsQuery.data ?? []).map((project) => [project.id, project.name])),
+    [sharedMigrationProjectsQuery.data],
+  );
   const issueRelationIds = useMemo(
     () => new Set(currentEnvironmentProblem?.entries.flatMap((entry) => entry.relation_ids) ?? []),
     [currentEnvironmentProblem],
@@ -643,6 +658,38 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, effectiveUsageChangeFacade, notifications, queryClient, single, t, tracker]);
 
+  const commitSharedUsageMigration = useCallback((request: CommitUsageChange) => {
+    const label = t("relationships.governance.sharedUsageMigration.title");
+    const total = Math.max(1, currentEnvironmentProblem?.consumers.length ?? 1);
+    return runTrackedOperation<UsageChangeResult>({
+      targetHref: `${location.pathname}${location.search}`,
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "usage_shared_migration",
+      label,
+      notifications,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
+      },
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        && !result.recovery_required
+        ? { title: label, tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
+      }),
+      total,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    });
+  }, [currentEnvironmentProblem, describeError, effectiveUsageChangeFacade, location.pathname, location.search, notifications, queryClient, t, tracker]);
+
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
     const selection = summarizeBatchSelection(selectedRows.filter((row) => relationIds.includes(relationIdOf(row.relation))));
@@ -789,6 +836,19 @@ export function RelationshipGovernancePage({
               </Button>
             </div>
           ) : null}
+          {currentEnvironmentProblem.kind === "same_skill"
+            && currentEnvironmentProblem.entries.some((entry) => entry.directory_role === "shared_directory") ? (
+              <div className="sh-governance__problem-actions">
+                <Button
+                  data-testid="governance-migrate-shared-usage"
+                  onClick={() => setSharedMigrationProblemId(currentEnvironmentProblem.problem_id)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {t("relationships.governance.sharedUsageMigration.open")}
+                </Button>
+              </div>
+            ) : null}
         </section>
       ) : null}
       {usageOverviewQuery.isSuccess && requestedRelationId && !matchingDeepLinkRow && (usageContextStatus === "active" || usageContextStatus === null) ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
@@ -1022,6 +1082,18 @@ export function RelationshipGovernancePage({
       {/* 预览/结果面板：清单是 flex 画布里的弹性滚动区，面板打开时
           清单收缩让位，面板始终紧跟工具条可见，不必滚动寻找。 */}
       <div className="sh-governance__flows">
+      {sharedMigrationProblemId && currentEnvironmentProblem?.problem_id === sharedMigrationProblemId ? (
+        <SharedUsageMigrationDialog
+          onClose={() => setSharedMigrationProblemId(null)}
+          onCommit={commitSharedUsageMigration}
+          onPrepare={effectiveUsageChangeFacade.prepareUsageChange}
+          onReloadProjectNames={() => { void sharedMigrationProjectsQuery.refetch(); }}
+          problem={currentEnvironmentProblem}
+          projectNames={sharedMigrationProjectNames}
+          projectNamesError={sharedMigrationProjectIds.length > 0 && sharedMigrationProjectsQuery.isError}
+          projectNamesPending={sharedMigrationProjectIds.length > 0 && sharedMigrationProjectsQuery.isPending}
+        />
+      ) : null}
       {single ? (
         single.kind === "undeploy" ? (
           single.usage ? (

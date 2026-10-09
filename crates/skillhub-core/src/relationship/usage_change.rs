@@ -18,6 +18,7 @@ pub enum UsageChangeAction {
     Repair,
     Restore,
     ResolveDuplicate,
+    MigrateSharedUsage,
 }
 
 /// The verified environmental issue and the exact user selection frozen into
@@ -30,6 +31,28 @@ pub struct DuplicateCleanupPreview {
     pub retain_entry_key: UsageEntryKey,
     pub selected_entry_keys: Vec<UsageEntryKey>,
     pub non_recognized_destination: Option<String>,
+}
+
+/// A complete replacement plan for one consumer of a shared skill entry.
+/// `target_ids` are resolved by the application from registered Agent/project
+/// targets; callers cannot supply destination paths or remove consumers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SharedUsageReplacement {
+    pub environment: super::UsageEnvironmentKey,
+    pub target_ids: Vec<String>,
+    pub form: Option<UsageForm>,
+    pub reused_existing: bool,
+    pub relationship_revision: String,
+}
+
+/// Verified, backend-owned impact snapshot for moving a shared entry to direct
+/// Agent/project deployments.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct SharedUsageMigrationPreview {
+    pub problem: super::EnvironmentProblemView,
+    pub replacements: Vec<SharedUsageReplacement>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -179,6 +202,8 @@ pub struct PreparedUsageChange {
     pub limitations: Vec<String>,
     #[serde(default)]
     pub duplicate_cleanup: Option<DuplicateCleanupPreview>,
+    #[serde(default)]
+    pub shared_usage_migration: Option<SharedUsageMigrationPreview>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

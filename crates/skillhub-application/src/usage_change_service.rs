@@ -16,20 +16,20 @@ use skillhub_adapters::deployment::{DeploymentFilesystem, OwnershipProof};
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_core::agent::{AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole};
 use skillhub_core::api::{
-    AppQueryResult, CommitRelationMigration, CommitUsageChange, PrepareRelationMigration,
-    PrepareUsageChange, RelationMigrationTargetMode, RelationshipMigrationBackupPolicy,
-    RelationshipOverviewScope,
+    AppQueryResult, CommitRelationMigration, CommitUsageChange, DeploymentPlanRequest,
+    PrepareRelationMigration, PrepareUsageChange, RelationMigrationTargetMode,
+    RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
-use skillhub_core::deployment::observed_path_key;
+use skillhub_core::deployment::{observed_path_key, DeploymentPlan};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, DuplicateCleanupPreview,
     EnvironmentProblemKind, FileRepresentation, PreparedUsageChange, RelationGovernanceTargetKind,
-    SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
-    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
-    UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
-    UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry, UsageEnvironmentKey,
-    UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement, UsageRecoveryPoint,
-    UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
+    SharedUsageMigrationPreview, SharedUsageReplacement, SourceCopyRelationFact, UsageChangeAction,
+    UsageChangeConsumer, UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult,
+    UsageChangeItemStatus, UsageChangeResult, UsageContentBasis, UsageCopyDisposition,
+    UsageDecision, UsageDecisionRecord, UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry,
+    UsageEnvironmentKey, UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement,
+    UsageRecoveryPoint, UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
 };
 use skillhub_core::{
     reparse_physical_id_for_path, symlink_physical_id_for_path, AppCommandResult, AppError,
@@ -48,6 +48,7 @@ const MANAGE_OPERATION_KIND: &str = "usage_manage";
 const MANAGE_BATCH_OPERATION_KIND: &str = "usage_manage_batch";
 const MANAGED_USAGE_CHANGE_KIND: &str = "managed_usage_change";
 const DUPLICATE_CLEANUP_KIND: &str = "usage_duplicate_cleanup";
+const SHARED_USAGE_MIGRATION_KIND: &str = "shared_usage_migration";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct ReleaseJournal {
@@ -82,6 +83,52 @@ struct DuplicateCleanupPlan {
     destination_parent_chain: Option<PathChainSnapshot>,
     destination_started: bool,
     destination_created: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SharedUsageMigrationJournal {
+    request: PrepareUsageChange,
+    prepared: PreparedUsageChange,
+    backup_anchor_chain: PathChainSnapshot,
+    source: SharedUsageMigrationSource,
+    replacements: Vec<SharedUsageMigrationReplacementPlan>,
+    completed: Vec<UsageChangeItemResult>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SharedUsageMigrationSource {
+    skill_id: SkillId,
+    entry_key: UsageEntryKey,
+    source_path: String,
+    fingerprint: String,
+    physical_identity: String,
+    relation_ids: Vec<String>,
+    expected_evidence_fingerprints: BTreeMap<String, Option<String>>,
+    source_parent_chain: PathChainSnapshot,
+    backup_path: String,
+    backup_created: bool,
+    removal_started: bool,
+    removed: bool,
+    decision_recorded: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SharedUsageMigrationReplacementPlan {
+    preview: SharedUsageReplacement,
+    target: UsageRelationTarget,
+    deployment_plan: Option<DeploymentPlan>,
+    destination_path: Option<String>,
+    reused_entry: Option<SharedUsageMigrationProof>,
+    child_operation_id: Option<OperationId>,
+    verified: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SharedUsageMigrationProof {
+    entry_key: UsageEntryKey,
+    path: String,
+    fingerprint: String,
+    physical_identity: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -230,6 +277,10 @@ impl LocalApplicationFacade {
             validate_duplicate_cleanup_request(&request)?;
             return self.prepare_duplicate_cleanup(request);
         }
+        if request.action == UsageChangeAction::MigrateSharedUsage {
+            validate_shared_usage_migration_request(&request)?;
+            return self.prepare_shared_usage_migration(request);
+        }
         if matches!(
             request.action,
             UsageChangeAction::Sync | UsageChangeAction::Repair | UsageChangeAction::Restore
@@ -344,6 +395,7 @@ impl LocalApplicationFacade {
             impacts: Vec::new(),
             limitations: Vec::new(),
             duplicate_cleanup: None,
+            shared_usage_migration: None,
         };
         let mut plans = Vec::new();
         let library = self.library_runtime.snapshot()?;
@@ -453,7 +505,8 @@ impl LocalApplicationFacade {
                 }
                 UsageChangeAction::Release
                 | UsageChangeAction::Manage
-                | UsageChangeAction::ResolveDuplicate => unreachable!(),
+                | UsageChangeAction::ResolveDuplicate
+                | UsageChangeAction::MigrateSharedUsage => unreachable!(),
             }
             let observed_before = entry_fingerprint(&destination)?;
             let observed_identity = entry_identity(&destination)?;
@@ -573,7 +626,8 @@ impl LocalApplicationFacade {
                 UsageChangeAction::Restore => UsageChangeImpactAction::Restore,
                 UsageChangeAction::Release
                 | UsageChangeAction::Manage
-                | UsageChangeAction::ResolveDuplicate => unreachable!(),
+                | UsageChangeAction::ResolveDuplicate
+                | UsageChangeAction::MigrateSharedUsage => unreachable!(),
             };
             prepared.impacts.push(UsageChangeImpact {
                 relation_ids,
@@ -586,7 +640,8 @@ impl LocalApplicationFacade {
                     UsageChangeAction::Restore => "按原受管方式恢复目标".to_owned(),
                     UsageChangeAction::Release
                     | UsageChangeAction::Manage
-                    | UsageChangeAction::ResolveDuplicate => unreachable!(),
+                    | UsageChangeAction::ResolveDuplicate
+                    | UsageChangeAction::MigrateSharedUsage => unreachable!(),
                 },
             });
             plans.push(ManagedUsageChangePlan {
@@ -959,6 +1014,68 @@ impl LocalApplicationFacade {
         Ok(journal.prepared)
     }
 
+    fn prepare_shared_usage_migration(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
+        let fingerprint = request_fingerprint(&request)?;
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("shared_usage_migration.prepare.database"))?;
+            if let Some(record) = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+            {
+                if record.kind != SHARED_USAGE_MIGRATION_KIND {
+                    return Err(operation_conflict("operation_id_reused"));
+                }
+                if record.request_fingerprint != fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", request.operation_id.to_string()));
+                }
+                let journal: SharedUsageMigrationJournal =
+                    serde_json::from_value(record.recovery_data).map_err(|_| {
+                        operation_conflict("shared_usage_migration_journal_invalid")
+                    })?;
+                return Ok(journal.prepared);
+            }
+        }
+
+        let journal =
+            build_shared_usage_migration_journal(self, request.clone(), OperationId::new())?;
+        let mut record = OperationRecord::planned(
+            request.operation_id,
+            SHARED_USAGE_MIGRATION_KIND,
+            fingerprint,
+        );
+        set_phase(
+            &mut record,
+            OperationPhase::Prepared,
+            0,
+            journal.replacements.len() as u32 + 1,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.result = Some(serde_json::to_value(&journal.prepared).map_err(serialization_error)?);
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("shared_usage_migration.prepare.database"))?;
+        if database
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some()
+        {
+            return Err(operation_conflict("operation_id_reused"));
+        }
+        database.operation_repository().insert_sync(&record)?;
+        Ok(journal.prepared)
+    }
+
     fn commit_duplicate_cleanup(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
         let _mutation = self
             .relation_migration_lock
@@ -1279,6 +1396,608 @@ impl LocalApplicationFacade {
         Ok(result)
     }
 
+    pub(crate) async fn commit_usage_change_command(
+        &self,
+        request: CommitUsageChange,
+    ) -> AppResult<UsageChangeResult> {
+        let is_shared_migration = self
+            .database
+            .lock()
+            .map_err(|_| internal("usage_change.commit.database"))?
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some_and(|record| record.kind == SHARED_USAGE_MIGRATION_KIND);
+        if is_shared_migration {
+            self.commit_shared_usage_migration(request).await
+        } else {
+            self.commit_usage_change(request)
+        }
+    }
+
+    pub(crate) async fn resolve_shared_usage_migration_recovery(
+        &self,
+        operation_id: OperationId,
+        action: RecoveryAction,
+    ) -> AppResult<bool> {
+        let prepared_id = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("shared_usage_migration.recovery.database"))?;
+            let Some(record) = database.operation_repository().get_sync(operation_id)? else {
+                return Ok(false);
+            };
+            if record.kind != SHARED_USAGE_MIGRATION_KIND {
+                return Ok(false);
+            }
+            if action != RecoveryAction::CompleteOperation {
+                return Err(operation_conflict(
+                    "shared_usage_migration_rollback_unsupported",
+                ));
+            }
+            let journal: SharedUsageMigrationJournal = serde_json::from_value(record.recovery_data)
+                .map_err(|_| operation_conflict("shared_usage_migration_journal_invalid"))?;
+            journal.prepared.prepared_id
+        };
+        let result = self
+            .commit_shared_usage_migration(CommitUsageChange {
+                operation_id,
+                prepared_id,
+            })
+            .await?;
+        if result.recovery_required {
+            return Err(operation_conflict(
+                "shared_usage_migration_recovery_incomplete",
+            ));
+        }
+        Ok(true)
+    }
+
+    async fn commit_shared_usage_migration(
+        &self,
+        request: CommitUsageChange,
+    ) -> AppResult<UsageChangeResult> {
+        let (mut record, mut journal) = {
+            let _mutation = self
+                .relation_migration_lock
+                .lock()
+                .map_err(|_| internal("shared_usage_migration.commit.mutation_lock"))?;
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("shared_usage_migration.commit.database"))?;
+            let mut record = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+                .ok_or_else(|| operation_conflict("shared_usage_migration_preview_missing"))?;
+            if record.kind != SHARED_USAGE_MIGRATION_KIND {
+                return Err(operation_conflict("operation_id_reused"));
+            }
+            let journal: SharedUsageMigrationJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("shared_usage_migration_journal_invalid"))?;
+            if journal.prepared.prepared_id != request.prepared_id {
+                return Err(operation_conflict("usage_change_preview_mismatch"));
+            }
+            if record.phase == OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(serialization_error)?
+                    .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
+            }
+            if !matches!(
+                record.phase,
+                OperationPhase::Prepared | OperationPhase::NeedsRecovery
+            ) {
+                return Err(operation_conflict(
+                    "shared_usage_migration_already_applying",
+                ));
+            }
+            drop(database);
+            if record.phase == OperationPhase::Prepared {
+                let fresh = build_shared_usage_migration_journal(
+                    self,
+                    journal.request.clone(),
+                    journal.prepared.prepared_id,
+                )?;
+                if fresh.prepared != journal.prepared
+                    || fresh.source != journal.source
+                    || fresh.replacements != journal.replacements
+                {
+                    return Err(operation_conflict("usage_change_preview_stale"));
+                }
+            }
+            persist_shared_migration(self, &mut record, &journal, OperationPhase::Applying)?;
+            (record, journal)
+        };
+
+        let library = self.library_runtime.snapshot()?;
+        let mut index = 0;
+        while index < journal.replacements.len() {
+            if journal.replacements[index].verified {
+                if let Some(proof) = journal.replacements[index].reused_entry.as_ref() {
+                    if verify_shared_migration_proof(proof, &library.store).is_err() {
+                        return self.fail_shared_migration(
+                            &mut record,
+                            &mut journal,
+                            index,
+                            operation_conflict("shared_usage_migration_replacement_changed"),
+                        );
+                    }
+                }
+                index += 1;
+                continue;
+            }
+
+            if let Some(proof) = journal.replacements[index].reused_entry.clone() {
+                if let Err(error) = verify_shared_migration_proof(&proof, &library.store) {
+                    return self.fail_shared_migration(&mut record, &mut journal, index, error);
+                }
+                journal.replacements[index].verified = true;
+                self.upsert_shared_migration_result(
+                    &mut journal,
+                    index,
+                    UsageChangeItemStatus::Applied,
+                    None,
+                );
+                persist_shared_migration(self, &mut record, &journal, OperationPhase::Applying)?;
+                index += 1;
+                continue;
+            }
+
+            if self
+                .verify_shared_migration_deployment(&journal.replacements[index], &journal.source)
+                .is_ok()
+            {
+                journal.replacements[index].verified = true;
+                self.upsert_shared_migration_result(
+                    &mut journal,
+                    index,
+                    UsageChangeItemStatus::Applied,
+                    None,
+                );
+                persist_shared_migration(self, &mut record, &journal, OperationPhase::Applying)?;
+                index += 1;
+                continue;
+            }
+
+            let mut child_operation_id = journal.replacements[index].child_operation_id;
+            if let Some(child_id) = child_operation_id {
+                let child = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("shared_usage_migration.child.database"))?
+                    .operation_repository()
+                    .get_sync(child_id)?;
+                match child.map(|record| record.phase) {
+                    Some(OperationPhase::NeedsRecovery) => {
+                        return self.fail_shared_migration(
+                            &mut record,
+                            &mut journal,
+                            index,
+                            operation_conflict("shared_usage_migration_child_needs_recovery"),
+                        );
+                    }
+                    Some(OperationPhase::Committed) => {
+                        return self.fail_shared_migration(
+                            &mut record,
+                            &mut journal,
+                            index,
+                            operation_conflict("shared_usage_migration_replacement_unverified"),
+                        );
+                    }
+                    Some(OperationPhase::Planned) => {
+                        child_operation_id = None;
+                        journal.replacements[index].child_operation_id = None;
+                        persist_shared_migration(
+                            self,
+                            &mut record,
+                            &journal,
+                            OperationPhase::Applying,
+                        )?;
+                    }
+                    Some(
+                        OperationPhase::Prepared
+                        | OperationPhase::Applying
+                        | OperationPhase::Verifying,
+                    ) => {}
+                    Some(OperationPhase::RolledBack) | None => {
+                        child_operation_id = None;
+                        journal.replacements[index].child_operation_id = None;
+                        persist_shared_migration(
+                            self,
+                            &mut record,
+                            &journal,
+                            OperationPhase::Applying,
+                        )?;
+                    }
+                }
+            }
+
+            if child_operation_id.is_none() {
+                let plan = journal.replacements[index]
+                    .deployment_plan
+                    .clone()
+                    .ok_or_else(|| operation_conflict("shared_usage_migration_plan_missing"))?;
+                let prepared = match self.prepare_deployment(plan).await? {
+                    AppCommandResult::PreparedDeployment(prepared) => prepared,
+                    _ => return Err(internal("shared_usage_migration.deployment_prepare")),
+                };
+                child_operation_id = Some(prepared.id);
+                journal.replacements[index].child_operation_id = child_operation_id;
+                persist_shared_migration(self, &mut record, &journal, OperationPhase::Applying)?;
+            }
+
+            let child_id = child_operation_id.expect("prepared deployment id");
+            match self.commit_deployment(child_id).await {
+                Ok(AppCommandResult::DeploymentSummary(summary)) if summary.committed => {
+                    if let Err(error) = self.verify_shared_migration_deployment(
+                        &journal.replacements[index],
+                        &journal.source,
+                    ) {
+                        return self.fail_shared_migration(&mut record, &mut journal, index, error);
+                    }
+                    journal.replacements[index].verified = true;
+                    self.upsert_shared_migration_result(
+                        &mut journal,
+                        index,
+                        UsageChangeItemStatus::Applied,
+                        None,
+                    );
+                    persist_shared_migration(
+                        self,
+                        &mut record,
+                        &journal,
+                        OperationPhase::Applying,
+                    )?;
+                }
+                Ok(AppCommandResult::DeploymentSummary(summary)) => {
+                    let residue = summary.targets.iter().any(|target| target.residue);
+                    let reason = summary
+                        .targets
+                        .iter()
+                        .find_map(|target| target.error_code.clone())
+                        .unwrap_or_else(|| "shared_usage_migration_target_failed".to_owned());
+                    if !residue {
+                        journal.replacements[index].child_operation_id = None;
+                    }
+                    return self.fail_shared_migration(
+                        &mut record,
+                        &mut journal,
+                        index,
+                        operation_conflict(&reason),
+                    );
+                }
+                Ok(_) => {
+                    return self.fail_shared_migration(
+                        &mut record,
+                        &mut journal,
+                        index,
+                        internal("shared_usage_migration.deployment_result"),
+                    );
+                }
+                Err(error) => {
+                    journal.replacements[index].child_operation_id = None;
+                    return self.fail_shared_migration(&mut record, &mut journal, index, error);
+                }
+            }
+            index += 1;
+        }
+
+        if journal
+            .replacements
+            .iter()
+            .any(|replacement| !replacement.verified)
+        {
+            return Err(operation_conflict(
+                "shared_usage_migration_replacements_incomplete",
+            ));
+        }
+        if let Err(error) = self.remove_shared_migration_source(&mut record, &mut journal) {
+            let failed_index = journal.replacements.len();
+            return self.fail_shared_migration(&mut record, &mut journal, failed_index, error);
+        }
+        self.rescan_shared_migration_source(&journal.source)?;
+        let result = UsageChangeResult {
+            operation_id: journal.prepared.operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            recovery_required: false,
+            item_results: journal.completed.clone(),
+        };
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        persist_shared_migration(self, &mut record, &journal, OperationPhase::Committed)?;
+        Ok(result)
+    }
+
+    fn verify_shared_migration_deployment(
+        &self,
+        replacement: &SharedUsageMigrationReplacementPlan,
+        source: &SharedUsageMigrationSource,
+    ) -> AppResult<SharedUsageMigrationProof> {
+        let plan = replacement
+            .deployment_plan
+            .as_ref()
+            .ok_or_else(|| operation_conflict("shared_usage_migration_plan_missing"))?;
+        let target_plan = plan
+            .targets
+            .first()
+            .filter(|_| plan.targets.len() == 1)
+            .ok_or_else(|| operation_conflict("shared_usage_migration_plan_invalid"))?;
+        let destination = PathBuf::from(
+            replacement
+                .destination_path
+                .as_deref()
+                .ok_or_else(|| operation_conflict("shared_usage_migration_destination_missing"))?,
+        );
+        let library = self.library_runtime.snapshot()?;
+        let deployment_fingerprint = DeploymentFilesystem::hash_tree(&destination)?;
+        let proof = verify_shared_migration_path(
+            &destination,
+            &source.fingerprint,
+            &replacement.target,
+            &plan.runtime_name,
+            &library.store,
+        )?;
+        let deployments = self
+            .database
+            .lock()
+            .map_err(|_| internal("shared_usage_migration.verify.database"))?
+            .deployment_repository()
+            .list_all()?;
+        if !deployments.iter().any(|deployment| {
+            deployment.skill_id == source.skill_id
+                && deployment.version_id == plan.version_id
+                && deployment.target_id == target_plan.physical_target_id
+                && deployment.runtime_name == plan.runtime_name
+                && deployment.expected_hash == deployment_fingerprint
+                && deployment.observed_hash.as_deref() == Some(deployment_fingerprint.as_str())
+                && deployment.managed
+                && deployment.state == skillhub_core::DeploymentState::Deployed
+        }) {
+            return Err(operation_conflict(
+                "shared_usage_migration_deployment_evidence_missing",
+            ));
+        }
+        Ok(proof)
+    }
+
+    fn remove_shared_migration_source(
+        &self,
+        record: &mut OperationRecord,
+        journal: &mut SharedUsageMigrationJournal,
+    ) -> AppResult<()> {
+        let library = self.library_runtime.snapshot()?;
+        if journal.source.removed && journal.source.decision_recorded {
+            self.verify_shared_migration_backup(journal, &library.store)?;
+            return Ok(());
+        }
+        let source_path = PathBuf::from(&journal.source.source_path);
+        if !journal.source.removed {
+            verify_shared_migration_source(&journal.source, &library.store)?;
+        }
+        self.verify_shared_migration_backup_anchor(journal)?;
+        if !journal.source.backup_created {
+            if fs::symlink_metadata(&journal.source.backup_path).is_ok() {
+                verify_shared_migration_backup_path(
+                    journal,
+                    &self.verify_shared_migration_backup_anchor(journal)?,
+                )?;
+                self.verify_shared_migration_backup(journal, &library.store)?;
+            } else {
+                verify_shared_migration_backup_path(
+                    journal,
+                    &self.verify_shared_migration_backup_anchor(journal)?,
+                )?;
+                backup_entry(&source_path, Path::new(&journal.source.backup_path))?;
+            }
+            journal.source.backup_created = true;
+            persist_shared_migration(self, record, journal, OperationPhase::Applying)?;
+        } else {
+            self.verify_shared_migration_backup(journal, &library.store)?;
+        }
+        if !journal.source.removed {
+            journal.source.removal_started = true;
+            persist_shared_migration(self, record, journal, OperationPhase::Applying)?;
+        }
+        if !journal.source.removed && fs::symlink_metadata(&source_path).is_ok() {
+            if let Err(remove_error) = remove_plain_entry(&source_path) {
+                let restore = restore_shared_migration_source(journal, &library.store);
+                journal.source.removal_started = false;
+                journal.source.removed = false;
+                persist_shared_migration(self, record, journal, OperationPhase::NeedsRecovery)?;
+                return Err(restore.err().unwrap_or(remove_error));
+            }
+        }
+        if !journal.source.removed {
+            if fs::symlink_metadata(&source_path).is_ok() {
+                return Err(operation_conflict(
+                    "shared_usage_migration_source_still_exists",
+                ));
+            }
+            journal.source.removed = true;
+            persist_shared_migration(self, record, journal, OperationPhase::Applying)?;
+        }
+
+        let decision = UsageDecisionRecord {
+            decision_id: format!("shared-usage-migration:{}", journal.prepared.operation_id),
+            skill_id: journal.source.skill_id,
+            entry_key: journal.source.entry_key.clone(),
+            relation_ids: journal.source.relation_ids.clone(),
+            physical_source_ids: journal.prepared.entry_evidence[0]
+                .physical_source_ids
+                .clone(),
+            decision: UsageDecision::Released,
+            content_fingerprint: Some(journal.source.fingerprint.clone()),
+            decided_at: super::now_epoch_seconds(),
+            operation_id: Some(journal.prepared.operation_id.to_string()),
+        };
+        let decision_result = self
+            .database
+            .lock()
+            .map_err(|_| internal("shared_usage_migration.decision.database"))?
+            .record_usage_decision_with_expected_evidence_fingerprints(
+                &decision,
+                &journal.source.expected_evidence_fingerprints,
+            );
+        if let Err(error) = decision_result {
+            let restore = restore_shared_migration_source(journal, &library.store);
+            journal.source.removal_started = false;
+            journal.source.removed = false;
+            persist_shared_migration(self, record, journal, OperationPhase::NeedsRecovery)?;
+            return Err(restore.err().unwrap_or(error));
+        }
+        journal.source.decision_recorded = true;
+        let result_item = UsageChangeItemResult {
+            relation_ids: journal.source.relation_ids.clone(),
+            skill_id: journal.source.skill_id,
+            target: journal.prepared.impacts[0].target.clone(),
+            action: UsageChangeImpactAction::RemoveCopyWithBackup,
+            status: UsageChangeItemStatus::Applied,
+            reason: None,
+            recovery_point: Some(UsageRecoveryPoint {
+                path: journal.source.backup_path.clone(),
+                fingerprint: Some(journal.source.fingerprint.clone()),
+                representation: FileRepresentation::Copy,
+            }),
+        };
+        journal
+            .completed
+            .retain(|item| item.action != UsageChangeImpactAction::RemoveCopyWithBackup);
+        journal.completed.push(result_item);
+        persist_shared_migration(self, record, journal, OperationPhase::Applying)
+    }
+
+    fn verify_shared_migration_backup_anchor(
+        &self,
+        journal: &SharedUsageMigrationJournal,
+    ) -> AppResult<PathBuf> {
+        let anchor = journal
+            .backup_anchor_chain
+            .nodes
+            .first()
+            .map(|node| PathBuf::from(&node.path))
+            .ok_or_else(|| operation_conflict("usage_backup_anchor_unverified"))?;
+        let metadata = fs::symlink_metadata(&anchor)
+            .map_err(|_| operation_conflict("usage_backup_anchor_identity_changed"))?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_dir()
+            || capture_path_chain(&anchor)? != journal.backup_anchor_chain
+            || anchor.file_name().and_then(|name| name.to_str()) != Some(".skillhub")
+        {
+            return Err(operation_conflict("usage_backup_anchor_identity_changed"));
+        }
+        Ok(anchor)
+    }
+
+    fn verify_shared_migration_backup(
+        &self,
+        journal: &SharedUsageMigrationJournal,
+        store: &VersionStore,
+    ) -> AppResult<()> {
+        let backup = Path::new(&journal.source.backup_path);
+        let metadata = fs::symlink_metadata(backup)
+            .map_err(|_| operation_conflict("shared_usage_migration_backup_missing"))?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_dir()
+            || store.hash_tree_read_only(backup)? != journal.source.fingerprint
+        {
+            return Err(operation_conflict("shared_usage_migration_backup_invalid"));
+        }
+        Ok(())
+    }
+
+    fn rescan_shared_migration_source(&self, source: &SharedUsageMigrationSource) -> AppResult<()> {
+        let (_, snapshots) = self.scan_usage_environment_state()?;
+        if snapshots
+            .iter()
+            .flat_map(|snapshot| &snapshot.discovered_entries)
+            .any(|entry| usage_entry_key(entry) == source.entry_key)
+        {
+            return Err(operation_conflict(
+                "shared_usage_migration_source_rescan_failed",
+            ));
+        }
+        Ok(())
+    }
+
+    fn upsert_shared_migration_result(
+        &self,
+        journal: &mut SharedUsageMigrationJournal,
+        index: usize,
+        status: UsageChangeItemStatus,
+        reason: Option<String>,
+    ) {
+        let replacement = &journal.replacements[index];
+        let result = UsageChangeItemResult {
+            relation_ids: Vec::new(),
+            skill_id: journal.source.skill_id,
+            target: replacement.target.clone(),
+            action: UsageChangeImpactAction::RecordOnly,
+            status,
+            reason,
+            recovery_point: None,
+        };
+        journal.completed.retain(|item| {
+            !(item.action == UsageChangeImpactAction::RecordOnly && item.target == result.target)
+        });
+        journal.completed.push(result);
+    }
+
+    fn fail_shared_migration(
+        &self,
+        record: &mut OperationRecord,
+        journal: &mut SharedUsageMigrationJournal,
+        index: usize,
+        error: AppError,
+    ) -> AppResult<UsageChangeResult> {
+        let recovery_required = true;
+        if index < journal.replacements.len() {
+            self.upsert_shared_migration_result(
+                journal,
+                index,
+                UsageChangeItemStatus::RecoveryRequired,
+                error
+                    .params
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| Some(error.code.as_str().to_owned())),
+            );
+        } else {
+            let impact = journal
+                .prepared
+                .impacts
+                .first()
+                .ok_or_else(|| operation_conflict("shared_usage_migration_impact_missing"))?;
+            journal
+                .completed
+                .retain(|item| item.action != UsageChangeImpactAction::RemoveCopyWithBackup);
+            journal.completed.push(UsageChangeItemResult {
+                relation_ids: impact.relation_ids.clone(),
+                skill_id: impact.skill_id,
+                target: impact.target.clone(),
+                action: impact.action,
+                status: UsageChangeItemStatus::RecoveryRequired,
+                reason: Some(error.code.as_str().to_owned()),
+                recovery_point: Some(UsageRecoveryPoint {
+                    path: journal.source.backup_path.clone(),
+                    fingerprint: Some(journal.source.fingerprint.clone()),
+                    representation: FileRepresentation::Copy,
+                }),
+            });
+        }
+        record.error_code = Some(error.code);
+        persist_shared_migration(self, record, journal, OperationPhase::NeedsRecovery)?;
+        Ok(UsageChangeResult {
+            operation_id: journal.prepared.operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            recovery_required,
+            item_results: journal.completed.clone(),
+        })
+    }
+
     fn commit_managed_usage_change(
         &self,
         request: CommitUsageChange,
@@ -1362,7 +2081,8 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::Restore => {}
                 UsageChangeAction::Release
                 | UsageChangeAction::Manage
-                | UsageChangeAction::ResolveDuplicate => unreachable!(),
+                | UsageChangeAction::ResolveDuplicate
+                | UsageChangeAction::MigrateSharedUsage => unreachable!(),
             }
         }
 
@@ -2131,6 +2851,7 @@ fn merge_manage_entry_previews(
         impacts: impacts.into_values().collect(),
         limitations: limitations.into_iter().collect(),
         duplicate_cleanup: None,
+        shared_usage_migration: None,
     })
 }
 
@@ -2513,6 +3234,7 @@ fn build_usage_manage_entry_preview(
                 })
                 .unwrap_or_default(),
             duplicate_cleanup: None,
+            shared_usage_migration: None,
         },
         relation_facts,
     ))
@@ -3016,6 +3738,7 @@ fn build_release_journal(
         impacts,
         limitations,
         duplicate_cleanup: None,
+        shared_usage_migration: None,
     };
     Ok(ReleaseJournal {
         request,
@@ -3059,6 +3782,741 @@ fn validate_duplicate_cleanup_request(request: &PrepareUsageChange) -> AppResult
         return Err(operation_conflict("duplicate_cleanup_selection_invalid"));
     }
     Ok(())
+}
+
+fn validate_shared_usage_migration_request(request: &PrepareUsageChange) -> AppResult<()> {
+    let Some(problem_id) = request.problem_id.as_deref() else {
+        return Err(operation_conflict(
+            "shared_usage_migration_problem_required",
+        ));
+    };
+    if request.action != UsageChangeAction::MigrateSharedUsage
+        || problem_id.trim().is_empty()
+        || !request.relation_ids.is_empty()
+        || request.skill_id.is_some()
+        || request.requested_form.is_some()
+        || request.copy_disposition.is_some()
+        || request.content_basis.is_some()
+        || request.retain_entry_key.is_some()
+        || !request.selected_entry_keys.is_empty()
+        || request.runtime_name.is_some()
+        || request.base_version_id.is_some()
+        || request.non_recognized_destination.is_some()
+    {
+        return Err(operation_conflict("shared_usage_migration_request_invalid"));
+    }
+    Ok(())
+}
+
+fn build_shared_usage_migration_journal(
+    facade: &LocalApplicationFacade,
+    request: PrepareUsageChange,
+    prepared_id: OperationId,
+) -> AppResult<SharedUsageMigrationJournal> {
+    validate_shared_usage_migration_request(&request)?;
+    let (analysis, snapshots) = facade.scan_usage_environment_state()?;
+    let problem_id = request
+        .problem_id
+        .as_deref()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_problem_required"))?;
+    let problem = analysis
+        .problems
+        .iter()
+        .find(|problem| problem.problem_id == problem_id)
+        .cloned()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_problem_stale"))?;
+    if problem.closed || problem.kind != EnvironmentProblemKind::SameSkill {
+        return Err(operation_conflict("shared_usage_migration_not_same_skill"));
+    }
+
+    let shared_entries = problem
+        .entries
+        .iter()
+        .filter(|entry| entry.directory_role == Some(AgentDirectoryRole::SharedDirectory))
+        .collect::<Vec<_>>();
+    if shared_entries.len() != 1 {
+        return Err(operation_conflict(
+            "shared_usage_migration_shared_entry_unknown",
+        ));
+    }
+    let shared_entry = shared_entries[0];
+    let skill_id = shared_entry
+        .skill_id
+        .ok_or_else(|| operation_conflict("shared_usage_migration_skill_unknown"))?;
+    let shared_fingerprint = shared_entry
+        .content_fingerprint
+        .as_deref()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_fingerprint_unknown"))?;
+    let runtime_name = shared_entry
+        .runtime_name
+        .as_deref()
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| operation_conflict("shared_usage_migration_runtime_name_unknown"))?;
+    let (detail, discovery, projects, relationship_revision) = {
+        let database = facade
+            .database
+            .lock()
+            .map_err(|_| internal("shared_usage_migration.prepare.database"))?;
+        let detail = database
+            .catalog_repository()?
+            .get_detail(skill_id)?
+            .ok_or_else(|| operation_conflict("shared_usage_migration_skill_missing"))?;
+        let discovery = database
+            .agent_repository()
+            .load()?
+            .unwrap_or_else(crate::empty_discovery);
+        let projects = database.project_repository().list()?;
+        let revision = database
+            .relationship_repository()
+            .relationship_revision()?
+            .to_string();
+        (detail, discovery, projects, revision)
+    };
+    if skillhub_core::normalize_runtime_name(&detail.runtime_name)
+        != skillhub_core::normalize_runtime_name(runtime_name)
+    {
+        return Err(operation_conflict(
+            "shared_usage_migration_subject_name_changed",
+        ));
+    }
+    let library = facade.library_runtime.snapshot()?;
+    let version_id = library
+        .store
+        .current(skill_id)?
+        .ok_or_else(|| operation_conflict("shared_usage_migration_subject_version_missing"))?;
+    let central_source = library
+        .central
+        .visible_skill_path_for_runtime(skill_id, &detail.runtime_name);
+    let central_fingerprint = library.store.hash_tree_read_only(&central_source)?;
+    if central_fingerprint != shared_fingerprint {
+        return Err(operation_conflict(
+            "shared_usage_migration_source_content_changed",
+        ));
+    }
+    let shared_proof = verified_plain_usage_entry(shared_entry, &library.store)?;
+    let shared_key = usage_entry_key(shared_entry);
+    let mut relation_ids = shared_entry.relation_ids.clone();
+    relation_ids.sort();
+    relation_ids.dedup();
+    if relation_ids.is_empty() {
+        return Err(operation_conflict(
+            "shared_usage_migration_relations_unknown",
+        ));
+    }
+    let expected_evidence_fingerprints = relation_ids
+        .iter()
+        .map(|id| (id.clone(), Some(shared_fingerprint.to_owned())))
+        .collect::<BTreeMap<_, _>>();
+    let physical_source_ids = snapshots
+        .iter()
+        .flat_map(|snapshot| snapshot.usage_relations.iter())
+        .filter(|relation| relation.entry_key.as_ref() == Some(&shared_key))
+        .flat_map(|relation| relation.physical_source_ids_evidence.iter().cloned())
+        .collect::<BTreeSet<_>>();
+
+    let consumers = sorted_unique_environments(&problem.consumers);
+    if consumers.is_empty() {
+        return Err(operation_conflict(
+            "shared_usage_migration_consumers_unknown",
+        ));
+    }
+    let snapshots_by_environment = snapshots
+        .iter()
+        .map(|snapshot| (usage_environment_identity(&snapshot.environment), snapshot))
+        .collect::<BTreeMap<_, _>>();
+    let mut replacements = Vec::with_capacity(consumers.len());
+    let mut replacement_plans = Vec::with_capacity(consumers.len());
+    for environment in consumers {
+        let environment_id = usage_environment_identity(&environment);
+        let snapshot = snapshots_by_environment
+            .get(&environment_id)
+            .copied()
+            .ok_or_else(|| operation_conflict("shared_usage_migration_consumer_unknown"))?;
+        if !snapshot.probe_limitations.is_empty() {
+            return Err(operation_conflict(
+                "shared_usage_migration_environment_incomplete",
+            ));
+        }
+        if analysis.problems.iter().any(|candidate| {
+            candidate.kind == EnvironmentProblemKind::NameConflict
+                && !candidate.closed
+                && candidate
+                    .environment_results
+                    .iter()
+                    .any(|result| usage_environment_identity(&result.environment) == environment_id)
+                && candidate.entries.iter().any(|entry| {
+                    entry.runtime_name.as_deref().is_some_and(|name| {
+                        skillhub_core::normalize_runtime_name(name)
+                            == skillhub_core::normalize_runtime_name(runtime_name)
+                    })
+                })
+        }) {
+            return Err(operation_conflict("shared_usage_migration_name_conflict"));
+        }
+
+        if let Some(entry) = snapshot.discovered_entries.iter().find(|entry| {
+            entry.directory_role == Some(AgentDirectoryRole::Builtin)
+                && entry.content_fingerprint.as_deref() == Some(shared_fingerprint)
+        }) {
+            let proof = verified_plain_usage_entry(entry, &library.store)?;
+            let target = target_from_environment_entry(entry, &environment);
+            replacements.push(SharedUsageReplacement {
+                environment,
+                target_ids: Vec::new(),
+                form: None,
+                reused_existing: true,
+                relationship_revision: snapshot.relationship_revision.clone(),
+            });
+            replacement_plans.push(SharedUsageMigrationReplacementPlan {
+                preview: replacements.last().expect("just added replacement").clone(),
+                target,
+                deployment_plan: None,
+                destination_path: None,
+                reused_entry: Some(proof),
+                child_operation_id: None,
+                verified: false,
+            });
+            continue;
+        }
+
+        let direct_usage = snapshot.discovered_entries.iter().find_map(|entry| {
+            if entry.directory_role == Some(AgentDirectoryRole::SharedDirectory)
+                || entry.directory_role == Some(AgentDirectoryRole::Builtin)
+                || entry.content_fingerprint.as_deref() != Some(shared_fingerprint)
+            {
+                return None;
+            }
+            snapshot
+                .usage_relations
+                .iter()
+                .find(|relation| {
+                    relation.active
+                        && relation.skill_id == Some(skill_id)
+                        && relation.entry_key.as_ref() == Some(&usage_entry_key(entry))
+                        && relation.target.kind != RelationGovernanceTargetKind::SharedDirectory
+                        && relation.target.agent_client_id.as_deref()
+                            == Some(environment.agent_client_id.as_str())
+                        && relation.target.kind
+                            == if environment.project_id.is_some() {
+                                RelationGovernanceTargetKind::Project
+                            } else {
+                                RelationGovernanceTargetKind::Agent
+                            }
+                        && relation
+                            .health_reasons
+                            .iter()
+                            .all(|reason| *reason == UsageHealthReason::Normal)
+                })
+                .map(|relation| (entry, relation))
+        });
+        if let Some((entry, relation)) = direct_usage {
+            let proof = verified_plain_usage_entry(entry, &library.store)?;
+            replacements.push(SharedUsageReplacement {
+                environment,
+                target_ids: Vec::new(),
+                form: relation.form,
+                reused_existing: true,
+                relationship_revision: snapshot.relationship_revision.clone(),
+            });
+            replacement_plans.push(SharedUsageMigrationReplacementPlan {
+                preview: replacements.last().expect("just added replacement").clone(),
+                target: relation.target.clone(),
+                deployment_plan: None,
+                destination_path: None,
+                reused_entry: Some(proof),
+                child_operation_id: None,
+                verified: false,
+            });
+            continue;
+        }
+
+        let target_id = select_shared_migration_target(&environment, &discovery, &projects)?;
+        let plan = match facade.get_deployment_plan(DeploymentPlanRequest {
+            skill_id,
+            version_id: version_id.clone(),
+            runtime_name: detail.runtime_name.clone(),
+            logical_target_ids: vec![target_id.clone()],
+            mode_override: None,
+        })? {
+            AppQueryResult::DeploymentPlan(plan) => plan,
+            _ => return Err(internal("shared_usage_migration.deployment_plan")),
+        };
+        if !plan.conflicts.is_empty() || plan.targets.len() != 1 {
+            return Err(operation_conflict("shared_usage_migration_target_conflict"));
+        }
+        let target_plan = plan.targets[0].clone();
+        if target_plan.change != TargetChange::Create {
+            return Err(operation_conflict(
+                "shared_usage_migration_target_not_empty",
+            ));
+        }
+        let destination = Path::new(&target_plan.destination_path);
+        let destination_parent = destination
+            .parent()
+            .ok_or_else(|| operation_conflict("shared_usage_migration_destination_invalid"))?;
+        let destination_name = destination
+            .file_name()
+            .ok_or_else(|| operation_conflict("shared_usage_migration_destination_invalid"))?;
+        let canonical_destination = fs::canonicalize(destination_parent)
+            .map_err(|_| operation_conflict("shared_usage_migration_destination_unavailable"))?
+            .join(destination_name);
+        let form = usage_form_for_deployment_mode(target_plan.mode);
+        replacements.push(SharedUsageReplacement {
+            environment: environment.clone(),
+            target_ids: vec![target_id],
+            form: Some(form),
+            reused_existing: false,
+            relationship_revision: snapshot.relationship_revision.clone(),
+        });
+        replacement_plans.push(SharedUsageMigrationReplacementPlan {
+            preview: replacements.last().expect("just added replacement").clone(),
+            target: target_for_new_replacement(&environment, &target_plan, snapshot)?,
+            destination_path: Some(canonical_destination.to_string_lossy().into_owned()),
+            deployment_plan: Some(plan),
+            reused_entry: None,
+            child_operation_id: None,
+            verified: false,
+        });
+    }
+
+    let backup_anchor_chain =
+        capture_backup_anchor(&library.root, &library.central.paths().management_dir)?;
+    let management = backup_anchor_chain
+        .nodes
+        .first()
+        .map(|node| PathBuf::from(&node.path))
+        .ok_or_else(|| operation_conflict("usage_backup_anchor_unverified"))?;
+    let source = SharedUsageMigrationSource {
+        skill_id,
+        entry_key: shared_key.clone(),
+        source_path: shared_proof.path.clone(),
+        fingerprint: shared_proof.fingerprint.clone(),
+        physical_identity: shared_proof.physical_identity.clone(),
+        relation_ids,
+        expected_evidence_fingerprints,
+        source_parent_chain: capture_path_chain(
+            Path::new(&shared_proof.path).parent().ok_or_else(|| {
+                operation_conflict("shared_usage_migration_source_parent_missing")
+            })?,
+        )?,
+        backup_path: management
+            .join("usage-shared-migration-backups")
+            .join(request.operation_id.to_string())
+            .join("shared-entry")
+            .to_string_lossy()
+            .into_owned(),
+        backup_created: false,
+        removal_started: false,
+        removed: false,
+        decision_recorded: false,
+    };
+    let entry_evidence = UsageEntryEvidence {
+        skill_id,
+        entry_key: shared_key,
+        relation_ids: source.relation_ids.clone(),
+        physical_source_ids: physical_source_ids.into_iter().collect(),
+        path: source.source_path.clone(),
+        directory_role: Some(AgentDirectoryRole::SharedDirectory),
+        form: Some(UsageForm::FullCopy),
+        management: UsageManagement::Unmanaged,
+        representation: FileRepresentation::Copy,
+        content_fingerprint: Some(source.fingerprint.clone()),
+        physical_identity: Some(source.physical_identity.clone()),
+        link_target_path: None,
+        exists: true,
+    };
+    let source_target = UsageRelationTarget {
+        kind: RelationGovernanceTargetKind::SharedDirectory,
+        directory_id: Some(entry_evidence.entry_key.directory_id.clone()),
+        agent_client_id: None,
+        directory_role: Some(AgentDirectoryRole::SharedDirectory),
+        recognition: Some(skillhub_core::relationship::DirectoryRecognition::Supported),
+    };
+    let prepared = PreparedUsageChange {
+        operation_id: request.operation_id,
+        prepared_id,
+        action: UsageChangeAction::MigrateSharedUsage,
+        relationship_revision,
+        affected_skill_ids: vec![skill_id],
+        subject_versions: vec![UsageSubjectVersion {
+            skill_id,
+            version_id: Some(version_id),
+        }],
+        entry_evidence: vec![entry_evidence],
+        consumers: Vec::new(),
+        impacts: vec![UsageChangeImpact {
+            relation_ids: source.relation_ids.clone(),
+            skill_id,
+            target: source_target,
+            action: UsageChangeImpactAction::RemoveCopyWithBackup,
+            description: "所有替代使用核验通过后，备份并移除共享技能入口。".to_owned(),
+        }],
+        limitations: Vec::new(),
+        duplicate_cleanup: None,
+        shared_usage_migration: Some(SharedUsageMigrationPreview {
+            problem,
+            replacements,
+        }),
+    };
+    Ok(SharedUsageMigrationJournal {
+        request,
+        prepared,
+        backup_anchor_chain,
+        source,
+        replacements: replacement_plans,
+        completed: Vec::new(),
+    })
+}
+
+fn persist_shared_migration(
+    facade: &LocalApplicationFacade,
+    record: &mut OperationRecord,
+    journal: &SharedUsageMigrationJournal,
+    phase: OperationPhase,
+) -> AppResult<()> {
+    record.recovery_data = serde_json::to_value(journal).map_err(serialization_error)?;
+    set_phase(
+        record,
+        phase,
+        journal.completed.len() as u32,
+        journal.replacements.len() as u32 + 1,
+    );
+    let database = facade
+        .database
+        .lock()
+        .map_err(|_| internal("shared_usage_migration.persist.database"))?;
+    database.operation_repository().update_sync(record)
+}
+
+fn verify_shared_migration_proof(
+    proof: &SharedUsageMigrationProof,
+    store: &VersionStore,
+) -> AppResult<()> {
+    let path = Path::new(&proof.path);
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(operation_conflict(
+            "shared_usage_migration_entry_representation_unsupported",
+        ));
+    }
+    let canonical = fs::canonicalize(path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if canonical.to_string_lossy() != proof.path
+        || store.hash_tree_read_only(&canonical)? != proof.fingerprint
+        || skillhub_core::physical_id_for_path(&canonical).as_deref()
+            != Some(proof.physical_identity.as_str())
+    {
+        return Err(operation_conflict(
+            "shared_usage_migration_replacement_changed",
+        ));
+    }
+    Ok(())
+}
+
+fn verify_shared_migration_path(
+    path: &Path,
+    fingerprint: &str,
+    target: &UsageRelationTarget,
+    runtime_name: &str,
+    store: &VersionStore,
+) -> AppResult<SharedUsageMigrationProof> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(operation_conflict(
+            "shared_usage_migration_entry_representation_unsupported",
+        ));
+    }
+    let canonical = fs::canonicalize(path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if canonical.to_string_lossy() != path.to_string_lossy()
+        || store.hash_tree_read_only(&canonical)? != fingerprint
+    {
+        return Err(operation_conflict(
+            "shared_usage_migration_replacement_changed",
+        ));
+    }
+    let directory_id = target
+        .directory_id
+        .clone()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_target_directory_unknown"))?;
+    let physical_identity = skillhub_core::physical_id_for_path(&canonical)
+        .ok_or_else(|| operation_conflict("shared_usage_migration_identity_unknown"))?;
+    Ok(SharedUsageMigrationProof {
+        entry_key: UsageEntryKey {
+            directory_id,
+            relative_entry_path: safe_relative_entry_path(runtime_name)?
+                .to_string_lossy()
+                .into_owned(),
+        },
+        path: canonical.to_string_lossy().into_owned(),
+        fingerprint: fingerprint.to_owned(),
+        physical_identity,
+    })
+}
+
+fn verify_shared_migration_source(
+    source: &SharedUsageMigrationSource,
+    store: &VersionStore,
+) -> AppResult<()> {
+    let path = Path::new(&source.source_path);
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && source.removal_started
+                && source.backup_created =>
+        {
+            return Ok(());
+        }
+        Err(_) => {
+            return Err(operation_conflict(
+                "shared_usage_migration_source_unavailable",
+            ))
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(operation_conflict(
+            "shared_usage_migration_source_representation_changed",
+        ));
+    }
+    let canonical = fs::canonicalize(path)
+        .map_err(|_| operation_conflict("shared_usage_migration_source_unavailable"))?;
+    if canonical.to_string_lossy() != source.source_path
+        || capture_path_chain(
+            path.parent().ok_or_else(|| {
+                operation_conflict("shared_usage_migration_source_parent_missing")
+            })?,
+        )? != source.source_parent_chain
+        || store.hash_tree_read_only(&canonical)? != source.fingerprint
+        || skillhub_core::physical_id_for_path(&canonical).as_deref()
+            != Some(source.physical_identity.as_str())
+    {
+        return Err(operation_conflict("shared_usage_migration_source_changed"));
+    }
+    Ok(())
+}
+
+fn verify_shared_migration_backup_path(
+    journal: &SharedUsageMigrationJournal,
+    anchor: &Path,
+) -> AppResult<()> {
+    let backup = Path::new(&journal.source.backup_path);
+    let relative = backup
+        .strip_prefix(anchor)
+        .map_err(|_| operation_conflict("shared_usage_migration_backup_path_invalid"))?;
+    let relative = safe_relative_entry_path(&relative.to_string_lossy())?;
+    let mut current = anchor.to_path_buf();
+    for component in relative.parent().into_iter().flat_map(Path::components) {
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(operation_conflict(
+                    "shared_usage_migration_backup_path_invalid",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(operation_conflict(
+                    "shared_usage_migration_backup_path_invalid",
+                ));
+            }
+        }
+    }
+    if backup == anchor {
+        return Err(operation_conflict(
+            "shared_usage_migration_backup_path_invalid",
+        ));
+    }
+    Ok(())
+}
+
+fn restore_shared_migration_source(
+    journal: &mut SharedUsageMigrationJournal,
+    store: &VersionStore,
+) -> AppResult<()> {
+    let backup = Path::new(&journal.source.backup_path);
+    let destination = Path::new(&journal.source.source_path);
+    if store.hash_tree_read_only(backup)? != journal.source.fingerprint {
+        return Err(operation_conflict("shared_usage_migration_backup_invalid"));
+    }
+    if fs::symlink_metadata(destination).is_ok() {
+        let current_identity = entry_identity(destination)?;
+        let current_fingerprint = store.hash_tree_read_only(destination)?;
+        if current_fingerprint == journal.source.fingerprint {
+            journal.source.physical_identity = current_identity
+                .ok_or_else(|| operation_conflict("shared_usage_migration_identity_unknown"))?;
+            return Ok(());
+        }
+        if current_identity.as_deref() != Some(journal.source.physical_identity.as_str()) {
+            return Err(operation_conflict(
+                "shared_usage_migration_restore_destination_changed",
+            ));
+        }
+        remove_plain_entry(destination)?;
+    }
+    restore_entry(backup, destination)?;
+    journal.source.physical_identity = skillhub_core::physical_id_for_path(destination)
+        .ok_or_else(|| operation_conflict("shared_usage_migration_identity_unknown"))?;
+    Ok(())
+}
+
+fn sorted_unique_environments(environments: &[UsageEnvironmentKey]) -> Vec<UsageEnvironmentKey> {
+    let mut by_identity = environments
+        .iter()
+        .cloned()
+        .map(|environment| (usage_environment_identity(&environment), environment))
+        .collect::<BTreeMap<_, _>>();
+    std::mem::take(&mut by_identity).into_values().collect()
+}
+
+fn verified_plain_usage_entry(
+    entry: &UsageEnvironmentEntry,
+    store: &VersionStore,
+) -> AppResult<SharedUsageMigrationProof> {
+    let root = entry
+        .directory_path
+        .as_deref()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_directory_unknown"))?;
+    let root = fs::canonicalize(root)
+        .map_err(|_| operation_conflict("shared_usage_migration_directory_unavailable"))?;
+    let relative = safe_relative_entry_path(&entry.relative_entry_path)?;
+    let path = root.join(relative);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(operation_conflict(
+            "shared_usage_migration_entry_representation_unsupported",
+        ));
+    }
+    let canonical = fs::canonicalize(&path)
+        .map_err(|_| operation_conflict("shared_usage_migration_entry_unavailable"))?;
+    if !canonical.starts_with(&root) {
+        return Err(operation_conflict(
+            "shared_usage_migration_entry_outside_directory",
+        ));
+    }
+    let fingerprint = store.hash_tree_read_only(&canonical)?;
+    let physical_identity = skillhub_core::physical_id_for_path(&canonical)
+        .ok_or_else(|| operation_conflict("shared_usage_migration_identity_unknown"))?;
+    if entry.content_fingerprint.as_deref() != Some(fingerprint.as_str())
+        || entry.physical_identity.as_deref() != Some(physical_identity.as_str())
+    {
+        return Err(operation_conflict("shared_usage_migration_entry_changed"));
+    }
+    Ok(SharedUsageMigrationProof {
+        entry_key: usage_entry_key(entry),
+        path: canonical.to_string_lossy().into_owned(),
+        fingerprint,
+        physical_identity,
+    })
+}
+
+fn select_shared_migration_target(
+    environment: &UsageEnvironmentKey,
+    discovery: &skillhub_core::agent::DiscoverySnapshot,
+    projects: &[skillhub_core::project::Project],
+) -> AppResult<String> {
+    if let Some(project_id) = environment.project_id {
+        if projects.iter().any(|project| project.id == project_id) {
+            return Ok(project_id.to_string());
+        }
+        return Err(operation_conflict("shared_usage_migration_project_unknown"));
+    }
+    let mut candidates = discovery
+        .logical_targets
+        .iter()
+        .filter(|target| {
+            target.client_id == environment.agent_client_id
+                && !target.shared_reference
+                && !target.builtin
+                && target.exists
+                && target.readable
+                && target.writable
+                && target.available
+                && target.physical_identity_verified
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        let left_preferred =
+            left.precedence == skillhub_core::agent::DirectoryPrecedence::Preferred;
+        let right_preferred =
+            right.precedence == skillhub_core::agent::DirectoryPrecedence::Preferred;
+        right_preferred
+            .cmp(&left_preferred)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    candidates
+        .first()
+        .map(|target| target.id.clone())
+        .ok_or_else(|| operation_conflict("shared_usage_migration_target_unknown"))
+}
+
+fn usage_form_for_deployment_mode(mode: DeploymentMode) -> UsageForm {
+    match mode {
+        DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => UsageForm::Link,
+        DeploymentMode::ManagedCopy => UsageForm::FullCopy,
+    }
+}
+
+fn target_from_environment_entry(
+    entry: &UsageEnvironmentEntry,
+    environment: &UsageEnvironmentKey,
+) -> UsageRelationTarget {
+    UsageRelationTarget {
+        kind: if environment.project_id.is_some() {
+            RelationGovernanceTargetKind::Project
+        } else {
+            RelationGovernanceTargetKind::Agent
+        },
+        directory_id: Some(entry.directory_id.clone()),
+        agent_client_id: Some(environment.agent_client_id.clone()),
+        directory_role: entry.directory_role,
+        recognition: Some(skillhub_core::relationship::DirectoryRecognition::Supported),
+    }
+}
+
+fn target_for_new_replacement(
+    environment: &UsageEnvironmentKey,
+    target: &TargetPlan,
+    snapshot: &UsageEnvironmentSnapshot,
+) -> AppResult<UsageRelationTarget> {
+    let destination_parent = Path::new(&target.destination_path)
+        .parent()
+        .ok_or_else(|| operation_conflict("shared_usage_migration_destination_invalid"))?;
+    let destination_parent = fs::canonicalize(destination_parent)
+        .map_err(|_| operation_conflict("shared_usage_migration_destination_unavailable"))?;
+    let directory = snapshot
+        .recognized_directories
+        .iter()
+        .find(|directory| {
+            (if environment.project_id.is_some() {
+                directory.role == AgentDirectoryRole::Project
+            } else {
+                matches!(
+                    directory.role,
+                    AgentDirectoryRole::AgentUser
+                        | AgentDirectoryRole::AgentWorkspace
+                        | AgentDirectoryRole::AgentNative
+                )
+            }) && directory.consumers.iter().any(|consumer| {
+                usage_environment_identity(consumer) == usage_environment_identity(environment)
+            }) && fs::canonicalize(&directory.path).is_ok_and(|path| path == destination_parent)
+        })
+        .ok_or_else(|| operation_conflict("shared_usage_migration_target_directory_unknown"))?;
+    Ok(UsageRelationTarget {
+        kind: if environment.project_id.is_some() {
+            RelationGovernanceTargetKind::Project
+        } else {
+            RelationGovernanceTargetKind::Agent
+        },
+        directory_id: Some(directory.directory_id.clone()),
+        agent_client_id: Some(environment.agent_client_id.clone()),
+        directory_role: Some(directory.role),
+        recognition: Some(directory.recognition),
+    })
 }
 
 fn build_duplicate_cleanup_journal(
@@ -3307,6 +4765,7 @@ fn build_duplicate_cleanup_journal(
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
         }),
+        shared_usage_migration: None,
     };
     Ok(DuplicateCleanupJournal {
         request,
@@ -5216,7 +6675,8 @@ fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppRes
         UsageChangeAction::Restore => request.content_basis.is_none(),
         UsageChangeAction::Release
         | UsageChangeAction::Manage
-        | UsageChangeAction::ResolveDuplicate => false,
+        | UsageChangeAction::ResolveDuplicate
+        | UsageChangeAction::MigrateSharedUsage => false,
     };
     if !matches!(
         request.action,

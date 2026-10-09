@@ -1,11 +1,19 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type {
+  CommitUsageChange,
+  EnvironmentProblemView,
+  PreparedUsageChange,
+  PrepareUsageChange,
   RelationGovernanceBatchItem,
   RelationGovernanceBatchOutcome,
   RelationGovernanceRow,
+  UsageChangeResult,
 } from "../../../api/bindings";
+import { describeNativeError } from "../../../api/nativeErrors";
 import { Button } from "../../../ui/Button";
+import { AgentPresentation } from "../../../ui/AgentPresentation";
 import {
   batchItemStateLabelKey,
   batchResultTitleKey,
@@ -18,6 +26,205 @@ import {
 } from "./api";
 import { governanceReasonLabelKey } from "./governancePresenter";
 import { RelationshipPath } from "../RelationshipPath";
+
+function newOperationId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `shared-usage-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export interface SharedUsageMigrationDialogProps {
+  problem: EnvironmentProblemView;
+  projectNames: ReadonlyMap<string, string>;
+  projectNamesPending: boolean;
+  projectNamesError: boolean;
+  onReloadProjectNames: () => void;
+  onPrepare: (request: PrepareUsageChange) => Promise<PreparedUsageChange>;
+  onCommit: (request: CommitUsageChange) => Promise<UsageChangeResult>;
+  onClose: () => void;
+}
+
+/** One backend-owned plan for every consumer of the selected shared Skill. */
+export function SharedUsageMigrationDialog({
+  onClose,
+  onCommit,
+  onPrepare,
+  onReloadProjectNames,
+  problem,
+  projectNames,
+  projectNamesError,
+  projectNamesPending,
+}: SharedUsageMigrationDialogProps) {
+  const { t } = useTranslation();
+  const [prepared, setPrepared] = useState<PreparedUsageChange | null>(null);
+  const [result, setResult] = useState<UsageChangeResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const title = t("relationships.governance.sharedUsageMigration.title");
+  const preview = prepared?.shared_usage_migration;
+  const missingProjectNames = preview?.replacements.some(({ environment }) =>
+    environment.project_id !== null && !projectNames.has(environment.project_id)) ?? false;
+
+  const describeError = (reason: unknown) => describeNativeError(
+    reason,
+    (key, options) => String(t(key as never, options as never)),
+    "tasks.notices.failureUnknown",
+  );
+
+  const prepare = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await onPrepare({
+        operation_id: newOperationId(),
+        action: "migrate_shared_usage",
+        relation_ids: [],
+        problem_id: problem.problem_id,
+        skill_id: null,
+        requested_form: null,
+        copy_disposition: null,
+        content_basis: null,
+        retain_entry_key: null,
+        selected_entry_keys: [],
+        runtime_name: null,
+        base_version_id: null,
+        non_recognized_destination: null,
+      });
+      if (response.action !== "migrate_shared_usage" || !response.shared_usage_migration) {
+        setError(t("relationships.governance.sharedUsageMigration.previewUnavailable"));
+      } else {
+        setPrepared(response);
+      }
+    } catch (reason) {
+      setError(describeError(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const commit = async () => {
+    if (!prepared || !preview || missingProjectNames || projectNamesPending || projectNamesError) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await onCommit({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+      }));
+    } catch (reason) {
+      setError(describeError(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryPreview = () => {
+    setPrepared(null);
+    setResult(null);
+    setError(null);
+  };
+
+  return (
+    <section aria-label={title} className="sh-governance__dialog" data-testid="shared-usage-migration-dialog" role="dialog">
+      <h3>{title}</h3>
+      {result ? (
+        <SharedUsageMigrationResult result={result} />
+      ) : (
+        <>
+          <p>{t("relationships.governance.sharedUsageMigration.description")}</p>
+          <p>{t("relationships.governance.sharedUsageMigration.source", { count: problem.entries.length })}</p>
+          {preview ? (
+            <>
+              <h4>{t("relationships.governance.sharedUsageMigration.replacementsHeading", { count: preview.replacements.length })}</h4>
+              <ul className="sh-governance__batch-items" data-testid="shared-usage-migration-replacements">
+                {preview.replacements.map((replacement, index) => {
+                  const { environment } = replacement;
+                  const projectName = environment.project_id ? projectNames.get(environment.project_id) : null;
+                  return (
+                    <li key={`${environment.agent_client_id}:${environment.project_id ?? "agent"}:${index}`}>
+                      <span><AgentPresentation agentId={environment.agent_client_id} /></span>
+                      {environment.project_id ? (
+                        <span>{t("relationships.governance.sharedUsageMigration.project", { name: projectName ?? t("relationships.governance.sharedUsageMigration.projectNameUnavailable") })}</span>
+                      ) : (
+                        <span>{t("relationships.governance.sharedUsageMigration.directAgent")}</span>
+                      )}
+                      <span>{t(replacement.reused_existing
+                        ? "relationships.governance.sharedUsageMigration.reused"
+                        : "relationships.governance.sharedUsageMigration.createDirect")}</span>
+                      {replacement.form ? <span>{t(`relationships.governance.sharedUsageMigration.form.${replacement.form}` as never)}</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              {projectNamesPending ? <p role="status">{t("relationships.governance.sharedUsageMigration.loadingProjects")}</p> : null}
+              {projectNamesError ? (
+                <div role="alert">
+                  <p>{t("relationships.governance.sharedUsageMigration.projectsUnavailable")}</p>
+                  <Button disabled={busy} onClick={onReloadProjectNames} size="sm" variant="secondary">
+                    {t("actions.retry")}
+                  </Button>
+                </div>
+              ) : null}
+              {missingProjectNames && !projectNamesPending && !projectNamesError ? (
+                <p role="alert">{t("relationships.governance.sharedUsageMigration.projectNameUnavailable")}</p>
+              ) : null}
+              <p>{t("relationships.governance.sharedUsageMigration.verifiedBeforeRemoval")}</p>
+            </>
+          ) : null}
+          {error ? <p role="alert">{error}</p> : null}
+          {busy ? <p role="status">{t("relationships.governance.sharedUsageMigration.running")}</p> : null}
+          <div className="sh-governance__dialog-actions">
+            <Button disabled={busy} onClick={onClose} variant="secondary">{t("actions.cancel")}</Button>
+            {!prepared ? (
+              <Button disabled={busy} onClick={() => void prepare()}>{t("relationships.governance.sharedUsageMigration.previewAction")}</Button>
+            ) : (
+              <>
+                <Button disabled={busy} onClick={retryPreview} variant="secondary">{t("relationships.governance.sharedUsageMigration.repreview")}</Button>
+                <Button
+                  data-testid="shared-usage-migration-confirm"
+                  disabled={busy || projectNamesPending || projectNamesError || missingProjectNames}
+                  onClick={() => void commit()}
+                >
+                  {t("relationships.governance.sharedUsageMigration.confirm")}
+                </Button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {result ? (
+        <div className="sh-governance__dialog-actions">
+          <Button onClick={onClose} variant="secondary">{t("relationships.governance.sharedUsageMigration.close")}</Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SharedUsageMigrationResult({ result }: { result: UsageChangeResult }) {
+  const { t } = useTranslation();
+  const succeeded = result.item_results.filter((item) => item.status === "applied").length;
+  const failed = result.item_results.length - succeeded;
+  const complete = failed === 0 && !result.recovery_required && result.item_results.length > 0;
+  return (
+    <div data-testid="shared-usage-migration-result">
+      <p role={complete ? "status" : "alert"}>
+        {complete
+          ? t("relationships.governance.sharedUsageMigration.completed", { count: succeeded })
+          : t("relationships.governance.sharedUsageMigration.partial", { succeeded, failed })}
+      </p>
+      {result.recovery_required ? <p role="alert">{t("relationships.governance.sharedUsageMigration.recoveryRequired")}</p> : null}
+      <ul className="sh-governance__batch-items">
+        {result.item_results.map((item, index) => (
+          <li key={`${item.skill_id}:${item.relation_ids.join(":")}:${index}`}>
+            <span>{t(`undeploy.flow.groups.${item.target.kind}` as never)}</span>
+            <span>{t(`undeploy.flow.results.${item.status}` as never)}</span>
+            {item.reason ? <span>{t("relationships.governance.sharedUsageMigration.reason", { reason: item.reason })}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export interface GovernanceBatchDialogProps {
   /** 进入对话框的选中行：既包含可执行行，也包含选中但受阻的行。 */

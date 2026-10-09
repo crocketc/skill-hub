@@ -85,11 +85,30 @@ impl LocalApplicationFacade {
                 ))
             })?;
         let mut environments = Vec::new();
-        let agent_ids = discovery
+        let mut agent_ids = discovery
             .instances
             .iter()
             .map(|instance| instance.client_id.clone())
             .collect::<BTreeSet<_>>();
+        // A declared shared-directory consumer remains in the scan even when
+        // discovery no longer reports its client. Governance must surface that
+        // unknown scope so destructive shared migration fails closed instead
+        // of silently omitting the consumer.
+        let shared_directory_ids = overview
+            .directory_nodes
+            .iter()
+            .filter(|node| node.role == DirectoryRole::SharedDirectory)
+            .map(|node| node.node_id.as_str())
+            .collect::<BTreeSet<_>>();
+        agent_ids.extend(
+            overview
+                .agent_directory_capabilities
+                .iter()
+                .filter(|capability| {
+                    shared_directory_ids.contains(capability.directory_node_id.as_str())
+                })
+                .map(|capability| capability.agent_client_id.clone()),
+        );
         for agent_client_id in &agent_ids {
             environments.push(UsageEnvironmentKey {
                 agent_client_id: agent_client_id.clone(),

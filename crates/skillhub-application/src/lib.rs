@@ -8983,7 +8983,8 @@ impl ApplicationFacade for LocalApplicationFacade {
             }
             AppCommand::CommitUsageChange(request) => {
                 return self
-                    .commit_usage_change(request)
+                    .commit_usage_change_command(request)
+                    .await
                     .map(AppCommandResult::UsageChangeResult)
             }
             AppCommand::PrepareUndeploy(_) | AppCommand::CommitUndeploy(_) => {
@@ -9070,6 +9071,19 @@ impl ApplicationFacade for LocalApplicationFacade {
                 ));
             }
             AppCommand::ResolveRecovery(request) => {
+                if self
+                    .resolve_shared_usage_migration_recovery(request.operation_id, request.action)
+                    .await?
+                {
+                    return Ok(AppCommandResult::OperationSummary(
+                        skillhub_core::OperationSummary {
+                            operation_id: request.operation_id,
+                            phase: skillhub_core::OperationPhase::Committed,
+                            message_code: "recovery.resolved".to_owned(),
+                            error_code: None,
+                        },
+                    ));
+                }
                 self.recovery_service
                     .resolve(request.operation_id, request.action)
                     .await?;
@@ -18637,13 +18651,13 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .map_err(|_| database_error("recovery.list", "invalid operation id".to_owned()))?;
             candidates.push(RecoveryCandidate {
                 operation_id: id,
-                actions: if kind == "usage_duplicate_cleanup" {
-                    vec![RecoveryAction::RollbackOperation]
-                } else {
-                    vec![
+                actions: match kind.as_str() {
+                    "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                    "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
+                    _ => vec![
                         RecoveryAction::CompleteOperation,
                         RecoveryAction::RollbackOperation,
-                    ]
+                    ],
                 },
             });
         }
@@ -18690,6 +18704,9 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 }
                 _ => Err(unsupported("recovery.resolve")),
             };
+        }
+        if operation_kind.as_deref() == Some("shared_usage_migration") {
+            return Err(unsupported("recovery.shared_usage_migration"));
         }
         let (phase, state, rolls_back) = match action {
             RecoveryAction::CompleteOperation => ("committed", "completed", false),

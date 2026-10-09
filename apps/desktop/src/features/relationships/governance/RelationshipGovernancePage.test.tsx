@@ -30,6 +30,11 @@ import {
 } from "./RelationshipGovernancePage";
 
 vi.mock("./nativeApi", () => ({ nativeGovernanceFacade: { __mocked: true } }));
+vi.mock("../../projects/nativeApi", () => ({
+  nativeProjectFacade: {
+    list: vi.fn().mockResolvedValue([{ id: "project-aurora", name: "Aurora" }]),
+  },
+}));
 
 afterEach(() => {
   // 先卸载：页面在 cleanup effect 里回写 return-state，必须发生在
@@ -679,6 +684,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
         consumers: [
           { agent_client_id: "codex", project_id: null },
           { agent_client_id: "cursor", project_id: null },
+          { agent_client_id: "codex", project_id: "project-aurora" },
         ],
         environment_results: [],
         closed: false,
@@ -733,6 +739,115 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByTestId("location-search").textContent).toContain("problemId=problem-duplicate");
     expect(screen.getByTestId("location-search").textContent).toContain("returnTo=");
     expect(screen.queryByRole("dialog", { name: "清理重复副本" })).not.toBeInTheDocument();
+  });
+
+  it("previews and confirms the complete backend-owned shared-usage migration", async () => {
+    const activeProblem: EnvironmentProblemAnalysis = {
+      problems: [{
+        problem_id: "problem-shared-migration",
+        kind: "same_skill",
+        entries: [{
+          directory_id: "dir-shared",
+          directory_role: "shared_directory",
+          relative_entry_path: "formatter",
+          runtime_name: "Formatter",
+          content_fingerprint: "sha256:formatter",
+          physical_identity: "physical:shared",
+          skill_id: "skill-pdf",
+          relation_ids: [],
+        }],
+        consumers: [
+          { agent_client_id: "codex", project_id: null },
+          { agent_client_id: "cursor", project_id: null },
+          { agent_client_id: "codex", project_id: "project-aurora" },
+        ],
+        environment_results: [],
+        closed: false,
+      }],
+      probe_limitations: [],
+    };
+    const prepared: PreparedUsageChange = {
+      ...preparedUsageManageChange(),
+      operation_id: "op-shared-migration-1",
+      prepared_id: "prepared-shared-migration-1",
+      action: "migrate_shared_usage",
+      shared_usage_migration: {
+        problem: activeProblem.problems[0]!,
+        replacements: [
+          {
+            environment: activeProblem.problems[0]!.consumers[0]!,
+            target_ids: ["target-codex"],
+            form: "link",
+            reused_existing: true,
+            relationship_revision: "rev-7",
+          },
+          {
+            environment: activeProblem.problems[0]!.consumers[1]!,
+            target_ids: ["target-cursor"],
+            form: "full_copy",
+            reused_existing: false,
+            relationship_revision: "rev-8",
+          },
+          {
+            environment: activeProblem.problems[0]!.consumers[2]!,
+            target_ids: ["target-project-aurora"],
+            form: "full_copy",
+            reused_existing: false,
+            relationship_revision: "rev-9",
+          },
+        ],
+      },
+    };
+    const migrationResultTemplate = usageManageResult().item_results[0]!;
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(prepared),
+      commitUsageChange: vi.fn().mockResolvedValue({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+        item_results: prepared.shared_usage_migration!.replacements.map((replacement, index) => ({
+          ...migrationResultTemplate,
+          relation_ids: [`shared-replacement-${index}`],
+          target: {
+            ...migrationResultTemplate.target,
+            kind: replacement.environment.project_id ? "project" : "agent",
+            agent_client_id: replacement.environment.agent_client_id,
+          },
+        })),
+        recovery_required: false,
+      }),
+    };
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue(activeProblem),
+    });
+    const { tracker } = await renderGovernanceApp({
+      facade,
+      usageChangeFacade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-shared-migration"],
+    });
+
+    fireEvent.click(await screen.findByTestId("governance-migrate-shared-usage"));
+    const dialog = await screen.findByRole("dialog", { name: "迁移共享目录技能" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览迁移方案" }));
+
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "migrate_shared_usage",
+      relation_ids: [],
+      problem_id: "problem-shared-migration",
+      selected_entry_keys: [],
+    })));
+    expect(await within(dialog).findByTestId("shared-usage-migration-replacements")).toBeVisible();
+    expect(within(dialog).getByText("保留现有使用，不重新派发")).toBeVisible();
+    expect(within(dialog).getAllByText("为该目标建立直连关系")).toHaveLength(2);
+    expect(await within(dialog).findByText("项目：Aurora")).toBeVisible();
+    expect(within(dialog).queryAllByRole("checkbox")).toHaveLength(0);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认迁移" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: prepared.operation_id,
+      prepared_id: prepared.prepared_id,
+    }));
+    await waitFor(() => expect(tracker.getSnapshot().find((operation) => operation.kind === "usage_shared_migration")?.operationId)
+      .toBe(prepared.operation_id));
   });
 
   it("does not offer duplicate cleanup for a same-name conflict", async () => {
