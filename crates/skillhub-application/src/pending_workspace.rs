@@ -1,7 +1,12 @@
 use super::*;
 use skillhub_core::check::{CheckKind, CheckRunPhase};
-use skillhub_core::pending::{DismissPendingWork, PendingWorkspace, WorkItem, WorkKind};
-use skillhub_core::relationship::{GovernableRelationFact, GovernableRelationStatus};
+use skillhub_core::pending::{
+    DismissPendingWork, PendingWorkspace, UsageGovernanceContext, WorkItem, WorkKind,
+};
+use skillhub_core::relationship::{
+    ConflictCaseFact, ConflictKind, EnvironmentProblemKind, EnvironmentProblemView,
+    GovernableRelationFact, GovernableRelationStatus,
+};
 
 fn work(kind: WorkKind, subject: String, occurrence: &str) -> WorkItem {
     let key = serde_json::to_value(kind)
@@ -30,7 +35,73 @@ fn work(kind: WorkKind, subject: String, occurrence: &str) -> WorkItem {
         due_date: None,
         risk: None,
         source_roots: Vec::new(),
+        governance_context: None,
     }
+}
+
+fn environment_problem_context(problem: &EnvironmentProblemView) -> Option<UsageGovernanceContext> {
+    let environment = problem.consumers.first().or_else(|| {
+        problem
+            .environment_results
+            .iter()
+            .find(|result| !result.closed)
+            .map(|result| &result.environment)
+    })?;
+    let relation_ids = problem
+        .entries
+        .iter()
+        .flat_map(|entry| entry.relation_ids.iter().cloned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let skill_ids = problem
+        .entries
+        .iter()
+        .filter_map(|entry| entry.skill_id.map(|id| id.to_string()))
+        .collect::<std::collections::BTreeSet<_>>();
+    Some(UsageGovernanceContext {
+        agent_id: environment.agent_client_id.clone(),
+        project_id: environment.project_id.map(|id| id.to_string()),
+        problem_id: Some(problem.problem_id.clone()),
+        relation_id: (relation_ids.len() == 1)
+            .then(|| relation_ids.into_iter().next())
+            .flatten(),
+        skill_id: (skill_ids.len() == 1)
+            .then(|| skill_ids.into_iter().next())
+            .flatten(),
+        return_to: Some("/pending".into()),
+    })
+}
+
+fn environment_problem_matches_conflict(
+    problem: &EnvironmentProblemView,
+    conflict: &ConflictCaseFact,
+) -> bool {
+    let expected_kind = match problem.kind {
+        EnvironmentProblemKind::SameSkill => ConflictKind::DuplicateSameContent,
+        EnvironmentProblemKind::NameConflict => ConflictKind::SameNameDifferentContent,
+    };
+    if conflict.kind != expected_kind || conflict.members.is_empty() {
+        return false;
+    }
+    let problem_members = problem
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .skill_id
+                .map(|skill_id| (entry.directory_id.clone(), skill_id.to_string()))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let conflict_members = conflict
+        .members
+        .iter()
+        .map(|member| {
+            Some((
+                member.directory_node_id.as_ref()?.clone(),
+                member.skill_id?.to_string(),
+            ))
+        })
+        .collect::<Option<std::collections::BTreeSet<_>>>();
+    !problem_members.is_empty() && conflict_members == Some(problem_members)
 }
 
 impl LocalApplicationFacade {
@@ -213,9 +284,70 @@ impl LocalApplicationFacade {
                 _ => result.unavailable_sources.push("ai".into()),
             }
         }
+        let mut active_environment_problems = Vec::new();
+        let mut problem_relation_ids = std::collections::BTreeSet::new();
+        if initialized {
+            match self.get_usage_environment_problems() {
+                Ok(skillhub_core::AppQueryResult::UsageEnvironmentProblems(analysis)) => {
+                    for problem in analysis
+                        .problems
+                        .into_iter()
+                        .filter(|problem| !problem.closed)
+                    {
+                        let Some(context) = environment_problem_context(&problem) else {
+                            if !result
+                                .unavailable_sources
+                                .iter()
+                                .any(|source| source == "usage_environment_problems")
+                            {
+                                result
+                                    .unavailable_sources
+                                    .push("usage_environment_problems".into());
+                            }
+                            continue;
+                        };
+                        problem_relation_ids.extend(
+                            problem
+                                .entries
+                                .iter()
+                                .flat_map(|entry| entry.relation_ids.iter().cloned()),
+                        );
+                        let mut item =
+                            work(WorkKind::Governance, problem.problem_id.clone(), "active");
+                        item.message_code = match problem.kind {
+                            EnvironmentProblemKind::SameSkill => {
+                                "pending.reasons.environment_problem.same_skill"
+                            }
+                            EnvironmentProblemKind::NameConflict => {
+                                "pending.reasons.environment_problem.name_conflict"
+                            }
+                        }
+                        .into();
+                        item.display_name = problem
+                            .entries
+                            .iter()
+                            .filter_map(|entry| entry.runtime_name.as_deref())
+                            .next()
+                            .map(str::to_owned);
+                        item.governance_context = Some(context);
+                        result.items.push(item);
+                        active_environment_problems.push(problem);
+                    }
+                }
+                _ => result
+                    .unavailable_sources
+                    .push("usage_environment_problems".into()),
+            }
+        }
         match self.get_conflict_workspace() {
             Ok(AppQueryResult::ConflictWorkspace(workspace)) => {
                 for entry in workspace.cases {
+                    if active_environment_problems
+                        .iter()
+                        .any(|problem| environment_problem_matches_conflict(problem, &entry.case))
+                    {
+                        continue;
+                    }
                     let mut item = work(
                         WorkKind::Conflict,
                         entry.case.conflict_id.to_string(),
@@ -246,6 +378,7 @@ impl LocalApplicationFacade {
                         GovernableRelationFact::Deployment(fact) => fact.active,
                     };
                     if !active
+                        || problem_relation_ids.contains(row.relation_id())
                         || !matches!(
                             row.status,
                             GovernableRelationStatus::NeedsValidation
@@ -464,5 +597,62 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::OperationSummary(operation_summary(
             "pending.user_confirmed",
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skillhub_core::relationship::{
+        ConflictClassification, ConflictEvidence, ConflictMemberFact, UsageEnvironmentEntry,
+    };
+
+    #[test]
+    fn duplicate_suppression_requires_the_complete_problem_member_set() {
+        let skill_id = skillhub_core::SkillId::new();
+        let entries = ["directory-a", "directory-b"]
+            .into_iter()
+            .map(|directory_id| UsageEnvironmentEntry {
+                directory_id: directory_id.into(),
+                relative_entry_path: "notes".into(),
+                runtime_name: Some("Notes".into()),
+                content_fingerprint: Some("sha256:notes".into()),
+                physical_identity: None,
+                skill_id: Some(skill_id),
+                relation_ids: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let problem = EnvironmentProblemView {
+            problem_id: "problem:notes".into(),
+            kind: EnvironmentProblemKind::SameSkill,
+            entries,
+            consumers: Vec::new(),
+            environment_results: Vec::new(),
+            closed: false,
+        };
+        let member = |directory_id: &str| ConflictMemberFact {
+            skill_id: Some(skill_id),
+            directory_node_id: Some(directory_id.into()),
+            ..ConflictMemberFact::default()
+        };
+        let conflict = |members: Vec<ConflictMemberFact>| ConflictCaseFact {
+            conflict_id: "conflict:notes".into(),
+            kind: ConflictKind::DuplicateSameContent,
+            classification: ConflictClassification::SameSkillVersion,
+            member_skill_ids: vec![skill_id],
+            members,
+            evidence: ConflictEvidence::default(),
+            user_decision: None,
+            decided_at: None,
+        };
+
+        assert!(environment_problem_matches_conflict(
+            &problem,
+            &conflict(vec![member("directory-a"), member("directory-b")]),
+        ));
+        assert!(!environment_problem_matches_conflict(
+            &problem,
+            &conflict(vec![member("directory-a")]),
+        ));
     }
 }

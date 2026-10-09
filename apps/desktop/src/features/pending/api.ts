@@ -1,3 +1,4 @@
+import type { UsageGovernanceContext } from "../relationships/returnState";
 export type PendingKind = "trial_due" | "security_finding" | "security_alert" | "recovery" | "conflict" | "governance" | "governance_followup" | "basic_check" | "import_skills" | "ai_setup" | "backup_setup" | "source_update" | "agent_compatibility";
 export type PendingRisk = "high" | "medium" | "low";
 export type PendingItem = {
@@ -31,6 +32,8 @@ export type PendingItem = {
   risk?: PendingRisk | null;
   /** 影响面：该 Skill 当前生效的部署关系数量；无法计算时缺省。 */
   affectedDeployments?: number | null;
+  /** Exact environment-problem context for reloading current governance facts. */
+  governanceContext?: UsageGovernanceContext;
 };
 /** 处理历史中的一条暂缓/忽略记录（原生忽略规则的 exact_pending 子集）。 */
 export type HandledEntry = {

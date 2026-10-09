@@ -1,5 +1,6 @@
 import type { PendingItem, PendingKind } from "./api";
 import type { AgentKindKey } from "../../ui/AgentPresentation";
+import { buildUsageGovernanceHref } from "../relationships/returnState";
 
 export const pendingKinds: PendingKind[] = ["recovery", "conflict", "governance", "governance_followup", "security_finding", "security_alert", "basic_check", "trial_due", "import_skills", "ai_setup", "backup_setup", "source_update", "agent_compatibility"];
 export const actionableCount = (items: PendingItem[]) => items.filter((item) => !item.recommended).length;
@@ -24,6 +25,7 @@ export interface PendingGroup {
   kind?: PendingKind;
   reviewPurpose?: "security_check" | "source_update" | "trial_review";
   subject?: string;
+  titleKey?: string;
   displayName?: string | null;
   items: PendingItem[];
   count: number;
@@ -50,7 +52,7 @@ const CATEGORY_ORDER: Record<PendingCategory, number> = {
 
 const RISK_ORDER: Record<NonNullable<PendingItem["risk"]>, number> = { low: 1, medium: 2, high: 3 };
 
-function pendingGroup(item: PendingItem): Pick<PendingGroup, "key" | "category" | "kind" | "reviewPurpose" | "subject" | "href"> {
+function pendingGroup(item: PendingItem): Pick<PendingGroup, "key" | "category" | "kind" | "reviewPurpose" | "subject" | "titleKey" | "href"> {
   switch (item.kind) {
     case "ai_setup": case "backup_setup": case "import_skills":
       return { key: `software:${item.kind}`, category: "software", kind: item.kind, href: item.href ?? pendingDestination(item) };
@@ -63,8 +65,33 @@ function pendingGroup(item: PendingItem): Pick<PendingGroup, "key" | "category" 
       };
     case "source_update": return { key: "skill_review:source_update", category: "skill_review", reviewPurpose: "source_update", href: "/library" };
     case "trial_due": return { key: "skill_review:trial_review", category: "skill_review", reviewPurpose: "trial_review", href: "/library" };
-    case "conflict": return { key: "relationships:conflict", category: "relationships", kind: item.kind, href: "/relationships/decisions" };
-    case "governance": return { key: "relationships:governance", category: "relationships", kind: item.kind, href: "/relationships/governance" };
+    case "conflict": return {
+      key: `relationships:conflict:${item.subject}`,
+      category: "relationships",
+      kind: item.kind,
+      subject: item.subject,
+      titleKey: item.message,
+      href: pendingDestination(item),
+    };
+    case "governance": {
+      const context = item.governanceContext;
+      const stableIdentity = context?.problem_id
+        ? `problem:${context.problem_id}`
+        : `relation:${context?.relation_id ?? item.subject}`;
+      const titleKey = item.message === "pending.reasons.environment_problem.same_skill"
+        ? "pending.environmentProblemTitles.sameSkill"
+        : item.message === "pending.reasons.environment_problem.name_conflict"
+          ? "pending.environmentProblemTitles.nameConflict"
+          : item.message;
+      return {
+        key: `relationships:governance:${stableIdentity}`,
+        category: "relationships",
+        kind: item.kind,
+        subject: stableIdentity,
+        titleKey,
+        href: pendingDestination(item),
+      };
+    }
     case "governance_followup": return { key: "relationships:followup", category: "relationships", kind: item.kind, href: "/discovery/local" };
     case "agent_compatibility": {
       const shared = item.agentSharedDirectory === true;
@@ -170,7 +197,12 @@ export function pendingDestination(item: PendingItem): string {
     }
     case "conflict": return `/relationships/decisions?${new URLSearchParams({ conflictId: item.subject })}`;
     case "governance_followup": return `/discovery/local?${new URLSearchParams({ task: item.subject })}`;
-    case "governance": return `/relationships/governance?${new URLSearchParams({ relationId: item.subject })}`;
+    case "governance": {
+      if (item.governanceContext) {
+        return buildUsageGovernanceHref(item.governanceContext) ?? "/pending";
+      }
+      return `/relationships/governance?${new URLSearchParams({ relationId: item.subject })}`;
+    }
     case "recovery": return `/recovery?${new URLSearchParams({ operationId: item.subject })}`;
     case "import_skills": return "/discovery/local";
     case "ai_setup": return "/settings?section=networkAi";

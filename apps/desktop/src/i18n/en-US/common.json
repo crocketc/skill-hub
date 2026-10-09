@@ -2537,7 +2537,15 @@
       "backup_setup": "Your library has content. Create a backup; this suggestion closes after successful creation and verification.",
       "agent_compatibility": "Agent import compatibility verification",
       "source_update": "A newer source version is available. Review the changes before updating.",
-      "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate."
+      "governance_followup": "An import advisory remains. Review the source and handle it; if completion cannot be verified automatically, confirm manual handling. Actual conflicts and risks remain separate.",
+      "environment_problem": {
+        "same_skill": "The Skill content is identical across multiple usage locations. Confirm whether they refer to the same Skill.",
+        "name_conflict": "The same name appears with different content in multiple usage locations. Review the entries separately."
+      }
+    },
+    "environmentProblemTitles": {
+      "sameSkill": "The same Skill appears in multiple directories",
+      "nameConflict": "Same-name Skills appear in multiple directories"
     },
     "count": "{{count}} items need action",
     "totalCount": "{{count}} pending items",
@@ -2855,10 +2863,7 @@
       "kind": {
         "duplicate_same_content": "Duplicate content",
         "same_name_different_content": "Same name, different content",
-        "same_source_fork": "Same-source fork",
-        "shared_directory_duplicate": "Shared-directory duplicate",
-        "unknown_directory_recognition": "Unrecognized directory source",
-        "unknown": "Other conflicts"
+        "unclassified": "Insufficient classification evidence"
       },
       "nav": {
         "prev": "Previous",
@@ -2996,7 +3001,17 @@
         "relationUnavailable": "This relationship is no longer available for this Skill.",
         "returnContextUnavailable": "The original Skill detail location could not be verified. Back will return to the Skill library."
       },
+      "problemContext": {
+        "currentIssue": "Current pending issue",
+        "loading": "Reloading this issue and all its usage locations. Actions stay unavailable until the reload completes.",
+        "unavailable": "This issue could not be reloaded. Return to pending work and refresh before trying again.",
+        "invalid": "This link has no valid Agent context, so the old action was blocked. Reopen it from pending work.",
+        "stale": "This issue was resolved or changed. The old link cannot be used; return to pending work and refresh.",
+        "scopeChanged": "This issue no longer belongs to the Agent or project in the link, so the old action was blocked. Return to pending work and refresh.",
+        "reloaded": "The current issue was reloaded and includes {{count}} directory entries. The related rows below show the full issue."
+      },
       "back": {
+        "pending": "Back to pending work",
         "library": "Back to Skill library",
         "graph": "Back to Skill graph",
         "conflict": "Back to conflict decisions",

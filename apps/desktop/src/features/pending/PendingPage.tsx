@@ -66,8 +66,10 @@ function PendingGroupRow({
   const allSelected = group.selectableIds.length > 0 && selectedCount === group.selectableIds.length;
   const summaryNames = group.category === "agents" || group.objectNames.length < 2 ? [] : group.objectNames.slice(0, SUMMARY_NAME_LIMIT);
   const hiddenNameCount = summaryNames.length ? group.objectNames.length - summaryNames.length : 0;
-  const title = group.category === "agents"
-    ? group.sharedDirectory ? String(t("agents.sharedDirectoryTitle")) : group.agentBrand ?? group.displayName ?? String(t("pending.kinds.agent_compatibility"))
+  const title = group.titleKey
+    ? String(t(group.titleKey as never))
+    : group.category === "agents"
+      ? group.sharedDirectory ? String(t("agents.sharedDirectoryTitle")) : group.agentBrand ?? group.displayName ?? String(t("pending.kinds.agent_compatibility"))
     : group.category === "skill_review"
       ? String(t(`pending.reviewPurpose.${group.reviewPurpose ?? "security_check"}` as never))
       : String(t(`pending.kinds.${group.kind}` as never));

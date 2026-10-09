@@ -1,5 +1,94 @@
 import { useCallback, useMemo } from "react";
 import { useLocation } from "react-router-dom";
+import type { EnvironmentProblemAnalysis, EnvironmentProblemView } from "../../api/bindings";
+
+/** URL context for reopening a current environment problem in governance. */
+export interface UsageGovernanceContext {
+  agent_id: string;
+  project_id?: string;
+  problem_id?: string;
+  relation_id?: string;
+  skill_id?: string;
+  return_to?: string;
+}
+
+function safeLocalReturnTarget(value: string | null | undefined): string | undefined {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return undefined;
+  }
+  try {
+    const target = new URL(value, "https://skillhub.invalid");
+    return target.origin === "https://skillhub.invalid" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPendingReturnTarget(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    return new URL(value, "https://skillhub.invalid").pathname === "/pending";
+  } catch {
+    return false;
+  }
+}
+
+/** Build the governance URL shape used by pending issue entries. */
+export function buildUsageGovernanceHref(context: UsageGovernanceContext): string | null {
+  if (!context.agent_id.trim()) return null;
+  const returnTo = safeLocalReturnTarget(context.return_to);
+  if (isPendingReturnTarget(returnTo) && !context.problem_id?.trim()) return null;
+  const params = new URLSearchParams();
+  params.set("agent_id", context.agent_id);
+  for (const key of ["project_id", "problem_id", "relation_id", "skill_id"] as const) {
+    const value = context[key];
+    if (value?.trim()) params.set(key, value);
+  }
+  if (returnTo) params.set("return_to", returnTo);
+  return `/relationships/governance?${params}`;
+}
+
+/** Parse the same URL context; malformed required identity is not navigable. */
+export function parseUsageGovernanceContext(
+  searchParams: URLSearchParams,
+): UsageGovernanceContext | null {
+  const agentId = searchParams.get("agent_id");
+  if (!agentId?.trim()) return null;
+  const problemId = searchParams.get("problem_id");
+  if (searchParams.has("problem_id") && !problemId?.trim()) return null;
+  const returnTo = safeLocalReturnTarget(searchParams.get("return_to"));
+  if (isPendingReturnTarget(returnTo) && !problemId?.trim()) return null;
+  const context: UsageGovernanceContext = { agent_id: agentId };
+  for (const key of ["project_id", "problem_id", "relation_id", "skill_id"] as const) {
+    const value = searchParams.get(key);
+    if (value?.trim()) context[key] = value;
+  }
+  if (returnTo) context.return_to = returnTo;
+  return context;
+}
+
+export type UsageGovernanceProblemResolution =
+  | { status: "stale" }
+  | { status: "scope_changed" }
+  | { status: "active"; problem: EnvironmentProblemView };
+
+/** Resolve a deep link against the freshly loaded issue and its exact anchor scope. */
+export function resolveUsageGovernanceProblem(
+  context: UsageGovernanceContext,
+  analysis: EnvironmentProblemAnalysis,
+): UsageGovernanceProblemResolution {
+  if (!context.problem_id) return { status: "stale" };
+  const problem = analysis.problems.find((candidate) => candidate.problem_id === context.problem_id);
+  if (!problem || problem.closed) return { status: "stale" };
+  const matchesAnchor = (environment: { agent_client_id: string; project_id: string | null }) =>
+    environment.agent_client_id === context.agent_id
+    && (environment.project_id ?? undefined) === context.project_id;
+  const belongsToAnchor = problem.consumers.some(matchesAnchor)
+    || problem.environment_results.some((result) => !result.closed && matchesAnchor(result.environment));
+  return belongsToAnchor
+    ? { status: "active", problem }
+    : { status: "scope_changed" };
+}
 
 /**
  * 关系页回退状态（任务 5）：仅滚动、画布坐标等非 URL 状态走 session 存储，

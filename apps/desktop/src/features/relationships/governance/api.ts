@@ -1,5 +1,6 @@
 import type {
   GovernanceHistoryPage,
+  EnvironmentProblemAnalysis,
   OperationId,
   RelationGovernanceAction,
   RelationGovernanceBatchAction,
@@ -156,6 +157,8 @@ export interface RelationGovernanceFacade {
   listGovernance(params?: RelationshipGovernanceParams): Promise<RelationGovernanceLedger>;
   /** Unified active usage facts; queried independently of the legacy action ledger. */
   getRelationshipOverview(): Promise<RelationshipOverview>;
+  /** Reload the complete current environment problem before honoring a pending deep link. */
+  getUsageEnvironmentProblems(): Promise<EnvironmentProblemAnalysis>;
   /** 计划 9.4：重校验走 RunRelationshipCheck 命令，而不是再查一次清单。 */
   revalidate(
     relationIds: string[],

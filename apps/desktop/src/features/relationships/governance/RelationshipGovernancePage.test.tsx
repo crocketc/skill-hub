@@ -5,6 +5,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   DeploymentRelationFact,
+  EnvironmentProblemAnalysis,
   RelationGovernanceBatchItem,
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
@@ -484,6 +485,7 @@ function createFacade(
   return {
     listGovernance: vi.fn().mockResolvedValue(ledger),
     getRelationshipOverview: vi.fn().mockResolvedValue(overviewForLedger(ledger)),
+    getUsageEnvironmentProblems: vi.fn().mockResolvedValue({ problems: [], probe_limitations: [] }),
     revalidate: vi.fn().mockResolvedValue(undefined),
     listHistory: vi.fn().mockResolvedValue(undefined),
     retainSourceCopy: vi.fn().mockResolvedValue(undefined),
@@ -635,6 +637,94 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByTestId("governance-target-managed:dep-eligible")).toHaveTextContent("Codex");
     // 影响列展示其他共享消费者。
     expect(screen.getByTestId("governance-impact-managed:dep-shared")).toHaveTextContent("Cursor");
+  });
+
+  it("blocks stale issue links and never opens their relation preview", async () => {
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue({ problems: [], probe_limitations: [] }),
+    });
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-stale&relation_id=managed%3Adep-eligible"],
+    });
+
+    expect(await screen.findByTestId("governance-context-stale")).toBeVisible();
+    expect(facade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("governance-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("governance-open-centralize")).not.toBeInTheDocument();
+  });
+
+  it("hides actionable rows when a governance deep link has an invalid issue context", async () => {
+    const facade = createFacade(FULL_LEDGER);
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?problem_id=problem-without-agent&relationId=managed%3Adep-eligible"],
+    });
+
+    expect(await screen.findByTestId("governance-context-invalid")).toBeVisible();
+    expect(screen.queryByTestId("governance-row")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(facade.getUsageEnvironmentProblems).not.toHaveBeenCalled();
+  });
+
+  it("reloads the full active issue before opening its contextual relation preview", async () => {
+    const currentProblem: EnvironmentProblemAnalysis = {
+      problems: [{
+        problem_id: "problem-current",
+        kind: "same_skill",
+        entries: [
+          { directory_id: "dir-a", relative_entry_path: "notes", runtime_name: "Notes A", content_fingerprint: "sha256:a", physical_identity: "physical:a", skill_id: "skill-pdf", relation_ids: ["managed:dep-eligible"] },
+          { directory_id: "dir-b", relative_entry_path: "notes", runtime_name: "Notes B", content_fingerprint: "sha256:a", physical_identity: "physical:b", skill_id: "skill-pdf", relation_ids: ["managed:dep-shared"] },
+        ],
+        consumers: [
+          { agent_client_id: "codex", project_id: null },
+          { agent_client_id: "cursor", project_id: null },
+        ],
+        environment_results: [],
+        closed: false,
+      }],
+      probe_limitations: [],
+    };
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue(currentProblem),
+    });
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-current&relation_id=managed%3Adep-eligible&return_to=%2Fpending"],
+    });
+
+    expect(await screen.findByTestId("governance-current-problem")).toBeVisible();
+    await waitFor(() => expect(screen.getAllByTestId("governance-row")).toHaveLength(2));
+    expect(screen.getByText(/涉及 2 个目录条目/)).toBeVisible();
+    expect(screen.getByText("Notes A")).toBeVisible();
+    expect(screen.getByText("Notes B")).toBeVisible();
+    expect(screen.getByTestId("governance-current-problem").closest(".sh-governance")).not.toBeNull();
+    expect(facade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "返回待处理列表" })).toBeVisible();
+  });
+
+  it("blocks a current issue when its anchor Agent scope has changed", async () => {
+    const facade = createFacade(FULL_LEDGER, {
+      getUsageEnvironmentProblems: vi.fn().mockResolvedValue({
+        problems: [{
+          problem_id: "problem-current",
+          kind: "name_conflict",
+          entries: [],
+          consumers: [{ agent_client_id: "cursor", project_id: null }],
+          environment_results: [],
+          closed: false,
+        }],
+        probe_limitations: [],
+      }),
+    });
+    await renderGovernanceApp({
+      facade,
+      entries: ["/relationships/governance?agent_id=codex&problem_id=problem-current"],
+    });
+
+    expect(await screen.findByTestId("governance-context-scope-changed")).toBeVisible();
+    expect(screen.queryByTestId("governance-row")).not.toBeInTheDocument();
   });
 
   it("summarizes deep-linked hidden filters without exposing any filter chips", async () => {

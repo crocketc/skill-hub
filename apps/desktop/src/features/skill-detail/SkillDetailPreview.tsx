@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type {
   RelationshipType,
+  EnvironmentProblemAnalysis,
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
   RelationGovernanceRow,
@@ -268,6 +269,9 @@ function previewBatchOutcome(state: RelationGovernanceBatchOutcome["state"], rel
 }
 
 const previewGovernanceFacade: RelationGovernanceFacade = {
+  async getUsageEnvironmentProblems(): Promise<EnvironmentProblemAnalysis> {
+    return { problems: [], probe_limitations: [] };
+  },
   async listGovernance() {
     const ledger: RelationGovernanceLedger = {
       rows: previewGovernanceRows,

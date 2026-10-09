@@ -50,20 +50,35 @@ export function caseConflictScope(conflictId: string): AnalyzeConflictScope {
 
 /** 队列条目的最小结构视图：助手只消费 conflict_id/kind 两个事实。 */
 export interface ConflictQueueEntryLike {
-  case: { conflict_id: string; kind?: ConflictKind };
+  case: {
+    conflict_id: string;
+    kind?: ConflictKind;
+    evidence?: {
+      fingerprints_match?: boolean | null;
+      names_match?: boolean | null;
+    };
+  };
 }
 
-/** 冲突类别组：kind 缺省按「其他冲突」归组，不冒充分类事实。 */
-export function conflictKindGroup(entry: ConflictQueueEntryLike): ConflictKind {
-  return entry.case.kind ?? "unknown";
+export type ProductConflictCategory = "duplicate_same_content" | "same_name_different_content";
+
+/** 仅投影已确认的两类产品冲突；历史 kind 只作为证据来源，不作为额外类别。 */
+export function conflictKindGroup(entry: ConflictQueueEntryLike): ProductConflictCategory | null {
+  const { kind, evidence } = entry.case;
+  if (kind === "duplicate_same_content" || kind === "same_name_different_content") return kind;
+  if (evidence?.fingerprints_match === true) return "duplicate_same_content";
+  if (evidence?.fingerprints_match === false && evidence.names_match === true) {
+    return "same_name_different_content";
+  }
+  return null;
 }
 
-/** 队列里当前类别的全部 kind 值（按首次出现顺序，供类别 chip 渲染）。 */
-export function queueKindValues(cases: readonly ConflictQueueEntryLike[]): ConflictKind[] {
-  const seen: ConflictKind[] = [];
+/** 队列里当前已确认的产品类别（按首次出现顺序，供类别 chip 渲染）。 */
+export function queueKindValues(cases: readonly ConflictQueueEntryLike[]): ProductConflictCategory[] {
+  const seen: ProductConflictCategory[] = [];
   for (const entry of cases) {
     const kind = conflictKindGroup(entry);
-    if (!seen.includes(kind)) seen.push(kind);
+    if (kind && !seen.includes(kind)) seen.push(kind);
   }
   return seen;
 }

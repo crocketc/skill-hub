@@ -23,6 +23,7 @@ import type { RemovalFacade, UsageChangeFacade } from "../removal/api";
 import { skillLibraryKeys } from "../skills/api";
 import type {
   DeploymentRelationFact,
+  EnvironmentProblemAnalysis,
   PreparedUsageChange,
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
@@ -451,6 +452,7 @@ function createTestGovernanceFacade(
   return {
     listGovernance: vi.fn().mockResolvedValue(governanceLedger(rows)),
     getRelationshipOverview: vi.fn().mockResolvedValue(governanceOverview(rows)),
+    getUsageEnvironmentProblems: vi.fn().mockResolvedValue({ problems: [], probe_limitations: [] } satisfies EnvironmentProblemAnalysis),
     revalidate: vi.fn(),
     listHistory: vi.fn(),
     retainSourceCopy: vi.fn(),

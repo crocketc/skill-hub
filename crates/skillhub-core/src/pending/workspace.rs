@@ -1,5 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+/// Exact context for reloading a current usage-governance problem from a pending item.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct UsageGovernanceContext {
+    pub agent_id: String,
+    pub project_id: Option<String>,
+    pub problem_id: Option<String>,
+    pub relation_id: Option<String>,
+    pub skill_id: Option<String>,
+    pub return_to: Option<String>,
+}
+
 /// Work is derived from durable domain facts, never from notification history.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +52,7 @@ pub struct WorkItem {
     pub due_date: Option<String>,
     pub risk: Option<super::PendingRisk>,
     pub source_roots: Vec<String>,
+    pub governance_context: Option<UsageGovernanceContext>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

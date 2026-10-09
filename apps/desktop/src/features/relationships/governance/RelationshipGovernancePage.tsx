@@ -24,7 +24,11 @@ import { Button } from "../../../ui/Button";
 import { Input } from "../../../ui/Input";
 import { DataState } from "../../../ui/DataState";
 import { RelationshipsLayout } from "../RelationshipsLayout";
-import { useRelationshipsReturnState } from "../returnState";
+import {
+  parseUsageGovernanceContext,
+  resolveUsageGovernanceProblem,
+  useRelationshipsReturnState,
+} from "../returnState";
 import { relationshipsKeys } from "../api";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import {
@@ -121,6 +125,33 @@ export function RelationshipGovernancePage({
     listGovernance: (params: Parameters<RelationGovernanceFacade["listGovernance"]>[0]) => facade.listGovernance(params),
   }), [facade]);
   const [searchParams, setSearchParams] = useSearchParams();
+  const usageContext = useMemo(
+    () => parseUsageGovernanceContext(searchParams),
+    [searchParams],
+  );
+  const hasUsageContextParams = ["agent_id", "project_id", "problem_id", "relation_id", "skill_id", "return_to"]
+    .some((key) => searchParams.has(key));
+  const malformedUsageContext = hasUsageContextParams && !usageContext;
+  const usageProblemsQuery = useQuery({
+    queryFn: () => facade.getUsageEnvironmentProblems(),
+    queryKey: relationshipsKeys.governanceUsageProblems(usageContext?.problem_id),
+    enabled: Boolean(usageContext?.problem_id),
+  });
+  const usageProblemResolution = useMemo(() => {
+    if (!usageContext?.problem_id || !usageProblemsQuery.data) return null;
+    return resolveUsageGovernanceProblem(usageContext, usageProblemsQuery.data);
+  }, [usageContext, usageProblemsQuery.data]);
+  const usageContextStatus = !hasUsageContextParams
+    ? null
+    : malformedUsageContext
+      ? "invalid"
+      : !usageContext?.problem_id
+        ? "active"
+        : usageProblemsQuery.isPending
+          ? "loading"
+          : usageProblemsQuery.isError
+            ? "unavailable"
+            : usageProblemResolution?.status ?? "loading";
   const deepLink = useMemo(
     () => parseGovernanceSearchParams(searchParams),
     [searchParams],
@@ -168,6 +199,13 @@ export function RelationshipGovernancePage({
     ),
     [ledgerQuery.isError, ledgerQuery.isPending, legacyRows, usageOverviewQuery.data],
   );
+  const currentEnvironmentProblem = usageProblemResolution?.status === "active"
+    ? usageProblemResolution.problem
+    : null;
+  const issueRelationIds = useMemo(
+    () => new Set(currentEnvironmentProblem?.entries.flatMap((entry) => entry.relation_ids) ?? []),
+    [currentEnvironmentProblem],
+  );
   const scopedRows = useMemo(() => {
     let filtered = relationRows;
     if (deepLink.agentClientId) {
@@ -208,12 +246,31 @@ export function RelationshipGovernancePage({
     deepLink.text,
     relationRows,
   ]);
-  const visibleRows = useMemo(
-    () => deepLink.classification === "all"
-      ? scopedRows
-      : scopedRows.filter((row) => classifyUsageRelation(row.usage) === deepLink.classification),
-    [deepLink.classification, scopedRows],
-  );
+  const contextualRows = useMemo(() => {
+    if (usageContextStatus && usageContextStatus !== "active") return [];
+    if (!usageContext) return scopedRows;
+    if (usageContext.problem_id) {
+      if (usageContextStatus !== "active") return [];
+      return relationRows.filter((row) => [
+        row.usage.relation_id,
+        ...row.usage.evidence_relation_ids,
+      ].some((relationId) => issueRelationIds.has(relationId)));
+    }
+    return relationRows.filter((row) => {
+      if (usageContext.relation_id) {
+        return row.usage.relation_id === usageContext.relation_id
+          || row.usage.evidence_relation_ids.includes(usageContext.relation_id);
+      }
+      if (usageContext.skill_id && row.usage.skill_id !== usageContext.skill_id) return false;
+      return row.usage.target.agent_client_id === usageContext.agent_id;
+    });
+  }, [issueRelationIds, relationRows, scopedRows, usageContext, usageContextStatus]);
+  const visibleRows = useMemo(() => {
+    if (usageContext?.problem_id) return contextualRows;
+    return deepLink.classification === "all"
+      ? contextualRows
+      : contextualRows.filter((row) => classifyUsageRelation(row.usage) === deepLink.classification);
+  }, [contextualRows, deepLink.classification, usageContext?.problem_id]);
   const classificationCounts = useMemo(() => ({
     all: scopedRows.length,
     pending: scopedRows.filter((row) => classifyUsageRelation(row.usage) === "pending").length,
@@ -663,15 +720,19 @@ export function RelationshipGovernancePage({
   }, [batchFlow.result, describeError, facade, notifications, queryClient, t, tracker]);
 
   // 深链 relationId：进入页面后按行的最恰当动作直接打开治理预览（仅一次）。
-  const pendingRelationIdRef = useRef<string | null>(deepLink.relationId);
-  useEffect(() => { pendingRelationIdRef.current = deepLink.relationId; }, [deepLink.relationId]);
+  const requestedRelationId = usageContext?.relation_id ?? deepLink.relationId;
+  const pendingRelationIdRef = useRef<string | null>(requestedRelationId);
+  useEffect(() => { pendingRelationIdRef.current = requestedRelationId; }, [requestedRelationId]);
   const matchingDeepLinkRow = useMemo(() => {
-    const requestedRelationId = deepLink.relationId;
     if (!requestedRelationId) return null;
     return visibleRows.find((row) => row.usage.relation_id === requestedRelationId
       || row.usage.evidence_relation_ids.includes(requestedRelationId)) ?? null;
-  }, [deepLink.relationId, visibleRows]);
+  }, [requestedRelationId, visibleRows]);
   useEffect(() => {
+    if (usageContextStatus && usageContextStatus !== "active") {
+      if (usageContextStatus !== "loading") pendingRelationIdRef.current = null;
+      return;
+    }
     if (!usageOverviewQuery.isSuccess || !ledgerQuery.isSuccess || !pendingRelationIdRef.current) return;
     const relationId = pendingRelationIdRef.current;
     pendingRelationIdRef.current = null;
@@ -690,21 +751,42 @@ export function RelationshipGovernancePage({
       row.usage.management === "managed"
       && isGovernanceActionAvailable(actionRow, "undeploy")
     ) openSingle("undeploy", actionRow, row.usage);
-  }, [ledgerQuery.isSuccess, matchingDeepLinkRow, openSingle, usageOverviewQuery.isSuccess]);
+  }, [ledgerQuery.isSuccess, matchingDeepLinkRow, openSingle, usageContextStatus, usageOverviewQuery.isSuccess]);
 
   const closeSingle = useCallback(() => setSingle(null), []);
 
   return (
     <RelationshipsLayout facade={layoutFacade} scope="governance">
-      {usageOverviewQuery.isSuccess && deepLink.relationId && !matchingDeepLinkRow ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
+      <div className="sh-governance">
+      {usageContextStatus === "invalid" ? <p data-testid="governance-context-invalid" role="alert">{t("relationships.governance.problemContext.invalid")}</p> : null}
+      {usageContextStatus === "loading" ? <p data-testid="governance-context-loading" role="status">{t("relationships.governance.problemContext.loading")}</p> : null}
+      {usageContextStatus === "unavailable" ? <p data-testid="governance-context-unavailable" role="alert">{t("relationships.governance.problemContext.unavailable")}</p> : null}
+      {usageContextStatus === "stale" ? <p data-testid="governance-context-stale" role="status">{t("relationships.governance.problemContext.stale")}</p> : null}
+      {usageContextStatus === "scope_changed" ? <p data-testid="governance-context-scope-changed" role="status">{t("relationships.governance.problemContext.scopeChanged")}</p> : null}
+      {usageContextStatus === "active" && currentEnvironmentProblem ? (
+        <section aria-label={t("relationships.governance.problemContext.currentIssue")} data-testid="governance-current-problem">
+          <p>{t("relationships.governance.problemContext.reloaded", { count: currentEnvironmentProblem.entries.length })}</p>
+          <ul>
+            {currentEnvironmentProblem.entries.map((entry, index) => (
+              <li key={`${entry.directory_id}:${entry.relative_entry_path}:${index}`}>
+                {entry.runtime_name || entry.relative_entry_path}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {usageOverviewQuery.isSuccess && requestedRelationId && !matchingDeepLinkRow && (usageContextStatus === "active" || usageContextStatus === null) ? <p role="status">{t("relationships.governance.deepLink.relationUnavailable")}</p> : null}
       {/* 工作台是 .sh-relationships 两行网格的唯一画布子元素：页签行 +
           画布行。治理页的块级内容一旦直接散落在网格里，画布行会被
           压缩，内容整体叠到后续兄弟元素上（2026-09-25 验收缺陷）。 */}
-      <div className="sh-governance">
-      {deepLink.from ? (
+      {deepLink.from || usageContext?.return_to ? (
         <div className="sh-governance__source-bar">
           <Button
             onClick={() => {
+              if (usageContext?.return_to) {
+                navigate(usageContext.return_to, { replace: true });
+                return;
+              }
               if (deepLink.from === "library") {
                 navigate(libraryReturnTarget?.to ?? "/library", {
                   replace: true,
@@ -717,7 +799,7 @@ export function RelationshipGovernancePage({
             size="sm"
             variant="ghost"
           >
-            {t(`relationships.governance.back.${deepLink.from}` as never)}
+            {t((usageContext?.return_to ? "relationships.governance.back.pending" : `relationships.governance.back.${deepLink.from}`) as never)}
           </Button>
           {deepLink.from === "library" && !libraryReturnTarget ? (
             <p data-testid="governance-return-context-warning" role="note">

@@ -4,6 +4,7 @@ import {
   type AppCommandResult,
   type CommitUndeploy,
   type GovernanceHistoryPage,
+  type EnvironmentProblemAnalysis,
   type ListGovernanceHistory,
   type RelationGovernanceBatchOutcome,
   type RelationshipGovernanceMutationResult,
@@ -82,6 +83,17 @@ export const nativeGovernanceFacade: RelationGovernanceFacade = {
     });
     if (result.type !== "relationship_overview") {
       return unexpectedResult("get_relationship_overview");
+    }
+    return result.payload;
+  },
+
+  async getUsageEnvironmentProblems(): Promise<EnvironmentProblemAnalysis> {
+    const result = await queryApplication({
+      type: "get_usage_environment_problems",
+      payload: null,
+    });
+    if (result.type !== "usage_environment_problems") {
+      return unexpectedResult("get_usage_environment_problems");
     }
     return result.payload;
   },

@@ -1,5 +1,6 @@
 import type {
   ConflictWorkspace,
+  EnvironmentProblemAnalysis,
   RelationGovernanceFilters,
   RelationGovernanceLedger,
   RelationshipGraphFilters,
@@ -11,6 +12,7 @@ import type {
 
 export type {
   ConflictWorkspace,
+  EnvironmentProblemAnalysis,
   RelationGovernanceFilters,
   RelationGovernanceLedger,
   RelationshipGraphFilters,
@@ -62,6 +64,8 @@ export const relationshipsKeys = {
     [relationshipsKeys.root, "governance", params] as const,
   governanceUsageOverview: () =>
     [relationshipsKeys.root, "governance-usage-overview"] as const,
+  governanceUsageProblems: (problemId?: string | null) =>
+    [relationshipsKeys.root, "governance-usage-problems", problemId ?? null] as const,
   governanceHistory: (params: {
     page: number;
     pageSize: number;

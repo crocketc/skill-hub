@@ -286,3 +286,118 @@ async fn findings_keep_exact_identity_and_close_independently() {
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].check_kind.as_deref(), Some("llm"));
 }
+
+#[tokio::test]
+async fn one_shared_environment_problem_produces_one_pending_item_for_all_agents() {
+    use skillhub_core::agent::{
+        ClientInstance, ClientKind, ClientPresence, DiscoverySnapshot, OperatingSystem,
+    };
+    use skillhub_core::relationship::{
+        AgentDirectoryCapabilityFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
+    };
+    use skillhub_storage::CentralLibrary;
+
+    let workspace = tempfile::tempdir().unwrap();
+    let library_root = workspace.path().join("library");
+    CentralLibrary::initialize(&library_root).unwrap();
+    let database = Database::open(workspace.path().join("state.sqlite")).unwrap();
+    database
+        .bootstrap_repository()
+        .save_initialization(&InitializationStatus::initialized("library", false))
+        .unwrap();
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-10-09T00:00:00Z".into(),
+            instances: ["agent-a", "agent-b"]
+                .into_iter()
+                .map(|client_id| ClientInstance {
+                    profile_id: format!("profile-{client_id}"),
+                    client_id: client_id.into(),
+                    kind: ClientKind::Cli,
+                    display_name: format!("{client_id} Agent"),
+                    supported_os: vec![OperatingSystem::Macos, OperatingSystem::Windows],
+                    client_presence: ClientPresence::Unknown,
+                })
+                .collect(),
+            agent_roots: Vec::new(),
+            logical_targets: Vec::new(),
+            physical_targets: Vec::new(),
+        })
+        .unwrap();
+
+    let shared_directory = workspace.path().join("shared/skills");
+    for name in ["notes-a", "notes-b"] {
+        let skill = shared_directory.join(name);
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: notes\n---\n# Notes\nSame shared skill.\n",
+        )
+        .unwrap();
+    }
+    database
+        .directory_repository()
+        .upsert_node(&DirectoryNodeFact {
+            node_id: "shared-skills".into(),
+            path: shared_directory.to_string_lossy().into_owned(),
+            path_key: String::new(),
+            role: DirectoryRole::SharedDirectory,
+            profile_id: None,
+            agent_client_id: None,
+            exists: true,
+            observed_at: 1,
+            scan_source: Some("pending-workspace-test".into()),
+        })
+        .unwrap();
+    for agent_client_id in ["agent-a", "agent-b"] {
+        database
+            .relationship_repository()
+            .upsert_capability(&AgentDirectoryCapabilityFact {
+                agent_client_id: agent_client_id.into(),
+                directory_node_id: "shared-skills".into(),
+                recognition: DirectoryRecognition::Supported,
+                precedence: skillhub_core::agent::DirectoryPrecedence::Preferred,
+                evidence_reference: Some("fixture".into()),
+                researched_at: Some("2026-10-09".into()),
+                applicable_platforms: vec!["macos".into(), "windows".into()],
+            })
+            .unwrap();
+    }
+
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let AppQueryResult::UsageEnvironmentProblems(analysis) = facade
+        .query(AppQuery::GetUsageEnvironmentProblems(
+            skillhub_core::api::GetUsageEnvironmentProblems,
+        ))
+        .await
+        .unwrap()
+    else {
+        panic!("usage environment problems")
+    };
+    assert_eq!(analysis.problems.len(), 1);
+    assert_eq!(analysis.problems[0].consumers.len(), 2);
+    let problem_id = analysis.problems[0].problem_id.clone();
+    let AppQueryResult::PendingWorkspace(workspace) =
+        facade.query(AppQuery::GetPendingWorkspace).await.unwrap()
+    else {
+        panic!("workspace")
+    };
+    let environment_problems = workspace
+        .items
+        .iter()
+        .filter(|item| {
+            item.kind == WorkKind::Governance && item.subject.starts_with("env:same_skill:")
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(environment_problems.len(), 1);
+    let context = environment_problems[0]
+        .governance_context
+        .as_ref()
+        .expect("environment problem navigation context");
+    assert_eq!(context.problem_id.as_deref(), Some(problem_id.as_str()));
+    assert!(matches!(context.agent_id.as_str(), "agent-a" | "agent-b"));
+    assert_eq!(context.return_to.as_deref(), Some("/pending"));
+}

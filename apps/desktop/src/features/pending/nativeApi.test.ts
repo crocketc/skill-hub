@@ -16,7 +16,7 @@ it("maps derived pending work to stable page identities", async () => {
   query.mockResolvedValue({ type: "pending_workspace", payload: { unavailable_sources: [], items: [{
     id: "work:security_finding:pdf-reader:v1:finding-7", subject: "pdf-reader", kind: "security_finding",
     message_code: "pending.reasons.security_finding", display_name: "PDF Reader", can_defer: false, can_ignore: false,
-    recommended: false, can_confirm: false, version_id: "v1", finding_id: "finding-7", check_kind: "basic", risk: "high", path: null, due_date: null, source_roots: [],
+    recommended: false, can_confirm: false, version_id: "v1", finding_id: "finding-7", check_kind: "basic", risk: "high", path: null, due_date: null, source_roots: [], governance_context: null,
   }] } });
   await expect(nativePendingFacade.list()).resolves.toEqual([{
     id: "work:security_finding:pdf-reader:v1:finding-7", subject: "pdf-reader", kind: "security_finding", code: "security_finding",
@@ -24,6 +24,24 @@ it("maps derived pending work to stable page identities", async () => {
     versionId: "v1", findingId: "finding-7", checkKind: "basic", risk: "high", path: undefined, dueDate: null,
     sourceRoots: [], href: "/library/pdf-reader/security?version=v1&kind=basic&finding=finding-7",
   }]);
+});
+
+it("maps the complete native usage-governance context without dropping nullable fields", async () => {
+  query.mockResolvedValue({ type: "pending_workspace", payload: { unavailable_sources: [], items: [{
+    id: "problem:shared", subject: "problem:shared", kind: "governance", message_code: "pending.reasons.environment_problem.same_skill",
+    display_name: "PDF Reader", can_defer: false, can_ignore: false, recommended: false, can_confirm: false,
+    version_id: null, finding_id: null, check_kind: null, risk: null, path: null, due_date: null, source_roots: [],
+    governance_context: {
+      agent_id: "codex", project_id: null, problem_id: "problem:shared", relation_id: "managed:dep-1",
+      skill_id: "skill-pdf", return_to: "/pending?category=relationships",
+    },
+  }] } });
+
+  const workspace = await nativePendingFacade.workspace!();
+  expect(workspace.items[0]?.governanceContext).toEqual({
+    agent_id: "codex", problem_id: "problem:shared", relation_id: "managed:dep-1",
+    skill_id: "skill-pdf", return_to: "/pending?category=relationships",
+  });
 });
 
 it("requires the finding workflow instead of silently acknowledging risk", async () => {

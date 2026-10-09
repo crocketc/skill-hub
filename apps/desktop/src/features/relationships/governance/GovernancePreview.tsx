@@ -439,6 +439,7 @@ function unavailablePreviewAction(): never {
 const previewFacade: RelationGovernanceFacade = {
   listGovernance: async () => ledger,
   getRelationshipOverview: async () => relationshipOverview,
+  getUsageEnvironmentProblems: async () => ({ problems: [], probe_limitations: [] }),
   revalidate: async (): Promise<RelationshipCheckReport> => ({
     items: [],
     relationship_revision: ledger.relationship_revision,

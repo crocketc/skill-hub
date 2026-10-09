@@ -126,11 +126,15 @@ function toCandidate(candidate: NativeImportCandidate): ImportCandidate {
   };
 }
 
-function conflictKind(kind: ImportAnalysis["conflicts"][number]["kind"]): ImportConflict["kind"] {
+function conflictKind(kind: ImportAnalysis["conflicts"][number]["kind"]): ImportConflict["kind"] | undefined {
   switch (kind) {
     case "exact_content":
-    case "same_source":
       return "exact_duplicate";
+    case "same_source":
+      // Source identity does not prove equal content. Normally this fact does
+      // not require a choice; if a stale or inconsistent DTO says otherwise,
+      // omit it instead of inventing an exact-content conflict.
+      return undefined;
     case "same_runtime_name_different_content":
       return "same_name";
     case "search_candidate":
@@ -525,6 +529,8 @@ export const nativeImportFacade: ImportFacade = {
     for (const { candidate, analysis } of analyses) {
       for (const conflict of analysis.conflicts) {
         if (!conflict.requires_choice) continue;
+        const kind = conflictKind(conflict.kind);
+        if (!kind) continue;
         const allowedActions = analysis.actions
           .map(actionForDecision)
           .filter((action): action is ImportAction => action !== undefined)
@@ -535,7 +541,7 @@ export const nativeImportFacade: ImportFacade = {
           candidateName: candidate.name,
           candidatePath: candidate.path,
           duplicateKind: analysis.duplicate_kind,
-          kind: conflictKind(conflict.kind),
+          kind,
           matchedSkillIds: analysis.matches.map((match) => match.skill_id),
           matchedSkills: analysis.matches
             .filter((match) => match.skill_id === conflict.skill_id)

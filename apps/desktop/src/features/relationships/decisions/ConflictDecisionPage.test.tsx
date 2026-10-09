@@ -285,6 +285,17 @@ describe("ConflictDecisionPage", () => {
     expect(screen.queryByRole("button", { name: "conflict:a" })).not.toBeInTheDocument();
   });
 
+  it("ignores a legacy third-category query and keeps the current issue queue visible", async () => {
+    await renderPage(createFacade(workspaceFixture()), {
+      initialEntry: "/relationships/decisions?category=same_source_fork&conflictId=conflict:a",
+    });
+
+    expect(await screen.findByText("冲突组 conflict:a")).toBeVisible();
+    expect(screen.getByRole("button", { name: "conflict:b" })).toBeVisible();
+    expect(screen.getAllByRole("group", { name: "冲突类别" })[0]).toBeVisible();
+    expect(screen.queryByRole("button", { name: "同源分叉" })).not.toBeInTheDocument();
+  });
+
   it("keeps manual decisions available when no LLM provider is configured", async () => {
     const facade = createFacade(workspaceFixture());
     facade.isAiAvailable = vi.fn(async () => false);

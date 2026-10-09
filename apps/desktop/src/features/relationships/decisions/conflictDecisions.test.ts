@@ -7,6 +7,7 @@ import {
   conflictKindGroup,
   conflictWorkspaceHref,
   nextConflictId,
+  queueKindValues,
 } from "./conflictDecisions";
 
 describe("conflict decision helpers", () => {
@@ -54,13 +55,31 @@ describe("conflict decision helpers", () => {
     ] as const;
 
     expect(conflictKindGroup(queue[0])).toBe("same_name_different_content");
-    // kind 缺省按「其他冲突」归组，不冒充分类事实。
-    expect(conflictKindGroup(queue[3])).toBe("unknown");
+    // 未分类条目不被伪装成第三种冲突类别。
+    expect(conflictKindGroup(queue[3])).toBeNull();
     expect(nextConflictId(queue, null, "next")).toBe("conflict:a");
     expect(nextConflictId(queue, "conflict:b", "next")).toBe("conflict:c");
     expect(nextConflictId(queue, "conflict:d", "next")).toBeNull();
     expect(nextConflictId(queue, "conflict:c", "prev")).toBe("conflict:b");
     expect(nextConflictId(queue, "conflict:a", "prev")).toBeNull();
     expect(nextConflictId([], null, "next")).toBeNull();
+  });
+
+  it("projects legacy evidence into the two product conflict categories only", () => {
+    const queue = [
+      { case: { conflict_id: "same", kind: "same_source_fork", evidence: { fingerprints_match: true, names_match: true } } },
+      { case: { conflict_id: "name", kind: "shared_directory_duplicate", evidence: { fingerprints_match: false, names_match: true } } },
+      { case: { conflict_id: "unrecognized", kind: "unknown_directory_recognition" } },
+    ] as const;
+
+    expect(queue.map(conflictKindGroup)).toEqual([
+      "duplicate_same_content",
+      "same_name_different_content",
+      null,
+    ]);
+    expect(queueKindValues(queue)).toEqual([
+      "duplicate_same_content",
+      "same_name_different_content",
+    ]);
   });
 });

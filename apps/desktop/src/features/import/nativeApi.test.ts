@@ -180,6 +180,45 @@ describe("native import facade", () => {
     });
   });
 
+  it("does not describe a same-source fork as an exact-content duplicate", async () => {
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: {
+          actions: ["skip"],
+          candidate: {} as never,
+          conflicts: [{
+            kind: "same_source",
+            reason_code: "import.same_source_requires_review",
+            requires_choice: true,
+            skill_id: "skill-1",
+          }],
+          duplicate_kind: "same_source",
+          matches: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+      });
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "prepared_import",
+      payload: { id: "prepared-1", candidate: {} as never, analysis: { actions: ["skip"] } as never },
+    });
+    const candidate = {
+      basicCheck: "not_checked" as const,
+      id: "C:/incoming/notes#notes",
+      name: "notes",
+      ownership: "unknown" as const,
+      path: "C:/incoming/notes",
+      source: await nativeImportFacade.parseSource("C:/incoming"),
+    };
+
+    const plan = await nativeImportFacade.analyzeConflicts([candidate]);
+
+    expect(plan.conflicts).toEqual([]);
+  });
+
   it("reports live per-candidate progress as native analyses resolve", async () => {
     const progress = vi.fn();
     vi.mocked(queryApplication)

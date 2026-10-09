@@ -2537,7 +2537,15 @@
       "backup_setup": "技能库已有内容，建议创建一份备份。成功创建并校验后，这条建议会自动关闭。",
       "agent_compatibility": "请试用此导入方式并在 Agent 中检查发现和加载结果，然后记录本机兼容性结论。",
       "source_update": "发现新的来源版本，请审阅差异后决定是否更新。",
-      "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。"
+      "governance_followup": "导入时保留了治理提醒。请审阅来源并完成相应处理；系统无法验证的提醒，可确认已人工处理。实际冲突与风险仍需单独解决。",
+      "environment_problem": {
+        "same_skill": "多个使用位置的 Skill 内容相同，需要确认它们是否指向同一 Skill。",
+        "name_conflict": "多个使用位置出现同名但内容不同的 Skill，需要分别确认。"
+      }
+    },
+    "environmentProblemTitles": {
+      "sameSkill": "同一技能出现在多个目录",
+      "nameConflict": "多个目录中存在重名技能"
     },
     "count": "需处理 {{count}} 项",
     "totalCount": "共 {{count}} 项待办",
@@ -2855,10 +2863,7 @@
       "kind": {
         "duplicate_same_content": "重复内容",
         "same_name_different_content": "同名不同内容",
-        "same_source_fork": "同源分叉",
-        "shared_directory_duplicate": "共享目录重复",
-        "unknown_directory_recognition": "未识别目录来源",
-        "unknown": "其他冲突"
+        "unclassified": "分类证据不足"
       },
       "nav": {
         "prev": "上一个",
@@ -2996,7 +3001,17 @@
         "relationUnavailable": "这条关系在该技能中已不可用。",
         "returnContextUnavailable": "无法验证原技能详情位置；返回操作将回到技能库。"
       },
+      "problemContext": {
+        "currentIssue": "当前待处理问题",
+        "loading": "正在重新读取这项问题及其全部使用位置；读取完成前不会开放操作。",
+        "unavailable": "无法重新读取这项问题。请返回待处理列表并刷新后重试。",
+        "invalid": "此链接缺少有效的 Agent 上下文，已阻止打开旧操作。请从待处理列表重新进入。",
+        "stale": "此问题已解决或发生变化。旧链接不能继续操作，请返回待处理列表刷新。",
+        "scopeChanged": "此问题已不再属于链接中的 Agent 或项目范围，已阻止旧操作。请返回待处理列表刷新。",
+        "reloaded": "已重新读取当前问题，涉及 {{count}} 个目录条目。下方列出整组问题的关联关系。"
+      },
       "back": {
+        "pending": "返回待处理列表",
         "library": "返回技能库",
         "graph": "返回技能图谱",
         "conflict": "返回冲突处理",

@@ -88,6 +88,16 @@ export const nativePendingFacade: PendingFacade = {
         checkKind: work.check_kind ?? undefined, path: work.path ?? undefined,
         dueDate: work.due_date, risk: work.risk,
         sourceRoots: work.source_roots, canConfirm: work.can_confirm,
+        ...(work.governance_context ? {
+          governanceContext: {
+            agent_id: work.governance_context.agent_id,
+            project_id: work.governance_context.project_id ?? undefined,
+            problem_id: work.governance_context.problem_id ?? undefined,
+            relation_id: work.governance_context.relation_id ?? undefined,
+            skill_id: work.governance_context.skill_id ?? undefined,
+            return_to: work.governance_context.return_to ?? undefined,
+          },
+        } : {}),
         ...(member?.brand ? { agentBrand: member.brand } : {}),
         ...(member?.kind ? { agentKinds: [member.kind] } : {}),
         ...(directory ? {

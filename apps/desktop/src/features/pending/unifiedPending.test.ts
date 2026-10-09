@@ -6,7 +6,7 @@ vi.mock("../../api/bindings", () => ({ queryApplication: vi.fn(), executeCommand
 const work = (kind: WorkItem["kind"], subject: string): WorkItem => ({
   id: `work:${kind}:${subject}:v1`, kind, subject, display_name: "Notes", message_code: `pending.reasons.${kind}`,
   recommended: false, can_confirm: false, can_defer: kind === "trial_due", can_ignore: kind === "trial_due", version_id: null,
-  finding_id: null, check_kind: null, path: null, due_date: null, risk: null, source_roots: [],
+  finding_id: null, check_kind: null, path: null, due_date: null, risk: null, source_roots: [], governance_context: null,
 });
 let items: WorkItem[];
 let unavailable: string[];

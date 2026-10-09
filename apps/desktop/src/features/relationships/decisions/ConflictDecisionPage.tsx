@@ -43,10 +43,6 @@ export interface ConflictDecisionPageProps {
 const KIND_CHIP_LABEL_KEYS: Record<string, string> = {
   duplicate_same_content: "relationships.decisions.kind.duplicate_same_content",
   same_name_different_content: "relationships.decisions.kind.same_name_different_content",
-  same_source_fork: "relationships.decisions.kind.same_source_fork",
-  shared_directory_duplicate: "relationships.decisions.kind.shared_directory_duplicate",
-  unknown_directory_recognition: "relationships.decisions.kind.unknown_directory_recognition",
-  unknown: "relationships.decisions.kind.unknown",
 };
 
 /**
@@ -77,7 +73,9 @@ export function ConflictDecisionPage({
 
   const categoryParam = searchParams.get("category");
   const conflictIdParam = searchParams.get("conflictId");
-  const visibleQueue = categoryParam
+  const isProductCategory = categoryParam === "duplicate_same_content"
+    || categoryParam === "same_name_different_content";
+  const visibleQueue = isProductCategory
     ? cases.filter((entry) => conflictKindGroup(entry) === categoryParam)
     : cases;
   const selectedId =
@@ -187,10 +185,10 @@ export function ConflictDecisionPage({
       {conflictIdParam && !selectedEntry ? <p role="status">{t("pending.linkResolved")}</p> : null}
       <div className="sh-conflict-page__chips" role="group" aria-label={t("relationships.decisions.chipsLabel")}>
         <Button
-          aria-pressed={!categoryParam}
+          aria-pressed={!isProductCategory}
           onClick={clearCategory}
           size="sm"
-          variant={!categoryParam ? "secondary" : "ghost"}
+          variant={!isProductCategory ? "secondary" : "ghost"}
         >
           {t("relationships.decisions.chipAll")}
         </Button>
@@ -280,8 +278,9 @@ export function ConflictDecisionPage({
                 <span className="sh-conflict-queue__id">{entry.case.conflict_id}</span>
                 <span>
                   {t(
-                    (KIND_CHIP_LABEL_KEYS[conflictKindGroup(entry)]
-                      ?? KIND_CHIP_LABEL_KEYS.unknown) as never,
+                    (conflictKindGroup(entry)
+                      ? KIND_CHIP_LABEL_KEYS[conflictKindGroup(entry)!]
+                      : "relationships.decisions.kind.unclassified") as never,
                   )}
                 </span>
                 {entry.latest_analysis ? (

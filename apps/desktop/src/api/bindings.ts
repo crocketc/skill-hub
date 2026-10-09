@@ -5375,6 +5375,16 @@ export type UsageEvidenceAnalysis = {
 
 export type UsageForm = "link" | "full_copy";
 
+/**  Exact context for reloading a current usage-governance problem from a pending item. */
+export type UsageGovernanceContext = {
+	agent_id: string,
+	project_id: string | null,
+	problem_id: string | null,
+	relation_id: string | null,
+	skill_id: string | null,
+	return_to: string | null,
+};
+
 export type UsageHealthReason = "normal" | "file_missing" | "link_abnormal" | "content_changed" | "needs_sync" | "sync_failed" | "unable_to_verify" | "user_confirmation";
 
 export type UsageManagement = "managed" | "unmanaged";
@@ -5498,6 +5508,7 @@ export type WorkItem = {
 	due_date: string | null,
 	risk: PendingRisk | null,
 	source_roots: string[],
+	governance_context: UsageGovernanceContext | null,
 };
 
 /**  Work is derived from durable domain facts, never from notification history. */

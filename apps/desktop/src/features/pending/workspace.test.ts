@@ -94,23 +94,58 @@ it("collects readable object names for the collapsed summary without identifiers
   expect(securityGroup?.highestRisk).toBe("medium");
 });
 
-it("keeps one destination summary per relationship workbench and one recovery entry", () => {
+it("keeps relationship pending groups at their stable issue or relation identity", () => {
   const groups = groupPendingItems([
     { id: "conflict-a", subject: "c-a", kind: "conflict" } as PendingItem,
     { id: "conflict-b", subject: "c-b", kind: "conflict" } as PendingItem,
-    { id: "governance", subject: "r-1", kind: "governance" } as PendingItem,
+    { id: "problem-a", subject: "p-a", kind: "governance", message: "pending.reasons.environment_problem.same_skill", governanceContext: { agent_id: "agent-a", problem_id: "problem-a", return_to: "/pending" } } as PendingItem,
+    { id: "problem-b", subject: "p-b", kind: "governance", governanceContext: { agent_id: "agent-b", project_id: "project-b", problem_id: "problem-b", return_to: "/pending" } } as PendingItem,
+    { id: "governance-a", subject: "r-1", kind: "governance" } as PendingItem,
+    { id: "governance-b", subject: "r-2", kind: "governance" } as PendingItem,
     { id: "followup", subject: "t-1", kind: "governance_followup" } as PendingItem,
     { id: "recovery-a", subject: "op-a", kind: "recovery" } as PendingItem,
     { id: "recovery-b", subject: "op-b", kind: "recovery" } as PendingItem,
   ]);
 
-  expect(groups.map((group) => [group.category, group.count, group.href])).toEqual([
-    ["relationships", 2, "/relationships/decisions"],
-    ["relationships", 1, "/relationships/governance"],
-    ["relationships", 1, "/discovery/local"],
-    ["recovery", 2, "/recovery"],
+  expect(groups.filter((group) => group.kind === "conflict").map((group) => [group.count, group.href])).toEqual([
+    [1, "/relationships/decisions?conflictId=c-a"],
+    [1, "/relationships/decisions?conflictId=c-b"],
   ]);
+  expect(groups.filter((group) => group.kind === "governance").map((group) => [group.count, group.href]).sort()).toEqual([
+    [1, "/relationships/governance?agent_id=agent-a&problem_id=problem-a&return_to=%2Fpending"],
+    [1, "/relationships/governance?agent_id=agent-b&project_id=project-b&problem_id=problem-b&return_to=%2Fpending"],
+    [1, "/relationships/governance?relationId=r-1"],
+    [1, "/relationships/governance?relationId=r-2"],
+  ].sort());
+  expect(groups.find((group) => group.key.includes("problem:problem-a"))?.titleKey)
+    .toBe("pending.environmentProblemTitles.sameSkill");
+  expect(groups.filter((group) => group.category === "recovery").map((group) => group.count)).toEqual([2]);
   expect(groups.every((group) => group.selectableIds.length === 0)).toBe(true);
+});
+
+it("sends a governance item to the shared current-problem route with complete context", () => {
+  expect(pendingDestination({
+    kind: "governance",
+    subject: "problem-1",
+    governanceContext: {
+      agent_id: "agent:codex",
+      project_id: "project:one",
+      problem_id: "env:same_skill:abc",
+      relation_id: "managed:dep-1",
+      skill_id: "skill:pdf",
+      return_to: "/pending?category=relationships",
+    },
+  } as PendingItem)).toBe(
+    "/relationships/governance?agent_id=agent%3Acodex&project_id=project%3Aone&problem_id=env%3Asame_skill%3Aabc&relation_id=managed%3Adep-1&skill_id=skill%3Apdf&return_to=%2Fpending%3Fcategory%3Drelationships",
+  );
+});
+
+it("keeps an incomplete pending issue link on the pending list", () => {
+  expect(pendingDestination({
+    kind: "governance",
+    subject: "problem-1",
+    governanceContext: { agent_id: "agent:codex", return_to: "/pending" },
+  } as PendingItem)).toBe("/pending");
 });
 
 it("merges Agent compatibility modes by target and keeps the target presentation facts", () => {
