@@ -5,8 +5,9 @@
 use skillhub_core::import::ImportProvenanceEvent;
 use skillhub_core::relationship::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
-    validate_source_copy_transition, RelationshipCheckLevel, RelationshipPathProbe,
-    SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact, SourceCopyTransition,
+    validate_source_copy_transition, RelationHealthReason, RelationshipCheckLevel,
+    RelationshipPathProbe, SourceCopyHealth, SourceCopyProbe, SourceCopyRelationFact,
+    SourceCopyTransition,
 };
 use skillhub_core::{ImportSourceClass, SkillId};
 use skillhub_core::{SourceDescriptor, SourceKind, SourceLocator};
@@ -129,20 +130,28 @@ fn full_check_with_changed_physical_identity_stays_needs_validation() {
 }
 
 #[test]
-fn frozen_contract_keeps_direct_identity_and_fingerprint_probe_verdicts() {
+fn direct_identity_and_fingerprint_probes_keep_distinct_verdicts() {
     let relation = relation();
     let identity =
         validate_source_copy_transition(&relation, SourceCopyProbe::PhysicalIdentityChanged, 100);
     let SourceCopyTransition::Update(updated) = identity else {
         panic!("identity probe never archives");
     };
-    assert_eq!(updated.health, SourceCopyHealth::ContentChanged);
+    assert_eq!(updated.health, SourceCopyHealth::NeedsValidation);
+    assert_eq!(
+        updated.health_reasons,
+        Some(vec![RelationHealthReason::TargetEntryReplaced])
+    );
     let fingerprint =
         validate_source_copy_transition(&relation, SourceCopyProbe::FingerprintChanged, 100);
     let SourceCopyTransition::Update(updated) = fingerprint else {
         panic!("fingerprint probe never archives");
     };
     assert_eq!(updated.health, SourceCopyHealth::ContentChanged);
+    assert_eq!(
+        updated.health_reasons,
+        Some(vec![RelationHealthReason::ContentChanged])
+    );
 }
 
 #[test]
