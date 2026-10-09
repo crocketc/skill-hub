@@ -884,11 +884,12 @@ pub(crate) fn sync_reconciled_deployment_tx(
         .execute(
             "UPDATE deployment_relations
              SET content_fingerprint=?1, match_state=?2, active=1,
-                 observed_at=?3, released_at=NULL
+                 health_reasons_json='[]', observed_at=?3, released_at=NULL
              WHERE relation_id=?4 AND ownership='skillhub_managed' AND (
                  content_fingerprint IS NOT ?1
                  OR match_state IS NOT ?2
                  OR active<>1
+                 OR health_reasons_json IS NOT '[]'
                  OR observed_at IS NOT ?3
                  OR released_at IS NOT NULL
              )",

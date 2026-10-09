@@ -260,6 +260,31 @@ fn unknown_probe_is_not_normal() {
 }
 
 #[test]
+fn managed_sync_failure_projects_as_retryable_sync_failure() {
+    let mut relation = deployment(
+        RelationshipType::ManagedCopy,
+        Some(vec![
+            skillhub_core::relationship::RelationHealthReason::OperationFailed,
+        ]),
+    );
+    relation.ownership = OwnershipState::SkillhubManaged;
+    let view = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[UsageManagementEvidence {
+            relation_id: "relation:ManagedCopy".into(),
+            management: UsageManagement::Managed,
+        }],
+    )
+    .remove(0);
+
+    assert_eq!(view.management, UsageManagement::Managed);
+    assert_eq!(view.health_reasons, vec![UsageHealthReason::SyncFailed]);
+}
+
+#[test]
 fn builtin_original_is_not_retained_copy() {
     let copies = vec![source_copy()];
     let views = project(

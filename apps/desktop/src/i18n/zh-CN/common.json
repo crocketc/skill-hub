@@ -2369,7 +2369,10 @@
         "remove_copy_with_backup": "创建恢复备份后移除目标拷贝。",
         "record_only": "此操作只结束关系记录，Agent 仍可能读取该文件。",
         "manage_link": "将此入口改为指向技能主体的链接。",
-        "manage_copy": "保留目标文件，并将其纳入技能库同步管理。"
+        "manage_copy": "保留目标文件，并将其纳入技能库同步管理。",
+        "synchronize": "将受管目标更新到技能库当前主体版本。",
+        "repair": "备份目标占用项后，修复受管链接。",
+        "restore": "按原受管方式恢复缺失目标。"
       },
       "confirm": "确认解除",
       "submitting": "正在解除使用关系…",
@@ -2387,7 +2390,10 @@
         "remove_copy_with_backup": "备份后移除拷贝",
         "record_only": "只结束跟踪记录",
         "manage_link": "转为管理链接",
-        "manage_copy": "转为管理拷贝"
+        "manage_copy": "转为管理拷贝",
+        "synchronize": "同步到技能库当前版本",
+        "repair": "修复受管链接",
+        "restore": "恢复受管目标"
       },
       "recoveryPoint": "恢复备份：{{path}}",
       "close": "关闭"
@@ -3068,6 +3074,39 @@
         "resultReason": "原因：{{reason}}",
         "close": "关闭"
       },
+      "managedChange": {
+        "sync": {
+          "title": "同步管理拷贝",
+          "description": "将目标拷贝更新为技能库当前主体版本。目标有未同步改动时，需要你明确确认采用主体版本。",
+          "contentChoice": "我确认以技能库当前版本替换目标内容",
+          "preparing": "正在准备同步预览…",
+          "committing": "正在同步目标…",
+          "confirm": "确认同步"
+        },
+        "repair": {
+          "title": "修复受管链接",
+          "description": "备份目标位置的占用项，再恢复指向技能主体的受管链接。",
+          "contentChoice": "我确认以技能库当前版本恢复受管链接",
+          "preparing": "正在准备修复预览…",
+          "committing": "正在修复链接…",
+          "confirm": "确认修复"
+        },
+        "restore": {
+          "title": "恢复受管目标",
+          "description": "按记录的受管方式恢复缺失目标，并核对恢复后的实际入口。",
+          "preparing": "正在准备恢复预览…",
+          "committing": "正在恢复目标…",
+          "confirm": "确认恢复"
+        },
+        "preview": "预览操作影响",
+        "changePreview": "重新核对并预览",
+        "resultHeading": "操作结果",
+        "resultComplete": "已完成 {{applied}} 项。",
+        "resultPartial": "已完成 {{applied}} 项；{{failed}} 项仍需处理。",
+        "resultReason": "原因：{{reason}}",
+        "retry": "重新准备操作",
+        "close": "关闭"
+      },
       "healthMessages": {
         "normal": "使用状态正常。",
         "file_missing": "使用目标文件或目录缺失。",
@@ -3205,6 +3244,9 @@
       "actions": {
         "centralize_management": "纳入技能库管理",
         "undeploy": "从 Agent/项目移除",
+        "sync": "同步到技能库当前版本",
+        "repair": "修复受管链接",
+        "restore": "恢复目标",
         "revalidate": "重新检查",
         "keep_independent_copy": "保留为独立拷贝",
         "revoke_retention": "撤销保留决定",

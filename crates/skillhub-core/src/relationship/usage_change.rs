@@ -14,6 +14,9 @@ use crate::{OperationId, SkillId, VersionId};
 pub enum UsageChangeAction {
     Release,
     Manage,
+    Sync,
+    Repair,
+    Restore,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -105,6 +108,9 @@ pub enum UsageChangeImpactAction {
     RecordOnly,
     ManageLink,
     ManageCopy,
+    Synchronize,
+    Repair,
+    Restore,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

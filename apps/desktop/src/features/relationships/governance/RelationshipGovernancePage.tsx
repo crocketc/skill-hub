@@ -53,6 +53,7 @@ import { GovernanceRelationTable } from "./GovernanceRelationTable";
 import { GovernanceBoard } from "./GovernanceBoard";
 import { GovernanceBatchDialog } from "./GovernanceBatchDialog";
 import { UsageManageDialog } from "./UsageManageDialog";
+import { ManagedUsageChangeDialog, type ManagedUsageChangeAction } from "./ManagedUsageChangeDialog";
 import { UndeployDialog } from "../../removal/UndeployDialog";
 import type { UsageChangeFacade } from "../../removal/api";
 import { nativeUsageChangeFacade, unavailableUsageChangeFacade } from "../../removal/nativeApi";
@@ -73,7 +74,7 @@ export interface RelationshipGovernancePageProps {
 }
 
 interface SingleFlowState {
-  kind: "centralize" | "undeploy";
+  kind: "centralize" | "undeploy" | ManagedUsageChangeAction;
   row: RelationGovernanceRow;
   usage: UsageRelationView | null;
   sharedImpactConfirmed: boolean;
@@ -548,6 +549,42 @@ export function RelationshipGovernancePage({
     });
   }, [describeError, effectiveUsageChangeFacade, notifications, queryClient, single, t, tracker]);
 
+  const commitSingleManagedChange = useCallback((
+    request: CommitUsageChange,
+    action: ManagedUsageChangeAction,
+  ): Promise<UsageChangeResult> => {
+    const relationId = single ? relationIdOf(single.row.relation) : "";
+    const label = String(t(`relationships.governance.actions.${action}` as never));
+    return runTrackedOperation<UsageChangeResult>({
+      targetHref: governanceDestination(relationId ? [relationId] : []),
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: action,
+      label,
+      notifications,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return effectiveUsageChangeFacade.commitUsageChange(request);
+      },
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        ? { title: label, tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.item_results.length === 0
+          ? 1
+          : result.item_results.filter((item) => item.status !== "applied").length,
+        skipped: 0,
+        succeeded: result.item_results.filter((item) => item.status === "applied").length,
+      }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    });
+  }, [describeError, effectiveUsageChangeFacade, notifications, queryClient, single, t, tracker]);
+
   const confirmBatch = useCallback(() => {
     const relationIds = [...batchFlow.checkedIds];
     const selection = summarizeBatchSelection(selectedRows.filter((row) => relationIds.includes(relationIdOf(row.relation))));
@@ -844,6 +881,7 @@ export function RelationshipGovernancePage({
                 busyRelationIds={busyRelationIds}
                 listRef={listRef}
                 onCentralize={(row) => openSingle("centralize", row)}
+                onManagedChange={(row, action) => openSingle(action, row)}
                 onListScroll={onListScroll}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
                 onToggleAll={toggleAll}
@@ -857,6 +895,7 @@ export function RelationshipGovernancePage({
                 busyRelationIds={busyRelationIds}
                 classification={deepLink.classification}
                 onCentralize={(row) => openSingle("centralize", row)}
+                onManagedChange={(row, action) => openSingle(action, row)}
                 onRevalidate={(row) => revalidateRows([relationIdOf(row.relation)])}
                 onToggleAll={toggleAll}
                 onToggleBucket={toggleBucketRows}
@@ -898,7 +937,7 @@ export function RelationshipGovernancePage({
           ) : (
             <DataState message={t("relationships.governance.deepLink.relationUnavailable")} state="unavailable" />
           )
-        ) : (
+        ) : single.kind === "centralize" ? (
           <UsageManageDialog
             checkedIds={new Set([relationIdOf(single.row.relation)])}
             onClose={closeSingle}
@@ -909,6 +948,14 @@ export function RelationshipGovernancePage({
               : current)}
             rows={[single.row]}
             sharedConfirmedIds={single.sharedImpactConfirmed ? new Set([relationIdOf(single.row.relation)]) : new Set()}
+          />
+        ) : (
+          <ManagedUsageChangeDialog
+            action={single.kind}
+            onClose={closeSingle}
+            onCommit={(request) => commitSingleManagedChange(request, single.kind as ManagedUsageChangeAction)}
+            onPrepare={effectiveUsageChangeFacade.prepareUsageChange}
+            row={single.row}
           />
         )
       ) : null}

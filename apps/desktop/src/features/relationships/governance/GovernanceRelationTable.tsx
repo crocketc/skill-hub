@@ -36,12 +36,14 @@ export interface GovernanceRelationTableProps {
   onToggleAll: (checked: boolean) => void;
   onCentralize: (row: RelationGovernanceRow) => void;
   onUndeploy: (row: RelationGovernanceRow) => void;
+  onManagedChange: (row: RelationGovernanceRow, action: "sync" | "repair" | "restore") => void;
   onRevalidate: (row: RelationGovernanceRow) => void;
 }
 
 export function GovernanceRelationTable({
   busyRelationIds,
   listRef,
+  onManagedChange,
   onCentralize,
   onListScroll,
   onRevalidate,
@@ -112,6 +114,7 @@ export function GovernanceRelationTable({
                   <GovernanceRelationActions
                     busy={busyRelationIds.has(usageGovernanceActionRelationId(row))}
                     onCentralize={onCentralize}
+                    onManagedChange={onManagedChange}
                     onRevalidate={onRevalidate}
                     onUndeploy={onUndeploy}
                     row={row}
@@ -307,12 +310,14 @@ export function GovernanceRelationBlockers({ row }: { row: UsageGovernanceRow })
 export function GovernanceRelationActions({
   busy,
   onCentralize,
+  onManagedChange,
   onRevalidate,
   onUndeploy,
   row,
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onManagedChange: GovernanceRelationTableProps["onManagedChange"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
   row: UsageGovernanceRow;
@@ -347,6 +352,13 @@ export function GovernanceRelationActions({
       onClick: () => onUndeploy(actionRow),
       variant: "secondary" as const,
     },
+    ...(["sync", "repair", "restore"] as const).map((action) => ({
+      action,
+      available: row.usage.management === "managed"
+        && isGovernanceActionAvailable(actionRow, action),
+      onClick: () => onManagedChange(actionRow, action),
+      variant: "secondary" as const,
+    })),
   ].filter((item) => item.available);
 
   return (

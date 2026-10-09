@@ -128,6 +128,14 @@ impl DeploymentFilesystem {
         tree_hash(root.as_ref())
     }
 
+    /// Checks the final path component without resolving it. The result is
+    /// true for directory symlinks on Unix and for any reparse point on
+    /// Windows, so callers can reject an unexpected link before copying or
+    /// removing an entry.
+    pub fn is_directory_link_entry(path: impl AsRef<Path>) -> bool {
+        is_directory_link_entry(path.as_ref())
+    }
+
     /// Probes directory-link creation at the exact location where a relation
     /// conversion would create the replacement entry.  The global
     /// [`Self::available_capabilities`] probe cannot answer per-volume

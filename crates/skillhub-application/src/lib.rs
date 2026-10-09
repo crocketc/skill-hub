@@ -495,15 +495,121 @@ impl LocalDeploymentBackend {
             .join(skillhub_core::deployment::deployment_tree_dir_name(
                 &target.version_id,
             ));
-        if !materialized.is_dir() {
-            std::fs::create_dir_all(&materialized).map_err(|error| {
-                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        let manifest = library.store.load_manifest(&target.version_id)?;
+        let cache_matches = || -> AppResult<bool> {
+            match std::fs::symlink_metadata(&materialized) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                        return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                            .with_param("reason", "materialized_cache_identity_changed")
+                            .with_action(RecoveryAction::Retry));
+                    }
+                    let observed = library.store.hash_tree_read_only(&materialized)?;
+                    if observed != manifest.tree_hash {
+                        return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                            .with_param("reason", "materialized_cache_content_changed")
+                            .with_action(RecoveryAction::Retry));
+                    }
+                    Ok(true)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                     .with_param("io_kind", format!("{:?}", error.kind()))
-                    .with_action(RecoveryAction::Retry)
-            })?;
-            library
-                .store
-                .materialize(&target.version_id, &materialized)?;
+                    .with_action(RecoveryAction::Retry)),
+            }
+        };
+        if cache_matches()? {
+            return Ok(materialized);
+        }
+
+        let parent = materialized.parent().ok_or_else(|| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "materialized_cache_parent_missing")
+                .with_action(RecoveryAction::Retry)
+        })?;
+        std::fs::create_dir_all(parent).map_err(|error| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("io_kind", format!("{:?}", error.kind()))
+                .with_action(RecoveryAction::Retry)
+        })?;
+        let mut staging = None;
+        for attempt in 0..16_u8 {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default();
+            let candidate = parent.join(format!(
+                ".{}.materializing-{}-{nonce}-{attempt}",
+                target.skill_id,
+                std::process::id(),
+            ));
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => {
+                    staging = Some(candidate);
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("io_kind", format!("{:?}", error.kind()))
+                        .with_action(RecoveryAction::Retry));
+                }
+            }
+        }
+        let staging = staging.ok_or_else(|| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "materialized_cache_staging_unavailable")
+                .with_action(RecoveryAction::Retry)
+        })?;
+
+        let materialize_result = (|| -> AppResult<()> {
+            library.store.materialize(&target.version_id, &staging)?;
+            let observed = library.store.hash_tree_read_only(&staging)?;
+            if observed != manifest.tree_hash {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "materialized_cache_verification_failed")
+                    .with_action(RecoveryAction::Retry));
+            }
+            Ok(())
+        })();
+        if let Err(error) = materialize_result {
+            cleanup_materialized_staging(&staging)?;
+            return Err(error);
+        }
+
+        match cache_matches() {
+            Ok(true) => {
+                cleanup_materialized_staging(&staging)?;
+                return Ok(materialized);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                cleanup_materialized_staging(&staging)?;
+                return Err(error);
+            }
+        }
+        if let Err(rename_error) = std::fs::rename(&staging, &materialized) {
+            match cache_matches() {
+                Ok(true) => {
+                    cleanup_materialized_staging(&staging)?;
+                    return Ok(materialized);
+                }
+                Ok(false) => {
+                    cleanup_materialized_staging(&staging)?;
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("io_kind", format!("{:?}", rename_error.kind()))
+                        .with_action(RecoveryAction::Retry));
+                }
+                Err(error) => {
+                    cleanup_materialized_staging(&staging)?;
+                    return Err(error);
+                }
+            }
+        }
+        if !cache_matches()? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "materialized_cache_publish_failed")
+                .with_action(RecoveryAction::Retry));
         }
         Ok(materialized)
     }
@@ -838,6 +944,25 @@ impl DeploymentBackend for LocalDeploymentBackend {
             // user's Agent directory with no way to find or clean it up.
             Err(error) => Err(self.roll_back_applied(&applied, error)),
         }
+    }
+}
+
+fn cleanup_materialized_staging(path: &Path) -> AppResult<()> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("io_kind", format!("{:?}", error.kind()))
+            .with_action(RecoveryAction::Retry)),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "materialized_staging_identity_changed")
+                .with_action(RecoveryAction::Retry))
+        }
+        Ok(_) => std::fs::remove_dir_all(path).map_err(|error| {
+            AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("io_kind", format!("{:?}", error.kind()))
+                .with_action(RecoveryAction::Retry)
+        }),
     }
 }
 

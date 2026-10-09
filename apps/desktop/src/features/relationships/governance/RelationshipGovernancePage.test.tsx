@@ -1071,6 +1071,189 @@ describe("RelationshipGovernancePage 只读导入原件与鼓励空态（FB-④/
 });
 
 describe("RelationshipGovernancePage 单条治理", () => {
+  it("previews and retries an explicit managed-copy sync from the unified action", async () => {
+    const relationId = "managed:copy-sync-failed";
+    const failedCopy = makeRow({
+      relationId,
+      readiness: "needs_validation",
+      primaryAction: "none",
+      relationship: "managed_copy",
+      fileRepresentation: "copy",
+      governance: {
+        governance_status: "completed",
+        management_status: "taken_over",
+        decision: "undecided",
+        management_confirmed_at: null,
+        health_reasons: ["operation_failed"],
+        action_conditions: [{ action: "sync", available: true, reasons: [] }],
+      },
+    });
+    const ledger: RelationGovernanceLedger = {
+      ...FULL_LEDGER,
+      rows: [failedCopy],
+      total: 1,
+      counts: {
+        ...FULL_LEDGER.counts,
+        all: 1,
+        eligible_to_centralize: 0,
+        needs_validation: 1,
+        blocked: 0,
+        status_normal: 0,
+        status_retained: 0,
+        status_needs_validation: 1,
+        status_needs_attention: 0,
+        status_blocked: 0,
+        source_copies: 0,
+        deployments: 1,
+      },
+    };
+    const prepared: PreparedUsageChange = {
+      ...preparedUsageManageChange(),
+      operation_id: "op-sync-copy-1",
+      prepared_id: "prepared-sync-copy-1",
+      action: "sync",
+      impacts: [{
+        ...preparedUsageManageChange().impacts[0]!,
+        relation_ids: [relationId],
+        action: "synchronize",
+        description: "同步到技能库当前主体版本。",
+      }],
+    };
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(prepared),
+      commitUsageChange: vi.fn().mockResolvedValue({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+        item_results: prepared.impacts.map((impact) => ({
+          ...impact,
+          status: "applied",
+          reason: null,
+          recovery_point: null,
+        })),
+        recovery_required: false,
+      }),
+    };
+    const { facade, tracker } = await renderGovernanceApp({
+      facade: createFacade(ledger),
+      usageChangeFacade,
+    });
+    await waitRows();
+
+    const syncAction = await screen.findByTestId(`governance-action-sync-${relationId}`);
+    expect(syncAction).toBeEnabled();
+    fireEvent.click(syncAction);
+    const dialog = await screen.findByRole("dialog", { name: "同步管理拷贝" });
+    expect(within(dialog).getByText("将目标拷贝更新为技能库当前主体版本。目标有未同步改动时，需要你明确确认采用主体版本。")).toBeVisible();
+    const contentChoice = within(dialog).getByRole("checkbox", { name: "我确认以技能库当前版本替换目标内容" });
+    expect(within(dialog).getByRole("button", { name: "预览操作影响" })).toBeDisabled();
+    fireEvent.click(contentChoice);
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览操作影响" }));
+
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sync",
+      relation_ids: [relationId],
+      content_basis: "library_current",
+    })));
+    expect(await screen.findByTestId("removal-impact-facts")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认同步" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: prepared.operation_id,
+      prepared_id: prepared.prepared_id,
+    }));
+    expect(await screen.findByTestId("managed-usage-change-result")).toBeVisible();
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+    expect(tracker.getSnapshot().find((operation) => operation.kind === "sync")?.operationId)
+      .toBe(prepared.operation_id);
+  });
+
+  it("previews and commits managed-target restoration without asking for a content choice", async () => {
+    const relationId = "managed:copy-missing";
+    const missingCopy = makeRow({
+      relationId,
+      readiness: "needs_validation",
+      primaryAction: "none",
+      relationship: "managed_copy",
+      fileRepresentation: "copy",
+      governance: {
+        governance_status: "completed",
+        management_status: "taken_over",
+        decision: "undecided",
+        management_confirmed_at: null,
+        health_reasons: ["link_target_unavailable"],
+        action_conditions: [{ action: "restore", available: true, reasons: [] }],
+      },
+    });
+    deploymentFactOf(missingCopy).health_reasons = ["target_entry_missing"];
+    const ledger: RelationGovernanceLedger = {
+      ...FULL_LEDGER,
+      rows: [missingCopy],
+      total: 1,
+      counts: {
+        ...FULL_LEDGER.counts,
+        all: 1,
+        eligible_to_centralize: 0,
+        needs_validation: 1,
+        blocked: 0,
+        status_normal: 0,
+        status_retained: 0,
+        status_needs_validation: 1,
+        status_needs_attention: 0,
+        status_blocked: 0,
+        source_copies: 0,
+        deployments: 1,
+      },
+    };
+    const prepared: PreparedUsageChange = {
+      ...preparedUsageManageChange(),
+      operation_id: "op-restore-copy-1",
+      prepared_id: "prepared-restore-copy-1",
+      action: "restore",
+      impacts: [{
+        ...preparedUsageManageChange().impacts[0]!,
+        relation_ids: [relationId],
+        action: "restore",
+        description: "按原受管方式恢复目标。",
+      }],
+    };
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn().mockResolvedValue(prepared),
+      commitUsageChange: vi.fn().mockResolvedValue({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+        item_results: prepared.impacts.map((impact) => ({
+          ...impact,
+          status: "applied",
+          reason: null,
+          recovery_point: null,
+        })),
+        recovery_required: false,
+      }),
+    };
+    const { facade } = await renderGovernanceApp({
+      facade: createFacade(ledger),
+      usageChangeFacade,
+    });
+    await waitRows();
+
+    fireEvent.click(await screen.findByTestId(`governance-action-restore-${relationId}`));
+    const dialog = await screen.findByRole("dialog", { name: "恢复受管目标" });
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览操作影响" }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "restore",
+      relation_ids: [relationId],
+      content_basis: null,
+    })));
+    expect(await screen.findByTestId("removal-impact-facts")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认恢复" }));
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: prepared.operation_id,
+      prepared_id: prepared.prepared_id,
+    }));
+    expect(await screen.findByTestId("managed-usage-change-result")).toBeVisible();
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+  });
+
   it("previews a single conversion with the chosen content basis and copy form before commit", async () => {
     const usageChangeFacade: UsageChangeFacade = {
       prepareUsageChange: vi.fn().mockResolvedValue(preparedUsageManageChange()),

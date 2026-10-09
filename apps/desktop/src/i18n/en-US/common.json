@@ -2369,7 +2369,10 @@
         "remove_copy_with_backup": "The target copy will be removed after a recovery copy is created.",
         "record_only": "Only the relationship record will end. The file may remain readable by the Agent.",
         "manage_link": "Change this entry into a link to the skill subject.",
-        "manage_copy": "Keep the target files and bring them under skill library synchronization."
+        "manage_copy": "Keep the target files and bring them under skill library synchronization.",
+        "synchronize": "Update the managed target to the current library subject version.",
+        "repair": "Back up the occupying target, then repair the managed link.",
+        "restore": "Restore the missing target using its recorded managed form."
       },
       "confirm": "Confirm release",
       "submitting": "Releasing usage…",
@@ -2387,7 +2390,10 @@
         "remove_copy_with_backup": "Remove the copy with a backup",
         "record_only": "End tracking only",
         "manage_link": "Convert to a managed link",
-        "manage_copy": "Convert to a managed copy"
+        "manage_copy": "Convert to a managed copy",
+        "synchronize": "Sync to the current library version",
+        "repair": "Repair the managed link",
+        "restore": "Restore the managed target"
       },
       "recoveryPoint": "Recovery copy: {{path}}",
       "close": "Close"
@@ -3068,6 +3074,39 @@
         "resultReason": "Reason: {{reason}}",
         "close": "Close"
       },
+      "managedChange": {
+        "sync": {
+          "title": "Sync managed copy",
+          "description": "Update the target copy to the current library subject version. If the target has unsynced changes, explicitly confirm using the subject version.",
+          "contentChoice": "I confirm replacing the target contents with the current library version",
+          "preparing": "Preparing sync preview…",
+          "committing": "Syncing target…",
+          "confirm": "Confirm sync"
+        },
+        "repair": {
+          "title": "Repair managed link",
+          "description": "Back up the item occupying the target, then restore the managed link to the skill subject.",
+          "contentChoice": "I confirm restoring the managed link to the current library version",
+          "preparing": "Preparing repair preview…",
+          "committing": "Repairing link…",
+          "confirm": "Confirm repair"
+        },
+        "restore": {
+          "title": "Restore managed target",
+          "description": "Restore the missing target using its recorded managed form, then verify the actual entry.",
+          "preparing": "Preparing restore preview…",
+          "committing": "Restoring target…",
+          "confirm": "Confirm restore"
+        },
+        "preview": "Preview impact",
+        "changePreview": "Review and preview again",
+        "resultHeading": "Operation result",
+        "resultComplete": "Completed {{applied}} item(s).",
+        "resultPartial": "Completed {{applied}} item(s); {{failed}} still need attention.",
+        "resultReason": "Reason: {{reason}}",
+        "retry": "Prepare the operation again",
+        "close": "Close"
+      },
       "healthMessages": {
         "normal": "The usage state is healthy.",
         "file_missing": "The usage target file or directory is missing.",
@@ -3205,6 +3244,9 @@
       "actions": {
         "centralize_management": "Bring under skill library management",
         "undeploy": "Remove from Agent/Project",
+        "sync": "Sync to the current library version",
+        "repair": "Repair managed link",
+        "restore": "Restore target",
         "revalidate": "Re-check",
         "keep_independent_copy": "Keep as an independent copy",
         "revoke_retention": "Revoke keep decision",

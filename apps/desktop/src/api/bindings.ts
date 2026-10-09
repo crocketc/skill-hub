@@ -3274,6 +3274,12 @@ export type RelationGovernanceAction =
 "centralize_management" |
 /**  移除 SkillHub 创建的目标入口；沿用既有移除影响预览。 */
 "undeploy" |
+/**  将受管目标同步到技能库当前主体版本。 */
+"sync" |
+/**  备份目标占位项后修复原受管链接。 */
+"repair" |
+/**  按记录的受管方式恢复缺失目标。 */
+"restore" |
 /**  重新检查/重新扫描后回到清单；不写文件、不写关系事实。 */
 "revalidate" |
 /**  来源副本转用户自留（复用既有 KeepIndependentCopy 命令）。 */
@@ -5206,7 +5212,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release" | "manage";
+export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize
@@ -5234,7 +5240,7 @@ export type UsageChangeImpact = {
 	description: string,
 };
 
-export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy";
+export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy" | "synchronize" | "repair" | "restore";
 
 export type UsageChangeItemResult = {
 	relation_ids: string[],

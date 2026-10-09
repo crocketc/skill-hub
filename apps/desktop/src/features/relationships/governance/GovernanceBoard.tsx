@@ -57,6 +57,7 @@ export function GovernanceBoard({
   busyRelationIds,
   classification,
   onCentralize,
+  onManagedChange,
   onRevalidate,
   onToggleAll,
   onToggleBucket,
@@ -105,6 +106,7 @@ export function GovernanceBoard({
             key={key}
             labelKey={labelKey}
             onCentralize={onCentralize}
+            onManagedChange={onManagedChange}
             onRevalidate={onRevalidate}
             onToggleBucket={onToggleBucket}
             onToggleRow={onToggleRow}
@@ -129,6 +131,7 @@ function GovernanceBoardColumnView({
   column,
   labelKey,
   onCentralize,
+  onManagedChange,
   onRevalidate,
   onToggleBucket,
   onToggleRow,
@@ -143,6 +146,7 @@ function GovernanceBoardColumnView({
   column: "pending" | "noAction";
   labelKey: string;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onManagedChange: GovernanceRelationTableProps["onManagedChange"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onToggleBucket: GovernanceBoardProps["onToggleBucket"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
@@ -236,6 +240,7 @@ function GovernanceBoardColumnView({
               busyRelationIds={busyRelationIds}
               key={bucket.key}
               onCentralize={onCentralize}
+              onManagedChange={onManagedChange}
               onRevalidate={onRevalidate}
               onToggleBucket={onToggleBucket}
               onToggleRow={onToggleRow}
@@ -254,6 +259,7 @@ function GovernanceBucketSection({
   bucket,
   busyRelationIds,
   onCentralize,
+  onManagedChange,
   onRevalidate,
   onToggleBucket,
   onToggleRow,
@@ -263,6 +269,7 @@ function GovernanceBucketSection({
   bucket: GovernanceBucket;
   busyRelationIds: ReadonlySet<string>;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onManagedChange: GovernanceRelationTableProps["onManagedChange"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onToggleBucket: GovernanceBoardProps["onToggleBucket"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
@@ -311,6 +318,7 @@ function GovernanceBucketSection({
           busy={busyRelationIds.has(usageGovernanceActionRelationId(row))}
           key={usageGovernanceRowId(row)}
             onCentralize={onCentralize}
+            onManagedChange={onManagedChange}
             onRevalidate={onRevalidate}
             onToggleRow={onToggleRow}
             onUndeploy={onUndeploy}
@@ -337,6 +345,7 @@ function RocketUpIcon() {
 function GovernanceBoardCard({
   busy,
   onCentralize,
+  onManagedChange,
   onRevalidate,
   onToggleRow,
   onUndeploy,
@@ -345,6 +354,7 @@ function GovernanceBoardCard({
 }: {
   busy: boolean;
   onCentralize: GovernanceRelationTableProps["onCentralize"];
+  onManagedChange: GovernanceRelationTableProps["onManagedChange"];
   onRevalidate: GovernanceRelationTableProps["onRevalidate"];
   onToggleRow: GovernanceRelationTableProps["onToggleRow"];
   onUndeploy: GovernanceRelationTableProps["onUndeploy"];
@@ -413,6 +423,7 @@ function GovernanceBoardCard({
             <GovernanceRelationActions
               busy={busy}
               onCentralize={onCentralize}
+              onManagedChange={onManagedChange}
               onRevalidate={onRevalidate}
               onUndeploy={onUndeploy}
               row={row}

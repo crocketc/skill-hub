@@ -157,6 +157,12 @@ pub enum RelationGovernanceAction {
     CentralizeManagement,
     /// 移除 SkillHub 创建的目标入口；沿用既有移除影响预览。
     Undeploy,
+    /// 将受管目标同步到技能库当前主体版本。
+    Sync,
+    /// 备份目标占位项后修复原受管链接。
+    Repair,
+    /// 按记录的受管方式恢复缺失目标。
+    Restore,
     /// 重新检查/重新扫描后回到清单；不写文件、不写关系事实。
     Revalidate,
     /// 来源副本转用户自留（复用既有 KeepIndependentCopy 命令）。
@@ -1040,14 +1046,52 @@ fn action_conditions(
             }
 
             if management_status == RelationManagementStatus::TakenOver {
-                if relation.relationship == RelationshipType::ManagedLink
-                    && relation.ownership == OwnershipState::SkillhubManaged
-                {
+                let managed = relation.ownership == OwnershipState::SkillhubManaged;
+                let managed_link = managed
+                    && matches!(
+                        relation.file_representation,
+                        FileRepresentation::SymbolicLink | FileRepresentation::DirectoryJunction
+                    );
+                if managed_link {
                     conditions.push(RelationGovernanceActionCondition {
                         action: RelationGovernanceAction::Undeploy,
                         available: true,
                         reasons: Vec::new(),
                     });
+                }
+                if managed {
+                    let raw_health = relation.health_reasons.as_deref().unwrap_or_default();
+                    let needs_restore =
+                        raw_health.contains(&RelationHealthReason::TargetEntryMissing);
+                    let needs_repair = managed_link
+                        && (raw_health.contains(&RelationHealthReason::TargetEntryReplaced)
+                            || raw_health.contains(&RelationHealthReason::TargetLinkUnavailable));
+                    let needs_sync = !needs_restore
+                        && !needs_repair
+                        && (raw_health.contains(&RelationHealthReason::OperationFailed)
+                            || raw_health.contains(&RelationHealthReason::ContentChanged)
+                            || relation.match_state == ObservedMatchState::Diverged);
+                    if needs_sync {
+                        conditions.push(RelationGovernanceActionCondition {
+                            action: RelationGovernanceAction::Sync,
+                            available: true,
+                            reasons: Vec::new(),
+                        });
+                    }
+                    if needs_restore {
+                        conditions.push(RelationGovernanceActionCondition {
+                            action: RelationGovernanceAction::Restore,
+                            available: true,
+                            reasons: Vec::new(),
+                        });
+                    }
+                    if needs_repair {
+                        conditions.push(RelationGovernanceActionCondition {
+                            action: RelationGovernanceAction::Repair,
+                            available: true,
+                            reasons: Vec::new(),
+                        });
+                    }
                 }
                 return conditions;
             }

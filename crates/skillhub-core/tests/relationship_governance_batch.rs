@@ -1305,6 +1305,87 @@ mod read_only_import_originals {
     }
 
     #[test]
+    fn managed_copy_sync_and_restore_and_link_repair_are_explicit_actions() {
+        use skillhub_core::relationship::{
+            project_unified_governance_ledger_with_context, RelationGovernanceConfirmationFact,
+            RelationGovernanceDecision, RelationHealthReason, RelationManagementStatus,
+        };
+
+        let confirmation = |relation_id: &str| RelationGovernanceConfirmationFact {
+            relation_id: relation_id.to_owned(),
+            management_status: RelationManagementStatus::TakenOver,
+            decision: RelationGovernanceDecision::Undecided,
+            confirmed_at: Some(7),
+        };
+        let mut failed_copy = RelationSpec::copy("rel-sync", "/agent/skills/sync").build();
+        failed_copy.ownership = OwnershipState::SkillhubManaged;
+        failed_copy.health_reasons = Some(vec![RelationHealthReason::OperationFailed]);
+
+        let mut missing_copy = RelationSpec::copy("rel-restore", "/agent/skills/restore").build();
+        missing_copy.ownership = OwnershipState::SkillhubManaged;
+        missing_copy.health_reasons = Some(vec![RelationHealthReason::TargetEntryMissing]);
+
+        let mut replaced_link =
+            RelationSpec::managed_link("rel-repair", "/agent/skills/repair").build();
+        replaced_link.ownership = OwnershipState::SkillhubManaged;
+        replaced_link.health_reasons = Some(vec![RelationHealthReason::TargetEntryReplaced]);
+
+        let confirmations = vec![
+            confirmation("rel-sync"),
+            confirmation("rel-restore"),
+            confirmation("rel-repair"),
+        ];
+        let ledger = project_unified_governance_ledger_with_context(
+            &RelationGovernanceFilters::default(),
+            &[
+                GovernableRelationFact::Deployment(failed_copy),
+                GovernableRelationFact::Deployment(missing_copy),
+                GovernableRelationFact::Deployment(replaced_link),
+            ],
+            &supported_capabilities(),
+            &[],
+            &confirmations,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &Vec::new(),
+            7,
+            None,
+        );
+
+        let sync = ledger
+            .rows
+            .iter()
+            .find(|row| row.relation_id() == "rel-sync")
+            .unwrap();
+        assert!(condition_of(sync, "sync").available);
+        assert!(sync
+            .governance
+            .health_reasons
+            .contains(&RelationGovernanceReason::OperationFailed));
+
+        let restore = ledger
+            .rows
+            .iter()
+            .find(|row| row.relation_id() == "rel-restore")
+            .unwrap();
+        assert!(condition_of(restore, "restore").available);
+        assert!(!restore
+            .governance
+            .action_conditions
+            .iter()
+            .any(|condition| {
+                serde_json::to_value(condition.action).unwrap() == "sync" && condition.available
+            }));
+
+        let repair = ledger
+            .rows
+            .iter()
+            .find(|row| row.relation_id() == "rel-repair")
+            .unwrap();
+        assert!(condition_of(repair, "repair").available);
+    }
+
+    #[test]
     fn healthy_read_only_originals_complete_as_retained_read_only_copies() {
         let ledger = ledger_with_read_only(
             vec![

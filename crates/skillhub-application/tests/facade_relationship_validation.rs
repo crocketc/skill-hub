@@ -6,7 +6,7 @@
 use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_application::relationship_validation_service::RelationshipPathProbing;
 use skillhub_application::LocalApplicationFacade;
-use skillhub_core::api::RunRelationshipCheck;
+use skillhub_core::api::{RunRelationshipCheck, SaveSkillContent};
 use skillhub_core::relationship::RelationshipPathProbe;
 use skillhub_core::relationship::{
     RelationshipCheckItemStatus, RelationshipCheckLevel, RelationshipCheckReport,
@@ -427,6 +427,60 @@ async fn successful_import_immediately_verifies_the_new_relation() {
         "the import trigger verified the fresh relation"
     );
     assert!(relations[0].last_verified_at.is_some());
+}
+
+#[tokio::test]
+async fn original_imported_copy_stays_on_its_import_baseline_after_subject_update() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with(workspace.path());
+    let source = workspace.path().join("baseline-src");
+    write_skill(&source, "# Imported baseline\n");
+    let skill_id = import_copy(&facade, &source, "Baseline").await;
+
+    let updated_subject = workspace.path().join("updated-subject");
+    write_skill(&updated_subject, "# Updated subject\n");
+    let saved = facade
+        .execute(AppCommand::SaveSkillContent(SaveSkillContent {
+            skill_id,
+            source_path: updated_subject.to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect("save a new subject version");
+    assert!(matches!(saved, AppCommandResult::OperationSummary(_)));
+
+    let report = run_check(
+        &facade,
+        RelationshipCheckLevel::Full,
+        RelationshipCheckScope::AllActive,
+    )
+    .await;
+    assert_eq!(report.items.len(), 1);
+    assert_eq!(
+        report.items[0].health,
+        Some(skillhub_core::relationship::SourceCopyHealth::Normal)
+    );
+
+    let database = facade.database_for_tests().clone();
+    let database = database.lock().unwrap();
+    let original = database
+        .relationship_repository()
+        .list_source_copy_relations(true)
+        .expect("source-copy relations")
+        .into_iter()
+        .find(|relation| relation.skill_id == skill_id)
+        .expect("original imported relation");
+    assert_eq!(
+        original.health,
+        skillhub_core::relationship::SourceCopyHealth::Normal
+    );
+    assert_eq!(
+        original.current_fingerprint.as_deref(),
+        Some(original.expected_fingerprint.as_str())
+    );
+    assert_eq!(
+        std::fs::read_to_string(source.join("SKILL.md")).expect("original source remains intact"),
+        "# Imported baseline\n"
+    );
 }
 
 #[tokio::test]

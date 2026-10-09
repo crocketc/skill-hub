@@ -304,7 +304,17 @@ fn deployment_health(relation: &DeploymentRelationFact) -> Vec<UsageHealthReason
                 reasons
                     .iter()
                     .copied()
-                    .flat_map(|reason| map_health_reason(reason, relation.file_representation))
+                    .flat_map(|reason| {
+                        if reason == RelationHealthReason::OperationFailed
+                            && relation.relationship == RelationshipType::ManagedCopy
+                            && relation.file_representation == FileRepresentation::Copy
+                            && relation.ownership == OwnershipState::SkillhubManaged
+                        {
+                            vec![UsageHealthReason::SyncFailed]
+                        } else {
+                            map_health_reason(reason, relation.file_representation)
+                        }
+                    })
                     .collect()
             }
         },

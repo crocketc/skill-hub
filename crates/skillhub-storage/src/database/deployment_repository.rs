@@ -5,6 +5,7 @@ use skillhub_core::deployment::{
     DeploymentMode, DeploymentRecord, DeploymentRepository as DeploymentRepositoryPort,
     DeploymentState,
 };
+use skillhub_core::relationship::RelationHealthReason;
 use skillhub_core::{AppError, AppResult, DeploymentId, ErrorCode, RecoveryAction, Severity};
 
 /// SQLite persistence for deployment facts.  The planner itself remains in
@@ -247,6 +248,31 @@ impl<'a> DeploymentRepositorySqlite<'a> {
             super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
         }
         transaction.commit().map_err(database_error)
+    }
+
+    /// Keeps a failed managed usage change visible while leaving deployment
+    /// ownership, its pinned version, and the last observed target anomaly intact.
+    pub fn mark_managed_usage_change_failed(&self, id: DeploymentId) -> AppResult<()> {
+        let relation_id = format!("managed:{id}");
+        let repository = self.database.relationship_repository();
+        let mut relation = repository
+            .list_relations()?
+            .into_iter()
+            .find(|relation| relation.relation_id == relation_id && relation.active)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "managed_deployment_relation")
+                    .with_action(RecoveryAction::Retry)
+            })?;
+        let mut reasons = relation.health_reasons.take().unwrap_or_default();
+        if !reasons.contains(&RelationHealthReason::OperationFailed) {
+            reasons.push(RelationHealthReason::OperationFailed);
+        }
+        reasons.sort_by_key(|reason| *reason as u8);
+        reasons.dedup();
+        relation.health_reasons = Some(reasons);
+        relation.observed_at = now();
+        repository.upsert_deployment_relation(&relation)
     }
 }
 
