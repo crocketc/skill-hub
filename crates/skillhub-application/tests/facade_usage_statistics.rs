@@ -260,34 +260,35 @@ async fn physical_shared_counted_once() {
     );
     let path = shared.join("shared-skill");
     let database = fixture.facade.database_for_tests();
-    let database = database.lock().expect("database lock");
-    for (index, client_id) in [CLIENT_A, CLIENT_B].into_iter().enumerate() {
-        database
-            .relationship_repository()
-            .upsert_deployment_relation(&DeploymentRelationFact {
-                relation_id: format!("shared-use-{index}"),
-                skill_id: None,
-                agent_client_id: client_id.into(),
-                path: path.to_string_lossy().into_owned(),
-                path_key: String::new(),
-                directory_node_id: Some("shared-dir".into()),
-                relationship: RelationshipType::SharedDirectoryRead,
-                file_representation: FileRepresentation::Directory,
-                ownership: OwnershipState::SharedReference,
-                link_target_path: None,
-                link_target_path_key: None,
-                link_target_directory_id: None,
-                content_fingerprint: "sha256:shared".into(),
-                origin: ObservedOrigin::Scan,
-                match_state: ObservedMatchState::NameOnly,
-                health_reasons: Some(Vec::new()),
-                active: true,
-                observed_at: 1,
-                released_at: None,
-            })
-            .expect("shared usage relation");
+    {
+        let database = database.lock().expect("database lock");
+        for (index, client_id) in [CLIENT_A, CLIENT_B].into_iter().enumerate() {
+            database
+                .relationship_repository()
+                .upsert_deployment_relation(&DeploymentRelationFact {
+                    relation_id: format!("shared-use-{index}"),
+                    skill_id: None,
+                    agent_client_id: client_id.into(),
+                    path: path.to_string_lossy().into_owned(),
+                    path_key: String::new(),
+                    directory_node_id: Some("shared-dir".into()),
+                    relationship: RelationshipType::SharedDirectoryRead,
+                    file_representation: FileRepresentation::Directory,
+                    ownership: OwnershipState::SharedReference,
+                    link_target_path: None,
+                    link_target_path_key: None,
+                    link_target_directory_id: None,
+                    content_fingerprint: "sha256:shared".into(),
+                    origin: ObservedOrigin::Scan,
+                    match_state: ObservedMatchState::NameOnly,
+                    health_reasons: Some(Vec::new()),
+                    active: true,
+                    observed_at: 1,
+                    released_at: None,
+                })
+                .expect("shared usage relation");
+        }
     }
-    drop(database);
 
     let statistics = statistics(&fixture).await;
     assert_eq!(statistics.physical_usage_count, 1);

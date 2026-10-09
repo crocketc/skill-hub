@@ -161,7 +161,7 @@ async fn prepare_subject_rename(
         .await
         .expect("prepare rename")
     {
-        AppCommandResult::PreparedUsageChange(prepared) => prepared,
+        AppCommandResult::PreparedUsageChange(prepared) => *prepared,
         other => panic!("expected prepared usage change, got {other:?}"),
     }
 }
@@ -209,7 +209,7 @@ async fn rename_preview_lists_every_managed_target() {
         .await
         .expect("prepare rename")
     {
-        AppCommandResult::PreparedUsageChange(prepared) => prepared,
+        AppCommandResult::PreparedUsageChange(prepared) => *prepared,
         other => panic!("expected prepared usage change, got {other:?}"),
     };
     let prepared = serde_json::to_value(prepared).expect("serialize preview contract");

@@ -164,7 +164,7 @@ fn trust_skill_security_command_has_stable_wire_shape() {
 
 #[test]
 fn import_analysis_query_has_stable_wire_shape() {
-    let query = AppQuery::AnalyzeImport(skillhub_core::AnalyzeImport {
+    let query = AppQuery::AnalyzeImport(Box::new(skillhub_core::AnalyzeImport {
         candidate: ImportCandidate::detected(
             SourceDescriptor::new(
                 SourceKind::Local,
@@ -176,11 +176,11 @@ fn import_analysis_query_has_stable_wire_shape() {
             "notes",
         ),
         tree_hash: None,
-    });
-    assert_eq!(
-        serde_json::to_value(query).unwrap()["type"],
-        "analyze_import"
-    );
+    }));
+    let wire = serde_json::to_value(query).unwrap();
+    assert_eq!(wire["type"], "analyze_import");
+    assert!(wire["payload"]["candidate"].is_object());
+    assert_eq!(wire["payload"]["tree_hash"], serde_json::Value::Null);
 }
 
 #[test]

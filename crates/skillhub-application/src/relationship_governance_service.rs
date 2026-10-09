@@ -55,6 +55,16 @@ struct RelationMigrationJournal {
     usage_result: Option<UsageChangeResult>,
 }
 
+struct RelationMigrationJournalContext {
+    operation_kind: String,
+    request_fingerprint: String,
+    expected_target_fingerprint: String,
+    allow_content_replacement: bool,
+    source_relations: Vec<SourceRelationFact>,
+    safety: RelationSafetySnapshot,
+    original_entity_identity: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct RelationSafetySnapshot {
     relation_parent: PathChainSnapshot,
@@ -99,23 +109,17 @@ struct RelationBackupMetadata {
 impl RelationMigrationJournal {
     fn from_prepared(
         prepared: skillhub_core::PreparedRelationMigration,
-        operation_kind: String,
-        request_fingerprint: String,
-        expected_target_fingerprint: String,
-        allow_content_replacement: bool,
-        source_relations: Vec<SourceRelationFact>,
-        safety: RelationSafetySnapshot,
-        original_entity_identity: String,
+        context: RelationMigrationJournalContext,
     ) -> Self {
         let relation = &prepared.relation;
         Self {
-            operation_kind,
-            request_fingerprint,
-            expected_target_fingerprint,
-            allow_content_replacement,
+            operation_kind: context.operation_kind,
+            request_fingerprint: context.request_fingerprint,
+            expected_target_fingerprint: context.expected_target_fingerprint,
+            allow_content_replacement: context.allow_content_replacement,
             expected_link_representation: representation_for_mode(prepared.target_mode),
-            source_relations,
-            safety,
+            source_relations: context.source_relations,
+            safety: context.safety,
             stage: RelationMigrationStage::Prepared,
             backup: RelationBackupMetadata {
                 operation_id: prepared.operation_id,
@@ -127,7 +131,7 @@ impl RelationMigrationJournal {
                 original_ownership: relation.ownership,
                 original_active: relation.active,
                 original_link_target: relation.link_target_path.clone(),
-                original_entity_identity,
+                original_entity_identity: context.original_entity_identity,
             },
             prepared,
             usage_preview: None,
@@ -968,13 +972,17 @@ impl LocalApplicationFacade {
                     .insert(prepared.operation_id, prepared.clone());
                 let journal = RelationMigrationJournal::from_prepared(
                     prepared.clone(),
-                    operation_kind.to_owned(),
-                    request_fingerprint,
-                    DeploymentFilesystem::hash_tree(&prepared.target_path)?,
-                    allow_content_replacement,
-                    source_relations,
-                    safety,
-                    original_entity_identity,
+                    RelationMigrationJournalContext {
+                        operation_kind: operation_kind.to_owned(),
+                        request_fingerprint,
+                        expected_target_fingerprint: DeploymentFilesystem::hash_tree(
+                            &prepared.target_path,
+                        )?,
+                        allow_content_replacement,
+                        source_relations,
+                        safety,
+                        original_entity_identity,
+                    },
                 );
                 self.persist_relation_operation(
                     prepared.operation_id,
@@ -2032,13 +2040,15 @@ impl LocalApplicationFacade {
         Ok((
             RelationMigrationJournal::from_prepared(
                 prepared,
-                "migrate_relation".into(),
-                relation_id_fingerprint(&relation.relation_id),
-                target_fingerprint,
-                false,
-                snapshot.source_relations,
-                safety,
-                original_entity_identity,
+                RelationMigrationJournalContext {
+                    operation_kind: "migrate_relation".into(),
+                    request_fingerprint: relation_id_fingerprint(&relation.relation_id),
+                    expected_target_fingerprint: target_fingerprint,
+                    allow_content_replacement: false,
+                    source_relations: snapshot.source_relations,
+                    safety,
+                    original_entity_identity,
+                },
             ),
             None,
             OperationPhase::Prepared,

@@ -2356,9 +2356,7 @@ impl LocalApplicationFacade {
             (record, journal)
         };
 
-        if let Err(error) = self.validate_subject_rename_snapshot(&journal) {
-            return Err(error);
-        }
+        self.validate_subject_rename_snapshot(&journal)?;
         persist_subject_rename(self, &mut record, &journal, OperationPhase::Applying)?;
         if let Err(error) = self.apply_subject_rename(&mut record, &mut journal) {
             return self.fail_subject_rename(record, journal, error);
@@ -2450,8 +2448,8 @@ impl LocalApplicationFacade {
             let root = self.backend.target_root(&plan.original_deployment)?;
             if skillhub_core::physical_id_for_path(&root).as_deref()
                 != Some(plan.target_root_identity.as_str())
-                || fs::symlink_metadata(&Path::new(&plan.path)).is_ok()
-                || fs::symlink_metadata(&Path::new(&plan.backup_path)).is_ok()
+                || fs::symlink_metadata(Path::new(&plan.path)).is_ok()
+                || fs::symlink_metadata(Path::new(&plan.backup_path)).is_ok()
                 || entry_fingerprint(Path::new(&plan.previous_path))?.as_deref()
                     != plan.observed_before.as_deref()
                 || entry_identity(Path::new(&plan.previous_path))? != plan.observed_identity
@@ -6022,7 +6020,7 @@ fn build_duplicate_cleanup_journal(
     let expected_keys = problem
         .entries
         .iter()
-        .map(|entry| usage_entry_key(entry))
+        .map(usage_entry_key)
         .collect::<BTreeSet<_>>();
     let selected_keys = request
         .selected_entry_keys

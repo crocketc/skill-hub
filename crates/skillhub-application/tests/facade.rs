@@ -2226,10 +2226,10 @@ async fn analyze_import_query_returns_deterministic_conflict_matches() {
     let facade = LocalApplicationFacade::new_with_today(database, (2026, 8, 29));
 
     let result = facade
-        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+        .query(RootAppQuery::AnalyzeImport(Box::new(AnalyzeImport {
             candidate,
             tree_hash: None,
-        }))
+        })))
         .await
         .expect("import analysis");
     let AppQueryResult::ImportAnalysis(analysis) = result else {
@@ -2307,10 +2307,10 @@ async fn analyze_import_computes_a_missing_candidate_hash_for_identical_local_tr
         "Same Skill",
     );
     let result = facade
-        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+        .query(RootAppQuery::AnalyzeImport(Box::new(AnalyzeImport {
             candidate,
             tree_hash: None,
-        }))
+        })))
         .await
         .expect("import analysis");
     let AppQueryResult::ImportAnalysis(analysis) = result else {
@@ -2350,7 +2350,7 @@ async fn create_skill_persists_import_identity_for_identical_content_analysis() 
         .expect("create existing skill");
 
     let result = facade
-        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+        .query(RootAppQuery::AnalyzeImport(Box::new(AnalyzeImport {
             candidate: ImportCandidate::detected(
                 SourceDescriptor::new(
                     SourceKind::Local,
@@ -2362,7 +2362,7 @@ async fn create_skill_persists_import_identity_for_identical_content_analysis() 
                 "Same Skill",
             ),
             tree_hash: None,
-        }))
+        })))
         .await
         .expect("import analysis");
     let AppQueryResult::ImportAnalysis(analysis) = result else {
@@ -2381,7 +2381,7 @@ async fn create_skill_persists_import_identity_for_identical_content_analysis() 
     std::fs::write(incoming_source.path().join("SKILL.md"), "# Changed skill\n")
         .expect("change incoming skill");
     let result = facade
-        .query(RootAppQuery::AnalyzeImport(AnalyzeImport {
+        .query(RootAppQuery::AnalyzeImport(Box::new(AnalyzeImport {
             candidate: ImportCandidate::detected(
                 SourceDescriptor::new(
                     SourceKind::Local,
@@ -2393,7 +2393,7 @@ async fn create_skill_persists_import_identity_for_identical_content_analysis() 
                 "Same Skill",
             ),
             tree_hash: None,
-        }))
+        })))
         .await
         .expect("changed import analysis");
     let AppQueryResult::ImportAnalysis(changed) = result else {

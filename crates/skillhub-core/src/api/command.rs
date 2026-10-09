@@ -1784,7 +1784,7 @@ pub enum AppCommandResult {
     #[serde(rename = "removal_result")]
     RemovalResult(crate::RemovalResult),
     #[serde(rename = "prepared_usage_change")]
-    PreparedUsageChange(crate::relationship::PreparedUsageChange),
+    PreparedUsageChange(Box<crate::relationship::PreparedUsageChange>),
     #[serde(rename = "usage_change_result")]
     UsageChangeResult(crate::relationship::UsageChangeResult),
     #[serde(rename = "health_report")]

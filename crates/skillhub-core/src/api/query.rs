@@ -1334,7 +1334,7 @@ pub enum AppQuery {
     #[serde(rename = "list_saved_project_views")]
     ListSavedProjectViews(ListSavedProjectViews),
     #[serde(rename = "analyze_import")]
-    AnalyzeImport(AnalyzeImport),
+    AnalyzeImport(Box<AnalyzeImport>),
     #[serde(rename = "analyze_import_batch")]
     AnalyzeImportBatch(AnalyzeImportBatch),
     #[serde(rename = "discover_import_candidates")]

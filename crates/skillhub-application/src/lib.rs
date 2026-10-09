@@ -9070,7 +9070,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::PrepareUsageChange(request) => {
                 return self
                     .prepare_usage_change(request)
-                    .map(AppCommandResult::PreparedUsageChange)
+                    .map(|prepared| AppCommandResult::PreparedUsageChange(Box::new(prepared)))
             }
             AppCommand::CommitUsageChange(request) => {
                 return self
@@ -9902,6 +9902,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .map(AppQueryResult::SearchResults)
             }),
             AppQuery::AnalyzeImport(request) => {
+                let request = *request;
                 let candidate = request.candidate;
                 let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
                 self.with_database("query.analyze_import", |database| {

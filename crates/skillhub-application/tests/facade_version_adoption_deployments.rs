@@ -98,6 +98,7 @@ fn tree_hash_of(content: &str) -> String {
     DeploymentFilesystem::hash_tree(dir.path()).expect("hash tree")
 }
 
+#[cfg(windows)]
 fn visible_skill_tree(library_root: &Path, skill_id: skillhub_core::SkillId) -> PathBuf {
     let entry = std::fs::read_dir(library_root.join("skills"))
         .expect("skills directory")

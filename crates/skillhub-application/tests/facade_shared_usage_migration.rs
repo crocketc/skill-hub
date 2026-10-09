@@ -107,64 +107,65 @@ async fn fixture() -> Fixture {
 
     let discovery = discovery_snapshot(workspace.path(), &shared_root, &target_a, &target_b);
     let database = facade.database_for_tests();
-    let database = database.lock().expect("database lock");
-    database
-        .agent_repository()
-        .replace(&discovery)
-        .expect("discovery snapshot");
-    add_directory(
-        &database,
-        SHARED_DIRECTORY_ID,
-        &shared_root,
-        DirectoryRole::SharedDirectory,
-        None,
-    );
-    add_directory(
-        &database,
-        "directory.a",
-        &target_a,
-        DirectoryRole::AgentNative,
-        Some(AGENT_A),
-    );
-    add_directory(
-        &database,
-        "directory.b",
-        &target_b,
-        DirectoryRole::AgentNative,
-        Some(AGENT_B),
-    );
-    add_capability(&database, SHARED_DIRECTORY_ID, AGENT_A);
-    add_capability(&database, SHARED_DIRECTORY_ID, AGENT_B);
-    add_capability(&database, "directory.a", AGENT_A);
-    add_capability(&database, "directory.b", AGENT_B);
-    add_relation(
-        &database,
-        "usage:shared:a",
-        skill_id,
-        AGENT_A,
-        &shared_skill,
-        SHARED_DIRECTORY_ID,
-        &source_fingerprint,
-    );
-    add_relation(
-        &database,
-        "usage:shared:b",
-        skill_id,
-        AGENT_B,
-        &shared_skill,
-        SHARED_DIRECTORY_ID,
-        &source_fingerprint,
-    );
-    add_relation(
-        &database,
-        "usage:direct:a",
-        skill_id,
-        AGENT_A,
-        &existing_a,
-        "directory.a",
-        &source_fingerprint,
-    );
-    drop(database);
+    {
+        let database = database.lock().expect("database lock");
+        database
+            .agent_repository()
+            .replace(&discovery)
+            .expect("discovery snapshot");
+        add_directory(
+            &database,
+            SHARED_DIRECTORY_ID,
+            &shared_root,
+            DirectoryRole::SharedDirectory,
+            None,
+        );
+        add_directory(
+            &database,
+            "directory.a",
+            &target_a,
+            DirectoryRole::AgentNative,
+            Some(AGENT_A),
+        );
+        add_directory(
+            &database,
+            "directory.b",
+            &target_b,
+            DirectoryRole::AgentNative,
+            Some(AGENT_B),
+        );
+        add_capability(&database, SHARED_DIRECTORY_ID, AGENT_A);
+        add_capability(&database, SHARED_DIRECTORY_ID, AGENT_B);
+        add_capability(&database, "directory.a", AGENT_A);
+        add_capability(&database, "directory.b", AGENT_B);
+        add_relation(
+            &database,
+            "usage:shared:a",
+            skill_id,
+            AGENT_A,
+            &shared_skill,
+            SHARED_DIRECTORY_ID,
+            &source_fingerprint,
+        );
+        add_relation(
+            &database,
+            "usage:shared:b",
+            skill_id,
+            AGENT_B,
+            &shared_skill,
+            SHARED_DIRECTORY_ID,
+            &source_fingerprint,
+        );
+        add_relation(
+            &database,
+            "usage:direct:a",
+            skill_id,
+            AGENT_A,
+            &existing_a,
+            "directory.a",
+            &source_fingerprint,
+        );
+    }
 
     let AppQueryResult::UsageEnvironmentProblems(analysis) = facade
         .query(AppQuery::GetUsageEnvironmentProblems(
