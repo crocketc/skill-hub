@@ -61,6 +61,7 @@ fn save_markdown_as_copy_has_stable_wire_shape() {
         origin: None,
         inheritance: skillhub_core::api::SaveAsCopyInheritance::None,
         target_display_name: None,
+        target_runtime_name: None,
     });
     let json = serde_json::to_value(command).unwrap();
     assert_eq!(json["type"], "save_markdown_as_copy");

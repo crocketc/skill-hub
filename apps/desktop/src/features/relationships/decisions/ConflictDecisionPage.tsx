@@ -16,6 +16,9 @@ import { relationshipsKeys } from "../api";
 import { nativeGovernanceFacade } from "../governance/nativeApi";
 import type { RelationGovernanceFacade } from "../governance/api";
 import { DuplicateCleanupDialog } from "../governance/DuplicateCleanupDialog";
+import { DerivedRenameDialog } from "../../markdown/SaveAsCopyDialog";
+import { getCurrentSkillVersion as fetchCurrentSkillVersion, nativeMarkdownFacade } from "../../markdown/nativeApi";
+import type { SaveAsCopyFacade } from "../../markdown/api";
 import type { UsageChangeFacade } from "../../removal/api";
 import { nativeUsageChangeFacade } from "../../removal/nativeApi";
 import {
@@ -52,6 +55,10 @@ export interface ConflictDecisionPageProps {
   environmentFacade?: Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems">;
   /** 重复清理仍使用统一 prepare／commit 契约。 */
   usageChangeFacade?: UsageChangeFacade;
+  /** 重名问题派生技能使用现有另存预览门面；测试可注入。 */
+  saveAsCopyFacade?: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview">;
+  /** 来源技能当前版本读取器；测试可注入。 */
+  getCurrentSkillVersion?: (skillId: string) => Promise<string | null>;
 }
 
 const KIND_CHIP_LABEL_KEYS: Record<string, string> = {
@@ -70,6 +77,8 @@ export function ConflictDecisionPage({
   notifications,
   tracker = operationTracker,
   usageChangeFacade = nativeUsageChangeFacade,
+  saveAsCopyFacade = nativeMarkdownFacade,
+  getCurrentSkillVersion = fetchCurrentSkillVersion,
 }: ConflictDecisionPageProps): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -92,9 +101,13 @@ export function ConflictDecisionPage({
   ) ?? null;
   const [duplicateCleanupOpen, setDuplicateCleanupOpen] = useState(false);
   const [cleanupProblemSnapshot, setCleanupProblemSnapshot] = useState<EnvironmentProblemView | null>(null);
+  const [derivedRenameOpen, setDerivedRenameOpen] = useState(false);
+  const [derivedRenameProblemSnapshot, setDerivedRenameProblemSnapshot] = useState<EnvironmentProblemView | null>(null);
   useEffect(() => {
     setDuplicateCleanupOpen(false);
     setCleanupProblemSnapshot(null);
+    setDerivedRenameOpen(false);
+    setDerivedRenameProblemSnapshot(null);
   }, [problemIdParam]);
   const { available: aiAvailable } = useConflictAiAvailability(facade);
   const ai = useConflictAiAnalysis({ facade, tracker });
@@ -176,6 +189,44 @@ export function ConflictDecisionPage({
     })
   ), [describeError, effectiveNotifications, location.pathname, location.search, queryClient, t, tracker, usageChangeFacade]);
 
+  const commitDerivedRename = useCallback((request: CommitUsageChange): Promise<UsageChangeResult> => (
+    runTrackedOperation<UsageChangeResult>({
+      targetHref: `${location.pathname}${location.search}`,
+      canCancel: false,
+      describeError,
+      invalidateQueryKeys: [[relationshipsKeys.root]],
+      kind: "usage_derived_rename",
+      label: t("markdown.saveCopy.derivedRename.title"),
+      notifications: effectiveNotifications,
+      queryClient,
+      run: async (handle) => {
+        handle.correlate(request.operation_id);
+        return usageChangeFacade.commitUsageChange(request);
+      },
+      successNotice: (result) => result.item_results.length > 0
+        && result.item_results.every((item) => item.status === "applied")
+        && !result.recovery_required
+        ? { title: t("markdown.saveCopy.derivedRename.title"), tone: "success" as const }
+        : null,
+      summarize: (result) => ({
+        failed: result.recovery_required
+          || result.item_results.length === 0
+          || result.item_results.some((item) => item.status !== "applied")
+          ? 1
+          : 0,
+        skipped: 0,
+        succeeded: result.item_results.length > 0
+          && result.item_results.every((item) => item.status === "applied")
+          && !result.recovery_required
+          ? 1
+          : 0,
+      }),
+      total: 1,
+      tracker,
+      translate: (key, options) => String(t(key as never, options as never)),
+    })
+  ), [describeError, effectiveNotifications, location.pathname, location.search, queryClient, t, tracker, usageChangeFacade]);
+
   const safeReturnTo = (() => {
     const value = searchParams.get("returnTo");
     return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
@@ -184,6 +235,9 @@ export function ConflictDecisionPage({
   })();
   const returnToIssue = () => {
     setDuplicateCleanupOpen(false);
+    setCleanupProblemSnapshot(null);
+    setDerivedRenameOpen(false);
+    setDerivedRenameProblemSnapshot(null);
     if (safeReturnTo) navigate(safeReturnTo);
   };
 
@@ -192,7 +246,9 @@ export function ConflictDecisionPage({
     const displayedProblem = environmentProblem
       ?? (duplicateCleanupOpen && cleanupProblemSnapshot?.problem_id === problemIdParam
         ? cleanupProblemSnapshot
-        : null);
+        : derivedRenameOpen && derivedRenameProblemSnapshot?.problem_id === problemIdParam
+          ? derivedRenameProblemSnapshot
+          : null);
     if (environmentProblemQuery.isPending && !displayedProblem) {
       return <p role="status">{t("relationships.governance.problemContext.loading")}</p>;
     }
@@ -229,9 +285,11 @@ export function ConflictDecisionPage({
           <ConflictActions
             mode="environment_problem"
             onNotNow={() => {
-              setDuplicateCleanupOpen(false);
-              setCleanupProblemSnapshot(null);
               returnToIssue();
+            }}
+            onDeriveRename={() => {
+              setDerivedRenameProblemSnapshot(displayedProblem);
+              setDerivedRenameOpen(true);
             }}
             onResolveDuplicate={() => {
               setCleanupProblemSnapshot(displayedProblem);
@@ -249,6 +307,24 @@ export function ConflictDecisionPage({
             onCommit={commitDuplicateCleanup}
             onCompleted={() => undefined}
             onPrepare={usageChangeFacade.prepareUsageChange}
+            problem={displayedProblem}
+          />
+        ) : null}
+        {derivedRenameOpen && displayedProblem.kind === "name_conflict" ? (
+          <DerivedRenameDialog
+            getCurrentSkillVersion={getCurrentSkillVersion}
+            onClose={() => {
+              setDerivedRenameOpen(false);
+              setDerivedRenameProblemSnapshot(null);
+            }}
+            onCommit={commitDerivedRename}
+            onCompleted={async () => {
+              const result = await environmentProblemQuery.refetch();
+              if (result.isError) throw result.error ?? new Error("Problem rescan failed");
+            }}
+            onPrepare={usageChangeFacade.prepareUsageChange}
+            open={derivedRenameOpen}
+            previewFacade={saveAsCopyFacade}
             problem={displayedProblem}
           />
         ) : null}

@@ -277,6 +277,8 @@ async fn release_active_entry(facade: &LocalApplicationFacade, skill_id: SkillId
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare release");
     facade

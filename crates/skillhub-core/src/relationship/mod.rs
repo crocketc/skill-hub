@@ -27,11 +27,12 @@ pub use usage::{
     UsageRelationTarget, UsageRelationView,
 };
 pub use usage_change::{
-    DuplicateCleanupPreview, PreparedUsageChange, SharedUsageMigrationPreview,
-    SharedUsageReplacement, SubjectRenamePreview, SubjectRenameTargetPreview, UsageChangeAction,
-    UsageChangeConsumer, UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult,
-    UsageChangeItemStatus, UsageChangeResult, UsageContentBasis, UsageCopyDisposition,
-    UsageDecisionRecord, UsageEntryEvidence, UsageRecoveryPoint, UsageSubjectVersion,
+    DerivedRenamePreview, DerivedRenameTargetPreview, DuplicateCleanupPreview, PreparedUsageChange,
+    SharedUsageMigrationPreview, SharedUsageReplacement, SubjectRenamePreview,
+    SubjectRenameTargetPreview, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
+    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
+    UsageContentBasis, UsageCopyDisposition, UsageDecisionRecord, UsageEntryEvidence,
+    UsageRecoveryPoint, UsageSubjectVersion,
 };
 pub use validation::{
     evaluate_relationship_probe, map_path_probe_to_source_copy, update_is_meaningful,
@@ -87,6 +88,8 @@ pub struct SkillLineageFact {
     pub version_id: VersionId,
     pub origin_skill_id: SkillId,
     pub origin_version_id: VersionId,
+    /// 创建派生主体时快照的来源显示名；来源主体删除后仍用于说明谱系。
+    pub origin_display_name: Option<String>,
     #[serde(with = "crate::i64_string")]
     #[specta(type = String)]
     pub created_at: i64,

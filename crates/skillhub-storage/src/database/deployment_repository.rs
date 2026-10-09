@@ -258,6 +258,26 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         deployment: &DeploymentRecord,
         previous_runtime_name: &str,
     ) -> AppResult<()> {
+        self.rename_runtime_for_skill_sync(deployment, deployment.skill_id, previous_runtime_name)
+    }
+
+    /// Reassigns one managed deployment to a new independent Skill while
+    /// changing its runtime path, preserving the stable deployment identity.
+    pub fn derive_managed_runtime_sync(
+        &self,
+        deployment: &DeploymentRecord,
+        previous_skill_id: skillhub_core::SkillId,
+        previous_runtime_name: &str,
+    ) -> AppResult<()> {
+        self.rename_runtime_for_skill_sync(deployment, previous_skill_id, previous_runtime_name)
+    }
+
+    fn rename_runtime_for_skill_sync(
+        &self,
+        deployment: &DeploymentRecord,
+        previous_skill_id: skillhub_core::SkillId,
+        previous_runtime_name: &str,
+    ) -> AppResult<()> {
         if !deployment.managed || deployment.state != DeploymentState::Deployed {
             return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "managed_deployment_not_renameable")
@@ -287,14 +307,16 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         }
         let changed = transaction
             .execute(
-                "UPDATE deployments SET runtime_name=?1,version_id=?2,expected_hash=?3,observed_hash=?4,updated_at=?5 WHERE id=?6 AND target_id=?7 AND runtime_name=?8 AND state='deployed' AND managed=1",
+                "UPDATE deployments SET skill_id=?1,runtime_name=?2,version_id=?3,expected_hash=?4,observed_hash=?5,updated_at=?6 WHERE id=?7 AND skill_id=?8 AND target_id=?9 AND runtime_name=?10 AND state='deployed' AND managed=1",
                 params![
+                    deployment.skill_id.to_string(),
                     deployment.runtime_name,
                     deployment.version_id.to_string(),
                     deployment.expected_hash,
                     deployment.observed_hash,
                     now(),
                     deployment.id.to_string(),
+                    previous_skill_id.to_string(),
                     deployment.target_id,
                     previous_runtime_name,
                 ],
@@ -318,6 +340,7 @@ impl<'a> DeploymentRepositorySqlite<'a> {
             .rename_managed_deployment_tx(
                 &transaction,
                 &deployment.id.to_string(),
+                deployment.skill_id,
                 &super::relationship_repository::deployment_entry_path(
                     &target_path,
                     &deployment.runtime_name,

@@ -22,13 +22,14 @@ impl<'a> LineageRepository<'a> {
             .database
             .connection
             .execute(
-                "INSERT INTO skill_lineage (skill_id,version_id,origin_skill_id,origin_version_id,created_at) VALUES (?1,?2,?3,?4,?5)",
+                "INSERT INTO skill_lineage (skill_id,version_id,origin_skill_id,origin_version_id,created_at,origin_display_name) VALUES (?1,?2,?3,?4,?5,?6)",
                 rusqlite::params![
                     fact.skill_id.to_string(),
                     fact.version_id.to_string(),
                     fact.origin_skill_id.to_string(),
                     fact.origin_version_id.to_string(),
                     fact.created_at,
+                    fact.origin_display_name,
                 ],
             )
             .map_err(database_error)?;
@@ -49,7 +50,7 @@ impl<'a> LineageRepository<'a> {
             .database
             .connection
             .query_row(
-                "SELECT skill_id,version_id,origin_skill_id,origin_version_id,created_at FROM skill_lineage WHERE skill_id=?1",
+                "SELECT skill_id,version_id,origin_skill_id,origin_version_id,created_at,origin_display_name FROM skill_lineage WHERE skill_id=?1",
                 [skill_id.to_string()],
                 |row| {
                     Ok((
@@ -58,12 +59,20 @@ impl<'a> LineageRepository<'a> {
                         row.get::<_, String>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, Option<String>>(5)?,
                     ))
                 },
             )
             .optional()
             .map_err(database_error)?;
-        let Some((skill_id, version_id, origin_skill_id, origin_version_id, created_at)) = row
+        let Some((
+            skill_id,
+            version_id,
+            origin_skill_id,
+            origin_version_id,
+            created_at,
+            origin_display_name,
+        )) = row
         else {
             return Ok(None);
         };
@@ -72,6 +81,7 @@ impl<'a> LineageRepository<'a> {
             version_id: parse_id(&version_id, "version_id")?,
             origin_skill_id: parse_id(&origin_skill_id, "origin_skill_id")?,
             origin_version_id: parse_id(&origin_version_id, "origin_version_id")?,
+            origin_display_name,
             created_at,
         }))
     }

@@ -4872,6 +4872,7 @@ async fn save_markdown_as_copy_creates_a_queryable_skill_without_changing_origin
             origin: None,
             inheritance: SaveAsCopyInheritance::None,
             target_display_name: None,
+            target_runtime_name: None,
         }))
         .await
         .expect("save markdown as copy");
@@ -4970,6 +4971,7 @@ async fn save_markdown_as_copy_rejects_invalid_path_without_touching_original() 
             origin: None,
             inheritance: SaveAsCopyInheritance::None,
             target_display_name: None,
+            target_runtime_name: None,
         }))
         .await
         .expect_err("path traversal must be rejected");

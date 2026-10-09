@@ -21,6 +21,7 @@ use skillhub_core::api::{
     SaveAsCopyReplacementChoice, SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::Skill;
+use skillhub_core::deployment::{DeploymentMode, DeploymentRecord, DeploymentState};
 use skillhub_core::{
     physical_id_for_path, AppCommand, AppQuery, AppResult, ApplicationFacade, DeploymentId,
     ErrorCode, OperationId, OperationPhase, RecoveryCandidate,
@@ -169,20 +170,20 @@ fn seed_managed_entry(
         .expect("insert version");
     let deployment_id = DeploymentId::new();
     database
-        .connection_for_test()
-        .execute(
-            "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, ?5, ?6, ?6, 0, 0)",
-            rusqlite::params![
-                deployment_id.to_string(),
-                skill_id.to_string(),
-                version_id.to_string(),
-                target_id,
-                runtime_name,
-                expected_hash,
-            ],
-        )
-        .expect("insert deployment");
-    deployment_id
+        .deployment_repository()
+        .insert_sync(&DeploymentRecord {
+            id: deployment_id,
+            skill_id,
+            version_id: version_id.clone(),
+            target_id,
+            state: DeploymentState::Deployed,
+            mode: DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name: runtime_name.to_owned(),
+            expected_hash: expected_hash.clone(),
+            observed_hash: Some(expected_hash),
+        })
+        .expect("record managed deployment")
 }
 
 async fn save_copy(
@@ -203,6 +204,7 @@ async fn save_copy(
             }),
             inheritance,
             target_display_name: display_name,
+            target_runtime_name: None,
         }))
         .await
 }
@@ -865,18 +867,18 @@ fn seed_managed_entry_at(
         .expect("insert version");
     let deployment_id = DeploymentId::new();
     database
-        .connection_for_test()
-        .execute(
-            "INSERT INTO deployments (id, skill_id, version_id, target_id, state, method, managed, runtime_name, expected_hash, observed_hash, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'deployed', 'managed_copy', 1, ?5, ?6, ?6, 0, 0)",
-            rusqlite::params![
-                deployment_id.to_string(),
-                skill_id.to_string(),
-                version_id.to_string(),
-                target_id,
-                runtime_name,
-                expected_hash,
-            ],
-        )
-        .expect("insert deployment");
-    deployment_id
+        .deployment_repository()
+        .insert_sync(&DeploymentRecord {
+            id: deployment_id,
+            skill_id,
+            version_id: version_id.clone(),
+            target_id,
+            state: DeploymentState::Deployed,
+            mode: DeploymentMode::ManagedCopy,
+            managed: true,
+            runtime_name: runtime_name.to_owned(),
+            expected_hash: expected_hash.clone(),
+            observed_hash: Some(expected_hash),
+        })
+        .expect("record managed deployment")
 }

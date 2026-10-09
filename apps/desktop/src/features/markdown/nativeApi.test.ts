@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
 import type { SaveMarkdownAsCopy } from "../../api/bindings";
 import { MarkdownUnavailableError } from "./api";
-import { nativeMarkdownFacade } from "./nativeApi";
+import { getCurrentSkillVersion, nativeMarkdownFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
   executeCommand: vi.fn(),
@@ -18,6 +18,28 @@ function saveCopyRequest(facade: object, request: SaveMarkdownAsCopy): Promise<u
 
 describe("nativeMarkdownFacade", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("reads the current version identity through the generated skill query", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: { current_version: "version-7" },
+    } as never);
+
+    await expect(getCurrentSkillVersion("skill-1")).resolves.toBe("version-7");
+    expect(queryApplication).toHaveBeenCalledWith({
+      type: "get_skill",
+      payload: { skill_id: "skill-1" },
+    });
+  });
+
+  it("keeps a missing current version explicit", async () => {
+    vi.mocked(queryApplication).mockResolvedValue({
+      type: "skill",
+      payload: { current_version: null },
+    } as never);
+
+    await expect(getCurrentSkillVersion("skill-empty")).resolves.toBeNull();
+  });
 
   it("maps the immutable Markdown file list", async () => {
     vi.mocked(queryApplication).mockResolvedValue({

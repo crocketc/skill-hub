@@ -20,6 +20,7 @@ pub enum UsageChangeAction {
     ResolveDuplicate,
     MigrateSharedUsage,
     RenameSubject,
+    DeriveAndReplace,
 }
 
 /// One managed target whose directory entry will move when a skill subject is
@@ -43,6 +44,29 @@ pub struct SubjectRenamePreview {
     pub previous_runtime_name: String,
     pub runtime_name: String,
     pub targets: Vec<SubjectRenameTargetPreview>,
+}
+
+/// One explicitly selected managed relation affected by a local derived rename.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DerivedRenameTargetPreview {
+    pub relation_id: String,
+    pub deployment_id: String,
+    pub previous_path: String,
+    pub replacement_path: String,
+    pub requires_shared_target_confirmation: bool,
+    pub blocker: Option<String>,
+}
+
+/// Frozen source and target scope for creating a locally renamed independent subject.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DerivedRenamePreview {
+    pub source_skill_id: SkillId,
+    pub base_version_id: VersionId,
+    pub runtime_name: String,
+    pub selected_relation_ids: Vec<String>,
+    pub targets: Vec<DerivedRenameTargetPreview>,
 }
 
 /// The verified environmental issue and the exact user selection frozen into
@@ -172,6 +196,7 @@ pub enum UsageChangeImpactAction {
     Repair,
     Restore,
     RenameSubject,
+    DeriveAndReplace,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -231,6 +256,8 @@ pub struct PreparedUsageChange {
     pub shared_usage_migration: Option<SharedUsageMigrationPreview>,
     #[serde(default)]
     pub subject_rename: Option<SubjectRenamePreview>,
+    #[serde(default)]
+    pub derived_rename: Option<DerivedRenamePreview>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -240,4 +267,8 @@ pub struct UsageChangeResult {
     pub prepared_id: OperationId,
     pub item_results: Vec<UsageChangeItemResult>,
     pub recovery_required: bool,
+    #[serde(default)]
+    pub derived_skill_id: Option<SkillId>,
+    #[serde(default)]
+    pub recovery_operation_id: Option<OperationId>,
 }

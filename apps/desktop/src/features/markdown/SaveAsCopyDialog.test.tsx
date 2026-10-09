@@ -7,14 +7,17 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type {
   DeploymentRecord,
+  EnvironmentProblemView,
+  PreparedUsageChange,
   SaveAsCopyOutcome,
   SaveAsCopyReplacementPreview,
   SaveMarkdownAsCopy,
+  UsageChangeResult,
 } from "../../api/bindings";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import type { MarkdownFacade } from "./api";
-import { SaveAsCopyDialog } from "./SaveAsCopyDialog";
+import { DerivedRenameDialog, SaveAsCopyDialog } from "./SaveAsCopyDialog";
 import { createMockMarkdownFacade } from "./testFixtures";
 
 /**
@@ -80,6 +83,77 @@ function makePreview(
     source_version_id: "v1",
     targets: previewTargets,
     ...overrides,
+  };
+}
+
+function derivedRenameProblem(): EnvironmentProblemView {
+  return {
+    problem_id: "problem-name-conflict",
+    kind: "name_conflict",
+    closed: false,
+    consumers: [],
+    environment_results: [],
+    entries: [{
+      directory_id: "dir-agent",
+      directory_path: "/agents/codex/skills",
+      directory_role: "agent_user",
+      relative_entry_path: "formatter",
+      runtime_name: "formatter",
+      content_fingerprint: "fingerprint-source",
+      physical_identity: "physical-source",
+      skill_id: "skill-source",
+      relation_ids: ["managed:deployment-source"],
+    }],
+  };
+}
+
+function derivedRenameReplacementPreview(expiresAt: string): SaveAsCopyReplacementPreview {
+  return {
+    confirmation_fingerprint: "fingerprint-derived",
+    expires_at: expiresAt,
+    preview_id: "preview-derived",
+    source_skill_id: "skill-source",
+    source_version_id: "version-current",
+    targets: [{
+      blocker: null,
+      consumer_deployment_ids: ["deployment-source"],
+      deployment_id: "deployment-source",
+      managed: true,
+      path: "/agents/codex/skills/formatter",
+      requires_shared_target_confirmation: false,
+      runtime_name: "formatter",
+      target_id: "target-source",
+      version_id: "version-current",
+    }],
+  };
+}
+
+function derivedRenamePrepared(): PreparedUsageChange {
+  return {
+    operation_id: "op-derived",
+    prepared_id: "prepared-derived",
+    action: "derive_and_replace",
+    relationship_revision: "rev-2",
+    affected_skill_ids: ["skill-source"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+    derived_rename: {
+      source_skill_id: "skill-source",
+      base_version_id: "version-current",
+      runtime_name: "formatter-local",
+      selected_relation_ids: ["managed:deployment-source"],
+      targets: [{
+        relation_id: "managed:deployment-source",
+        deployment_id: "deployment-source",
+        previous_path: "/agents/codex/skills/formatter",
+        replacement_path: "/agents/codex/skills/formatter-local",
+        requires_shared_target_confirmation: false,
+        blocker: null,
+      }],
+    },
   };
 }
 
@@ -245,6 +319,66 @@ async function chooseReplaceAndPreview(
 }
 
 describe("SaveAsCopyDialog", () => {
+  it("requests a fresh derived-rename preview after the original expires", async () => {
+    const previews = [
+      derivedRenameReplacementPreview(pastExpiry),
+      derivedRenameReplacementPreview(futureExpiry),
+    ];
+    let previewIndex = 0;
+    const previewFacade = {
+      saveAsCopyReplacementPreview: vi.fn(async () => previews[Math.min(previewIndex++, 1)]),
+    };
+    const onPrepare = vi.fn(async () => derivedRenamePrepared());
+    const i18n = await createSkillHubI18n(["zh-CN"]);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+    });
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={client}>
+          <I18nextProvider i18n={i18n}>
+            <MemoryRouter initialEntries={["/relationships/decisions"]}>
+              <DerivedRenameDialog
+                getCurrentSkillVersion={vi.fn(async () => "version-current")}
+                onClose={vi.fn()}
+                onCommit={vi.fn(async () => ({} as UsageChangeResult))}
+                onCompleted={vi.fn()}
+                onPrepare={onPrepare}
+                open
+                previewFacade={previewFacade}
+                problem={derivedRenameProblem()}
+              />
+            </MemoryRouter>
+          </I18nextProvider>
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "为选中位置另存" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "新技能运行名" }), {
+      target: { value: "formatter-local" },
+    });
+    fireEvent.click(within(dialog).getByRole("checkbox", {
+      name: "/agents/codex/skills/formatter",
+    }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览替换目标" }));
+    expect(await within(dialog).findByText("预览已过期，请重新生成后继续。"))
+      .toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "重新预览" }));
+    await waitFor(() => expect(previewFacade.saveAsCopyReplacementPreview).toHaveBeenCalledTimes(2));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "准备准确方案" }));
+    await waitFor(() => expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({
+      action: "derive_and_replace",
+      skill_id: "skill-source",
+      base_version_id: "version-current",
+      runtime_name: "formatter-local",
+      selected_relation_ids: ["managed:deployment-source"],
+    })));
+    expect(await within(dialog).findByText("/agents/codex/skills/formatter-local"))
+      .toBeVisible();
+  });
+
   it("defaults to no inheritance and saves a copy carrying source lineage, then locates the new skill", async () => {
     const onSaved = vi.fn();
     const facade = await renderDialog({}, { onSaved });

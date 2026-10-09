@@ -155,6 +155,9 @@ pub struct SaveMarkdownAsCopy {
     /// 集中库同名主体合法，无静默 `(copy)` 后缀。空白值回退来源展示名。
     #[serde(default)]
     pub target_display_name: Option<String>,
+    /// 仅供关系统一派生改名流程设置新主体运行名；缺省沿用来源。
+    #[serde(default)]
+    pub target_runtime_name: Option<String>,
 }
 
 /// K5：单个替换目标的执行状态。`Failed` 携带稳定错误码；入口未被改动
@@ -857,6 +860,12 @@ pub struct PrepareUsageChange {
     pub selected_entry_keys: Vec<crate::relationship::UsageEntryKey>,
     pub runtime_name: Option<String>,
     pub base_version_id: Option<crate::VersionId>,
+    /// `derive_and_replace` 的显式受管目标范围；其它动作必须留空。
+    #[serde(default)]
+    pub selected_relation_ids: Vec<String>,
+    /// 被用户明确确认可接管共享物理入口的关系；必须是已选择关系的子集。
+    #[serde(default)]
+    pub confirmed_shared_relation_ids: Vec<String>,
     pub non_recognized_destination: Option<String>,
 }
 

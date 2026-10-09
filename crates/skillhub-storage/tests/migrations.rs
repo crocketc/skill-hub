@@ -22,6 +22,40 @@ fn empty_database_migrates_to_current_schema_and_enables_fts5() {
 }
 
 #[test]
+fn v30_upgrade_snapshots_existing_lineage_origin_names() {
+    let file = NamedTempFile::new().unwrap();
+    {
+        let database = Database::open(file.path()).unwrap();
+        let connection = database.connection_for_test();
+        connection
+            .execute_batch(
+                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+                 PRAGMA user_version = 30;
+                 INSERT INTO skills(id,display_name,runtime_name,created_at,updated_at)
+                   VALUES ('deleted-origin','Original title','original-title',1,1),
+                          ('derived-skill','Derived title','derived-title',1,1);
+                 INSERT INTO skill_lineage(skill_id,version_id,origin_skill_id,origin_version_id,created_at)
+                   VALUES ('derived-skill','derived-version','deleted-origin','origin-version',2);",
+            )
+            .unwrap();
+    }
+
+    let migrated = Database::open(file.path()).unwrap();
+    assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
+    assert_eq!(migrated.migration_report().applied_versions, vec![31]);
+    let (origin_name, origin_id): (Option<String>, String) = migrated
+        .connection_for_test()
+        .query_row(
+            "SELECT origin_display_name,origin_skill_id FROM skill_lineage WHERE skill_id='derived-skill'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(origin_name.as_deref(), Some("Original title"));
+    assert_eq!(origin_id, "deleted-origin");
+}
+
+#[test]
 fn v22_archived_skills_become_normal_without_losing_skill_facts() {
     let file = NamedTempFile::new().unwrap();
     {
@@ -62,7 +96,7 @@ fn v22_archived_skills_become_normal_without_losing_skill_facts() {
         migrated.migration_report().applied_versions,
         // W3-1（FB-003 裁决第 1 节）：0028 起新增 security_alerts 预警状态表。
         // #12（2026-10-07 裁决）：0029 解除存证事件删除禁令，随主体删除。
-        vec![23, 24, 25, 26, 27, 28, 29, 30]
+        vec![23, 24, 25, 26, 27, 28, 29, 30, 31]
     );
     assert!(migrated.has_table("security_alerts").unwrap());
     assert!(migrated
@@ -1037,6 +1071,12 @@ fn check_run_trigger_column_defaults_to_manual_after_upgrade() {
             .execute("DROP TABLE security_alerts", [])
             .unwrap();
         connection
+            .execute(
+                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name",
+                [],
+            )
+            .unwrap();
+        connection
             .execute_batch(
                 "DROP TABLE active_usage_evidence;
                  DROP TABLE active_usage_slots;
@@ -1051,10 +1091,11 @@ fn check_run_trigger_column_defaults_to_manual_after_upgrade() {
     let migrated = Database::open(file.path()).unwrap();
     assert_eq!(migrated.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
     // W3-1（FB-003 裁决第 1 节）：0028 起新增 security_alerts 预警状态表；
-    // #12（2026-10-07 裁决）：0029 解除存证事件删除禁令，随主体删除。
+    // #12（2026-10-07 裁决）：0029 解除存证事件删除禁令，随主体删除；
+    // 0031 为既有谱系来源补入名称快照。
     assert_eq!(
         migrated.migration_report().applied_versions,
-        vec![27, 28, 29, 30]
+        vec![27, 28, 29, 30, 31]
     );
     let trigger: String = migrated
         .connection_for_test()

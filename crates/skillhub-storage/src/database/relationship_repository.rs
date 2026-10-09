@@ -659,6 +659,7 @@ impl<'a> RelationshipRepository<'a> {
         &self,
         transaction: &Transaction<'_>,
         id: &str,
+        skill_id: skillhub_core::SkillId,
         path: &str,
         content_fingerprint: &str,
         observed_at: i64,
@@ -694,8 +695,8 @@ impl<'a> RelationshipRepository<'a> {
         let directory_node_id = directory_node_id_for_path_tx(transaction, path)?;
         let changed = transaction
             .execute(
-                "UPDATE deployment_relations SET path=?1,path_key=?2,directory_node_id=?3,content_fingerprint=?4,match_state='content_verified',health_reasons_json='[]',observed_at=?5 WHERE relation_id=?6 AND active=1 AND ownership='skillhub_managed'",
-                params![path, path_key, directory_node_id, content_fingerprint, observed_at, relation_id],
+                "UPDATE deployment_relations SET skill_id=?1,path=?2,path_key=?3,directory_node_id=?4,content_fingerprint=?5,match_state='content_verified',health_reasons_json='[]',observed_at=?6 WHERE relation_id=?7 AND active=1 AND ownership='skillhub_managed'",
+                params![skill_id.to_string(), path, path_key, directory_node_id, content_fingerprint, observed_at, relation_id],
             )
             .map_err(database_error)?;
         if changed != 1 {

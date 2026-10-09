@@ -1212,6 +1212,25 @@ export type DeploymentTarget = {
 	preferred_mode?: DeploymentMode | null,
 };
 
+/**  Frozen source and target scope for creating a locally renamed independent subject. */
+export type DerivedRenamePreview = {
+	source_skill_id: SkillId,
+	base_version_id: VersionId,
+	runtime_name: string,
+	selected_relation_ids: string[],
+	targets: DerivedRenameTargetPreview[],
+};
+
+/**  One explicitly selected managed relation affected by a local derived rename. */
+export type DerivedRenameTargetPreview = {
+	relation_id: string,
+	deployment_id: string,
+	previous_path: string,
+	replacement_path: string,
+	requires_shared_target_confirmation: boolean,
+	blocker: string | null,
+};
+
 export type DesktopPreferences = {
 	network_enabled: boolean,
 	llm_provider: string,
@@ -3077,6 +3096,10 @@ export type PrepareUsageChange = {
 	selected_entry_keys: UsageEntryKey[],
 	runtime_name: string | null,
 	base_version_id: VersionId | null,
+	/**  `derive_and_replace` 的显式受管目标范围；其它动作必须留空。 */
+	selected_relation_ids?: string[],
+	/**  被用户明确确认可接管共享物理入口的关系；必须是已选择关系的子集。 */
+	confirmed_shared_relation_ids?: string[],
 	non_recognized_destination: string | null,
 };
 
@@ -3142,6 +3165,7 @@ export type PreparedUsageChange = {
 	duplicate_cleanup?: DuplicateCleanupPreview | null,
 	shared_usage_migration?: SharedUsageMigrationPreview | null,
 	subject_rename?: SubjectRenamePreview | null,
+	derived_rename?: DerivedRenamePreview | null,
 };
 
 /**
@@ -4212,6 +4236,8 @@ export type SaveMarkdownAsCopy = {
 	 *  集中库同名主体合法，无静默 `(copy)` 后缀。空白值回退来源展示名。
 	 */
 	target_display_name?: string | null,
+	/**  仅供关系统一派生改名流程设置新主体运行名；缺省沿用来源。 */
+	target_runtime_name?: string | null,
 };
 
 export type SaveMarkdownContent = {
@@ -5299,7 +5325,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate" | "migrate_shared_usage" | "rename_subject";
+export type UsageChangeAction = "release" | "manage" | "sync" | "repair" | "restore" | "resolve_duplicate" | "migrate_shared_usage" | "rename_subject" | "derive_and_replace";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize
@@ -5327,7 +5353,7 @@ export type UsageChangeImpact = {
 	description: string,
 };
 
-export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy" | "synchronize" | "repair" | "restore" | "rename_subject";
+export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy" | "synchronize" | "repair" | "restore" | "rename_subject" | "derive_and_replace";
 
 export type UsageChangeItemResult = {
 	relation_ids: string[],
@@ -5346,6 +5372,8 @@ export type UsageChangeResult = {
 	prepared_id: OperationId,
 	item_results: UsageChangeItemResult[],
 	recovery_required: boolean,
+	derived_skill_id?: SkillId | null,
+	recovery_operation_id?: OperationId | null,
 };
 
 /**

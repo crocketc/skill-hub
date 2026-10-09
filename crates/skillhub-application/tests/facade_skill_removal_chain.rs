@@ -242,7 +242,7 @@ fn seed_cross_references(connection: &rusqlite::Connection, doomed: &str, surviv
     connection
         .execute_batch(&format!(
             "INSERT INTO skills(id,display_name,runtime_name,created_at,updated_at) VALUES('{child}','LineageChild','lineage-child',1,1);
-             INSERT INTO skill_lineage(skill_id,version_id,origin_skill_id,origin_version_id,created_at) VALUES('{child}','child-version','{d}','origin-version',1);
+             INSERT INTO skill_lineage(skill_id,version_id,origin_skill_id,origin_version_id,created_at,origin_display_name) VALUES('{child}','child-version','{d}','origin-version',1,(SELECT display_name FROM skills WHERE id='{d}'));
              INSERT INTO conflict_cases(conflict_id,kind,classification,evidence_json) VALUES('case-1','duplicate_same_content','same_skill_version','{{}}');
              INSERT INTO conflict_case_members(member_id,conflict_id,skill_id,provenance_id,path) VALUES('member-doomed','case-1','{d}','ev1-{d}','C:/a'),
                ('member-survivor','case-1','{s}','ev1-{s}','C:/b');",
@@ -350,10 +350,6 @@ async fn delete_clears_the_full_import_chain_and_keeps_the_original_files() {
             "SELECT COUNT(*) FROM skill_lineage WHERE skill_id=?1",
         ),
         (
-            "skill_lineage(origin)",
-            "SELECT COUNT(*) FROM skill_lineage WHERE origin_skill_id=?1",
-        ),
-        (
             "combination_skills",
             "SELECT COUNT(*) FROM combination_skills WHERE skill_id=?1",
         ),
@@ -363,6 +359,20 @@ async fn delete_clears_the_full_import_chain_and_keeps_the_original_files() {
             .expect("count query");
         assert_eq!(rows, 0, "{table} must not keep rows for the removed skill");
     }
+
+    let (lineage_origin, lineage_name, lineage_version): (String, Option<String>, String) = connection
+        .query_row(
+            "SELECT origin_skill_id,origin_display_name,origin_version_id FROM skill_lineage WHERE skill_id='00000000-0000-0000-0000-0000000000c0'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("derived subject keeps its upstream reference");
+    assert_eq!(
+        lineage_origin, doomed,
+        "lineage preserves the deleted source identity"
+    );
+    assert_eq!(lineage_name.as_deref(), Some("Doomed"));
+    assert_eq!(lineage_version, "origin-version");
 
     // 冲突案保留，被删成员降级为 NULL；幸存成员不受影响。
     let (member_skill, member_provenance): (Option<String>, Option<String>) = connection

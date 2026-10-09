@@ -17,21 +17,23 @@ use skillhub_adapters::relationship::FilesystemRelationshipProbe;
 use skillhub_core::agent::{AgentDirectoryIdentity, AgentDirectoryProjection, AgentDirectoryRole};
 use skillhub_core::api::{
     AppQueryResult, CommitRelationMigration, CommitUsageChange, DeploymentPlanRequest,
-    PrepareRelationMigration, PrepareUsageChange, RelationMigrationTargetMode,
-    RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    GetSaveAsCopyReplacementPreview, PrepareRelationMigration, PrepareUsageChange,
+    RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    SaveAsCopyInheritance, SaveAsCopyInheritanceOutcome, SaveAsCopyOrigin,
+    SaveAsCopyReplacementChoice, SaveAsCopyTargetStatus, SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::{observed_path_key, DeploymentPlan};
 use skillhub_core::relationship::{
-    AgentDirectoryCapabilityFact, DeploymentRelationFact, DuplicateCleanupPreview,
-    EnvironmentProblemKind, FileRepresentation, OwnershipState, PreparedUsageChange,
-    RelationGovernanceTargetKind, SharedUsageMigrationPreview, SharedUsageReplacement,
-    SourceCopyRelationFact, UsageChangeAction, UsageChangeConsumer, UsageChangeImpact,
-    UsageChangeImpactAction, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
-    UsageContentBasis, UsageCopyDisposition, UsageDecision, UsageDecisionRecord,
-    UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry, UsageEnvironmentKey,
-    UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement, UsageRecoveryPoint,
-    UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
+    AgentDirectoryCapabilityFact, DeploymentRelationFact, DerivedRenamePreview,
+    DerivedRenameTargetPreview, DuplicateCleanupPreview, EnvironmentProblemKind,
+    FileRepresentation, OwnershipState, PreparedUsageChange, RelationGovernanceTargetKind,
+    SharedUsageMigrationPreview, SharedUsageReplacement, SourceCopyRelationFact, UsageChangeAction,
+    UsageChangeConsumer, UsageChangeImpact, UsageChangeImpactAction, UsageChangeItemResult,
+    UsageChangeItemStatus, UsageChangeResult, UsageContentBasis, UsageCopyDisposition,
+    UsageDecision, UsageDecisionRecord, UsageEntryEvidence, UsageEntryKey, UsageEnvironmentEntry,
+    UsageEnvironmentKey, UsageEnvironmentSnapshot, UsageForm, UsageHealthReason, UsageManagement,
+    UsageRecoveryPoint, UsageRelationTarget, UsageRelationView, UsageSubjectVersion,
 };
 use skillhub_core::{
     reparse_physical_id_for_path, symlink_physical_id_for_path, AppCommandResult, AppError,
@@ -52,6 +54,7 @@ const MANAGED_USAGE_CHANGE_KIND: &str = "managed_usage_change";
 const DUPLICATE_CLEANUP_KIND: &str = "usage_duplicate_cleanup";
 const SHARED_USAGE_MIGRATION_KIND: &str = "shared_usage_migration";
 const SUBJECT_RENAME_KIND: &str = "subject_runtime_rename";
+const DERIVED_RENAME_KIND: &str = "usage_derived_rename";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct SubjectRenameJournal {
@@ -71,6 +74,16 @@ struct SubjectRenameJournal {
     database_pointer_updated: bool,
     portable_updated: bool,
     metadata_committed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct DerivedRenameJournal {
+    request: PrepareUsageChange,
+    prepared: PreparedUsageChange,
+    original_skill: skillhub_core::catalog::Skill,
+    source_version_id: VersionId,
+    copy_request: SaveMarkdownAsCopy,
+    child_operation_id: OperationId,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -316,6 +329,9 @@ impl LocalApplicationFacade {
         if request.action == UsageChangeAction::RenameSubject {
             return self.prepare_subject_rename(request);
         }
+        if request.action == UsageChangeAction::DeriveAndReplace {
+            return self.prepare_derived_rename(request);
+        }
         if request.action == UsageChangeAction::Manage {
             validate_manage_request(&request)?;
             return self.prepare_usage_manage(request);
@@ -532,6 +548,7 @@ impl LocalApplicationFacade {
             duplicate_cleanup: None,
             shared_usage_migration: None,
             subject_rename: None,
+            derived_rename: None,
         };
         let mut preview_targets = Vec::new();
         let mut plans = Vec::new();
@@ -734,6 +751,326 @@ impl LocalApplicationFacade {
         Ok(prepared)
     }
 
+    fn prepare_derived_rename(
+        &self,
+        request: PrepareUsageChange,
+    ) -> AppResult<PreparedUsageChange> {
+        validate_derived_rename_request(&request)?;
+        let fingerprint = request_fingerprint(&request)?;
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("derived_rename.prepare.database"))?;
+            if let Some(record) = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+            {
+                if record.kind != DERIVED_RENAME_KIND {
+                    return Err(operation_conflict("operation_id_reused"));
+                }
+                if record.request_fingerprint != fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", request.operation_id.to_string()));
+                }
+                let journal: DerivedRenameJournal = serde_json::from_value(record.recovery_data)
+                    .map_err(|_| operation_conflict("derived_rename_journal_invalid"))?;
+                return Ok(journal.prepared);
+            }
+        }
+
+        let source_skill_id = request
+            .skill_id
+            .ok_or_else(|| operation_conflict("derived_rename_skill_required"))?;
+        let base_version_id = request
+            .base_version_id
+            .clone()
+            .ok_or_else(|| operation_conflict("derived_rename_base_version_required"))?;
+        let runtime_name = request
+            .runtime_name
+            .as_deref()
+            .ok_or_else(|| operation_conflict("derived_rename_runtime_name_required"))?;
+        skillhub_core::deployment::validate_runtime_name(runtime_name)?;
+        let library = self.library_runtime.snapshot()?;
+        if library.current(source_skill_id)?.as_ref() != Some(&base_version_id) {
+            return Err(operation_conflict("derived_rename_base_version_stale"));
+        }
+        let (expected_identity, source_markdown) =
+            library.read_file(&base_version_id, "SKILL.md", 1_048_576)?;
+        let source_markdown = String::from_utf8(source_markdown).map_err(|_| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("reason", "skill_markdown_not_utf8")
+                .with_action(RecoveryAction::InspectTarget)
+        })?;
+        let markdown = rename_skill_frontmatter_content(&source_markdown, runtime_name)?;
+        let source_skill = self.with_database("derived_rename.load_skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(source_skill_id)?
+                .ok_or_else(|| operation_conflict("usage_subject_missing"))
+        })?;
+        let deployment_ids = request
+            .selected_relation_ids
+            .iter()
+            .map(|relation_id| {
+                relation_id
+                    .strip_prefix("managed:")
+                    .and_then(|raw| raw.parse::<skillhub_core::DeploymentId>().ok())
+                    .ok_or_else(|| operation_conflict("derived_rename_relation_invalid"))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        let replacement_preview =
+            match self.get_save_as_copy_replacement_preview(GetSaveAsCopyReplacementPreview {
+                source_skill_id,
+                targets: deployment_ids.clone(),
+            })? {
+                AppQueryResult::SaveAsCopyReplacementPreview(preview) => preview,
+                _ => {
+                    return Err(operation_conflict(
+                        "derived_rename_replacement_preview_missing",
+                    ))
+                }
+            };
+        if replacement_preview.source_version_id != base_version_id {
+            return Err(operation_conflict("derived_rename_base_version_stale"));
+        }
+
+        let (deployments, relations, revision, scopes) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("derived_rename.prepare.database"))?;
+            let deployments = database.deployment_repository().list_all()?;
+            let relations = database.relationship_repository().list_relations()?;
+            let revision = database.relationship_repository().relationship_revision()?;
+            let mut scopes = BTreeMap::new();
+            for deployment in deployments
+                .iter()
+                .filter(|deployment| deployment_ids.contains(&deployment.id))
+            {
+                let scope = database
+                    .connection_for_test()
+                    .query_row(
+                        "SELECT scope FROM targets WHERE id=?1",
+                        [&deployment.target_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .map_err(|_| operation_conflict("derived_rename_target_missing"))?;
+                scopes.insert(deployment.target_id.clone(), scope);
+            }
+            (deployments, relations, revision, scopes)
+        };
+
+        let mut prepared = PreparedUsageChange {
+            operation_id: request.operation_id,
+            prepared_id: OperationId::new(),
+            action: UsageChangeAction::DeriveAndReplace,
+            relationship_revision: revision.to_string(),
+            affected_skill_ids: vec![source_skill_id],
+            subject_versions: vec![UsageSubjectVersion {
+                skill_id: source_skill_id,
+                version_id: Some(base_version_id.clone()),
+            }],
+            entry_evidence: Vec::new(),
+            consumers: Vec::new(),
+            impacts: Vec::new(),
+            limitations: Vec::new(),
+            duplicate_cleanup: None,
+            shared_usage_migration: None,
+            subject_rename: None,
+            derived_rename: None,
+        };
+        let mut target_previews = Vec::new();
+        let mut choices = Vec::new();
+        for target_preview in &replacement_preview.targets {
+            let deployment_id = target_preview.deployment_id;
+            let relation_id = format!("managed:{deployment_id}");
+            if target_preview.requires_shared_target_confirmation
+                && !request.confirmed_shared_relation_ids.contains(&relation_id)
+            {
+                return Err(operation_conflict(
+                    "derived_rename_shared_confirmation_required",
+                ));
+            }
+            let deployment = deployments
+                .iter()
+                .find(|deployment| deployment.id == deployment_id)
+                .filter(|deployment| {
+                    deployment.skill_id == source_skill_id
+                        && deployment.state == skillhub_core::DeploymentState::Deployed
+                        && deployment.managed
+                })
+                .ok_or_else(|| operation_conflict("derived_rename_relation_missing"))?;
+            let relation = relations
+                .iter()
+                .find(|relation| {
+                    relation.relation_id == relation_id
+                        && relation.active
+                        && relation.skill_id == Some(source_skill_id)
+                        && relation.ownership == OwnershipState::SkillhubManaged
+                })
+                .ok_or_else(|| operation_conflict("derived_rename_relation_unverified"))?;
+            if target_preview.blocker.is_some() || !target_preview.managed {
+                return Err(operation_conflict("derived_rename_target_blocked"));
+            }
+            let previous_path = PathBuf::from(&target_preview.path);
+            let replacement_path = previous_path
+                .parent()
+                .ok_or_else(|| operation_conflict("derived_rename_target_missing"))?
+                .join(runtime_name);
+            if replacement_path != previous_path && fs::symlink_metadata(&replacement_path).is_ok()
+            {
+                return Err(operation_conflict("derived_rename_target_name_conflict"));
+            }
+            let target_scope = scopes
+                .get(&deployment.target_id)
+                .ok_or_else(|| operation_conflict("derived_rename_target_missing"))?;
+            let target = UsageRelationTarget {
+                kind: if target_scope == "project" {
+                    RelationGovernanceTargetKind::Project
+                } else {
+                    RelationGovernanceTargetKind::Agent
+                },
+                directory_id: Some(deployment.target_id.clone()),
+                agent_client_id: Some(relation.agent_client_id.clone()),
+                directory_role: None,
+                recognition: None,
+            };
+            let representation = match deployment.mode {
+                DeploymentMode::ManagedCopy => FileRepresentation::Copy,
+                DeploymentMode::SymbolicLink => FileRepresentation::SymbolicLink,
+                DeploymentMode::DirectoryJunction => FileRepresentation::DirectoryJunction,
+            };
+            let form = if deployment.mode == DeploymentMode::ManagedCopy {
+                UsageForm::FullCopy
+            } else {
+                UsageForm::Link
+            };
+            let path = previous_path.to_string_lossy().into_owned();
+            let content_fingerprint = entry_fingerprint(&previous_path).ok().flatten();
+            let physical_identity = entry_identity(&previous_path).unwrap_or_default();
+            prepared.entry_evidence.push(UsageEntryEvidence {
+                skill_id: source_skill_id,
+                entry_key: UsageEntryKey {
+                    directory_id: deployment.target_id.clone(),
+                    relative_entry_path: deployment.runtime_name.clone(),
+                },
+                relation_ids: vec![relation_id.clone()],
+                physical_source_ids: vec![deployment.target_id.clone()],
+                path: path.clone(),
+                directory_role: None,
+                form: Some(form),
+                management: UsageManagement::Managed,
+                representation,
+                content_fingerprint: content_fingerprint.clone(),
+                physical_identity,
+                link_target_path: fs::canonicalize(&previous_path)
+                    .ok()
+                    .map(|value| value.to_string_lossy().into_owned()),
+                exists: fs::symlink_metadata(&previous_path).is_ok(),
+            });
+            prepared.consumers.push(UsageChangeConsumer {
+                relation_ids: vec![relation_id.clone()],
+                skill_id: Some(source_skill_id),
+                entry_key: Some(UsageEntryKey {
+                    directory_id: deployment.target_id.clone(),
+                    relative_entry_path: deployment.runtime_name.clone(),
+                }),
+                target: target.clone(),
+                path: Some(path),
+                form: Some(form),
+                management: UsageManagement::Managed,
+                representation,
+                health_reasons: vec![UsageHealthReason::Normal],
+                physical_source_ids: vec![deployment.target_id.clone()],
+                content_fingerprint,
+            });
+            prepared.impacts.push(UsageChangeImpact {
+                relation_ids: vec![relation_id.clone()],
+                skill_id: source_skill_id,
+                target,
+                action: UsageChangeImpactAction::DeriveAndReplace,
+                description: "创建独立派生技能，并仅接管所选使用位置。".to_owned(),
+            });
+            target_previews.push(DerivedRenameTargetPreview {
+                relation_id: relation_id.clone(),
+                deployment_id: deployment_id.to_string(),
+                previous_path: target_preview.path.clone(),
+                replacement_path: replacement_path.to_string_lossy().into_owned(),
+                requires_shared_target_confirmation: target_preview
+                    .requires_shared_target_confirmation,
+                blocker: None,
+            });
+            choices.push(SaveAsCopyReplacementChoice {
+                deployment_id,
+                confirm_shared_target_removal: request
+                    .confirmed_shared_relation_ids
+                    .contains(&relation_id),
+            });
+        }
+        if target_previews.len() != request.selected_relation_ids.len() {
+            return Err(operation_conflict("derived_rename_relation_scope_mismatch"));
+        }
+        target_previews.sort_by(|left, right| left.previous_path.cmp(&right.previous_path));
+        prepared.derived_rename = Some(DerivedRenamePreview {
+            source_skill_id,
+            base_version_id: base_version_id.clone(),
+            runtime_name: runtime_name.to_owned(),
+            selected_relation_ids: request.selected_relation_ids.clone(),
+            targets: target_previews,
+        });
+        let copy_request = SaveMarkdownAsCopy {
+            skill_id: source_skill_id,
+            path: "SKILL.md".to_owned(),
+            markdown,
+            expected_identity,
+            origin: Some(SaveAsCopyOrigin {
+                source_skill_id,
+                source_version_id: base_version_id.clone(),
+            }),
+            inheritance: SaveAsCopyInheritance::ReplaceTargets {
+                preview_id: replacement_preview.preview_id,
+                targets: choices,
+            },
+            target_display_name: None,
+            target_runtime_name: Some(runtime_name.to_owned()),
+        };
+        let journal = DerivedRenameJournal {
+            request: request.clone(),
+            prepared: prepared.clone(),
+            original_skill: source_skill,
+            source_version_id: base_version_id,
+            copy_request,
+            child_operation_id: OperationId::new(),
+        };
+        let mut record =
+            OperationRecord::planned(request.operation_id, DERIVED_RENAME_KIND, fingerprint);
+        set_phase(
+            &mut record,
+            OperationPhase::Prepared,
+            0,
+            journal.prepared.impacts.len() as u32,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        record.result = Some(serde_json::to_value(&journal.prepared).map_err(serialization_error)?);
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("derived_rename.prepare.database"))?;
+        if database
+            .operation_repository()
+            .get_sync(request.operation_id)?
+            .is_some()
+        {
+            return Err(operation_conflict("operation_id_reused"));
+        }
+        database.operation_repository().insert_sync(&record)?;
+        Ok(prepared)
+    }
+
     fn prepare_managed_usage_change(
         &self,
         request: PrepareUsageChange,
@@ -778,6 +1115,7 @@ impl LocalApplicationFacade {
             duplicate_cleanup: None,
             shared_usage_migration: None,
             subject_rename: None,
+            derived_rename: None,
         };
         let mut plans = Vec::new();
         let library = self.library_runtime.snapshot()?;
@@ -890,6 +1228,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
                 UsageChangeAction::RenameSubject => unreachable!(),
+                UsageChangeAction::DeriveAndReplace => unreachable!(),
             }
             let observed_before = entry_fingerprint(&destination)?;
             let observed_identity = entry_identity(&destination)?;
@@ -1012,6 +1351,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
                 UsageChangeAction::RenameSubject => unreachable!(),
+                UsageChangeAction::DeriveAndReplace => unreachable!(),
             };
             prepared.impacts.push(UsageChangeImpact {
                 relation_ids,
@@ -1027,6 +1367,7 @@ impl LocalApplicationFacade {
                     | UsageChangeAction::ResolveDuplicate
                     | UsageChangeAction::MigrateSharedUsage => unreachable!(),
                     UsageChangeAction::RenameSubject => unreachable!(),
+                    UsageChangeAction::DeriveAndReplace => unreachable!(),
                 },
             });
             plans.push(ManagedUsageChangePlan {
@@ -1581,6 +1922,8 @@ impl LocalApplicationFacade {
             prepared_id: journal.prepared.prepared_id,
             item_results: Vec::new(),
             recovery_required: false,
+            derived_skill_id: None,
+            recovery_operation_id: None,
         };
         let database = self
             .database
@@ -1620,6 +1963,9 @@ impl LocalApplicationFacade {
         }
         if operation_kind.as_deref() == Some(DUPLICATE_CLEANUP_KIND) {
             return self.commit_duplicate_cleanup(request);
+        }
+        if operation_kind.as_deref() == Some(DERIVED_RENAME_KIND) {
+            return self.commit_derived_rename(request);
         }
 
         // Serialize against relationship migration and other usage changes in
@@ -1768,6 +2114,8 @@ impl LocalApplicationFacade {
                 .iter()
                 .any(|item| item.status == UsageChangeItemStatus::RecoveryRequired),
             item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
         };
         set_phase(
             &mut record,
@@ -1778,6 +2126,184 @@ impl LocalApplicationFacade {
         record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
         record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
         database.operation_repository().update_sync(&record)?;
+        Ok(result)
+    }
+
+    fn commit_derived_rename(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
+        let _mutation = self
+            .relation_migration_lock
+            .lock()
+            .map_err(|_| internal("derived_rename.commit.mutation_lock"))?;
+        let (mut record, journal) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("derived_rename.commit.database"))?;
+            let record = database
+                .operation_repository()
+                .get_sync(request.operation_id)?
+                .ok_or_else(|| operation_conflict("derived_rename_preview_missing"))?;
+            if record.kind != DERIVED_RENAME_KIND {
+                return Err(operation_conflict("operation_id_reused"));
+            }
+            let journal: DerivedRenameJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("derived_rename_journal_invalid"))?;
+            if journal.prepared.prepared_id != request.prepared_id {
+                return Err(operation_conflict("usage_change_preview_mismatch"));
+            }
+            if record.phase == OperationPhase::Committed {
+                return record
+                    .result
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(serialization_error)?
+                    .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
+            }
+            if record.phase != OperationPhase::Prepared {
+                return Err(operation_conflict("derived_rename_recovery_required"));
+            }
+            (record, journal)
+        };
+        let library = self.library_runtime.snapshot()?;
+        let source_skill_id = journal.original_skill.id();
+        let current_skill = self.with_database("derived_rename.validate.skill", |database| {
+            database
+                .catalog_repository()?
+                .get_sync(source_skill_id)?
+                .ok_or_else(|| operation_conflict("usage_change_preview_stale"))
+        })?;
+        if current_skill != journal.original_skill
+            || library.current(source_skill_id)?.as_ref() != Some(&journal.source_version_id)
+            || self
+                .with_database("derived_rename.validate.version", |database| {
+                    database.current_version(source_skill_id)
+                })?
+                .as_ref()
+                != Some(&journal.source_version_id)
+        {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        let revision = self
+            .database
+            .lock()
+            .map_err(|_| internal("derived_rename.validate.database"))?
+            .relationship_repository()
+            .relationship_revision()?;
+        if revision.to_string() != journal.prepared.relationship_revision {
+            return Err(operation_conflict("usage_change_preview_stale"));
+        }
+        set_phase(
+            &mut record,
+            OperationPhase::Applying,
+            0,
+            journal.prepared.impacts.len() as u32,
+        );
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        self.database
+            .lock()
+            .map_err(|_| internal("derived_rename.checkpoint.database"))?
+            .operation_repository()
+            .update_sync(&record)?;
+
+        let child_exists = self
+            .database
+            .lock()
+            .map_err(|_| internal("derived_rename.child.database"))?
+            .operation_repository()
+            .get_sync(journal.child_operation_id)?
+            .is_some();
+        if !child_exists {
+            self.journal_begin(journal.child_operation_id, "save_markdown_as_copy");
+        }
+        let saved = self
+            .save_markdown_as_copy_flow(journal.copy_request.clone(), journal.child_operation_id);
+        let saved = match saved {
+            Ok(AppCommandResult::SavedSkillCopy(saved)) => saved,
+            Ok(_) => return Err(operation_conflict("derived_rename_copy_result_invalid")),
+            Err(error) => {
+                let mut failed = record;
+                failed.error_code = Some(error.code);
+                let child_phase = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("derived_rename.child_phase.database"))?
+                    .operation_repository()
+                    .get_sync(journal.child_operation_id)?
+                    .map(|child| child.phase);
+                set_phase(
+                    &mut failed,
+                    if matches!(
+                        child_phase,
+                        Some(OperationPhase::Applying | OperationPhase::NeedsRecovery)
+                    ) {
+                        OperationPhase::NeedsRecovery
+                    } else {
+                        OperationPhase::RolledBack
+                    },
+                    0,
+                    journal.prepared.impacts.len() as u32,
+                );
+                failed.recovery_data =
+                    serde_json::to_value(&journal).map_err(serialization_error)?;
+                self.database
+                    .lock()
+                    .map_err(|_| internal("derived_rename.failure.database"))?
+                    .operation_repository()
+                    .update_sync(&failed)?;
+                return Err(error);
+            }
+        };
+        let replacement_items = match &saved.inheritance {
+            SaveAsCopyInheritanceOutcome::NotRequested => Vec::new(),
+            SaveAsCopyInheritanceOutcome::Replaced { items }
+            | SaveAsCopyInheritanceOutcome::PartiallyReplaced { items } => items.clone(),
+        };
+        let item_results = replacement_items
+            .iter()
+            .map(|item| {
+                let relation_id = format!("managed:{}", item.deployment_id);
+                let impact = journal
+                    .prepared
+                    .impacts
+                    .iter()
+                    .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+                    .ok_or_else(|| operation_conflict("derived_rename_result_target_missing"))?;
+                Ok(UsageChangeItemResult {
+                    relation_ids: vec![relation_id],
+                    skill_id: saved.skill_id,
+                    target: impact.target.clone(),
+                    action: UsageChangeImpactAction::DeriveAndReplace,
+                    status: match item.status {
+                        SaveAsCopyTargetStatus::Applied => UsageChangeItemStatus::Applied,
+                        SaveAsCopyTargetStatus::Failed => UsageChangeItemStatus::Failed,
+                    },
+                    reason: item.error_code.map(|code| code.as_str().to_owned()),
+                    recovery_point: None,
+                })
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        let result = UsageChangeResult {
+            operation_id: journal.prepared.operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            item_results,
+            recovery_required: saved.recovery_operation_id.is_some(),
+            derived_skill_id: Some(saved.skill_id),
+            recovery_operation_id: saved.recovery_operation_id,
+        };
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        set_phase(
+            &mut record,
+            OperationPhase::Committed,
+            result.item_results.len() as u32,
+            journal.prepared.impacts.len() as u32,
+        );
+        self.database
+            .lock()
+            .map_err(|_| internal("derived_rename.finish.database"))?
+            .operation_repository()
+            .update_sync(&record)?;
         Ok(result)
     }
 
@@ -2631,6 +3157,8 @@ impl LocalApplicationFacade {
             prepared_id: journal.prepared.prepared_id,
             recovery_required: false,
             item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
         };
         record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
         persist_shared_migration(self, &mut record, &journal, OperationPhase::Committed)?;
@@ -2921,6 +3449,8 @@ impl LocalApplicationFacade {
             prepared_id: journal.prepared.prepared_id,
             recovery_required,
             item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
         })
     }
 
@@ -3010,6 +3540,7 @@ impl LocalApplicationFacade {
                 | UsageChangeAction::ResolveDuplicate
                 | UsageChangeAction::MigrateSharedUsage => unreachable!(),
                 UsageChangeAction::RenameSubject => unreachable!(),
+                UsageChangeAction::DeriveAndReplace => unreachable!(),
             }
         }
 
@@ -3119,6 +3650,8 @@ impl LocalApplicationFacade {
                 .iter()
                 .any(|item| item.status == UsageChangeItemStatus::RecoveryRequired),
             item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
         };
         set_phase(
             &mut record,
@@ -3425,6 +3958,8 @@ impl LocalApplicationFacade {
             operation_id: preview.operation_id,
             prepared_id: preview.prepared_id,
             recovery_required: status == UsageChangeItemStatus::RecoveryRequired,
+            derived_skill_id: None,
+            recovery_operation_id: None,
             item_results: vec![UsageChangeItemResult {
                 relation_ids: impact.relation_ids.clone(),
                 skill_id: impact.skill_id,
@@ -3657,6 +4192,8 @@ impl LocalApplicationFacade {
                 .iter()
                 .any(|item| item.status == UsageChangeItemStatus::RecoveryRequired),
             item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
         };
         record.phase = OperationPhase::Committed;
         record.progress.phase = record.phase;
@@ -3780,6 +4317,7 @@ fn merge_manage_entry_previews(
         duplicate_cleanup: None,
         shared_usage_migration: None,
         subject_rename: None,
+        derived_rename: None,
     })
 }
 
@@ -4164,6 +4702,7 @@ fn build_usage_manage_entry_preview(
             duplicate_cleanup: None,
             shared_usage_migration: None,
             subject_rename: None,
+            derived_rename: None,
         },
         relation_facts,
     ))
@@ -4566,6 +5105,7 @@ fn build_release_journal(
             UsageChangeImpactAction::Repair => "备份占用项并修复受管入口。",
             UsageChangeImpactAction::Restore => "按目标原受管方式恢复入口。",
             UsageChangeImpactAction::RenameSubject => "按主体新运行名同步所有受管入口。",
+            UsageChangeImpactAction::DeriveAndReplace => "创建独立派生技能，并仅接管所选使用位置。",
         };
         let impact = UsageChangeImpact {
             relation_ids: evidence_ids,
@@ -4670,6 +5210,7 @@ fn build_release_journal(
         duplicate_cleanup: None,
         shared_usage_migration: None,
         subject_rename: None,
+        derived_rename: None,
     };
     Ok(ReleaseJournal {
         request,
@@ -4705,6 +5246,8 @@ fn validate_duplicate_cleanup_request(request: &PrepareUsageChange) -> AppResult
         || request.content_basis.is_some()
         || request.runtime_name.is_some()
         || request.base_version_id.is_some()
+        || !request.selected_relation_ids.is_empty()
+        || !request.confirmed_shared_relation_ids.is_empty()
         || request
             .non_recognized_destination
             .as_ref()
@@ -4732,6 +5275,8 @@ fn validate_shared_usage_migration_request(request: &PrepareUsageChange) -> AppR
         || !request.selected_entry_keys.is_empty()
         || request.runtime_name.is_some()
         || request.base_version_id.is_some()
+        || !request.selected_relation_ids.is_empty()
+        || !request.confirmed_shared_relation_ids.is_empty()
         || request.non_recognized_destination.is_some()
     {
         return Err(operation_conflict("shared_usage_migration_request_invalid"));
@@ -5089,6 +5634,7 @@ fn build_shared_usage_migration_journal(
             replacements,
         }),
         subject_rename: None,
+        derived_rename: None,
     };
     Ok(SharedUsageMigrationJournal {
         request,
@@ -5699,6 +6245,7 @@ fn build_duplicate_cleanup_journal(
         }),
         shared_usage_migration: None,
         subject_rename: None,
+        derived_rename: None,
     };
     Ok(DuplicateCleanupJournal {
         request,
@@ -7136,6 +7683,8 @@ pub(crate) fn rollback_release_operation(
                     .unwrap_or(operation_id),
                 item_results: item_results.clone(),
                 recovery_required: false,
+                derived_skill_id: None,
+                recovery_operation_id: None,
             })
             .map_err(serialization_error)?,
         );
@@ -7426,6 +7975,8 @@ pub(crate) fn complete_release_operation(
             })
             .collect(),
         recovery_required: false,
+        derived_skill_id: None,
+        recovery_operation_id: None,
     };
     record.result = Some(serde_json::to_value(result).map_err(serialization_error)?);
     set_phase(
@@ -7591,6 +8142,8 @@ fn validate_request(request: &PrepareUsageChange) -> AppResult<()> {
         || request.retain_entry_key.is_some()
         || request.runtime_name.is_some()
         || request.base_version_id.is_some()
+        || !request.selected_relation_ids.is_empty()
+        || !request.confirmed_shared_relation_ids.is_empty()
         || request.non_recognized_destination.is_some()
     {
         return Err(operation_conflict("usage_change_field_not_applicable"));
@@ -7613,11 +8166,48 @@ fn validate_subject_rename_request(request: &PrepareUsageChange) -> AppResult<()
         && request.retain_entry_key.is_none()
         && request.selected_entry_keys.is_empty()
         && request.base_version_id.is_none()
+        && request.selected_relation_ids.is_empty()
+        && request.confirmed_shared_relation_ids.is_empty()
         && request.non_recognized_destination.is_none();
     if fields_match {
         Ok(())
     } else {
         Err(operation_conflict("subject_rename_request_invalid"))
+    }
+}
+
+fn validate_derived_rename_request(request: &PrepareUsageChange) -> AppResult<()> {
+    let selected = request
+        .selected_relation_ids
+        .iter()
+        .collect::<BTreeSet<_>>();
+    let confirmed = request
+        .confirmed_shared_relation_ids
+        .iter()
+        .collect::<BTreeSet<_>>();
+    let fields_match = request.action == UsageChangeAction::DeriveAndReplace
+        && request.skill_id.is_some()
+        && request.base_version_id.is_some()
+        && request
+            .runtime_name
+            .as_deref()
+            .is_some_and(|name| !name.trim().is_empty())
+        && request.relation_ids.is_empty()
+        && request.problem_id.is_none()
+        && request.requested_form.is_none()
+        && request.copy_disposition.is_none()
+        && request.content_basis.is_none()
+        && request.retain_entry_key.is_none()
+        && request.selected_entry_keys.is_empty()
+        && request.non_recognized_destination.is_none()
+        && !selected.is_empty()
+        && selected.len() == request.selected_relation_ids.len()
+        && confirmed.len() == request.confirmed_shared_relation_ids.len()
+        && confirmed.is_subset(&selected);
+    if fields_match {
+        Ok(())
+    } else {
+        Err(operation_conflict("derived_rename_request_invalid"))
     }
 }
 
@@ -7634,6 +8224,7 @@ fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppRes
         | UsageChangeAction::ResolveDuplicate
         | UsageChangeAction::MigrateSharedUsage => false,
         UsageChangeAction::RenameSubject => false,
+        UsageChangeAction::DeriveAndReplace => false,
     };
     if !matches!(
         request.action,
@@ -7652,6 +8243,8 @@ fn validate_managed_usage_change_request(request: &PrepareUsageChange) -> AppRes
         || !request.selected_entry_keys.is_empty()
         || request.runtime_name.is_some()
         || request.base_version_id.is_some()
+        || !request.selected_relation_ids.is_empty()
+        || !request.confirmed_shared_relation_ids.is_empty()
         || request.non_recognized_destination.is_some()
     {
         return Err(operation_conflict("managed_usage_change_selection_invalid"));
@@ -7848,6 +8441,8 @@ fn validate_manage_request(request: &PrepareUsageChange) -> AppResult<()> {
         || !request.selected_entry_keys.is_empty()
         || request.runtime_name.is_some()
         || request.base_version_id.is_some()
+        || !request.selected_relation_ids.is_empty()
+        || !request.confirmed_shared_relation_ids.is_empty()
         || request.non_recognized_destination.is_some()
     {
         return Err(operation_conflict("usage_change_selection_invalid"));
@@ -7876,6 +8471,11 @@ fn renamed_skill(journal: &SubjectRenameJournal) -> AppResult<skillhub_core::cat
 
 fn rename_skill_frontmatter(path: &Path, runtime_name: &str) -> AppResult<()> {
     let content = fs::read_to_string(path).map_err(subject_rename_io_error)?;
+    let renamed = rename_skill_frontmatter_content(&content, runtime_name)?;
+    fs::write(path, renamed).map_err(subject_rename_io_error)
+}
+
+fn rename_skill_frontmatter_content(content: &str, runtime_name: &str) -> AppResult<String> {
     let mut lines = content
         .split_inclusive('\n')
         .map(str::to_owned)
@@ -7931,7 +8531,7 @@ fn rename_skill_frontmatter(path: &Path, runtime_name: &str) -> AppResult<()> {
         serde_json::to_string(runtime_name).map_err(serialization_error)?
     };
     lines[index] = format!("{}name: {scalar}{line_ending}", &content[..indent_len]);
-    fs::write(path, lines.concat()).map_err(subject_rename_io_error)
+    Ok(lines.concat())
 }
 
 fn persist_subject_rename(
@@ -7975,6 +8575,8 @@ fn subject_rename_result(journal: &SubjectRenameJournal) -> UsageChangeResult {
             })
             .collect(),
         recovery_required: false,
+        derived_skill_id: None,
+        recovery_operation_id: None,
     }
 }
 

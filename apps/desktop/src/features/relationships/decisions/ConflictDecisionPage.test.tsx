@@ -12,6 +12,7 @@ import type {
   ConflictWorkspaceCase,
   EnvironmentProblemAnalysis,
   EnvironmentProblemView,
+  SaveAsCopyReplacementPreview,
   PrepareUsageChange,
   PreparedUsageChange,
   ResolveConflictCase,
@@ -24,6 +25,7 @@ import {
 } from "../../../platform/operationTracker";
 import type { AppNotifications } from "../../../ui/notifications";
 import type { UsageChangeFacade } from "../../removal/api";
+import type { SaveAsCopyFacade } from "../../markdown/api";
 import { ConflictDecisionPage } from "./ConflictDecisionPage";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
 import type { RelationGovernanceFacade } from "../governance/api";
@@ -195,6 +197,37 @@ function duplicateProblem(overrides: Partial<EnvironmentProblemView> = {}): Envi
   };
 }
 
+function nameConflictProblem(): EnvironmentProblemView {
+  return duplicateProblem({
+    problem_id: "problem-name-conflict",
+    kind: "name_conflict",
+    entries: [
+      {
+        directory_id: "dir-agent",
+        directory_path: "/agents/codex/skills",
+        directory_role: "agent_user",
+        relative_entry_path: "formatter",
+        runtime_name: "Formatter",
+        content_fingerprint: "sha256:source",
+        physical_identity: "physical:source",
+        skill_id: "skill-source",
+        relation_ids: ["managed:deployment-source"],
+      },
+      {
+        directory_id: "dir-project",
+        directory_path: "/projects/demo/.agents/skills",
+        directory_role: "project",
+        relative_entry_path: "formatter",
+        runtime_name: "Formatter",
+        content_fingerprint: "sha256:other",
+        physical_identity: "physical:other",
+        skill_id: null,
+        relation_ids: [],
+      },
+    ],
+  });
+}
+
 function duplicateCleanupPrepared(problem: EnvironmentProblemView): PreparedUsageChange {
   return {
     operation_id: "op-duplicate-cleanup",
@@ -213,6 +246,87 @@ function duplicateCleanupPrepared(problem: EnvironmentProblemView): PreparedUsag
       selected_entry_keys: problem.entries.map(({ directory_id, relative_entry_path }) => ({ directory_id, relative_entry_path })),
       non_recognized_destination: null,
     },
+  };
+}
+
+function derivedRenamePrepared(): PreparedUsageChange {
+  return {
+    operation_id: "op-derived-rename",
+    prepared_id: "prepared-derived-rename",
+    action: "derive_and_replace",
+    relationship_revision: "r9",
+    affected_skill_ids: ["skill-source"],
+    subject_versions: [],
+    entry_evidence: [],
+    consumers: [],
+    impacts: [],
+    limitations: [],
+    derived_rename: {
+      source_skill_id: "skill-source",
+      base_version_id: "version-current",
+      runtime_name: "formatter-local",
+      selected_relation_ids: ["managed:deployment-source"],
+      targets: [
+        {
+          relation_id: "managed:deployment-source",
+          deployment_id: "deployment-source",
+          previous_path: "/agents/codex/skills/formatter",
+          replacement_path: "/agents/codex/skills/formatter-local",
+          requires_shared_target_confirmation: true,
+          blocker: null,
+        },
+      ],
+    },
+  };
+}
+
+function derivedRenamePreview(): SaveAsCopyReplacementPreview {
+  return {
+    confirmation_fingerprint: "fingerprint-derived",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    preview_id: "replacement-preview-derived",
+    source_skill_id: "skill-source",
+    source_version_id: "version-current",
+    targets: [
+      {
+        blocker: null,
+        consumer_deployment_ids: ["deployment-source", "deployment-shared-consumer"],
+        deployment_id: "deployment-source",
+        managed: true,
+        path: "/agents/codex/skills/formatter",
+        requires_shared_target_confirmation: true,
+        runtime_name: "formatter",
+        target_id: "target-shared",
+        version_id: "version-current",
+      },
+    ],
+  };
+}
+
+function derivedRenameResult(): UsageChangeResult {
+  return {
+    operation_id: "op-derived-rename",
+    prepared_id: "prepared-derived-rename",
+    item_results: [
+      {
+        relation_ids: ["managed:deployment-source"],
+        skill_id: "skill-derived",
+        target: {
+          kind: "agent",
+          directory_id: "dir-agent",
+          agent_client_id: "codex",
+          directory_role: "agent_user",
+          recognition: "supported",
+        },
+        action: "derive_and_replace",
+        status: "failed",
+        reason: "deployment.target_changed",
+        recovery_point: null,
+      },
+    ],
+    recovery_required: true,
+    derived_skill_id: "skill-derived",
+    recovery_operation_id: "recovery-derived",
   };
 }
 
@@ -250,6 +364,8 @@ async function renderPage(
     tracker?: OperationTracker;
     problemFacade?: Pick<RelationGovernanceFacade, "getUsageEnvironmentProblems">;
     usageChangeFacade?: UsageChangeFacade;
+    saveAsCopyFacade?: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview">;
+    getCurrentSkillVersion?: (skillId: string) => Promise<string | null>;
   } = {},
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -265,8 +381,10 @@ async function renderPage(
         <MemoryRouter initialEntries={[options.initialEntry ?? "/relationships/decisions"]}>
           <LocationProbe />
           <ConflictDecisionPage
-            environmentFacade={options.problemFacade}
-            facade={facade}
+          environmentFacade={options.problemFacade}
+          facade={facade}
+            getCurrentSkillVersion={options.getCurrentSkillVersion}
+            saveAsCopyFacade={options.saveAsCopyFacade}
             notifications={notifications}
             tracker={tracker}
             usageChangeFacade={options.usageChangeFacade}
@@ -281,6 +399,81 @@ async function renderPage(
 // --- 用例 ---
 
 describe("ConflictDecisionPage", () => {
+  it("offers derived rename for a name conflict with a managed usage", async () => {
+    const problem = nameConflictProblem();
+    const prepared = derivedRenamePrepared();
+    const usageChangeFacade: UsageChangeFacade = {
+      prepareUsageChange: vi.fn(async (_request: PrepareUsageChange) => prepared),
+      commitUsageChange: vi.fn(async (_request: CommitUsageChange) => derivedRenameResult()),
+    };
+    const problemFacade = createProblemFacade({ problems: [problem], probe_limitations: [] });
+    const saveAsCopyFacade: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview"> = {
+      saveAsCopyReplacementPreview: vi.fn(async () => derivedRenamePreview()),
+    };
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-name-conflict",
+      problemFacade,
+      saveAsCopyFacade,
+      usageChangeFacade,
+      getCurrentSkillVersion: vi.fn(async () => "version-current"),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "为选中位置另存为独立技能" }));
+    const dialog = await screen.findByRole("dialog", { name: "为选中位置另存" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "新技能运行名" }), {
+      target: { value: "formatter-local" },
+    });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "/agents/codex/skills/formatter" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "预览替换目标" }));
+
+    expect(await within(dialog).findByRole("checkbox", { name: /共享入口/ })).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /共享入口/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "准备准确方案" }));
+    await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
+      action: "derive_and_replace",
+      problem_id: "problem-name-conflict",
+      skill_id: "skill-source",
+      base_version_id: "version-current",
+      runtime_name: "formatter-local",
+      selected_relation_ids: ["managed:deployment-source"],
+      confirmed_shared_relation_ids: ["managed:deployment-source"],
+    })));
+    expect(await within(dialog).findByText("/agents/codex/skills/formatter-local")).toBeVisible();
+    const readsBeforeCommit = (problemFacade.getUsageEnvironmentProblems as ReturnType<typeof vi.fn>).mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "我已核对新技能和替换位置，确认继续。" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认创建并替换" }));
+
+    await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
+      operation_id: "op-derived-rename",
+      prepared_id: "prepared-derived-rename",
+    }));
+    expect(await within(dialog).findByText("新技能已创建，但部分使用位置需要处理。"))
+      .toBeVisible();
+    expect(within(dialog).getByRole("link", { name: "前往恢复中心" }))
+      .toHaveAttribute("href", "/recovery?operationId=recovery-derived");
+    expect((problemFacade.getUsageEnvironmentProblems as ReturnType<typeof vi.fn>).mock.calls.length)
+      .toBeGreaterThan(readsBeforeCommit);
+    fireEvent.click(within(dialog).getByRole("button", { name: "查看新技能" }));
+    expect(lastLocation).toEqual({ pathname: "/library/skill-derived", search: "" });
+  });
+
+  it("does not offer derived rename when a name conflict has no managed source", async () => {
+    const problem = nameConflictProblem();
+    problem.entries = problem.entries.map((entry) => ({
+      ...entry,
+      skill_id: null,
+      relation_ids: [],
+    }));
+    await renderPage(createFacade(workspaceFixture({ cases: [], handled: [], handled_count: 0 })), {
+      initialEntry: "/relationships/decisions?problemId=problem-name-conflict",
+      problemFacade: createProblemFacade({ problems: [problem], probe_limitations: [] }),
+    });
+
+    expect(await screen.findByRole("heading", { name: "多个目录中存在重名技能" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "为选中位置另存为独立技能" }))
+      .not.toBeInTheDocument();
+  });
+
   it("handles a current same-skill environment problem in the shared conflict workflow", async () => {
     const problem = duplicateProblem();
     const prepared = duplicateCleanupPrepared(problem);

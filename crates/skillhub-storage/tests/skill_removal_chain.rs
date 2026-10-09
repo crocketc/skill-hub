@@ -89,11 +89,11 @@ fn seed_chain(connection: &rusqlite::Connection, fixture: &ChainFixture) {
             ))
             .unwrap();
     }
-    // 交叉谱系：被删技能作为「谱系上游 origin」出现在另一个主体的行里
-    // （origin_skill_id 无外键，必须显式清理；child 本体行保留）。
+    // 交叉谱系：被删技能作为「谱系上游 origin」出现在另一个主体的行里；
+    // 其身份、来源名称与版本说明必须在来源主体删除后保留。
     connection
         .execute(
-            "INSERT INTO skill_lineage(skill_id,version_id,origin_skill_id,origin_version_id,created_at) VALUES(?1,'child-version',?2,'origin-version',1)",
+            "INSERT INTO skill_lineage(skill_id,version_id,origin_skill_id,origin_version_id,created_at,origin_display_name) VALUES(?1,'child-version',?2,'origin-version',1,(SELECT display_name FROM skills WHERE id=?2))",
             rusqlite::params![
                 "00000000-0000-0000-0000-0000000000c0",
                 fixture.doomed,
@@ -221,10 +221,6 @@ fn remove_sync_clears_the_full_skill_chain_under_foreign_keys() {
             "SELECT COUNT(*) FROM skill_lineage WHERE skill_id=?1",
         ),
         (
-            "skill_lineage(origin)",
-            "SELECT COUNT(*) FROM skill_lineage WHERE origin_skill_id=?1",
-        ),
-        (
             "combination_skills",
             "SELECT COUNT(*) FROM combination_skills WHERE skill_id=?1",
         ),
@@ -284,12 +280,23 @@ fn remove_sync_clears_the_full_skill_chain_under_foreign_keys() {
         "SELECT COUNT(*) FROM combinations WHERE id='combo-00000000-0000-0000-0000-0000000000d0'",
         "SELECT COUNT(*) FROM directory_nodes WHERE node_id='node-00000000-0000-0000-0000-0000000000d0'",
         "SELECT COUNT(*) FROM targets WHERE id='target-00000000-0000-0000-0000-0000000000d0'",
-        // 谱系子主体本体行保留（清的是 origin 指向，不是子主体）。
+        // 谱系子主体本体行保留。
         "SELECT COUNT(*) FROM skills WHERE id='00000000-0000-0000-0000-0000000000c0'",
     ] {
         let kept: i64 = connection.query_row(sql, [], |row| row.get(0)).unwrap();
         assert_eq!(kept, 1, "shared container rows survive: {sql}");
     }
+
+    let lineage_origin: (String, Option<String>, String) = connection
+        .query_row(
+            "SELECT origin_skill_id,origin_display_name,origin_version_id FROM skill_lineage WHERE skill_id='00000000-0000-0000-0000-0000000000c0'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("derived subject keeps its upstream lineage");
+    assert_eq!(lineage_origin.0, fixture.doomed);
+    assert_eq!(lineage_origin.1.as_deref(), Some("Doomed"));
+    assert_eq!(lineage_origin.2, "origin-version");
 
     // 其他技能数据完全不受影响。
     for (table, sql) in [

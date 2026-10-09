@@ -73,7 +73,7 @@ impl<'a> CatalogRepositorySqlite<'a> {
     /// - 使用关系边（deployment_relations/observed_deployments）按治理
     ///   裁决随主体一并删除，不留 ON DELETE SET NULL 产生的悬空边；
     /// - 无外键的投影与状态行（搜索名、全文检索、翻译、安全警示、版本
-    ///   名、谱系 origin 侧）必须显式删，否则必遗孤；
+    ///   名）必须显式删，否则必遗孤；谱系 origin 侧追溯需保留；
     /// - skills 本体最后删除，级联收 versions/check_runs/check_findings/
     ///   combination_skills/source_update_checks 等子表。
     pub fn remove_sync(&self, id: SkillId) -> AppResult<()> {
@@ -127,7 +127,7 @@ impl<'a> CatalogRepositorySqlite<'a> {
         )
         .map_err(error)?;
         // 7) 无外键的投影与状态行：搜索展示名、全文检索行、描述翻译、
-        //    安全警示、用户版本名。
+        //    安全警示、用户版本名。谱系 origin 侧保留独立追溯说明。
         tx.execute("DELETE FROM search_display_names WHERE skill_id=?1", [&id])
             .map_err(error)?;
         tx.execute("DELETE FROM skills_fts WHERE skill_id=?1", [&id])
@@ -154,9 +154,8 @@ impl<'a> CatalogRepositorySqlite<'a> {
         //    的主体/版本引用按 schema SET NULL 降级。
         tx.execute("DELETE FROM skills WHERE id=?1", [&id])
             .map_err(error)?;
-        // 10) 复用修改谱系 origin 侧：无外键，主体删除后显式清理。
-        tx.execute("DELETE FROM skill_lineage WHERE origin_skill_id=?1", [&id])
-            .map_err(error)?;
+        // 10) 保留其它主体指向此来源的谱系事实；来源名已在创建时快照，
+        //     来源正文随上方主体级联删除，不影响派生主体独立使用。
         tx.commit().map_err(error)
     }
 

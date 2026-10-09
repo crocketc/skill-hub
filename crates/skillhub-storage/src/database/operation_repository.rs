@@ -108,6 +108,42 @@ impl<'a> OperationRepositorySqlite<'a> {
         )
         .transpose()
     }
+
+    pub fn list_sync(&self) -> AppResult<Vec<OperationRecord>> {
+        let mut statement = self
+            .database
+            .connection
+            .prepare("SELECT operation_id,kind,phase,request_fingerprint,progress_json,inverse_json,error_code FROM operations ORDER BY created_at,operation_id")
+            .map_err(error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            })
+            .map_err(error)?;
+        rows.map(|row| {
+            let (id, kind, phase, fingerprint, progress, inverse, error_code) =
+                row.map_err(error)?;
+            let operation_id = id.parse().map_err(|_| invalid_record())?;
+            decode_record(
+                operation_id,
+                &kind,
+                &phase,
+                &fingerprint,
+                &progress,
+                &inverse,
+                error_code.as_deref(),
+            )
+        })
+        .collect()
+    }
 }
 
 #[derive(Serialize)]
@@ -176,39 +212,7 @@ impl OperationRepository for OperationRepositorySqlite<'_> {
     }
 
     async fn list(&self) -> AppResult<Vec<OperationRecord>> {
-        let mut statement = self
-            .database
-            .connection
-            .prepare("SELECT operation_id,kind,phase,request_fingerprint,progress_json,inverse_json,error_code FROM operations ORDER BY created_at,operation_id")
-            .map_err(error)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                ))
-            })
-            .map_err(error)?;
-        rows.map(|row| {
-            let (id, kind, phase, fingerprint, progress, inverse, error_code) =
-                row.map_err(error)?;
-            let operation_id = id.parse().map_err(|_| invalid_record())?;
-            decode_record(
-                operation_id,
-                &kind,
-                &phase,
-                &fingerprint,
-                &progress,
-                &inverse,
-                error_code.as_deref(),
-            )
-        })
-        .collect()
+        self.list_sync()
     }
 }
 

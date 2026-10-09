@@ -342,6 +342,8 @@ fn prepare_release(
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare release")
 }
@@ -381,6 +383,8 @@ fn manage_request(
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     }
 }
 
@@ -853,6 +857,8 @@ async fn manage_preview_rebuilds_when_persisted_preview_attachment_is_missing() 
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     };
     let original_preview = fixture
         .facade
@@ -906,6 +912,8 @@ async fn shared_link_conversion_is_rejected_by_usage_and_legacy_entrypoints() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("shared usage must not be managed as a link");
     assert_eq!(usage_error.code, ErrorCode::OperationConflict);
@@ -1063,6 +1071,8 @@ async fn builtin_relationship_cannot_be_managed_into_a_deployment() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("read-only built-in entries cannot be managed");
     assert_eq!(error.code, ErrorCode::OperationConflict);
@@ -1110,6 +1120,8 @@ async fn permission_failure_during_manage_keeps_original_entry() {
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     });
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(original_mode))
         .expect("restore parent permissions");
@@ -1155,6 +1167,8 @@ async fn release_skill_and_entry_selection_matches_relation_selection() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare by skill and selected entry key");
 
@@ -1230,6 +1244,8 @@ async fn release_relation_representative_expands_to_all_entry_evidence() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("representative relation ID expands through the unified view");
     assert_eq!(prepared.entry_evidence.len(), 1);
@@ -1315,6 +1331,8 @@ async fn manage_shared_entry_converts_all_relation_evidence_once() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare unified shared-entry management");
     let mut expected_ids = vec![RELATION_ID.to_owned(), SECOND_RELATION_ID.to_owned()];
@@ -1461,6 +1479,8 @@ async fn release_relation_id_mapping_rejects_ambiguous_usage_views() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("one relation id must not ambiguously select two unified views");
     assert_eq!(
@@ -1493,6 +1513,8 @@ async fn release_selection_rejects_empty_mixed_and_out_of_skill_scopes() {
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     };
 
     assert!(fixture
@@ -1542,6 +1564,8 @@ async fn release_mixed_link_and_copy_uses_one_preview_and_per_entry_actions() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare mixed link and copy selection together");
 
@@ -1595,6 +1619,8 @@ async fn release_rejects_copy_disposition_when_selection_has_no_copy() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("copy choice is inapplicable when selection only contains links");
     assert_eq!(
@@ -1962,6 +1988,8 @@ async fn full_copy_fact_rejects_root_link_replacement_before_keep_prepare() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("a copied fact must not authorize keeping an actual root link");
     assert_eq!(
@@ -2027,6 +2055,8 @@ async fn inaccessible_entry_is_not_treated_as_missing_release() {
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     });
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(original_mode))
         .expect("restore parent permissions");
@@ -2540,6 +2570,8 @@ async fn shared_preview_keeps_other_path_consumer_for_each_selected_entry() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare both shared entries");
 
@@ -3200,6 +3232,8 @@ async fn rollback_recovery_preserves_committed_target_and_restores_failed_target
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect("prepare two independent release targets");
     assert_eq!(prepared.impacts.len(), 2);
@@ -3509,6 +3543,8 @@ async fn healthy_builtin_release_is_rejected() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("healthy built-in original cannot be released or reclaimed");
     assert_eq!(
@@ -3579,6 +3615,8 @@ async fn unknown_directory_does_not_silently_become_record_only() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("unknown directory identity must require a safe verified action");
     assert_eq!(
@@ -3607,6 +3645,8 @@ async fn unknown_directory_identity_cannot_remove_files() {
             runtime_name: None,
             base_version_id: None,
             non_recognized_destination: None,
+            selected_relation_ids: vec![],
+            confirmed_shared_relation_ids: vec![],
         })
         .expect_err("unverified directory identity cannot authorize deletion");
     assert_eq!(

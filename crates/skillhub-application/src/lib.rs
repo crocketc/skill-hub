@@ -2973,7 +2973,7 @@ impl LocalApplicationFacade {
     }
 
     /// Starts a single-step flow with a `planned` record.
-    fn journal_begin(&self, operation_id: OperationId, kind: &'static str) {
+    pub(crate) fn journal_begin(&self, operation_id: OperationId, kind: &'static str) {
         self.journal_insert(journal_record(
             operation_id,
             kind,
@@ -8025,7 +8025,7 @@ impl LocalApplicationFacade {
     /// 消费者分组与阻塞原因），以 preview_id + expires_at + 确认指纹
     /// 三件套持久化到操作日志（phase=prepared）；提交端重新核对记账指纹，
     /// 任何漂移都使预览失效。
-    fn get_save_as_copy_replacement_preview(
+    pub(crate) fn get_save_as_copy_replacement_preview(
         &self,
         request: GetSaveAsCopyReplacementPreview,
     ) -> AppResult<AppQueryResult> {
@@ -8116,7 +8116,7 @@ impl LocalApplicationFacade {
     /// 版本与记账指纹；逐项检查阻塞原因、选择与预览一致以及共享目标
     /// 确认门（K2 语义）。全部通过后消耗预览（一次性），返回逐项执行
     /// 计划。
-    fn validate_save_as_copy_replacement(
+    pub(crate) fn validate_save_as_copy_replacement(
         &self,
         source_skill_id: skillhub_core::SkillId,
         preview_id: OperationId,
@@ -8253,12 +8253,13 @@ impl LocalApplicationFacade {
     /// 不触碰条目；交接失败还原备份条目。已成功项不重复执行，旧使用
     /// 关系进入治理历史，新使用关系建立并验证。部分失败持久化 Applying
     /// 相位与逐项载荷作为恢复依据；新主体永不因此被删除。
-    fn execute_save_as_copy_replacement(
+    pub(crate) fn execute_save_as_copy_replacement(
         &self,
         library: &library_runtime::LibraryContext,
         copy: &Skill,
         version_id: &skillhub_core::VersionId,
         operation_id: OperationId,
+        requested_runtime_name: Option<&str>,
         plan: Vec<(SaveAsCopyReplacementTargetFact, bool)>,
     ) -> AppResult<SaveAsCopyInheritanceOutcome> {
         let filesystem = DeploymentFilesystem::new();
@@ -8269,11 +8270,28 @@ impl LocalApplicationFacade {
                 .iter()
                 .filter_map(|raw| raw.parse().ok())
                 .collect();
+            let replacement_runtime_name = requested_runtime_name
+                .or(fact.runtime_name.as_deref())
+                .unwrap_or(copy.runtime_name());
+            let replacement_path = fact.path.as_deref().map(|path| {
+                let old_path = std::path::Path::new(path);
+                if let Some(runtime_name) = requested_runtime_name {
+                    old_path
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new(""))
+                        .join(runtime_name)
+                } else {
+                    old_path.to_path_buf()
+                }
+            });
             let base = |error_code: Option<ErrorCode>| skillhub_core::api::SaveAsCopyTargetResult {
                 deployment_id: fact.deployment_id,
                 target_id: fact.target_id.clone().unwrap_or_default(),
-                path: fact.path.clone().unwrap_or_default(),
-                runtime_name: fact.runtime_name.clone().unwrap_or_default(),
+                path: replacement_path
+                    .as_ref()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                runtime_name: replacement_runtime_name.to_owned(),
                 consumer_deployment_ids: consumers.clone(),
                 status: match error_code {
                     Some(_) => skillhub_core::api::SaveAsCopyTargetStatus::Failed,
@@ -8319,6 +8337,15 @@ impl LocalApplicationFacade {
                 items.push(base(Some(error.code)));
                 continue;
             }
+            let destination_path = replacement_path
+                .clone()
+                .unwrap_or_else(|| proof.destination_path.clone());
+            if destination_path != proof.destination_path
+                && std::fs::symlink_metadata(&destination_path).is_ok()
+            {
+                items.push(base(Some(ErrorCode::OperationConflict)));
+                continue;
+            }
             // 交接：先把原条目改名为备份（可还原），再把新版本树原子
             // 就位；任何失败都还原备份并按本项失败归属。
             let backup = proof.destination_path.with_file_name(format!(
@@ -8339,13 +8366,13 @@ impl LocalApplicationFacade {
             let target_plan = TargetPlan {
                 physical_target_id: record.target_id.clone(),
                 logical_target_ids: Vec::new(),
-                target_path: backup
+                target_path: destination_path
                     .parent()
                     .map(|parent| parent.to_string_lossy().into_owned())
                     .unwrap_or_default(),
-                destination_path: proof.destination_path.to_string_lossy().into_owned(),
+                destination_path: destination_path.to_string_lossy().into_owned(),
                 source_path: staging.to_string_lossy().into_owned(),
-                runtime_name: record.runtime_name.clone(),
+                runtime_name: replacement_runtime_name.to_owned(),
                 skill_id: copy.id(),
                 version_id: version_id.clone(),
                 mode: record.mode,
@@ -8367,7 +8394,7 @@ impl LocalApplicationFacade {
                         state: DeploymentState::Deployed,
                         mode: record.mode,
                         managed: true,
-                        runtime_name: record.runtime_name.clone(),
+                        runtime_name: replacement_runtime_name.to_owned(),
                         expected_hash: applied.observed_tree_hash.clone(),
                         observed_hash: Some(applied.observed_tree_hash.clone()),
                     };
@@ -8376,8 +8403,11 @@ impl LocalApplicationFacade {
                         |database| {
                             database
                                 .deployment_repository()
-                                .insert_sync(&re_pointed)
-                                .map(|_| ())
+                                .derive_managed_runtime_sync(
+                                    &re_pointed,
+                                    record.skill_id,
+                                    &record.runtime_name,
+                                )
                         },
                     );
                     match committed {
@@ -8392,7 +8422,7 @@ impl LocalApplicationFacade {
                             items.push(base(None));
                         }
                         Err(error) => {
-                            let _ = std::fs::remove_dir_all(&proof.destination_path);
+                            let _ = std::fs::remove_dir_all(&destination_path);
                             let _ = std::fs::rename(&backup, &proof.destination_path);
                             items.push(base(Some(error.code)));
                         }
@@ -8400,6 +8430,9 @@ impl LocalApplicationFacade {
                 }
                 Err(error) => {
                     let _ = std::fs::remove_dir_all(&staging);
+                    if destination_path != proof.destination_path {
+                        let _ = std::fs::remove_dir_all(&destination_path);
+                    }
                     let _ = std::fs::rename(&backup, &proof.destination_path);
                     items.push(base(Some(error.code)));
                 }
@@ -8566,7 +8599,7 @@ impl LocalApplicationFacade {
     /// 血缘（origin）并按持久化预览接管显式选择的受管目标（替换继承）；
     /// 网络来源与未选择的关系永不迁移。失败补偿删除副本 catalog 行、
     /// 丢弃版本对象并移除新可见树；原主体不受影响。
-    fn save_markdown_as_copy_flow(
+    pub(crate) fn save_markdown_as_copy_flow(
         &self,
         request: SaveMarkdownAsCopy,
         operation_id: OperationId,
@@ -8630,10 +8663,19 @@ impl LocalApplicationFacade {
             Some(trimmed) if !trimmed.is_empty() => trimmed.to_owned(),
             _ => skill.display_name().to_owned(),
         };
+        let runtime_name = match request.target_runtime_name.as_deref() {
+            Some(runtime_name) => {
+                if let Err(error) = skillhub_core::deployment::validate_runtime_name(runtime_name) {
+                    return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+                }
+                runtime_name.to_owned()
+            }
+            None => skill.runtime_name().to_owned(),
+        };
         let copy = match Skill::from_parts(
             skillhub_core::SkillId::new(),
             display_name,
-            skill.runtime_name().to_owned(),
+            runtime_name,
             skill.original_description().to_owned(),
             skill.translated_description().map(str::to_owned),
             skill.note().map(str::to_owned),
@@ -8782,6 +8824,7 @@ impl LocalApplicationFacade {
                         version_id: version.id.clone(),
                         origin_skill_id: origin.source_skill_id,
                         origin_version_id: origin.source_version_id.clone(),
+                        origin_display_name: Some(skill.display_name().to_owned()),
                         created_at: now_epoch_seconds(),
                     };
                     match self.with_database("execute.save_markdown_as_copy.lineage", |database| {
@@ -8820,6 +8863,7 @@ impl LocalApplicationFacade {
                         &copy,
                         &version.id,
                         operation_id,
+                        request.target_runtime_name.as_deref(),
                         plan,
                     )?;
                     let recovery = match outcome {
@@ -9781,14 +9825,18 @@ impl ApplicationFacade for LocalApplicationFacade {
                             |fact| skillhub_core::api::SkillUpstreamLineage {
                                 source_skill_id: fact.origin_skill_id,
                                 source_version_id: fact.origin_version_id,
-                                source_display_name: database
-                                    .catalog_repository()
-                                    .and_then(|repository| {
-                                        repository.get_sync(fact.origin_skill_id)
-                                    })
-                                    .ok()
-                                    .flatten()
-                                    .map(|skill| skill.display_name().to_owned()),
+                                source_display_name: fact.origin_display_name.clone().or_else(
+                                    || {
+                                        database
+                                            .catalog_repository()
+                                            .and_then(|repository| {
+                                                repository.get_sync(fact.origin_skill_id)
+                                            })
+                                            .ok()
+                                            .flatten()
+                                            .map(|skill| skill.display_name().to_owned())
+                                    },
+                                ),
                                 created_at: Some(format_rfc3339_utc(fact.created_at)),
                             },
                         ),
@@ -18648,37 +18696,31 @@ impl RecoveryBackend for LocalRecoveryBackend {
             .database
             .lock()
             .map_err(|_| internal("recovery.list"))?;
-        let mut statement = database
-            .connection_for_test()
-            .prepare(
-                "SELECT operation_id, kind, recovery_data FROM operations WHERE phase IN ('planned','prepared','applying','verifying','needs_recovery') AND NOT (kind IN ('usage_duplicate_cleanup','subject_runtime_rename') AND phase='prepared') ORDER BY operation_id",
-            )
-            .map_err(|error| database_error("recovery.list", error.to_string()))?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| database_error("recovery.list", error.to_string()))?;
+        let records = database.operation_repository().list_sync()?;
         let mut candidates = Vec::new();
-        for row in rows {
-            let (id, kind, recovery_data) =
-                row.map_err(|error| database_error("recovery.list", error.to_string()))?;
-            let recovery_data: serde_json::Value = serde_json::from_str(&recovery_data)
-                .map_err(|error| database_error("recovery.list", error.to_string()))?;
-            let id = id
-                .parse()
-                .map_err(|_| database_error("recovery.list", "invalid operation id".to_owned()))?;
+        for record in records {
+            if !matches!(
+                record.phase,
+                skillhub_core::OperationPhase::Planned
+                    | skillhub_core::OperationPhase::Prepared
+                    | skillhub_core::OperationPhase::Applying
+                    | skillhub_core::OperationPhase::Verifying
+                    | skillhub_core::OperationPhase::NeedsRecovery
+            ) || (matches!(
+                record.kind.as_str(),
+                "usage_duplicate_cleanup" | "subject_runtime_rename"
+            ) && record.phase == skillhub_core::OperationPhase::Prepared)
+            {
+                continue;
+            }
             candidates.push(RecoveryCandidate {
-                operation_id: id,
-                actions: match kind.as_str() {
+                operation_id: record.operation_id,
+                actions: match record.kind.as_str() {
                     "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
                     "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
                     "subject_runtime_rename"
-                        if recovery_data
+                        if record
+                            .recovery_data
                             .get("metadata_committed")
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false) =>

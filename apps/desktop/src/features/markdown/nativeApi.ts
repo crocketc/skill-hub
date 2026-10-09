@@ -43,6 +43,20 @@ const toDomainDraft = (
       }
     : null;
 
+/** 当前技能版本身份；派生改名准备阶段必须与此版本精确绑定。 */
+export async function getCurrentSkillVersion(skillId: string): Promise<string | null> {
+  try {
+    const result: AppQueryResult = await queryApplication({
+      type: "get_skill",
+      payload: { skill_id: skillId },
+    });
+    if (result.type !== "skill") throw unavailableResult();
+    return result.payload.current_version;
+  } catch {
+    throw unavailableResult();
+  }
+}
+
 export const nativeMarkdownFacade: MarkdownFacade = {
   ...unavailableMarkdownFacade,
   async listMarkdownFiles(skillId) {

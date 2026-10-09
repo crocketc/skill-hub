@@ -1,19 +1,26 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useInRouterContext, useNavigate } from "react-router-dom";
-import { nativeErrorCode } from "../../api/nativeErrors";
+import { describeNativeError, nativeErrorCode } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
 import { CheckboxField } from "../../ui/CheckboxField";
 import { Icon } from "../../ui/Icon";
 import { RadioField } from "../../ui/RadioField";
 import {
+  type CommitUsageChange,
+  type DerivedRenamePreview,
+  type EnvironmentProblemView,
+  type PrepareUsageChange,
+  type PreparedUsageChange,
   type SaveAsCopyOutcome,
   type SaveAsCopyReplacementPreview,
   type SaveAsCopyReplacementTargetPreview,
   type SaveMarkdownAsCopy,
+  type UsageChangeResult,
 } from "../../api/bindings";
+import { Input } from "../../ui/Input";
 import type { SaveAsCopyFacade } from "./api";
 
 /**
@@ -649,5 +656,601 @@ function SaveAsCopyInheritanceOutcomeView({ outcome }: { outcome: SaveAsCopyOutc
         ))}
       </ul>
     </div>
+  );
+}
+
+export interface DerivedRenameDialogProps {
+  problem: EnvironmentProblemView;
+  previewFacade: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview">;
+  getCurrentSkillVersion: (skillId: string) => Promise<string | null>;
+  onPrepare: (request: PrepareUsageChange) => Promise<PreparedUsageChange>;
+  onCommit: (request: CommitUsageChange) => Promise<UsageChangeResult>;
+  onCompleted: () => Promise<void> | void;
+  onClose: () => void;
+  open: boolean;
+}
+
+type DerivedRenameTargetChoice = {
+  relationId: string;
+  deploymentId: string;
+  path: string;
+};
+
+type DerivedRenameSourceChoice = {
+  skillId: string;
+  runtimeName: string;
+  targets: DerivedRenameTargetChoice[];
+};
+
+function managedDeploymentId(relationId: string): string | null {
+  const prefix = "managed:";
+  return relationId.startsWith(prefix) && relationId.length > prefix.length
+    ? relationId.slice(prefix.length)
+    : null;
+}
+
+function fullEntryPath(directoryPath: string | null | undefined, relativePath: string): string {
+  if (!directoryPath) return relativePath;
+  const separator = directoryPath.includes("\\") ? "\\" : "/";
+  return `${directoryPath.replace(/[\\/]+$/, "")}${separator}${relativePath.replace(/^[\\/]+/, "")}`;
+}
+
+function derivedRenameSources(problem: EnvironmentProblemView): DerivedRenameSourceChoice[] {
+  const bySkill = new Map<string, DerivedRenameSourceChoice>();
+  for (const entry of problem.entries) {
+    if (!entry.skill_id) continue;
+    const targetChoices = entry.relation_ids.flatMap((relationId) => {
+      const deploymentId = managedDeploymentId(relationId);
+      return deploymentId
+        ? [{ relationId, deploymentId, path: fullEntryPath(entry.directory_path, entry.relative_entry_path) }]
+        : [];
+    });
+    if (targetChoices.length === 0) continue;
+    const existing = bySkill.get(entry.skill_id) ?? {
+      skillId: entry.skill_id,
+      runtimeName: entry.runtime_name ?? "",
+      targets: [],
+    };
+    const knownRelations = new Set(existing.targets.map((target) => target.relationId));
+    existing.targets.push(...targetChoices.filter((target) => !knownRelations.has(target.relationId)));
+    bySkill.set(entry.skill_id, existing);
+  }
+  return [...bySkill.values()].map((source) => ({
+    ...source,
+    targets: source.targets.sort((left, right) => left.path.localeCompare(right.path)),
+  }));
+}
+
+function newDerivedRenameOperationId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `derived-rename-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * 重名问题里的局部处理：先选主体、运行名和受管目标，核实替换预览与
+ * 共享消费者，再取统一关系准备快照；只有显式确认准确路径后才提交。
+ */
+export function DerivedRenameDialog({
+  problem,
+  previewFacade,
+  getCurrentSkillVersion,
+  onPrepare,
+  onCommit,
+  onCompleted,
+  onClose,
+  open,
+}: DerivedRenameDialogProps) {
+  const { t } = useTranslation();
+  const sources = useMemo(() => derivedRenameSources(problem), [problem]);
+  const [sourceSkillId, setSourceSkillId] = useState(sources[0]?.skillId ?? "");
+  const [runtimeName, setRuntimeName] = useState("");
+  const [selectedRelationIds, setSelectedRelationIds] = useState<Set<string>>(() => new Set());
+  const [confirmedSharedRelationIds, setConfirmedSharedRelationIds] = useState<Set<string>>(() => new Set());
+  const [preflight, setPreflight] = useState<SaveAsCopyReplacementPreview | null>(null);
+  const [prepared, setPrepared] = useState<PreparedUsageChange | null>(null);
+  const [result, setResult] = useState<UsageChangeResult | null>(null);
+  const [confirmedImpact, setConfirmedImpact] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rescanFailed, setRescanFailed] = useState(false);
+  const [previewClock, setPreviewClock] = useState(() => Date.now());
+  const translate = (key: string, options?: Record<string, unknown>) =>
+    String(t(key as never, options as never));
+  const describeError = (reason: unknown) => describeNativeError(
+    reason,
+    (key, options) => String(t(key as never, options as never)),
+    "tasks.notices.failureUnknown",
+  );
+  const source = sources.find((candidate) => candidate.skillId === sourceSkillId);
+  const versionQuery = useQuery({
+    enabled: open && Boolean(source),
+    queryFn: () => getCurrentSkillVersion(source!.skillId),
+    queryKey: ["relationship-derived-rename", "current-version", sourceSkillId],
+    retry: false,
+  });
+  const currentVersion = versionQuery.data ?? null;
+  const selectedTargets = source?.targets.filter((target) => selectedRelationIds.has(target.relationId)) ?? [];
+  const preflightByDeployment = new Map((preflight?.targets ?? []).map((target) => [target.deployment_id, target]));
+  const unverifiedTargets = selectedTargets.filter((target) => {
+    const previewTarget = preflightByDeployment.get(target.deploymentId);
+    return !previewTarget || !previewTarget.managed || previewTarget.blocker !== null;
+  });
+  const sharedTargets = selectedTargets.filter((target) =>
+    preflightByDeployment.get(target.deploymentId)?.requires_shared_target_confirmation,
+  );
+  const missingSharedConfirmations = sharedTargets.filter((target) =>
+    !confirmedSharedRelationIds.has(target.relationId),
+  );
+  const previewExpiry = preflight ? Date.parse(preflight.expires_at) : Number.NaN;
+  const previewExpired = preflight !== null
+    && (!Number.isFinite(previewExpiry) || previewExpiry <= previewClock);
+  const derivedPreview: DerivedRenamePreview | null = prepared?.derived_rename ?? null;
+  const derivedTargets = derivedPreview?.targets ?? [];
+  const derivedTargetsBlock = derivedTargets.some((target) => target.blocker !== null);
+  const preparedTargetIds = new Set(derivedTargets.map((target) => target.relation_id));
+  const preparedScopeMatches = selectedTargets.length > 0
+    && selectedTargets.every((target) => preparedTargetIds.has(target.relationId))
+    && derivedTargets.length === selectedTargets.length;
+
+  useEffect(() => {
+    if (!open) return;
+    setRuntimeName("");
+    setSelectedRelationIds(new Set());
+    setConfirmedSharedRelationIds(new Set());
+    setPreflight(null);
+    setPrepared(null);
+    setResult(null);
+    setConfirmedImpact(false);
+    setBusy(false);
+    setError(null);
+    setRescanFailed(false);
+  }, [open, problem.problem_id]);
+
+  useEffect(() => {
+    setSourceSkillId((current) => sources.some((candidate) => candidate.skillId === current)
+      ? current
+      : sources[0]?.skillId ?? "");
+  }, [sources]);
+
+  useEffect(() => {
+    if (!preflight || !Number.isFinite(previewExpiry)) return;
+    const delay = Math.max(0, previewExpiry - Date.now());
+    const timer = window.setTimeout(() => setPreviewClock(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [preflight, previewExpiry]);
+
+  useEffect(() => {
+    setSelectedRelationIds(new Set());
+    setConfirmedSharedRelationIds(new Set());
+    setPreflight(null);
+    setPrepared(null);
+    setResult(null);
+    setConfirmedImpact(false);
+    setError(null);
+  }, [sourceSkillId]);
+
+  const invalidateDraft = () => {
+    setPreflight(null);
+    setPrepared(null);
+    setConfirmedSharedRelationIds(new Set());
+    setConfirmedImpact(false);
+    setError(null);
+  };
+
+  const requestReplacementPreview = async () => {
+    if (!source || !currentVersion || !runtimeName.trim() || selectedTargets.length === 0) return;
+    setBusy(true);
+    setError(null);
+    invalidateDraft();
+    setPreviewClock(Date.now());
+    try {
+      const next = await previewFacade.saveAsCopyReplacementPreview(
+        source.skillId,
+        selectedTargets.map((target) => target.deploymentId),
+      );
+      const requestedIds = new Set(selectedTargets.map((target) => target.deploymentId));
+      if (next.source_skill_id !== source.skillId
+        || next.source_version_id !== currentVersion
+        || next.targets.length !== requestedIds.size
+        || next.targets.some((target) => !requestedIds.has(target.deployment_id))) {
+        throw new Error(translate("markdown.saveCopy.derivedRename.previewUnavailable"));
+      }
+      setPreflight(next);
+    } catch (reason) {
+      setError(reason instanceof Error
+        && reason.message === translate("markdown.saveCopy.derivedRename.previewUnavailable")
+        ? reason.message
+        : describeError(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareDerivedRename = async () => {
+    if (!source || !currentVersion || !preflight || previewExpired
+      || selectedTargets.length === 0 || unverifiedTargets.length > 0
+      || missingSharedConfirmations.length > 0 || !runtimeName.trim()) return;
+    setBusy(true);
+    setError(null);
+    setConfirmedImpact(false);
+    try {
+      const relationIds = selectedTargets.map((target) => target.relationId);
+      const next = await onPrepare({
+        operation_id: newDerivedRenameOperationId(),
+        action: "derive_and_replace",
+        relation_ids: [],
+        problem_id: problem.problem_id,
+        skill_id: source.skillId,
+        requested_form: null,
+        copy_disposition: null,
+        content_basis: null,
+        retain_entry_key: null,
+        selected_entry_keys: [],
+        runtime_name: runtimeName.trim(),
+        base_version_id: currentVersion,
+        selected_relation_ids: relationIds,
+        confirmed_shared_relation_ids: relationIds.filter((relationId) =>
+          confirmedSharedRelationIds.has(relationId),
+        ),
+        non_recognized_destination: null,
+      });
+      const preview = next.derived_rename;
+      if (!preview
+        || preview.source_skill_id !== source.skillId
+        || preview.base_version_id !== currentVersion
+        || preview.runtime_name !== runtimeName.trim()
+        || preview.selected_relation_ids.length !== relationIds.length
+        || relationIds.some((relationId) => !preview.selected_relation_ids.includes(relationId))) {
+        throw new Error(translate("markdown.saveCopy.derivedRename.previewUnavailable"));
+      }
+      setPrepared(next);
+    } catch (reason) {
+      setError(reason instanceof Error
+        && reason.message === translate("markdown.saveCopy.derivedRename.previewUnavailable")
+        ? reason.message
+        : describeError(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const commitDerivedRename = async () => {
+    if (!prepared || !derivedPreview || !preparedScopeMatches || derivedTargetsBlock || !confirmedImpact) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await onCommit({
+        operation_id: prepared.operation_id,
+        prepared_id: prepared.prepared_id,
+      });
+      setResult(next);
+      try {
+        await onCompleted();
+      } catch {
+        setRescanFailed(true);
+      }
+    } catch (reason) {
+      setError(describeError(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const close = () => {
+    if (!busy) onClose();
+  };
+
+  return (
+    <Dialog.Root
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) close();
+      }}
+      open={open}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="sh-dialog__overlay" />
+        <Dialog.Content
+          aria-label={result
+            ? translate("markdown.saveCopy.derivedRename.resultTitle")
+            : translate("markdown.saveCopy.derivedRename.title")}
+          aria-describedby={undefined}
+          className="sh-dialog sh-dialog__content sh-save-copy__dialog"
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault();
+          }}
+        >
+          <Dialog.Title className="sh-dialog__title">
+            {result
+              ? translate("markdown.saveCopy.derivedRename.resultTitle")
+              : translate("markdown.saveCopy.derivedRename.title")}
+          </Dialog.Title>
+          {!result ? (
+            <Dialog.Description className="sh-dialog__description">
+              {translate("markdown.saveCopy.derivedRename.description")}
+            </Dialog.Description>
+          ) : null}
+
+          {result ? (
+            <DerivedRenameResultView
+              prepared={derivedPreview}
+              rescanFailed={rescanFailed}
+              result={result}
+              onClose={close}
+            />
+          ) : (
+            <>
+              {sources.length > 1 ? (
+                <label className="sh-save-copy__fieldset">
+                  <span>{translate("markdown.saveCopy.derivedRename.sourceLabel")}</span>
+                  <select
+                    aria-label={translate("markdown.saveCopy.derivedRename.sourceLabel")}
+                    disabled={busy || preflight !== null}
+                    onChange={(event) => setSourceSkillId(event.target.value)}
+                    value={sourceSkillId}
+                  >
+                    {sources.map((candidate) => (
+                      <option key={candidate.skillId} value={candidate.skillId}>
+                        {candidate.runtimeName || translate("markdown.saveCopy.derivedRename.unnamedSource")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : source ? (
+                <p className="sh-save-copy__lead">
+                  {translate("markdown.saveCopy.derivedRename.source", {
+                    name: source.runtimeName || translate("markdown.saveCopy.derivedRename.unnamedSource"),
+                  })}
+                </p>
+              ) : (
+                <p role="alert">{translate("markdown.saveCopy.derivedRename.noManagedSource")}</p>
+              )}
+
+              <label className="sh-save-copy__fieldset">
+                <span>{translate("markdown.saveCopy.derivedRename.runtimeNameLabel")}</span>
+                <Input
+                  aria-label={translate("markdown.saveCopy.derivedRename.runtimeNameLabel")}
+                  autoComplete="off"
+                  disabled={busy || preflight !== null}
+                  onChange={(event) => {
+                    invalidateDraft();
+                    setRuntimeName(event.target.value);
+                  }}
+                  value={runtimeName}
+                />
+              </label>
+
+              <fieldset className="sh-save-copy__fieldset">
+                <legend>{translate("markdown.saveCopy.derivedRename.targetsLegend")}</legend>
+                {source && versionQuery.isPending ? (
+                  <p role="status">{translate("markdown.saveCopy.derivedRename.versionLoading")}</p>
+                ) : source && (versionQuery.isError || !currentVersion) ? (
+                  <p role="alert">{translate("markdown.saveCopy.derivedRename.versionUnavailable")}</p>
+                ) : null}
+                {source?.targets.map((target) => (
+                  <CheckboxField
+                    checked={selectedRelationIds.has(target.relationId)}
+                    disabled={busy || preflight !== null}
+                    key={target.relationId}
+                    label={target.path}
+                    onChange={(event) => {
+                      const next = new Set(selectedRelationIds);
+                      if (event.target.checked) next.add(target.relationId);
+                      else next.delete(target.relationId);
+                      setSelectedRelationIds(next);
+                      invalidateDraft();
+                    }}
+                  />
+                ))}
+                {source?.targets.length === 0 ? (
+                  <p role="status">{translate("markdown.saveCopy.derivedRename.noManagedTargets")}</p>
+                ) : null}
+              </fieldset>
+
+              {preflight ? (
+                <div className="sh-save-copy__derived-preview" data-testid="derived-rename-preview">
+                  <h3>{translate("markdown.saveCopy.derivedRename.previewHeading")}</h3>
+                  {previewExpired ? (
+                    <p className="sh-save-copy__notice" role="alert">
+                      {translate("markdown.saveCopy.derivedRename.previewExpired")}
+                    </p>
+                  ) : null}
+                  <ul className="sh-save-copy__targets">
+                    {selectedTargets.map((target) => {
+                      const previewTarget = preflightByDeployment.get(target.deploymentId);
+                      return (
+                        <li key={target.relationId}>
+                          <div className="sh-save-copy__target-facts">
+                            <code title={target.path}>{target.path}</code>
+                            {previewTarget?.blocker || !previewTarget?.managed ? (
+                              <p className="sh-save-copy__blocker" role="alert">
+                                {translate("markdown.saveCopy.derivedRename.targetUnavailable")}
+                              </p>
+                            ) : null}
+                            {previewTarget?.requires_shared_target_confirmation ? (
+                              <CheckboxField
+                                checked={confirmedSharedRelationIds.has(target.relationId)}
+                                disabled={busy || previewExpired}
+                                label={translate("markdown.saveCopy.derivedRename.sharedConfirm", {
+                                  path: target.path,
+                                  count: previewTarget.consumer_deployment_ids.length,
+                                })}
+                                onChange={(event) => {
+                                  const next = new Set(confirmedSharedRelationIds);
+                                  if (event.target.checked) next.add(target.relationId);
+                                  else next.delete(target.relationId);
+                                  setConfirmedSharedRelationIds(next);
+                                }}
+                              />
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {prepared && derivedPreview ? (
+                    <>
+                      <h3>{translate("markdown.saveCopy.derivedRename.exactPreviewHeading")}</h3>
+                      {preparedScopeMatches ? (
+                        <ul className="sh-save-copy__targets">
+                          {derivedTargets.map((target) => (
+                            <li className="sh-save-copy__target-facts" key={target.relation_id}>
+                              <code title={target.previous_path}>{target.previous_path}</code>
+                              <span aria-hidden="true">→</span>
+                              <code title={target.replacement_path}>{target.replacement_path}</code>
+                              {target.blocker ? (
+                                <p className="sh-save-copy__blocker" role="alert">
+                                  {translate("markdown.saveCopy.derivedRename.targetBlocked")}
+                                </p>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p role="alert">{translate("markdown.saveCopy.derivedRename.scopeChanged")}</p>
+                      )}
+                      <p>{translate("markdown.saveCopy.derivedRename.impactSummary", {
+                        name: derivedPreview.runtime_name,
+                        count: derivedPreview.targets.length,
+                      })}</p>
+                      <p>{translate("markdown.saveCopy.derivedRename.lineageNotice")}</p>
+                      <CheckboxField
+                        checked={confirmedImpact}
+                        disabled={busy || !preparedScopeMatches || derivedTargetsBlock}
+                        label={translate("markdown.saveCopy.derivedRename.confirmImpact")}
+                        onChange={(event) => setConfirmedImpact(event.target.checked)}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {error ? <p className="sh-save-copy__notice" role="alert">{error}</p> : null}
+              <div className="sh-dialog__actions">
+                <Button disabled={busy} onClick={close} size="sm" variant="ghost">
+                  {translate("actions.cancel")}
+                </Button>
+                {result ? null : prepared ? (
+                  <Button
+                    disabled={busy || !confirmedImpact || !preparedScopeMatches || derivedTargetsBlock}
+                    loading={busy}
+                    onClick={() => void commitDerivedRename()}
+                    size="sm"
+                  >
+                    {translate("markdown.saveCopy.derivedRename.confirmAction")}
+                  </Button>
+                ) : preflight && previewExpired ? (
+                  <Button
+                    disabled={busy || !runtimeName.trim() || selectedTargets.length === 0}
+                    loading={busy}
+                    onClick={() => void requestReplacementPreview()}
+                    size="sm"
+                  >
+                    {translate("markdown.saveCopy.derivedRename.rePreviewAction")}
+                  </Button>
+                ) : preflight ? (
+                  <Button
+                    disabled={busy || previewExpired || selectedTargets.length === 0
+                      || unverifiedTargets.length > 0 || missingSharedConfirmations.length > 0}
+                    loading={busy}
+                    onClick={() => void prepareDerivedRename()}
+                    size="sm"
+                  >
+                    {translate("markdown.saveCopy.derivedRename.prepareAction")}
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={busy || versionQuery.isPending || !currentVersion
+                      || !runtimeName.trim() || selectedTargets.length === 0}
+                    loading={busy}
+                    onClick={() => void requestReplacementPreview()}
+                    size="sm"
+                  >
+                    {translate("markdown.saveCopy.derivedRename.previewAction")}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function DerivedRenameResultView({
+  prepared,
+  result,
+  rescanFailed,
+  onClose,
+}: {
+  prepared: DerivedRenamePreview | null;
+  result: UsageChangeResult;
+  rescanFailed: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const translate = (key: string) => String(t(key as never));
+  const itemResults = prepared?.targets.map((target) => ({
+    target,
+    result: result.item_results.find((item) => item.relation_ids.includes(target.relation_id)) ?? null,
+  })) ?? [];
+  const complete = itemResults.length > 0
+    && itemResults.every(({ result: item }) => item?.status === "applied")
+    && !result.recovery_required;
+  const newSkill = result.derived_skill_id ?? null;
+  return (
+    <>
+      <p role="status">{translate(complete
+        ? "markdown.saveCopy.derivedRename.completed"
+        : "markdown.saveCopy.derivedRename.partial")}</p>
+      {itemResults.length > 0 ? (
+        <ul className="sh-save-copy__result-list">
+          {itemResults.map(({ target, result: item }) => (
+            <li key={target.relation_id}>
+              <code title={target.replacement_path}>{target.replacement_path}</code>
+              <span className={item?.status === "applied"
+                ? "sh-save-copy__result-applied"
+                : "sh-save-copy__result-failed"}>
+                {translate(item?.status === "applied"
+                  ? "markdown.saveCopy.derivedRename.applied"
+                  : item?.status === "recovery_required"
+                    ? "markdown.saveCopy.derivedRename.recoveryRequired"
+                    : item?.status === "failed"
+                      ? "markdown.saveCopy.derivedRename.failed"
+                      : "markdown.saveCopy.derivedRename.resultMissing")}
+              </span>
+              {item?.reason && targetResultErrorKeys[item.reason] ? (
+                <span>{translate(targetResultErrorKeys[item.reason])}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {rescanFailed ? (
+        <p role="alert">{translate("markdown.saveCopy.derivedRename.rescanFailed")}</p>
+      ) : (
+        <p>{translate("markdown.saveCopy.derivedRename.rescanned")}</p>
+      )}
+      {newSkill ? (
+        <OpenNewSkillAction
+          label={translate("markdown.saveCopy.derivedRename.openSkill")}
+          onActivate={onClose}
+          skillId={newSkill}
+        />
+      ) : null}
+      {result.recovery_operation_id ? (
+        <RecoveryLink
+          label={translate("markdown.saveCopy.derivedRename.recoveryLink")}
+          operationId={result.recovery_operation_id}
+        />
+      ) : null}
+      <div className="sh-dialog__actions">
+        <Button onClick={onClose} size="sm" variant="secondary">
+          {translate("markdown.saveCopy.close")}
+        </Button>
+      </div>
+    </>
   );
 }

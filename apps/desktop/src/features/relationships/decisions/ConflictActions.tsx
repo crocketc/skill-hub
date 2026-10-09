@@ -28,6 +28,7 @@ interface ConflictCaseActionsProps {
 interface EnvironmentProblemActionsProps {
   mode: "environment_problem";
   problem: EnvironmentProblemView;
+  onDeriveRename: () => void;
   onResolveDuplicate: () => void;
   onNotNow: () => void;
   resolving?: boolean;
@@ -44,6 +45,10 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
   const { t } = useTranslation();
   if (props.mode === "environment_problem") {
     const canResolveDuplicate = props.problem.kind === "same_skill" && props.problem.entries.length > 1;
+    const canDeriveRename = props.problem.kind === "name_conflict"
+      && props.problem.entries.some((entry) => entry.skill_id !== null
+        && entry.relation_ids.some((relationId) => relationId.startsWith("managed:")
+          && relationId.length > "managed:".length));
     return (
       <section aria-label={t("relationships.decisions.actions.heading")} className="sh-conflict-actions">
         <h3>{t("relationships.decisions.actions.heading")}</h3>
@@ -51,6 +56,11 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
           {canResolveDuplicate ? (
             <Button disabled={props.resolving} onClick={props.onResolveDuplicate} size="sm">
               {t("relationships.governance.duplicateCleanup.open")}
+            </Button>
+          ) : null}
+          {canDeriveRename ? (
+            <Button disabled={props.resolving} onClick={props.onDeriveRename} size="sm">
+              {t("markdown.saveCopy.derivedRename.openAction")}
             </Button>
           ) : null}
           <Button disabled={props.resolving} onClick={props.onNotNow} size="sm" variant="ghost">

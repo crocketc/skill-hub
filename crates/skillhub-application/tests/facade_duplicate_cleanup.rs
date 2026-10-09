@@ -173,6 +173,8 @@ fn request(
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: destination,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     }
 }
 
@@ -260,6 +262,8 @@ async fn unmanaged_cleanup_requires_explicit_intent() {
         runtime_name: None,
         base_version_id: None,
         non_recognized_destination: None,
+        selected_relation_ids: vec![],
+        confirmed_shared_relation_ids: vec![],
     });
     assert!(result.is_err());
     assert!(first.join("SKILL.md").is_file());
