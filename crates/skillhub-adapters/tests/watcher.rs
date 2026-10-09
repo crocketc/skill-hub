@@ -254,6 +254,38 @@ mod native_backend {
         assert!(watcher.poll().unwrap().is_empty(), "hints drain once");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn canonical_event_paths_match_symlinked_active_roots() {
+        let temp = tempfile::tempdir().unwrap();
+        let physical_root = temp.path().join("physical");
+        std::fs::create_dir(&physical_root).unwrap();
+        let configured_root = temp.path().join("alias");
+        std::os::unix::fs::symlink(&physical_root, &configured_root).unwrap();
+
+        let backend = FakeBackend::default();
+        let clock = ManualWatchClock::default();
+        let mut watcher = NativeRelationshipWatcher::with_clock(
+            [configured_root.clone()],
+            Duration::from_millis(400),
+            Box::new(backend.clone()),
+            Box::new(clock.clone()),
+        );
+        watcher.start().unwrap();
+
+        let event_path = physical_root.join("skill.md");
+        backend.push(event(
+            NativeWatchEventKind::Created,
+            &event_path.to_string_lossy(),
+        ));
+
+        assert!(watcher.poll().unwrap().is_empty());
+        clock.advance(400);
+        let confirmed = watcher.poll().unwrap();
+        assert_eq!(confirmed.len(), 1, "canonical event must remain in root");
+        assert_eq!(confirmed[0].path(), configured_root.join("skill.md"));
+    }
+
     #[test]
     fn stop_stops_backend_and_discards_unconfirmed_native_events() {
         let backend = FakeBackend::default();

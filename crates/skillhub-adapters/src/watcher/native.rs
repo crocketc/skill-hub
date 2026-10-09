@@ -375,7 +375,8 @@ impl NativeRelationshipWatcher {
                 self.inner.on_overflow(root_lossy.into_owned());
             }
             kind => {
-                let hint = WatchHint::for_root(root_lossy, event.path.to_string_lossy())
+                let path = path_under_root(root, &event.path);
+                let hint = WatchHint::for_root(root_lossy, path.to_string_lossy())
                     .with_kind(hint_kind(kind));
                 self.inner.push(hint);
             }
@@ -405,7 +406,9 @@ fn hint_kind(kind: NativeWatchEventKind) -> WatchHintKind {
 }
 
 fn normalize(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
+    let value = canonicalize_with_missing(path)
+        .to_string_lossy()
+        .replace('\\', "/");
     #[cfg(windows)]
     {
         value.to_ascii_lowercase()
@@ -414,4 +417,41 @@ fn normalize(path: &Path) -> String {
     {
         value
     }
+}
+
+/// Native backends may report a canonical path while the configured root was
+/// reached through a symlink (for example `/var` vs `/private/var` on macOS).
+/// Resolve the longest existing prefix so removed paths can still be mapped
+/// back to their watched root.
+fn canonicalize_with_missing(path: &Path) -> PathBuf {
+    let mut unresolved = Vec::new();
+    let mut ancestor = path;
+
+    loop {
+        if let Ok(mut resolved) = ancestor.canonicalize() {
+            for component in unresolved.into_iter().rev() {
+                resolved.push(component);
+            }
+            return resolved;
+        }
+
+        let Some(name) = ancestor.file_name() else {
+            return path.to_path_buf();
+        };
+        unresolved.push(name.to_os_string());
+
+        let Some(parent) = ancestor.parent() else {
+            return path.to_path_buf();
+        };
+        ancestor = parent;
+    }
+}
+
+fn path_under_root(root: &Path, event_path: &Path) -> PathBuf {
+    let canonical_root = canonicalize_with_missing(root);
+    let canonical_event = canonicalize_with_missing(event_path);
+    canonical_event
+        .strip_prefix(canonical_root)
+        .map(|relative| root.join(relative))
+        .unwrap_or_else(|_| event_path.to_path_buf())
 }
