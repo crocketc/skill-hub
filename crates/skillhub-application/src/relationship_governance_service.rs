@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, GetSkillRelationshipGraph, ListSkillRelationshipCandidates,
@@ -23,9 +24,9 @@ use skillhub_core::relationship::{
     project_unified_governance_ledger_with_context, project_usage_relations, ConflictCaseFact,
     ConflictClassification, ConflictResolutionOutcome, DeploymentRelationFact, DirectoryNodeFact,
     FileRepresentation, GovernanceTaskFact, GovernanceTaskKind, OwnershipState,
-    RelationGovernanceDecision, RelationManagementStatus, RelationshipType, RemovalFacts,
-    SourceCopyRelationFact, SourceRelationFact, UsageDecision, UsageDecisionEvidence,
-    UsageManagement, UsageManagementEvidence, UsageProjectionInput,
+    PreparedUsageChange, RelationGovernanceDecision, RelationManagementStatus, RelationshipType,
+    RemovalFacts, SourceCopyRelationFact, SourceRelationFact, UsageChangeResult, UsageDecision,
+    UsageDecisionEvidence, UsageManagement, UsageManagementEvidence, UsageProjectionInput,
 };
 use skillhub_core::{
     AppError, AppResult, ErrorCode, InverseOperation, OperationId, OperationObjectResult,
@@ -39,12 +40,17 @@ use crate::LocalApplicationFacade;
 #[derive(Clone, Debug)]
 struct RelationMigrationJournal {
     prepared: skillhub_core::PreparedRelationMigration,
+    operation_kind: String,
+    request_fingerprint: String,
     expected_target_fingerprint: String,
     expected_link_representation: FileRepresentation,
     source_relations: Vec<SourceRelationFact>,
     safety: RelationSafetySnapshot,
     stage: RelationMigrationStage,
     backup: RelationBackupMetadata,
+    usage_preview: Option<PreparedUsageChange>,
+    usage_manage_relations: Vec<DeploymentRelationFact>,
+    usage_result: Option<UsageChangeResult>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -91,6 +97,8 @@ struct RelationBackupMetadata {
 impl RelationMigrationJournal {
     fn from_prepared(
         prepared: skillhub_core::PreparedRelationMigration,
+        operation_kind: String,
+        request_fingerprint: String,
         expected_target_fingerprint: String,
         source_relations: Vec<SourceRelationFact>,
         safety: RelationSafetySnapshot,
@@ -98,6 +106,8 @@ impl RelationMigrationJournal {
     ) -> Self {
         let relation = &prepared.relation;
         Self {
+            operation_kind,
+            request_fingerprint,
             expected_target_fingerprint,
             expected_link_representation: representation_for_mode(prepared.target_mode),
             source_relations,
@@ -116,26 +126,9 @@ impl RelationMigrationJournal {
                 original_entity_identity,
             },
             prepared,
-        }
-    }
-
-    fn from_persisted(
-        prepared: skillhub_core::PreparedRelationMigration,
-        expected_target_fingerprint: String,
-        expected_link_representation: FileRepresentation,
-        source_relations: Vec<SourceRelationFact>,
-        safety: RelationSafetySnapshot,
-        stage: RelationMigrationStage,
-        backup: RelationBackupMetadata,
-    ) -> Self {
-        Self {
-            prepared,
-            expected_target_fingerprint,
-            expected_link_representation,
-            source_relations,
-            safety,
-            stage,
-            backup,
+            usage_preview: None,
+            usage_manage_relations: Vec::new(),
+            usage_result: None,
         }
     }
 }
@@ -610,12 +603,78 @@ impl LocalApplicationFacade {
         request: PrepareRelationMigration,
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
+        let request_fingerprint = relation_migration_request_fingerprint(&request)?;
+        let prepared = self.prepare_relation_migration_for_operation(
+            request,
+            operation_id,
+            "migrate_relation",
+            request_fingerprint,
+            false,
+        )?;
+        Ok(AppCommandResult::PreparedRelationMigration(prepared))
+    }
+
+    pub(crate) fn prepare_usage_relation_migration(
+        &self,
+        operation_id: OperationId,
+        request: PrepareRelationMigration,
+        request_fingerprint: String,
+    ) -> AppResult<skillhub_core::PreparedRelationMigration> {
+        self.prepare_relation_migration_for_operation(
+            request,
+            operation_id,
+            "usage_manage",
+            request_fingerprint,
+            true,
+        )
+    }
+
+    fn prepare_relation_migration_for_operation(
+        &self,
+        request: PrepareRelationMigration,
+        operation_id: OperationId,
+        operation_kind: &'static str,
+        request_fingerprint: String,
+        manage_commit_confirms_shared_impact: bool,
+    ) -> AppResult<skillhub_core::PreparedRelationMigration> {
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("execute.prepare_relation_migration"))?;
+            if let Some(record) = database.operation_repository().get_sync(operation_id)? {
+                if record.kind != operation_kind {
+                    return Err(invalid_relation_migration(
+                        "operation id is already bound to another operation",
+                    ));
+                }
+                if record.request_fingerprint != request_fingerprint {
+                    return Err(AppError::new(
+                        ErrorCode::OperationIdReusedWithDifferentRequest,
+                        Severity::Error,
+                    )
+                    .with_param("operation_id", operation_id.to_string()));
+                }
+                let prepared = record
+                    .recovery_data
+                    .get("journal")
+                    .and_then(|journal| journal.get("prepared"))
+                    .cloned()
+                    .ok_or_else(|| {
+                        invalid_relation_migration(
+                            "relationship journal prepared facts are missing",
+                        )
+                    })?;
+                return serde_json::from_value(prepared).map_err(|_| {
+                    invalid_relation_migration("relationship journal facts are corrupt")
+                });
+            }
+        }
+
         let prepared = self.with_database("execute.prepare_relation_migration", |database| {
-            if request.target_mode != RelationMigrationTargetMode::ManagedLink
-                || request.backup_policy != RelationshipMigrationBackupPolicy::Required
-            {
+            if request.backup_policy != RelationshipMigrationBackupPolicy::Required {
                 return Err(invalid_relation_migration(
-                    "only required-backup managed-link conversion is supported",
+                    "relationship conversion requires a verified backup",
                 ));
             }
             let snapshot = database
@@ -708,22 +767,32 @@ impl LocalApplicationFacade {
             let relation_parent = Path::new(&relation.path)
                 .parent()
                 .ok_or_else(|| ownership_mismatch(&relation.path))?;
-            let conversion_plan =
-                skillhub_core::deployment::plan_relation_conversion(
-                    &skillhub_core::deployment::RelationConversionFacts {
-                        relationship: relation.relationship,
-                        link_capabilities: DeploymentFilesystem::new()
-                            .probe_link_capabilities(relation_parent, &target_path),
-                        link_target_same_volume: skillhub_core::paths_share_volume(
-                            relation_parent,
-                            &target_path,
-                        ),
-                        other_shared_consumers: impact.other_consumers.len(),
-                        // 只读目标在上方预检已拒绝；此字段保留给计划层
-                        // 的纵深防御（直接调用计划时同样拦截）。
-                        target_read_only: false,
-                    },
-                );
+            let target_is_shared = Self::relation_target_is_shared(database, &relation)?;
+            let facts = skillhub_core::deployment::RelationConversionFacts {
+                relationship: relation.relationship,
+                target_is_shared,
+                link_capabilities: DeploymentFilesystem::new()
+                    .probe_link_capabilities(relation_parent, &target_path),
+                link_target_same_volume: skillhub_core::paths_share_volume(
+                    relation_parent,
+                    &target_path,
+                ),
+                other_shared_consumers: impact.other_consumers.len(),
+                // 只读目标在上方预检已拒绝；此字段保留给计划层
+                // 的纵深防御（直接调用计划时同样拦截）。
+                target_read_only: false,
+            };
+            let conversion_plan = match request.target_mode {
+                RelationMigrationTargetMode::ManagedLink => {
+                    skillhub_core::deployment::plan_relation_conversion(&facts)
+                }
+                RelationMigrationTargetMode::ManagedCopy => {
+                    skillhub_core::deployment::plan_relation_conversion_for_mode(
+                        &facts,
+                        DeploymentMode::ManagedCopy,
+                    )
+                }
+            };
             let conversion_plan = match conversion_plan {
                 Ok(plan) => plan,
                 Err(error) => {
@@ -740,10 +809,19 @@ impl LocalApplicationFacade {
                     return Err(error);
                 }
             };
-            let mut governance_tasks = impact.governance_tasks;
+            let mut governance_tasks = if manage_commit_confirms_shared_impact {
+                impact
+                    .governance_tasks
+                    .into_iter()
+                    .filter(|task| task.kind != GovernanceTaskKind::ConfirmSharedDirectoryImpact)
+                    .collect()
+            } else {
+                impact.governance_tasks
+            };
             let shared_impact = conversion_plan.requires_shared_impact_confirmation
                 || !impact.other_consumers.is_empty();
             if shared_impact
+                && !manage_commit_confirms_shared_impact
                 && request
                     .confirmation_token
                     .as_deref()
@@ -778,6 +856,7 @@ impl LocalApplicationFacade {
                 skillhub_core::PreparedRelationMigration {
                 operation_id,
                 relation_id: request.relation_id.clone(),
+                target_is_shared,
                 relation,
                 current_content_fingerprint: current_fingerprint,
                 target_path: target_path.to_string_lossy().into_owned(),
@@ -801,6 +880,8 @@ impl LocalApplicationFacade {
                     .insert(prepared.operation_id, prepared.clone());
                 let journal = RelationMigrationJournal::from_prepared(
                     prepared.clone(),
+                    operation_kind.to_owned(),
+                    request_fingerprint,
                     DeploymentFilesystem::hash_tree(&prepared.target_path)?,
                     source_relations,
                     safety,
@@ -814,12 +895,12 @@ impl LocalApplicationFacade {
                     None,
                     None,
                 )?;
-                Ok(AppCommandResult::PreparedRelationMigration(prepared))
+                Ok(prepared)
             }
             Err(error) => {
                 self.journal_advance(
                     operation_id,
-                    "migrate_relation",
+                    operation_kind,
                     OperationPhase::RolledBack,
                     Some(error.code),
                 );
@@ -828,7 +909,7 @@ impl LocalApplicationFacade {
         }
     }
 
-    pub(crate) async fn commit_relation_migration(
+    pub(crate) fn commit_relation_migration(
         &self,
         request: skillhub_core::api::CommitRelationMigration,
     ) -> AppResult<AppCommandResult> {
@@ -903,6 +984,20 @@ impl LocalApplicationFacade {
         if snapshot.source_relations != journal.source_relations {
             return self.failed_relation_result(&journal, target_changed(&prepared.relation.path));
         }
+        let current_target_is_shared = self
+            .with_database("relationship.commit_shared_target_snapshot", |database| {
+                Self::relation_target_is_shared(database, &relation)
+            })?;
+        if current_target_is_shared != prepared.target_is_shared
+            || (current_target_is_shared && prepared.target_mode != DeploymentMode::ManagedCopy)
+        {
+            return self.failed_relation_result(&journal, target_changed(&prepared.relation.path));
+        }
+        if journal.operation_kind == "usage_manage" {
+            if let Err(error) = self.validate_usage_manage_relation_snapshot(&journal) {
+                return self.failed_relation_result(&journal, error);
+            }
+        }
         if let Err(error) =
             validate_relation_safety_snapshot(&journal, &relation, &target_path, &library_root)
         {
@@ -961,6 +1056,11 @@ impl LocalApplicationFacade {
         {
             return self.failed_relation_result(&applying, error);
         }
+        if applying.operation_kind == "usage_manage" {
+            if let Err(error) = self.validate_usage_manage_relation_snapshot(&applying) {
+                return self.failed_relation_result(&applying, error);
+            }
+        }
 
         let backup_path = PathBuf::from(&prepared.backup_path);
         if let Err(error) = validate_backup_path(&applying, &library_root) {
@@ -997,6 +1097,11 @@ impl LocalApplicationFacade {
         {
             return self.failed_relation_result(&applying, error);
         }
+        if applying.operation_kind == "usage_manage" {
+            if let Err(error) = self.validate_usage_manage_relation_snapshot(&applying) {
+                return self.failed_relation_result(&applying, error);
+            }
+        }
 
         // Fixed conversion order (design §2.2): create the new link and
         // verify it BEFORE the original entry is removed, so a creation or
@@ -1007,8 +1112,14 @@ impl LocalApplicationFacade {
             .parent()
             .ok_or_else(|| ownership_mismatch(&relation.path))?
             .to_path_buf();
+        let staging_prefix = match mode {
+            DeploymentMode::ManagedCopy => ".skillhub-relation-copy",
+            DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                ".skillhub-relation-link"
+            }
+        };
         let staging_path = relation_parent.join(format!(
-            ".skillhub-relation-link-{}",
+            "{staging_prefix}-{}",
             applying.prepared.operation_id
         ));
         if let Err(error) = validate_relation_parent_and_target_snapshot(
@@ -1019,19 +1130,22 @@ impl LocalApplicationFacade {
             return self.failed_relation_result(&applying, error);
         }
         match fs::symlink_metadata(&staging_path) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                // A leftover staging link from an interrupted attempt of this
-                // operation may be reclaimed while it still points at the
-                // prepared target.
-                if let Err(error) = remove_staged_relation_link(&staging_path, &target_path) {
+            Ok(_) => {
+                // A leftover stage from this operation is reclaimed only
+                // after its exact representation and content are verified.
+                if let Err(error) = remove_staged_relation_entry(
+                    &staging_path,
+                    &target_path,
+                    mode,
+                    &applying.expected_target_fingerprint,
+                ) {
                     return self.failed_relation_result(&applying, error);
                 }
             }
-            Ok(_) => {
-                // The staging location is ours to create, never to clobber.
-                return self.failed_relation_result(&applying, ownership_mismatch(&staging_path));
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return self.failed_relation_result(&applying, io_conflict(&staging_path, error));
             }
-            Err(_) => {}
         }
         let staged = DeploymentFilesystem::new()
             .prepare(&TargetPlan {
@@ -1064,14 +1178,30 @@ impl LocalApplicationFacade {
             Err(error) => {
                 // The original entry was never touched; only the staging
                 // location may need cleanup.
-                let _ = remove_staged_relation_link(&staging_path, &target_path);
+                let error = match remove_staged_relation_entry(
+                    &staging_path,
+                    &target_path,
+                    mode,
+                    &applying.expected_target_fingerprint,
+                ) {
+                    Ok(()) => error,
+                    Err(cleanup_error) => recovery_failure_error(&error, &cleanup_error),
+                };
                 return self.failed_relation_result(&applying, error);
             }
         };
         if staged.ownership.mode != prepared.target_mode {
             let error =
-                invalid_relation_migration("actual link representation differs from prepared mode");
-            let _ = remove_staged_relation_link(&staging_path, &target_path);
+                invalid_relation_migration("actual representation differs from prepared mode");
+            let error = match remove_staged_relation_entry(
+                &staging_path,
+                &target_path,
+                mode,
+                &applying.expected_target_fingerprint,
+            ) {
+                Ok(()) => error,
+                Err(cleanup_error) => recovery_failure_error(&error, &cleanup_error),
+            };
             return self.failed_relation_result(&applying, error);
         }
 
@@ -1079,7 +1209,15 @@ impl LocalApplicationFacade {
         // link into place.  From here on a failure must restore the original
         // entry from the recovery point.
         if let Err(error) = remove_relation_entry(Path::new(&relation.path)) {
-            let _ = remove_staged_relation_link(&staging_path, &target_path);
+            let error = match remove_staged_relation_entry(
+                &staging_path,
+                &target_path,
+                mode,
+                &applying.expected_target_fingerprint,
+            ) {
+                Ok(()) => error,
+                Err(cleanup_error) => recovery_failure_error(&error, &cleanup_error),
+            };
             return self.failed_relation_result(&applying, error);
         }
         if let Err(error) = fs::rename(&staging_path, Path::new(&relation.path)) {
@@ -1087,8 +1225,17 @@ impl LocalApplicationFacade {
             let recovery = self
                 .library_root()
                 .and_then(|library_root| recover_relation_entry(&applying, &library_root))
-                .and_then(|_| remove_staged_relation_link(&staging_path, &target_path));
-            let error = recovery.err().unwrap_or(error);
+                .and_then(|_| {
+                    remove_staged_relation_entry(
+                        &staging_path,
+                        &target_path,
+                        mode,
+                        &applying.expected_target_fingerprint,
+                    )
+                });
+            let error = recovery.err().map_or(error.clone(), |recovery_error| {
+                recovery_failure_error(&error, &recovery_error)
+            });
             return self.failed_relation_result(&applying, error);
         }
         let swapped = validate_relation_parent_and_target_snapshot(
@@ -1124,28 +1271,39 @@ impl LocalApplicationFacade {
             return self.handle_post_filesystem_failure(&journal, error, false);
         }
 
-        let mut normalized = relation.clone();
-        normalized.relationship = RelationshipType::ManagedLink;
-        normalized.file_representation = match mode {
-            DeploymentMode::SymbolicLink => {
-                skillhub_core::relationship::FileRepresentation::SymbolicLink
-            }
-            DeploymentMode::DirectoryJunction => {
-                skillhub_core::relationship::FileRepresentation::DirectoryJunction
-            }
-            DeploymentMode::ManagedCopy => skillhub_core::relationship::FileRepresentation::Unknown,
+        let original_usage_relations = if journal.usage_manage_relations.is_empty() {
+            vec![relation.clone()]
+        } else {
+            journal.usage_manage_relations.clone()
         };
-        normalized.ownership = skillhub_core::relationship::OwnershipState::SkillhubManaged;
-        normalized.link_target_path = Some(target_path.to_string_lossy().into_owned());
-        normalized.link_target_path_key = None;
-        normalized.link_target_directory_id = None;
-        normalized.content_fingerprint = applied.observed_tree_hash;
-        normalized.active = true;
+        let normalized_relations = original_usage_relations
+            .iter()
+            .map(|original| {
+                normalized_relation_fact(
+                    original,
+                    mode,
+                    &target_path.to_string_lossy(),
+                    &applied.observed_tree_hash,
+                )
+            })
+            .collect::<Vec<_>>();
+        if applying.operation_kind == "usage_manage" {
+            if let Err(error) = self.validate_usage_manage_relation_snapshot(&applying) {
+                return self.handle_post_filesystem_failure(&applying, error, true);
+            }
+        }
+        let Some(normalized) = normalized_relations
+            .iter()
+            .find(|normalized| normalized.relation_id == prepared.relation_id)
+        else {
+            let error = invalid_relation_migration("primary usage relation is missing");
+            return self.handle_post_filesystem_failure(&applying, error, true);
+        };
         let persisted =
             self.with_database("execute.commit_relation_migration.record", |database| {
                 database
                     .relationship_repository()
-                    .upsert_deployment_relation(&normalized)
+                    .upsert_deployment_relations(&normalized_relations)
             });
         if let Err(error) = persisted {
             return self.handle_post_filesystem_failure(&journal, error, true);
@@ -1250,6 +1408,13 @@ impl LocalApplicationFacade {
                 | RelationMigrationStage::FilesystemRestoredRelationPersisted
         ) && filesystem_restored;
         let already_restored = relation_is_restored(&current, &journal);
+        if journal.operation_kind == "usage_manage" {
+            if let Err(error) =
+                self.validate_usage_manage_relation_state(&journal, already_restored)
+            {
+                return self.failed_relation_result(&journal, error);
+            }
+        }
         if retry_restored {
             if let Err(error) = validate_relation_parent_and_target_snapshot(
                 &journal,
@@ -1309,7 +1474,7 @@ impl LocalApplicationFacade {
             self.with_database("execute.rollback_relation_migration.record", |database| {
                 database
                     .relationship_repository()
-                    .restore_deployment_relation(&prepared.relation)
+                    .restore_deployment_relations(&original_usage_relation_facts(&applying))
             })
         {
             return self.failed_relation_result(&applying, error);
@@ -1446,7 +1611,7 @@ impl LocalApplicationFacade {
                 self.with_database("execute.relation_migration.recover_record", |database| {
                     database
                         .relationship_repository()
-                        .restore_deployment_relation(&restored.prepared.relation)
+                        .restore_deployment_relations(&original_usage_relation_facts(&restored))
                 })
             {
                 let combined = recovery_failure_error(&journal_error, &writeback_error);
@@ -1490,6 +1655,100 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn validate_usage_manage_relation_snapshot(
+        &self,
+        journal: &RelationMigrationJournal,
+    ) -> AppResult<Vec<DeploymentRelationFact>> {
+        if journal.usage_manage_relations.is_empty() {
+            return Ok(vec![journal.prepared.relation.clone()]);
+        }
+        let preview_ids = journal
+            .usage_preview
+            .as_ref()
+            .and_then(|preview| preview.entry_evidence.first())
+            .map(|evidence| evidence.relation_ids.clone())
+            .ok_or_else(|| invalid_relation_migration("usage management evidence is missing"))?;
+        let mut expected_ids = journal
+            .usage_manage_relations
+            .iter()
+            .map(|relation| relation.relation_id.clone())
+            .collect::<Vec<_>>();
+        expected_ids.sort();
+        expected_ids.dedup();
+        if expected_ids != preview_ids
+            || !journal
+                .usage_manage_relations
+                .iter()
+                .any(|relation| relation == &journal.prepared.relation)
+        {
+            return Err(invalid_relation_migration(
+                "usage management evidence does not match its relation snapshot",
+            ));
+        }
+
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("relationship.manage_relation_snapshot"))?;
+        let current_relations = database.relationship_repository().list_relations()?;
+        let mut relations = journal.usage_manage_relations.clone();
+        relations.sort_by(|left, right| left.relation_id.cmp(&right.relation_id));
+        for expected in &relations {
+            let current = current_relations
+                .iter()
+                .find(|relation| relation.relation_id == expected.relation_id)
+                .ok_or_else(|| target_changed(&expected.path))?;
+            if current != expected
+                || !current.active
+                || current.path != journal.prepared.relation.path
+                || current.skill_id != journal.prepared.relation.skill_id
+                || current.file_representation != journal.prepared.relation.file_representation
+                || current.content_fingerprint != journal.prepared.current_content_fingerprint
+            {
+                return Err(target_changed(&expected.path));
+            }
+            if relations.len() > 1 && !Self::relation_target_is_shared(&database, current)? {
+                return Err(target_changed(&expected.path));
+            }
+        }
+        Ok(relations)
+    }
+
+    fn validate_usage_manage_relation_state(
+        &self,
+        journal: &RelationMigrationJournal,
+        restored: bool,
+    ) -> AppResult<()> {
+        if journal.usage_manage_relations.is_empty() {
+            return Ok(());
+        }
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("relationship.manage_relation_state"))?;
+        let current_relations = database.relationship_repository().list_relations()?;
+        for original in &journal.usage_manage_relations {
+            let current = current_relations
+                .iter()
+                .find(|relation| relation.relation_id == original.relation_id)
+                .ok_or_else(|| ownership_mismatch(&original.path))?;
+            let expected = if restored {
+                original.clone()
+            } else {
+                normalized_relation_fact(
+                    original,
+                    journal.prepared.target_mode,
+                    &journal.prepared.target_path,
+                    &journal.prepared.current_content_fingerprint,
+                )
+            };
+            if current != &expected {
+                return Err(ownership_mismatch(&original.path));
+            }
+        }
+        Ok(())
+    }
+
     fn validate_source_relations_snapshot(
         &self,
         relation_id: &str,
@@ -1522,7 +1781,7 @@ impl LocalApplicationFacade {
             database.operation_repository().get_sync(operation_id)?
         };
         if let Some(record) = record {
-            if record.kind != "migrate_relation" {
+            if record.kind != "migrate_relation" && record.kind != "usage_manage" {
                 return Err(relation_operation_not_found(operation_id));
             }
             let journal_value = record
@@ -1605,15 +1864,43 @@ impl LocalApplicationFacade {
                     invalid_relation_migration("relationship backup metadata is corrupt")
                 })
                 .and_then(RelationBackupMetadata::from_json)?;
-            let journal = RelationMigrationJournal::from_persisted(
+            let usage_preview = journal_value
+                .get("usage_preview")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| invalid_relation_migration("usage management preview is corrupt"))?;
+            let usage_result = journal_value
+                .get("usage_result")
+                .filter(|value| !value.is_null())
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| invalid_relation_migration("usage management result is corrupt"))?;
+            let usage_manage_relations = journal_value
+                .get("usage_manage_relations")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| {
+                    invalid_relation_migration("usage management relation facts are corrupt")
+                })?
+                .unwrap_or_default();
+            let journal = RelationMigrationJournal {
                 prepared,
+                operation_kind: record.kind.clone(),
+                request_fingerprint: record.request_fingerprint.clone(),
                 expected_target_fingerprint,
                 expected_link_representation,
                 source_relations,
                 safety,
                 stage,
                 backup,
-            );
+                usage_preview,
+                usage_manage_relations,
+                usage_result,
+            };
             let result = record
                 .result
                 .map(|value| {
@@ -1651,6 +1938,8 @@ impl LocalApplicationFacade {
         Ok((
             RelationMigrationJournal::from_prepared(
                 prepared,
+                "migrate_relation".into(),
+                relation_id_fingerprint(&relation.relation_id),
                 target_fingerprint,
                 snapshot.source_relations,
                 safety,
@@ -1703,6 +1992,125 @@ impl LocalApplicationFacade {
         Ok(self.library_runtime.snapshot()?.root.clone())
     }
 
+    pub(crate) fn attach_usage_manage_preview(
+        &self,
+        operation_id: OperationId,
+        preview: PreparedUsageChange,
+        relations: Vec<DeploymentRelationFact>,
+    ) -> AppResult<()> {
+        let (mut journal, existing_result, phase) =
+            self.load_relation_migration_journal(operation_id)?;
+        if journal.operation_kind != "usage_manage" {
+            return Err(invalid_relation_migration(
+                "operation is not a usage management preview",
+            ));
+        }
+        let preview_ids = preview
+            .entry_evidence
+            .first()
+            .map(|evidence| evidence.relation_ids.clone())
+            .ok_or_else(|| invalid_relation_migration("usage management evidence is missing"))?;
+        let mut relation_ids = relations
+            .iter()
+            .map(|relation| relation.relation_id.clone())
+            .collect::<Vec<_>>();
+        relation_ids.sort();
+        relation_ids.dedup();
+        if relation_ids != preview_ids
+            || !relations
+                .iter()
+                .any(|relation| relation == &journal.prepared.relation)
+            || relations.iter().any(|relation| {
+                relation.path != journal.prepared.relation.path
+                    || relation.skill_id != journal.prepared.relation.skill_id
+                    || relation.file_representation != journal.prepared.relation.file_representation
+                    || relation.content_fingerprint != journal.prepared.current_content_fingerprint
+            })
+        {
+            return Err(invalid_relation_migration(
+                "usage management evidence does not match its relation snapshot",
+            ));
+        }
+        if let Some(existing) = journal.usage_preview.as_ref() {
+            if existing != &preview || journal.usage_manage_relations != relations {
+                return Err(invalid_relation_migration(
+                    "operation id is bound to different usage management facts",
+                ));
+            }
+            return Ok(());
+        }
+        journal.usage_preview = Some(preview);
+        journal.usage_manage_relations = relations;
+        let state = existing_result
+            .as_ref()
+            .map(|result| result.state)
+            .unwrap_or(RelationMigrationState::Prepared);
+        self.persist_relation_operation(
+            operation_id,
+            phase,
+            state,
+            &journal,
+            existing_result.as_ref(),
+            None,
+        )
+    }
+
+    pub(crate) fn usage_manage_preview(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<Option<PreparedUsageChange>> {
+        let (journal, _, _) = self.load_relation_migration_journal(operation_id)?;
+        if journal.operation_kind != "usage_manage" {
+            return Err(invalid_relation_migration(
+                "operation is not a usage management preview",
+            ));
+        }
+        Ok(journal.usage_preview)
+    }
+
+    pub(crate) fn usage_manage_result(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<Option<UsageChangeResult>> {
+        let (journal, _, _) = self.load_relation_migration_journal(operation_id)?;
+        if journal.operation_kind != "usage_manage" {
+            return Err(invalid_relation_migration(
+                "operation is not a usage management preview",
+            ));
+        }
+        Ok(journal.usage_result)
+    }
+
+    pub(crate) fn store_usage_manage_result(
+        &self,
+        operation_id: OperationId,
+        usage_result: UsageChangeResult,
+    ) -> AppResult<()> {
+        let (mut journal, relation_result, phase) =
+            self.load_relation_migration_journal(operation_id)?;
+        if journal.operation_kind != "usage_manage" {
+            return Err(invalid_relation_migration(
+                "operation is not a usage management preview",
+            ));
+        }
+        journal.usage_result = Some(usage_result);
+        let state = relation_result
+            .as_ref()
+            .map(|result| result.state)
+            .unwrap_or(RelationMigrationState::Failed);
+        let error_code = relation_result
+            .as_ref()
+            .and_then(|result| result.error_code);
+        self.persist_relation_operation(
+            operation_id,
+            phase,
+            state,
+            &journal,
+            relation_result.as_ref(),
+            error_code,
+        )
+    }
+
     fn persist_relation_operation(
         &self,
         operation_id: OperationId,
@@ -1713,8 +2121,9 @@ impl LocalApplicationFacade {
         error_code: Option<ErrorCode>,
     ) -> AppResult<()> {
         let prepared = &journal.prepared;
-        let mut record = super::journal_record(operation_id, "migrate_relation", phase, error_code);
-        record.request_fingerprint = prepared.relation_id.clone();
+        let mut record =
+            super::journal_record(operation_id, &journal.operation_kind, phase, error_code);
+        record.request_fingerprint = journal.request_fingerprint.clone();
         record.inverse = Some(InverseOperation {
             kind: "rollback_relation_migration".into(),
             preconditions: json!({
@@ -1738,6 +2147,9 @@ impl LocalApplicationFacade {
                 "safety": journal.safety,
                 "stage": journal.stage,
                 "backup": journal.backup.to_json(),
+                "usage_preview": journal.usage_preview,
+                "usage_manage_relations": journal.usage_manage_relations,
+                "usage_result": journal.usage_result,
             },
             "phase": phase,
         });
@@ -1903,6 +2315,40 @@ fn relation_facts_match(
     let mut expected = prepared.clone();
     expected.content_fingerprint = current.content_fingerprint.clone();
     current == &expected
+}
+
+fn normalized_relation_fact(
+    relation: &DeploymentRelationFact,
+    mode: DeploymentMode,
+    target_path: &str,
+    content_fingerprint: &str,
+) -> DeploymentRelationFact {
+    let mut normalized = relation.clone();
+    normalized.relationship = match mode {
+        DeploymentMode::ManagedCopy => RelationshipType::ManagedCopy,
+        DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+            RelationshipType::ManagedLink
+        }
+    };
+    normalized.file_representation = representation_for_mode(mode);
+    normalized.ownership = OwnershipState::SkillhubManaged;
+    normalized.link_target_path =
+        (mode != DeploymentMode::ManagedCopy).then(|| target_path.to_owned());
+    normalized.link_target_path_key = None;
+    normalized.link_target_directory_id = None;
+    normalized.content_fingerprint = content_fingerprint.to_owned();
+    normalized.active = true;
+    normalized
+}
+
+fn original_usage_relation_facts(
+    journal: &RelationMigrationJournal,
+) -> Vec<DeploymentRelationFact> {
+    if journal.usage_manage_relations.is_empty() {
+        vec![journal.prepared.relation.clone()]
+    } else {
+        journal.usage_manage_relations.clone()
+    }
 }
 
 fn validate_non_symlink_directory(path: &Path) -> AppResult<()> {
@@ -2279,6 +2725,15 @@ fn remove_created_relation_entry(journal: &RelationMigrationJournal) -> AppResul
         Path::new(&journal.prepared.target_path),
     )?;
     match fs::symlink_metadata(path) {
+        Ok(metadata) if journal.prepared.target_mode == DeploymentMode::ManagedCopy => {
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
+                || DeploymentFilesystem::hash_tree(path)? != journal.expected_target_fingerprint
+            {
+                return Err(ownership_mismatch(path));
+            }
+            remove_relation_entry(path)
+        }
         Ok(metadata) if metadata.file_type().is_symlink() => {
             let target = fs::read_link(path).map_err(|error| io_conflict(path, error))?;
             if target.as_path() != Path::new(&journal.prepared.target_path) {
@@ -2294,8 +2749,22 @@ fn remove_created_relation_entry(journal: &RelationMigrationJournal) -> AppResul
 
 /// Removes the staged conversion link created by this operation, refusing to
 /// touch anything that is not exactly a link pointing at the prepared target.
-fn remove_staged_relation_link(staging: &Path, target: &Path) -> AppResult<()> {
+fn remove_staged_relation_entry(
+    staging: &Path,
+    target: &Path,
+    mode: DeploymentMode,
+    expected_fingerprint: &str,
+) -> AppResult<()> {
     match fs::symlink_metadata(staging) {
+        Ok(metadata) if mode == DeploymentMode::ManagedCopy => {
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
+                || DeploymentFilesystem::hash_tree(staging)? != expected_fingerprint
+            {
+                return Err(ownership_mismatch(staging));
+            }
+            remove_relation_entry(staging)
+        }
         Ok(metadata) if metadata.file_type().is_symlink() => {
             let link_target =
                 fs::read_link(staging).map_err(|error| io_conflict(staging, error))?;
@@ -2326,11 +2795,22 @@ fn validate_relation_for_rollback(
     let prepared = &journal.prepared;
     if current.path != prepared.relation.path
         || !current.active
-        || current.relationship != RelationshipType::ManagedLink
+        || current.relationship
+            != match prepared.target_mode {
+                DeploymentMode::ManagedCopy => RelationshipType::ManagedCopy,
+                DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                    RelationshipType::ManagedLink
+                }
+            }
         || current.ownership != OwnershipState::SkillhubManaged
         || current.file_representation != journal.expected_link_representation
         || current.content_fingerprint != prepared.current_content_fingerprint
-        || current.link_target_path.as_deref() != Some(prepared.target_path.as_str())
+        || current.link_target_path.as_deref()
+            != if prepared.target_mode == DeploymentMode::ManagedCopy {
+                None
+            } else {
+                Some(prepared.target_path.as_str())
+            }
     {
         return Err(ownership_mismatch(&current.path));
     }
@@ -2351,7 +2831,15 @@ fn validate_relation_for_rollback(
                 return Err(ownership_mismatch(&current.path));
             }
         }
-        DeploymentMode::ManagedCopy => return Err(ownership_mismatch(&current.path)),
+        DeploymentMode::ManagedCopy => {
+            if metadata.file_type().is_symlink()
+                || !metadata.is_dir()
+                || DeploymentFilesystem::hash_tree(&current.path)?
+                    != journal.expected_target_fingerprint
+            {
+                return Err(ownership_mismatch(&current.path));
+            }
+        }
     }
     Ok(())
 }
@@ -2561,6 +3049,21 @@ fn relation_operation_not_found(id: OperationId) -> AppError {
     AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
         .with_param("operation_id", id.to_string())
         .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+fn relation_migration_request_fingerprint(request: &PrepareRelationMigration) -> AppResult<String> {
+    let bytes = serde_json::to_vec(request)
+        .map_err(|_| invalid_relation_migration("relationship request could not be encoded"))?;
+    Ok(content_request_fingerprint(&bytes))
+}
+
+fn relation_id_fingerprint(relation_id: &str) -> String {
+    content_request_fingerprint(relation_id.as_bytes())
+}
+
+fn content_request_fingerprint(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    format!("sha256:{digest:x}")
 }
 
 fn invalid_relation_migration(detail: impl Into<String>) -> AppError {

@@ -3073,6 +3073,8 @@ export type PreparedImport = {
 export type PreparedRelationMigration = {
 	operation_id: OperationId,
 	relation_id: string,
+	/**  Whether the registered target was a shared directory at preview time. */
+	target_is_shared?: boolean,
 	relation: DeploymentRelationFact,
 	current_content_fingerprint: string,
 	target_path: string,
@@ -3554,7 +3556,7 @@ export type RelationMigrationResult = {
  */
 export type RelationMigrationState = "prepared" | "committed" | "rolled_back" | "failed" | "cancelled";
 
-export type RelationMigrationTargetMode = "managed_link";
+export type RelationMigrationTargetMode = "managed_link" | "managed_copy";
 
 /**
  *  Stable identity for deduplicating one Skill's use at one verified physical
@@ -5202,7 +5204,7 @@ export type UpstreamOrigin = {
 	directory: string,
 };
 
-export type UsageChangeAction = "release";
+export type UsageChangeAction = "release" | "manage";
 
 /**
  *  A consumer included in the full impact snapshot. One item can summarize
@@ -5230,7 +5232,7 @@ export type UsageChangeImpact = {
 	description: string,
 };
 
-export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only";
+export type UsageChangeImpactAction = "remove_link" | "keep_independent_copy" | "remove_copy_with_backup" | "record_only" | "manage_link" | "manage_copy";
 
 export type UsageChangeItemResult = {
 	relation_ids: string[],

@@ -8,12 +8,12 @@ use skillhub_core::agent::{
 use skillhub_core::deployment::observed_path_key;
 use skillhub_core::deployment::reconcile::path_lives_under_platform;
 use skillhub_core::deployment::{
-    plan_relation_conversion, plan_target_preview, DeploymentBlockReason, DeploymentMode,
-    DeploymentPairFacts, DeploymentPlanInput, DeploymentPlanRequest, DeploymentPlanner,
-    DeploymentPreference, DeploymentPreviewDisposition, ExistingDeployment, ExistingOwnership,
-    ObservedMatchState, ObservedOrigin, RegisteredTargetIndex, RelationConversionFacts,
-    TargetChange, TargetConflict, TargetConflictReason, TargetFact, TargetFactSource,
-    VerifiedTarget,
+    plan_relation_conversion, plan_relation_conversion_for_mode, plan_target_preview,
+    DeploymentBlockReason, DeploymentMode, DeploymentPairFacts, DeploymentPlanInput,
+    DeploymentPlanRequest, DeploymentPlanner, DeploymentPreference, DeploymentPreviewDisposition,
+    ExistingDeployment, ExistingOwnership, ObservedMatchState, ObservedOrigin,
+    RegisteredTargetIndex, RelationConversionFacts, TargetChange, TargetConflict,
+    TargetConflictReason, TargetFact, TargetFactSource, VerifiedTarget,
 };
 use skillhub_core::relationship::classifier::{
     classify_directory_capability, classify_observed_relation,
@@ -1216,32 +1216,74 @@ fn api_request_resolves_registered_ids_and_rejects_unregistered_ids() {
 
 #[test]
 fn shared_reference_with_other_consumers_requires_shared_impact_confirmation() {
-    // Junction-only capabilities mirror the RC-15 host shape (an account
-    // without symlink privilege): the conversion still plans there, through a
-    // directory junction, and the confirmation rule is unchanged.
-    let plan = plan_relation_conversion(&RelationConversionFacts {
-        relationship: RelationshipType::SharedDirectoryReference,
-        link_capabilities: capabilities(false, true, true),
-        link_target_same_volume: true,
-        other_shared_consumers: 1,
-        target_read_only: false,
-    })
-    .expect("a shared reference with a usable link form is plannable");
-    assert_eq!(plan.mode, DeploymentMode::DirectoryJunction);
+    // Explicit copy conversion preserves the shared body and exposes the
+    // impact confirmation when other consumers remain.
+    let plan = plan_relation_conversion_for_mode(
+        &RelationConversionFacts {
+            relationship: RelationshipType::SharedDirectoryReference,
+            target_is_shared: true,
+            link_capabilities: capabilities(true, true, true),
+            link_target_same_volume: true,
+            other_shared_consumers: 1,
+            target_read_only: false,
+        },
+        DeploymentMode::ManagedCopy,
+    )
+    .expect("an explicitly requested shared full copy is plannable");
+    assert_eq!(plan.mode, DeploymentMode::ManagedCopy);
     assert!(plan.requires_shared_impact_confirmation);
 }
 
 #[test]
-fn shared_reference_without_other_consumers_needs_no_confirmation() {
-    let plan = plan_relation_conversion(&RelationConversionFacts {
+fn shared_reference_default_conversion_is_refused_until_copy_is_explicitly_requested() {
+    let error = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::SharedDirectoryReference,
+        target_is_shared: true,
         link_capabilities: capabilities(true, true, true),
         link_target_same_volume: true,
-        other_shared_consumers: 0,
+        other_shared_consumers: 1,
         target_read_only: false,
     })
-    .expect("a solo shared reference is plannable");
-    assert_eq!(plan.mode, DeploymentMode::SymbolicLink);
+    .expect_err("a shared relationship must never be silently converted into a link");
+
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+}
+
+#[test]
+fn agent_local_shared_reference_alias_can_convert_to_a_managed_link() {
+    let plan = plan_relation_conversion(&RelationConversionFacts {
+        relationship: RelationshipType::SharedDirectoryReference,
+        target_is_shared: false,
+        link_capabilities: capabilities(true, true, true),
+        link_target_same_volume: true,
+        other_shared_consumers: 1,
+        target_read_only: false,
+    })
+    .expect("an Agent-local alias can become a managed link to the library");
+
+    assert!(matches!(
+        plan.mode,
+        DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction
+    ));
+    assert!(plan.requires_shared_impact_confirmation);
+    assert!(plan.keeps_shared_body);
+}
+
+#[test]
+fn shared_reference_without_other_consumers_needs_no_confirmation() {
+    let plan = plan_relation_conversion_for_mode(
+        &RelationConversionFacts {
+            relationship: RelationshipType::SharedDirectoryReference,
+            target_is_shared: true,
+            link_capabilities: capabilities(true, true, true),
+            link_target_same_volume: true,
+            other_shared_consumers: 0,
+            target_read_only: false,
+        },
+        DeploymentMode::ManagedCopy,
+    )
+    .expect("an explicitly requested shared full copy is plannable");
+    assert_eq!(plan.mode, DeploymentMode::ManagedCopy);
     assert!(!plan.requires_shared_impact_confirmation);
 }
 
@@ -1255,6 +1297,7 @@ fn shared_reference_without_other_consumers_needs_no_confirmation() {
 fn import_copy_in_a_writable_directory_is_convertible() {
     let plan = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::ImportCopy,
+        target_is_shared: false,
         link_capabilities: capabilities(true, true, true),
         link_target_same_volume: true,
         other_shared_consumers: 0,
@@ -1269,6 +1312,7 @@ fn import_copy_in_a_writable_directory_is_convertible() {
 fn read_only_targets_refuse_conversion_and_keep_the_original() {
     let import_copy = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::ImportCopy,
+        target_is_shared: false,
         link_capabilities: capabilities(true, true, true),
         link_target_same_volume: true,
         other_shared_consumers: 0,
@@ -1287,6 +1331,7 @@ fn read_only_targets_refuse_conversion_and_keep_the_original() {
     // 即使关系形状本身可转换，只读目录也没有可执行落点。
     let observed_copy = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::ObservedCopy,
+        target_is_shared: false,
         link_capabilities: capabilities(true, true, true),
         link_target_same_volume: true,
         other_shared_consumers: 0,

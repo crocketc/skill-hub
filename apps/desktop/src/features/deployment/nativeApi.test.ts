@@ -139,6 +139,28 @@ it("attaches the canonical shared directory card model without changing the writ
   expect(target.cardModel?.directories[0].physicalIdentityKey).toBe("shared-physical");
 });
 
+it("filters a shared target to managed copy even if stale native facts offer links", async () => {
+  vi.mocked(queryApplication).mockImplementation(async (query) => query.type === "list_deployment_targets"
+    ? {
+      type: "deployment_targets",
+      payload: [{
+        id: "agent-skills-target",
+        label: "agent-skills",
+        path: "C:/Users/demo/.agents/skills",
+        available: true,
+        physical_id: "shared-physical",
+        modes: ["symbolic_link", "directory_junction", "managed_copy"],
+        agent_client_id: "agent-skills.shared",
+        shared_directory: true,
+        physical_identity_verified: true,
+      }],
+    } as never
+    : { type: "agent_directory_projection", payload: { directories: [] } } as never);
+
+  const [target] = await createNativeBatchDeploymentFacade().listTargets();
+  expect(target.modes).toEqual(["managed_copy"]);
+});
+
 it("previews the whole batch in one native call and maps pair facts", async () => {
   mockPreviewResponse();
 

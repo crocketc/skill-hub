@@ -19,9 +19,9 @@ pub use observed::{
     ObservedRowAction, ObservedStatus,
 };
 pub use planner::{
-    plan_relation_conversion, plan_target_preview, DeploymentBlockReason, DeploymentPairFacts,
-    DeploymentPlanner, DeploymentPreference, DeploymentPreviewDisposition, PairPreview,
-    RelationConversionFacts, RelationConversionPlan,
+    plan_relation_conversion, plan_relation_conversion_for_mode, plan_target_preview,
+    DeploymentBlockReason, DeploymentPairFacts, DeploymentPlanner, DeploymentPreference,
+    DeploymentPreviewDisposition, PairPreview, RelationConversionFacts, RelationConversionPlan,
 };
 pub use reconcile::{
     ExternalChangeObservation, ExternalChangeState, ReconcileAction, ReconcilePlan, ReconcileResult,

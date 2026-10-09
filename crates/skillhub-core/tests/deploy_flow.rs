@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use skillhub_core::application::{DeploymentBackend, DeploymentService};
 use skillhub_core::deployment::{
-    plan_relation_conversion, DeploymentMode, DeploymentPlan, DeploymentRecord, DeploymentState,
-    RelationConversionFacts, TargetChange, TargetPlan,
+    plan_relation_conversion, plan_relation_conversion_for_mode, DeploymentMode, DeploymentPlan,
+    DeploymentRecord, DeploymentState, RelationConversionFacts, TargetChange, TargetPlan,
 };
 use skillhub_core::relationship::RelationshipType;
 use skillhub_core::{
@@ -149,6 +149,7 @@ fn link_capabilities(symlink: bool, junction: bool) -> DeploymentCapability {
 fn conversion_plan_selects_the_platform_link_mode_for_a_managed_copy() {
     let plan = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::ManagedCopy,
+        target_is_shared: false,
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
@@ -164,6 +165,7 @@ fn conversion_plan_selects_the_platform_link_mode_for_a_managed_copy() {
 fn conversion_plan_never_degrades_to_a_copy_when_links_are_unavailable() {
     let error = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::ObservedCopy,
+        target_is_shared: false,
         link_capabilities: link_capabilities(false, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
@@ -177,6 +179,7 @@ fn conversion_plan_never_degrades_to_a_copy_when_links_are_unavailable() {
 fn conversion_plan_rejects_a_cross_volume_junction_instead_of_copying() {
     let cross_volume = RelationConversionFacts {
         relationship: RelationshipType::ObservedCopy,
+        target_is_shared: false,
         link_capabilities: link_capabilities(false, true),
         link_target_same_volume: false,
         other_shared_consumers: 0,
@@ -200,8 +203,9 @@ fn conversion_plan_requires_confirmation_and_keeps_the_shared_body() {
         other_shared_consumers: 2,
         ..relation_conversion_facts_for(RelationshipType::SharedDirectoryReference)
     };
-    let plan = plan_relation_conversion(&with_other_consumers)
-        .expect("shared reference conversion is plannable");
+    let plan =
+        plan_relation_conversion_for_mode(&with_other_consumers, DeploymentMode::ManagedCopy)
+            .expect("explicit shared full-copy conversion is plannable");
     assert!(plan.requires_shared_impact_confirmation);
     assert!(plan.keeps_shared_body);
 
@@ -209,7 +213,8 @@ fn conversion_plan_requires_confirmation_and_keeps_the_shared_body() {
         other_shared_consumers: 0,
         ..relation_conversion_facts_for(RelationshipType::SharedDirectoryReference)
     };
-    let plan = plan_relation_conversion(&solo).expect("solo shared reference still plans");
+    let plan = plan_relation_conversion_for_mode(&solo, DeploymentMode::ManagedCopy)
+        .expect("solo shared full-copy conversion still plans");
     assert!(!plan.requires_shared_impact_confirmation);
     assert!(plan.keeps_shared_body);
 }
@@ -221,6 +226,7 @@ fn conversion_plan_rejects_a_shared_direct_read_as_a_governance_todo() {
     // forbidden, so the deterministic plan must refuse it.
     let error = plan_relation_conversion(&RelationConversionFacts {
         relationship: RelationshipType::SharedDirectoryRead,
+        target_is_shared: false,
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,
@@ -245,6 +251,7 @@ fn conversion_plan_rejects_relations_without_a_convertible_entry() {
 fn relation_conversion_facts_for(relationship: RelationshipType) -> RelationConversionFacts {
     RelationConversionFacts {
         relationship,
+        target_is_shared: relationship == RelationshipType::SharedDirectoryReference,
         link_capabilities: link_capabilities(true, false),
         link_target_same_volume: true,
         other_shared_consumers: 0,

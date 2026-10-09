@@ -555,6 +555,7 @@ pub struct RollbackOriginalMigration {
 #[serde(rename_all = "snake_case")]
 pub enum RelationMigrationTargetMode {
     ManagedLink,
+    ManagedCopy,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

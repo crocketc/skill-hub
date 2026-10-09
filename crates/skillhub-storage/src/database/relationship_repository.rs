@@ -264,6 +264,16 @@ impl<'a> RelationshipRepository<'a> {
         transaction.commit().map_err(database_error)
     }
 
+    /// Upserts a group of facts for one physical usage entry atomically.
+    /// Shared-directory observations can have one fact per consuming Agent;
+    /// a physical conversion must update all of them in the same transaction.
+    pub fn upsert_deployment_relations(
+        &self,
+        relations: &[DeploymentRelationFact],
+    ) -> AppResult<()> {
+        self.upsert_deployment_relations_with_policy(relations, false)
+    }
+
     /// Restores a previously prepared relationship fact during rollback.
     ///
     /// Normal observation writes must not downgrade a SkillHub-managed fact,
@@ -275,6 +285,38 @@ impl<'a> RelationshipRepository<'a> {
             .unchecked_transaction()
             .map_err(database_error)?;
         if upsert_deployment_relation_tx_with_policy(&transaction, relation, true)? {
+            bump_relationship_revision_tx(&transaction)?;
+        }
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Restores a group of deployment facts as one rollback transaction.
+    pub fn restore_deployment_relations(
+        &self,
+        relations: &[DeploymentRelationFact],
+    ) -> AppResult<()> {
+        self.upsert_deployment_relations_with_policy(relations, true)
+    }
+
+    fn upsert_deployment_relations_with_policy(
+        &self,
+        relations: &[DeploymentRelationFact],
+        allow_managed_downgrade: bool,
+    ) -> AppResult<()> {
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let mut changed = false;
+        for relation in relations {
+            changed |= upsert_deployment_relation_tx_with_policy(
+                &transaction,
+                relation,
+                allow_managed_downgrade,
+            )?;
+        }
+        if changed {
             bump_relationship_revision_tx(&transaction)?;
         }
         transaction.commit().map_err(database_error)

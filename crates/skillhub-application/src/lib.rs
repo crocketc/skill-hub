@@ -8611,7 +8611,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.prepare_relation_migration(request)
             }
             AppCommand::CommitRelationMigration(request) => {
-                return self.commit_relation_migration(request).await
+                return self.commit_relation_migration(request)
             }
             AppCommand::RollbackRelationMigration(request) => {
                 return self.rollback_relation_migration(request).await
@@ -15882,7 +15882,58 @@ fn effective_target_capabilities(
     {
         allowed.limitations.extend(declared.limitations.clone());
     }
-    host.intersect(&allowed)
+    let mut effective = host.intersect(&allowed);
+    if target.shared_reference {
+        effective.symlink = false;
+        effective.junction = false;
+    }
+    effective
+}
+
+#[cfg(test)]
+mod target_capability_tests {
+    use super::{effective_target_capabilities, offered_modes};
+    use skillhub_core::{
+        agent::{DirectoryObservationStatus, DirectoryPrecedence, TargetScope},
+        DeploymentCapability, DeploymentMode, LogicalTarget,
+    };
+
+    #[test]
+    fn shared_targets_offer_only_managed_copy_even_when_agent_supports_links() {
+        let database = skillhub_storage::Database::open_in_memory().expect("database");
+        let root = tempfile::tempdir().expect("target root");
+        let physical_id = skillhub_core::physical_id_for_path(root.path()).expect("identity");
+        let target = LogicalTarget {
+            id: "shared-codex".into(),
+            profile_id: "codex".into(),
+            client_id: "codex.cli".into(),
+            scope: TargetScope::Global,
+            path: root.path().to_string_lossy().into_owned(),
+            agent_root_id: "root-codex".into(),
+            marker: "SKILL.md".into(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: true,
+            builtin: false,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id,
+            status: DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
+        };
+
+        let capabilities = effective_target_capabilities(
+            &database,
+            &target,
+            &DeploymentCapability::new(true, true, true),
+        );
+
+        assert_eq!(
+            offered_modes(&capabilities),
+            vec![DeploymentMode::ManagedCopy]
+        );
+    }
 }
 
 /// 计划界面可提供的部署方式（顺序即规划器偏好：链接 → 联接 → 复制）。

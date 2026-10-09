@@ -54,13 +54,19 @@ function commitResult(result: AppCommandResult) {
 }
 
 function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
+  // Shared directories are a single copy-managed destination. Keep the UI
+  // capability list aligned with the backend policy even when a discovery
+  // snapshot contains stale link capability facts.
+  const modes = target.shared_directory
+    ? target.modes.filter((mode) => mode === "managed_copy")
+    : target.modes;
   return {
     id: target.id,
     label: target.label,
     path: target.path,
     available: target.available,
     physicalId: target.physical_id,
-    modes: target.modes,
+    modes,
     agentClientId: target.agent_client_id ?? undefined,
     agentProfileId: target.agent_profile_id ?? undefined,
     sharedDirectory: target.shared_directory,

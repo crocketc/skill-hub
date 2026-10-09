@@ -13,6 +13,7 @@ use crate::{OperationId, SkillId, VersionId};
 #[serde(rename_all = "snake_case")]
 pub enum UsageChangeAction {
     Release,
+    Manage,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -102,6 +103,8 @@ pub enum UsageChangeImpactAction {
     KeepIndependentCopy,
     RemoveCopyWithBackup,
     RecordOnly,
+    ManageLink,
+    ManageCopy,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

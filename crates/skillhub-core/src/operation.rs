@@ -59,6 +59,9 @@ pub enum RelationMigrationState {
 pub struct PreparedRelationMigration {
     pub operation_id: OperationId,
     pub relation_id: String,
+    /// Whether the registered target was a shared directory at preview time.
+    #[serde(default)]
+    pub target_is_shared: bool,
     pub relation: DeploymentRelationFact,
     pub current_content_fingerprint: String,
     pub target_path: String,

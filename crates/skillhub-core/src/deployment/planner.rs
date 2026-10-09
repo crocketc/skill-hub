@@ -371,6 +371,11 @@ fn invalid_input(detail: impl Into<String>) -> AppError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationConversionFacts {
     pub relationship: RelationshipType,
+    /// Whether the entry being converted lives in the shared-directory
+    /// target itself. This is independent from `relationship`: an Agent-local
+    /// alias can reference a shared body while its own replacement entry is
+    /// still in a normal Agent directory.
+    pub target_is_shared: bool,
     /// Link capabilities probed where the replacement entry will be created.
     pub link_capabilities: DeploymentCapability,
     /// `false` when the relation entry and the central-library target live on
@@ -388,10 +393,7 @@ pub struct RelationConversionFacts {
 /// backups and journaling stay in the application layer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationConversionPlan {
-    /// Technical link form chosen from the probed capabilities via
-    /// `DeploymentMode::select`.  It is never `ManagedCopy`: a conversion that
-    /// cannot link must fail and keep the original entry instead of replacing
-    /// it with a copy.
+    /// Requested and capability-checked representation.
     pub mode: DeploymentMode,
     /// The shared directory body is never cleaned by a conversion, no matter
     /// how many consumers remain.
@@ -401,10 +403,29 @@ pub struct RelationConversionPlan {
     pub warnings: Vec<String>,
 }
 
-/// Plans one observed-copy or shared-reference conversion into a SkillHub
-/// managed link.
+/// Plans the legacy managed-link conversion. A relation physically located
+/// in a shared-directory target cannot use this entry point because that
+/// would silently request a link. Agent-local aliases of shared bodies remain
+/// eligible for links.
 pub fn plan_relation_conversion(
     facts: &RelationConversionFacts,
+) -> AppResult<RelationConversionPlan> {
+    if facts.target_is_shared {
+        return Err(shared_link_conversion_rejected());
+    }
+    let mode = match DeploymentMode::select(&facts.link_capabilities) {
+        Some(DeploymentMode::ManagedCopy) | None => return Err(link_unavailable()),
+        Some(mode) => mode,
+    };
+    plan_relation_conversion_for_mode(facts, mode)
+}
+
+/// Plans an explicitly requested relation representation. Entries physically
+/// located in shared-directory targets accept only full copies; an Agent-local
+/// alias of a shared body may use a link, with shared-impact confirmation.
+pub fn plan_relation_conversion_for_mode(
+    facts: &RelationConversionFacts,
+    mode: DeploymentMode,
 ) -> AppResult<RelationConversionPlan> {
     // 只读目标（Agent 内置等）软件不增删改：替换条目的每一步都需要写入
     // 权限，先于关系形状拒绝，避免给出永远无法执行的转换计划。
@@ -429,22 +450,21 @@ pub fn plan_relation_conversion(
         return Err(conversion_not_convertible(facts.relationship));
     }
 
-    // DeploymentMode::select owns the platform decision; a conversion only
-    // refuses the copy fallback instead of accepting it.
-    let mode = match DeploymentMode::select(&facts.link_capabilities) {
-        Some(DeploymentMode::ManagedCopy) | None => {
-            return Err(link_unavailable());
-        }
-        Some(mode) => mode,
-    };
+    let shared =
+        facts.target_is_shared || facts.relationship == RelationshipType::SharedDirectoryReference;
+    if facts.target_is_shared && mode != DeploymentMode::ManagedCopy {
+        return Err(shared_link_conversion_rejected());
+    }
+    if !mode.is_supported_by(&facts.link_capabilities) {
+        return Err(match mode {
+            DeploymentMode::ManagedCopy => copy_unavailable(),
+            DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => link_unavailable(),
+        });
+    }
     if mode == DeploymentMode::DirectoryJunction && !facts.link_target_same_volume {
         return Err(junction_cannot_span_volumes());
     }
 
-    let shared = matches!(
-        facts.relationship,
-        RelationshipType::SharedDirectoryReference
-    );
     let mut warnings = Vec::new();
     if shared {
         warnings.push("relationship.conversion.shared_body_kept".to_owned());
@@ -455,6 +475,15 @@ pub fn plan_relation_conversion(
         requires_shared_impact_confirmation: shared && facts.other_shared_consumers > 0,
         warnings,
     })
+}
+
+fn shared_link_conversion_rejected() -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+        .with_param(
+            "detail",
+            "shared directories accept managed full copies, not links",
+        )
+        .with_action(RecoveryAction::Acknowledge)
 }
 
 fn conversion_not_convertible(relationship: RelationshipType) -> AppError {
@@ -483,6 +512,15 @@ fn link_unavailable() -> AppError {
         .with_param(
             "detail",
             "link creation is unavailable at the relation location; conversion keeps the original entry instead of replacing it with a copy",
+        )
+        .with_action(RecoveryAction::OpenReadOnly)
+}
+
+fn copy_unavailable() -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+        .with_param(
+            "detail",
+            "managed full-copy creation is unavailable at the relation location",
         )
         .with_action(RecoveryAction::OpenReadOnly)
 }

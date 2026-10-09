@@ -188,7 +188,7 @@ fn remove_owned_refuses_a_managed_link_replaced_by_a_foreign_entry() {
         }
         DeploymentMode::SymbolicLink => {
             #[cfg(unix)]
-            std::os::unix::fs::remove_file(&applied.destination_path).unwrap();
+            fs::remove_file(&applied.destination_path).unwrap();
             #[cfg(not(unix))]
             {
                 let _ = applied;
@@ -234,7 +234,7 @@ fn remove_owned_refuses_a_managed_link_replaced_by_a_foreign_entry() {
         }
         DeploymentMode::SymbolicLink => {
             #[cfg(unix)]
-            std::os::unix::fs::remove_file(&applied.destination_path).unwrap();
+            fs::remove_file(&applied.destination_path).unwrap();
             #[cfg(not(unix))]
             unreachable!("non-windows hosts never reach this arm");
         }

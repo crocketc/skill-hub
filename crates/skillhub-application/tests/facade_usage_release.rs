@@ -15,17 +15,19 @@ use skillhub_core::agent::{
     OperatingSystem, PhysicalTarget, TargetScope,
 };
 use skillhub_core::api::{
-    CommitUsageChange, CreateSkill, GetRelationshipOverview, ListSkills, PrepareUsageChange,
-    RelationshipOverviewScope,
+    CommitUsageChange, CreateSkill, GetRelationshipOverview, ListSkills, PrepareRelationMigration,
+    PrepareUsageChange, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
     DirectoryRole, FileRepresentation, OwnershipState, RelationHealthReason, RelationshipType,
-    UsageChangeAction, UsageChangeImpactAction, UsageCopyDisposition, UsageDecision, UsageEntryKey,
+    UsageChangeAction, UsageChangeImpactAction, UsageChangeItemStatus, UsageCopyDisposition,
+    UsageDecision, UsageEntryKey, UsageForm,
 };
 use skillhub_core::{
-    AppCommand, AppQuery, AppQueryResult, ApplicationFacade, OperationId, SkillId,
+    AppCommand, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode, OperationId,
+    RelationMigrationTargetMode, SkillId,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -338,6 +340,383 @@ fn prepare_release(
         .expect("prepare release")
 }
 
+fn prepare_manage(
+    facade: &LocalApplicationFacade,
+    relation_id: &str,
+    form: UsageForm,
+) -> skillhub_core::relationship::PreparedUsageChange {
+    facade
+        .prepare_usage_change(PrepareUsageChange {
+            operation_id: OperationId::new(),
+            action: UsageChangeAction::Manage,
+            relation_ids: vec![relation_id.to_owned()],
+            problem_id: None,
+            skill_id: None,
+            requested_form: Some(form),
+            copy_disposition: None,
+            content_basis: None,
+            retain_entry_key: None,
+            selected_entry_keys: Vec::new(),
+            runtime_name: None,
+            base_version_id: None,
+            non_recognized_destination: None,
+        })
+        .expect("prepare manage")
+}
+
+#[tokio::test]
+async fn copy_only_conversion_creates_managed_copy_without_creating_a_second_subject() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let prepared = prepare_manage(&fixture.facade, RELATION_ID, UsageForm::FullCopy);
+
+    assert_eq!(prepared.action, UsageChangeAction::Manage);
+    assert_eq!(prepared.affected_skill_ids, vec![fixture.skill_id]);
+    assert_eq!(prepared.impacts.len(), 1);
+    assert_eq!(
+        prepared.impacts[0].action,
+        UsageChangeImpactAction::ManageCopy
+    );
+
+    let result = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("commit explicit full-copy conversion");
+    assert!(!result.recovery_required);
+    assert_eq!(result.item_results.len(), 1);
+    assert_eq!(
+        result.item_results[0].status,
+        UsageChangeItemStatus::Applied
+    );
+    assert_eq!(
+        result.item_results[0].action,
+        UsageChangeImpactAction::ManageCopy
+    );
+
+    let relation = fixture
+        .facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .into_iter()
+        .find(|relation| relation.relation_id == RELATION_ID)
+        .expect("managed relation");
+    assert_eq!(relation.skill_id, Some(fixture.skill_id));
+    assert_eq!(relation.relationship, RelationshipType::ManagedCopy);
+    assert_eq!(relation.file_representation, FileRepresentation::Copy);
+    assert_eq!(relation.ownership, OwnershipState::SkillhubManaged);
+    assert_eq!(relation.link_target_path, None);
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("managed copy fingerprint"),
+        fixture.expected_fingerprint
+    );
+    assert!(
+        fixture.original_path.is_dir(),
+        "the original remains preserved"
+    );
+}
+
+#[tokio::test]
+async fn manage_preview_rebuilds_when_persisted_preview_attachment_is_missing() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let request = PrepareUsageChange {
+        operation_id: OperationId::new(),
+        action: UsageChangeAction::Manage,
+        relation_ids: vec![RELATION_ID.into()],
+        problem_id: None,
+        skill_id: None,
+        requested_form: Some(UsageForm::FullCopy),
+        copy_disposition: None,
+        content_basis: None,
+        retain_entry_key: None,
+        selected_entry_keys: Vec::new(),
+        runtime_name: None,
+        base_version_id: None,
+        non_recognized_destination: None,
+    };
+    let original_preview = fixture
+        .facade
+        .prepare_usage_change(request.clone())
+        .expect("first management preview");
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(request.operation_id)
+            .expect("operation lookup")
+            .expect("persisted manage operation");
+        record.recovery_data["journal"]
+            .as_object_mut()
+            .expect("migration journal")
+            .remove("usage_preview");
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("simulate interruption before preview attachment");
+    }
+
+    let retried = fixture
+        .facade
+        .prepare_usage_change(request)
+        .expect("same operation can rebuild its missing preview");
+    assert_eq!(retried, original_preview);
+}
+
+#[tokio::test]
+async fn shared_link_conversion_is_rejected_by_usage_and_legacy_entrypoints() {
+    let fixture = fixture_with_directory(EntryKind::FullCopy, false, DirectoryKind::Shared).await;
+    let before =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("shared entry fingerprint before rejection");
+
+    let usage_error = fixture
+        .facade
+        .prepare_usage_change(PrepareUsageChange {
+            operation_id: OperationId::new(),
+            action: UsageChangeAction::Manage,
+            relation_ids: vec![RELATION_ID.into()],
+            problem_id: None,
+            skill_id: None,
+            requested_form: Some(UsageForm::Link),
+            copy_disposition: None,
+            content_basis: None,
+            retain_entry_key: None,
+            selected_entry_keys: Vec::new(),
+            runtime_name: None,
+            base_version_id: None,
+            non_recognized_destination: None,
+        })
+        .expect_err("shared usage must not be managed as a link");
+    assert_eq!(usage_error.code, ErrorCode::OperationConflict);
+
+    let legacy_error = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: RELATION_ID.into(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect_err("legacy migration arguments must not bypass shared copy policy");
+    assert_eq!(legacy_error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("shared entry fingerprint after rejection"),
+        before,
+        "both rejected requests preserve the shared file"
+    );
+}
+
+#[tokio::test]
+async fn shared_directory_relation_cannot_be_linked_without_agent_snapshot() {
+    let fixture = fixture_with_directory(EntryKind::FullCopy, false, DirectoryKind::Unknown).await;
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        assert!(database
+            .agent_repository()
+            .load()
+            .expect("agent snapshot query")
+            .is_none());
+        let mut directory = database
+            .directory_repository()
+            .get_node(DIRECTORY_ID)
+            .expect("directory node query")
+            .expect("directory identity");
+        directory.role = skillhub_core::relationship::DirectoryRole::SharedDirectory;
+        database
+            .directory_repository()
+            .upsert_node(&directory)
+            .expect("record the relation path as a shared directory");
+        let mut relation = database
+            .relationship_repository()
+            .list_relations()
+            .expect("relationship facts")
+            .into_iter()
+            .find(|relation| relation.relation_id == RELATION_ID)
+            .expect("shared-reference relation");
+        relation.relationship = RelationshipType::SharedDirectoryReference;
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&relation)
+            .expect("mark relationship as a shared reference");
+    }
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: RELATION_ID.into(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect_err("a shared directory is copy-only without discovery data");
+
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        error
+            .params
+            .get("detail")
+            .and_then(serde_json::Value::as_str),
+        Some("shared directories accept managed full copies, not links"),
+        "the refusal must come from the shared-target conversion policy: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn legacy_shared_link_remains_unchanged_until_explicitly_converted() {
+    if skip_if_link_creation_unavailable() {
+        return;
+    }
+    let fixture = fixture_with_directory(EntryKind::Link, false, DirectoryKind::Shared).await;
+    let original_target = std::fs::read_link(&fixture.entry_path).expect("original shared link");
+    let before = std::fs::symlink_metadata(&fixture.entry_path)
+        .expect("shared link metadata")
+        .file_type()
+        .is_symlink();
+
+    let AppQueryResult::RelationshipOverview(overview) = fixture
+        .facade
+        .query(AppQuery::GetRelationshipOverview(GetRelationshipOverview {
+            scope: RelationshipOverviewScope::All,
+        }))
+        .await
+        .expect("read historical relationship")
+    else {
+        panic!("expected relationship overview");
+    };
+    let relation = overview
+        .usage_relations
+        .iter()
+        .find(|relation| relation.evidence_relation_ids == [RELATION_ID])
+        .expect("historical shared usage remains visible");
+    assert_eq!(relation.form, Some(UsageForm::Link));
+    assert_eq!(
+        relation.management,
+        skillhub_core::relationship::UsageManagement::Unmanaged
+    );
+    assert!(
+        std::fs::symlink_metadata(&fixture.entry_path)
+            .expect("shared entry after read")
+            .file_type()
+            .is_symlink()
+            && before
+    );
+    assert_eq!(
+        std::fs::read_link(&fixture.entry_path).unwrap(),
+        original_target
+    );
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("historical shared link target fingerprint"),
+        fixture.expected_fingerprint
+    );
+}
+
+#[tokio::test]
+async fn builtin_relationship_cannot_be_managed_into_a_deployment() {
+    let fixture = fixture_with_directory(EntryKind::FullCopy, false, DirectoryKind::Builtin).await;
+    let before =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("built-in entry fingerprint before rejection");
+
+    let error = fixture
+        .facade
+        .prepare_usage_change(PrepareUsageChange {
+            operation_id: OperationId::new(),
+            action: UsageChangeAction::Manage,
+            relation_ids: vec![RELATION_ID.into()],
+            problem_id: None,
+            skill_id: None,
+            requested_form: Some(UsageForm::FullCopy),
+            copy_disposition: None,
+            content_basis: None,
+            retain_entry_key: None,
+            selected_entry_keys: Vec::new(),
+            runtime_name: None,
+            base_version_id: None,
+            non_recognized_destination: None,
+        })
+        .expect_err("read-only built-in entries cannot be managed");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("built-in entry fingerprint after rejection"),
+        before,
+        "the built-in entry remains unchanged"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn permission_failure_during_manage_keeps_original_entry() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let parent = fixture.entry_path.parent().expect("entry parent");
+    let original_mode = std::fs::metadata(parent)
+        .expect("entry parent metadata")
+        .permissions()
+        .mode();
+    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o000))
+        .expect("remove parent search permission");
+    let denied = std::fs::symlink_metadata(&fixture.entry_path)
+        .err()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied);
+    if !denied {
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(original_mode))
+            .expect("restore parent permissions after unavailable denial fixture");
+        panic!("unsearchable parent did not produce PermissionDenied");
+    }
+
+    let result = fixture.facade.prepare_usage_change(PrepareUsageChange {
+        operation_id: OperationId::new(),
+        action: UsageChangeAction::Manage,
+        relation_ids: vec![RELATION_ID.into()],
+        problem_id: None,
+        skill_id: None,
+        requested_form: Some(UsageForm::FullCopy),
+        copy_disposition: None,
+        content_basis: None,
+        retain_entry_key: None,
+        selected_entry_keys: Vec::new(),
+        runtime_name: None,
+        base_version_id: None,
+        non_recognized_destination: None,
+    });
+    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(original_mode))
+        .expect("restore parent permissions");
+
+    let error = result.expect_err("unreadable entry cannot be managed");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("original entry remains readable after restoring permissions"),
+        fixture.expected_fingerprint
+    );
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    assert!(database
+        .relationship_repository()
+        .list_relations()
+        .expect("relationship facts")
+        .iter()
+        .any(|relation| relation.relation_id == RELATION_ID && relation.active));
+}
+
 #[tokio::test]
 async fn release_skill_and_entry_selection_matches_relation_selection() {
     let fixture = fixture(EntryKind::FullCopy, true).await;
@@ -461,6 +840,106 @@ async fn release_relation_representative_expands_to_all_entry_evidence() {
             [RELATION_ID, SECOND_RELATION_ID].contains(&relation.relation_id.as_str())
                 && relation.active
         }));
+}
+
+#[tokio::test]
+async fn manage_shared_entry_converts_all_relation_evidence_once() {
+    if skip_if_link_creation_unavailable() {
+        return;
+    }
+    let fixture = fixture_with_directory(EntryKind::Link, false, DirectoryKind::Shared).await;
+    let second_client = "agent.manage-shared-evidence";
+    register_shared_directory_capability(&fixture, second_client);
+    add_shared_directory_member(&fixture, second_client);
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut second = database
+            .relationship_repository()
+            .list_relations()
+            .expect("deployment relations")
+            .into_iter()
+            .find(|relation| relation.relation_id == RELATION_ID)
+            .expect("first deployment relation");
+        second.relation_id = SECOND_RELATION_ID.into();
+        second.agent_client_id = second_client.into();
+        second.observed_at += 1;
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&second)
+            .expect("second Agent evidence for same shared entry");
+    }
+    let AppQueryResult::RelationshipOverview(overview) = fixture
+        .facade
+        .query(AppQuery::GetRelationshipOverview(GetRelationshipOverview {
+            scope: RelationshipOverviewScope::All,
+        }))
+        .await
+        .expect("relationship overview")
+    else {
+        panic!("expected relationship overview");
+    };
+    let view = overview
+        .usage_relations
+        .iter()
+        .find(|view| view.evidence_relation_ids.len() == 2)
+        .unwrap_or_else(|| panic!("unified usage views: {:#?}", overview.usage_relations));
+
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(PrepareUsageChange {
+            operation_id: OperationId::new(),
+            action: UsageChangeAction::Manage,
+            relation_ids: vec![view.relation_id.clone()],
+            problem_id: None,
+            skill_id: None,
+            requested_form: Some(UsageForm::FullCopy),
+            copy_disposition: None,
+            content_basis: None,
+            retain_entry_key: None,
+            selected_entry_keys: Vec::new(),
+            runtime_name: None,
+            base_version_id: None,
+            non_recognized_destination: None,
+        })
+        .expect("prepare unified shared-entry management");
+    let mut expected_ids = vec![RELATION_ID.to_owned(), SECOND_RELATION_ID.to_owned()];
+    expected_ids.sort();
+    assert_eq!(prepared.entry_evidence[0].relation_ids, expected_ids);
+    assert_eq!(
+        prepared.impacts[0].action,
+        UsageChangeImpactAction::ManageCopy
+    );
+
+    let result = fixture
+        .facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("commit the shared conversion once");
+    assert!(!result.recovery_required);
+    assert!(fixture.entry_path.is_dir());
+    assert!(!std::fs::symlink_metadata(&fixture.entry_path)
+        .expect("converted shared entry")
+        .file_type()
+        .is_symlink());
+
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let relations = database
+        .relationship_repository()
+        .list_relations()
+        .expect("managed shared relation evidence");
+    for relation_id in [RELATION_ID, SECOND_RELATION_ID] {
+        let relation = relations
+            .iter()
+            .find(|relation| relation.relation_id == relation_id)
+            .expect("shared relation evidence remains queryable");
+        assert_eq!(relation.relationship, RelationshipType::ManagedCopy);
+        assert_eq!(relation.file_representation, FileRepresentation::Copy);
+        assert_eq!(relation.ownership, OwnershipState::SkillhubManaged);
+    }
 }
 
 #[tokio::test]

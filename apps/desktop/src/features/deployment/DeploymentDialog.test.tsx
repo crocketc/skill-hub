@@ -255,6 +255,34 @@ it("disables mode preferences that the selected targets do not all support (DEV-
   expect((screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement).disabled).toBe(false);
 });
 
+it("offers only copy preference for a shared directory target", async () => {
+  const user = userEvent.setup();
+  const shared = {
+    ...deploymentTargetsFixture()[0],
+    id: "shared-skills",
+    label: "共享目录",
+    sharedDirectory: true,
+    modes: ["managed_copy" as const],
+  };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  const facade: BatchDeploymentFacade = { listTargets: async () => [shared], preview, commit: vi.fn() };
+
+  await renderDialog(facade);
+  const checkbox = await screen.findByRole("checkbox", { name: "Agent共享目录" });
+  const linkOption = screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement;
+  const copyOption = screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement;
+  await user.click(checkbox);
+
+  expect(linkOption.disabled).toBe(true);
+  expect(copyOption.disabled).toBe(false);
+  await user.selectOptions(screen.getByRole("combobox", { name: "部署方式" }), "copy");
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(preview).toHaveBeenCalledWith(
+    [expect.objectContaining({ targetIds: ["shared-skills"], preference: "copy" })],
+    undefined,
+  );
+});
+
 it("retries every selectable member of a failed merged card (DEV-106)", async () => {
   const user = userEvent.setup();
   const pairs = [pair({ pairId: "skill-pdf:codex", logicalTargetIds: ["codex-cli", "codex-desktop"], targetLabel: "OpenAI" })];

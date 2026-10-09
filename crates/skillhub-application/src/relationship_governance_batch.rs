@@ -189,6 +189,48 @@ impl LocalApplicationFacade {
         }))
     }
 
+    /// Resolve physical shared identity from Agent targets and registered
+    /// directory roles. A shared-reference fact only keeps an unverified
+    /// physical target copy-only; it does not classify a confirmed local alias.
+    pub(crate) fn relation_target_is_shared(
+        database: &Database,
+        relation: &skillhub_core::relationship::DeploymentRelationFact,
+    ) -> AppResult<bool> {
+        if let Some(snapshot) = database.agent_repository().load()? {
+            let matched_target = snapshot
+                .logical_targets
+                .iter()
+                .filter(|target| {
+                    target.client_id == relation.agent_client_id
+                        && skillhub_core::deployment::path_lives_under(&relation.path, &target.path)
+                })
+                .max_by_key(|target| target.path.len());
+            if let Some(target) = matched_target {
+                return Ok(target.shared_reference);
+            }
+        }
+
+        // The persisted directory role can still prove that a legacy alias
+        // lives in an Agent-local destination when discovery has no matching
+        // logical target. An absent/unknown directory fact cannot prove that
+        // a shared-reference entry is local, so keep that conversion copy-only.
+        let directory = relation
+            .directory_node_id
+            .as_deref()
+            .map(|node_id| database.directory_repository().get_node(node_id))
+            .transpose()?
+            .flatten()
+            .filter(|node| node.exists);
+        match directory.map(|node| node.role) {
+            Some(skillhub_core::relationship::DirectoryRole::AgentNative)
+            | Some(skillhub_core::relationship::DirectoryRole::Project) => Ok(false),
+            Some(skillhub_core::relationship::DirectoryRole::SharedDirectory) => Ok(true),
+            Some(skillhub_core::relationship::DirectoryRole::CentralLibrary) | None => Ok(relation
+                .relationship
+                == skillhub_core::relationship::RelationshipType::SharedDirectoryReference),
+        }
+    }
+
     /// 独立治理历史查询（plan 7.10）：只读写入时固化的显示快照，分页、
     /// 最新在前；不回查可能已删除的 Agent/项目，也不混入通用 operations。
     pub(crate) fn list_governance_history(
@@ -788,12 +830,9 @@ impl LocalApplicationFacade {
         &self,
         child: &GovernanceBatchChild,
     ) -> RelationGovernanceBatchItem {
-        match self
-            .commit_relation_migration(CommitRelationMigration {
-                prepared_relation_migration_id: child.operation_id,
-            })
-            .await
-        {
+        match self.commit_relation_migration(CommitRelationMigration {
+            prepared_relation_migration_id: child.operation_id,
+        }) {
             Ok(AppCommandResult::RelationMigrationResult(result)) => RelationGovernanceBatchItem {
                 relation_id: child.relation_id.clone(),
                 operation_id: Some(result.operation_id),
