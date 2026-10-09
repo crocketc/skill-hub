@@ -175,7 +175,7 @@ function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenar
       if (scenario === "warning") {
         return {
           ...pair,
-          warnings: ["The target directory is a junction; the Skill will deploy through it."],
+          warnings: ["The target directory is a junction; dispatch will use it."],
         };
       }
       // 部分受阻：target-2 不可达（blocked 不拖住其余可执行项）。

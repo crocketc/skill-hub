@@ -11,7 +11,7 @@ import { RescanWizard } from "./RescanWizard";
 const PREVIEW_LIBRARY_PATH = "C:\\Users\\Preview\\SkillHub\\skills";
 // Long Windows path with deep segments: exercises wrapping without overflow.
 const PREVIEW_LONG_LIBRARY_PATH = [
-  "D:\\very-long-library-root-segment\\skillhub-central-library",
+  "D:\\very-long-library-root-segment\\skillhub-sample-library",
   "team-workspaces\\agent-platform\\imports-2026\\rediscovery-preview",
   "nested\\library-root",
 ].join("\\");

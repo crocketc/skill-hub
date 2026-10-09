@@ -165,10 +165,10 @@ test.describe("deployment flow shell", () => {
     await page.getByLabel("Preview Agent 2").check();
     await page.getByRole("button", { name: "Preview" }).click();
 
-    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Recommend copy instead" });
+    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Full-copy dispatch is recommended" });
     await expect(copyGroup).toBeVisible();
     await expect(
-      copyGroup.getByText("This account may not create directory links. Copy deployment is available instead."),
+      copyGroup.getByText("This account cannot create links. You can choose full-copy dispatch instead."),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm and add" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Regenerate final preview" })).toBeVisible();
@@ -230,16 +230,16 @@ test.describe("batch deployment flow", () => {
     await page.getByRole("button", { name: "Preview" }).click();
 
     // 五桶汇总如实呈现：未确认的回退计入「Still blocked」，不计为复制。
-    await expect(page.getByText("Link 0 · Copy 0 · No change 0 · Excluded 0 · Still blocked 2")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 0 · No change 0 · Excluded 0 · Still blocked 2")).toBeVisible();
 
-    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Recommend copy instead" });
+    const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Full-copy dispatch is recommended" });
     await expect(copyGroup).toBeVisible();
     await page.getByRole("checkbox", { name: "Confirm copy fallback for the whole group" }).check();
     await expect(copyGroup.getByTestId("confirmed-copy")).toHaveCount(2);
 
     // 确认后必须重新生成最终预览；确认经指纹校验被保留。
     await page.getByRole("button", { name: "Regenerate final preview" }).click();
-    await expect(page.getByText("Link 0 · Copy 2 · No change 0 · Excluded 0 · Still blocked 0")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 2 · No change 0 · Excluded 0 · Still blocked 0")).toBeVisible();
     await expect(copyGroup.getByTestId("confirmed-copy")).toHaveCount(2);
 
     await page.getByRole("button", { name: "Confirm and add" }).click();
@@ -260,7 +260,7 @@ test.describe("batch deployment flow", () => {
 
     // 排除与确认一样改变提交范围：必须经「Regenerate final preview」落地。
     await page.getByRole("button", { name: "Regenerate final preview" }).click();
-    await expect(page.getByText("Link 0 · Copy 7 · No change 0 · Excluded 1 · Still blocked 0")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 7 · No change 0 · Excluded 1 · Still blocked 0")).toBeVisible();
 
     await page.getByRole("button", { name: "Confirm and add" }).click();
     await expect(page.getByText("Adding finished", { exact: true })).toBeVisible();
@@ -299,16 +299,16 @@ test.describe("removal confirmations", () => {
     await expect(
       dialog.getByText("Deleting also removes the skill's unfinished edit drafts."),
     ).toBeVisible();
-    // 2026-10-08 弹窗重设计：摘要优先，各组明细默认收起；复制部署默认预勾
+    // 2026-10-08 弹窗重设计：摘要优先，各组明细默认收起；完整拷贝默认预勾
     // 「保留为独立拷贝」，因此确认按钮带默认值即可用；逐项改选在组内单选完成。
     const summary = dialog.getByRole("region", { name: "Deletion summary" });
     await expect(summary).toBeVisible();
     await expect(summary).toContainText("Skill library: the Skill's record, contents and version history will be deleted");
-    await expect(summary).toContainText("Link deployments 1:");
-    await expect(summary).toContainText("Copy deployments 1:");
+    await expect(summary).toContainText("1 links:");
+    await expect(summary).toContainText("1 full copies:");
     const confirm = page.getByRole("button", { name: "Confirm deletion from library" });
     await expect(confirm).toBeEnabled();
-    await dialog.locator("details > summary").filter({ hasText: "Copy deployments" }).click();
+    await dialog.locator("details > summary").filter({ hasText: "Full copies" }).click();
     await dialog.getByRole("radio", { name: /Delete the copy too/ }).first().check();
     await expect(confirm).toBeEnabled();
   });
@@ -354,7 +354,7 @@ test.describe("removal confirmations", () => {
     await page.goto("/__preview/removal?scenario=load-failed");
 
     await expect(page.getByRole("alert")).toContainText(
-      "Deployment target details could not be verified, so deletion was not prepared.",
+      "Usage relationship target details could not be verified, so removal was not prepared.",
     );
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Confirm deletion from library/ })).toHaveCount(0);

@@ -48,7 +48,7 @@
     "collapse": "Collapse",
     "sources": {
       "library": "Skill library",
-      "deployment": "Deployment",
+      "deployment": "Dispatch",
       "import": "Import",
       "discovery": "Discovery",
       "governance": "Governance",
@@ -114,7 +114,7 @@
       "description": "Create a new Skill from the current content with its reuse-modify source recorded; the inheritance branch is your explicit choice.",
       "modeLegend": "Usage locations",
       "modeNone": "Do not inherit usage locations",
-      "modeNoneHint": "The original Skill keeps its deployments and relations; the new Skill does not follow later updates.",
+      "modeNoneHint": "The original Skill keeps its usage relationships unchanged; the new Skill does not follow later updates.",
       "modeReplace": "Take over selected usage locations",
       "modeReplaceHint": "Take over item by item based on the real preview; shared physical targets need explicit per-target confirmation.",
       "targetsLegend": "Candidate usage locations",
@@ -371,7 +371,7 @@
       "selectAll": "Select all importable candidates",
       "analyze": "Analyze conflicts",
       "empty": "No candidates were found for this source.",
-      "nameMismatch": "Folder name differs from the name declared in SKILL.md; import is unaffected, and agents identify the skill by its folder name after deployment",
+      "nameMismatch": "Folder name differs from the name declared in SKILL.md; import is unaffected, and agents identify the Skill by its folder name after dispatch.",
       "basicCheck": {
         "not_checked": "Not checked",
         "passed": "Basic check passed",
@@ -456,7 +456,7 @@
         "sameContentDescription": "These candidates are identical copies from the same source. The suggestion is to keep one for import and skip the rest; every choice stays editable.",
         "keepBadge": "Suggested to keep",
         "skipBadge": "Suggested to skip",
-        "sameNameTitle": "Same name within the batch: different content",
+        "sameNameTitle": "Name taken in this import",
         "sameNameDescription": "These candidates share a runtime name but have different content, so each one needs an explicit disposition: import it independently with a new name, or skip it. Submission stays locked until every member is decided.",
         "renameLabel": "New name",
         "renameGuidance": "The new name must not collide with other batch candidates or existing library Skills; the final decision happens at submission.",
@@ -521,7 +521,7 @@
       "openLibrary": "Open Skill library",
       "showCompletedDetails": "Show successful and skipped details",
       "hideCompletedDetails": "Hide successful and skipped details",
-      "originalsPreserved": "Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.",
+      "originalsPreserved": "Skill files at the original location remain unchanged. Cleanup requires a separate confirmation in relationship governance and a recovery path.",
       "governanceNextLabel": "Next steps",
       "governanceNextDescription": "These Skills are now stored centrally in the library — update once, reuse everywhere. Once the original entry is removed, agents no longer read from their old location; you can later link or copy from the skill library to any agent.",
       "goHandle": "Go handle",
@@ -556,7 +556,7 @@
     "governance": {
       "eyebrow": "Relationship governance",
       "title": "Review relationship handling after import",
-      "description": "Importing into the skill library and handling original copies are separate actions; every change needs confirmation, impact details, and a recovery path.",
+      "description": "Importing a Skill into the library and handling the source-location files are separate actions. Every change requires confirmation, an impact summary, and a recovery path.",
       "aiUnavailable": "AI suggestions are not configured; deterministic relationship checks remain in force.",
       "groupActionLegend": "Default group action",
       "memberOverrideLegend": "Override for {{name}}",
@@ -569,8 +569,8 @@
       },
       "classification": {
         "exactDuplicate": "Same skill",
-        "contentIdenticalCopy": "Content-identical copies",
-        "sameNameDifferentContent": "Same name, different content",
+        "contentIdenticalCopy": "Same skill",
+        "sameNameDifferentContent": "Name taken",
         "sharedDirectoryRead": "Shared directory reads",
         "sharedDirectoryReference": "Shared directory references",
         "unrecognizedSource": "Unrecognized or unconfirmed"
@@ -584,15 +584,15 @@
       },
       "rollback": {
         "exact_duplicate": "Recovery: the original source is kept; remove the library copy to re-import later.",
-        "content_identical_copy": "Recovery: the source copy is kept; it can be converted to a managed link later.",
-        "same_name_different_content": "Recovery: the original source is kept; the same-name decision can be revisited.",
+        "content_identical_copy": "Recovery: keep the Skill file at its original location; you can later choose whether to bring it under skill library management.",
+        "same_name_different_content": "Recovery: keep the original source; the name conflict can be handled again.",
         "shared_directory_read": "Recovery: the shared directory itself is not modified by this action.",
         "shared_directory_reference": "Recovery: the shared directory and other agent references stay untouched.",
         "unrecognized_source": "Recovery: the original source is kept; the recognition task can be revisited."
       },
       "taskDetail": {
         "select_authoritative_version": "Authoritative version pending",
-        "convert_copy_to_managed_link": "Convert copy to managed link pending",
+        "convert_copy_to_managed_link": "Choose how to manage the full copy",
         "classify_same_name_skill": "Same-name skill classification pending",
         "confirm_shared_directory_impact": "Shared directory impact pending",
         "convert_shared_reference_to_managed_link": "Shared reference conversion pending",
@@ -791,8 +791,8 @@
       "excludeFailed": "Failed to exclude ({{code}}); the directory is unchanged.",
       "excludedNotice": "Excluded {{path}}. Restore it from the ignore rules in Settings.",
       "builtinLabel": "Built-in",
-      "builtinHint": "Managed by the platform itself. SkillHub observes it read-only and never deploys or deletes here; adjust it inside the agent, and import frequently used skills into SkillHub to manage them centrally.",
-      "rescanResult": "Scanned {{clients}} agents and {{targets}} deployment targets"
+      "builtinHint": "Built into the platform. SkillHub shows discovered Skills in read-only mode and does not dispatch or delete them. Make changes in the Agent itself; import frequently used Skills into the skill library to manage them there.",
+      "rescanResult": "Scanned {{clients}} agents and {{targets}} dispatch targets"
     },
     "search": {
       "label": "Search skills.sh",
@@ -900,8 +900,8 @@
       "builtin": "Built-in"
     },
     "cardDeploymentStatus": {
-      "deployed": "Deployed",
-      "partiallyDeployed": "Partially deployed"
+      "deployed": "Added",
+      "partiallyDeployed": "Partially added"
     },
     "pathPending": "Not created yet",
     "pathUnavailable": "Path unavailable",
@@ -930,12 +930,12 @@
       "rescan": "Rescan agents",
       "addCustom": "Add custom agent",
       "edit": "Edit",
-      "remove": "Remove",
+      "remove": "Remove Agent",
       "pickDirectory": "Pick directory",
       "save": "Save",
       "cancel": "Cancel"
     },
-    "managedDeploymentCount": "{{count}} managed copies",
+    "managedDeploymentCount": "{{count}} managed full copies",
     "kind": {
       "cli": "Terminal",
       "desktop": "Desktop app",
@@ -967,7 +967,7 @@
       "discoveredFact": "An Agent directory is recognised; this does not prove the Agent software is installed or will load a Skill.",
       "observed": "Observed",
       "identity": "Agent identity",
-      "managedDeployments": "Managed copies",
+      "managedDeployments": "Managed full copies",
       "brand": "Brand",
       "client": "Client",
       "instance": "Instance",
@@ -1025,10 +1025,10 @@
     "launchDeployment": "Add to Agent/Project",
     "managedSkillsCount_one": "{{count}} managed skill",
     "managedSkillsCount_other": "{{count}} managed skills",
-    "managedRelationsCount_one": "{{count}} deployment relation",
-    "managedRelationsCount_other": "{{count}} deployment relations",
+    "managedRelationsCount_one": "{{count}} usage relationship",
+    "managedRelationsCount_other": "{{count}} usage relationships",
     "builtinLabel": "Built-in · read-only",
-    "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them centrally.",
+    "builtinHint": "Adjust in the agent itself; import frequently used skills into SkillHub to manage them in one place.",
     "sharedDirectoryChip": "Shared-directory ready",
     "sharedDirectoryTitle": "Agent shared directory",
     "sharedBrandOverflow": "{{count}} more brands: {{brands}}",
@@ -1055,7 +1055,7 @@
       "save": "Save local verification"
     },
     "deploymentMethods": {
-      "label": "Deployment methods",
+      "label": "Dispatch methods",
       "readonly": "Built-in directory is read-only; importing is disabled",
       "copy": {
         "unverified": "Copy import compatibility is unverified",
@@ -1068,8 +1068,8 @@
         "unsupported": "Link import unavailable"
       },
       "managed_copy": {
-        "supported": "Managed copy supported",
-        "unsupported": "Managed copy unavailable"
+        "supported": "Full-copy dispatch supported",
+        "unsupported": "Full-copy dispatch unavailable"
       },
       "symbolic_link": {
         "supported": "Symbolic link supported",
@@ -1161,19 +1161,19 @@
     "readOnly": "Read-only facts",
     "detail": {
       "managedDeployments": {
-        "eyebrow": "Managed copies",
-        "title": "Managed skill copies in this project directory",
-        "description": "Removing the deployment relation keeps the files in place; SkillHub no longer tracks external changes of that copy.",
-        "empty": "This project directory has no managed skill copies.",
-        "unavailable": "Unable to read managed copy records.",
-        "detach": "Remove deployment relation",
-        "confirm": "Confirm relation removal",
+        "eyebrow": "Full copies · Managed",
+        "title": "Full copies in this project directory",
+        "description": "Releasing the usage relationship leaves the files in place. SkillHub stops tracking external changes to those directory entries.",
+        "empty": "This project directory has no managed full copies.",
+        "unavailable": "Full-copy records are unavailable.",
+        "detach": "Release usage relationship",
+        "confirm": "Confirm usage relationship release",
         "cancel": "Cancel",
-        "confirmBody": "Remove the deployment relation of {{skill}} ({{path}})? Files stay in place, future changes are no longer tracked; add it again or re-import to manage it.",
-        "detached": "Deployment relation removed: {{skill}}.",
-        "detachNoticeTitle": "Deployment relation removed",
-        "detachFailedTitle": "Failed to remove the deployment relation",
-        "failed": "Failed to remove the deployment relation ({{code}}). Please retry; if it persists, note the error code."
+        "confirmBody": "Release the usage relationship for {{skill}} ({{path}})? The files will stay in place, and SkillHub will stop tracking changes. To keep managing this Skill, dispatch it again or bring it under skill library management from relationship governance.",
+        "detached": "Usage relationship released: {{skill}}.",
+        "detachNoticeTitle": "Usage relationship released",
+        "detachFailedTitle": "Unable to release usage relationship",
+        "failed": "Unable to release the usage relationship ({{code}}). Try again; record the error code if the issue continues."
       },
       "eyebrow": "Project detail",
       "agentAssociations": {
@@ -1246,7 +1246,7 @@
         "skipped": "Skipped",
         "failed": "Failed"
       },
-      "detachNote": "Removing a deployment relation applies to a single relation record and is handled one by one in the managed copies list; the project detail page offers no detach entry."
+      "detachNote": "Release each usage relationship separately from the full-copy list. Project details has no entry for this action."
     }
   },
   "appShell": {
@@ -1309,7 +1309,7 @@
     "finishedTitle": "Initialization complete",
     "genericError": "The operation failed ({{code}}). Please retry or reopen the page.",
     "bootstrapUnavailable": "Bootstrap status is unavailable. Initialization and rediscovery are temporarily unavailable.",
-    "libraryDescription": "The library keeps managed skill content in one place. It is created or opened only when initialization is completed.",
+    "libraryDescription": "The skill library manages Skill subjects and their content. The library is created or opened during setup.",
     "libraryHelper": "Confirm the default location to continue, or pick another system directory as the skill library.",
     "pickOtherDirectory": "Pick another directory",
     "customDirectoryApplied": "The directory above is recorded as the skill library. It is created or opened only when initialization is completed.",
@@ -1442,7 +1442,7 @@
         "removeTagsConfirmTitle": "Confirm tag removal",
         "removeTagsConfirmDescription": "The following tags will be removed from the selected Skills:",
         "removeTagsConfirmAction": "Confirm removal",
-        "removeTagsRetained": "Kept: the Skill itself, its content and deployment relations are untouched.",
+        "removeTagsRetained": "Retained: the Skill subject, content, and usage relationships stay unchanged.",
         "removeTagsRecovery": "Recovery: add the same tags back at any time; removals are not kept as history.",
         "securityCheck": "Run security check",
         "tagOutcomeError": "Could not save tags ({{code}}).",
@@ -1789,10 +1789,10 @@
       "matrix": "Relations matrix"
     },
     "matrix": {
-      "ariaLabel": "Skill deployment relations matrix",
+      "ariaLabel": "Skill usage relationship matrix",
       "skillColumn": "Skill",
-      "loading": "Loading deployment relations…",
-      "empty": "No deployment relations yet. Add a Skill to Agents/projects to see the matrix.",
+      "loading": "Loading usage relationships…",
+      "empty": "No usage relationships yet. Dispatch a Skill to an Agent or project to see the matrix here.",
       "hint": "The matrix shows Skills on the current page; ✓ means the Skill is added to that target."
     },
     "groupMode": {
@@ -1837,7 +1837,7 @@
       "cancel": "Cancel",
       "delete": "Delete combination {{name}}",
       "deleteTitle": "Delete combination {{name}}",
-      "deleteBody": "Combination \"{{name}}\" has {{count}} members. Deleting removes only this combination record; the skills, deployment relations and files in the library are untouched. This cannot be undone.",
+      "deleteBody": "The combination \"{{name}}\" has {{count}} members. Deleting it removes only the combination record; it does not affect library Skills, usage relationships, or files. This cannot be undone.",
       "confirmDelete": "Confirm deletion",
       "export": "Export combination {{name}}",
       "exported": "Export created: {{path}}",
@@ -1864,7 +1864,7 @@
       "button": "Change runtime name",
       "eyebrow": "Skill runtime name",
       "title": "Change skill runtime name",
-      "description": "This changes name in SKILL.md, creates a new skill version, and synchronizes every managed use. The display alias stays unchanged.",
+      "description": "This updates name in SKILL.md, creates a new Skill version, and synchronizes every managed usage target. The display alias stays unchanged.",
       "input": "New runtime name",
       "preview": "Preview all impact",
       "previewing": "Checking all impact",
@@ -1872,17 +1872,17 @@
       "previewTitle": "Runtime name change preview",
       "previewMissing": "The preview did not include runtime-name details. Check the impact again.",
       "change": "The runtime name will change from “{{previous}}” to “{{next}}”.",
-      "targetsHeading": "Managed targets to update ({{count}})",
-      "noTargets": "There are no managed uses. This changes only the skill subject and creates a new version.",
+      "targetsHeading": "Managed targets to synchronize ({{count}})",
+      "noTargets": "There are no managed usage targets. This changes only the Skill subject and creates a new version.",
       "modes": {
-        "managed_copy": "Managed copy",
+        "managed_copy": "Full copy · Managed",
         "symbolic_link": "Symbolic link",
         "directory_junction": "Directory junction"
       },
       "edit": "Edit name",
       "confirm": "Confirm runtime-name change",
       "close": "Close",
-      "completed": "Runtime name changed and synchronized to {{count}} managed targets.",
+      "completed": "Runtime name updated; synchronized {{count}} targets.",
       "partial": "The runtime name change did not finish everywhere. Completed: {{applied}}. Needs attention: {{failed}}.",
       "recovery": "The change needs recovery. Review the operation in Recovery Center.",
       "openRecovery": "Open Recovery Center",
@@ -1938,11 +1938,11 @@
     },
     "insights": {
       "dependencyShapes": {
-        "importCopy": "Import copy",
-        "managedCopy": "Managed copy",
-        "managedLink": "Managed link",
-        "observedCopy": "Observed copy",
-        "observedLink": "Observed link",
+        "importCopy": "Import origin",
+        "managedCopy": "Full copy · Managed",
+        "managedLink": "Link · Managed",
+        "observedCopy": "Discovered Skill · Full copy · Unmanaged",
+        "observedLink": "Discovered Skill · Link · Unmanaged",
         "sharedDirectoryRead": "Shared directory read",
         "sharedDirectoryReference": "Shared directory reference",
         "unknown": "Shape unknown"
@@ -1955,7 +1955,7 @@
         "categories": {
           "combinationChanged": "Combination change",
           "contentSaved": "Save content",
-          "deploymentReconciled": "Deployment reconciled",
+          "deploymentReconciled": "Usage relationship reconciled",
           "preferenceChanged": "Preference change",
           "skillAdded": "Add Skill",
           "skillOperation": "Skill operation",
@@ -2055,6 +2055,14 @@
       "failureUnknown": "The operation did not complete ({{code}}). Record the code if it keeps happening.",
       "aiAnalysisLabel": "AI semantic analysis",
       "duplicatesPhase": "Analyzing semantic duplicate candidates"
+    },
+    "sourceUpdates": {
+      "actions": {
+        "associate": "Associate update source",
+        "replace": "Replace update source",
+        "unlink": "Unlink update source",
+        "check": "Check for updates"
+      }
     }
   },
   "deployment": {
@@ -2086,7 +2094,7 @@
       "unavailable": "Unavailable",
       "createAction": "Create and add",
       "createTitle": "Create the Skill directory?",
-      "createDescription": "Only the Skill directory declared by this Agent profile will be created. The Agent root will not be created; the directory will be revalidated before it is added to this deployment.",
+      "createDescription": "Only the Skill directory declared by this Agent profile will be created. The Agent root will not be created; the directory will be revalidated before dispatch.",
       "createConfirm": "Create directory",
       "createUnavailable": "This connection cannot create a pending directory yet."
     },
@@ -2110,7 +2118,7 @@
     },
     "plan": {
       "heading": "Planned additions",
-      "description": "Review the target, deployment method, and file impact before committing. Preview does not change files.",
+      "description": "Review the target, dispatch method, and file impact before committing. Preview does not change files.",
       "target": "Target",
       "operation": "Operation",
       "location": "Target directory",
@@ -2119,7 +2127,7 @@
       "impact": {
         "label": "Impact",
         "create": "A Skill entry will be created in the target directory; the source Skill in the skill library will not be changed.",
-        "noOp": "The target already has the same deployment; no files need to be written."
+        "noOp": "A matching usage relationship already exists at the target; no files need to be written."
       },
       "conflicts": {
         "generic": "The target has a conflict that must be reviewed.",
@@ -2142,25 +2150,25 @@
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
       "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
       "technicalDetails": "Technical details",
-      "finalSummary": "Link {{link}} · Copy {{copy}} · No change {{noChange}} · Excluded {{excluded}} · Still blocked {{blocked}}"
+      "finalSummary": "Links {{link}} · Full copies {{copy}} · No change {{noChange}} · Excluded {{excluded}} · Still blocked {{blocked}}"
     },
     "mode": {
-      "label": "Deployment mode",
+      "label": "Dispatch method",
       "automatic": "Automatic (recommended per target)",
       "symbolic_link": "Symbolic link",
       "directory_junction": "Directory junction",
-      "managed_copy": "Managed copy",
+      "managed_copy": "Full copy · Managed",
       "symbolic_link_unavailable": "This target does not support symbolic links",
       "directory_junction_unavailable": "This target does not support directory junctions",
-      "userLink": "Link deployment",
-      "userCopy": "Copy deployment",
-      "userLinkUnavailable": "This target does not support link deployment; copy deployment will be used instead",
+      "userLink": "Link dispatch",
+      "userCopy": "Full-copy dispatch",
+      "userLinkUnavailable": "This target does not support links. You can choose full-copy dispatch instead.",
       "technical": "Implementation"
     },
     "name_mismatch": "The skill folder name does not match the name field in SKILL.md; agents may not recognize this skill. Fix it and import again.",
     "results": {
       "heading": "Addition results",
-      "manageDeployment": "Manage this deployment",
+      "manageDeployment": "Manage this usage relationship",
       "status": {
         "succeeded": "Succeeded",
         "failed": "Failed",
@@ -2171,15 +2179,15 @@
         "skipped": "Skipped"
       },
       "failure": {
-        "targetExists": "The target directory already contains an entry with the same name, so it cannot be added again. Move or rename the existing folder and retry, or use \"Bring under skill library management\" to adopt the existing copy.",
-        "nameMismatch": "The deployed folder name does not match SKILL.md. Choose a deployment name that matches the declared Skill name; no source file was rewritten.",
+        "targetExists": "The target directory already contains an entry with the same name, so it cannot be added again. Move or rename the existing folder and retry, or use “Manage through skill library” to manage the existing copy directly.",
+        "nameMismatch": "The target folder name does not match SKILL.md. Choose a folder name that matches the declared Skill name; no source file is changed.",
         "targetChanged": "The target changed while being added. Inspect the target before retrying.",
-        "symlinkNotSupported": "The target does not support symbolic links. Try managed copy instead.",
-        "junctionNotSupported": "The target does not support directory junctions. Try managed copy instead.",
+        "symlinkNotSupported": "This target does not support symbolic links. You can choose a full copy instead.",
+        "junctionNotSupported": "This target does not support directory junctions. You can choose a full copy instead.",
         "ownershipMismatch": "The target content or ownership changed. Inspect the target before retrying.",
         "ownershipUnknown": "The target ownership could not be verified. Inspect the target before retrying.",
         "securityBlocked": "A security check blocked the addition. Review the findings before retrying.",
-        "invalidCapability": "The target does not support the selected deployment mode. Choose another mode or target."
+        "invalidCapability": "The target does not support the selected dispatch method. Choose another method or target."
       }
     },
     "tracker": {
@@ -2193,28 +2201,28 @@
     },
     "preference": {
       "automatic": "Choose automatically",
-      "link": "Link deployment",
-      "copy": "Copy deployment"
+      "link": "Link",
+      "copy": "Full copy"
     },
     "regeneratePreview": "Regenerate final preview",
     "groups": {
       "selected": "Execute as selected",
-      "recommendCopy": "Recommend copy instead",
+      "recommendCopy": "Full-copy dispatch is recommended",
       "noChange": "No change needed",
       "blocked": "Cannot execute",
       "selectAll": "Select all in this group",
       "confirmAll": "Confirm copy fallback for the whole group",
-      "confirmCopyHint": "Check to confirm placement as a copy, then regenerate the final preview.",
+      "confirmCopyHint": "Selecting this confirms full-copy dispatch. Generate the final preview again after confirming.",
       "includeHint": "Check to include in this batch; uncheck to exclude the target.",
-      "confirmedCopy": "Confirmed to deploy as a copy; it will run on commit."
+      "confirmedCopy": "Confirmed full-copy dispatch; it will execute on commit."
     },
     "blockReason": {
-      "link_permission_unavailable": "This account may not create directory links. Copy deployment is available instead.",
-      "link_filesystem_unsupported": "This disk or partition does not support directory links. Copy deployment is available instead.",
+      "link_permission_unavailable": "This account cannot create links. You can choose full-copy dispatch instead.",
+      "link_filesystem_unsupported": "This disk or partition does not support links. You can choose full-copy dispatch instead.",
       "target_occupied": "The target directory already contains an entry with the same name.",
       "path_unavailable": "The target directory is currently unreachable. Check the disk or network connection and retry.",
       "shared_impact_requires_resolution": "Other agents also read this shared directory; resolve the shared impact first.",
-      "sharedImpactDetail": "Resolve the shared-directory impact in relationship governance before deploying.",
+      "sharedImpactDetail": "Resolve the shared-directory impact in relationship governance before dispatching.",
       "committedBlocked": "This target was not executed and stays as it is."
     }
   },
@@ -2315,14 +2323,14 @@
     "summary": {
       "title": "Deletion summary",
       "central": "Skill library: the Skill's record, contents and version history will be deleted",
-      "links": "Link deployments {{count}}: the link files will be removed along with it",
-      "copies": "Copy deployments {{count}}: kept as independent copies by default; you can change each to delete the copy",
+      "links": "{{count}} links: deleting the Skill will also remove the link files",
+      "copies": "{{count}} full copies: kept as independent copies by default; you can choose to remove each copy",
       "imports": "Imported-copy relations {{count}}: the relation records are deleted with the Skill; the original files are untouched"
     },
     "loading": "Loading deletion impact…",
     "loadError": "Deletion impact could not be loaded. Try again.",
     "errors": {
-      "deploymentTargetUnavailable": "Deployment target details could not be verified, so deletion was not prepared.",
+      "deploymentTargetUnavailable": "Usage relationship target details could not be verified, so removal was not prepared.",
       "previewInvalidated": "This preview is no longer valid. Please review and confirm again."
     },
     "commitError": "Deletion did not complete. The managed library was preserved; review and retry.",
@@ -2333,15 +2341,15 @@
     "choiceLabel": "Target copy handling",
     "choose": "Choose an action",
     "choices": {
-      "keep": "Keep the files at the target and remove the relation (the library record is deleted too)",
+      "keep": "Keep the files at their targets and release the usage relationships (relationship records are cleared when the Skill is deleted)",
       "remove": "Delete the copy at the target (remove from target)",
-      "convert": "Convert to an independent copy (keep files, remove the deployment relation)"
+      "convert": "Keep each full copy as an independent copy and release its usage relationship"
     },
     "confirm": "Confirm deletion from library",
     "submitting": "Deleting from library…",
     "groups": {
-      "links": "Link deployments",
-      "copies": "Copy deployments",
+      "links": "Links",
+      "copies": "Full copies",
       "linksOutcome": "Link files will be removed",
       "copiesOutcome": "Kept as independent copies by default",
       "needsConfirmation": "Confirmation needed",
@@ -2350,13 +2358,13 @@
       "copyKeepHint": "The copy stays where it is and keeps working; SkillHub no longer manages it",
       "copyDelete": "Delete the copy too",
       "copyDeleteHint": "The copy files in the target directory will be deleted",
-      "sharedConfirm": "This directory is shared by several deployments; I confirm deleting the files in it"
+      "sharedConfirm": "This directory is used by multiple usage relationships. I confirm deleting its files."
     },
     "batch": {
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",
-      "description": "{{count}} Skills are selected for deletion from the library. Handle every deployment relationship first.",
-      "noDeployments": "No deployment relations need handling.",
+      "description": "You selected {{count}} Skills to delete from the library. Handle their usage relationships first.",
+      "noDeployments": "There are no usage relationships to handle before deletion.",
       "continue": "Continue deletion",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
@@ -2397,7 +2405,7 @@
       "continue": "Continue (re-confirm)",
       "continuing": "Re-checking…",
       "errorCodes": {
-        "deployment_ownership_mismatch": "Deletion failed: the target content no longer matches the deployment relation.",
+        "deployment_ownership_mismatch": "Deletion failed: the target contents do not match the usage relationship record.",
         "deployment_target_changed": "Deletion failed: the target changed before it could be deleted.",
         "deployment_security_check_blocked": "Deletion failed: a security check did not pass, so deletion was blocked.",
         "target_ownership_unknown": "Deletion failed: target ownership could not be confirmed, so deletion was blocked.",
@@ -2412,20 +2420,20 @@
   "undeploy": {
     "eyebrow": "Remove from Agent/Project",
     "heading": "Remove from {{target}}?",
-    "description": "Removing from the target deletes the copy at the target, or converts the files into an independent copy and removes the deployment relation.",
-    "sharedNotice": "This target is shared by several deployment relations: only this relation is removed and the files stay available to the others.",
+    "description": "Removing an entry handles its files according to the relationship form. You can also keep a full copy as an independent copy and release the usage relationship.",
+    "sharedNotice": "This target is shared by multiple usage relationships. Releasing the current relationship leaves the files for the other relationships.",
     "choiceLabel": "Removal handling",
     "choose": "Choose an action",
     "choices": {
-      "keepShared": "Remove only this relation (shared files stay with the others)",
+      "keepShared": "Release only this usage relationship (the shared files stay available to the others)",
       "remove": "Delete the copy at the target",
-      "keepCopy": "Convert to an independent copy (keep files, remove the deployment relation)"
+      "keepCopy": "Keep the full copy as an independent copy (release the usage relationship)"
     },
     "confirm": "Confirm removal from target",
     "submitting": "Removing from target…",
     "loadError": "Removal impact could not be loaded.",
     "commitError": "Removing from the target did not complete. Review the target and retry.",
-    "retained": "Kept: the Skill, its version history and other deployment relations in the library are unaffected.",
+    "retained": "The library Skill, version history, and other usage relationships are not affected.",
     "recovery": "Recovery: adding the same Skill again rebuilds the copy at the target.",
     "flow": {
       "eyebrow": "Release usage relationship",
@@ -2435,8 +2443,16 @@
       "relationDescription": "Review the impact of releasing this {{target}} relationship.",
       "unknownTarget": "unverified target",
       "entriesHeading": "Entries affected",
-      "groups": { "agent": "Agent", "shared": "Shared directory", "project": "Project" },
-      "forms": { "link": "Link", "full_copy": "Full copy", "unknown": "Form not verified" },
+      "groups": {
+        "agent": "Agent",
+        "shared": "Shared directory",
+        "project": "Project"
+      },
+      "forms": {
+        "link": "Link",
+        "full_copy": "Full copy",
+        "unknown": "Form not verified"
+      },
       "noTargets": "No releasable entries in this group.",
       "copyHandling": "Full copy handling",
       "copyChoices": {
@@ -2449,20 +2465,26 @@
       "consumerHeading": "All affected consumers",
       "noOtherConsumers": "No other consumers were reported.",
       "entry": "Entry: {{path}}",
-      "consumerManagement": { "managed": "Managed by SkillHub", "unmanaged": "Not managed by SkillHub" },
-      "consumerHealth": { "normal": "Verified", "attention": "Needs review" },
+      "consumerManagement": {
+        "managed": "Managed by SkillHub",
+        "unmanaged": "Not managed by SkillHub"
+      },
+      "consumerHealth": {
+        "normal": "Verified",
+        "attention": "Needs review"
+      },
       "unmanagedWarning": "This location is not managed by SkillHub. The file may remain readable by the Agent after its relationship record ends.",
-      "recordOnlyNote": "Only the relationship record will end. This action does not change the target file.",
+      "recordOnlyNote": "This action releases the usage relationship without changing the target file.",
       "actionNotes": {
         "remove_link": "The verified link at this entry will be removed.",
         "keep_independent_copy": "The target copy stays in place and becomes independent of the library Skill.",
         "remove_copy_with_backup": "The target copy will be removed after a recovery copy is created.",
-        "record_only": "Only the relationship record will end. The file may remain readable by the Agent.",
+        "record_only": "This action releases the usage relationship; the Agent may still read the file.",
         "manage_link": "Change this entry into a link to the skill subject.",
         "manage_copy": "Keep the target files and bring them under skill library synchronization.",
-        "synchronize": "Update the managed target to the current library subject version.",
-        "repair": "Back up the occupying target, then repair the managed link.",
-        "restore": "Restore the missing target using its recorded managed form."
+        "synchronize": "Synchronize managed targets with the current skill-library version.",
+        "repair": "Back up the occupying item, then repair the Link usage relationship.",
+        "restore": "Restore the missing target using its recorded link or full-copy form."
       },
       "confirm": "Confirm release",
       "submitting": "Releasing usage…",
@@ -2479,11 +2501,11 @@
         "keep_independent_copy": "Keep as an independent copy",
         "remove_copy_with_backup": "Remove the copy with a backup",
         "record_only": "End tracking only",
-        "manage_link": "Convert to a managed link",
-        "manage_copy": "Convert to a managed copy",
+        "manage_link": "Bring under skill-library management as a link",
+        "manage_copy": "Manage through skill library (full copy)",
         "synchronize": "Sync to the current library version",
-        "repair": "Repair the managed link",
-        "restore": "Restore the managed target"
+        "repair": "Repair link",
+        "restore": "Restore usage target"
       },
       "recoveryPoint": "Recovery copy: {{path}}",
       "close": "Close"
@@ -2503,7 +2525,7 @@
       "medium": "Medium risk",
       "low": "Low risk"
     },
-    "impact": "Affects {{count}} deployment relations",
+    "impact": "Affects {{count}} usage relationships",
     "item": {
       "actionsGroup": "Suggested actions for {{subject}}"
     },
@@ -2654,7 +2676,7 @@
       "select_authoritative_version": "Select an authoritative version",
       "classify_same_name_skill": "Review same-name Skills",
       "confirm_shared_directory_impact": "Review shared-directory impact",
-      "convert_copy_to_managed_link": "Review copy management",
+      "convert_copy_to_managed_link": "Choose how to manage the full copy",
       "convert_shared_reference_to_managed_link": "Review shared reference",
       "unknown_directory_recognition": "Review directory purpose",
       "operation_failure_recovery": "Recover an incomplete operation"
@@ -2663,7 +2685,7 @@
       "select_authoritative_version": "Compare versions in conflict decisions and select the version to keep.",
       "classify_same_name_skill": "Decide whether the matching names describe distinct Skills or different versions.",
       "confirm_shared_directory_impact": "Review the shared-directory consumers in governance before changing the relationship.",
-      "convert_copy_to_managed_link": "Keep an independent copy or preview bringing it under skill-library management.",
+      "convert_copy_to_managed_link": "Keep an independent copy or preview managing it through the skill library.",
       "convert_shared_reference_to_managed_link": "Review the shared reference in relationship governance.",
       "unknown_directory_recognition": "Confirm the source directory and its purpose. Unsupported Agent paths can be added manually and rechecked.",
       "operation_failure_recovery": "Use recovery to handle the incomplete operation based on its recorded state."
@@ -2696,26 +2718,26 @@
   },
   "relationshipGovernance": {
     "relationship": {
-      "import_copy": "Import copy",
-      "managed_copy": "Copy deployment",
-      "managed_link": "Link deployment",
-      "observed_copy": "Observed copy",
-      "observed_link": "Observed link",
-      "shared_directory_read": "Shared directory direct read",
-      "shared_directory_reference": "Shared directory link reference",
-      "source_copy": "Source copy",
+      "import_copy": "Import origin",
+      "managed_copy": "Full copy · Managed",
+      "managed_link": "Link · Managed",
+      "observed_copy": "Discovered Skill · Full copy · Unmanaged",
+      "observed_link": "Discovered Skill · Link · Unmanaged",
+      "shared_directory_read": "Shared directory · Direct read",
+      "shared_directory_reference": "Shared directory · Link reference",
+      "source_copy": "Import origin",
       "unknown": "Relationship unconfirmed"
     },
     "fileRepresentation": {
       "directory": "Directory",
       "symbolic_link": "Symbolic link",
       "directory_junction": "Directory junction",
-      "copy": "Copy",
+      "copy": "Full copy",
       "unknown": "Unknown"
     },
     "ownership": {
       "skillhub_managed": "SkillHub managed",
-      "observed_unmanaged": "Observed unmanaged",
+      "observed_unmanaged": "Discovered, unmanaged",
       "shared_reference": "Shared reference"
     },
     "recognition": {
@@ -2732,7 +2754,7 @@
     },
     "precedence": {
       "preferred": "Preferred",
-      "lower_priority_copy": "Lower-priority copy",
+      "lower_priority_copy": "Lower-priority full copy",
       "may_coexist": "May coexist",
       "unknown": "Precedence unregistered"
     },
@@ -2744,14 +2766,14 @@
       "needs_validation": "Needs re-validation",
       "content_changed": "Content changed",
       "permission_limited": "Permission limited",
-      "managed_occupied": "Managed directory occupied",
+      "managed_occupied": "Occupied by another managed usage relationship",
       "operation_failed": "Last operation failed"
     },
     "minimalAction": {
       "remove_current_agent_target": "Recommended: remove only this agent's target",
       "remove_current_relation_keep_shared_files": "Recommended: remove only this relation, keep shared files",
       "remove_current_shared_alias": "Recommended: remove only this alias; the shared directory and other references stay",
-      "convert_copy_to_managed_link": "Recommended: convert to a managed link after backup and verification",
+      "convert_copy_to_managed_link": "Recommended: bring this full copy under skill-library management after backup and verification",
       "end_relation_record_only": "Recommended: release the relationship record only and keep the read-only original",
       "create_governance_task": "Recommended: create a governance todo first"
     },
@@ -2759,8 +2781,8 @@
       "select_authoritative_version": "Select the authoritative version",
       "classify_same_name_skill": "Classify the same-name skill",
       "confirm_shared_directory_impact": "Confirm shared directory impact",
-      "convert_copy_to_managed_link": "Convert the copy to a managed link",
-      "convert_shared_reference_to_managed_link": "Convert the shared reference to a managed link",
+      "convert_copy_to_managed_link": "Choose whether to manage the full copy through the skill library",
+      "convert_shared_reference_to_managed_link": "Choose how to bring the shared reference under skill-library management",
       "unknown_directory_recognition": "Confirm directory recognition",
       "operation_failure_recovery": "Recover from the failed operation"
     },
@@ -2844,7 +2866,7 @@
       "filterStatuses": "Relationship health",
       "filterHealth": "Relationship health",
       "filterGovernance": "Governance progress",
-      "filterManagement": "Central library management",
+      "filterManagement": "Management",
       "filtersClear": "Clear filters",
       "displaySettings": "Display settings",
       "displaySources": "Sources",
@@ -2857,7 +2879,7 @@
         "statesLabel": "Relationship health",
         "showDetails": "Show graph legend details",
         "hideDetails": "Hide graph legend details",
-        "typeHint": "Edge labels identify the relationship type; line style identifies relationship health. Governable use relationships also show completion and central library management status."
+        "typeHint": "Edge labels show relationship types and line styles show relationship health. Usage relationships with governance data also show progress and skill-library management."
       },
       "canvasLabel": "Skill relationship graph",
       "zoomIn": "Zoom in",
@@ -2886,25 +2908,25 @@
         "unknown": "Other item"
       },
       "edgeType": {
-        "usage": "Usage",
+        "usage": "Usage relationship",
         "import_origin": "Import origin",
         "update_source": "Update source",
         "derived_from": "Derived from",
-        "directory_ownership": "Directory ownership",
+        "directory_ownership": "Directory location",
         "directory_recognition": "Directory recognition",
-        "import_copy": "Import copy",
-        "shared_directory_read": "Shared directory read",
-        "shared_directory_reference": "Shared directory link reference",
-        "managed_copy": "Managed copy",
-        "managed_link": "Managed link",
-        "observed_copy": "Observed copy",
-        "observed_link": "Observed link",
-        "unknown": "Unconfirmed relationship"
+        "import_copy": "Import origin",
+        "shared_directory_read": "Usage relationship",
+        "shared_directory_reference": "Usage relationship",
+        "managed_copy": "Usage relationship",
+        "managed_link": "Usage relationship",
+        "observed_copy": "Usage relationship",
+        "observed_link": "Usage relationship",
+        "unknown": "Awaiting your decision"
       },
       "edgeKind": {
         "related_skill": "Related Skill",
         "source": "Source",
-        "deployment": "Deployment relation",
+        "deployment": "Usage relationship",
         "located_in": "Located in",
         "shared": "Shared directory",
         "conflict": "Conflict"
@@ -2919,7 +2941,7 @@
       "detailsLabel": "Graph details",
       "referenceOnly": "Deleted Skill snapshot; reference only.",
       "detailsFacts": "Relation facts",
-      "centerFacts": "Deployment relations {{deployments}}, sources {{sources}}, conflicts {{conflicts}}",
+      "centerFacts": "{{deployments}} usage relationships, {{sources}} sources, {{conflicts}} conflicts",
       "lastVerifiedLabel": "Last verified",
       "lastVerified": "{{time}}",
       "neverVerified": "Never verified",
@@ -2928,7 +2950,7 @@
       "detailsState": "Relationship health",
       "detailsHealth": "Relationship health",
       "governanceClassification": "Governance progress",
-      "governanceManagement": "Central library management",
+      "governanceManagement": "Management",
       "governanceSummary": "Current summary",
       "governanceDecision": "Decision",
       "governanceReasons": "Reasons and conditions",
@@ -2958,8 +2980,8 @@
         "hasConclusion": "Has AI conclusion"
       },
       "kind": {
-        "duplicate_same_content": "Duplicate content",
-        "same_name_different_content": "Same name, different content",
+        "duplicate_same_content": "Same skill",
+        "same_name_different_content": "Name taken",
         "unclassified": "Insufficient classification evidence"
       },
       "nav": {
@@ -2995,7 +3017,7 @@
         "heading": "Decision",
         "confirmSame": "Confirm same Skill",
         "keepDistinct": "Keep as separate Skills",
-        "centralize": "Bring under skill library management",
+        "centralize": "Manage through skill library",
         "centralizeHint": "No files change here: open relationship governance to review the impact preview and confirm.",
         "notNow": "Not now",
         "notNowHint": "“Not now” writes no conclusion and no history.",
@@ -3049,7 +3071,7 @@
       "decision": {
         "confirm_same_skill": "Confirm same Skill",
         "keep_distinct": "Keep as separate Skills",
-        "centralize_management": "Bring under skill library management"
+        "centralize_management": "Manage through skill library"
       },
       "empty": {
         "allDone": "Well done! {{count}} conflicts handled in total.",
@@ -3170,7 +3192,7 @@
       },
       "deployEntry": {
         "action": "Add to Agent/Project",
-        "hint": "This view manages existing relationships; use regular deployment to add Skills."
+        "hint": "This view manages existing relationships; use regular dispatch to add Skills."
       },
       "filters": {
         "label": "Quick filters",
@@ -3200,17 +3222,17 @@
         "operation_failed": "Last operation failed",
         "restricted": "Permission limited",
         "restrictedNote": "Restricted relationships need the limitation resolved first: handle each reason below, then re-verify — the relationship returns to the matching bucket for a decision.",
-        "managed_link": "Managed links",
+        "managed_link": "Link healthy, follows skill library",
         "retained": "Retained independent copies",
         "selectBucket": "Select all executable relationships in the {{label}} bucket"
       },
       "management": {
-        "not_taken_over": "Not centrally managed",
-        "taken_over": "Centrally managed"
+        "not_taken_over": "Unmanaged",
+        "taken_over": "Managed"
       },
       "usageManagement": {
-        "managed": "Managed by the skill library",
-        "unmanaged": "Not under skill library management"
+        "managed": "Managed",
+        "unmanaged": "Unmanaged"
       },
       "form": {
         "link": "Link",
@@ -3218,8 +3240,8 @@
         "unknown": "Form not confirmed"
       },
       "manage": {
-        "title": "Bring under skill library management",
-        "description": "Choose which content to use and how the target should receive it. The preview lists selected relationships, subject version changes, and other managed targets affected.",
+        "title": "Manage through skill library",
+        "description": "Choose the content and target form. The preview lists selected relationships, Skill version changes, and effects on other managed usage targets.",
         "contentBasis": "Choose the content to use",
         "libraryCurrent": "Current skill library version (recommended)",
         "originalEntry": "Content at the usage location",
@@ -3230,7 +3252,7 @@
         "originalVersionNote": "Using the original content will create a new version for {{count}} skill subject(s); existing versions and verification evidence are retained.",
         "preview": "Preview conversion impact",
         "preparing": "Preparing conversion preview…",
-        "confirm": "Bring under management",
+        "confirm": "Confirm management through the skill library",
         "committing": "Converting relationships…",
         "changeSelection": "Change selection and preview again",
         "resultHeading": "Conversion results",
@@ -3241,7 +3263,7 @@
       },
       "managedChange": {
         "sync": {
-          "title": "Sync managed copy",
+          "title": "Sync full copy · managed",
           "description": "Update the target copy to the current library subject version. If the target has unsynced changes, explicitly confirm using the subject version.",
           "contentChoice": "I confirm replacing the target contents with the current library version",
           "preparing": "Preparing sync preview…",
@@ -3249,16 +3271,16 @@
           "confirm": "Confirm sync"
         },
         "repair": {
-          "title": "Repair managed link",
-          "description": "Back up the item occupying the target, then restore the managed link to the skill subject.",
-          "contentChoice": "I confirm restoring the managed link to the current library version",
+          "title": "Repair link",
+          "description": "Back up the item occupying the target, then restore the link to the Skill subject.",
+          "contentChoice": "I confirm restoring the link to the current skill-library version",
           "preparing": "Preparing repair preview…",
           "committing": "Repairing link…",
           "confirm": "Confirm repair"
         },
         "restore": {
-          "title": "Restore managed target",
-          "description": "Restore the missing target using its recorded managed form, then verify the actual entry.",
+          "title": "Restore usage target",
+          "description": "Restore the missing target using its recorded link or full-copy form, then verify the entry.",
           "preparing": "Preparing restore preview…",
           "committing": "Restoring target…",
           "confirm": "Confirm restore"
@@ -3294,15 +3316,15 @@
         "retained_independent_copy": "Kept as an independent copy"
       },
       "shortName": {
-        "healthy": "Usage healthy",
+        "healthy": "Healthy",
         "unmanaged": "Not managed yet",
         "builtin_original": "Built-in original is healthy",
-        "file_missing": "Usage target missing",
-        "link_abnormal": "Link needs review",
-        "needs_sync": "Sync needed",
+        "file_missing": "Files missing",
+        "link_abnormal": "Link issue",
+        "needs_sync": "Sync pending",
         "sync_failed": "Sync failed",
         "unable_to_verify": "Unable to verify",
-        "user_confirmation": "User confirmation needed",
+        "user_confirmation": "Awaiting your decision",
         "healthyDescription": "The active usage fact is verified as healthy and managed by the skill library.",
         "unmanagedDescription": "The usage state is healthy but is not managed by the skill library. A management decision is still needed.",
         "builtin_originalDescription": "This healthy built-in file remains an original and needs no management.",
@@ -3324,12 +3346,12 @@
         "restrictedDescription": "Current permissions or relationship conditions do not allow this action. Review the reason or resolve the listed condition first.",
         "retained": "Copy kept",
         "retainedDescription": "This relationship was explicitly kept as an independent copy; it is not under skill library management.",
-        "taken_over": "Centrally managed",
-        "taken_overDescription": "This target is currently managed by the central library. Re-check the relationship if an issue is listed below.",
-        "not_taken_over": "Not centrally managed",
-        "not_taken_overDescription": "This relationship has not been brought under central library management. Review the reason before using an available action.",
+        "taken_over": "Managed",
+        "taken_overDescription": "This target is currently managed by the skill library. Re-check the relationship if an issue is listed below.",
+        "not_taken_over": "Unmanaged (discovered)",
+        "not_taken_overDescription": "This relationship is not managed by the skill library. Review the reason before using an available action.",
         "completed": "Completed",
-        "completedDescription": "This relationship has a recorded outcome. Check central library management separately."
+        "completedDescription": "This relationship has a recorded outcome. Check skill-library management separately."
       },
       "entryLabel": "Entry:",
       "multipleSkillNames": "Multiple skill names: {{names}}",
@@ -3338,10 +3360,10 @@
         "verification_required": "The current verification is insufficient. Re-check the target.",
         "content_changed": "The target content changed. Re-check before deciding.",
         "permission_limited": "Current permissions do not allow this action.",
-        "managed_target_occupied": "Another managed relationship occupies the target. Review the conflict first.",
+        "managed_target_occupied": "Another managed usage relationship occupies this location. Review the conflict first.",
         "operation_failed": "The last relationship operation did not complete. Review the current state before retrying.",
         "target_identity_unconfirmed": "The target identity has not been confirmed. Re-check the target.",
-        "relationship_not_convertible": "This relationship type cannot currently be brought under skill library management.",
+        "relationship_not_convertible": "This relationship type cannot currently be managed through the skill library.",
         "shared_impact_confirmation_required": "Other Agents also use this shared directory. Review and confirm the impact first.",
         "managed_entry_requires_verified_removal": "This target is managed by the skill library. Verify that its entry can be safely removed before releasing the relationship; this action cannot bypass that check.",
         "link_target_unavailable": "The link target cannot currently be reached. Check its location and re-check the relationship.",
@@ -3349,7 +3371,7 @@
         "subject_unavailable": "The relationship subject is unavailable. Restore access before checking again."
       },
       "importBatch": {
-        "banner": "This import left {{count}} local source copies"
+        "banner": "The import left {{count}} Skill files at their original locations."
       },
       "search": {
         "label": "Search skills, targets or paths",
@@ -3369,15 +3391,15 @@
       "source": {
         "scan": "Found by scan",
         "import": "Registered by import",
-        "agent_local": "Agent-local copy",
-        "user_local": "User-local copy",
-        "registered_project": "Registered project copy",
-        "online": "Online import copy",
-        "central_library": "Central library copy",
+        "agent_local": "Skill in an Agent directory",
+        "user_local": "Skill in a user directory",
+        "registered_project": "Skill in a project directory",
+        "online": "Online import source",
+        "central_library": "Skill library",
         "legacy_unclassified": "Unclassified source"
       },
       "readiness": {
-        "eligible_to_centralize": "Ready for skill library management",
+        "eligible_to_centralize": "Ready to manage through the skill library",
         "needs_validation": "Needs validation",
         "blocked": "Blocked",
         "already_centralized": "Managed by the skill library"
@@ -3407,10 +3429,10 @@
         "rollbackUnavailable": "No rollback available"
       },
       "actions": {
-        "centralize_management": "Bring under skill library management",
+        "centralize_management": "Manage through skill library",
         "undeploy": "Remove from Agent/Project",
         "sync": "Sync to the current library version",
-        "repair": "Repair managed link",
+        "repair": "Repair link",
         "restore": "Restore target",
         "revalidate": "Re-check",
         "keep_independent_copy": "Keep as an independent copy",
@@ -3437,10 +3459,10 @@
         "nextPage": "Next page",
         "pageInfo": "Page {{page}} / {{total}} entries",
         "action": {
-          "clean_source_copy": "Clean up source copy",
-          "retain_source_copy": "Keep source copy",
+          "clean_source_copy": "Clean up the Skill file at its source location",
+          "retain_source_copy": "Keep the Skill file at its source location",
           "relink_source_copy": "Relink source directory",
-          "centralize_management": "Bring under skill library management",
+          "centralize_management": "Manage through skill library",
           "retain": "Keep",
           "relink": "Relink",
           "validate": "Re-check"
@@ -3468,27 +3490,27 @@
       },
       "clean": {
         "action": "Clean up",
-        "previewTitle": "Clean up source copy",
-        "explain": "This deletes the local source copy of the skill at the location below.",
+        "previewTitle": "Clean up the Skill file at its source location",
+        "explain": "This removes the local file for this Skill from the location below.",
         "stopUsing": "After cleanup, the original entry at the Agent stops working",
-        "centralUnaffected": "The copy in the central library is not affected",
-        "redeployLater": "You can redeploy the skill to this Agent later",
+        "centralUnaffected": "Skills in the skill library are not affected",
+        "redeployLater": "You can dispatch the Skill to this Agent later",
         "backupRollback": "A backup is created before cleanup; rollback is available",
-        "noRollback": "This copy has no rollback path",
-        "ownership": "I confirm this is a local copy I may clean up",
+        "noRollback": "No recovery path is available for this file.",
+        "ownership": "I confirm that I have permission to clean up this local file",
         "commit": "Confirm cleanup",
         "resultTitle": "Cleanup complete",
-        "deployNow": "Deploy to this Agent",
-        "deployLater": "Deploy later",
+        "deployNow": "Dispatch to this Agent",
+        "deployLater": "Dispatch later",
         "needsValidationHint": "Re-check first, then clean up or keep"
       },
       "retain": {
         "action": "Keep",
-        "done": "Source copy kept"
+        "done": "Kept the Skill file at its source location"
       },
       "selection": {
         "selectedCount": "{{count}} selected",
-        "openBatch": "Bring the selection under skill library management",
+        "openBatch": "Manage the selection through the skill library",
         "openBatchRetain": "Keep selection as independent copies"
       },
       "batchSummary": {
@@ -3496,20 +3518,20 @@
         "blocked": "Blocked {{count}}"
       },
       "centralize": {
-        "explain": "Skill library management keeps a usable entry at the current location and switches it to the unified version in the skill library.",
-        "done": "Brought under skill library management: {{skill}}"
+        "explain": "This preserves a usable entry at the current location and switches it to the unified version in the skill library.",
+        "done": "Managed through the skill library: {{skill}}"
       },
       "undeployResult": {
         "done": "Removed from the target: {{path}}"
       },
       "preview": {
-        "centralizeTitle": "Skill library management preview",
+        "centralizeTitle": "Preview: manage through skill library",
         "undeployTitle": "Remove from Agent/Project preview",
         "revoke_retentionTitle": "Revoke keep decision",
         "revoke_retentionImpact": "Only the keep decision for this relationship will be revoked. Source files, target entries, and the skill library Skill will remain unchanged. The relationship status will be re-evaluated from current health facts.",
         "revoke_retentionConfirm": "Confirm revoking keep decision",
         "end_relationshipTitle": "Release relation",
-        "end_relationshipImpact": "Release this source relationship record. Files in the source directory and the skill library Skill will remain. This action will not try to remove a managed target entry.",
+        "end_relationshipImpact": "Release this import-origin relationship. The source-location files and Skill subject remain; entries created by other usage relationships are not removed.",
         "end_relationshipConfirm": "Confirm releasing the relationship",
         "skillLabel": "Skill",
         "targetLabel": "Target path",
@@ -3529,10 +3551,10 @@
         "unexpectedRelation": "The result does not match the selected relationship. Reload the ledger to confirm its state."
       },
       "batch": {
-        "title": "Bring the selection under skill library management",
+        "title": "Manage selected usage relationships through the skill library",
         "retainTitle": "Keep selection as independent copies",
         "hint": "Blocked items are not selected by default; you can cancel single items, and the remaining rows are unaffected.",
-        "mixing": "Source copies and deployment relations cannot join the same batch; handle them separately",
+        "mixing": "Source-file cleanup and usage-relationship release cannot be in the same batch. Handle them separately.",
         "itemExecutable": "Executable",
         "itemBlocked": "Blocked",
         "itemCheck": "Run {{name}}",
@@ -3542,7 +3564,7 @@
         "running": "Running and verifying item by item…",
         "resultTitle": "Batch result",
         "resultPartial": "Partially committed: {{committed}} succeeded, {{failed}} failed",
-        "resultAll": "All brought under skill library management ({{count}} items)",
+        "resultAll": "All selected usage relationships are now managed through the skill library ({{count}} items)",
         "resultAllRetained": "Kept as independent copies ({{count}} items)",
         "resultNone": "Nothing succeeded this time; review the per-item failures",
         "resultCancelled": "{{count}} items cancelled",
@@ -3555,7 +3577,7 @@
         "rollbackAvailable": "Rollback available",
         "childOperation": "Operation record",
         "trackerLabel": "Skill library management batch",
-        "itemTrackerLabel": "Bring under skill library management",
+        "itemTrackerLabel": "Manage through skill library",
         "close": "Close"
       },
       "empty": {
@@ -3638,11 +3660,11 @@
     },
     "kinds": {
       "delete_skill": "Delete skill",
-      "deploy_skill": "Deploy skill",
+      "deploy_skill": "Dispatch skill",
       "import_skill": "Import skill",
       "migrate_original": "Migrate original directory",
-      "relink_source_copy": "Relink source copy",
-      "undeploy_skill": "Undeploy skill",
+      "relink_source_copy": "Relink source file",
+      "undeploy_skill": "Release usage relationship",
       "uninstall_skill": "Uninstall skill"
     }
   },
@@ -3720,7 +3742,7 @@
       "migrationAvailable": "A library migration entry is available when the native service is connected.",
       "runHealthCheck": "Run health check",
       "unnamedSkill": "Unnamed skill",
-      "healthScope": "The health check only looks for unfinished application operations (such as interrupted imports or additions) and offers recovery/repair paths. It does not include duplicate or same-name detection (duplicate analysis runs during import), content validation, or deployment consistency checks.",
+      "healthScope": "Health checks cover unfinished application operations (such as interrupted imports or additions) and provide recovery or repair steps. They do not check name or content conflicts (analyzed during import), content integrity, or usage-relationship consistency.",
       "checking": "Checking…",
       "checkFailed": "Health check failed. Please try again later.",
       "allClear": "No issues found",
@@ -4042,7 +4064,7 @@
       "verified": "Backup package verified.",
       "review": "Review restore",
       "commit": "Restore backup",
-      "summary": "{{skills}} skills found; {{deployments_requiring_rediscovery}} deployment relations will need rediscovery.",
+      "summary": "{{skills}} Skills found; {{deployments_requiring_rediscovery}} usage relationships need to be discovered again.",
       "decision": "Decision for {{skillId}}",
       "choose": "Choose a decision",
       "overwrite": "Overwrite existing",
@@ -4133,7 +4155,7 @@
         "project": "No configuration relations by project yet"
       },
       "eyebrow": "Configuration relation distribution",
-      "heading": "Where managed skills are configured",
+      "heading": "Usage relationships from skill-library Skills",
       "loading": "Loading the configuration relation chart",
       "projectLimit": "Showing the top {{shown}} of {{total}} projects by configuration relations",
       "scrollableDetails": "Scrollable configuration relation details"
@@ -4235,21 +4257,21 @@
     },
     "uninstall": {
       "heading": "Uninstall preparation",
-      "description": "Select deployment relations, preview the impact, then tick each action you want to run. Unticked actions never run.",
-      "scenario": "When to use this: when you no longer want SkillHub to manage a Skill that is deployed to Agents/projects. You can optionally back up first, undeploy everything, leave target folders as independent copies, and clear local data or credentials; the skill library is preserved by default and your Agent's own files are never deleted. With no deployments there is nothing to manage here.",
-      "loadingDeployments": "Loading deployment relations…",
-      "noDeployments": "No deployment relations are registered.",
-      "selectDeployment": "Select deployment relation {{id}}",
+      "description": "Select usage relationships and preview their impact, then choose which actions to run. Unselected actions are skipped.",
+      "scenario": "Use this when you no longer want SkillHub to manage Skills dispatched to Agents or projects. You can back up first, release all usage relationships, keep target files as independent copies, or clear local data and credentials. The skill library is kept by default, and your Agent files are not deleted. There is nothing to do here when no usage relationships exist.",
+      "loadingDeployments": "Loading usage relationships…",
+      "noDeployments": "There are no usage relationships.",
+      "selectDeployment": "Select this usage relationship",
       "deploymentLabel": "{{id}}: {{skill_id}} → {{target_id}} ({{state}})",
       "deploymentState": {
         "planned": "planned",
-        "deployed": "deployed",
+        "deployed": "Dispatched",
         "removed": "removed",
         "needs_recovery": "needs recovery"
       },
       "preview": "Preview impact",
       "apply": "Apply selected actions",
-      "impactSummary": "{{count}} deployment relations are affected.",
+      "impactSummary": "Affects {{count}} usage relationships.",
       "preservesYes": "The central Skill library will be preserved.",
       "preservesNo": "The central Skill library will not be preserved.",
       "actionsHeading": "Available actions (nothing is selected by default)",

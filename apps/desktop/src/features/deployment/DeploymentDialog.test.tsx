@@ -245,14 +245,14 @@ it("disables mode preferences that the selected targets do not all support (DEV-
   await renderDialog(facade);
 
   // 未选择目标时链接/复制偏好同样不可选；自动推荐始终可用。
-  await screen.findByRole("option", { name: "链接部署" });
-  expect((screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement).disabled).toBe(true);
-  expect((screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement).disabled).toBe(true);
+  await screen.findByRole("option", { name: "链接" });
+  expect((screen.getByRole("option", { name: "链接" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole("option", { name: "完整拷贝" }) as HTMLOptionElement).disabled).toBe(true);
   expect((screen.getByRole("option", { name: "自动选择方式" }) as HTMLOptionElement).disabled).toBe(false);
 
   await user.click(await screen.findByRole("checkbox"));
-  expect((screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement).disabled).toBe(true);
-  expect((screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement).disabled).toBe(false);
+  expect((screen.getByRole("option", { name: "链接" }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole("option", { name: "完整拷贝" }) as HTMLOptionElement).disabled).toBe(false);
 });
 
 it("offers only copy preference for a shared directory target", async () => {
@@ -269,13 +269,13 @@ it("offers only copy preference for a shared directory target", async () => {
 
   await renderDialog(facade);
   const checkbox = await screen.findByRole("checkbox", { name: "Agent共享目录" });
-  const linkOption = screen.getByRole("option", { name: "链接部署" }) as HTMLOptionElement;
-  const copyOption = screen.getByRole("option", { name: "复制部署" }) as HTMLOptionElement;
+  const linkOption = screen.getByRole("option", { name: "链接" }) as HTMLOptionElement;
+  const copyOption = screen.getByRole("option", { name: "完整拷贝" }) as HTMLOptionElement;
   await user.click(checkbox);
 
   expect(linkOption.disabled).toBe(true);
   expect(copyOption.disabled).toBe(false);
-  await user.selectOptions(screen.getByRole("combobox", { name: "部署方式" }), "copy");
+  await user.selectOptions(screen.getByRole("combobox", { name: "派发方式" }), "copy");
   await user.click(screen.getByRole("button", { name: "预览" }));
   expect(preview).toHaveBeenCalledWith(
     [expect.objectContaining({ targetIds: ["shared-skills"], preference: "copy" })],
@@ -319,7 +319,7 @@ it("sends the user preference instead of an implementation mode (14.11)", async 
   await renderDialog(facade);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.selectOptions(screen.getByLabelText("部署方式"), "copy");
+  await user.selectOptions(screen.getByLabelText("派发方式"), "copy");
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(preview).toHaveBeenCalledWith(
@@ -365,8 +365,8 @@ it("requires explicit fallback confirmation, then a final re-preview, before com
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   const plan = await screen.findByRole("region", { name: /添加计划/ });
-  // Link 被阻止：给出用户可理解的原因与「改用复制部署」的选择。
-  expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
+  // Link 被阻止：给出用户可理解的原因与完整拷贝派发选择。
+  expect(within(plan).getByText(/当前账户无权创建链接/)).toBeVisible();
 
   // 未确认前提交不可用；确认动作的下一步是「重新生成最终预览」。
   await user.click(within(plan).getByRole("checkbox", { name: /PDF 抽取器 · Codex CLI/ }));
@@ -374,7 +374,7 @@ it("requires explicit fallback confirmation, then a final re-preview, before com
 
   // 确认保留：显示最终复制影响并开放提交。
   const finalPlan = await screen.findByRole("region", { name: /添加计划/ });
-  expect(within(finalPlan).getByText(/已确认改用复制/)).toBeVisible();
+  expect(within(finalPlan).getByText(/已确认按完整拷贝派发/)).toBeVisible();
   const commitButton = await screen.findByRole("button", { name: "确认添加" });
   expect(commitButton).toBeEnabled();
   await user.click(commitButton);
@@ -397,8 +397,8 @@ it("renders blocked reasons in user-facing words and keeps raw causes in technic
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   const plan = await screen.findByRole("region", { name: /添加计划/ });
-  expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
-  expect(within(plan).getByText(/此文件的磁盘或分区不支持链接部署/)).toBeVisible();
+  expect(within(plan).getByText(/当前账户无权创建链接/)).toBeVisible();
+  expect(within(plan).getByText(/此磁盘或分区不支持创建链接/)).toBeVisible();
   // DEV-99：原始 code/内部 ID 全面退出界面——技术详情折叠区也不得展示。
   expect(within(plan).queryByText("deployment.symlink_not_supported")).toBeNull();
   expect(within(plan).queryByText("Skill ID")).toBeNull();

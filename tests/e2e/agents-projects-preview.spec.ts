@@ -45,7 +45,7 @@ test("agent cards expose identity, directory facts, and deployment capabilities"
   // Every card exposes only copy and combined link capabilities; the
   // tooltip/accessible label carries the user-facing explanation.
   // DEV-108 预览夹具含共享目录与只读内置目录后共 8 张卡，每卡两枚能力图标。
-  const deploymentMethods = page.getByLabel("Deployment methods");
+  const deploymentMethods = page.getByLabel("Dispatch methods");
   await expect(deploymentMethods).toHaveCount(8);
   await expect(deploymentMethods.first().locator(".sh-agent-card__deployment-method")).toHaveCount(2);
   const builtinCard = page.locator(".sh-agent-card").filter({

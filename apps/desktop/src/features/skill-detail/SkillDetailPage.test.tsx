@@ -167,7 +167,7 @@ function GovernanceProbe() {
   );
 }
 
-// W3-3（§7.8 生产承载）：详情头部「转为集中管理」接真实治理契约。
+// W3-3（§7.8 生产承载）：详情头部「转入技能库管理」接真实治理契约。
 // 候选行与批次结果都来自治理门面，不复制第二套执行状态机。
 function governanceDeploymentFact(overrides: Partial<DeploymentRelationFact> = {}): DeploymentRelationFact {
   return {
@@ -755,14 +755,14 @@ describe("SkillDetailPage shell", () => {
     };
     await renderDetail({ governanceFacade, tracker, usageChangeFacade });
 
-    fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
+    fireEvent.click(await screen.findByRole("button", { name: "转入技能库管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring under skill library management",
+      name: "Manage through skill library",
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview conversion impact" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Bring under management" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm management through the skill library" }));
 
     await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
       action: "manage",
@@ -792,10 +792,10 @@ describe("SkillDetailPage shell", () => {
     };
     await renderDetail({ governanceFacade, usageChangeFacade });
 
-    fireEvent.click(await screen.findByRole("button", { name: "转为集中管理" }));
+    fireEvent.click(await screen.findByRole("button", { name: "转入技能库管理" }));
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Bring under skill library management",
+      name: "Manage through skill library",
     });
     const confirm = within(dialog).getByRole("button", { name: "Preview conversion impact" });
     expect(confirm).toBeDisabled();
@@ -815,7 +815,7 @@ describe("SkillDetailPage shell", () => {
     await renderDetail({ governanceFacade: createTestGovernanceFacade([]) });
 
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "转为集中管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "转入技能库管理" })).not.toBeInTheDocument();
   });
 
   // W3-5：使用去向卡由治理清单（单一事实来源）驱动，样例卡与演示弹层退场。
@@ -833,10 +833,10 @@ describe("SkillDetailPage shell", () => {
 
     const destinations = await screen.findByLabelText("技能使用去向");
     const pending = within(destinations).getByTestId("usage-destination-observed:codex-1");
-    expect(within(pending).getByText("待集中管理")).toBeVisible();
+    expect(within(pending).getByText("未管理")).toBeVisible();
     expect(within(pending).getByText("C:/agents/codex/skills/pdf-reader")).toBeVisible();
     const managed = within(destinations).getByTestId("usage-destination-managed:dep-shared");
-    expect(within(managed).getByText("已集中管理")).toBeVisible();
+    expect(within(managed).getByText("管理中")).toBeVisible();
     expect(within(managed).getByText("C:/agents/shared/skills/pdf-reader")).toBeVisible();
     // 示例卡样例与演示弹层不再出现（主体位置区仍可真实呈现同路径事实，
     // 因此样例断言限定在使用去向容器内）。
@@ -1170,7 +1170,7 @@ describe("SkillDetailPage shell", () => {
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Deployment target details could not be verified, so deletion was not prepared.",
+      "Usage relationship target details could not be verified, so removal was not prepared.",
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
@@ -1555,18 +1555,18 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     const section = await sourcesSection();
     expect(await section.findByText("当前更新来源：本机目录。"))
       .toBeVisible();
-    expect(section.getByRole("button", { name: "更换来源" })).toBeVisible();
-    expect(section.getByRole("button", { name: "解除更新来源" })).toBeVisible();
-    expect(section.getByRole("button", { name: "检查更新" })).toBeDisabled();
+    expect(section.getByRole("button", { name: "Replace update source" })).toBeVisible();
+    expect(section.getByRole("button", { name: "Unlink update source" })).toBeVisible();
+    expect(section.getByRole("button", { name: "Check for updates" })).toBeDisabled();
 
-    fireEvent.click(section.getByRole("button", { name: "解除更新来源" }));
+    fireEvent.click(section.getByRole("button", { name: "Unlink update source" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/技能内容、版本与导入来源记录不会改变/)).toBeVisible();
     fireEvent.click(within(dialog).getByRole("button", { name: "保留关联" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(facade.calls.unlinkedUpdateSources).toEqual([]);
 
-    fireEvent.click(section.getByRole("button", { name: "解除更新来源" }));
+    fireEvent.click(section.getByRole("button", { name: "Unlink update source" }));
     const confirmation = await screen.findByRole("dialog");
     fireEvent.click(within(confirmation).getByRole("button", { name: "确认解除" }));
     await waitFor(() => {
@@ -1587,7 +1587,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     expect(await section.findByText("发现可采用的更新候选（v2.5.0）。")).toBeVisible();
     expect(section.getByRole("button", { name: "预览采用影响" })).toBeVisible();
     expect(section.getByRole("button", { name: "忽略本次更新" })).toBeVisible();
-    expect(section.getByRole("button", { name: "更换来源" })).toBeVisible();
+    expect(section.getByRole("button", { name: "Replace update source" })).toBeVisible();
     // 原型示例仓库名不得再出现；来源展示只来自门面事实。
     expect(screen.queryByText("PDF Reader 官方维护仓库")).not.toBeInTheDocument();
   });
@@ -1606,7 +1606,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     await renderDetail({ facade });
 
     const section = await sourcesSection();
-    fireEvent.click(await section.findByRole("button", { name: "检查更新" }));
+    fireEvent.click(await section.findByRole("button", { name: "Check for updates" }));
 
     expect(await section.findByText("来源检查完成：已是最新。")).toBeVisible();
     expect(facade.calls.checkedSourceUpdates).toEqual([{ skillId: "skill-pdf" }]);
@@ -1681,7 +1681,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
 
     const section = await sourcesSection();
     expect(await section.findByText("当前没有关联更新来源。")).toBeVisible();
-    fireEvent.click(section.getByRole("button", { name: "关联更新来源" }));
+    fireEvent.click(section.getByRole("button", { name: "Associate update source" }));
 
     expect(await screen.findByRole("dialog", { name: "关联网络更新来源" })).toBeVisible();
     fireEvent.change(screen.getByLabelText("来源地址"), {
@@ -1714,7 +1714,7 @@ describe("SkillDetailPage source updates real commands (W3-4)", () => {
     await renderDetail({ facade });
 
     const section = await sourcesSection();
-    fireEvent.click(await section.findByRole("button", { name: "关联更新来源" }));
+    fireEvent.click(await section.findByRole("button", { name: "Associate update source" }));
     fireEvent.change(await screen.findByLabelText("来源地址"), {
       target: { value: "https://example.com/org/repo" },
     });

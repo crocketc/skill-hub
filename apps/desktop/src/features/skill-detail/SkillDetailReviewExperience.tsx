@@ -488,8 +488,8 @@ function UsageDestinationCardView({
 }) {
   const healthNote = card.unhealthy ? "入口健康异常，请在关系治理中检查。" : "";
   const detail = card.takenOver
-    ? `受管链接跟随技能库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
-    : `原位置仍是独立拷贝；可在关系治理中纳入集中管理。${healthNote}`;
+    ? `管理中的链接跟随技能库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
+    : `原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。${healthNote}`;
   return (
     <article className="sh-skill-detail-review__destination" data-testid={`usage-destination-${card.relationId}`}>
       <div className="sh-skill-detail-review__destination-heading">
@@ -509,7 +509,7 @@ function UsageDestinationCardView({
           )}
         </div>
         <StatusBadge tone={card.takenOver ? "success" : "warning"}>
-          {card.takenOver ? "已集中管理" : "待集中管理"}
+          {card.takenOver ? "管理中" : "未管理"}
         </StatusBadge>
       </div>
       <p title={detail}>{detail}</p>
@@ -647,7 +647,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
       setPreview(null);
       setNotice(
         applied.deployments_need_reconciliation
-          ? "已采用来源更新并创建新版本。有部署需要重新对账；请在关系治理中检查。"
+          ? "已采用来源更新并创建新版本。有使用关系需要重新核对；请在关系治理中检查。"
           : "已采用来源更新并创建新版本。",
       );
       setActionError(null);
@@ -747,7 +747,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
           size="sm"
           variant="secondary"
         >
-          检查更新
+          {t("skillDetail.sourceUpdates.actions.check")}
         </Button>
         {!statusQuery.isError ? (
           <Button
@@ -760,7 +760,9 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
             size="sm"
             variant="ghost"
           >
-            {hasSource ? "更换来源" : "关联更新来源"}
+            {hasSource
+              ? t("skillDetail.sourceUpdates.actions.replace")
+              : t("skillDetail.sourceUpdates.actions.associate")}
           </Button>
         ) : null}
         {hasSource && status?.association_revision ? (
@@ -772,7 +774,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
             size="sm"
             variant="ghost"
           >
-            解除更新来源
+            {t("skillDetail.sourceUpdates.actions.unlink")}
           </Button>
         ) : null}
         {candidateAvailable ? (

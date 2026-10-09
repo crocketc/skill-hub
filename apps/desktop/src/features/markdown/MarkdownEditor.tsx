@@ -411,7 +411,7 @@ export function MarkdownEditor({
         </div>
         <div className="sh-markdown-editor__save-cluster">
           <span className="sh-markdown-editor__save-hint">
-            {reviewSaveFlow ? "受管链接跟随当前版本；未接管的使用位置保持原状。" : t("markdown.editor.saveHint")}
+            {reviewSaveFlow ? "管理中的链接跟随当前版本；未管理的使用位置保持原状。" : t("markdown.editor.saveHint")}
           </span>
           {!reviewSaveFlow ? <span className="sh-markdown-editor__copy-note">
             <Button

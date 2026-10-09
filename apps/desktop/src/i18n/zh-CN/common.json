@@ -48,7 +48,7 @@
     "collapse": "收起",
     "sources": {
       "library": "技能库",
-      "deployment": "部署",
+      "deployment": "派发",
       "import": "导入",
       "discovery": "发现",
       "governance": "关系治理",
@@ -114,7 +114,7 @@
       "description": "以当前内容创建一个新 Skill，登记与来源的「复用修改」关系；继承分支由你显式选择。",
       "modeLegend": "使用位置继承",
       "modeNone": "不继承使用位置",
-      "modeNoneHint": "原 Skill 的部署与关系原样保留；新 Skill 不跟随后续更新。",
+      "modeNoneHint": "原 Skill 的使用关系保持原样；新 Skill 不会跟随后续更新。",
       "modeReplace": "接管选定的使用位置",
       "modeReplaceHint": "按真实预览逐项接管；共享物理目标需逐项确认。",
       "targetsLegend": "候选使用位置",
@@ -131,8 +131,8 @@
       "previewRejectedRetryable": "提交被拒绝（{{code}}）。预览未被消费，补齐确认后可用同一预览重试。",
       "saveFailed": "无法创建新技能；本机草稿仍然保留。",
       "targetRuntime": "运行名：{{name}}",
-      "targetManaged": "受管目标",
-      "targetUnmanaged": "非受管目标",
+      "targetManaged": "管理中的目标",
+      "targetUnmanaged": "未管理目标",
       "consumers": "消费者：{{consumers}}",
       "versionLabel": "版本",
       "blocker": {
@@ -165,16 +165,16 @@
         "openAction": "为选中位置另存为独立技能",
         "title": "为选中位置另存",
         "resultTitle": "派生技能处理结果",
-        "description": "创建独立技能并只替换明确选中的受管使用位置。其他位置和来源技能保持不变。",
+        "description": "创建独立技能并只替换明确选中的管理中使用位置。其他位置和来源技能保持不变。",
         "sourceLabel": "来源技能",
         "source": "来源：{{name}}",
         "unnamedSource": "未命名技能",
         "runtimeNameLabel": "新技能运行名",
-        "targetsLegend": "选择要替换的受管使用位置",
+        "targetsLegend": "选择要替换的管理中使用位置",
         "versionLoading": "正在读取来源技能当前版本…",
         "versionUnavailable": "无法确认来源技能的当前版本，暂时不能继续。",
-        "noManagedSource": "没有可用于创建派生技能的受管来源。",
-        "noManagedTargets": "此来源没有可替换的受管使用位置。",
+        "noManagedSource": "没有可用于创建派生技能的管理中来源。",
+        "noManagedTargets": "此来源没有可替换的管理中使用位置。",
         "previewUnavailable": "替换预览与所选来源或目标不一致，请重新预览。",
         "previewHeading": "替换目标预览",
         "previewExpired": "预览已过期，请重新生成后继续。",
@@ -371,7 +371,7 @@
       "selectAll": "全选可导入候选",
       "analyze": "分析冲突",
       "empty": "此来源没有找到候选 Skill。",
-      "nameMismatch": "文件夹名与 SKILL.md 内声明的名称不一致；不影响导入，部署后 Agent 按文件夹名识别",
+      "nameMismatch": "文件夹名与 SKILL.md 内声明的名称不一致；不影响导入，派发后 Agent 按文件夹名识别。",
       "basicCheck": {
         "not_checked": "尚未检查",
         "passed": "基础检查通过",
@@ -521,7 +521,7 @@
       "openLibrary": "打开 Skill 库",
       "showCompletedDetails": "查看成功和跳过明细",
       "hideCompletedDetails": "收起成功和跳过明细",
-      "originalsPreserved": "原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
+      "originalsPreserved": "原位置的技能文件保持不变；如需清理，请在关系治理中单独确认并保留回退路径。",
       "governanceNextLabel": "后续整理",
       "governanceNextDescription": "这些 Skill 已集中保存到技能库，统一更新、多端复用。删除原入口后，Agent 将不再从原来的位置读取它们；之后你可以随时在关系治理里从技能库为各 Agent 重新建立链接或复制。",
       "goHandle": "去处理",
@@ -556,7 +556,7 @@
     "governance": {
       "eyebrow": "关系治理",
       "title": "确认导入后的关系处理",
-      "description": "导入技能库与处理原始副本是独立操作；所有更改都需要确认、影响说明和回退路径。",
+      "description": "导入技能库与处理来源位置的技能文件是独立操作；所有更改都需要确认、影响说明和回退路径。",
       "aiUnavailable": "AI 建议未配置；已保留确定性关系判断。",
       "groupActionLegend": "分组默认动作",
       "memberOverrideLegend": "{{name}} 的单项覆盖",
@@ -569,8 +569,8 @@
       },
       "classification": {
         "exactDuplicate": "同一技能",
-        "contentIdenticalCopy": "内容一致的复制副本",
-        "sameNameDifferentContent": "同名不同内容",
+        "contentIdenticalCopy": "同一技能",
+        "sameNameDifferentContent": "重名",
         "sharedDirectoryRead": "通用目录直接读取",
         "sharedDirectoryReference": "通用目录链接引用",
         "unrecognizedSource": "识别未知或待确认"
@@ -584,15 +584,15 @@
       },
       "rollback": {
         "exact_duplicate": "回退方式：保留来源原件；库内拷贝删除后可重新导入。",
-        "content_identical_copy": "回退方式：保留来源副本；后续可确认转为管理链接。",
-        "same_name_different_content": "回退方式：保留来源原件；同名裁决可重新处理。",
+        "content_identical_copy": "回退方式：保留原位置的技能文件；后续可确认是否转入技能库管理。",
+        "same_name_different_content": "回退方式：保留来源原件；重名处理可重新进行。",
         "shared_directory_read": "回退方式：共享目录原件不会被本操作修改。",
         "shared_directory_reference": "回退方式：共享目录本体与其他 Agent 引用保持不变。",
         "unrecognized_source": "回退方式：保留来源原件；识别待办可重新处理。"
       },
       "taskDetail": {
         "select_authoritative_version": "待选择权威版本",
-        "convert_copy_to_managed_link": "待将复制副本转为管理链接",
+        "convert_copy_to_managed_link": "待确认完整拷贝的管理方式",
         "classify_same_name_skill": "待判断同名 Skill 是否为不同 Skill",
         "confirm_shared_directory_impact": "待确认通用目录影响范围",
         "convert_shared_reference_to_managed_link": "待将通用目录引用转为管理链接",
@@ -766,7 +766,7 @@
       "conflict": "冲突 {{count}}",
       "suspected": "疑似重复 {{count}}",
       "unreadable": "无法读取 {{count}}",
-      "unmanagedHint": "扫描发现、尚未纳入技能库管理的 Skill 数量",
+      "unmanagedHint": "扫描发现、尚未管理的 Skill 数量",
       "relatedHint": "目录存在、可读写且已与客户端建立关联的目标目录数量",
       "conflictHint": "目录存在但当前不可用（不可读、不可写或已断开关联）的目标数量",
       "suspectedHint": "不同位置发现了内容指纹相同的 Skill，可能是重复拷贝",
@@ -791,8 +791,8 @@
       "excludeFailed": "排除失败（{{code}}），目录保持不变。",
       "excludedNotice": "已排除 {{path}}。可在设置的忽略规则中恢复。",
       "builtinLabel": "内置",
-      "builtinHint": "该目录由平台自带管理，SkillHub 只读观察，不提供部署或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入 SkillHub 统一管理。",
-      "rescanResult": "已扫描 {{clients}} 个 Agent、{{targets}} 个部署目标"
+      "builtinHint": "该目录由平台自带管理，SkillHub 只读显示其中的技能，不提供派发或删除；如需调整请在对应 Agent 内手动管理，常用技能建议导入技能库，在技能库中管理。",
+      "rescanResult": "已扫描 {{clients}} 个 Agent、{{targets}} 个派发目标"
     },
     "search": {
       "label": "搜索 skills.sh",
@@ -930,12 +930,12 @@
       "rescan": "重新扫描",
       "addCustom": "新增自定义 Agent",
       "edit": "编辑",
-      "remove": "删除",
+      "remove": "删除 Agent",
       "pickDirectory": "选择目录",
       "save": "保存",
       "cancel": "取消"
     },
-    "managedDeploymentCount": "{{count}} 个受管副本",
+    "managedDeploymentCount": "{{count}} 个完整拷贝 · 管理中",
     "kind": {
       "cli": "终端",
       "desktop": "桌面端",
@@ -967,7 +967,7 @@
       "discoveredFact": "已识别 Agent 目录；这不代表 Agent 软件已安装或一定会加载 Skill。",
       "observed": "已观测",
       "identity": "Agent 身份",
-      "managedDeployments": "受管副本",
+      "managedDeployments": "完整拷贝 · 管理中",
       "brand": "品牌",
       "client": "客户端",
       "instance": "实例",
@@ -1025,8 +1025,8 @@
     "launchDeployment": "添加到 Agent/项目",
     "managedSkillsCount_one": "{{count}} 个 Skill",
     "managedSkillsCount_other": "{{count}} 个 Skill",
-    "managedRelationsCount_one": "{{count}} 条部署关系",
-    "managedRelationsCount_other": "{{count}} 条部署关系",
+    "managedRelationsCount_one": "{{count}} 条使用关系",
+    "managedRelationsCount_other": "{{count}} 条使用关系",
     "builtinLabel": "内置 · 只读",
     "builtinHint": "内置目录只读，随 Agent 软件更新；如需调整请在对应 Agent 内管理。",
     "sharedDirectoryChip": "支持共享目录",
@@ -1068,8 +1068,8 @@
       },
       "readonly": "内置目录只读，不允许导入",
       "managed_copy": {
-        "supported": "支持复制派发",
-        "unsupported": "不支持复制派发"
+        "supported": "支持完整拷贝派发",
+        "unsupported": "不支持完整拷贝派发"
       },
       "symbolic_link": {
         "supported": "支持符号链接派发",
@@ -1161,19 +1161,19 @@
     "readOnly": "只读事实",
     "detail": {
       "managedDeployments": {
-        "eyebrow": "受管副本",
-        "title": "本项目目录中的受管 Skill 副本",
-        "description": "移除部署关系后文件保留在原位，SkillHub 不再跟踪该副本的外部变化。",
-        "empty": "本项目目录没有受管的 Skill 副本。",
-        "unavailable": "无法读取受管副本记录。",
-        "detach": "移除部署关系",
-        "confirm": "确认移除部署关系",
+        "eyebrow": "完整拷贝 · 管理中",
+        "title": "本项目目录中的完整拷贝",
+        "description": "解除使用关系后，文件保留在原位，SkillHub 不再跟踪该目录项的外部变化。",
+        "empty": "本项目目录没有管理中的完整拷贝。",
+        "unavailable": "无法读取完整拷贝记录。",
+        "detach": "解除使用关系",
+        "confirm": "确认解除使用关系",
         "cancel": "取消",
-        "confirmBody": "确认移除 {{skill}}（{{path}}）的部署关系？文件保留在原位，此后变化不再被跟踪；重新添加或重新导入即可重新接管。",
-        "detached": "已移除部署关系：{{skill}}。",
-        "detachNoticeTitle": "已移除部署关系",
-        "detachFailedTitle": "移除部署关系失败",
-        "failed": "移除部署关系失败（{{code}}）。请重试；若持续出现请记录该错误码。"
+        "confirmBody": "确认解除 {{skill}}（{{path}}）的使用关系？文件会保留在原位，此后不再跟踪其变化。如需继续管理，可重新派发或在关系治理中转入技能库管理。",
+        "detached": "已解除使用关系：{{skill}}。",
+        "detachNoticeTitle": "已解除使用关系",
+        "detachFailedTitle": "解除使用关系失败",
+        "failed": "解除使用关系失败（{{code}}）。请重试；若持续出现请记录该错误码。"
       },
       "eyebrow": "项目详情",
       "agentAssociations": {
@@ -1246,7 +1246,7 @@
         "skipped": "已跳过",
         "failed": "失败"
       },
-      "detachNote": "移除部署关系针对单条关系记录，需在受管副本列表中逐条处理；项目详情没有对应的移除入口。"
+      "detachNote": "解除使用关系针对单条关系记录，需在完整拷贝列表中逐条处理；项目详情没有对应入口。"
     }
   },
   "appShell": {
@@ -1309,7 +1309,7 @@
     "finishedTitle": "初始化已完成",
     "genericError": "操作失败（{{code}}）。请稍后重试或重新打开页面。",
     "bootstrapUnavailable": "暂时无法读取初始化状态。初始化和重新发现暂不可用。",
-    "libraryDescription": "技能库会统一保存受管理的技能内容。完成初始化时才会创建或打开技能库。",
+    "libraryDescription": "技能库统一管理技能主体及其内容。完成初始化时才会创建或打开技能库。",
     "libraryHelper": "确认使用默认位置即可直接继续；也可以选择其他系统目录作为技能库。",
     "pickOtherDirectory": "选择其他目录",
     "customDirectoryApplied": "已记录上述目录作为技能库。完成初始化时才会创建或打开它。",
@@ -1442,7 +1442,7 @@
         "removeTagsConfirmTitle": "确认移除这些标签？",
         "removeTagsConfirmDescription": "将从所选 Skill 移除以下标签：",
         "removeTagsConfirmAction": "确认移除标签",
-        "removeTagsRetained": "保留：Skill 本体、内容与部署关系完全不变。",
+        "removeTagsRetained": "保留：Skill 本体、内容与使用关系均不受影响。",
         "removeTagsRecovery": "恢复：重新添加同名标签即可；移除操作不会自动记录历史。",
         "securityCheck": "运行安全检查",
         "tagOutcomeError": "标签保存失败（{{code}}）。",
@@ -1789,10 +1789,10 @@
       "matrix": "关系矩阵"
     },
     "matrix": {
-      "ariaLabel": "Skill 部署关系矩阵",
+      "ariaLabel": "Skill 使用关系矩阵",
       "skillColumn": "Skill",
-      "loading": "正在读取部署关系…",
-      "empty": "尚无部署关系，先把 Skill 添加到 Agent/项目后即可在此查看矩阵。",
+      "loading": "正在读取使用关系…",
+      "empty": "尚无使用关系，先把 Skill 派发到 Agent/项目后即可在此查看矩阵。",
       "hint": "矩阵仅显示当前页的 Skill；✓ 表示该 Skill 已添加到对应目标。"
     },
     "groupMode": {
@@ -1837,7 +1837,7 @@
       "cancel": "取消",
       "delete": "删除组合 {{name}}",
       "deleteTitle": "删除组合 {{name}}",
-      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、部署关系与文件；此操作不可撤销。",
+      "deleteBody": "组合「{{name}}」包含 {{count}} 个成员。删除只移除该组合记录本身，不影响库中的 Skill、使用关系与文件；此操作不可撤销。",
       "confirmDelete": "确认删除",
       "export": "导出组合 {{name}}",
       "exported": "导出已创建：{{path}}",
@@ -1864,25 +1864,25 @@
       "button": "修改运行名",
       "eyebrow": "技能运行名",
       "title": "修改技能运行名",
-      "description": "这会修改 SKILL.md 中的 name、创建新的技能版本，并同步全部受管使用目标。展示别名保持不变。",
+      "description": "这会修改 SKILL.md 中的 name、创建新的技能版本，并同步全部管理中的使用目标。展示别名保持不变。",
       "input": "新运行名称",
       "preview": "预览全部影响",
       "previewing": "正在检查全部影响",
-      "submitting": "正在同步受管目标",
+      "submitting": "正在同步管理中的目标",
       "previewTitle": "运行名改动预览",
       "previewMissing": "预览没有返回运行名变更详情，请重新检查。",
       "change": "运行名将从「{{previous}}」改为「{{next}}」。",
-      "targetsHeading": "将同步的受管目标（{{count}}）",
-      "noTargets": "当前没有受管使用目标；本次只修改技能主体并创建新版本。",
+      "targetsHeading": "将同步的管理中目标（{{count}}）",
+      "noTargets": "当前没有管理中的使用目标；本次只修改技能主体并创建新版本。",
       "modes": {
-        "managed_copy": "受管拷贝",
+        "managed_copy": "完整拷贝 · 管理中",
         "symbolic_link": "符号链接",
         "directory_junction": "目录联接"
       },
       "edit": "返回修改名称",
       "confirm": "确认修改运行名",
       "close": "关闭",
-      "completed": "运行名修改完成，已同步 {{count}} 个受管目标。",
+      "completed": "运行名修改完成，已同步 {{count}} 个目标。",
       "partial": "运行名修改未能全部完成，已完成 {{applied}} 项，仍需处理 {{failed}} 项。",
       "recovery": "修改需要恢复处理。请先检查恢复中心中的操作记录。",
       "openRecovery": "打开恢复中心",
@@ -1938,11 +1938,11 @@
     },
     "insights": {
       "dependencyShapes": {
-        "importCopy": "导入副本",
-        "managedCopy": "托管副本",
-        "managedLink": "托管链接",
-        "observedCopy": "观察副本",
-        "observedLink": "观察链接",
+        "importCopy": "导入来源",
+        "managedCopy": "完整拷贝 · 管理中",
+        "managedLink": "链接 · 管理中",
+        "observedCopy": "发现的技能 · 完整拷贝 · 未管理",
+        "observedLink": "发现的技能 · 链接 · 未管理",
         "sharedDirectoryRead": "共享目录读取",
         "sharedDirectoryReference": "共享目录引用",
         "unknown": "形态未知"
@@ -1955,7 +1955,7 @@
         "categories": {
           "combinationChanged": "组合调整",
           "contentSaved": "保存内容",
-          "deploymentReconciled": "核对部署",
+          "deploymentReconciled": "核对使用关系",
           "preferenceChanged": "偏好调整",
           "skillAdded": "添加 Skill",
           "skillOperation": "Skill 操作",
@@ -2055,6 +2055,14 @@
       "failureUnknown": "操作未能完成（{{code}}）。若持续出现请记录该错误码。",
       "aiAnalysisLabel": "AI 语义分析",
       "duplicatesPhase": "分析语义重复候选"
+    },
+    "sourceUpdates": {
+      "actions": {
+        "associate": "关联更新来源",
+        "replace": "更换更新来源",
+        "unlink": "解除更新来源",
+        "check": "检查更新"
+      }
     }
   },
   "deployment": {
@@ -2086,7 +2094,7 @@
       "unavailable": "不可用",
       "createAction": "创建并加入派发",
       "createTitle": "创建 Skill 目录？",
-      "createDescription": "将只创建这个 Agent profile 声明的 Skill 目录，不会创建 Agent 根目录；创建后会重新验证目录并加入当前派发。",
+      "createDescription": "将只创建这个 Agent profile 声明的 Skill 目录，不会创建 Agent 根目录；创建后会重新验证目录，再将 Skill 派发到该目录。",
       "createConfirm": "确认创建",
       "createUnavailable": "当前连接不支持创建待建目录。"
     },
@@ -2110,7 +2118,7 @@
     },
     "plan": {
       "heading": "添加计划",
-      "description": "确认目标、部署方式和实际影响后再提交。预览不会修改文件。",
+      "description": "确认目标、派发方式和实际影响后再提交。预览不会修改文件。",
       "target": "目标",
       "operation": "操作",
       "location": "目标目录",
@@ -2119,7 +2127,7 @@
       "impact": {
         "label": "影响",
         "create": "将在目标目录创建一个 Skill 入口；技能库中的源 Skill 不会被修改。",
-        "noOp": "目标中已经是相同部署，无需重复写入。"
+        "noOp": "目标中已经存在相同使用关系，无需重复写入。"
       },
       "conflicts": {
         "generic": "目标存在需要处理的冲突。",
@@ -2142,25 +2150,25 @@
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
       "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
       "technicalDetails": "技术详情",
-      "finalSummary": "链接部署 {{link}} · 复制部署 {{copy}} · 无需变更 {{noChange}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
+      "finalSummary": "链接派发 {{link}} · 完整拷贝派发 {{copy}} · 无需变更 {{noChange}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
     },
     "mode": {
-      "label": "部署方式",
+      "label": "派发方式",
       "automatic": "自动（按目标推荐）",
       "symbolic_link": "符号链接",
       "directory_junction": "目录联接",
-      "managed_copy": "托管复制",
+      "managed_copy": "完整拷贝 · 管理中",
       "symbolic_link_unavailable": "此目标不支持符号链接",
       "directory_junction_unavailable": "此目标不支持目录联接",
-      "userLink": "链接部署",
-      "userCopy": "复制部署",
-      "userLinkUnavailable": "此目标不支持链接部署，将改用复制部署",
+      "userLink": "链接派发",
+      "userCopy": "完整拷贝派发",
+      "userLinkUnavailable": "此目标不支持链接；可选择完整拷贝派发。",
       "technical": "实现方式"
     },
     "name_mismatch": "Skill 文件夹名与 SKILL.md 内的 name 不一致，Agent 可能无法识别这个 Skill。请修正后重新导入。",
     "results": {
       "heading": "添加结果",
-      "manageDeployment": "管理此部署",
+      "manageDeployment": "管理此使用关系",
       "status": {
         "succeeded": "已成功",
         "failed": "失败",
@@ -2171,15 +2179,15 @@
         "skipped": "已跳过"
       },
       "failure": {
-        "targetExists": "目标目录已存在同名内容，无法重复添加。可以先移走或重命名已有文件夹再试；若那是这个 Skill 之前的拷贝，也可以改用「纳入技能库管理」直接管理它。",
-        "nameMismatch": "部署文件夹名与 SKILL.md 不一致。请选择与声明名称一致的部署名；系统不会改写源文件。",
+        "targetExists": "目标目录已存在同名内容，无法重复添加。可以先移走或重命名已有文件夹再试；若那是这个 Skill 之前的拷贝，也可以改用「转入技能库管理」直接管理它。",
+        "nameMismatch": "目标文件夹名与 SKILL.md 不一致。请选择与声明名称一致的目标文件夹名；系统不会改写源文件。",
         "targetChanged": "目标在添加过程中发生变化，请检查目标后再试。",
-        "symlinkNotSupported": "目标不支持符号链接，请改用托管复制。",
-        "junctionNotSupported": "目标不支持目录联接，请改用托管复制。",
+        "symlinkNotSupported": "目标不支持符号链接；可选择完整拷贝。",
+        "junctionNotSupported": "目标不支持目录联接；可选择完整拷贝。",
         "ownershipMismatch": "目标内容或所有权已变化，请检查目标后再试。",
         "ownershipUnknown": "无法确认目标所有权，请检查目标后再试。",
         "securityBlocked": "安全检查阻止了添加，请查看检查结果后再试。",
-        "invalidCapability": "目标不支持所选部署方式，请改用其他方式或目标。"
+        "invalidCapability": "目标不支持所选派发方式，请改用其他方式或目标。"
       }
     },
     "tracker": {
@@ -2193,28 +2201,28 @@
     },
     "preference": {
       "automatic": "自动选择方式",
-      "link": "链接部署",
-      "copy": "复制部署"
+      "link": "链接",
+      "copy": "完整拷贝"
     },
     "regeneratePreview": "重新生成最终预览",
     "groups": {
       "selected": "按所选方式执行",
-      "recommendCopy": "建议改用复制部署",
+      "recommendCopy": "建议选择完整拷贝派发",
       "noChange": "无需变更",
       "blocked": "无法执行",
       "selectAll": "全选本组",
-      "confirmAll": "确认本组全部改用复制",
-      "confirmCopyHint": "勾选表示确认以复制部署落位；确认后请重新生成最终预览。",
+      "confirmAll": "确认本组全部改用完整拷贝",
+      "confirmCopyHint": "勾选表示确认以完整拷贝方式派发；确认后请重新生成最终预览。",
       "includeHint": "勾选表示纳入本批；取消勾选将排除该目标。",
-      "confirmedCopy": "已确认改用复制，将在提交时执行。"
+      "confirmedCopy": "已确认按完整拷贝派发；提交时将执行。"
     },
     "blockReason": {
-      "link_permission_unavailable": "当前账户无权创建链接部署，可改用复制部署。",
-      "link_filesystem_unsupported": "此文件的磁盘或分区不支持链接部署，可改用复制部署。",
+      "link_permission_unavailable": "当前账户无权创建链接；可选择完整拷贝派发。",
+      "link_filesystem_unsupported": "此磁盘或分区不支持创建链接；可选择完整拷贝派发。",
       "target_occupied": "目标目录已存在同名内容，无法重复添加。",
       "path_unavailable": "目标目录当前无法访问，请确认磁盘或网络连接后重试。",
       "shared_impact_requires_resolution": "其他 Agent 也在读取这个共享目录，需要先处理共享影响。",
-      "sharedImpactDetail": "请先在关系治理中处理共享目录的影响，再执行部署。",
+      "sharedImpactDetail": "请先在关系治理中处理共享目录的影响，再派发。",
       "committedBlocked": "该目标未能执行，保持原状。"
     }
   },
@@ -2315,14 +2323,14 @@
     "summary": {
       "title": "删除摘要",
       "central": "技能库：该 Skill 的记录、内容与版本历史将被删除",
-      "links": "链接部署 {{count}} 处：链接文件将随删除一并移除",
-      "copies": "复制部署 {{count}} 处：默认保留为独立拷贝，可逐项改为连拷贝一起删",
-      "imports": "导入拷贝关系 {{count}} 条：关系记录随技能删除；原件文件不受影响"
+      "links": "链接 {{count}} 处：删除技能时会一并移除链接文件",
+      "copies": "完整拷贝 {{count}} 处：默认保留为独立拷贝，可逐项改为连拷贝一起移除",
+      "imports": "导入来源关系 {{count}} 条：关系记录随技能删除；原件文件不受影响"
     },
     "loading": "正在读取删除影响…",
     "loadError": "无法读取删除影响，请稍后重试。",
     "errors": {
-      "deploymentTargetUnavailable": "无法核实部署目标详情，未准备删除操作。",
+      "deploymentTargetUnavailable": "无法核实使用关系目标详情，未准备删除操作。",
       "previewInvalidated": "预览已失效，请重新确认。"
     },
     "commitError": "删除未完成，技能库保持不变，请检查后重试。",
@@ -2333,15 +2341,15 @@
     "choiceLabel": "目标拷贝处理方式",
     "choose": "选择处理方式",
     "choices": {
-      "keep": "保留目标处的文件，解除部署关系（库中记录一并删除）",
+      "keep": "保留目标位置的文件，并解除使用关系（关系记录随技能删除一并清除）",
       "remove": "删除目标目录中的拷贝（从目标移除）",
-      "convert": "转为独立拷贝（保留目标文件，移除部署关系）"
+      "convert": "将完整拷贝保留为独立拷贝，并解除使用关系"
     },
     "confirm": "确认从库中删除",
     "submitting": "正在从库中删除…",
     "groups": {
-      "links": "链接部署",
-      "copies": "复制部署",
+      "links": "链接",
+      "copies": "完整拷贝",
       "linksOutcome": "将删除链接文件",
       "copiesOutcome": "默认保留为独立拷贝",
       "needsConfirmation": "需逐项确认",
@@ -2350,13 +2358,13 @@
       "copyKeepHint": "拷贝文件留在原地继续可用；技能库不再管理它",
       "copyDelete": "连拷贝一起删",
       "copyDeleteHint": "目标目录中的拷贝文件将被删除",
-      "sharedConfirm": "这个目录被多条部署关系共用；我确认删除其中的文件"
+      "sharedConfirm": "这个目录被多条使用关系共用；我确认删除其中的文件"
     },
     "batch": {
       "eyebrow": "批量删除影响",
       "heading": "检查批量删除影响",
-      "description": "已选择从库中删除 {{count}} 个 Skill。请先处理每个部署关系。",
-      "noDeployments": "没有部署关系，可以直接删除。",
+      "description": "已选择从技能库删除 {{count}} 个 Skill。请先处理相关使用关系。",
+      "noDeployments": "没有相关使用关系，可以直接删除。",
       "continue": "继续删除",
       "forceConfirm": "强制删除 {{count}} 个 Skill",
       "loadError": "无法读取批量删除影响，请稍后重试。",
@@ -2397,7 +2405,7 @@
       "continue": "继续处理（重新确认）",
       "continuing": "正在重新核对…",
       "errorCodes": {
-        "deployment_ownership_mismatch": "删除失败：目标当前内容与部署关系不匹配。",
+        "deployment_ownership_mismatch": "删除失败：目标当前内容与使用关系记录不匹配。",
         "deployment_target_changed": "删除失败：目标内容在删除前已变化。",
         "deployment_security_check_blocked": "删除失败：安全检查未通过，已阻止删除。",
         "target_ownership_unknown": "删除失败：无法确认目标归属，已阻止删除。",
@@ -2412,20 +2420,20 @@
   "undeploy": {
     "eyebrow": "从 Agent/项目移除",
     "heading": "要从 {{target}} 移除吗？",
-    "description": "从目标移除会删除目标目录中的拷贝；也可以把文件转为独立拷贝并移除部署关系。",
-    "sharedNotice": "此目标由多个部署关系共享：仅移除当前部署关系，文件保留给其他关系继续使用。",
+    "description": "从目标移除会按关系形式处理目标文件；也可以将完整拷贝保留为独立拷贝并解除使用关系。",
+    "sharedNotice": "此目标由多个使用关系共用：仅解除当前使用关系，文件保留给其他关系继续使用。",
     "choiceLabel": "移除处理方式",
     "choose": "选择处理方式",
     "choices": {
-      "keepShared": "仅移除此部署关系（共享文件保留给其他关系）",
+      "keepShared": "仅解除当前使用关系（共享文件仍供其他关系使用）",
       "remove": "删除目标目录中的拷贝",
-      "keepCopy": "转为独立拷贝（保留目标文件，移除部署关系）"
+      "keepCopy": "将完整拷贝保留为独立拷贝（解除使用关系）"
     },
     "confirm": "确认从目标移除",
     "submitting": "正在从目标移除…",
     "loadError": "无法读取移除影响。",
     "commitError": "从目标移除未完成，请检查目标后重试。",
-    "retained": "保留：库中的 Skill、版本历史与其他部署关系不受影响。",
+    "retained": "保留：技能库中的 Skill、版本历史及其他使用关系不受影响。",
     "recovery": "恢复：重新添加同一 Skill 即可在目标处重建拷贝。",
     "flow": {
       "eyebrow": "解除使用关系",
@@ -2435,8 +2443,16 @@
       "relationDescription": "查看解除此 {{target}} 使用关系的影响。",
       "unknownTarget": "尚未核实目标",
       "entriesHeading": "受影响的入口",
-      "groups": { "agent": "Agent", "shared": "共享目录", "project": "项目" },
-      "forms": { "link": "链接", "full_copy": "完整拷贝", "unknown": "形式尚未核实" },
+      "groups": {
+        "agent": "Agent",
+        "shared": "共享目录",
+        "project": "项目"
+      },
+      "forms": {
+        "link": "链接",
+        "full_copy": "完整拷贝",
+        "unknown": "形式尚未核实"
+      },
       "noTargets": "此分组没有可解除的入口。",
       "copyHandling": "完整拷贝的处理方式",
       "copyChoices": {
@@ -2449,20 +2465,26 @@
       "consumerHeading": "全部受影响的使用方",
       "noOtherConsumers": "没有其他使用方。",
       "entry": "入口：{{path}}",
-      "consumerManagement": { "managed": "由 SkillHub 管理", "unmanaged": "未由 SkillHub 管理" },
-      "consumerHealth": { "normal": "已核实", "attention": "需要检查" },
+      "consumerManagement": {
+        "managed": "由 SkillHub 管理",
+        "unmanaged": "未由 SkillHub 管理"
+      },
+      "consumerHealth": {
+        "normal": "已核实",
+        "attention": "需要检查"
+      },
       "unmanagedWarning": "此位置未由 SkillHub 管理。关系记录结束后，Agent 仍可能读取该文件。",
-      "recordOnlyNote": "此操作只结束关系记录，不会更改目标文件。",
+      "recordOnlyNote": "此操作只解除使用关系，不会更改目标文件。",
       "actionNotes": {
         "remove_link": "移除该入口中已核实的链接。",
         "keep_independent_copy": "目标拷贝留在原处，并与技能库主体分离。",
         "remove_copy_with_backup": "创建恢复备份后移除目标拷贝。",
-        "record_only": "此操作只结束关系记录，Agent 仍可能读取该文件。",
+        "record_only": "此操作只解除使用关系，Agent 仍可能读取该文件。",
         "manage_link": "将此入口改为指向技能主体的链接。",
         "manage_copy": "保留目标文件，并将其纳入技能库同步管理。",
-        "synchronize": "将受管目标更新到技能库当前主体版本。",
-        "repair": "备份目标占用项后，修复受管链接。",
-        "restore": "按原受管方式恢复缺失目标。"
+        "synchronize": "将管理中的目标更新到技能库当前主体版本。",
+        "repair": "备份目标占用项后，修复链接的使用关系。",
+        "restore": "按记录的链接或完整拷贝形式恢复缺失目标。"
       },
       "confirm": "确认解除",
       "submitting": "正在解除使用关系…",
@@ -2480,10 +2502,10 @@
         "remove_copy_with_backup": "备份后移除拷贝",
         "record_only": "只结束跟踪记录",
         "manage_link": "转为管理链接",
-        "manage_copy": "转为管理拷贝",
+        "manage_copy": "转入技能库管理（完整拷贝）",
         "synchronize": "同步到技能库当前版本",
-        "repair": "修复受管链接",
-        "restore": "恢复受管目标"
+        "repair": "修复链接",
+        "restore": "恢复使用目标"
       },
       "recoveryPoint": "恢复备份：{{path}}",
       "close": "关闭"
@@ -2503,7 +2525,7 @@
       "medium": "中风险",
       "low": "低风险"
     },
-    "impact": "影响 {{count}} 个部署关系",
+    "impact": "影响 {{count}} 条使用关系",
     "item": {
       "actionsGroup": "处理 {{subject}} 的建议操作"
     },
@@ -2654,7 +2676,7 @@
       "select_authoritative_version": "选择权威版本",
       "classify_same_name_skill": "审阅同名 Skill",
       "confirm_shared_directory_impact": "确认共享目录影响",
-      "convert_copy_to_managed_link": "审阅副本管理方式",
+      "convert_copy_to_managed_link": "确认完整拷贝的管理方式",
       "convert_shared_reference_to_managed_link": "审阅共享引用",
       "unknown_directory_recognition": "确认目录用途",
       "operation_failure_recovery": "处理未完成操作"
@@ -2663,7 +2685,7 @@
       "select_authoritative_version": "前往冲突处理比较版本，确认要保留的版本。",
       "classify_same_name_skill": "前往冲突处理，确认同名内容是不同技能还是同一技能的不同版本。",
       "confirm_shared_directory_impact": "在关系治理中查看共享目录的使用方，确认影响后再操作。",
-      "convert_copy_to_managed_link": "在关系治理中选择保留独立拷贝，或预览纳入技能库管理。",
+      "convert_copy_to_managed_link": "在关系治理中选择保留独立拷贝，或预览转入技能库管理。",
       "convert_shared_reference_to_managed_link": "在关系治理中审阅共享引用，确认安全的管理方式。",
       "unknown_directory_recognition": "确认来源目录及用途；不支持的 Agent 路径可手动添加后重新检查。",
       "operation_failure_recovery": "前往恢复页面，根据实际操作记录处理未完成操作。"
@@ -2696,26 +2718,26 @@
   },
   "relationshipGovernance": {
     "relationship": {
-      "import_copy": "导入副本",
-      "managed_copy": "复制部署",
-      "managed_link": "链接部署",
-      "observed_copy": "识别到的复制副本",
-      "observed_link": "识别到的链接",
-      "shared_directory_read": "共享目录直接读取",
-      "shared_directory_reference": "共享目录链接引用",
-      "source_copy": "来源副本",
+      "import_copy": "导入来源",
+      "managed_copy": "完整拷贝 · 管理中",
+      "managed_link": "链接 · 管理中",
+      "observed_copy": "发现的技能 · 完整拷贝 · 未管理",
+      "observed_link": "发现的技能 · 链接 · 未管理",
+      "shared_directory_read": "共享目录 · 直接读取",
+      "shared_directory_reference": "共享目录 · 链接引用",
+      "source_copy": "导入来源",
       "unknown": "关系待确认"
     },
     "fileRepresentation": {
       "directory": "目录",
       "symbolic_link": "符号链接",
       "directory_junction": "目录联接",
-      "copy": "副本",
+      "copy": "完整拷贝",
       "unknown": "未知"
     },
     "ownership": {
       "skillhub_managed": "SkillHub 管理",
-      "observed_unmanaged": "观察到未纳管",
+      "observed_unmanaged": "发现的技能，未管理",
       "shared_reference": "共享引用"
     },
     "recognition": {
@@ -2732,7 +2754,7 @@
     },
     "precedence": {
       "preferred": "优先目录",
-      "lower_priority_copy": "低优先级副本",
+      "lower_priority_copy": "较低优先级的完整拷贝",
       "may_coexist": "可共存",
       "unknown": "优先级未登记"
     },
@@ -2744,7 +2766,7 @@
       "needs_validation": "待校验",
       "content_changed": "内容已变化",
       "permission_limited": "权限受限",
-      "managed_occupied": "被受管目录占用",
+      "managed_occupied": "被其他管理中的使用关系占用",
       "operation_failed": "上次操作失败"
     },
     "minimalAction": {
@@ -2759,7 +2781,7 @@
       "select_authoritative_version": "选择权威版本",
       "classify_same_name_skill": "判定同名 Skill 的身份",
       "confirm_shared_directory_impact": "确认共享目录影响",
-      "convert_copy_to_managed_link": "把复制副本转换为管理链接",
+      "convert_copy_to_managed_link": "确认完整拷贝是否转入技能库管理",
       "convert_shared_reference_to_managed_link": "把共享引用转换为管理链接",
       "unknown_directory_recognition": "确认目录识别能力",
       "operation_failure_recovery": "处理操作失败与回退"
@@ -2844,7 +2866,7 @@
       "filterStatuses": "关系健康",
       "filterHealth": "关系健康",
       "filterGovernance": "治理进度",
-      "filterManagement": "集中库管理",
+      "filterManagement": "管理情况",
       "filtersClear": "清除筛选",
       "displaySettings": "显示设置",
       "displaySources": "来源",
@@ -2857,7 +2879,7 @@
         "statesLabel": "关系健康",
         "showDetails": "展开图谱图例说明",
         "hideDetails": "收起图谱图例说明",
-        "typeHint": "边上的文字表示关系类型，线型表示关系健康；有治理信息的使用关系还会显示待处理/已完成和集中库管理状态。"
+        "typeHint": "边上的文字表示关系类型，线型表示关系健康；有治理信息的使用关系还会显示待处理/已完成和技能库管理状态。"
       },
       "canvasLabel": "技能关系图",
       "zoomIn": "放大",
@@ -2892,25 +2914,25 @@
         "derived_from": "复用修改",
         "directory_ownership": "目录归属",
         "directory_recognition": "目录识别",
-        "import_copy": "导入副本",
-        "shared_directory_read": "共享目录直接读取",
-        "shared_directory_reference": "共享目录链接引用",
-        "managed_copy": "复制部署",
-        "managed_link": "链接部署",
-        "observed_copy": "识别到的复制副本",
-        "observed_link": "识别到的链接",
-        "unknown": "关系待确认"
+        "import_copy": "导入来源",
+        "shared_directory_read": "使用关系",
+        "shared_directory_reference": "使用关系",
+        "managed_copy": "使用关系",
+        "managed_link": "使用关系",
+        "observed_copy": "使用关系",
+        "observed_link": "使用关系",
+        "unknown": "待用户确认"
       },
       "edgeKind": {
         "related_skill": "关联 Skill",
         "source": "来源",
-        "deployment": "部署关系",
+        "deployment": "使用关系",
         "located_in": "所在目录",
         "shared": "共享目录",
         "conflict": "冲突"
       },
       "status": {
-        "active": "观察中",
+        "active": "使用中",
         "released": "已收回",
         "content_verified": "内容一致",
         "name_only": "仅同名（未验证）",
@@ -2919,7 +2941,7 @@
       "detailsLabel": "图谱详情",
       "referenceOnly": "来源 Skill 已删除；此节点仅为只读追溯快照。",
       "detailsFacts": "关系事实",
-      "centerFacts": "部署关系 {{deployments}}，来源 {{sources}}，冲突 {{conflicts}}",
+      "centerFacts": "使用关系 {{deployments}}，来源 {{sources}}，冲突 {{conflicts}}",
       "lastVerifiedLabel": "最后验证",
       "lastVerified": "{{time}}",
       "neverVerified": "尚未验证",
@@ -2928,7 +2950,7 @@
       "detailsState": "关系健康",
       "detailsHealth": "关系健康",
       "governanceClassification": "治理进度",
-      "governanceManagement": "集中库管理",
+      "governanceManagement": "管理情况",
       "governanceSummary": "当前说明",
       "governanceDecision": "处理决定",
       "governanceReasons": "原因与条件",
@@ -2958,8 +2980,8 @@
         "hasConclusion": "有 AI 结论"
       },
       "kind": {
-        "duplicate_same_content": "重复内容",
-        "same_name_different_content": "同名不同内容",
+        "duplicate_same_content": "同一技能",
+        "same_name_different_content": "重名",
         "unclassified": "分类证据不足"
       },
       "nav": {
@@ -2995,7 +3017,7 @@
         "heading": "处理决定",
         "confirmSame": "确认同一 Skill",
         "keepDistinct": "保留为独立 Skill",
-        "centralize": "纳入技能库管理",
+        "centralize": "转入技能库管理",
         "centralizeHint": "不改文件：前往关系治理查看影响预览并最终确认。",
         "notNow": "暂不处理",
         "notNowHint": "「暂不处理」不会写入任何结论或历史。",
@@ -3049,7 +3071,7 @@
       "decision": {
         "confirm_same_skill": "确认同一 Skill",
         "keep_distinct": "保留为独立 Skill",
-        "centralize_management": "纳入技能库管理"
+        "centralize_management": "转入技能库管理"
       },
       "empty": {
         "allDone": "干得漂亮！累计已处理 {{count}} 组冲突。",
@@ -3108,22 +3130,22 @@
         "reloaded": "已重新读取当前问题，涉及 {{count}} 个目录条目。下方列出整组问题的关联关系。"
       },
       "duplicateCleanup": {
-        "open": "整理重复副本",
-        "title": "清理重复副本",
-        "description": "核对目录条目并明确选择保留项。其余副本会先备份再移除；当前涉及 {{count}} 个使用位置。",
+        "open": "整理同一技能",
+        "title": "处理多目录中的同一技能",
+        "description": "核对目录条目并明确选择保留项。其余项会先备份再移除；当前涉及 {{count}} 个使用位置。",
         "sharedDirectory": "共享目录",
         "unknownDirectory": "目录类型未知",
-        "multipleBuiltins": "发现多个内置副本，无法安全处理。请先检查目录状态。",
-        "builtinRetained": "平台内置副本只读，将保留：{{path}}",
-        "retainLabel": "保留此副本",
-        "moveRetained": "将保留副本迁到未识别目录",
+        "multipleBuiltins": "发现多个内置技能，无法安全处理。请先检查目录状态。",
+        "builtinRetained": "平台内置技能只读，将保留：{{path}}",
+        "retainLabel": "保留此项",
+        "moveRetained": "将保留项移至未识别目录",
         "destinationLabel": "目标路径",
         "destinationPlaceholder": "输入未被识别为 Agent 或项目技能目录的完整路径",
         "previewUnavailable": "后端未返回清理预览，请重新加载问题后重试。",
         "preview": "本次将清理 {{count}} 个路径（包括迁出项）。",
         "backupBeforeRemove": "移除前会创建备份；问题只有在完整重新扫描确认后才关闭。",
-        "destinationPreview": "保留副本的迁出目标：{{path}}",
-        "confirmLabel": "我已核对保留副本和清理范围，了解其他副本将先备份再移除。",
+        "destinationPreview": "保留项的迁出目标：{{path}}",
+        "confirmLabel": "我已核对保留项和清理范围，了解其余项将先备份再移除。",
         "previewAction": "预览清理影响",
         "confirm": "确认清理",
         "completed": "操作已完成，相关目录已重新扫描。",
@@ -3183,7 +3205,7 @@
         "no_action": "无需处理"
       },
       "buckets": {
-        "unmanaged": "尚未纳入技能库管理",
+        "unmanaged": "未管理",
         "file_missing": "目标位置缺失",
         "link_abnormal": "链接异常",
         "needs_sync": "需要同步",
@@ -3200,17 +3222,17 @@
         "operation_failed": "上次操作失败",
         "restricted": "权限受限",
         "restrictedNote": "受限关系需先解除限制：按各条原因处理后重新核验，关系会回到对应桶等待决定。",
-        "managed_link": "正常受管链接",
+        "managed_link": "链接正常，跟随技能库",
         "retained": "已保留独立拷贝",
         "selectBucket": "勾选{{label}}桶中的全部可执行关系"
       },
       "management": {
-        "not_taken_over": "待集中管理",
-        "taken_over": "已集中管理"
+        "not_taken_over": "未管理",
+        "taken_over": "管理中"
       },
       "usageManagement": {
-        "managed": "已纳入技能库管理",
-        "unmanaged": "尚未纳入技能库管理"
+        "managed": "管理中",
+        "unmanaged": "未管理"
       },
       "form": {
         "link": "链接",
@@ -3218,8 +3240,8 @@
         "unknown": "形式待确认"
       },
       "manage": {
-        "title": "转为集中管理",
-        "description": "选择采用的内容和目标形式。确认前会列出所选关系、技能版本变化及其他受管目标的影响。",
+        "title": "转入技能库管理",
+        "description": "选择采用的内容和目标形式。确认前会列出所选关系、技能版本变化及其他管理中使用目标的影响。",
         "contentBasis": "采用哪处内容",
         "libraryCurrent": "技能库当前版本（推荐）",
         "originalEntry": "使用位置原件",
@@ -3230,7 +3252,7 @@
         "originalVersionNote": "采用原件内容后，将为 {{count}} 个技能主体新增版本；原版本与校验依据保留。",
         "preview": "预览转换影响",
         "preparing": "正在准备转换预览…",
-        "confirm": "确认转为集中管理",
+        "confirm": "确认转入技能库管理",
         "committing": "正在转换关系…",
         "changeSelection": "修改选择并重新预览",
         "resultHeading": "转换结果",
@@ -3241,7 +3263,7 @@
       },
       "managedChange": {
         "sync": {
-          "title": "同步管理拷贝",
+          "title": "同步完整拷贝",
           "description": "将目标拷贝更新为技能库当前主体版本。目标有未同步改动时，需要你明确确认采用主体版本。",
           "contentChoice": "我确认以技能库当前版本替换目标内容",
           "preparing": "正在准备同步预览…",
@@ -3249,16 +3271,16 @@
           "confirm": "确认同步"
         },
         "repair": {
-          "title": "修复受管链接",
-          "description": "备份目标位置的占用项，再恢复指向技能主体的受管链接。",
-          "contentChoice": "我确认以技能库当前版本恢复受管链接",
+          "title": "修复链接",
+          "description": "备份目标位置的占用项，再恢复指向技能主体的链接。",
+          "contentChoice": "我确认以技能库当前版本恢复链接",
           "preparing": "正在准备修复预览…",
           "committing": "正在修复链接…",
           "confirm": "确认修复"
         },
         "restore": {
-          "title": "恢复受管目标",
-          "description": "按记录的受管方式恢复缺失目标，并核对恢复后的实际入口。",
+          "title": "恢复使用目标",
+          "description": "按记录的链接或完整拷贝形式恢复缺失目标，并核对实际入口。",
           "preparing": "正在准备恢复预览…",
           "committing": "正在恢复目标…",
           "confirm": "确认恢复"
@@ -3294,17 +3316,17 @@
         "retained_independent_copy": "已保留为独立拷贝"
       },
       "shortName": {
-        "healthy": "使用正常",
+        "healthy": "正常",
         "unmanaged": "尚未纳入管理",
         "builtin_original": "内置原件正常",
-        "file_missing": "使用目标缺失",
-        "link_abnormal": "链接需检查",
-        "needs_sync": "需要同步",
+        "file_missing": "文件缺失",
+        "link_abnormal": "链接异常",
+        "needs_sync": "待同步",
         "sync_failed": "同步失败",
-        "unable_to_verify": "暂无法核验",
-        "user_confirmation": "需用户确认",
-        "healthyDescription": "当前使用事实已核验为正常，且纳入技能库管理。",
-        "unmanagedDescription": "当前使用状态正常，但尚未纳入技能库管理，仍需你决定是否管理。",
+        "unable_to_verify": "无法核验",
+        "user_confirmation": "待用户确认",
+        "healthyDescription": "当前使用事实已核验为正常，且处于管理中。",
+        "unmanagedDescription": "当前使用状态正常，但尚未管理，仍需你决定是否转入技能库管理。",
         "builtin_originalDescription": "这是健康的内置原件，无需管理；它仍是原件，不是独立拷贝。",
         "file_missingDescription": "使用目标文件或目录缺失。检查目标后再选择可用操作。",
         "link_abnormalDescription": "使用链接异常或链接目标已变化。检查实际目标后再继续。",
@@ -3314,7 +3336,7 @@
         "user_confirmationDescription": "当前关系仍需你选择处理方式。查看事实与可用操作后再决定。",
         "link_issue": "链接需处理",
         "link_issueDescription": "目标不可访问或链接目标已变化。先重新检查关系，再查看可用处理方式。",
-        "content_changed": "内容有变化",
+        "content_changed": "内容变化",
         "content_changedDescription": "目标内容与上次确认时不同。重新检查后再决定如何处理。",
         "needs_review": "待重新检查",
         "needs_reviewDescription": "当前证据不足以支持后续操作。重新检查目标并确认身份后再继续。",
@@ -3323,13 +3345,13 @@
         "restricted": "暂不可操作",
         "restrictedDescription": "当前权限或关系条件不支持此操作。查看原因，或先处理所列条件。",
         "retained": "已保留拷贝",
-        "retainedDescription": "这条关系已明确保留为独立拷贝；它仍未纳入技能库管理。",
-        "taken_over": "已集中管理",
-        "taken_overDescription": "此目标当前由集中库管理。若下方显示异常，请先重新检查关系。",
-        "not_taken_over": "待集中管理",
-        "not_taken_overDescription": "此关系尚未纳入集中库管理。请先查看原因，再使用当前可用操作。",
+        "retainedDescription": "这条关系已明确保留为独立拷贝；该拷贝当前未管理。",
+        "taken_over": "管理中",
+        "taken_overDescription": "此目标当前由技能库管理。若下方显示异常，请先重新检查关系。",
+        "not_taken_over": "未管理（发现的）",
+        "not_taken_overDescription": "此关系当前未管理。请先查看原因，再使用当前可用操作。",
         "completed": "已完成",
-        "completedDescription": "此关系已有明确处理结果；集中库管理状态请单独查看。"
+        "completedDescription": "此关系已有明确处理结果；技能库管理状态请单独查看。"
       },
       "entryLabel": "入口：",
       "multipleSkillNames": "多个技能名称：{{names}}",
@@ -3338,10 +3360,10 @@
         "verification_required": "当前验证结果不足，请重新检查目标。",
         "content_changed": "目标内容已变化，请重新检查后再决定。",
         "permission_limited": "当前权限不足，暂时无法执行该操作。",
-        "managed_target_occupied": "目标位置已被其他受管关系占用，请先检查冲突。",
+        "managed_target_occupied": "目标位置已被其他管理中的使用关系占用，请先检查冲突。",
         "operation_failed": "最近一次关系操作未能完成，请检查当前状态后重试。",
         "target_identity_unconfirmed": "尚未确认目标身份，请重新检查目标。",
-        "relationship_not_convertible": "此关系类型暂不支持纳入技能库管理。",
+        "relationship_not_convertible": "此关系类型暂不支持转入技能库管理。",
         "shared_impact_confirmation_required": "其他 Agent 也在使用此共享目录，需要先查看并确认影响。",
         "managed_entry_requires_verified_removal": "此目标由技能库管理；必须先验证可安全移除目标入口。解除关系不会绕过这项检查。",
         "link_target_unavailable": "链接目标当前无法访问，请确认目标位置后重新检查。",
@@ -3349,7 +3371,7 @@
         "subject_unavailable": "关系主体当前不可用，请先恢复可访问状态再检查。"
       },
       "importBatch": {
-        "banner": "本次导入留下 {{count}} 个本地来源副本"
+        "banner": "本次导入后，原位置仍保留 {{count}} 个技能原件"
       },
       "search": {
         "label": "搜索 Skill、目标或路径",
@@ -3369,15 +3391,15 @@
       "source": {
         "scan": "扫描发现",
         "import": "导入登记",
-        "agent_local": "Agent 本地副本",
-        "user_local": "用户本地副本",
-        "registered_project": "项目登记副本",
-        "online": "在线导入副本",
-        "central_library": "集中库副本",
+        "agent_local": "Agent 目录中的技能",
+        "user_local": "用户目录中的技能",
+        "registered_project": "项目目录中的技能",
+        "online": "在线导入来源",
+        "central_library": "技能库",
         "legacy_unclassified": "未分类来源"
       },
       "readiness": {
-        "eligible_to_centralize": "可纳入技能库管理",
+        "eligible_to_centralize": "可转入技能库管理",
         "needs_validation": "待校验",
         "blocked": "受阻",
         "already_centralized": "已由技能库管理"
@@ -3407,10 +3429,10 @@
         "rollbackUnavailable": "不可回退"
       },
       "actions": {
-        "centralize_management": "纳入技能库管理",
+        "centralize_management": "转入技能库管理",
         "undeploy": "从 Agent/项目移除",
         "sync": "同步到技能库当前版本",
-        "repair": "修复受管链接",
+        "repair": "修复链接",
         "restore": "恢复目标",
         "revalidate": "重新检查",
         "keep_independent_copy": "保留为独立拷贝",
@@ -3437,10 +3459,10 @@
         "nextPage": "下一页",
         "pageInfo": "第 {{page}} 页 / 共 {{total}} 条",
         "action": {
-          "clean_source_copy": "清理来源副本",
-          "retain_source_copy": "保留来源副本",
+          "clean_source_copy": "清理来源位置的技能文件",
+          "retain_source_copy": "保留来源位置的技能文件",
           "relink_source_copy": "重新关联来源目录",
-          "centralize_management": "纳入技能库管理",
+          "centralize_management": "转入技能库管理",
           "retain": "保留",
           "relink": "重新关联",
           "validate": "重新检查"
@@ -3468,27 +3490,27 @@
       },
       "clean": {
         "action": "清理",
-        "previewTitle": "清理来源副本",
-        "explain": "将删除该 Skill 在下方位置的本地来源副本。",
+        "previewTitle": "清理来源位置的技能文件",
+        "explain": "将删除该 Skill 在下方位置的本地文件。",
         "stopUsing": "清理后，Agent 处的原入口将停止使用",
-        "centralUnaffected": "集中库中的技能副本不受影响",
-        "redeployLater": "以后可以把该技能重新部署到此 Agent",
+        "centralUnaffected": "技能库中的技能不受影响",
+        "redeployLater": "以后可以把该技能重新派发到此 Agent",
         "backupRollback": "清理前会先创建备份，支持回滚",
-        "noRollback": "此副本没有可用的回滚路径",
-        "ownership": "我确认这是我可以清理的本地副本",
+        "noRollback": "此文件没有可用的回滚路径",
+        "ownership": "我确认这是我有权清理的本地文件",
         "commit": "确认清理",
         "resultTitle": "清理完成",
-        "deployNow": "部署到此 Agent",
-        "deployLater": "稍后部署",
+        "deployNow": "派发到此 Agent",
+        "deployLater": "稍后派发",
         "needsValidationHint": "先重新检查，再清理或保留"
       },
       "retain": {
         "action": "保留",
-        "done": "已保留此来源副本"
+        "done": "已保留来源位置的技能文件"
       },
       "selection": {
         "selectedCount": "已选 {{count}} 条",
-        "openBatch": "批量纳入技能库管理",
+        "openBatch": "批量转入技能库管理",
         "openBatchRetain": "批量保留为独立拷贝"
       },
       "batchSummary": {
@@ -3496,20 +3518,20 @@
         "blocked": "受阻 {{count}}"
       },
       "centralize": {
-        "explain": "纳入技能库管理会保留当前位置的可用入口，改为使用技能库中的统一版本。",
-        "done": "已纳入技能库管理：{{skill}}"
+        "explain": "转入技能库管理会保留当前位置的可用入口，改为使用技能库中的统一版本。",
+        "done": "已转入技能库管理：{{skill}}"
       },
       "undeployResult": {
         "done": "已从目标移除：{{path}}"
       },
       "preview": {
-        "centralizeTitle": "纳入技能库管理预览",
+        "centralizeTitle": "转入技能库管理预览",
         "undeployTitle": "从 Agent/项目移除预览",
         "revoke_retentionTitle": "撤销保留决定",
         "revoke_retentionImpact": "只撤销这条关系上的保留决定，不修改来源文件、目标入口或技能库 Skill 主体。关系状态会按当前健康事实重新评估。",
         "revoke_retentionConfirm": "确认撤销保留决定",
         "end_relationshipTitle": "解除关系",
-        "end_relationshipImpact": "解除这条来源关系记录。保留来源目录中的文件和技能库 Skill 主体；不会尝试移除受管理的目标入口。",
+        "end_relationshipImpact": "解除这条导入来源关系。保留来源位置的文件和技能库 Skill 主体；不会尝试移除其他使用关系建立的目标入口。",
         "end_relationshipConfirm": "确认解除关系",
         "skillLabel": "技能",
         "targetLabel": "目标路径",
@@ -3529,10 +3551,10 @@
         "unexpectedRelation": "返回结果与当前关系不匹配。请重新加载清单确认状态。"
       },
       "batch": {
-        "title": "批量纳入技能库管理",
+        "title": "批量转入技能库管理",
         "retainTitle": "批量保留为独立拷贝",
         "hint": "受阻项默认不选中；可以逐项取消，其余行不受影响。",
-        "mixing": "来源副本与部署关系不能加入同一批次；请分开处理",
+        "mixing": "来源位置文件清理与解除使用关系不能加入同一批次；请分开处理",
         "itemExecutable": "可执行",
         "itemBlocked": "受阻",
         "itemCheck": "执行 {{name}}",
@@ -3542,7 +3564,7 @@
         "running": "正在逐条执行并验证…",
         "resultTitle": "批量结果",
         "resultPartial": "部分成功：{{committed}} 条成功，{{failed}} 条失败",
-        "resultAll": "已全部纳入技能库管理（{{count}} 条）",
+        "resultAll": "已全部转入技能库管理（{{count}} 条）",
         "resultAllRetained": "已保留为独立拷贝（{{count}} 条）",
         "resultNone": "本次没有成功，请逐条查看失败原因",
         "resultCancelled": "已取消 {{count}} 条",
@@ -3554,8 +3576,8 @@
         "rollback": "回退 {{id}}",
         "rollbackAvailable": "可回退",
         "childOperation": "操作记录",
-        "trackerLabel": "纳入技能库管理批次",
-        "itemTrackerLabel": "纳入技能库管理",
+        "trackerLabel": "转入技能库管理批次",
+        "itemTrackerLabel": "转入技能库管理",
         "close": "关闭"
       },
       "empty": {
@@ -3638,11 +3660,11 @@
     },
     "kinds": {
       "delete_skill": "删除技能",
-      "deploy_skill": "部署技能",
+      "deploy_skill": "派发技能",
       "import_skill": "导入技能",
       "migrate_original": "迁移原始目录",
-      "relink_source_copy": "重连来源副本",
-      "undeploy_skill": "解除部署",
+      "relink_source_copy": "重新关联来源文件",
+      "undeploy_skill": "解除使用关系",
       "uninstall_skill": "卸载技能"
     }
   },
@@ -3720,7 +3742,7 @@
       "migrationAvailable": "连接本机服务后可使用技能库迁移入口。",
       "runHealthCheck": "运行健康检查",
       "unnamedSkill": "未命名技能",
-      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、添加），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或部署一致性检查。",
+      "healthScope": "健康检查只检查未完成的应用操作（如被中断的导入、添加），并给出恢复/修复路径；不包含重名或重复内容检测（重复分析在导入时进行）、内容校验或使用关系一致性检查。",
       "checking": "检查中…",
       "checkFailed": "健康检查失败，请稍后重试",
       "allClear": "未发现问题",
@@ -3911,7 +3933,7 @@
     },
     "backup": {
       "heading": "数据保护",
-      "hierarchy": "“数据保护”是父模块：备份、恢复、导出与退出管理都是它下面的子能力，在“数据保护”页集中管理。",
+      "hierarchy": "“数据保护”是父模块：备份、恢复、导出与退出管理都是它下面的子能力，在“数据保护”页统一管理。",
       "location": "备份位置",
       "retention": "保留时间",
       "days": "天",
@@ -4042,7 +4064,7 @@
       "verified": "备份包校验通过。",
       "review": "检查恢复影响",
       "commit": "恢复备份",
-      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 条部署关系需要重新发现。",
+      "summary": "发现 {{skills}} 个 Skill；{{deployments_requiring_rediscovery}} 条使用关系需要重新识别。",
       "decision": "{{skillId}} 的处理方式",
       "choose": "选择处理方式",
       "overwrite": "覆盖现有 Skill",
@@ -4133,7 +4155,7 @@
         "project": "暂时没有按项目统计的配置关系"
       },
       "eyebrow": "配置关系分布",
-      "heading": "受管理技能的配置关系去向",
+      "heading": "技能库管理的使用关系去向",
       "loading": "正在加载配置关系图表",
       "projectLimit": "显示配置关系最多的 {{shown}} / 共 {{total}} 个项目",
       "scrollableDetails": "可滚动的配置关系数量明细"
@@ -4235,21 +4257,21 @@
     },
     "uninstall": {
       "heading": "退出管理",
-      "description": "先选择部署关系并预览影响，再逐项勾选要执行的动作；未勾选的动作不会执行。",
-      "scenario": "适用场景：不再想让 SkillHub 继续管理某个已部署到 Agent/项目的 Skill 时使用。可以按需选择先备份、解除全部部署、把目标目录保留为独立拷贝、清理本机数据或凭据；技能库默认保留，你的 Agent 原有文件不会被删除。没有部署关系时无需使用本功能。",
-      "loadingDeployments": "正在读取部署关系…",
-      "noDeployments": "当前没有部署关系。",
-      "selectDeployment": "选择部署关系 {{id}}",
+      "description": "先选择使用关系并预览影响，再逐项勾选要执行的动作；未勾选的动作不会执行。",
+      "scenario": "适用场景：不再需要 SkillHub 管理已派发到 Agent/项目的技能时使用。可以按需选择先备份、解除全部使用关系、将目标文件保留为独立拷贝、清理本机数据或凭据；技能库默认保留，你的 Agent 原有文件不会被删除。没有使用关系时无需使用本功能。",
+      "loadingDeployments": "正在读取使用关系…",
+      "noDeployments": "当前没有使用关系。",
+      "selectDeployment": "选择此使用关系",
       "deploymentLabel": "{{id}}：{{skill_id}} → {{target_id}}（{{state}}）",
       "deploymentState": {
         "planned": "计划中",
-        "deployed": "已部署",
+        "deployed": "已派发",
         "removed": "已移除",
         "needs_recovery": "待恢复"
       },
       "preview": "预览影响",
       "apply": "应用所选动作",
-      "impactSummary": "将影响 {{count}} 个部署关系。",
+      "impactSummary": "将影响 {{count}} 条使用关系。",
       "preservesYes": "中央 Skill 库会保留。",
       "preservesNo": "中央 Skill 库不会保留。",
       "actionsHeading": "可用动作（默认全不选）",

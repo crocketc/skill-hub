@@ -5,8 +5,8 @@ import { expect, test, type Page } from "@playwright/test";
  * with deterministic facts; it never touches a real directory, network, or
  * Tauri side effect.
  */
-async function installNativePreview(page: Page) {
-  await page.addInitScript(() => {
+async function installNativePreview(page: Page, options: { projectDeployment?: boolean } = {}) {
+  await page.addInitScript((projectDeployment: boolean) => {
     let callbackId = 0;
     let conflictResolved = false;
     // 来源更新的会话内状态：检查后才出现可采用候选；采用后回到最新。
@@ -151,7 +151,10 @@ async function installNativePreview(page: Page) {
       { id: "claude-target", label: "Claude Code", path: "C:/Preview/.claude", available: true, physical_id: "claude-physical", modes: ["managed_copy"] },
       { id: "missing-target", label: "Unavailable target", path: "C:/Preview/missing", available: false, physical_id: "missing-physical", modes: ["managed_copy"] },
     ];
-    const deployments = [{ id: "dep-1", skill_id: "pdf-reader", version_id: "v1", target_id: "codex-target", state: "deployed", mode: "symbolic_link", managed: true, runtime_name: "pdf-reader", expected_hash: "hash", observed_hash: "hash" }];
+    const deployments = [
+      { id: "dep-1", skill_id: "pdf-reader", version_id: "v1", target_id: "codex-target", state: "deployed", mode: "symbolic_link", managed: true, runtime_name: "pdf-reader", expected_hash: "hash", observed_hash: "hash" },
+      ...(projectDeployment ? [{ id: "dep-project-1", skill_id: "release-notes", version_id: "v2", target_id: "project-aurora", state: "deployed", mode: "managed_copy", managed: true, runtime_name: "release-notes", expected_hash: "hash", observed_hash: "hash" }] : []),
+    ];
     const skillItems = [
       { skill_id: "pdf-reader", display_name: "PDF Reader", runtime_name: "pdf-reader", original_description: "Read PDFs", translated_description: null, user_note: null, tags: ["documents"], license: "MIT", lifecycle: "Normal", trial_due: null, author: "anthropics", source_kind: "github", source_locator: "anthropics/skills", current_version: "v1", current_version_label: "v1", agent_deployment_count: 1, agent_deployment_target_ids: ["codex-target"], project_deployment_count: 0, basic_check: "passed", ai_check: "not_checked", high_risk_count: 1 },
       { skill_id: "release-notes", display_name: "Release Notes", runtime_name: "release-notes", original_description: "Write release notes", translated_description: null, user_note: null, tags: ["automation"], license: "MIT", lifecycle: "Normal", trial_due: null, author: "skill-hub", source_kind: "local", source_locator: "C:/Preview/release-notes", current_version: "v2", current_version_label: "v2", agent_deployment_count: 0, agent_deployment_target_ids: [], project_deployment_count: 1, basic_check: "passed", ai_check: "not_checked", high_risk_count: 0 },
@@ -248,8 +251,8 @@ async function installNativePreview(page: Page) {
           ]);
           case "get_conflict_workspace": return ok("conflict_workspace", { cases: conflictResolved ? [] : [{ case: { classification: "uncertain", conflict_id: "import-conflict:same_name_different_content:find-skills", evidence: { fingerprints_match: null, names_match: true, sufficient_identity_evidence: false }, member_skill_ids: ["pdf-reader", "release-notes"], members: [{ skill_id: "pdf-reader", version_id: "v1", provenance_id: null, directory_node_id: null, path: "C:/Preview/SkillHub/skills/find-skills", fingerprint: "fnv1a:0abc" }, { skill_id: "release-notes", version_id: "v2", provenance_id: null, directory_node_id: null, path: "C:/Preview/.claude/skills/find-skills", fingerprint: "fnv1a:0def" }] }, latest_analysis: null, analysis_stale: false, recommended_decision: null }], handled_count: 0, handled: [], relationship_revision: "preview-rel-1", last_verified_at: null });
           // 真实流接线轮（W3-5/ed0cdf39）：使用去向卡以治理清单行为单一事实
-          // 来源，清单必须携带真实行——两条部署关系（待接管独立副本 + 已接管
-          // 受管链接）与一条只读导入原件（已完成保留）。counts 保持既有口径
+          // 来源，清单必须携带真实行——两条使用关系（未管理的独立拷贝 + 管理中
+          // 的链接）与一条只读导入原件（已完成保留）。counts 保持既有口径
           // 不动：概览「2 to handle」= status_needs_validation + status_blocked，
           // 关系页签治理计数 = counts.all，均被其他用例断言。
           case "list_relation_governance": return ok("relation_governance_ledger", {
@@ -532,7 +535,7 @@ async function installNativePreview(page: Page) {
       },
     });
     Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", { configurable: true, value: { unregisterListener() {} } });
-  });
+  }, options.projectDeployment ?? false);
 }
 
 test("overview metrics, chart dimensions, and tag drilldown remain navigable", async ({ page }) => {
@@ -978,7 +981,7 @@ test("combination manager maintains members, renames, and guards duplicates", as
 });
 
 test("project detail shows access, agent associations, and assembly status", async ({ page }) => {
-  await installNativePreview(page);
+  await installNativePreview(page, { projectDeployment: true });
   await page.goto("/projects/project-aurora");
   await expect(page.getByRole("heading", { name: "Aurora" })).toBeVisible();
   // Agent 呈现约定：勾选项统一用品牌与展示类型命名，不暴露 client_id。
@@ -986,6 +989,15 @@ test("project detail shows access, agent associations, and assembly status", asy
   await expect(page.getByText("OpenAI")).toBeVisible();
   await expect(page.getByText(/Already satisfied/)).toBeVisible();
   await expect(page.getByText(/Conflict needs a choice/)).toBeVisible();
+  const manageRelation = page.getByTestId("governance-link");
+  await expect(manageRelation).toHaveAttribute(
+    "href",
+    "/relationships/governance?from=project&project=project-aurora&skillId=release-notes",
+  );
+  await manageRelation.click();
+  await expect(page).toHaveURL(
+    "/relationships/governance?from=project&project=project-aurora&skillId=release-notes",
+  );
 });
 
 test("operations records link to a committed operation detail", async ({ page }) => {
@@ -1005,9 +1017,9 @@ test("native skill detail surfaces review sections, source adoption, and version
   // 主体事实；使用去向区以真实关系数据呈现治理状态（native 夹具：独立副本待接管）。
   await expect(page.getByText("MIT", { exact: true })).toBeVisible();
   // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改写为行动导向措辞，
-  // 待接管的独立副本直接给出治理入口指引，徽标为「待集中管理」。
+  // 未管理的独立拷贝直接给出关系治理入口指引，徽标为「未管理」。
   // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
-  await expect(page.getByText("原位置仍是独立拷贝；可在关系治理中纳入集中管理。")).toBeVisible();
+  await expect(page.getByText("原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。")).toBeVisible();
   // 来源更新区（真实流，K6）：显式关联网络来源 → 显式只读检查 → 采用影响
   // 预览 → 确认采用。关联只登记来源（不替换内容、不自动检查）；检查通过
   // 后才出现采用入口；采用前先看文件级影响预览。

@@ -4,7 +4,7 @@ import path from "node:path";
 
 test.use({ locale: "zh-CN" });
 
-test("governance board stays compact, switches views with selection, and opens the existing impact preview", async ({
+test("governance board stays compact, switches views with selection, and opens the management choices", async ({
   page,
 }) => {
   const screenshots = path.resolve(process.cwd(), "apps/desktop/test-results/ui/relationship-governance");
@@ -25,7 +25,7 @@ test("governance board stays compact, switches views with selection, and opens t
   const shortStatus = page.getByTestId("governance-short-name-preview:centralize-pdf");
   await shortStatus.focus();
   await expect(shortStatus).toHaveAccessibleDescription(
-    "当前使用状态正常，但尚未纳入技能库管理，仍需你决定是否管理。",
+    "当前使用状态正常，但尚未管理，仍需你决定是否转入技能库管理。",
   );
 
   const canvas = page.getByTestId("governance-row-list");
@@ -71,10 +71,13 @@ test("governance board stays compact, switches views with selection, and opens t
   expect(narrowCanvas?.height).toBeGreaterThan(180);
 
   await page.getByTestId("governance-action-preview:centralize-pdf").click();
-  await expect(page.getByRole("dialog", { name: "纳入技能库管理预览" })).toBeVisible();
-  await expect(page.getByTestId("governance-centralize-explain")).toContainText("保留当前位置");
-  await expect(page.getByTestId("removal-impact-facts")).toBeVisible();
-  await expect(page.getByRole("button", { name: "确认执行" })).toBeVisible();
+  const managementDialog = page.getByRole("dialog", { name: "转入技能库管理" });
+  await expect(managementDialog).toBeVisible();
+  await expect(managementDialog.getByRole("radio", { name: "技能库当前版本（推荐）" })).toBeChecked();
+  await expect(managementDialog.getByRole("radio", { name: "使用位置原件" })).toBeVisible();
+  await expect(managementDialog.getByRole("radio", { name: "链接" })).toBeChecked();
+  await expect(managementDialog.getByRole("radio", { name: "完整拷贝" })).toBeVisible();
+  await expect(managementDialog.getByRole("button", { name: "预览转换影响" })).toBeEnabled();
 });
 
 test("legacy retained source evidence is not a no-action decision and history stays reachable", async ({ page }) => {

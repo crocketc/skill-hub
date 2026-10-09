@@ -35,17 +35,20 @@ test("agent detail shows the directory matrix with recognition and relation fact
   await expect(shared.getByLabel("Trae · 终端").first()).toBeVisible();
   await expect(shared.getByText("trae.code")).toHaveCount(0);
 
-  // 关系行按用户语义命名；其他 Agent 的复制部署显式标注归属。
-  await expect(shared.getByText("共享目录直接读取")).toBeVisible();
-  await expect(shared.getByText("复制部署")).toBeVisible();
+  // 关系行按用户语义命名；其他 Agent 的受管完整拷贝显式标注归属。
+  const sharedSkill = shared.getByRole("listitem").filter({ hasText: "skill-pdf" });
+  await expect(shared.getByText("共享目录 · 直接读取")).toBeVisible();
+  await expect(shared.getByText("完整拷贝 · 管理中")).toBeVisible();
   await expect(shared.getByText("归属 Agent：")).toBeVisible();
+  await expect(sharedSkill.getByTestId("governance-link")).toHaveAttribute(
+    "href",
+    /\/relationships\/governance\?from=agent&agent=custom&relationId=rel%3Apreview%3Aread/,
+  );
   // 技术形态只在技术详情内出现。
   await expect(shared.getByText(/符号链接/)).toHaveCount(0);
 
   // 移除影响入口按关系提供；打开后先展示最小影响动作与其他消费者。
-  await shared
-    .getByRole("listitem")
-    .filter({ hasText: "skill-pdf" })
+  await sharedSkill
     .getByRole("button", { name: "查看移除影响" })
     .click();
   await expect(page.getByText("移除影响预览")).toBeVisible();
@@ -59,18 +62,18 @@ test("agent detail shows the directory matrix with recognition and relation fact
 test("skill detail surfaces governed usage and removal impact", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
 
-  // 转正后使用去向区以卡片呈现每个使用位置的状态事实（待集中管理/已集中管理）。
+  // 使用去向卡片直接呈现关系的管理状态（未管理/管理中）。
   // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改为行动导向措辞，
   // 待接管给出治理入口指引，已接管说明跟随与共享目录计数口径。
   const usage = page.locator("#review-usage-body");
   // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
-  await expect(usage.getByText("原位置仍是独立拷贝；可在关系治理中纳入集中管理。")).toBeVisible();
+  await expect(usage.getByText("原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。")).toBeVisible();
   await expect(
-    usage.getByText("受管链接跟随技能库当前版本。共享目录只计一个物理去向。"),
+    usage.getByText("管理中的链接跟随技能库当前版本。共享目录只计一个物理去向。"),
   ).toBeVisible();
 
   // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框。2026-10-08
-  // 弹窗重设计：摘要优先（删什么/留什么），分组明细默认收起；复制部署默认
+  // 弹窗重设计：摘要优先（删什么/留什么），分组明细默认收起；完整拷贝默认
   // 预勾「保留为独立拷贝」，确认带默认值即可用，改选在组内单选完成；
   // 预览门面提供确定性影响夹具，不在预览里执行真实删除。
   await page.getByRole("button", { name: "删除", exact: true }).click();
@@ -86,7 +89,7 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
     dialog.getByText("恢复：从库中删除无法在应用内撤销；建议先在「设置 → 数据保护」导出备份。"),
   ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
-  await dialog.locator("details > summary").filter({ hasText: "复制部署" }).click();
+  await dialog.locator("details > summary").filter({ hasText: "完整拷贝" }).click();
   await dialog.getByRole("radio", { name: /连拷贝一起删/ }).first().check();
   await expect(dialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
 });

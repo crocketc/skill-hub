@@ -338,7 +338,7 @@ test("review toolbar routes dispatch and export to their real flows and previews
   await page.getByRole("button", { name: "删除", exact: true }).click();
   const deleteDialog = page.getByRole("dialog");
   await expect(deleteDialog).toContainText("从库中删除 PDF Reader 吗？");
-  // 2026-10-08 弹窗重设计：复制部署默认预勾「保留为独立拷贝」，确认带默认值即可用；
+  // 2026-10-08 弹窗重设计：完整拷贝默认预勾「保留为独立拷贝」，确认带默认值即可用；
   // 门控与改选细节由 relationship-views 与 workflow-deployment 用例把守，取消仍无副作用。
   await expect(deleteDialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
   await deleteDialog.getByRole("button", { name: "取消" }).click();
@@ -441,7 +441,7 @@ test("review versions compare, rename and restore with current relationship impa
 
   await page.getByRole("button", { name: "恢复到 稳定版" }).click();
   const rollback = page.getByRole("region", { name: "恢复影响预览" });
-  await expect(rollback).toContainText("受管链接：2 个");
+  await expect(rollback).toContainText("管理中的链接：2 个");
   // 术语轮（2026-10-08）：副本→拷贝。
   await expect(rollback).toContainText("独立拷贝：1 个");
   await expect(rollback).toContainText("恢复后重新执行基础安全检查");
@@ -451,7 +451,7 @@ test("review versions compare, rename and restore with current relationship impa
   await page.getByRole("button", { name: "恢复到 稳定版" }).click();
   await page.getByRole("region", { name: "恢复影响预览" }).getByRole("button", { name: "确认创建恢复版本" }).click();
   await expect(page.getByTestId("review-version-result")).toContainText("已创建新的当前版本");
-  await expect(page.getByTestId("review-version-result")).toContainText("受管链接继续跟随当前版本");
+  await expect(page.getByTestId("review-version-result")).toContainText("管理中的链接继续跟随当前版本");
   await expect(page.getByTestId("review-version-result")).toContainText("独立拷贝保持原状");
 });
 
@@ -546,22 +546,22 @@ test("review header offers centralized management through the shared governance 
   const actionOrder = await actionArea.locator(".sh-button").evaluateAll((elements) =>
     elements.map((element) => element.textContent?.trim()),
   );
-  expect(actionOrder).toEqual(["转为集中管理", "派发", "导出", "删除"]);
-  // 追加裁决：转为集中管理与“待集中管理”徽标同色（warning），不与绿色强调入口混用。
-  await expect(actionArea.locator(".sh-skill-detail-review__warning-action")).toHaveText("转为集中管理");
+  expect(actionOrder).toEqual(["转入技能库管理", "派发", "导出", "删除"]);
+  // 入口与“未管理”状态同为 warning，不与绿色强调入口混用。
+  await expect(actionArea.locator(".sh-skill-detail-review__warning-action")).toHaveText("转入技能库管理");
   await expect(actionArea.locator(".sh-skill-detail-review__accent-action")).toHaveCount(0);
 
   // 真实流接线轮（§7.8 生产承载）：确认入口打开与治理页共用的真实批次
   // 对话框（候选行来自治理清单、prepare→commit 真实契约），演示确认弹层
-  // 与「原位置已按受管链接接管」的前端状态翻转退役；接管后的卡片刷新由
+  // 与「原位置已转入技能库管理」的前端状态翻转退役；操作后的卡片刷新由
   // 关系治理页用例把守。
-  await actionArea.getByRole("button", { name: "转为集中管理" }).click();
+  await actionArea.getByRole("button", { name: "转入技能库管理" }).click();
   const batchDialog = page.getByTestId("governance-batch-dialog");
   await expect(batchDialog).toBeVisible();
-  await expect(batchDialog).toContainText("批量纳入技能库管理");
+  await expect(batchDialog).toContainText("批量转入技能库管理");
   await expect(batchDialog.getByRole("checkbox", { name: "执行 PDF Reader" })).toBeChecked();
   await batchDialog.getByTestId("governance-batch-confirm").click();
-  await expect(page.getByTestId("governance-batch-result-title")).toContainText("已全部纳入技能库管理（1 条）");
+  await expect(page.getByTestId("governance-batch-result-title")).toContainText("已全部转入技能库管理（1 条）");
   await expect(page.getByTestId(`governance-batch-result-rel:skill-preview:copy`)).toContainText("成功");
 });
 

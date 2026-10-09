@@ -224,8 +224,8 @@ it("shows one directory card for same-brand kinds and expands selection to every
   expect(within(grid).getByText("桌面端/终端")).toBeVisible();
 
   await user.click(within(grid).getByRole("checkbox"));
-  const mode = screen.getByLabelText("部署方式") as HTMLSelectElement;
-  expect(within(mode).getByRole("option", { name: "链接部署" })).toBeDisabled();
+  const mode = screen.getByRole("combobox", { name: "派发方式" }) as HTMLSelectElement;
+  expect(within(mode).getByRole("option", { name: "链接" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "预览" }));
   expect(preview).toHaveBeenCalledWith([expect.objectContaining({ targetIds: ["codex-cli", "codex-desktop"] })], undefined);
 });
@@ -372,7 +372,7 @@ it("previews the whole batch in one call and groups pair dispositions for explic
   const plan = await screen.findByRole("region", { name: /添加计划/ });
   // 四组按处置分组呈现，每组标题携带 pair 数量。
   expect(within(plan).getByRole("heading", { name: /按所选方式执行/ })).toHaveTextContent("1");
-  expect(within(plan).getByRole("heading", { name: /建议改用复制部署/ })).toHaveTextContent("1");
+  expect(within(plan).getByRole("heading", { name: /建议选择完整拷贝派发/ })).toHaveTextContent("1");
   expect(within(plan).getByRole("heading", { name: /无需变更/ })).toHaveTextContent("1");
   expect(within(plan).getByRole("heading", { name: /无法执行/ })).toHaveTextContent("1");
 });
@@ -386,7 +386,7 @@ it("sends the selected preference instead of an implementation mode (14.11)", as
   render(<I18nextProvider i18n={i18n}><MemoryRouter><BatchDeploymentPage facade={facade} skillIds={["skill-pdf"]} /></MemoryRouter></I18nextProvider>);
 
   await user.click(await screen.findByLabelText("Codex CLI"));
-  await user.selectOptions(screen.getByLabelText("部署方式"), "link");
+  await user.selectOptions(screen.getByLabelText("派发方式"), "link");
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   expect(preview).toHaveBeenCalledWith(
@@ -414,7 +414,7 @@ it("requires group confirmation per pair and never merges different impacts into
   // 组内全选 + 逐项取消：勾选组全选后，单个 pair 可取消。
   const group = groups.find((candidate) => within(candidate).queryByRole("checkbox", { name: /Skill 1 · Codex CLI/ }));
   expect(group).toBeDefined();
-  const selectAll = within(group!).getByRole("checkbox", { name: /确认本组全部改用复制/ });
+  const selectAll = within(group!).getByRole("checkbox", { name: /确认本组全部改用完整拷贝/ });
   await user.click(selectAll);
   const rowCheckbox = within(group!).getByRole("checkbox", { name: /Skill 1 · Codex CLI/ });
   expect(rowCheckbox).toBeChecked();
@@ -461,7 +461,7 @@ it("asks the backend to re-preview with held fingerprints and honors preserved c
   ));
   expect(await screen.findByRole("button", { name: "确认添加" })).toBeEnabled();
   const preserved = await screen.findByTestId("disposition-group");
-  expect(within(preserved).getByText(/已确认改用复制/)).toBeVisible();
+  expect(within(preserved).getByText(/已确认按完整拷贝派发/)).toBeVisible();
 });
 
 it("re-demands confirmation when the backend reports the fingerprint drifted (14.7)", async () => {
@@ -520,8 +520,8 @@ it("counts the final summary across link, copy, no-change, excluded and still-bl
   const plan = await screen.findByRole("region", { name: /添加计划/ });
   const summary = within(plan).getByRole("status");
   // 链接 1、复制 2（后端判定保留的确认计入复制）、无需变更 1；已排除 0；仍受阻 2。
-  expect(summary).toHaveTextContent("链接部署 1");
-  expect(summary).toHaveTextContent("复制部署 2");
+  expect(summary).toHaveTextContent("链接派发 1");
+  expect(summary).toHaveTextContent("完整拷贝派发 2");
   expect(summary).toHaveTextContent("无需变更 1");
   expect(summary).toHaveTextContent("已排除 0");
   expect(summary).toHaveTextContent("仍受阻 2");
@@ -790,8 +790,8 @@ it("renders every blocked reason in user-facing words and keeps raw causes in te
   await user.click(screen.getByRole("button", { name: "预览" }));
 
   const plan = await screen.findByRole("region", { name: /添加计划/ });
-  expect(within(plan).getByText(/当前账户无权创建链接部署/)).toBeVisible();
-  expect(within(plan).getByText(/此文件的磁盘或分区不支持链接部署/)).toBeVisible();
+  expect(within(plan).getByText(/当前账户无权创建链接/)).toBeVisible();
+  expect(within(plan).getByText(/此磁盘或分区不支持创建链接/)).toBeVisible();
   expect(within(plan).getByText(/目标目录已存在同名内容/)).toBeVisible();
   expect(within(plan).getByText(/目标目录当前无法访问/)).toBeVisible();
   expect(within(plan).getByText(/其他 Agent 也在读取这个共享目录/)).toBeVisible();
@@ -850,12 +850,12 @@ it("shows the user-facing mode and keeps the implementation type in technical de
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
 
-  // 首屏主文案是「复制部署」，绝不作为主文案出现「托管复制」。
+  // 首屏主文案是「完整拷贝派发」，实现形态只放在技术详情中。
   const rows = await screen.findAllByTestId("target-plan");
   expect(rows.length).toBeGreaterThan(0);
-  expect(within(rows[0]).getByText("复制部署")).toBeVisible();
+  expect(within(rows[0]).getByText("完整拷贝派发")).toBeVisible();
   // 具体实现方式只在「技术详情」可展开区域内。
-  const implNode = within(rows[0]).getByText("托管复制");
+  const implNode = within(rows[0]).getByText("完整拷贝 · 管理中");
   expect(implNode.closest("details")).not.toBeNull();
   expect(implNode).not.toBeVisible();
 });
@@ -877,9 +877,9 @@ it("offers a reachable manage-deployment entry after a successful batch (DEV-21-
   await user.click(await screen.findByRole("button", { name: "确认添加" }));
 
   // 每个成功的 Skill 一条入口（同一 Skill 的多目标不重复）。
-  const manage = await screen.findAllByRole("button", { name: /管理此部署/ });
+  const manage = await screen.findAllByRole("button", { name: /管理此使用关系/ });
   expect(manage).toHaveLength(2);
-  await user.click(screen.getAllByRole("button", { name: /管理此部署：Skill / })[0]);
+  await user.click(screen.getAllByRole("button", { name: /管理此使用关系：Skill / })[0]);
   expect(onManageDeployment).toHaveBeenCalledWith("skill-1");
 });
 

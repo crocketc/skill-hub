@@ -1,5 +1,7 @@
 import enUS from "./en-US/common.json";
 import zhCN from "./zh-CN/common.json";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 // 术语守护（任务 11，规则冻结于 docs/archive/requirements/产品与交互设计.md §2.2 与实施计划任务 11）：
 // - 用户可见动作键（按钮、步骤名、状态转换、空态引导）一律用“添加到 Agent/项目”“从 Agent/项目移除”，
@@ -9,6 +11,17 @@ import zhCN from "./zh-CN/common.json";
 // - zh-CN/en-US 键集一致性仍由 ./i18n.test.ts 断言，本文件不重复承担该职责。
 
 type Translations = Record<string, unknown>;
+
+type TranslationLeaf = readonly [key: string, value: string];
+
+function leaves(tree: Translations, prefix = ""): TranslationLeaf[] {
+  return Object.entries(tree).flatMap(([name, value]) => {
+    const key = prefix ? `${prefix}.${name}` : name;
+    if (typeof value === "string") return [[key, value] as const];
+    if (value !== null && typeof value === "object") return leaves(value as Translations, key);
+    return [];
+  });
+}
 
 function lookup(tree: Translations, key: string): string {
   let node: unknown = tree;
@@ -196,20 +209,53 @@ const NOUN_KEYS = [
   "backup.uninstall.impactSummary",
 ];
 
-// 正向锁：技术详情/诊断术语必须原样保留，防止后续“一刀切删词”。
+// 正向锁：派发方式和关系形式必须使用规范词；符号链接、目录联接只用于技术详情。
 const TECHNICAL_LOCKS: ReadonlyArray<readonly [key: string, zh: string, en?: RegExp]> = [
-  ["deployment.mode.label", "部署方式", /deployment mode/i],
+  ["deployment.mode.label", "派发方式", /dispatch method/i],
   ["deployment.mode.symbolic_link", "符号链接", /symbolic link/i],
   ["deployment.mode.directory_junction", "目录联接", /directory junction/i],
-  ["deployment.mode.managed_copy", "托管复制", /managed copy/i],
-  ["deployment.results.failure.invalidCapability", "部署方式", /deployment mode/i],
-  ["relationshipGovernance.relationship.managed_copy", "复制部署", /copy deployment/i],
-  ["relationshipGovernance.relationship.managed_link", "链接部署", /link deployment/i],
+  ["deployment.mode.managed_copy", "完整拷贝 · 管理中", /full copy · managed/i],
+  ["deployment.results.failure.invalidCapability", "派发方式", /dispatch method/i],
+  ["relationshipGovernance.relationship.managed_copy", "完整拷贝 · 管理中", /full copy · managed/i],
+  ["relationshipGovernance.relationship.managed_link", "链接 · 管理中", /link · managed/i],
   ["relationshipGovernance.fileRepresentation.symbolic_link", "符号链接", /symbolic link/i],
   ["relationshipGovernance.fileRepresentation.directory_junction", "目录联接", /directory junction/i],
-  ["removal.choices.keep", "解除部署关系"],
-  ["backup.uninstall.scenario", "解除全部部署", /undeploy everything/i],
-  ["settings.library.healthScope", "部署一致性检查", /deployment consistency/i],
+  ["settings.llm.protocol.azure_open_ai", "Azure OpenAI（部署级寻址）", /Azure OpenAI \(deployment-scoped\)/i],
+  ["removal.choices.keep", "解除使用关系", /release the usage relationships/i],
+  ["backup.uninstall.scenario", "解除全部使用关系", /release all usage relationships/i],
+  ["settings.library.healthScope", "使用关系一致性检查", /usage-relationship consistency/i],
+];
+
+const CONFIRMED_RELATION_TERMS: ReadonlyArray<readonly [key: string, zh: string, en: string]> = [
+  ["relationships.graph.edgeType.usage", "使用关系", "Usage relationship"],
+  ["relationships.graph.edgeType.import_origin", "导入来源", "Import origin"],
+  ["relationships.graph.edgeType.update_source", "更新来源", "Update source"],
+  ["relationships.graph.edgeType.derived_from", "复用修改", "Derived from"],
+  ["relationships.graph.edgeType.directory_ownership", "目录归属", "Directory location"],
+  ["relationships.graph.edgeType.directory_recognition", "目录识别", "Directory recognition"],
+  ["relationships.decisions.kind.duplicate_same_content", "同一技能", "Same skill"],
+  ["relationships.decisions.kind.same_name_different_content", "重名", "Name taken"],
+  ["relationships.governance.shortName.healthy", "正常", "Healthy"],
+  ["relationships.governance.shortName.file_missing", "文件缺失", "Files missing"],
+  ["relationships.governance.shortName.link_abnormal", "链接异常", "Link issue"],
+  ["relationships.governance.shortName.content_changed", "内容变化", "Content changed"],
+  ["relationships.governance.shortName.needs_sync", "待同步", "Sync pending"],
+  ["relationships.governance.shortName.sync_failed", "同步失败", "Sync failed"],
+  ["relationships.governance.shortName.unable_to_verify", "无法核验", "Unable to verify"],
+  ["relationships.governance.shortName.user_confirmation", "待用户确认", "Awaiting your decision"],
+  ["relationships.decisions.actions.centralize", "转入技能库管理", "Manage through skill library"],
+  ["relationships.decisions.decision.centralize_management", "转入技能库管理", "Manage through skill library"],
+  ["relationships.governance.manage.title", "转入技能库管理", "Manage through skill library"],
+  ["relationships.governance.manage.confirm", "确认转入技能库管理", "Confirm management through the skill library"],
+  ["skillDetail.sourceUpdates.actions.associate", "关联更新来源", "Associate update source"],
+  ["skillDetail.sourceUpdates.actions.replace", "更换更新来源", "Replace update source"],
+  ["skillDetail.sourceUpdates.actions.unlink", "解除更新来源", "Unlink update source"],
+  ["skillDetail.sourceUpdates.actions.check", "检查更新", "Check for updates"],
+];
+
+const DEPRECATED_PRODUCT_WORDS: ReadonlyArray<readonly [lang: "zh" | "en", pattern: RegExp]> = [
+  ["zh", /集中库|(?:待|已|转为|确认转为)集中管理|纳入技能库管理|副本|结束关系|完全重复|名称重复|可能匹配|搜索匹配|受管|托管|观察|(?:复制|链接)部署|复制派发|部署|管理拷贝/],
+  ["en", /central[ -]library|centrally managed|manage(?:d|s|ing)? (?:\w+ )?centrally|end(ing)? (the |this )?relationship|managed (?:links?|cop(?:y|ies))|observed (?:links?|cop(?:y|ies))|(?:link|cop(?:y|ies)) deployments?|deployments? relationship|\b(?:un)?deploy(?:ment|ed|ing|s)?\b|^(?:Exact duplicates?|Same name(?:, different content)?|Possible match|Search-matched an existing Skill)$/i],
 ];
 
 it("locks the frozen action verbs verbatim", () => {
@@ -258,4 +304,35 @@ it("keeps technical-detail terms in place (positive locks)", () => {
     if (enPattern && !enPattern.test(lookup(enUS, key))) missing.push(`en ${key} misses ${String(enPattern)}`);
   }
   expect(missing).toEqual([]);
+});
+
+it("matches the confirmed bilingual relationship, conflict, status, and source-action terms", () => {
+  const mismatches = CONFIRMED_RELATION_TERMS.flatMap(([key, zh, en]) => {
+    try {
+      const actualZh = lookup(zhCN, key);
+      const actualEn = lookup(enUS, key);
+      return actualZh === zh && actualEn === en
+        ? []
+        : [`${key}: zh=${JSON.stringify(actualZh)}; en=${JSON.stringify(actualEn)}`];
+    } catch (error) {
+      return [`${key}: ${error instanceof Error ? error.message : String(error)}`];
+    }
+  });
+  expect(mismatches).toEqual([]);
+});
+
+it("does not let broad audit exceptions preserve deprecated product wording", () => {
+  const technicalWordKeys = new Set(["settings.llm.protocol.azure_open_ai"]);
+  const withoutPlaceholders = (value: string) => value.replace(I18NEXT_PLACEHOLDER, "");
+  const violations = [
+    ...leaves(zhCN).flatMap(([key, value]) =>
+      !technicalWordKeys.has(key) && DEPRECATED_PRODUCT_WORDS[0][1].test(withoutPlaceholders(value)) ? [`zh ${key}: ${value}`] : [],
+    ),
+    ...leaves(enUS).flatMap(([key, value]) =>
+      !technicalWordKeys.has(key) && DEPRECATED_PRODUCT_WORDS[1][1].test(withoutPlaceholders(value)) ? [`en ${key}: ${value}`] : [],
+    ),
+  ];
+  const audit = readFileSync(path.resolve(process.cwd(), "../../scripts/terminology-audit.mjs"), "utf8");
+  expect(audit).not.toContain("KEY_ALLOWLIST");
+  expect(violations).toEqual([]);
 });

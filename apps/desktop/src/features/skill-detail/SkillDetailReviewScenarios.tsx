@@ -152,7 +152,7 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
   return (
     <>
       {onCentralize ? (
-        <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">转为集中管理</Button>
+        <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">转入技能库管理</Button>
       ) : null}
       {onReclaim ? (
         <Button onClick={onReclaim} size="sm" variant="secondary">{t("skillDetail.actions.reclaim")}</Button>

@@ -56,7 +56,9 @@ test("lands the import on a summary with the governance task deep link and organ
     summary.getByRole("button", { name: "去处理" }),
   ).toBeVisible();
   // 原件保护事实：导入不删源，清理必须在关系治理中单独确认。
-  await expect(summary.getByText(/原始副本保持不变/)).toBeVisible();
+  await expect(
+    summary.getByText("原位置的技能文件保持不变；如需清理，请在关系治理中单独确认并保留回退路径。"),
+  ).toBeVisible();
   // 待处理项如实计数，不静默吞掉。
   await expect(summary.getByText(/待处理 1/)).toBeVisible();
 });

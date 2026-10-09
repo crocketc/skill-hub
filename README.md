@@ -5,7 +5,7 @@
 ### 让每一个 Agent，都能找到、用上并安全管理正确的 Skill
 
 SkillHub 是面向 Windows 和 macOS 的本地 Skill 全生命周期管理工具：
-发现、导入、检查、整理、部署、版本管理、备份和更新，一处完成。
+发现、导入、检查、整理、派发、版本管理、备份和更新，一处完成。
 
 [![Latest release](https://img.shields.io/github/v/release/crocketc/skill-hub?display_name=tag&label=release)](https://github.com/crocketc/skill-hub/releases)
 [![Validate](https://img.shields.io/github/actions/workflow/status/crocketc/skill-hub/validate.yml?label=quality)](https://github.com/crocketc/skill-hub/actions/workflows/validate.yml)
@@ -21,7 +21,7 @@ SkillHub 是面向 Windows 和 macOS 的本地 Skill 全生命周期管理工具
 Skill 越用越多之后，真正麻烦的往往不是“有没有 Skill”，而是：
 
 - 同一个 Skill 散落在 Codex、Claude、Cursor 和不同项目目录里。
-- 同名 Skill 内容不同，复制部署后很难判断哪个才是正在使用的版本。
+- 重名 Skill 内容不同，派发后很难判断各使用位置对应哪个技能主体。
 - 更新来源不清楚，删除时又担心误删 Agent 原有文件。
 - 每个 Agent 的目录规则不同，普通用户很难记住所有路径。
 - Skill 的版本、备份、恢复和跨设备迁移没有统一入口。
@@ -29,27 +29,27 @@ Skill 越用越多之后，真正麻烦的往往不是“有没有 Skill”，�
 
 SkillHub 把这些“文件散落、关系不清、操作不敢做”的问题，收敛成一个可追踪的本地工作流。
 
-我们的终极目标是：**集中库统一管理本地所有 Skill 主体，Agent 和项目通过链接使用 Skill。** 内容、版本和生命周期集中维护，Agent/项目目录最终只保留指向集中库的使用入口。
+**技能库统一管理技能主体的内容、版本、元数据与生命周期，Agent 和项目通过使用关系使用技能。**
 
-这是产品演进目标。当前仍保留复制部署等兼容能力，链接是否可用取决于目标 Agent、系统能力和目录权限。Skill 已导入集中库，不等于原 Agent/项目中的独立副本已完成接管；完整关系模型正在梳理，后续将通过明确状态、治理提醒及导入完成页的“转为集中库管理”入口，引导用户预览、确认并安全替换为链接。无法安全转换时保留原状，不静默覆盖用户文件。
+技能库不会自动接管本地所有目录。导入后，来源位置仍作为导入来源保留；使用位置可按目标能力建立链接或完整拷贝关系。转入管理、回收技能和解除使用关系前会显示影响并核验目标；无法安全处理时保留原文件，不静默覆盖。
 
 ## SkillHub 的核心亮点
 
-### 一个集中库，管理所有 Skill
+### 技能库管理技能主体
 
-把 Skill 导入用户选择的集中库，保留来源、所有权、版本和部署关系。集中库管理的是 Skill 主体，包括内容、版本、元数据和生命周期；导入不会悄悄覆盖用户原始文件。
+把 Skill 导入用户选择的技能库，保留来源、版本和使用关系。技能库管理技能主体，包括内容、版本、元数据和生命周期；导入不会悄悄覆盖来源位置的文件。
 
-### 面向 Agent 和项目的部署
+### 派发到 Agent 和项目
 
-选择一个或多个 Agent、项目后，使用复制或符号链接部署。SkillHub 记录每一次部署，解除部署时只移除 SkillHub 创建的目标，不删除集中库和用户原文件。
+选择一个或多个 Agent、项目后，派发链接或完整拷贝。SkillHub 记录每一条使用关系；解除关系时按关系形式处理目标，不删除技能库主体或导入来源原件。
 
 ### 重复与冲突先说清楚
 
-导入前分析内容哈希、来源、运行时名称和搜索相似度，区分完全重复、同来源、同名不同内容和候选相似项。遇到需要判断的情况交给用户选择，不静默覆盖。导入后按关系类别分组确认（完全重复、内容一致的复制副本、同名不同内容、通用目录直接读取、通用目录链接引用、识别未知），每组显示影响数量、受影响 Agent 与回退方式，未确认不放行；识别未知与未决冲突进入待办，不静默跳过。
+导入前分析内容、来源和运行名称，区分同一技能与重名；相似技能只作为可选的语义提示，不替代确定性判定。需要用户决定的项目会进入治理流程，显示受影响位置与回退方式；未知目录和未决问题不会静默跳过。
 
 ### 关系转换可回退
 
-复制副本与共享目录引用可以在确认影响后替换为集中库管理链接：先备份、再建新链接验证、最后移除原入口，同一位置不留双入口；失败时保留原入口或从恢复点回退，链接能力不足时明确告知而不是静默改为复制覆盖。Agent 详情页提供目录与关系矩阵（目录角色、识别状态、共享消费者），Skill 详情页提供来源存证、关系类型与移除影响预览；可选的 AI 冲突分析只给出短结论与建议，不替代确定性检查，也不改写用户裁决。
+已有使用位置可在确认影响后转入技能库管理，按目标能力选择链接或维护同步的完整拷贝；先备份并核验替代入口，再处理原入口。共享目录迁移会核对全部消费者；部分失败时保留共享来源并提供恢复路径。Agent 详情页展示目录与使用关系，Skill 详情页展示来源和关系影响；可选的 AI 分析只提供建议，不替代确定性检查，也不改写用户决定。
 
 ### 确定性安全检查，LLM 只是可选增强
 
@@ -67,40 +67,35 @@ LLM 接入统一在一个设置入口：25 个内置供应商预设（按产品�
 
 ### 为普通用户降低门槛，为开发者保留控制权
 
-普通用户可以通过向导和可视化操作管理 Skill；开发者仍可以查看路径、选择复制/链接方式、使用自定义目录，并通过 CLI 和本地 CI 保持可复核性。
+普通用户可以通过向导和可视化操作管理 Skill；开发者仍可以查看路径、选择完整拷贝或链接、使用自定义目录，并通过 CLI 和本地 CI 保持可复核性。
 
 ## 一眼看懂工作流
 
 ```mermaid
 flowchart LR
     A[发现本机 Skill] --> B[检查重复与风险]
-    B --> C[导入集中库]
+    B --> C[导入技能库]
     C --> D[版本与标签管理]
-    D --> E[部署到 Agent / 项目]
-    E --> F[更新、回滚或解除部署]
+    D --> E[派发到 Agent / 项目]
+    E --> F[更新、回滚或回收技能]
     C --> G[备份与迁移]
 ```
 
 ## 当前状态
 
-当前发布版本为 **`0.1.0` 早期版本**，重点验证本地 Skill 管理闭环和跨平台发布流程。
+当前公开发布版本为 **`0.1.0` 早期版本**。`feat/v0.2.0-product-completion` 分支上的统一关系体系属于后续开发，尚未发布。
 
 已覆盖的核心方向：
 
-- 本地 Skill 发现、导入和集中库管理
-- Agent/项目目录识别与部署关系管理
-- 复制部署、链接部署和安全解除部署
+- 本地 Skill 发现、导入和技能库主体管理
+- Agent/项目目录识别与使用关系管理
+- 链接或完整拷贝派发，以及回收技能和解除使用关系
 - 重复/冲突分析、版本管理和 Markdown 预览
 - 基础安全检查与可选 LLM 检查
 - 备份、恢复、迁移和应用内更新
 - Windows 11 与 macOS 的本地 CI 验证
 
-进行中（代码与自动化已完成，真实设备验收待做）：
-
-- 待处理工作台从当前检查、冲突、关系治理、恢复与试用状态派生事项；与会话通知互补，提供精确操作入口、真实状态关闭和主导航计数。代码与自动化已完成，桌面验收待做；状态见 [开发状态](docs/development/开发状态-2026-10-10.md) 与 [验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-10.md)
-- 导入关系分组确认、复制副本/共享引用转管理链接、Agent 目录矩阵、Skill 详情关系视图、可选 AI 冲突分析及冲突组生产写入链路，以及来源副本治理与部署预览 pair 契约（2026-09-24 实施计划 15/15）已完成代码与自动化；真实设备验收待做。进度见 [开发状态](docs/development/开发状态-2026-10-10.md)、[自动化测试说明](docs/development/自动化测试说明-2026-10-10.md) 与 [验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-10.md)
-- 技能关系页面与统一异步执行反馈已有实现和自动化证据；技能保存、版本采用、来源治理、共享删除与导出仍有生产链路缺口，Windows junction 与链接权限仍待真机取证。下一阶段范围见 [技能功能补全实施计划](docs/archive/decisions/plans/2026-10-04-技能功能缺口补全实施计划.md)，完成情况以当前验收矩阵为准。
-- Windows 目录联接（junction）执行器已有实现；当前 Windows 自动化基线通过，未开启开发者模式时的真实目录联接、权限受限及共享影响仍待桌面验收（RC-13/RC-14）。自动化结果不替代真实设备证据。
+统一关系体系 T01—T21 已完成代码与定向自动化验证；T22 全量测试和发布检查待执行。Windows/macOS 真实桌面人工验收尚未执行，自动化结果不代表人工通过。当前实施进度见[开发状态](docs/development/开发状态-2026-10-10.md)、[自动化测试说明](docs/development/自动化测试说明-2026-10-10.md)、[人工验收清单](docs/development/人工验收清单-2026-10-10.md)和[验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-10.md)。
 
 实验能力（仅供参考）：
 
@@ -157,16 +152,16 @@ Windows 更新包使用 `.nsis.zip`，macOS 更新包使用 `.app.tar.gz`。DMG 
 
 SkillHub 使用适配器识别各 Agent 的个人级、项目级和自定义 Skill 目录。候选平台包括 Codex、Claude Code、Claude Desktop、Gemini CLI、Cursor、Cline、GitHub Copilot、Windsurf、OpenCode、Trae、Qoder、CodeBuddy、Comate、Kimi Code、OpenClaw、Hermes Agent、Grok Build、ZCode、Pi coding agent、DeepSeek Harness 等。
 
-兼容性分为“能识别目录”和“Agent 实际会执行 Skill”两个层次。SkillHub 负责前者以及文件部署，不假设目标 Agent 一定会加载或执行某个 Skill。
+兼容性分为“能识别目录”和“Agent 实际会执行 Skill”两个层次。SkillHub 负责前者以及文件派发，不假设目标 Agent 一定会加载或执行某个 Skill。
 
 ## 数据、隐私与安全边界
 
-- 目录索引、部署关系、版本和操作记录默认保存在本机。
-- 用户 Skill、API Key、个人配置和集中库路径不会提交到本项目仓库。
+- 目录索引、使用关系、版本和操作记录默认保存在本机。
+- 用户 Skill、API Key、个人配置和技能库路径不会提交到本项目仓库。
 - 联网搜索、来源获取和 LLM 检查均为可选功能，启用前请确认数据发送范围。
-- LLM API 密钥只保存在操作系统凭据存储；集中库、备份和标准导出只保留引用，不含密钥明文。
+- LLM API 密钥只保存在操作系统凭据存储；技能库、备份和标准导出只保留引用，不含密钥明文。
 - SkillHub 不负责安装 Skill 运行所需的 Python、ffmpeg、MCP 或其他外部工具。
-- 不会静默覆盖用户文件；复制、链接、解除部署和删除都需要明确的操作路径。
+- 不会静默覆盖用户文件；完整拷贝、链接、解除使用关系和删除都需要明确的操作路径。
 - 未签名/未公证安装包不会被描述为“绕过” Windows 或 macOS 安全审查。
 
 ## 已知限制与后续方向
@@ -261,10 +256,10 @@ docs/                          安装、发布和依赖说明
 - SkillHub 版本
 - 目标 Agent 及版本
 - 可复现步骤和错误信息
-- 使用的是复制部署、链接部署还是自定义目录
+- 使用的是完整拷贝派发、链接派发还是自定义目录
 
 请勿在 Issue、日志或提交中上传 API Key、密码、个人 Skill 内容或完整用户目录路径。
 
 ## English summary
 
-SkillHub is a local Skill lifecycle manager for Windows and macOS. It discovers, imports, checks, versions, deploys, backs up, and updates Agent Skills while preserving user-owned files. The `0.1.0` release is an early distribution with unsigned/notarized-install limitations; verify release assets and follow the operating-system security prompts.
+SkillHub is a local Skill lifecycle manager for Windows and macOS. It discovers, imports, checks, versions, dispatches, backs up, and updates Agent Skills while preserving user-owned files. The `0.1.0` release is an early distribution with unsigned/notarized-install limitations; verify release assets and follow the operating-system security prompts.
