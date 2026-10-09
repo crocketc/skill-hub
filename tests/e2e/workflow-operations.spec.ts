@@ -60,7 +60,7 @@ test("links a persisted record to its operation detail page", async ({ page }) =
   // DEV-99：链接可达名是「本地化操作名：对象名」，不再是裸 kind。
   const link = page.getByRole("link", { name: "Import skill: Fixture pack" });
   await expect(link).toHaveAttribute("href", "/operations/op-import-1");
-  const failureLink = page.getByRole("link", { name: "Deploy skill: PDF extractor" });
+  const failureLink = page.getByRole("link", { name: "Dispatch skill: PDF extractor" });
   await expect(failureLink).toHaveAttribute("href", "/operations/op-deploy-9");
 
   await page.goto("/__preview/operation-progress");

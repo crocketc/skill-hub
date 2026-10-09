@@ -237,7 +237,7 @@ test.describe("responsive workspace behaviour", () => {
     // 的比较入口）。
     await page.locator("#review-sources").scrollIntoViewIfNeeded();
     await expect(
-      page.locator("#review-sources").getByRole("button", { name: "检查更新" }),
+      page.locator("#review-sources").getByRole("button", { name: /Check for updates|检查更新/ }),
     ).toBeVisible();
     await page.locator("#review-versions").scrollIntoViewIfNeeded();
     await expect(

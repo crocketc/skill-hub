@@ -909,24 +909,22 @@
 
 .sh-skill-detail--review .sh-version-timeline article {
   align-items: center;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 8rem 13rem minmax(8rem, 1fr) 7.5rem 6.5rem 8rem;
   gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-3);
 }
 
 .sh-skill-detail--review .sh-version-timeline__heading {
-  flex: none;
   gap: var(--space-1);
   /* “当前版本”徽标只在当前行出现：为徽标预留槽位宽，
      时间列及后续槽位的起点跨行一致。 */
-  min-width: 7.5rem;
+  min-width: 0;
 }
 
 /* 时间·来源槽位：各行来源词长短不一，预留统一宽度保持变化列对齐。 */
 .sh-skill-detail--review .sh-version-timeline article > p:first-of-type {
-  flex: none;
-  min-width: 13rem;
+  min-width: 0;
 }
 
 /* 槽位占位（当前版本无恢复动作）：视觉隐藏、等宽接住恢复槽位。 */
@@ -963,7 +961,6 @@
 
 .sh-skill-detail--review .sh-version-timeline article > p {
   color: var(--ui-ink-muted);
-  flex: 1 1 auto;
   font-size: var(--font-size-xs);
   margin: 0;
   min-width: 0;
@@ -971,7 +968,7 @@
 
 .sh-skill-detail--review .sh-version-timeline article > .sh-button,
 .sh-skill-detail--review .sh-version-timeline article > label {
-  flex: none;
+  min-width: 0;
 }
 
 .sh-skill-detail--review .sh-version-timeline article > label {
@@ -980,6 +977,12 @@
   display: flex;
   font-size: var(--font-size-xs);
   gap: var(--space-1);
+}
+
+@media (max-width: 72rem) {
+  .sh-skill-detail--review .sh-version-timeline article {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 /* —— 使用去向卡片：元素位置与尺寸固定，长值省略+悬浮全文 —— */

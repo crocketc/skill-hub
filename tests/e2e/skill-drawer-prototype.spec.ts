@@ -44,7 +44,12 @@ test("drawer review prototype stays isolated and fits a compact desktop viewport
   await expect(drawer.locator(".sh-skill-drawer__pinned-title h2")).toHaveText("PDF Reader");
   const prototypeActions = drawer.locator(".sh-skill-drawer__prototype-actions");
   const actionButtons = prototypeActions.locator("button[data-prototype-action]");
-  await expect(actionButtons).toHaveCount(3);
+  await expect(actionButtons).toHaveText([
+    /Dispatch|派发/i,
+    /Reclaim skill|回收技能/i,
+    /Export|导出/i,
+    /Delete|删除/i,
+  ]);
   for (const button of await actionButtons.all()) {
     await expect(button).toBeVisible();
     await expect(button).toBeEnabled();
@@ -100,7 +105,7 @@ test("drawer review prototype remains inside a narrow viewport", async ({ page }
   expect(geometry.right).toBeLessThanOrEqual(382);
   expect(geometry.width).toBeLessThanOrEqual(374);
   const prototypeActions = drawer.locator(".sh-skill-drawer__prototype-actions");
-  await expect(prototypeActions.locator("button")).toHaveCount(3);
+  await expect(prototypeActions.locator("button")).toHaveCount(4);
   await expect(prototypeActions).toBeVisible();
   const purposeHelp = drawer.locator(".sh-skill-drawer__purpose-row .sh-skill-drawer__edit-icon");
   await purposeHelp.focus();
@@ -212,7 +217,7 @@ test("review drawer keeps its clipped floating surface and compact fixed action 
   expect(Math.abs(rowGeometry.actionTop - rowGeometry.titleTop)).toBeLessThan(8);
   expect(rowGeometry.heights.every((height) => Math.abs(height - rowGeometry.heights[0]!) < 1)).toBe(true);
   expect(rowGeometry.heights[0]).toBeLessThanOrEqual(34);
-  expect(await actions.locator("button").count()).toBe(3);
+  expect(await actions.locator("button").count()).toBe(4);
 
   const order = await drawer.locator(".sh-skill-drawer__prototype-modules > .sh-skill-drawer__module h3").allTextContents();
   expect(order.at(-1)).toMatch(/source and version|来源与版本/i);

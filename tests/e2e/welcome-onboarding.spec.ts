@@ -4,6 +4,13 @@ test("first launch plays the welcome journey before the existing setup choices",
   await page.addInitScript(() => {
     localStorage.setItem("skillhub.appearance", "sakura");
     Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
+    // WindowControls 的 WebView 分支按平台选择原生 macOS 红绿灯或 Windows 自绘按钮。
+    // 此流程验证唯一自绘关闭入口；macOS 原生控件留给真实桌面验收。
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36",
+    });
+    Object.defineProperty(navigator, "platform", { configurable: true, value: "Win32" });
     Object.defineProperty(window, "isTauri", { configurable: true, value: true });
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       configurable: true,

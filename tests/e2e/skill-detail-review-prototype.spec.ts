@@ -351,7 +351,7 @@ test("review source replacement and adoption stay distinct flows with honest res
 
   // 真实流接线轮（W3-4/K6/G-15）：更换来源只登记关系（显式类型+地址），
   // 采用更新走预览绑定两段确认；两条流的影响说明各自独立呈现。
-  await page.getByRole("button", { name: "更换来源" }).click();
+  await page.getByRole("button", { name: "更换更新来源" }).click();
   const replaceDialog = page.getByRole("dialog", { name: "更换网络更新来源" });
   await expect(replaceDialog).toContainText("来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。");
   await expect(replaceDialog.getByRole("button", { name: "确认更换" })).toBeDisabled();
@@ -539,30 +539,31 @@ test("review sources show the derived upstream block by default without DEV togg
   await expect(page.locator("#review-sources .sh-skill-detail-review__dev-scenarios")).toHaveCount(0);
 });
 
-test("review header offers centralized management through the shared governance batch", async ({ page }) => {
+test("review header opens the shared usage-management flow", async ({ page }) => {
   await page.goto(reviewUrl);
 
   const actionArea = page.locator('[aria-label="技能操作"]');
   const actionOrder = await actionArea.locator(".sh-button").evaluateAll((elements) =>
     elements.map((element) => element.textContent?.trim()),
   );
-  expect(actionOrder).toEqual(["转入技能库管理", "派发", "导出", "删除"]);
+  expect(actionOrder).toEqual(["转入技能库管理", "回收技能", "修改运行名", "派发", "导出", "删除"]);
   // 入口与“未管理”状态同为 warning，不与绿色强调入口混用。
   await expect(actionArea.locator(".sh-skill-detail-review__warning-action")).toHaveText("转入技能库管理");
   await expect(actionArea.locator(".sh-skill-detail-review__accent-action")).toHaveCount(0);
 
-  // 真实流接线轮（§7.8 生产承载）：确认入口打开与治理页共用的真实批次
-  // 对话框（候选行来自治理清单、prepare→commit 真实契约），演示确认弹层
-  // 与「原位置已转入技能库管理」的前端状态翻转退役；操作后的卡片刷新由
-  // 关系治理页用例把守。
+  // 详情头部与治理页共用使用关系的选择和预览入口；预览路由不执行原生写入，
+  // 成功提交由 SkillDetailPage 的门面测试和原生关系治理 E2E 覆盖。
   await actionArea.getByRole("button", { name: "转入技能库管理" }).click();
-  const batchDialog = page.getByTestId("governance-batch-dialog");
-  await expect(batchDialog).toBeVisible();
-  await expect(batchDialog).toContainText("批量转入技能库管理");
-  await expect(batchDialog.getByRole("checkbox", { name: "执行 PDF Reader" })).toBeChecked();
-  await batchDialog.getByTestId("governance-batch-confirm").click();
-  await expect(page.getByTestId("governance-batch-result-title")).toContainText("已全部转入技能库管理（1 条）");
-  await expect(page.getByTestId(`governance-batch-result-rel:skill-preview:copy`)).toContainText("成功");
+  const manageDialog = page.getByRole("dialog", { name: "转入技能库管理" });
+  await expect(manageDialog).toBeVisible();
+  await expect(manageDialog.getByRole("checkbox", { name: "选择 PDF Reader 的关系" })).toBeChecked();
+  await expect(manageDialog.getByRole("radio", { name: "技能库当前版本（推荐）" })).toBeChecked();
+  await expect(manageDialog.getByRole("radio", { name: "使用位置原件" })).toBeVisible();
+  await expect(manageDialog.getByRole("radio", { name: "链接" })).toBeChecked();
+  await expect(manageDialog.getByRole("radio", { name: "完整拷贝" })).toBeVisible();
+  await expect(manageDialog.getByRole("button", { name: "预览转换影响" })).toBeEnabled();
+  await manageDialog.getByRole("button", { name: "取消" }).click();
+  await expect(manageDialog).toHaveCount(0);
 });
 
 test("review governance deep link carries each card's relation identity", async ({ page }) => {

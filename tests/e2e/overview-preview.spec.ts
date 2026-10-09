@@ -34,15 +34,15 @@ const expectedAccents: Record<(typeof themeNames)[number], string> = {
   "grok-night": "#f2f3ef",
 };
 
-// 任务 9 冻结五指标（api.ts getOverviewSummaryMetrics 口径，api.test.ts 锁定）：
-// hero = 技能总数；紧凑带 = 合并 Agent、管理项目、部署关系（按 Agent/项目拆分）、
-// 待确认冲突。预览桩（OverviewPreview overviewPreviewRelationshipsFacade）提供
-// 确定性关系事实：2 个待确认冲突、4 个图谱候选、9 条治理关系边。
+// T18 统一统计口径（api.ts getOverviewSummaryMetrics 与 OverviewPreview 锁定）：
+// hero = 技能主体；紧凑带 = Agent 对象（含共享目录）、管理项目、物理使用入口、
+// 待确认冲突。预览桩提供确定性事实：主体 27、Agent 对象 3（含共享目录 1）、
+// 项目 3、物理使用入口 27、待确认冲突 2。
 const heroMetricName = "27 Total skills";
 const statNames = [
-  "3 Agents (3 configured · 5 discovered)",
+  "3 Agent objects · shared directories: 1",
   "3 Manage projects",
-  "45 Skill configuration relations (27 to agents · 18 to projects)",
+  "27 Unique physical usage entries",
   "2 Unconfirmed relationship conflicts",
 ] as const;
 
@@ -329,7 +329,7 @@ test("reaches every overview control by keyboard with visible focus", async ({ p
 
   await page.getByRole("link", { name: heroMetricName }).focus();
   await page.keyboard.press("Tab");
-  // 任务 9 冻结指标顺序：hero → 合并 Agent → 管理项目 → 部署关系 → 待确认冲突。
+  // 统一统计顺序：主体 → Agent 对象 → 项目 → 物理使用入口 → 待确认冲突。
   await expect(page.getByRole("link", { name: statNames[0] })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: statNames[1] })).toBeFocused();
@@ -489,4 +489,3 @@ test("renders without continuous motion when SkillHub's reduced-motion switch is
   });
   expect(await freeOfMotion.jsonValue()).toBe(true);
 });
-

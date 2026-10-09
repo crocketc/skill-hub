@@ -11,6 +11,7 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
     let conflictResolved = false;
     // 来源更新的会话内状态：检查后才出现可采用候选；采用后回到最新。
     let sourceUpdateState: { state: string; checked_at: string; upstream_label: string; candidate_identity: string } | null = null;
+    let sourceAssociation: { skill_id: string; source: { kind: string; locator: Record<string, string> }; role: string; upstream: { url: string; branch: string; directory: string } | null; created_at: string } | null = null;
     const callbacks = new Map<number, (payload: unknown) => void>();
     const bootstrap = {
       initialization_state: "initialized",
@@ -185,6 +186,10 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
         request?: { logical_target_ids: string[]; skill_id: string; version_id: string; runtime_name: string };
         key?: string;
         path?: string;
+        source?:
+          | { kind: "https"; locator: { https_url: string } }
+          | { kind: "git"; locator: { git_url: string } }
+          | { kind: "local"; locator: { local_path: string } };
         skill_id?: string;
         kind?: string;
       };
@@ -216,6 +221,14 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           case "get_bootstrap_snapshot": return ok("bootstrap_snapshot", bootstrap);
           case "get_discovery_snapshot": return ok("discovery_snapshot", discovery);
           case "get_agent_directory_projection": return ok("agent_directory_projection", agentDirectoryProjection);
+          case "get_usage_environment_statistics": return ok("usage_environment_statistics", {
+            real_agent_count: 2,
+            shared_directory_count: 0,
+            project_count: 1,
+            physical_usage_count: 1,
+            subject_count: 4,
+            environments: [],
+          });
           case "list_skill_repos": return ok("skill_repos", repos);
           case "search_online_sources": return ok("source_search_page", onlinePage);
           case "discover_repo_skills": return ok("repo_discovery_report", repoReport);
@@ -231,6 +244,9 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           // 状态投影翻到 update_available，供「预览采用影响」入口出现。
           case "get_source_update_status": return ok("source_update_status", {
             skill_id: query.payload.skill_id ?? "pdf-reader",
+            association: sourceAssociation,
+            association_revision: sourceAssociation ? "sha256:source-revision-1" : null,
+            check_capability: sourceAssociation ? "git_repository" : "not_associated",
             state: sourceUpdateState?.state ?? null,
             checked_at: sourceUpdateState?.checked_at ?? null,
             upstream_label: sourceUpdateState?.upstream_label ?? null,
@@ -496,7 +512,19 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
             sourceUpdateState = { state: "up_to_date", checked_at: "2026-09-08T09:01:00Z", upstream_label: "v2.0.0", candidate_identity: "sha256:source-candidate-1" };
             return ok("applied_source_update", { skill_id: "pdf-reader", decision: action.payload.decision, new_version: action.payload.decision === "take_upstream" ? "v2" : null, deployments_need_reconciliation: false });
           }
-          case "relink_source":
+          case "relink_source": {
+            const source = action.payload.source;
+            sourceAssociation = {
+              skill_id: action.payload.skill_id ?? "pdf-reader",
+              source,
+              role: "verified_upstream",
+              upstream: source.kind === "git"
+                ? { url: source.locator.git_url, branch: "main", directory: "." }
+                : null,
+              created_at: "1791489600",
+            };
+            return ok("operation_summary", operationSummary);
+          }
           case "set_version_label":
           case "set_current_version": return ok("operation_summary", operationSummary);
           case "create_combination":
@@ -753,7 +781,7 @@ test("unified pending follows a conflict to resolution and updates overview tota
   await page.screenshot({ path: testInfo.outputPath("unified-pending.png"), fullPage: true });
   await specificItem.selectOption("conflict");
   await expect(page.getByRole("button", { name: "Ignore", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Show item details: Skill conflicts" }).click();
+  await page.getByRole("button", { name: /Show item details: Review this skill conflict/ }).click();
   const conflictItem = page
     .getByRole("region", { name: "Relationships" })
     .getByRole("listitem")
@@ -820,9 +848,9 @@ test("data protection exposes export, restore, retention, and uninstall previews
 
   await page.getByRole("button", { name: "Run rolling backup" }).click();
   await expect(page.getByText(/Rolling backup finished: 3 kept/)).toBeVisible();
-  await page.getByLabel(/Select deployment relation dep-1/).check();
+  await page.getByLabel("Select this usage relationship").check();
   await page.getByRole("button", { name: "Preview impact" }).click();
-  await expect(page.getByText(/affected/)).toBeVisible();
+  await expect(page.getByText(/Affects \d+ usage relationships/)).toBeVisible();
 });
 
 test("settings exposes ordered sections and application update boundary", async ({ page }) => {
@@ -1023,14 +1051,15 @@ test("native skill detail surfaces review sections, source adoption, and version
   // 来源更新区（真实流，K6）：显式关联网络来源 → 显式只读检查 → 采用影响
   // 预览 → 确认采用。关联只登记来源（不替换内容、不自动检查）；检查通过
   // 后才出现采用入口；采用前先看文件级影响预览。
-  await page.getByRole("button", { name: "关联更新来源" }).click();
+  await page.getByRole("button", { name: "Associate update source" }).click();
   const chooser = page.getByRole("dialog");
   await expect(chooser).toContainText("关联网络更新来源");
   await expect(chooser).toContainText("来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。");
+  await chooser.getByLabel("来源类型").selectOption("git");
   await chooser.getByLabel("来源地址").fill("https://example.com/pdf-reader.git");
   await chooser.getByRole("button", { name: "确认关联" }).click();
   await expect(page.getByText("已登记更新来源；可随时执行只读检查。")).toBeVisible();
-  await page.getByRole("button", { name: "检查更新" }).click();
+  await page.getByRole("button", { name: "Check for updates" }).click();
   await expect(page.getByText("来源检查完成：发现可采用的更新候选。")).toBeVisible();
   await expect(page.getByText("发现可采用的更新候选（v2.0.0）。")).toBeVisible();
   await page.getByRole("button", { name: "预览采用影响" }).click();

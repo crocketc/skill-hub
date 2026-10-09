@@ -83,7 +83,7 @@ test("exposes risk, impact, and suggested actions per item after expanding", asy
   await openPending(page);
   await expandPendingGroups(page);
 
-  const finding = page.locator(".sh-pending-item").filter({ hasText: "Affects 3 deployment relations" });
+  const finding = page.locator(".sh-pending-item").filter({ hasText: "Affects 3 usage relationships" });
   await expect(finding.getByRole("group", { name: "Suggested actions for pdf-reader" })).toBeVisible();
   await expect(finding.getByRole("link", { name: "Open task" })).toHaveAttribute("href", "/library/pdf-reader/security");
   // 安全发现没有暂缓/忽略契约，不得在总览出现可借道的批量操作。
@@ -91,7 +91,7 @@ test("exposes risk, impact, and suggested actions per item after expanding", asy
   await expect(finding.getByRole("button", { name: "Ignore" })).toHaveCount(0);
 
   const trial = page.locator(".sh-pending-item").filter({ hasText: "Due 2026-09-30" });
-  await expect(trial.getByText("Affects 2 deployment relations")).toBeVisible();
+  await expect(trial.getByText("Affects 2 usage relationships")).toBeVisible();
   await expect(trial.getByRole("button", { name: "Make regular" })).toBeVisible();
   await expect(trial.getByRole("button", { name: "Defer" })).toBeVisible();
 });

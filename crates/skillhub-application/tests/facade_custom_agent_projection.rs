@@ -62,7 +62,7 @@ fn profile(brand: &str, client_id: &str, directory_path: &str) -> AgentProfile {
 }
 
 /// 建一个带自定义 Agent 的门面。`directory_exists` 控制授权目录是否真实存在。
-/// `library_root` 必须随返回值保活：TempDir 一释放就会删掉整个集中库。
+/// `database_dir` 和 `library_root` 必须随返回值保活：TempDir 一释放就会删掉对应数据。
 #[allow(clippy::type_complexity)]
 async fn facade_with_unverified_custom_agent(
     directory_exists: bool,
@@ -73,6 +73,7 @@ async fn facade_with_unverified_custom_agent(
     tempfile::TempDir,
     SkillId,
     VersionId,
+    tempfile::TempDir,
 ) {
     let database_dir = tempfile::tempdir().expect("database dir");
     let database = Database::open(database_dir.path().join("skillhub.sqlite")).expect("database");
@@ -161,6 +162,7 @@ async fn facade_with_unverified_custom_agent(
         library_root,
         skill_id,
         version_id,
+        database_dir,
     )
 }
 
@@ -173,6 +175,7 @@ async fn facade_with_custom_agent(
     tempfile::TempDir,
     SkillId,
     VersionId,
+    tempfile::TempDir,
 ) {
     let fixture = facade_with_unverified_custom_agent(directory_exists).await;
     if directory_exists {
@@ -197,7 +200,7 @@ async fn facade_with_custom_agent(
 #[tokio::test]
 async fn custom_compatibility_pending_closes_only_after_explicit_loading_confirmation() {
     use skillhub_core::agent::compatibility::{CompatibilityStatus, RecordAgentCompatibility};
-    let (facade, _agent_root, _path, _library, skill_id, version_id) =
+    let (facade, _agent_root, _path, _library, skill_id, version_id, _database_dir) =
         facade_with_unverified_custom_agent(true).await;
     let projection = projection_of(&facade).await;
     let member = &projection.directories[0].members[0];
@@ -302,7 +305,7 @@ async fn projection_of(facade: &LocalApplicationFacade) -> skillhub_core::AgentD
 
 #[tokio::test]
 async fn custom_agent_directories_enter_the_projection_with_verified_facts() {
-    let (facade, _agent_root, directory_path, _library_root, _skill_id, _version_id) =
+    let (facade, _agent_root, directory_path, _library_root, _skill_id, _version_id, _database_dir) =
         facade_with_custom_agent(true).await;
 
     let projection = projection_of(&facade).await;
@@ -350,8 +353,15 @@ async fn custom_agent_directories_enter_the_projection_with_verified_facts() {
 
 #[tokio::test]
 async fn custom_agent_missing_directory_is_reported_instead_of_dropped() {
-    let (facade, _agent_root, _directory_path, _library_root, _skill_id, _version_id) =
-        facade_with_custom_agent(false).await;
+    let (
+        facade,
+        _agent_root,
+        _directory_path,
+        _library_root,
+        _skill_id,
+        _version_id,
+        _database_dir,
+    ) = facade_with_custom_agent(false).await;
 
     let projection = projection_of(&facade).await;
     let fact = projection
@@ -384,8 +394,15 @@ async fn custom_agent_missing_directory_is_reported_instead_of_dropped() {
 /// 「目录被整体替换」。基线经 ListCustomAgents 原样可读，与实体同生命周期。
 #[tokio::test]
 async fn create_custom_agent_persists_the_directory_identity_baseline() {
-    let (facade, _agent_root, _directory_path, _library_root, _skill_id, _version_id) =
-        facade_with_custom_agent(true).await;
+    let (
+        facade,
+        _agent_root,
+        _directory_path,
+        _library_root,
+        _skill_id,
+        _version_id,
+        _database_dir,
+    ) = facade_with_custom_agent(true).await;
 
     let result = facade
         .query(AppQuery::ListCustomAgents(ListCustomAgents))
@@ -409,8 +426,15 @@ async fn create_custom_agent_persists_the_directory_identity_baseline() {
 /// 品牌名而不是内部 id。
 #[tokio::test]
 async fn custom_agents_are_offered_as_deployment_targets_with_unified_rules() {
-    let (facade, _agent_root, _directory_path, _library_root, _skill_id, _version_id) =
-        facade_with_custom_agent(true).await;
+    let (
+        facade,
+        _agent_root,
+        _directory_path,
+        _library_root,
+        _skill_id,
+        _version_id,
+        _database_dir,
+    ) = facade_with_custom_agent(true).await;
 
     let result = facade
         .query(AppQuery::ListDeploymentTargets(ListDeploymentTargets))
@@ -441,7 +465,7 @@ async fn custom_agents_are_offered_as_deployment_targets_with_unified_rules() {
 /// 投影同步呈现 IdentityChanged，计划解析必须拒绝该目标。
 #[tokio::test]
 async fn replaced_custom_agent_directories_are_flagged_and_rejected_from_planning() {
-    let (facade, _agent_root, directory_path, _library_root, _skill_id, _version_id) =
+    let (facade, _agent_root, directory_path, _library_root, _skill_id, _version_id, _database_dir) =
         facade_with_custom_agent(true).await;
     std::fs::remove_dir_all(&directory_path).expect("remove directory");
     std::fs::create_dir_all(&directory_path).expect("recreate empty directory");
@@ -500,7 +524,7 @@ async fn replaced_custom_agent_directories_are_flagged_and_rejected_from_plannin
 /// 正常路径：已登记且身份未变的自定义 Agent 必须能进入部署计划。
 #[tokio::test]
 async fn deployment_plan_resolves_a_verified_custom_agent_target() {
-    let (facade, _agent_root, _directory_path, _library_root, skill_id, version_id) =
+    let (facade, _agent_root, _directory_path, _library_root, skill_id, version_id, _database_dir) =
         facade_with_custom_agent(true).await;
 
     let planned = facade
