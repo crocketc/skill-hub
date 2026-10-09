@@ -79,7 +79,7 @@ it("shows discovered directory facts without trust or usability status", async (
     await screen.findByText("已识别 Agent 目录；这不代表 Agent 软件已安装或一定会加载 Skill。"),
   ).toBeVisible();
   expect(screen.getByText("可访问")).toBeVisible();
-  expect(screen.getByText("2 个 Skill · 5 条部署关系")).toBeVisible();
+  expect(screen.getByText("2 个 Skill · 5 条使用关系")).toBeVisible();
   expect(screen.queryByText(/已授权|可用|验证通过/)).not.toBeInTheDocument();
   expect(screen.getByText("实验功能，仅供参考")).toBeVisible();
   expect(screen.getByText("研发中")).toBeVisible();
@@ -192,7 +192,7 @@ it("offers explicit edit and confirmed removal entries for custom agents", async
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await waitFor(() => expect(screen.getByRole("button", { name: "编辑" })).toHaveFocus());
 
-  await user.click(screen.getByRole("button", { name: "删除" }));
+  await user.click(screen.getByRole("button", { name: "删除 Agent" }));
   expect(await screen.findByText("删除自定义 Agent")).toBeVisible();
   expect(facade.removeCustomAgent).not.toHaveBeenCalled();
 

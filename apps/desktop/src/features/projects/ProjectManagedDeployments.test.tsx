@@ -61,7 +61,7 @@ describe("ProjectManagedDeployments", () => {
   it("shows an honest empty state when the project has no managed copies", async () => {
     const ops = createOps({ list: vi.fn().mockResolvedValue([record({ managed: false })]) });
     await renderSection(ops);
-    expect(await screen.findByText("本项目目录没有受管的 Skill 副本。")).toBeVisible();
+    expect(await screen.findByText("本项目目录没有管理中的完整拷贝。")).toBeVisible();
   });
 
   it("detaches management only after an explicit confirmation", async () => {
@@ -81,14 +81,14 @@ describe("ProjectManagedDeployments", () => {
     });
     await renderSection(ops);
     await screen.findByText(/skill-pdf/);
-    fireEvent.click(screen.getByRole("button", { name: "移除部署关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "解除使用关系" }));
     expect(ops.detach).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "确认移除部署关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认解除使用关系" }));
     await waitFor(() => expect(ops.detach).toHaveBeenCalledWith("dep-1"));
-    expect(await screen.findByText(/已移除部署关系/)).toBeVisible();
+    expect(await screen.findByText(/已解除使用关系/)).toBeVisible();
     // The list reloads; the detached copy no longer appears as managed.
     await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "移除部署关系" })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: "解除使用关系" })).not.toBeInTheDocument(),
     );
     expect(ops.list).toHaveBeenCalledTimes(2);
   });
@@ -99,15 +99,15 @@ describe("ProjectManagedDeployments", () => {
     });
     await renderSection(ops);
     await screen.findByText(/skill-pdf/);
-    fireEvent.click(screen.getByRole("button", { name: "移除部署关系" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认移除部署关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "解除使用关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认解除使用关系" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/removal\.detach_management_failed/);
   });
 
   it("shows an unavailable state when records cannot be read", async () => {
     const ops = createOps({ list: vi.fn().mockRejectedValue(new Error("boom")) });
     await renderSection(ops);
-    expect(await screen.findByText("无法读取受管副本记录。")).toBeVisible();
+    expect(await screen.findByText("无法读取完整拷贝记录。")).toBeVisible();
   });
 });
 
@@ -149,8 +149,8 @@ async function renderWithBridge(ops: ProjectManagedDeploymentsOps) {
 }
 
 async function confirmDetach() {
-  fireEvent.click(screen.getByRole("button", { name: "移除部署关系" }));
-  fireEvent.click(screen.getByRole("button", { name: "确认移除部署关系" }));
+  fireEvent.click(screen.getByRole("button", { name: "解除使用关系" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认解除使用关系" }));
 }
 
 describe("ProjectManagedDeployments 与统一执行桥", () => {
@@ -163,8 +163,8 @@ describe("ProjectManagedDeployments 与统一执行桥", () => {
     // `detach_management` 是单次同步写入：只给结果反馈，不占用在途顶栏。
     expect(tracker.getSnapshot()).toEqual([]);
     const notice = await screen.findByTestId("notice-success");
-    expect(notice).toHaveTextContent("已移除部署关系");
-    expect(notice).toHaveTextContent("已移除部署关系：skill-pdf。");
+    expect(notice).toHaveTextContent("已解除使用关系");
+    expect(notice).toHaveTextContent("已解除使用关系：skill-pdf。");
   });
 
   it("reports a detach failure as a danger notice, not only as inline text", async () => {
@@ -175,7 +175,7 @@ describe("ProjectManagedDeployments 与统一执行桥", () => {
     await confirmDetach();
 
     const notice = await screen.findByTestId("notice-danger");
-    expect(notice).toHaveTextContent("移除部署关系失败");
+    expect(notice).toHaveTextContent("解除使用关系失败");
     expect(notice).toHaveTextContent("removal.detach_management_failed");
     // 页面局部文案保留，失败原因不被通知替换掉。
     const inlineAlert = (await screen.findAllByRole("alert")).find(
@@ -203,11 +203,11 @@ describe("ProjectManagedDeployments 与统一执行桥", () => {
     // 结构化 AppError 必须渲染成可读文案，而不是 [object Object]。
     expect(notice).not.toHaveTextContent("[object Object]");
     expect(notice).toHaveTextContent(
-      "移除部署关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
+      "解除使用关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
     );
     // 通知详情与页面内联提示同源：同一份描述、同一个错误码。
     expect(inlineAlert?.textContent?.trim()).toBe(
-      "移除部署关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
+      "解除使用关系失败（relation.some_new_failure）。请重试；若持续出现请记录该错误码。",
     );
   });
 });

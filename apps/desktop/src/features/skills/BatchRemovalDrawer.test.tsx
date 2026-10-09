@@ -51,7 +51,7 @@ async function renderDrawer(
 it("states the flow description exactly once", async () => {
   const { baseElement } = await renderDrawer();
 
-  expect(screen.getAllByText(/selected for deletion from the library/)).toHaveLength(1);
+  expect(screen.getAllByText(/You selected .* Skills to delete from the library/)).toHaveLength(1);
   // 正文里的旧 eyebrow 只会与抽屉标题重复，一并移除。
   expect(screen.queryByText("Batch deletion impact")).toBeNull();
   expect(baseElement.querySelectorAll(".sh-drawer__description")).toHaveLength(1);
@@ -88,7 +88,7 @@ it("uses the plain delete action when no deployment relations need handling", as
     impacts: [{ ...impacts[0], deployments: [] }],
   });
 
-  expect(screen.getByText(/No deployment relations need handling\./)).toBeVisible();
+  expect(screen.getByText("There are no usage relationships to handle before deletion.")).toBeVisible();
   const proceed = screen.getByRole("button", { name: "Delete" });
   expect(proceed).toBeEnabled();
 

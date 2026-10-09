@@ -560,7 +560,7 @@ describe("GraphDetailsPanel governance entries", () => {
     await renderSelection({ graph, language: "zh-CN", selectedEdgeId: "e-use" });
 
     expect(screen.getByTestId("graph-governance-classification")).toHaveTextContent("待处理");
-    expect(screen.getByTestId("graph-governance-management")).toHaveTextContent("待集中管理");
+    expect(screen.getByTestId("graph-governance-management")).toHaveTextContent("未管理");
     expect(screen.getByTestId("graph-governance-reasons")).toHaveTextContent("当前验证结果不足，请重新检查目标。");
     expect(screen.getByRole("link", { name: "在关系治理中处理" })).toHaveAttribute(
       "href",

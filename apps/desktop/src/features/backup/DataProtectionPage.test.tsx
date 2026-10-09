@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
@@ -26,6 +26,13 @@ function deploymentRecord(id: string, skillId: string, state: DeploymentRecord["
 
 function versionResult(skillId: string, versionId: string, current: boolean): VersionResult {
   return { version_id: versionId, skill_id: skillId, current, file_count: 1, added: 0, changed: 0, removed: 0 };
+}
+
+async function selectUsageRelationship(id: string, skillId: string) {
+  const entry = await screen.findByText(new RegExp(`^${id}: ${skillId} →`));
+  const label = entry.closest("label");
+  if (!label) throw new Error(`Expected ${id} to be rendered as a selectable usage relationship`);
+  fireEvent.click(within(label).getByRole("checkbox"));
 }
 
 interface RenderPageOptions {
@@ -400,12 +407,12 @@ describe("DataProtectionPage", () => {
     expect(preview).toBeDisabled();
     expect(screen.getByRole("button", { name: "Apply selected actions" })).toBeDisabled();
 
-    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
-    fireEvent.click(screen.getByLabelText("Select deployment relation dep-2"));
+    await selectUsageRelationship("dep-1", "skill-1");
+    await selectUsageRelationship("dep-2", "skill-2");
     expect(preview).toBeEnabled();
     fireEvent.click(preview);
 
-    expect(await screen.findByText("2 deployment relations are affected.")).toBeVisible();
+    expect(await screen.findByText("Affects 2 usage relationships.")).toBeVisible();
     expect(screen.getByText("The central Skill library will not be preserved.")).toBeVisible();
 
     const undeployAll = screen.getByLabelText("Remove all selected copies from their targets");
@@ -440,7 +447,7 @@ describe("DataProtectionPage", () => {
     });
     renderPage(facade);
 
-    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
+    await selectUsageRelationship("dep-1", "skill-1");
     fireEvent.click(screen.getByRole("button", { name: "Preview impact" }));
     const backup = await screen.findByLabelText("Back up selected data");
     fireEvent.click(backup);
@@ -458,11 +465,11 @@ describe("DataProtectionPage", () => {
     facade.prepareUninstall = vi.fn().mockRejectedValue(new Error("uninstall preflight failed"));
     renderPage(facade);
 
-    fireEvent.click(await screen.findByLabelText("Select deployment relation dep-1"));
+    await selectUsageRelationship("dep-1", "skill-1");
     fireEvent.click(screen.getByRole("button", { name: "Preview impact" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("uninstall preflight failed");
-    expect(screen.queryByText("1 deployment relations are affected.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Affects 1 usage relationships.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply selected actions" })).toBeDisabled();
   });
 
@@ -472,7 +479,7 @@ describe("DataProtectionPage", () => {
     renderPage(facade);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("deployments unavailable");
-    expect(screen.queryByLabelText("Select deployment relation dep-1")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^dep-1: skill-1 →/)).not.toBeInTheDocument();
   });
 
   /**
@@ -488,9 +495,9 @@ describe("DataProtectionPage", () => {
     ]);
     renderPage(facade);
 
-    expect(await screen.findByLabelText("Select deployment relation dep-live")).toBeVisible();
-    expect(screen.queryByLabelText("Select deployment relation dep-gone")).not.toBeInTheDocument();
-    expect(screen.getByText(/dep-live: skill-live → target-dep-live \(deployed\)/)).toBeVisible();
+    expect(await screen.findByLabelText("Select this usage relationship")).toBeVisible();
+    expect(screen.queryByText(/^dep-gone: skill-gone →/)).not.toBeInTheDocument();
+    expect(screen.getByText(/dep-live: skill-live → target-dep-live \(Dispatched\)/)).toBeVisible();
   });
 });
 
@@ -583,4 +590,3 @@ it("shows the library path and opens it through the native opener", async () => 
   fireEvent.click(screen.getByRole("button", { name: "Open library folder" }));
   await waitFor(() => expect(opener.openDirectory).toHaveBeenCalledWith("C:/Users/demo/SkillHub"));
 });
-

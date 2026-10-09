@@ -57,8 +57,8 @@ it("links required work to its source without exposing identifiers or offering i
     href: "/relationships/decisions?conflictId=internal-case", canSnooze: false,
   }] });
   render(<MemoryRouter><I18nextProvider i18n={i18n}><PendingPage facade={facade} /></I18nextProvider></MemoryRouter>);
-  expect(await screen.findByRole("button", { name: "查看事项明细: 技能冲突" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "查看事项明细: 技能冲突" }));
+  expect(await screen.findByRole("button", { name: "查看事项明细: 有待确认的技能冲突，需要选择处理方式。" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "查看事项明细: 有待确认的技能冲突，需要选择处理方式。" }));
   const exactLink = document.querySelector<HTMLAnchorElement>('.sh-pending-item a[href="/relationships/decisions?conflictId=internal-case"]');
   expect(exactLink).toBeInTheDocument();
   expect(screen.queryByText("internal-case")).not.toBeInTheDocument();
@@ -358,10 +358,10 @@ it("shows due date, risk badge and deployment impact per item", async () => {
   await screen.findByText("skill-a");
 
   expect(screen.getByText("到期日：2026-09-30")).toBeInTheDocument();
-  expect(screen.getByText("影响 2 个部署关系")).toBeInTheDocument();
+  expect(screen.getByText("影响 2 条使用关系")).toBeInTheDocument();
   const riskBadge = screen.getAllByText("高风险")[0]!;
   expect(riskBadge).toHaveClass("sh-pending-item__risk--high");
-  expect(screen.getByText("影响 3 个部署关系")).toBeInTheDocument();
+  expect(screen.getByText("影响 3 条使用关系")).toBeInTheDocument();
 });
 
 it("defers a single item for the chosen days with a generated reason and refreshes the list", async () => {

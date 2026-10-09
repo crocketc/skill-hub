@@ -67,12 +67,39 @@ vi.mock("../api/bindings", async (importOriginal) => {
         type: "relation_governance_ledger" as const,
         payload: {
           rows: [],
-          counts: { all: 0, eligible_to_centralize: 0, needs_validation: 0, blocked: 0 },
+          counts: {
+            all: 0,
+            eligible_to_centralize: 0,
+            needs_validation: 0,
+            blocked: 0,
+            status_normal: 0,
+            status_retained: 0,
+            status_needs_validation: 0,
+            status_needs_attention: 0,
+            status_blocked: 0,
+            source_copies: 0,
+            deployments: 0,
+          },
           bucket: "all" as const,
           total: 0,
           relationship_revision: "test-rev",
           last_verified_at: null,
         },
+      };
+      if (query.type === "get_usage_environment_statistics") return {
+        type: "usage_environment_statistics" as const,
+        payload: {
+          real_agent_count: 0,
+          shared_directory_count: 0,
+          project_count: 0,
+          physical_usage_count: 0,
+          subject_count: 0,
+          environments: [],
+        },
+      };
+      if (query.type === "get_relationship_overview") return {
+        type: "relationship_overview" as const,
+        payload: { usage_relations: [] },
       };
       if (query.type === "list_governance_history") return {
         type: "governance_history_page" as const,

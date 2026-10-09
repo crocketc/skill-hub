@@ -394,7 +394,7 @@ it("explains that detaching management is a per-deployment action without faking
     </TestProviders>,
   );
 
-  expect(await screen.findByText("移除部署关系针对单条关系记录，需在受管副本列表中逐条处理；项目详情没有对应的移除入口。")).toBeVisible();
+  expect(await screen.findByText("解除使用关系针对单条关系记录，需在完整拷贝列表中逐条处理；项目详情没有对应入口。")).toBeVisible();
 });
 
 // —— 任务 12C（12.7/12.14）：项目详情页顶层一次 Light check ——

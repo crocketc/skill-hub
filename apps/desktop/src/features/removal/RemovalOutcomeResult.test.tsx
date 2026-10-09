@@ -112,7 +112,7 @@ describe("RemovalOutcomeResult", () => {
 
     // 已知错误码 → 统一 presenter 映射的可读原因；原始错误码不出现。
     const failedGroup = screen.getByTestId("removal-outcome-failed");
-    expect(failedGroup).toHaveTextContent("删除失败：目标当前内容与部署关系不匹配。");
+    expect(failedGroup).toHaveTextContent("删除失败：目标当前内容与使用关系记录不匹配。");
     expect(failedGroup).not.toHaveTextContent("deployment.ownership_mismatch");
   });
 

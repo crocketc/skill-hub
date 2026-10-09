@@ -69,7 +69,7 @@ it("renders structured impact facts per group without backend prose", async () =
   expect(
     screen.getByText("回退方式：共享目录原件不会被本操作修改。"),
   ).toBeVisible();
-  expect(screen.getByText("同名不同内容")).toBeVisible();
+  expect(screen.getByText("重名")).toBeVisible();
   // "保留原件，不导入" 动作在两个分组都出现：至少存在且可见即可。
   expect(screen.getAllByText("保留原件，不导入").length).toBeGreaterThan(0);
 });

@@ -113,7 +113,7 @@ describe("GovernanceHistoryPage（任务 12A）", () => {
     expect(within(rows[0]!).queryByText("已清理来源副本")).not.toBeInTheDocument();
     // 旧条目：清理动作 + 已执行结果 + 对象与路径。
     expect(within(rows[1]!).getByTestId("governance-history-action-src-old")).toHaveTextContent(
-      "清理来源副本",
+      "清理来源位置的技能文件",
     );
     expect(within(rows[1]!).getByTestId("governance-history-result-src-old")).toHaveTextContent(
       "已执行",

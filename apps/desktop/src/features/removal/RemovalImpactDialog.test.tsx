@@ -107,16 +107,16 @@ it("changes the copy decision to deleting the copy at the target", async () => {
 it("leads with an impact summary and keeps per-group details collapsed", async () => {
   await renderDialog({ ...removalImpactFixture(), importRelationCount: 2 });
 
-  // 摘要先行：中央删除、链接、拷贝默认、导入关系各占一行。
+  // 摘要先行：技能库、链接、完整拷贝和导入来源关系各占一行。
   expect(screen.getByText(/该 Skill 的记录、内容与版本历史将被删除/)).toBeTruthy();
-  expect(screen.getByText("链接部署 1 处：链接文件将随删除一并移除")).toBeTruthy();
-  expect(screen.getByText(/复制部署 1 处：默认保留为独立拷贝/)).toBeTruthy();
-  expect(screen.getByText("导入拷贝关系 2 条：关系记录随技能删除；原件文件不受影响")).toBeTruthy();
+  expect(screen.getByText("链接 1 处：删除技能时会一并移除链接文件")).toBeTruthy();
+  expect(screen.getByText(/完整拷贝 1 处：默认保留为独立拷贝/)).toBeTruthy();
+  expect(screen.getByText("导入来源关系 2 条：关系记录随技能删除；原件文件不受影响")).toBeTruthy();
   // 用户语言，不暴露内部词「导入登记」。
   expect(screen.queryByText(/导入登记/)).not.toBeInTheDocument();
 
   // 分组明细默认收起。
-  for (const label of ["链接部署", "复制部署"]) {
+  for (const label of ["链接", "完整拷贝"]) {
     const group = screen.getByText(label).closest("details");
     expect(group).not.toHaveAttribute("open");
   }
@@ -158,8 +158,8 @@ it("names groups, defaults and consequences in English", async () => {
   await renderDialog(removalImpactFixture(), "en-US");
 
   expect(screen.getByText("Skill library: the Skill's record, contents and version history will be deleted")).toBeTruthy();
-  expect(screen.getByText("Link deployments 1: the link files will be removed along with it")).toBeTruthy();
-  expect(screen.getByText(/Copy deployments 1: kept as independent copies by default/)).toBeTruthy();
+  expect(screen.getByText("1 links: deleting the Skill will also remove the link files")).toBeTruthy();
+  expect(screen.getByText(/1 full copies: kept as independent copies by default/)).toBeTruthy();
   expect(screen.getByText("The link file here will be removed")).toBeTruthy();
   expect(screen.getByRole("radio", { name: /Keep as an independent copy/ })).toBeChecked();
   expect(screen.getByRole("radio", { name: /Delete the copy too/ })).toBeTruthy();

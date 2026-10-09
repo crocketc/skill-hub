@@ -706,7 +706,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByText("Notes B")).toBeVisible();
     expect(screen.getByTestId("governance-current-problem").closest(".sh-governance")).not.toBeNull();
     expect(facade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
     expect(screen.getByRole("button", { name: "返回待处理列表" })).toBeVisible();
   });
 
@@ -1031,7 +1031,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(deployLink?.getAttribute("href")).toBe("/deploy");
     expect(deployLink?.textContent).toContain("添加到 Agent/项目");
     // 治理行上的主操作不是「添加到 Agent/项目」：动作词互不混用。
-    expect(rowAction("managed:dep-eligible").textContent).toContain("纳入技能库管理");
+    expect(rowAction("managed:dep-eligible").textContent).toContain("转入技能库管理");
     expect(rowAction("managed:dep-undeploy").textContent).toContain("从 Agent/项目移除");
   });
 
@@ -1114,7 +1114,7 @@ describe("RelationshipGovernancePage 页签与细分桶（FB-④）", () => {
 
     // 四条待处理关系按统一健康事实分桶；缺少核验证据仍显示为无法核验。
     const unmanaged = screen.getByTestId("governance-bucket-unmanaged");
-    expect(unmanaged).toHaveTextContent("尚未纳入技能库管理");
+    expect(unmanaged).toHaveTextContent("尚未纳入管理");
     expect(within(unmanaged).getAllByTestId("governance-row")).toHaveLength(1);
     expect(screen.getByTestId("governance-bucket-unmanaged-count")).toHaveTextContent("1");
     const unverified = screen.getByTestId("governance-bucket-unable_to_verify");
@@ -1150,7 +1150,7 @@ describe("RelationshipGovernancePage 页签与细分桶（FB-④）", () => {
     expect(within(noAction).getAllByTestId("governance-row")).toHaveLength(1);
     const pending = screen.getByTestId("governance-bucket-unmanaged");
     expect(within(pending).getAllByTestId("governance-row")).toHaveLength(1);
-    expect(pending).toHaveTextContent("尚未纳入技能库管理");
+    expect(pending).toHaveTextContent("尚未纳入管理");
     expect(screen.queryByTestId("governance-bucket-retained")).not.toBeInTheDocument();
   });
 
@@ -1401,7 +1401,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     const syncAction = await screen.findByTestId(`governance-action-sync-${relationId}`);
     expect(syncAction).toBeEnabled();
     fireEvent.click(syncAction);
-    const dialog = await screen.findByRole("dialog", { name: "同步管理拷贝" });
+    const dialog = await screen.findByRole("dialog", { name: "同步完整拷贝" });
     expect(within(dialog).getByText("将目标拷贝更新为技能库当前主体版本。目标有未同步改动时，需要你明确确认采用主体版本。")).toBeVisible();
     const contentChoice = within(dialog).getByRole("checkbox", { name: "我确认以技能库当前版本替换目标内容" });
     expect(within(dialog).getByRole("button", { name: "预览操作影响" })).toBeDisabled();
@@ -1495,7 +1495,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(await screen.findByTestId(`governance-action-restore-${relationId}`));
-    const dialog = await screen.findByRole("dialog", { name: "恢复受管目标" });
+    const dialog = await screen.findByRole("dialog", { name: "恢复使用目标" });
     expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "预览操作影响" }));
     await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
@@ -1530,7 +1530,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("radio", { name: "使用位置原件" }));
     fireEvent.click(within(dialog).getByRole("radio", { name: "完整拷贝" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
@@ -1544,7 +1544,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     expect(await screen.findByTestId("removal-impact-facts")).toBeVisible();
     expect(screen.getByText("采用原件内容后同步更新此受管目标。" )).toBeVisible();
     expect(screen.getByText("采用原件内容后，将为 1 个技能主体新增版本；原版本与校验依据保留。" )).toBeVisible();
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
     await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
       operation_id: "op-manage-1",
       prepared_id: "prepared-manage-1",
@@ -1565,15 +1565,15 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await screen.findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
 
     // 预览保持打开：错误可见，没有虚构已完成结果。
     await screen.findByRole("alert");
     expect(screen.queryByTestId("usage-manage-result")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
   });
 
   it("runs single relation release through the unified prepare → confirm → commit receipt", async () => {
@@ -1645,17 +1645,17 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
 
     const readable = "操作未能完成（io.denied）。若持续出现请记录该错误码。";
     const toast = await screen.findByTestId("notice-danger");
     expect(toast).toHaveTextContent(readable);
-    expect(within(screen.getByRole("dialog", { name: "转为集中管理" })).getByRole("alert")).toHaveTextContent(readable);
+    expect(within(screen.getByRole("dialog", { name: "转入技能库管理" })).getByRole("alert")).toHaveTextContent(readable);
     expect(screen.queryByTestId("usage-manage-result")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
   });
 
   it("locks only the busy relation and keeps other rows operable", async () => {
@@ -1669,10 +1669,10 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
     await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalled());
 
     // 同一条关系的按钮互斥（禁用），其他关系的按钮仍然可用。
@@ -1706,10 +1706,10 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-eligible"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
 
     const result = await screen.findByTestId("usage-manage-result");
     expect(result).toHaveTextContent("0 项；1 项仍需处理");
@@ -1730,7 +1730,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     await waitRows();
 
     fireEvent.click(rowAction("managed:dep-shared"));
-    const dialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
 
     // 未勾选共享影响确认前，确认按钮保持禁用。
     expect(within(dialog).getByRole("button", { name: "预览转换影响" })).toBeDisabled();
@@ -1750,8 +1750,8 @@ describe("RelationshipGovernancePage 批量治理", () => {
     const context = await renderGovernanceApp(options);
     await waitRows();
     fireEvent.click(screen.getByLabelText("全选本页关系"));
-    fireEvent.click(screen.getByRole("button", { name: "批量纳入技能库管理" }));
-    await screen.findByRole("dialog", { name: "转为集中管理" });
+    fireEvent.click(screen.getByRole("button", { name: "批量转入技能库管理" }));
+    await screen.findByRole("dialog", { name: "转入技能库管理" });
     return context;
   }
 
@@ -1796,10 +1796,10 @@ describe("RelationshipGovernancePage 批量治理", () => {
     fireEvent.click(sharedCheckbox);
     expect(sharedCheckbox.checked).toBe(false);
 
-    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    const dialog = screen.getByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
     await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
       action: "manage",
       relation_ids: ["managed:dep-eligible"],
@@ -1817,7 +1817,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
     };
     await openBatchDialog({ usageChangeFacade });
 
-    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    const dialog = screen.getByRole("dialog", { name: "转入技能库管理" });
     const confirmButton = within(dialog).getByRole("button", { name: "预览转换影响" });
     // 共享影响未确认时不能执行。
     expect(confirmButton).toBeDisabled();
@@ -1851,11 +1851,11 @@ describe("RelationshipGovernancePage 批量治理", () => {
     };
     const { tracker } = await openBatchDialog({ usageChangeFacade });
 
-    const dialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    const dialog = screen.getByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(dialog).getByLabelText(/我已确认 共享 PDF 对共享目录的影响/));
     fireEvent.click(within(dialog).getByRole("button", { name: "预览转换影响" }));
     await within(dialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(dialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认转入技能库管理" }));
 
     // 部分成功必须逐项呈现：成功一条、失败一条（含错误明细与重试/回退信息）。
     const result = await screen.findByTestId("usage-manage-result");
@@ -1889,16 +1889,16 @@ describe("RelationshipGovernancePage 批量治理", () => {
         }])),
     };
     await openBatchDialog({ usageChangeFacade });
-    const batchDialog = screen.getByRole("dialog", { name: "转为集中管理" });
+    const batchDialog = screen.getByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(batchDialog).getByLabelText(/我已确认 共享 PDF 对共享目录的影响/));
     fireEvent.click(within(batchDialog).getByRole("button", { name: "预览转换影响" }));
     await within(batchDialog).findByTestId("removal-impact-facts");
-    fireEvent.click(within(batchDialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(batchDialog).getByRole("button", { name: "确认转入技能库管理" }));
     await screen.findByText("原因：目标内容已变化");
-    fireEvent.click(within(screen.getByRole("dialog", { name: "转为集中管理" })).getByRole("button", { name: "关闭" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "转入技能库管理" })).getByRole("button", { name: "关闭" }));
 
     fireEvent.click(rowAction("managed:dep-shared"));
-    const singleDialog = await screen.findByRole("dialog", { name: "转为集中管理" });
+    const singleDialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
     fireEvent.click(within(singleDialog).getByLabelText("我已确认共享目录影响"));
     fireEvent.click(within(singleDialog).getByRole("button", { name: "预览转换影响" }));
     await within(singleDialog).findByTestId("removal-impact-facts");
@@ -1906,7 +1906,7 @@ describe("RelationshipGovernancePage 批量治理", () => {
       action: "manage",
       relation_ids: ["managed:dep-shared"],
     }));
-    fireEvent.click(within(singleDialog).getByRole("button", { name: "确认转为集中管理" }));
+    fireEvent.click(within(singleDialog).getByRole("button", { name: "确认转入技能库管理" }));
     await screen.findByText("已完成 1 项关系转换。");
   });
 });
@@ -2082,7 +2082,7 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       entries: ["/relationships/governance?from=conflict&conflictId=case-1&relationId=managed:dep-shared"],
     });
     await waitRows();
-    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
   });
 
   it("re-fetches the Skill ledger row and does not authorize from stale target identity state", async () => {
@@ -2103,7 +2103,7 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       facade,
     });
 
-    expect(await screen.findByRole("dialog", { name: "转为集中管理" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
     expect(facade.listGovernance).toHaveBeenCalledTimes(1);
     expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
   });
@@ -2279,7 +2279,7 @@ describe("RelationshipGovernancePage 来源治理入口（任务 11）", () => {
 
     // 导入完成页深链直达“本次导入”的治理上下文：横幅宣布本地来源副本数。
     expect(await screen.findByTestId("governance-import-banner")).toHaveTextContent(
-      "本次导入留下 1 个本地来源副本",
+      "本次导入后，原位置仍保留 1 个技能原件",
     );
     expect(facade.listGovernance).toHaveBeenCalledWith(expect.objectContaining({
       batch_id: "import-b-9",
@@ -2324,7 +2324,7 @@ describe("RelationshipGovernancePage 来源治理入口（任务 11）", () => {
 
     expect(screen.getAllByTestId("governance-row")).toHaveLength(1);
     expect(screen.getByTestId("governance-import-banner")).toHaveTextContent(
-      "本次导入留下 2 个本地来源副本",
+      "本次导入后，原位置仍保留 2 个技能原件",
     );
   });
 });
@@ -2585,7 +2585,7 @@ describe("RelationshipGovernancePage 来源副本动作（任务 11.7-11.9）", 
     expect(within(sourceCards[0]!).getByTestId("governance-short-name-src-pending-legacy-ready")).toHaveTextContent("尚未纳入管理");
     expect(within(sourceCards[1]!).getByTestId("governance-short-name-src-retained-centralized-readiness")).toHaveTextContent("尚未纳入管理");
     expect(sourceCards[1]).toHaveTextContent("使用状态正常");
-    expect(sourceCards[1]).toHaveTextContent("尚未纳入技能库管理");
+    expect(sourceCards[1]).toHaveTextContent("尚未纳入管理");
     expect(document.body).not.toHaveTextContent("已由技能库管理");
     expect(document.body).not.toHaveTextContent("已保留为独立拷贝");
   });
@@ -2605,7 +2605,7 @@ describe("RelationshipGovernancePage 来源副本动作（任务 11.7-11.9）", 
     expect((await screen.findAllByTestId("governance-row")).length).toBe(4);
 
     // Legacy Retained is not structured user-decision evidence; both source facts remain active.
-    expect(screen.getByTestId("governance-bucket-unmanaged")).toHaveTextContent("尚未纳入技能库管理");
+    expect(screen.getByTestId("governance-bucket-unmanaged")).toHaveTextContent("尚未纳入管理");
     expect(screen.queryByTestId("governance-action-revalidate-src-pending")).not.toBeInTheDocument();
     expect(screen.queryByTestId("governance-action-revalidate-src-retained")).not.toBeInTheDocument();
     // 需要重新检查：仅显示 action_conditions 明确允许的复核入口。
@@ -2718,7 +2718,7 @@ describe("RelationshipGovernancePage 批次收敛（任务 11.10/11.15）", () =
 
     // 来源副本没有旧 retain 批量入口；受阻部署也不能进入可执行项。
     const dialog = await screen.findByTestId("usage-manage-dialog");
-    expect(within(dialog).getByRole("heading", { name: "转为集中管理" })).toBeVisible();
+    expect(within(dialog).getByRole("heading", { name: "转入技能库管理" })).toBeVisible();
     expect(within(dialog).getByTestId("usage-manage-item-managed:dep-eligible")).toBeVisible();
     expect(within(dialog).queryByTestId("usage-manage-item-src-pending")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "预览转换影响" })).toBeEnabled();

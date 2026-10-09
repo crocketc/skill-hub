@@ -262,7 +262,7 @@ describe("first-load center selection", () => {
 
     expect(await screen.findByRole("region", { name: "Graph legend" })).toBeVisible();
     expect(screen.getByText("Content verified")).toBeVisible();
-    expect(screen.getByText("Usage")).toBeVisible();
+    expect(screen.getByText("Usage relationship")).toBeVisible();
   });
 
   it("keeps the legend inside the canvas and expands its detailed reading hint on demand", async () => {
@@ -276,7 +276,7 @@ describe("first-load center selection", () => {
       "aria-expanded",
       "false",
     );
-    expect(within(legend).queryByText(/Edge labels identify the relationship type; line style identifies relationship health/)).not.toBeInTheDocument();
+    expect(within(legend).queryByText(/Edge labels show relationship types and line styles show relationship health/)).not.toBeInTheDocument();
 
     await user.click(within(legend).getByRole("button", { name: "Show graph legend details" }));
 
@@ -284,7 +284,7 @@ describe("first-load center selection", () => {
       "aria-expanded",
       "true",
     );
-    expect(within(legend).getByText(/Edge labels identify the relationship type; line style identifies relationship health/)).toBeVisible();
+    expect(within(legend).getByText(/Edge labels show relationship types and line styles show relationship health/)).toBeVisible();
   });
 
   it("picks the center once from candidates and replaces the URL", async () => {
@@ -560,7 +560,7 @@ describe("fact filters", () => {
       expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
     });
     // 事实计数来自查询结果本身，与筛选无关。
-    expect(screen.getByText("Deployment relations 1, sources 0, conflicts 0")).toBeVisible();
+    expect(screen.getByText("1 usage relationships, 0 sources, 0 conflicts")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Filters" }));
     await user.click(screen.getByRole("checkbox", { name: "Content verified" }));
@@ -568,7 +568,7 @@ describe("fact filters", () => {
     await waitFor(() => {
       expect(calls.graph.at(-1)?.statuses).toEqual(["content_verified"]);
     });
-    expect(screen.getByText("Deployment relations 1, sources 0, conflicts 0")).toBeVisible();
+    expect(screen.getByText("1 usage relationships, 0 sources, 0 conflicts")).toBeVisible();
     // 图谱查询仍然只带事实筛选，不带 tags。
     expect(JSON.stringify(calls.graph.at(-1))).not.toContain("tags");
   });

@@ -817,13 +817,13 @@ describe("native skill detail facade", () => {
             agentClientId: "openai.codex-cli",
             id: "relation-1",
             path: "C:/Users/demo/.codex/skills/pdf-reader",
-            shapeLabel: "托管链接",
+            shapeLabel: "链接 · 管理中",
           },
           {
             agentClientId: null,
             id: "relation-2",
             path: "C:/Projects/demo/skills-copy",
-            shapeLabel: "导入副本",
+            shapeLabel: "导入来源",
           },
         ],
         deterministicDuplicates: ["PDF Reader（副本）"],
@@ -933,15 +933,15 @@ describe("native skill detail facade", () => {
     try {
       await skillHubI18n.changeLanguage("zh-CN");
       const chinese = await loadInsights();
-      expect(chinese.dependencies[0]?.shapeLabel).toBe("托管链接");
+      expect(chinese.dependencies[0]?.shapeLabel).toBe("链接 · 管理中");
       expect(chinese.externalChanges[0]?.stateLabel).toBe("内容已与技能库分叉");
-      expect(chinese.operationHistory[0]?.label).toBe("核对部署 · 已撤销");
+      expect(chinese.operationHistory[0]?.label).toBe("核对使用关系 · 已撤销");
 
       await skillHubI18n.changeLanguage("en-US");
       const english = await loadInsights();
-      expect(english.dependencies[0]?.shapeLabel).toBe("Managed link");
+      expect(english.dependencies[0]?.shapeLabel).toBe("Link · Managed");
       expect(english.externalChanges[0]?.stateLabel).toBe("Content diverged from the skill library");
-      expect(english.operationHistory[0]?.label).toBe("Deployment reconciled · Rolled back");
+      expect(english.operationHistory[0]?.label).toBe("Usage relationship reconciled · Rolled back");
     } finally {
       await skillHubI18n.changeLanguage(previousLanguage);
     }

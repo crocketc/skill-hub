@@ -239,7 +239,7 @@ it("annotates relations owned by other agents and links pending tasks to their r
   const cards = screen.getAllByTestId("directory-card");
   const shared = within(cards[0]);
   const rows = shared.getAllByTestId("directory-relation");
-  const foreignRow = rows.find((row) => within(row).queryByText("识别到的复制副本") !== null);
+  const foreignRow = rows.find((row) => within(row).queryByText("发现的技能 · 完整拷贝 · 未管理") !== null);
   expect(foreignRow).toBeDefined();
   // 其他 Agent 的关系必须显式标注归属，不得混入当前 Agent 的矩阵语义。
   expect(within(foreignRow!).getByText("归属 Agent：")).toBeVisible();
@@ -257,9 +257,9 @@ it("labels relations with user semantics and keeps link types in technical detai
   await renderMatrix();
 
   // 通用目录直接读取与 Agent 自有目录的链接引用/复制部署都按用户语义命名。
-  expect(screen.getByText("共享目录直接读取")).toBeVisible();
-  expect(screen.getByText("共享目录链接引用")).toBeVisible();
-  expect(screen.getByText("复制部署")).toBeVisible();
+  expect(screen.getByText("共享目录 · 直接读取")).toBeVisible();
+  expect(screen.getByText("共享目录 · 链接引用")).toBeVisible();
+  expect(screen.getByText("完整拷贝 · 管理中")).toBeVisible();
   // "外部链接"绝不是关系名称；链接类型只出现在技术详情中。
   expect(screen.queryByText(/外部链接/)).not.toBeInTheDocument();
 
@@ -344,7 +344,7 @@ it("offers a removal impact entry per active relation and shows deterministic fa
   expect(facts.textContent).toContain("当前 Agent 直接读取该通用共享目录。");
   expect(facts.textContent).toContain("其他识别该目录的 Agent：");
   expect(facts.querySelector('[aria-label="Trae · 终端"]')).not.toBeNull();
-  expect(facts.textContent).toContain("同一 Skill 的其他路径：/home/demo/.trae/skills/pdf (复制部署)");
+  expect(facts.textContent).toContain("同一 Skill 的其他路径：/home/demo/.trae/skills/pdf (完整拷贝 · 管理中)");
   expect(facts.textContent).toContain("可回退；备份位置：/backups/rel-read");
   expect(facts.textContent).toContain("权限受限");
   expect(facts.textContent).toContain("关联待办：1 项");
@@ -412,8 +412,8 @@ it("renders English copy with the same structure", async () => {
   const shared = within(cards[0]);
   expect(shared.getAllByText("Shared directory").length).toBeGreaterThan(0);
   expect(shared.getByText("Recognition confirmed")).toBeVisible();
-  expect(screen.getByText("Shared directory direct read")).toBeVisible();
-  expect(screen.getByText("Copy deployment")).toBeVisible();
+  expect(screen.getByText("Shared directory · Direct read")).toBeVisible();
+  expect(screen.getByText("Full copy · Managed")).toBeVisible();
   expect(screen.getByTestId("directory-matrix-execution-note").textContent).toContain(
     "does not mean the agent has loaded",
   );

@@ -667,9 +667,9 @@ export const nativeSkillDetailFacade: SkillDetailFacade = {
       })),
       // Unix 秒（十进制字符串）在前端本地化；不可得时诚实缺省时间。
       operationHistory: payload.operation_history.map((entry) => ({
-        at: entry.at_epoch
-          ? new Date(Number(entry.at_epoch) * 1000).toLocaleString()
-          : undefined,
+        ...(entry.at_epoch
+          ? { at: new Date(Number(entry.at_epoch) * 1000).toLocaleString() }
+          : {}),
         id: entry.operation_id,
         label: insightsOperationLabel(entry.message_code),
       })),

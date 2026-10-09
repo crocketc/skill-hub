@@ -70,7 +70,7 @@ it("lists recent native operations with links to their detail pages", async () =
   expect(rows.length).toBeGreaterThanOrEqual(2);
   const detail = screen.getByRole("link", { name: "导入技能：示例包" });
   expect(detail.getAttribute("href")).toBe("/operations/op-1");
-  const failedDetail = screen.getByRole("link", { name: "部署技能：PDF 抽取器" });
+  const failedDetail = screen.getByRole("link", { name: "派发技能：PDF 抽取器" });
   expect(failedDetail.getAttribute("href")).toBe("/operations/op-2");
   expect(screen.getByText(/deployment\.target_conflict/)).toBeVisible();
 });
@@ -153,7 +153,7 @@ it("localizes known operation kinds as row titles and detail link text", async (
 
   const imported = await screen.findByRole("link", { name: "导入技能" });
   expect(imported.getAttribute("href")).toBe("/operations/op-1");
-  expect(screen.getByRole("link", { name: "部署技能" }).getAttribute("href")).toBe(
+  expect(screen.getByRole("link", { name: "派发技能" }).getAttribute("href")).toBe(
     "/operations/op-2",
   );
   expect(screen.queryByRole("link", { name: "import_skill" })).not.toBeInTheDocument();

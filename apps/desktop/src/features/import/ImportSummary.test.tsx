@@ -220,7 +220,7 @@ it("keeps the original copy and exposes the relationship-governance todo after a
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("原始副本保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
+  expect(screen.getByText("原位置的技能文件保持不变；如需清理，请在关系治理中单独确认并保留回退路径。")).toBeVisible();
   expect(screen.queryByRole("link", { name: /关系治理待办/ })).not.toBeInTheDocument();
 });
 
@@ -250,7 +250,7 @@ it("renders the added import summary copy in the active English locale", async (
     </I18nextProvider>,
   );
 
-  expect(screen.getByText("Original copies remain unchanged; cleanup is a separate confirmed action with a recovery path.")).toBeVisible();
+  expect(screen.getByText("Skill files at the original location remain unchanged. Cleanup requires a separate confirmation in relationship governance and a recovery path.")).toBeVisible();
   expect(screen.getByRole("button", { name: "View governance task governance-task-1" })).toBeVisible();
 });
 

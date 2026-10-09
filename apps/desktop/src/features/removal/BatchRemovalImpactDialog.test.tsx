@@ -47,7 +47,7 @@ async function renderDialog(props: Partial<Parameters<typeof BatchRemovalImpactD
 it("requires impact choices and a second click confirmation without typed phrases", async () => {
   const { onConfirm } = await renderDialog();
 
-  expect(screen.getByText(/2 Skills are selected for deletion from the library\./)).toBeVisible();
+  expect(screen.getByText(/You selected 2 Skills to delete from the library\. Handle their usage relationships first\./)).toBeVisible();
   // DEV-97：存在部署关系时动词是“继续删除”，风险语义由红色主按钮、
   // 二次确认与非原子提示承载，不再自称“强制”。
   expect(screen.getByRole("button", { name: "Continue deletion" })).toBeDisabled();

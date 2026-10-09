@@ -105,13 +105,16 @@ it("routes a fresh local profile to initialization", async () => {
   expect(screen.queryByRole("link", { name: "概览" })).not.toBeInTheDocument();
 });
 
-it("shows cached home data while filesystem verification continues", async () => {
+it("keeps cached home content available when filesystem verification is unavailable", async () => {
   await renderBootstrapGate({
-    snapshot: cachedSnapshot,
+    snapshot: {
+      ...cachedSnapshot,
+      tag_categories: [{ key: "cached", count: 42 }],
+    },
     verification: { kind: "unavailable" },
   });
 
-  expect(await screen.findAllByText("42")).toHaveLength(1);
+  expect(await screen.findByRole("button", { name: "查看 cached 的 42 个 Skill" })).toBeVisible();
   expect(screen.queryByText("正在核对本地变化")).not.toBeInTheDocument();
   expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "概览" })).toBeVisible();

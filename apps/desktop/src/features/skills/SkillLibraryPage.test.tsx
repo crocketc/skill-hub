@@ -530,7 +530,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
 
-    expect(await screen.findByText("Deployment target details could not be verified, so deletion was not prepared.")).toBeVisible();
+    expect(await screen.findByText("Usage relationship target details could not be verified, so removal was not prepared.")).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
   } finally {
@@ -554,7 +554,7 @@ it("localizes failed deletion impact preparation and keeps confirmation closed i
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择 PDF Reader" }));
     fireEvent.click(screen.getByRole("button", { name: "从库中删除所选 Skill" }));
 
-    expect(await screen.findByText("无法核实部署目标详情，未准备删除操作。")).toBeVisible();
+    expect(await screen.findByText("无法核实使用关系目标详情，未准备删除操作。")).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "检查批量删除影响" })).not.toBeInTheDocument();
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
   } finally {

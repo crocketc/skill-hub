@@ -500,8 +500,8 @@ describe("ConflictDecisionPage", () => {
     expect(await screen.findByRole("heading", { name: "同一技能出现在多个目录" })).toBeVisible();
     expect(screen.getByText("/agents/codex/skills/formatter")).toBeVisible();
     expect(screen.getByText("/agents/cursor/skills/formatter")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "整理重复副本" }));
-    const dialog = await screen.findByRole("dialog", { name: "清理重复副本" });
+    fireEvent.click(screen.getByRole("button", { name: "整理同一技能" }));
+    const dialog = await screen.findByRole("dialog", { name: "处理多目录中的同一技能" });
     fireEvent.click(within(dialog).getByRole("button", { name: "预览清理影响" }));
     await waitFor(() => expect(usageChangeFacade.prepareUsageChange).toHaveBeenCalledWith(expect.objectContaining({
       action: "resolve_duplicate",
@@ -511,7 +511,7 @@ describe("ConflictDecisionPage", () => {
         { directory_id: "dir-b", relative_entry_path: "formatter" },
       ],
     })));
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: "我已核对保留副本和清理范围，了解其他副本将先备份再移除。" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "我已核对保留项和清理范围，了解其余项将先备份再移除。" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "确认清理" }));
     await waitFor(() => expect(usageChangeFacade.commitUsageChange).toHaveBeenCalledWith({
       operation_id: prepared.operation_id,
@@ -542,7 +542,7 @@ describe("ConflictDecisionPage", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "多个目录中存在重名技能" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "整理重复副本" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "整理同一技能" })).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("多个使用位置出现同名但内容不同的 Skill，需要分别确认。");
   });
 
@@ -554,7 +554,7 @@ describe("ConflictDecisionPage", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "同一技能出现在多个目录" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "整理重复副本" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "整理同一技能" })).not.toBeInTheDocument();
   });
 
   it("renders only the pending uncertain queue and keeps handled items in history", async () => {
@@ -591,7 +591,7 @@ describe("ConflictDecisionPage", () => {
     await renderPage(createFacade(workspaceFixture()));
     await screen.findByText("冲突组 conflict:a");
 
-    fireEvent.click(screen.getByRole("button", { name: "同名不同内容" }));
+    fireEvent.click(screen.getByRole("button", { name: "重名" }));
     expect(screen.queryByRole("button", { name: "conflict:b" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "conflict:a" })).toBeVisible();
     expect(screen.getByRole("button", { name: "conflict:c" })).toBeVisible();
@@ -781,7 +781,7 @@ describe("ConflictDecisionPage", () => {
     const { tracker } = await renderPage(facade);
     await screen.findByText("冲突组 conflict:a");
 
-    fireEvent.click(screen.getByRole("button", { name: "纳入技能库管理" }));
+    fireEvent.click(screen.getByRole("button", { name: "转入技能库管理" }));
 
     // 不跨页自动提交：不写决定、不进执行桥，只携带冲突上下文跳治理预览。
     expect(facade.resolveConflictCase).not.toHaveBeenCalled();
