@@ -156,6 +156,22 @@ struct SharedUsageMigrationJournal {
     completed: Vec<UsageChangeItemResult>,
 }
 
+pub(crate) fn shared_usage_migration_recovery_action_available(
+    operation_id: OperationId,
+    recovery_data: &Value,
+) -> bool {
+    serde_json::from_value::<SharedUsageMigrationJournal>(recovery_data.clone())
+        .ok()
+        .is_some_and(|journal| {
+            journal.request.operation_id == operation_id
+                && journal.request.action == UsageChangeAction::MigrateSharedUsage
+                && journal.prepared.operation_id == operation_id
+                && journal.prepared.action == UsageChangeAction::MigrateSharedUsage
+                && journal.prepared.shared_usage_migration.is_some()
+                && !journal.replacements.is_empty()
+        })
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct SharedUsageMigrationSource {
     skill_id: SkillId,

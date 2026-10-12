@@ -741,6 +741,17 @@ async fn restart_recovers_partial_migration() {
         &fixture.library_root,
         deployment_index(&fixture.target_a, &fixture.target_b),
     );
+    let AppQueryResult::RecoveryCandidates(candidates) = reopened
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list migration recovery candidate")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates.iter().any(|candidate| {
+        candidate.operation_id == prepared.operation_id
+            && candidate.actions == [RecoveryAction::CompleteOperation]
+    }));
     let AppCommandResult::OperationSummary(summary) = reopened
         .execute(AppCommand::ResolveRecovery(ResolveRecovery {
             operation_id: prepared.operation_id,
@@ -756,6 +767,48 @@ async fn restart_recovers_partial_migration() {
     assert!(fixture.shared_root.is_dir());
     assert!(fixture.other_shared_skill.join("SKILL.md").is_file());
     assert!(fixture.target_b.join("formatter/SKILL.md").is_file());
+}
+
+#[tokio::test]
+async fn malformed_shared_migration_journal_does_not_offer_resume_action() {
+    let fixture = fixture().await;
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(migration_request(&fixture.problem_id))
+        .expect("prepare shared usage migration");
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read migration operation")
+            .expect("migration operation exists");
+        record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.recovery_data = serde_json::json!({"journal": "truncated"});
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("persist malformed recovery record");
+    }
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("malformed operation remains visible for manual handling");
+    assert!(
+        candidate.actions.is_empty(),
+        "malformed journal must not claim automatic resume is available"
+    );
 }
 
 async fn current_same_skill_problem_id(facade: &LocalApplicationFacade) -> String {

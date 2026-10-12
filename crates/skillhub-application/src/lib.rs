@@ -20250,7 +20250,15 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         RecoveryAction::RollbackOperation,
                     ],
                     "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
-                    "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
+                    "shared_usage_migration"
+                        if record.phase == skillhub_core::OperationPhase::NeedsRecovery
+                            && usage_change_service::shared_usage_migration_recovery_action_available(
+                                record.operation_id,
+                                &record.recovery_data,
+                            ) =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "subject_runtime_rename"
                         if record
                             .recovery_data
