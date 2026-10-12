@@ -171,6 +171,10 @@ pub enum PreparedRemovalState {
 pub struct PreparedRemovalRecord {
     pub kind: PreparedRemovalKind,
     pub impact: RemovalImpact,
+    /// SkillHub 中央技能运行名，用于重启后核对原可见目录。
+    /// 应用层持久化此事实；恢复载荷不接受任意删除路径。
+    #[serde(default)]
+    pub central_runtime_name: Option<String>,
     /// 最近一次提交尝试中用户给出的决定（含共享目标确认标记）。
     pub decisions: Vec<RemovalChoice>,
     pub applied_deployment_ids: Vec<DeploymentId>,

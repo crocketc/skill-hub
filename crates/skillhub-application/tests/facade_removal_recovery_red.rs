@@ -9,9 +9,9 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CancelDeleteSkill, CommitDeleteSkill, ListDeployments,
-    PrepareDeleteSkill,
+    PrepareDeleteSkill, ResolveRecovery,
 };
-use skillhub_core::catalog::Skill;
+use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentRecord, DeploymentState};
 use skillhub_core::{
     AppCommand, AppQuery, AppResult, ApplicationFacade, DeploymentId, ErrorCode, OperationId,
@@ -151,6 +151,14 @@ async fn active_deployments(
 }
 
 async fn recovery_candidate_ids(facade: &LocalApplicationFacade) -> Vec<OperationId> {
+    recovery_candidates(facade)
+        .await
+        .into_iter()
+        .map(|candidate| candidate.operation_id)
+        .collect()
+}
+
+async fn recovery_candidates(facade: &LocalApplicationFacade) -> Vec<RecoveryCandidate> {
     let list = facade
         .query(AppQuery::ListRecoveryCandidates)
         .await
@@ -160,9 +168,6 @@ async fn recovery_candidate_ids(facade: &LocalApplicationFacade) -> Vec<Operatio
     };
     let candidates: Vec<RecoveryCandidate> = candidates;
     candidates
-        .into_iter()
-        .map(|candidate| candidate.operation_id)
-        .collect()
 }
 
 fn journal_record(
@@ -180,6 +185,46 @@ fn prepared_payload(database: &Database, operation_id: OperationId) -> PreparedR
     let record = journal_record(database, operation_id);
     serde_json::from_value(record.recovery_data)
         .expect("the prepared payload must be persisted in the journal")
+}
+
+fn persist_applying_delete(
+    database: &Database,
+    impact: &RemovalImpact,
+    decisions: Vec<RemovalChoice>,
+    applied: Vec<DeploymentId>,
+    remaining: Vec<DeploymentId>,
+    runtime_name: &str,
+) {
+    let mut journal = journal_record(database, impact.operation_id);
+    let mut prepared = prepared_payload(database, impact.operation_id);
+    prepared.central_runtime_name = Some(runtime_name.to_owned());
+    prepared.state = PreparedRemovalState::Applying;
+    prepared.decisions = decisions;
+    prepared.applied_deployment_ids = applied;
+    prepared.remaining_deployment_ids = remaining;
+    journal.recovery_data = serde_json::to_value(prepared).expect("serialize delete payload");
+    journal.phase = skillhub_core::OperationPhase::Applying;
+    journal.progress.phase = skillhub_core::OperationPhase::Applying;
+    database
+        .operation_repository()
+        .update_sync(&journal)
+        .expect("persist interrupted delete");
+}
+
+fn seed_central_version(library: &CentralLibrary, skill: &Skill) -> VersionId {
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Recoverable delete\n").expect("write source");
+    let store = VersionStore::from_library(library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(skill, Some(&version.id))
+        .expect("save portable metadata");
+    version.id
 }
 
 /// RED：prepared 持久化后，重启（新 facade 触发启动清扫）必须拒绝旧预览的
@@ -394,6 +439,15 @@ async fn a_partially_failed_delete_registers_recovery_and_preserves_decisions() 
     assert!(recovery_candidate_ids(&facade)
         .await
         .contains(&impact.operation_id));
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("valid delete journal should offer its supported continuation");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
 
     let cancel_partial = facade
         .execute(AppCommand::CancelDeleteSkill(CancelDeleteSkill {
@@ -513,7 +567,7 @@ async fn retry_after_partial_failure_reprepares_and_skips_applied_items() {
 /// 不被 K1c 的补偿完整结算静默吸收；直接重提交被拒，移除故障后续作必须
 /// 重新 prepare（关系已空，只剩主体删除）。
 #[tokio::test]
-async fn a_failed_central_deletion_is_a_structured_outcome_and_recovers_via_reprepare() {
+async fn a_failed_central_deletion_is_a_structured_outcome_and_recovers_via_recovery_center() {
     let ws = workspace();
     let database = open_database(&ws.database_path);
     let skill = seed_skill(&database, "Central failure").await;
@@ -573,35 +627,56 @@ async fn a_failed_central_deletion_is_a_structured_outcome_and_recovers_via_repr
     assert!(recovery_candidate_ids(&facade)
         .await
         .contains(&impact.operation_id));
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("central delete failure should remain a candidate");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    assert_eq!(
+        stored.central_runtime_name.as_deref(),
+        Some(skill.runtime_name())
+    );
 
     // 直接重提交被拒：applying 相位不可提交，续作必须重新 prepare。
     let error = commit_delete(&facade, impact.operation_id, Vec::new())
         .await
         .expect_err("an applying row cannot be recommitted blindly");
     assert_eq!(error.code, ErrorCode::ObjectNotFound);
+    assert!(
+        recovery_candidate_ids(&facade)
+            .await
+            .contains(&impact.operation_id),
+        "a rejected retry must preserve the recovery candidate"
+    );
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::NeedsRecovery,
+        "a rejected retry cannot settle an applying delete as rolled back"
+    );
 
-    // 移除故障后续作：重新 prepare 只剩主体删除，然后 Committed。
+    // 移除故障后通过恢复中心继续已确认的删除决定。
     std::fs::remove_dir_all(&manifest).expect("clear obstruction");
     std::fs::copy(&manifest_backup, &manifest).expect("restore manifest");
     std::fs::remove_file(&manifest_backup).expect("drop backup");
-    let fresh = prepare_delete(&facade, skill.id()).await;
-    assert!(
-        fresh.deployments.is_empty(),
-        "no relations were ever registered; only the central body is left"
-    );
-    let retry = commit_delete(&facade, fresh.operation_id, Vec::new())
+    let retry = facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
         .await
-        .expect("retry commit must succeed");
-    let AppCommandResult::RemovalResult(retry) = retry else {
-        panic!("expected removal result");
+        .expect("recovery center should continue the confirmed delete");
+    let AppCommandResult::OperationSummary(summary) = retry else {
+        panic!("expected recovered operation summary");
     };
-    assert_eq!(retry.state, RemovalResultState::Committed);
-    assert!(retry.central_skill_deleted);
-    assert!(retry.central_delete_error.is_none());
+    assert_eq!(summary.phase, skillhub_core::OperationPhase::Committed);
     assert!(
         !recovery_candidate_ids(&facade)
             .await
-            .contains(&fresh.operation_id),
+            .contains(&impact.operation_id),
         "the completed retry must not stay a recovery candidate"
     );
     let audit_database = open_database(&ws.database_path);
@@ -614,4 +689,472 @@ async fn a_failed_central_deletion_is_a_structured_outcome_and_recovers_via_repr
         )
         .expect("count catalog rows");
     assert_eq!(catalog_rows, 0, "the catalog record must be gone");
+    assert_eq!(
+        journal_record(&audit_database, impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
+}
+
+#[tokio::test]
+async fn delete_recovery_reconciles_database_write_before_progress_checkpoint() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Interrupted relation removal").await;
+    let deployment_id = seed_deployment(
+        &database,
+        skill.id(),
+        "target-interrupted-relation",
+        &ws.scratch_dir.path().join("missing-target-root"),
+    )
+    .await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    let source = tempfile::tempdir().expect("source");
+    std::fs::write(source.path().join("SKILL.md"), "# Interrupted\n").expect("write source");
+    let store = VersionStore::from_library(&library);
+    let version = store
+        .capture(skill.id(), source.path())
+        .expect("capture version");
+    store
+        .set_current(skill.id(), &version.id)
+        .expect("set current");
+    library
+        .save_portable_skill(&skill, Some(&version.id))
+        .expect("save portable metadata");
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let audit_database = open_database(&ws.database_path);
+    persist_applying_delete(
+        &audit_database,
+        &impact,
+        vec![choice(
+            deployment_id,
+            RemovalDecision::RemoveRelationOnly,
+            false,
+        )],
+        Vec::new(),
+        vec![deployment_id],
+        skill.runtime_name(),
+    );
+    audit_database
+        .deployment_repository()
+        .mark_removed_sync(deployment_id)
+        .expect("simulate database mutation before progress checkpoint");
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("interrupted delete remains recoverable");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("resume should recognize the already removed relation");
+
+    let database = open_database(&ws.database_path);
+    let catalog_rows: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM skills WHERE id = ?1",
+            [skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("count catalog rows");
+    assert_eq!(catalog_rows, 0);
+    assert_eq!(
+        journal_record(&database, impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
+}
+
+#[tokio::test]
+async fn delete_recovery_resumes_after_visible_tree_and_version_manifest_were_removed() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Interrupted central delete").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    let version_id = seed_central_version(&library, &skill);
+    library
+        .materialize_current_skill(&skill, &version_id)
+        .expect("materialize visible tree");
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let audit_database = open_database(&ws.database_path);
+    persist_applying_delete(
+        &audit_database,
+        &impact,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        skill.runtime_name(),
+    );
+
+    let visible_backup = library.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{}",
+        skill.id(),
+        impact.operation_id
+    ));
+    assert!(library
+        .prepare_visible_tree_removal(&skill, &visible_backup)
+        .expect("move visible tree to the operation backup"));
+    let manifest = library
+        .paths()
+        .versions_dir
+        .join(skill.id().to_string())
+        .join(format!(
+            "{}.json",
+            version_id
+                .as_str()
+                .strip_prefix("sha256:")
+                .unwrap_or(version_id.as_str())
+        ));
+    std::fs::remove_file(&manifest).expect("simulate interruption after manifest removal");
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("central delete remains recoverable");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("resume should finish the interrupted central delete");
+
+    assert!(!visible_backup.exists());
+    assert!(!library.visible_skill_path(&skill).exists());
+    assert!(library
+        .load_portable_skill(skill.id())
+        .expect("read portable manifest")
+        .is_none());
+    let database = open_database(&ws.database_path);
+    assert!(database
+        .catalog_repository()
+        .expect("catalog repository")
+        .get_sync(skill.id())
+        .expect("read deleted catalog row")
+        .is_none());
+    assert_eq!(
+        journal_record(&database, impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
+}
+
+#[tokio::test]
+async fn delete_recovery_refuses_a_replaced_target_without_deleting_it() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Target identity guard").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    seed_central_version(&library, &skill);
+    let target_root = ws.scratch_dir.path().join("replacement-root");
+    std::fs::create_dir_all(target_root.join("fixture")).expect("create target");
+    let protected_file = target_root.join("fixture").join("keep.txt");
+    std::fs::write(&protected_file, "belongs to a replacement target")
+        .expect("write protected file");
+    let deployment_id = seed_deployment(
+        &database,
+        skill.id(),
+        "registered-target-id-that-does-not-match-this-directory",
+        &target_root,
+    )
+    .await;
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let audit_database = open_database(&ws.database_path);
+    persist_applying_delete(
+        &audit_database,
+        &impact,
+        vec![choice(
+            deployment_id,
+            RemovalDecision::RemoveOwnedTarget,
+            false,
+        )],
+        Vec::new(),
+        vec![deployment_id],
+        skill.runtime_name(),
+    );
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("changed target must keep the recovery gate visible");
+    assert!(
+        candidate.actions.is_empty(),
+        "a replaced target must not advertise a continuation action"
+    );
+    let error = restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect_err("a target with a changed physical identity must remain untouched");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        std::fs::read_to_string(&protected_file).expect("protected file remains"),
+        "belongs to a replacement target"
+    );
+    assert!(recovery_candidate_ids(&restarted)
+        .await
+        .contains(&impact.operation_id));
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::NeedsRecovery
+    );
+}
+
+#[tokio::test]
+async fn delete_recovery_hides_action_when_target_ownership_hash_changed() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Changed owned target").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    seed_central_version(&library, &skill);
+    let target_root = ws.scratch_dir.path().join("changed-owned-target-root");
+    let deployed_path = target_root.join("fixture");
+    std::fs::create_dir_all(&deployed_path).expect("create deployed copy");
+    std::fs::write(deployed_path.join("keep.txt"), "changed after deployment")
+        .expect("write modified deployed copy");
+    let target_id = skillhub_core::physical_id_for_path(&target_root)
+        .expect("registered target physical identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    persist_applying_delete(
+        &open_database(&ws.database_path),
+        &impact,
+        vec![choice(
+            deployment_id,
+            RemovalDecision::RemoveOwnedTarget,
+            false,
+        )],
+        Vec::new(),
+        vec![deployment_id],
+        skill.runtime_name(),
+    );
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("modified target must keep the recovery gate visible");
+    assert!(
+        candidate.actions.is_empty(),
+        "an ownership mismatch must not advertise a continuation action"
+    );
+}
+
+#[tokio::test]
+async fn delete_recovery_hides_action_when_decisions_do_not_match_the_impact() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Corrupt delete facts").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    seed_central_version(&library, &skill);
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let audit_database = open_database(&ws.database_path);
+    persist_applying_delete(
+        &audit_database,
+        &impact,
+        vec![choice(
+            DeploymentId::new(),
+            RemovalDecision::RemoveRelationOnly,
+            false,
+        )],
+        Vec::new(),
+        Vec::new(),
+        skill.runtime_name(),
+    );
+    let mut journal = journal_record(&audit_database, impact.operation_id);
+    journal.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    journal.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    audit_database
+        .operation_repository()
+        .update_sync(&journal)
+        .expect("mark invalid record for recovery");
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("invalid recovery record still keeps the safety gate");
+    assert!(candidate.actions.is_empty());
+}
+
+#[tokio::test]
+async fn delete_recovery_hides_action_for_a_windows_drive_like_runtime_name() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Invalid runtime name").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    seed_central_version(&library, &skill);
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    persist_applying_delete(
+        &open_database(&ws.database_path),
+        &impact,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        "C:outside-library",
+    );
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("invalid recovery record still keeps the safety gate");
+    assert!(candidate.actions.is_empty());
+}
+
+#[tokio::test]
+async fn delete_recovery_can_retry_after_target_removal_outlives_its_database_checkpoint() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Retry interrupted removal").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    seed_central_version(&library, &skill);
+    let target_root = ws.scratch_dir.path().join("retry-target-root");
+    let deployed_path = target_root.join("fixture");
+    std::fs::create_dir_all(&deployed_path).expect("create deployed copy");
+    std::fs::write(deployed_path.join("SKILL.md"), "# Owned deployment\n")
+        .expect("write deployed copy");
+    let target_id = skillhub_core::physical_id_for_path(&target_root)
+        .expect("registered target physical identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let expected_hash =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&deployed_path)
+            .expect("hash owned deployment");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET expected_hash=?1, observed_hash=?1 WHERE id=?2",
+            rusqlite::params![expected_hash, deployment_id.to_string()],
+        )
+        .expect("persist deployment ownership proof");
+
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    open_database(&ws.database_path)
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER block_delete_relation_checkpoint
+             BEFORE UPDATE OF state ON deployments
+             WHEN NEW.state='removed'
+             BEGIN SELECT RAISE(ABORT, 'injected delete relation checkpoint failure'); END;",
+        )
+        .expect("inject relation checkpoint failure");
+
+    let partial = commit_delete(
+        &facade,
+        impact.operation_id,
+        vec![choice(
+            deployment_id,
+            RemovalDecision::RemoveOwnedTarget,
+            false,
+        )],
+    )
+    .await
+    .expect("the deletion service should report a partial result");
+    let AppCommandResult::RemovalResult(partial) = partial else {
+        panic!("expected partial removal result");
+    };
+    assert_eq!(partial.state, RemovalResultState::PartiallyCommitted);
+    assert!(!deployed_path.exists(), "the confirmed target was removed");
+    assert!(recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+
+    let first_retry = facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await;
+    assert!(
+        first_retry.is_err(),
+        "the injected database failure must remain visible"
+    );
+    assert!(recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+
+    open_database(&ws.database_path)
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER block_delete_relation_checkpoint;")
+        .expect("remove injected failure");
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("retry should reconcile the missing target and complete deletion");
+    assert!(!recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
 }

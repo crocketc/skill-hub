@@ -102,7 +102,7 @@ impl RemovalBackend for FakeRemovalBackend {
         Ok(())
     }
 
-    async fn delete_skill(&self, skill_id: SkillId) -> AppResult<()> {
+    async fn delete_skill(&self, _operation_id: OperationId, skill_id: SkillId) -> AppResult<()> {
         if *self.failing_delete.lock().unwrap() {
             return Err(AppError::new(
                 ErrorCode::InternalError,

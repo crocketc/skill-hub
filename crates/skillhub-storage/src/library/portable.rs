@@ -22,6 +22,17 @@ impl PortableManifestStore {
     }
 
     pub fn load(&self) -> AppResult<LibraryManifest> {
+        self.load_with_normalization(true)
+    }
+
+    /// Reads and normalizes legacy fields in memory without writing the
+    /// normalized manifest. Recovery startup uses this before a write action
+    /// has been selected so a read-only library cannot block its recovery UI.
+    pub(crate) fn load_read_only(&self) -> AppResult<LibraryManifest> {
+        self.load_with_normalization(false)
+    }
+
+    fn load_with_normalization(&self, persist_normalization: bool) -> AppResult<LibraryManifest> {
         let bytes = fs::read(&self.path).map_err(io_error)?;
         let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(json_error)?;
         let normalized = normalize_archived_lifecycle(&mut value);
@@ -33,7 +44,9 @@ impl PortableManifestStore {
             let verified: LibraryManifest =
                 serde_json::from_slice(&normalized_bytes).map_err(json_error)?;
             validate_manifest_version(&verified)?;
-            self.replace_atomic(&normalized_bytes)?;
+            if persist_normalization {
+                self.replace_atomic(&normalized_bytes)?;
+            }
         }
         Ok(manifest)
     }

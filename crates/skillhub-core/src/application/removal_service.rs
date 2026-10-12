@@ -22,7 +22,7 @@ pub trait RemovalBackend: Send + Sync {
     async fn remove_owned_target(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     async fn remove_relation(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     async fn detach_management(&self, deployment: &DeploymentRecord) -> AppResult<()>;
-    async fn delete_skill(&self, skill_id: SkillId) -> AppResult<()>;
+    async fn delete_skill(&self, operation_id: OperationId, skill_id: SkillId) -> AppResult<()>;
     /// 持久化删除阶段（影响快照 + 用户决定 + 已处理/剩余项）。
     async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()>;
     /// K2：读取仍可提交（journal `prepared` 相位）的记录；过期/已推进的
@@ -55,6 +55,7 @@ where
             .save_prepared_removal(&PreparedRemovalRecord {
                 kind: PreparedRemovalKind::DeleteSkill,
                 impact: impact.clone(),
+                central_runtime_name: None,
                 decisions: Vec::new(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: Vec::new(),
@@ -71,6 +72,7 @@ where
             .save_prepared_removal(&PreparedRemovalRecord {
                 kind: PreparedRemovalKind::UndeploySkill,
                 impact: impact.clone(),
+                central_runtime_name: None,
                 decisions: Vec::new(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: Vec::new(),
@@ -179,6 +181,7 @@ where
             .save_prepared_removal(&PreparedRemovalRecord {
                 kind: PreparedRemovalKind::DeleteSkill,
                 impact: record.impact.clone(),
+                central_runtime_name: None,
                 decisions: decisions.clone(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: remaining.clone(),
@@ -272,6 +275,7 @@ where
                 .save_prepared_removal(&PreparedRemovalRecord {
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
+                    central_runtime_name: None,
                     decisions: decisions.clone(),
                     applied_deployment_ids: applied.clone(),
                     remaining_deployment_ids: remaining.clone(),
@@ -288,6 +292,7 @@ where
                 .save_prepared_removal(&PreparedRemovalRecord {
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
+                    central_runtime_name: None,
                     decisions,
                     applied_deployment_ids: applied,
                     remaining_deployment_ids: remaining,
@@ -310,12 +315,17 @@ where
         // 中央 Skill 未删除，持久化 PartiallyCommitted（journal Applying
         // 相位＝恢复候选）并携带稳定错误码与恢复引用；裸 Err 会让补偿完整
         // 的 RolledBack 行静默吸收"目标已回收、中央仍在"的真实不一致。
-        if let Err(error) = self.backend.delete_skill(record.impact.skill_id).await {
+        if let Err(error) = self
+            .backend
+            .delete_skill(operation_id, record.impact.skill_id)
+            .await
+        {
             let code = error.code;
             self.backend
                 .save_prepared_removal(&PreparedRemovalRecord {
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
+                    central_runtime_name: None,
                     decisions,
                     applied_deployment_ids: applied,
                     remaining_deployment_ids: Vec::new(),

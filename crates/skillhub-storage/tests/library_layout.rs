@@ -146,6 +146,34 @@ fn both_modes_probe_writability_and_report_an_actionable_error() {
     assert_eq!(reopened.load_manifest().unwrap().format_version, 1);
 }
 
+#[cfg(unix)]
+#[test]
+fn recovery_open_does_not_require_a_writable_library_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let library = CentralLibrary::create(root.path()).expect("create library");
+    let management_dir = library.paths().management_dir.clone();
+    let manifest_path = library.paths().manifest_path.clone();
+    drop(library);
+    let legacy_manifest = br#"{"format_version":1,"skills":[{"id":"00000000-0000-0000-0000-0000000000a1","display_name":"Legacy","runtime_name":"legacy","lifecycle":"Archived"}]}"#;
+    std::fs::write(&manifest_path, legacy_manifest).expect("write legacy manifest");
+    std::fs::set_permissions(&management_dir, std::fs::Permissions::from_mode(0o555))
+        .expect("make management directory read-only");
+
+    let result =
+        CentralLibrary::open_for_recovery_with_fault_handler(root.path(), Arc::new(|_| false));
+
+    std::fs::set_permissions(&management_dir, std::fs::Permissions::from_mode(0o755))
+        .expect("restore management directory permissions");
+    result.expect("recovery must open without writing a legacy manifest normalization");
+    assert_eq!(
+        std::fs::read(&manifest_path).expect("read original manifest"),
+        legacy_manifest,
+        "opening for recovery must leave the manifest untouched"
+    );
+}
+
 #[test]
 fn interrupted_manifest_write_keeps_previous_valid_manifest() {
     let ws = TempWorkspace::new().unwrap();

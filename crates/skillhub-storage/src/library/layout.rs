@@ -19,6 +19,12 @@ pub struct CentralLibrary {
     store: PortableManifestStore,
 }
 
+#[derive(Clone, Copy)]
+enum MaterializeMode {
+    Normal { allow_manifest_creation: bool },
+    Recovery,
+}
+
 /// A visible-tree replacement whose prior directory is retained until the
 /// caller commits all other consumers of the selected version.
 #[derive(Debug)]
@@ -94,6 +100,25 @@ impl CentralLibrary {
         Self::materialize(root, false)
     }
 
+    /// Opens a library for operation recovery without probing writability or
+    /// rebuilding missing visible trees. An interrupted delete may have
+    /// already moved the tree and removed its manifest; startup must let the
+    /// recovery UI open before retrying writes, and must not recreate that
+    /// tree from an incomplete version store.
+    pub fn open_for_recovery_with_fault_handler(
+        root: impl AsRef<Path>,
+        fault_handler: ManifestFaultHandler,
+    ) -> AppResult<Self> {
+        let root = root.as_ref();
+        let paths = LibraryPaths::from_root(root);
+        if !paths.manifest_path.is_file() {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("reason", "existing_library_manifest_missing")
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        Self::materialize_with_mode(root, MaterializeMode::Recovery, fault_handler)
+    }
+
     pub fn initialize(root: impl AsRef<Path>) -> AppResult<Self> {
         Self::initialize_with_fault_handler(root, Arc::new(|_| false))
     }
@@ -114,6 +139,27 @@ impl CentralLibrary {
         allow_manifest_creation: bool,
         fault_handler: ManifestFaultHandler,
     ) -> AppResult<Self> {
+        Self::materialize_with_mode(
+            root,
+            MaterializeMode::Normal {
+                allow_manifest_creation,
+            },
+            fault_handler,
+        )
+    }
+
+    fn materialize_with_mode(
+        root: &Path,
+        mode: MaterializeMode,
+        fault_handler: ManifestFaultHandler,
+    ) -> AppResult<Self> {
+        let (allow_manifest_creation, rebuild_missing_visible_skills, check_writability) =
+            match mode {
+                MaterializeMode::Normal {
+                    allow_manifest_creation,
+                } => (allow_manifest_creation, true, true),
+                MaterializeMode::Recovery => (false, false, false),
+            };
         let paths = LibraryPaths::from_root(root);
         for directory in [
             &paths.skills_dir,
@@ -137,11 +183,22 @@ impl CentralLibrary {
             store.write_atomic(&LibraryManifest::default())?;
         } else {
             // Existing files are never overwritten during initialization.
-            store.load()?;
+            match mode {
+                MaterializeMode::Normal { .. } => {
+                    store.load()?;
+                }
+                MaterializeMode::Recovery => {
+                    store.load_read_only()?;
+                }
+            }
         }
         let library = Self { paths, store };
-        library.probe_writable()?;
-        library.materialize_missing_visible_skills()?;
+        if check_writability {
+            library.probe_writable()?;
+        }
+        if rebuild_missing_visible_skills {
+            library.materialize_missing_visible_skills()?;
+        }
         Ok(library)
     }
 

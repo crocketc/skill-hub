@@ -12,7 +12,7 @@ pub mod relationship_watch_confirmation;
 mod update_service;
 mod usage_change_service;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1151,7 +1151,11 @@ impl RemovalBackend for LocalDeploymentBackend {
             .detach_management_sync(deployment.id)
     }
 
-    async fn delete_skill(&self, skill_id: skillhub_core::SkillId) -> AppResult<()> {
+    async fn delete_skill(
+        &self,
+        operation_id: OperationId,
+        skill_id: skillhub_core::SkillId,
+    ) -> AppResult<()> {
         let library = self.library_runtime.snapshot()?;
         // 指针读取同时充当守卫：store 不可读时在破坏之前中止。
         let (skill, _current_pointer) = {
@@ -1180,11 +1184,7 @@ impl RemovalBackend for LocalDeploymentBackend {
         // 删除按可逆性排序：可见树先移入备份（可逆），不可逆的版本对象删除
         // 最先执行；此时目录、portable 与数据库投影都未触碰，失败时还原可见
         // 树即可回到删除前的四个消费面事实。
-        let backup = library.central.paths().tmp_dir.join(format!(
-            "visible-backup-{}-{}",
-            skill_id,
-            OperationId::new()
-        ));
+        let backup = deletion_visible_backup_path(&library.central, skill_id, operation_id);
         let tree_backed_up = library
             .central
             .prepare_visible_tree_removal(&skill, &backup)?;
@@ -1220,11 +1220,7 @@ impl RemovalBackend for LocalDeploymentBackend {
         // 属主体私有数据，保留只会成为永久残留。先移入同一 tmp 备份区
         // （与 visible-backup 同模式命名），随既有"丢弃备份"步骤一并清理；
         // 移动失败不得静默留下孤儿草稿，按不可逆删除如实上报恢复材料。
-        let drafts_backup = library.central.paths().tmp_dir.join(format!(
-            "drafts-backup-{}-{}",
-            skill_id,
-            OperationId::new()
-        ));
+        let drafts_backup = deletion_drafts_backup_path(&library.central, skill_id, operation_id);
         let drafts_moved = match library
             .central
             .prepare_drafts_removal(skill_id, &drafts_backup)
@@ -1268,6 +1264,30 @@ impl RemovalBackend for LocalDeploymentBackend {
             .database
             .lock()
             .map_err(|_| internal("removal.save_prepared"))?;
+        let catalog_runtime_name = database
+            .catalog_repository()?
+            .get_sync(record.impact.skill_id)?
+            .map(|skill| skill.runtime_name().to_owned());
+        let previous_runtime_name = if catalog_runtime_name.is_none() {
+            database
+                .operation_repository()
+                .get_sync(record.impact.operation_id)?
+                .and_then(|existing| {
+                    existing
+                        .recovery_data
+                        .get("central_runtime_name")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                })
+        } else {
+            None
+        };
+        let runtime_name = catalog_runtime_name
+            .or(previous_runtime_name)
+            .or_else(|| record.central_runtime_name.clone());
+        if let Some(runtime_name) = runtime_name {
+            journal.recovery_data["central_runtime_name"] = serde_json::Value::String(runtime_name);
+        }
         match database.operation_repository().update_sync(&journal) {
             Ok(()) => Ok(()),
             Err(error) if error.code == ErrorCode::ObjectNotFound => {
@@ -1395,6 +1415,67 @@ fn drafts_dir_path(
     skill_id: skillhub_core::SkillId,
 ) -> std::path::PathBuf {
     central.paths().drafts_dir.join(skill_id.to_string())
+}
+
+fn deletion_visible_backup_path(
+    central: &skillhub_storage::CentralLibrary,
+    skill_id: skillhub_core::SkillId,
+    operation_id: OperationId,
+) -> PathBuf {
+    central
+        .paths()
+        .tmp_dir
+        .join(format!("visible-backup-{skill_id}-{operation_id}"))
+}
+
+fn deletion_drafts_backup_path(
+    central: &skillhub_storage::CentralLibrary,
+    skill_id: skillhub_core::SkillId,
+    operation_id: OperationId,
+) -> PathBuf {
+    central
+        .paths()
+        .tmp_dir
+        .join(format!("drafts-backup-{skill_id}-{operation_id}"))
+}
+
+fn same_deployment_identity(expected: &DeploymentRecord, current: &DeploymentRecord) -> bool {
+    expected.id == current.id
+        && expected.skill_id == current.skill_id
+        && expected.version_id == current.version_id
+        && expected.target_id == current.target_id
+        && expected.mode == current.mode
+        && expected.managed == current.managed
+        && expected.runtime_name == current.runtime_name
+        && expected.expected_hash == current.expected_hash
+        && expected.observed_hash == current.observed_hash
+}
+
+fn path_entry_exists_for_recovery(path: &Path) -> AppResult<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(recovery_filesystem_error(
+            "delete_recovery_path_stat",
+            error,
+        )),
+    }
+}
+
+fn ensure_directory(path: &Path, reason: &'static str) -> AppResult<()> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| recovery_filesystem_error("delete_recovery_directory_stat", error))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(recovery_conflict(reason));
+    }
+    Ok(())
+}
+
+fn recovery_filesystem_error(operation: &'static str, error: std::io::Error) -> AppError {
+    AppError::new(ErrorCode::InternalError, Severity::Error)
+        .with_param("operation", operation)
+        .with_param("source", error.to_string())
+        .with_action(RecoveryAction::Retry)
 }
 
 #[async_trait]
@@ -2388,6 +2469,7 @@ impl LocalApplicationFacade {
         })));
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
+            library_runtime: library_runtime.clone(),
         })));
         let call_policy_service =
             Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
@@ -2471,8 +2553,26 @@ impl LocalApplicationFacade {
         let library_root = library_root.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(database));
         let startup_journal_sweep = Self::sweep_stale_journal(&database);
-        let central = CentralLibrary::initialize_with_fault_handler(&library_root, fault_handler)
-            .expect("new_with_library requires a valid central library");
+        let delete_recovery_pending = database
+            .lock()
+            .ok()
+            .and_then(|database| database.operation_repository().list_sync().ok())
+            .map(|records| {
+                records.iter().any(|record| {
+                    record.kind == "delete_skill"
+                        && skillhub_core::operation_requires_recovery_gate(
+                            &record.kind,
+                            record.phase,
+                        )
+                })
+            })
+            .unwrap_or(true);
+        let central = if delete_recovery_pending {
+            CentralLibrary::open_for_recovery_with_fault_handler(&library_root, fault_handler)
+        } else {
+            CentralLibrary::initialize_with_fault_handler(&library_root, fault_handler)
+        }
+        .expect("new_with_library requires a valid central library");
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
             library_runtime::LibraryContext::from_library(central),
         )));
@@ -2488,6 +2588,7 @@ impl LocalApplicationFacade {
         })));
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
+            library_runtime: library_runtime.clone(),
         })));
         let call_policy_service =
             Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
@@ -15578,13 +15679,9 @@ impl LocalApplicationFacade {
             // K2：重启后对过期 prepared 的拒绝提交保留原行的影响载荷
             // （已确认的决定与快照不得因重启丢失），只把相位结算为
             // `rolled_back`。
-            Some(error) if error.code == ErrorCode::ObjectNotFound => self
-                .journal_advance_keeping_payload(
-                    operation_id,
-                    kind,
-                    skillhub_core::OperationPhase::RolledBack,
-                    Some(error.code),
-                ),
+            Some(error) if error.code == ErrorCode::ObjectNotFound => {
+                self.journal_missing_removal_outcome(operation_id, kind, error.code)
+            }
             // 补偿完整（四个消费面都回到删除前事实）的失败不留残局，
             // 不能像真实残留那样拦截下一次启动。
             Some(error)
@@ -15608,6 +15705,53 @@ impl LocalApplicationFacade {
                 Some(error.code),
             ),
         }
+    }
+
+    fn journal_missing_removal_outcome(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        error_code: ErrorCode,
+    ) {
+        let Ok(database) = self.database.lock() else {
+            return;
+        };
+        let repository = database.operation_repository();
+        let existing = match repository.get_sync(operation_id) {
+            Ok(existing) => existing,
+            Err(_) => return,
+        };
+        let Some(mut record) = existing else {
+            drop(database);
+            self.journal_advance(
+                operation_id,
+                kind,
+                skillhub_core::OperationPhase::RolledBack,
+                Some(error_code),
+            );
+            return;
+        };
+        if record.kind != kind {
+            return;
+        }
+        let next_phase = if record.phase == skillhub_core::OperationPhase::Prepared {
+            skillhub_core::OperationPhase::RolledBack
+        } else if skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase) {
+            skillhub_core::OperationPhase::NeedsRecovery
+        } else {
+            // Rejected retries must not rewrite a committed or already settled
+            // journal row into a different terminal outcome.
+            return;
+        };
+        record.phase = next_phase;
+        record.progress.phase = next_phase;
+        record.progress.message_code = match next_phase {
+            skillhub_core::OperationPhase::NeedsRecovery => "operation.needs_recovery",
+            _ => "operation.rolled_back",
+        }
+        .to_owned();
+        record.error_code = Some(error_code);
+        let _ = repository.update_sync(&record);
     }
 
     fn list_skill_operations(&self, skill_id: skillhub_core::SkillId) -> AppResult<AppQueryResult> {
@@ -17276,6 +17420,117 @@ fn has_relation_migration_recovery_journal(recovery_data: &serde_json::Value) ->
         .is_some_and(|prepared| {
             serde_json::from_value::<skillhub_core::PreparedRelationMigration>(prepared).is_ok()
         })
+}
+
+fn parse_delete_recovery_candidate(
+    operation_id: OperationId,
+    phase: skillhub_core::OperationPhase,
+    recovery_data: &serde_json::Value,
+) -> Option<PreparedRemovalRecord> {
+    if !matches!(
+        phase,
+        skillhub_core::OperationPhase::Applying
+            | skillhub_core::OperationPhase::Verifying
+            | skillhub_core::OperationPhase::NeedsRecovery
+    ) {
+        return None;
+    }
+    let prepared: PreparedRemovalRecord = serde_json::from_value(recovery_data.clone()).ok()?;
+    if prepared.kind != skillhub_core::PreparedRemovalKind::DeleteSkill
+        || prepared.impact.operation_id != operation_id
+        || !matches!(
+            prepared.state,
+            skillhub_core::PreparedRemovalState::Applying
+                | skillhub_core::PreparedRemovalState::PartiallyCommitted
+        )
+        || !prepared
+            .central_runtime_name
+            .as_deref()
+            .is_some_and(is_safe_runtime_name)
+    {
+        return None;
+    }
+
+    let expected_ids: HashSet<String> = prepared
+        .impact
+        .deployments
+        .iter()
+        .map(|deployment| deployment.id.to_string())
+        .collect();
+    let decision_ids: HashSet<String> = prepared
+        .decisions
+        .iter()
+        .map(|choice| choice.deployment_id.to_string())
+        .collect();
+    let applied_ids: HashSet<String> = prepared
+        .applied_deployment_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let remaining_ids: HashSet<String> = prepared
+        .remaining_deployment_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let has_unconfirmed_shared_target_removal = prepared.decisions.iter().any(|choice| {
+        if choice.decision != skillhub_core::RemovalDecision::RemoveOwnedTarget
+            || choice.confirm_shared_target_removal
+        {
+            return false;
+        }
+        deployment_for_choice(&prepared, choice.deployment_id).is_some_and(|selected| {
+            prepared
+                .impact
+                .deployments
+                .iter()
+                .filter(|deployment| deployment.target_id == selected.target_id)
+                .count()
+                > 1
+        })
+    });
+    if expected_ids.len() != prepared.impact.deployments.len()
+        || decision_ids.len() != prepared.decisions.len()
+        || applied_ids.len() != prepared.applied_deployment_ids.len()
+        || remaining_ids.len() != prepared.remaining_deployment_ids.len()
+        || decision_ids != expected_ids
+        || !applied_ids.is_disjoint(&remaining_ids)
+        || applied_ids
+            .union(&remaining_ids)
+            .cloned()
+            .collect::<HashSet<_>>()
+            != expected_ids
+        || prepared
+            .impact
+            .deployments
+            .iter()
+            .any(|deployment| deployment.state != DeploymentState::Deployed)
+        || has_unconfirmed_shared_target_removal
+        || prepared.decisions.iter().any(|choice| {
+            matches!(
+                choice.decision,
+                skillhub_core::RemovalDecision::Cancel
+                    | skillhub_core::RemovalDecision::DetachManagement
+            )
+        })
+    {
+        return None;
+    }
+    Some(prepared)
+}
+
+fn deployment_for_choice(
+    prepared: &PreparedRemovalRecord,
+    deployment_id: skillhub_core::DeploymentId,
+) -> Option<&DeploymentRecord> {
+    prepared
+        .impact
+        .deployments
+        .iter()
+        .find(|deployment| deployment.id == deployment_id)
+}
+
+fn is_safe_runtime_name(runtime_name: &str) -> bool {
+    skillhub_core::deployment::validate_runtime_name(runtime_name).is_ok()
 }
 
 /// Runtime-name comparison for occupancy facts, matching the planner's own
@@ -19030,11 +19285,13 @@ impl HealthBackend for LocalHealthBackend {
 #[async_trait]
 impl RecoveryBackend for LocalRecoveryBackend {
     async fn list_candidates(&self) -> AppResult<Vec<RecoveryCandidate>> {
-        let database = self
-            .database
-            .lock()
-            .map_err(|_| internal("recovery.list"))?;
-        let records = database.operation_repository().list_sync()?;
+        let records = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.list"))?;
+            database.operation_repository().list_sync()?
+        };
         let mut candidates = Vec::new();
         for record in records {
             if !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase) {
@@ -19059,6 +19316,20 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         vec![RecoveryAction::CompleteOperation]
                     }
                     "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
+                    "delete_skill"
+                        if parse_delete_recovery_candidate(
+                            record.operation_id,
+                            record.phase,
+                            &record.recovery_data,
+                        )
+                        .zip(self.library_runtime.snapshot().ok())
+                        .is_some_and(|(prepared, library)| {
+                            self.validate_delete_recovery_facts(&prepared, &library)
+                                .is_ok()
+                        }) =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
                         vec![RecoveryAction::RollbackOperation]
                     }
@@ -19121,6 +19392,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
         if operation_kind.as_deref() == Some("shared_usage_migration") {
             return Err(unsupported("recovery.shared_usage_migration"));
         }
+        if operation_kind.as_deref() == Some("delete_skill") {
+            if action != RecoveryAction::CompleteOperation {
+                return Err(unsupported("recovery.resolve.delete_skill"));
+            }
+            return self.complete_delete_operation(operation_id);
+        }
         if operation_kind.as_deref() == Some("deploy_skill") {
             if action != RecoveryAction::RollbackOperation {
                 return Err(unsupported("recovery.resolve.deploy_skill"));
@@ -19151,6 +19428,501 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
+    fn validate_delete_recovery_facts(
+        &self,
+        prepared: &PreparedRemovalRecord,
+        library: &library_runtime::LibraryContext,
+    ) -> AppResult<Option<Skill>> {
+        let (catalog_skill, current_deployments) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill.validate"))?;
+            let catalog_skill = database
+                .catalog_repository()?
+                .get_sync(prepared.impact.skill_id)?;
+            let current_deployments = database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .filter(|deployment| deployment.skill_id == prepared.impact.skill_id)
+                .collect::<Vec<_>>();
+            (catalog_skill, current_deployments)
+        };
+        if catalog_skill.as_ref().is_some_and(|skill| {
+            Some(skill.runtime_name()) != prepared.central_runtime_name.as_deref()
+        }) {
+            return Err(recovery_conflict("delete_skill_runtime_name_changed"));
+        }
+        if catalog_skill.is_none() && !current_deployments.is_empty() {
+            return Err(recovery_conflict("delete_catalog_and_relations_disagree"));
+        }
+
+        let expected_ids: HashSet<_> = prepared
+            .impact
+            .deployments
+            .iter()
+            .map(|deployment| deployment.id)
+            .collect();
+        if current_deployments
+            .iter()
+            .any(|deployment| !expected_ids.contains(&deployment.id))
+        {
+            return Err(recovery_conflict("delete_unexpected_deployment_record"));
+        }
+        let deployment_backend =
+            LocalDeploymentBackend::new(self.database.clone(), self.library_runtime.clone());
+        for expected in &prepared.impact.deployments {
+            let current = current_deployments
+                .iter()
+                .find(|deployment| deployment.id == expected.id);
+            let Some(current) = current else {
+                if catalog_skill.is_some() {
+                    return Err(recovery_conflict("delete_deployment_record_missing"));
+                }
+                continue;
+            };
+            if !same_deployment_identity(expected, current) {
+                return Err(recovery_conflict("delete_deployment_identity_changed"));
+            }
+            match current.state {
+                DeploymentState::Removed => continue,
+                DeploymentState::Deployed => {}
+                DeploymentState::Planned | DeploymentState::NeedsRecovery => {
+                    return Err(recovery_conflict("delete_deployment_state_invalid"));
+                }
+            }
+            let choice = prepared
+                .decisions
+                .iter()
+                .find(|choice| choice.deployment_id == current.id)
+                .ok_or_else(|| recovery_conflict("delete_decision_missing"))?;
+            if choice.decision == skillhub_core::RemovalDecision::RemoveOwnedTarget {
+                if !is_safe_runtime_name(&current.runtime_name) {
+                    return Err(recovery_conflict("delete_target_runtime_name_invalid"));
+                }
+                let target_root = deployment_backend.target_root(current)?;
+                match std::fs::symlink_metadata(&target_root) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => {
+                        return Err(recovery_filesystem_error("delete_target_root_stat", error));
+                    }
+                    Ok(_)
+                        if physical_id_for_path(&target_root).as_deref()
+                            == Some(current.target_id.as_str()) => {}
+                    Ok(_) => return Err(recovery_conflict("delete_target_root_identity_changed")),
+                }
+                let destination = target_root.join(&current.runtime_name);
+                match std::fs::symlink_metadata(&destination) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(recovery_filesystem_error("delete_target_stat", error));
+                    }
+                    Ok(_) => {
+                        let proof = deployment_backend.deployment_proof(current)?;
+                        deployment_backend.filesystem.verify_ownership(&proof)?;
+                    }
+                }
+            }
+        }
+
+        let runtime_name = prepared
+            .central_runtime_name
+            .as_deref()
+            .filter(|name| is_safe_runtime_name(name))
+            .ok_or_else(|| recovery_conflict("delete_runtime_name_missing"))?;
+        let skill_id = prepared.impact.skill_id;
+        if library
+            .central
+            .load_portable_skill(skill_id)?
+            .is_some_and(|(portable, _)| portable.runtime_name != runtime_name)
+        {
+            return Err(recovery_conflict("delete_portable_runtime_name_changed"));
+        }
+        let tmp_dir = &library.central.paths().tmp_dir;
+        ensure_directory(tmp_dir, "delete_tmp_directory_changed")?;
+        let visible_path = library
+            .central
+            .visible_skill_path_for_runtime(skill_id, runtime_name);
+        let visible_backup =
+            deletion_visible_backup_path(&library.central, skill_id, prepared.impact.operation_id);
+        let visible_exists = path_entry_exists_for_recovery(&visible_path)?;
+        let visible_backup_exists = path_entry_exists_for_recovery(&visible_backup)?;
+        if visible_backup_exists {
+            ensure_directory(&visible_backup, "delete_visible_backup_changed")?;
+            if visible_exists {
+                return Err(recovery_conflict(
+                    "delete_visible_output_and_backup_both_exist",
+                ));
+            }
+        } else if visible_exists {
+            ensure_directory(&visible_path, "delete_visible_directory_changed")?;
+            if catalog_skill.is_none() {
+                return Err(recovery_conflict("delete_visible_output_reappeared"));
+            }
+        }
+        let drafts_path = library
+            .central
+            .paths()
+            .drafts_dir
+            .join(skill_id.to_string());
+        let drafts_backup =
+            deletion_drafts_backup_path(&library.central, skill_id, prepared.impact.operation_id);
+        let drafts_exists = path_entry_exists_for_recovery(&drafts_path)?;
+        let drafts_backup_exists = path_entry_exists_for_recovery(&drafts_backup)?;
+        if drafts_exists && drafts_backup_exists {
+            return Err(recovery_conflict("delete_drafts_and_backup_both_exist"));
+        }
+        if drafts_exists {
+            ensure_directory(&drafts_path, "delete_drafts_directory_changed")?;
+        }
+        if drafts_backup_exists {
+            ensure_directory(&drafts_backup, "delete_drafts_backup_changed")?;
+        }
+        Ok(catalog_skill)
+    }
+
+    fn complete_delete_operation(&self, operation_id: OperationId) -> AppResult<()> {
+        let journal = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill"))?;
+            database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| recovery_conflict("delete_operation_missing"))?
+        };
+        if journal.kind != "delete_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("delete_operation_not_recoverable"));
+        }
+        let mut prepared =
+            parse_delete_recovery_candidate(operation_id, journal.phase, &journal.recovery_data)
+                .ok_or_else(|| recovery_conflict("delete_recovery_facts_invalid"))?;
+        let library = self.library_runtime.snapshot()?;
+        let deployment_backend =
+            LocalDeploymentBackend::new(self.database.clone(), self.library_runtime.clone());
+        let catalog_skill = self.validate_delete_recovery_facts(&prepared, &library)?;
+
+        // Reconcile each confirmed decision against the durable deployment row
+        // and current target. Progress may lag one successful mutation when the
+        // process stops between that mutation and the next journal save.
+        for deployment in &prepared.impact.deployments {
+            let choice = prepared
+                .decisions
+                .iter()
+                .find(|choice| choice.deployment_id == deployment.id)
+                .ok_or_else(|| recovery_conflict("delete_decision_missing"))?;
+            self.resume_delete_deployment(
+                &deployment_backend,
+                deployment,
+                choice.decision,
+                catalog_skill.is_some(),
+            )?;
+            if !prepared.applied_deployment_ids.contains(&deployment.id) {
+                prepared.applied_deployment_ids.push(deployment.id);
+            }
+            prepared
+                .remaining_deployment_ids
+                .retain(|id| *id != deployment.id);
+            self.persist_delete_recovery_payload(operation_id, &prepared)?;
+        }
+
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill.relations"))?;
+            let deployments = database.deployment_repository().list_all()?;
+            if deployments.iter().any(|deployment| {
+                deployment.skill_id == prepared.impact.skill_id
+                    && deployment.state == DeploymentState::Deployed
+            }) {
+                return Err(recovery_conflict("delete_active_deployment_remains"));
+            }
+            if catalog_skill.is_none()
+                && deployments
+                    .iter()
+                    .any(|deployment| deployment.skill_id == prepared.impact.skill_id)
+            {
+                return Err(recovery_conflict("delete_catalog_and_relations_disagree"));
+            }
+        }
+
+        self.resume_central_skill_deletion(&library, &prepared)?;
+
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.delete_skill.finish"))?;
+        let repository = database.operation_repository();
+        let mut journal = repository
+            .get_sync(operation_id)?
+            .ok_or_else(|| recovery_conflict("delete_operation_missing"))?;
+        if journal.kind != "delete_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("delete_operation_not_recoverable"));
+        }
+        journal.phase = skillhub_core::OperationPhase::Committed;
+        journal.progress.phase = skillhub_core::OperationPhase::Committed;
+        journal.progress.message_code = "recovery.resolved".to_owned();
+        journal.recovery_data = serde_json::to_value(&prepared).map_err(|error| {
+            internal_with_detail("recovery.delete_skill.serialize", error.to_string())
+        })?;
+        repository.update_sync(&journal)
+    }
+
+    fn resume_delete_deployment(
+        &self,
+        deployment_backend: &LocalDeploymentBackend,
+        expected: &DeploymentRecord,
+        decision: skillhub_core::RemovalDecision,
+        catalog_exists: bool,
+    ) -> AppResult<()> {
+        let current = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill.deployment"))?;
+            database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .find(|deployment| deployment.id == expected.id)
+        };
+        let Some(current) = current else {
+            return if catalog_exists {
+                Err(recovery_conflict("delete_deployment_record_missing"))
+            } else {
+                // Catalog removal is one SQLite transaction that also deletes
+                // every deployment row. Its absence proves this item was past
+                // the target phase before the central delete committed.
+                Ok(())
+            };
+        };
+        if !same_deployment_identity(expected, &current) {
+            return Err(recovery_conflict("delete_deployment_identity_changed"));
+        }
+        match current.state {
+            DeploymentState::Removed => return Ok(()),
+            DeploymentState::Deployed => {}
+            DeploymentState::Planned | DeploymentState::NeedsRecovery => {
+                return Err(recovery_conflict("delete_deployment_state_invalid"));
+            }
+        }
+
+        match decision {
+            skillhub_core::RemovalDecision::RemoveOwnedTarget => {
+                if !is_safe_runtime_name(&current.runtime_name) {
+                    return Err(recovery_conflict("delete_target_runtime_name_invalid"));
+                }
+                let target_root = deployment_backend.target_root(&current)?;
+                match std::fs::symlink_metadata(&target_root) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.delete_skill.mark_removed"))?;
+                        return database
+                            .deployment_repository()
+                            .mark_removed_sync(current.id);
+                    }
+                    Err(error) => {
+                        return Err(recovery_filesystem_error("delete_target_root_stat", error));
+                    }
+                    Ok(_)
+                        if physical_id_for_path(&target_root).as_deref()
+                            == Some(current.target_id.as_str()) => {}
+                    Ok(_) => return Err(recovery_conflict("delete_target_root_identity_changed")),
+                }
+                let destination = target_root.join(&current.runtime_name);
+                match std::fs::symlink_metadata(&destination) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.delete_skill.mark_removed"))?;
+                        database
+                            .deployment_repository()
+                            .mark_removed_sync(current.id)
+                    }
+                    Err(error) => Err(recovery_filesystem_error("delete_target_stat", error)),
+                    Ok(_) => {
+                        let proof = deployment_backend.deployment_proof(&current)?;
+                        deployment_backend.filesystem.remove_owned(&proof)?;
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.delete_skill.mark_removed"))?;
+                        database
+                            .deployment_repository()
+                            .mark_removed_sync(current.id)
+                    }
+                }
+            }
+            skillhub_core::RemovalDecision::KeepSharedDeployment
+            | skillhub_core::RemovalDecision::RemoveRelationOnly => {
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.delete_skill.mark_removed"))?;
+                database
+                    .deployment_repository()
+                    .mark_removed_sync(current.id)
+            }
+            skillhub_core::RemovalDecision::Cancel
+            | skillhub_core::RemovalDecision::DetachManagement => {
+                Err(recovery_conflict("delete_decision_unsupported"))
+            }
+        }
+    }
+
+    fn persist_delete_recovery_payload(
+        &self,
+        operation_id: OperationId,
+        prepared: &PreparedRemovalRecord,
+    ) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.delete_skill.checkpoint"))?;
+        let repository = database.operation_repository();
+        let mut journal = repository
+            .get_sync(operation_id)?
+            .ok_or_else(|| recovery_conflict("delete_operation_missing"))?;
+        if journal.kind != "delete_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("delete_operation_not_recoverable"));
+        }
+        journal.recovery_data = serde_json::to_value(prepared).map_err(|error| {
+            internal_with_detail("recovery.delete_skill.serialize", error.to_string())
+        })?;
+        repository.update_sync(&journal)
+    }
+
+    fn resume_central_skill_deletion(
+        &self,
+        library: &library_runtime::LibraryContext,
+        prepared: &PreparedRemovalRecord,
+    ) -> AppResult<()> {
+        let skill_id = prepared.impact.skill_id;
+        let runtime_name = prepared
+            .central_runtime_name
+            .as_deref()
+            .filter(|name| is_safe_runtime_name(name))
+            .ok_or_else(|| recovery_conflict("delete_runtime_name_missing"))?;
+        if library
+            .central
+            .load_portable_skill(skill_id)?
+            .is_some_and(|(portable, _)| portable.runtime_name != runtime_name)
+        {
+            return Err(recovery_conflict("delete_portable_runtime_name_changed"));
+        }
+        let visible_backup =
+            deletion_visible_backup_path(&library.central, skill_id, prepared.impact.operation_id);
+        let drafts_backup =
+            deletion_drafts_backup_path(&library.central, skill_id, prepared.impact.operation_id);
+        ensure_directory(
+            &library.central.paths().tmp_dir,
+            "delete_tmp_directory_changed",
+        )?;
+        let visible_path = library
+            .central
+            .visible_skill_path_for_runtime(skill_id, runtime_name);
+        let visible_exists = path_entry_exists_for_recovery(&visible_path)?;
+        let visible_backup_exists = path_entry_exists_for_recovery(&visible_backup)?;
+        if visible_backup_exists {
+            ensure_directory(&visible_backup, "delete_visible_backup_changed")?;
+            if visible_exists {
+                return Err(recovery_conflict(
+                    "delete_visible_output_and_backup_both_exist",
+                ));
+            }
+        } else if let Some(skill) = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.delete_skill.visible"))?
+            .catalog_repository()?
+            .get_sync(skill_id)?
+        {
+            if skill.runtime_name() != runtime_name {
+                return Err(recovery_conflict("delete_skill_runtime_name_changed"));
+            }
+            library
+                .central
+                .prepare_visible_tree_removal(&skill, &visible_backup)?;
+        } else if visible_exists {
+            // The catalog transaction only runs after this operation moved the
+            // original tree. A tree reappearing under the old name is foreign.
+            return Err(recovery_conflict("delete_visible_output_reappeared"));
+        }
+
+        // Each step is safe to repeat: remaining manifests are enumerated,
+        // absent portable/catalog rows are idempotent removals, and catalog
+        // projections commit together in one database transaction.
+        library.store.remove_skill_sync(skill_id)?;
+        library
+            .central
+            .restore_portable_skill_record(skill_id, None)?;
+        let catalog_exists = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill.catalog"))?;
+            let exists = database.catalog_repository()?.get_sync(skill_id)?.is_some();
+            if exists {
+                database.catalog_repository()?.remove_sync(skill_id)?;
+            }
+            exists
+        };
+
+        let drafts_path = library
+            .central
+            .paths()
+            .drafts_dir
+            .join(skill_id.to_string());
+        let drafts_exists = path_entry_exists_for_recovery(&drafts_path)?;
+        let drafts_backup_exists = path_entry_exists_for_recovery(&drafts_backup)?;
+        if drafts_exists && drafts_backup_exists {
+            return Err(recovery_conflict("delete_drafts_and_backup_both_exist"));
+        }
+        if drafts_exists {
+            ensure_directory(&drafts_path, "delete_drafts_directory_changed")?;
+            library
+                .central
+                .prepare_drafts_removal(skill_id, &drafts_backup)?;
+        }
+        if drafts_backup_exists {
+            ensure_directory(&drafts_backup, "delete_drafts_backup_changed")?;
+        }
+        if visible_backup_exists {
+            library
+                .central
+                .discard_visible_tree_removal(&visible_backup)?;
+        }
+        if drafts_backup_exists {
+            library
+                .central
+                .discard_visible_tree_removal(&drafts_backup)?;
+        }
+        if !catalog_exists
+            && self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.delete_skill.verify"))?
+                .catalog_repository()?
+                .get_sync(skill_id)?
+                .is_some()
+        {
+            return Err(recovery_conflict("delete_catalog_reappeared"));
+        }
+        Ok(())
+    }
+
     /// Deletes the targets an interrupted operation recorded in its
     /// `recovery_data`.  Rolling a candidate back has to undo what the
     /// operation wrote, not only settle its accounting row.
@@ -19319,6 +20091,7 @@ struct LocalHealthBackend {
 
 struct LocalRecoveryBackend {
     database: Arc<Mutex<Database>>,
+    library_runtime: Arc<library_runtime::LibraryRuntime>,
 }
 
 struct LocalCallPolicyBackend {
