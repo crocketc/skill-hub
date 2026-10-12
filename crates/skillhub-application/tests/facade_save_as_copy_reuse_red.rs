@@ -11,7 +11,7 @@
 //!   不得声明全部继承或全部回滚，也不得删除仍被已成功目标使用的新主体。
 //! - 中央库同名主体合法；显示名只影响展示，不得改写运行时名称。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_application::LocalApplicationFacade;
@@ -633,10 +633,9 @@ async fn shared_target_replacement_requires_confirmation_and_lists_consumers() {
     assert_eq!(deployments_of(&facade, source.skill.id()).await.len(), 1);
 }
 
-/// RED：第 3 个目标中途失败 → 逐项结果可归属、登记恢复依据、不得声明
-/// 全部继承或全部回滚、不得删除新主体或原主体。
+/// 第 3 个目标预检失败 → 逐项结果可归属；已稳定完成的部分结果不留恢复门禁。
 #[tokio::test]
-async fn a_mid_failure_replacement_reports_per_item_results_and_recovery_basis() {
+async fn a_mid_failure_replacement_reports_per_item_results_and_settles_stable_partial_result() {
     let mut fixture = Fixture::new();
     let source = seed_source_skill(&mut fixture, "Notebook", "# Notebook\n").await;
     let database = open_database(&fixture.database_path);
@@ -728,20 +727,27 @@ async fn a_mid_failure_replacement_reports_per_item_results_and_recovery_basis()
     );
     assert!(outcome.lineage_registered);
 
-    // 恢复依据：操作日志保留 Applying 相位与逐项载荷，并出现恢复候选。
-    let recovery_id = outcome
-        .recovery_operation_id
-        .expect("partial failure must persist recovery");
+    // 逐项目标结果已稳定：成功项已接管，失败项未被修改；整批不应留在
+    // 执行中或让恢复中心展示无动作的候选。
+    assert_eq!(
+        outcome.recovery_operation_id, None,
+        "stable partial result must not claim recovery is required"
+    );
     let audit = fixture.audit();
     let record = audit
         .operation_repository()
-        .get_sync(recovery_id)
+        .list_sync()
         .expect("read operation journal")
-        .expect("operation journal row must exist");
-    assert_eq!(record.phase, OperationPhase::Applying);
-    assert!(!record.recovery_data.is_null(), "逐项载荷必须持久化");
+        .into_iter()
+        .find(|record| record.kind == "save_markdown_as_copy")
+        .expect("save-as-copy journal row must exist");
+    assert_eq!(record.phase, OperationPhase::Committed);
+    assert_eq!(record.recovery_data["items"].as_array().unwrap().len(), 3);
+    assert_eq!(record.recovery_data["recovery_required"], false);
     drop(audit);
-    assert!(replacement_candidates(&facade).await.contains(&recovery_id));
+    assert!(!replacement_candidates(&facade)
+        .await
+        .contains(&record.operation_id));
 
     // 已成功目标保持接管，失败目标保持原状；新主体与原主体都不得被删除。
     assert_eq!(deployments_of(&facade, outcome.skill_id).await.len(), 2);
@@ -752,6 +758,89 @@ async fn a_mid_failure_replacement_reports_per_item_results_and_recovery_basis()
         .await
         .upstream_lineage
         .is_some());
+}
+
+#[tokio::test]
+async fn replacement_database_failure_restores_original_and_settles_partial_result() {
+    let mut fixture = Fixture::new();
+    let source = seed_source_skill(&mut fixture, "Notebook", "# Notebook\n").await;
+    let database = open_database(&fixture.database_path);
+    let deployment = seed_managed_entry(
+        &mut fixture,
+        &database,
+        source.skill.id(),
+        &source.version_id,
+        "notebook-one",
+        "# Notebook\n",
+        false,
+    );
+    drop(database);
+    let facade = fixture.facade();
+    let preview = preview_replacement(&facade, source.skill.id(), vec![deployment]).await;
+
+    // 让文件替换成功、数据库记账失败，以验证失败补偿是否确实恢复原条目。
+    fixture
+        .audit()
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_replacement_accounting
+             BEFORE UPDATE ON deployments
+             BEGIN SELECT RAISE(ABORT, 'test replacement accounting failure'); END;",
+        )
+        .expect("install accounting failure trigger");
+
+    let outcome = saved_copy(
+        save_copy(
+            &facade,
+            &source,
+            SaveAsCopyInheritance::ReplaceTargets {
+                preview_id: preview.preview_id,
+                targets: vec![choice(deployment, false)],
+            },
+            None,
+        )
+        .await
+        .expect("copy should report a per-target failure"),
+    );
+    let skillhub_core::api::SaveAsCopyInheritanceOutcome::PartiallyReplaced { items } =
+        &outcome.inheritance
+    else {
+        panic!("expected a per-target partial result");
+    };
+    assert_eq!(
+        items[0].status,
+        skillhub_core::api::SaveAsCopyTargetStatus::Failed
+    );
+    assert_eq!(outcome.recovery_operation_id, None);
+
+    let database = fixture.audit();
+    let journal = database
+        .operation_repository()
+        .list_sync()
+        .expect("read operation journal")
+        .into_iter()
+        .find(|record| record.kind == "save_markdown_as_copy")
+        .expect("save-as-copy journal row");
+    assert_eq!(journal.phase, OperationPhase::Committed);
+    assert_eq!(journal.recovery_data["items"].as_array().unwrap().len(), 1);
+    assert_eq!(journal.recovery_data["recovery_required"], false);
+    let current = database
+        .deployment_repository()
+        .list_all()
+        .expect("read deployments")
+        .into_iter()
+        .find(|record| record.id == deployment)
+        .expect("original deployment row");
+    assert_eq!(current.skill_id, source.skill.id());
+    let entry = PathBuf::from(&items[0].path);
+    assert_eq!(
+        std::fs::read_to_string(entry.join("SKILL.md")).expect("restored original entry"),
+        "# Notebook\n"
+    );
+    drop(database);
+    assert!(!replacement_candidates(&facade)
+        .await
+        .contains(&journal.operation_id));
 }
 
 /// RED：预览一次性——提交成功后同一 preview_id 复用被拒绝；记账漂移

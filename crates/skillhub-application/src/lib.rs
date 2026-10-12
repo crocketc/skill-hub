@@ -8507,9 +8507,10 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
         requested_runtime_name: Option<&str>,
         plan: Vec<(SaveAsCopyReplacementTargetFact, bool)>,
-    ) -> AppResult<SaveAsCopyInheritanceOutcome> {
+    ) -> AppResult<(SaveAsCopyInheritanceOutcome, bool)> {
         let filesystem = DeploymentFilesystem::new();
         let mut items: Vec<skillhub_core::api::SaveAsCopyTargetResult> = Vec::new();
+        let mut recovery_required = false;
         for (fact, _confirm) in &plan {
             let consumers: Vec<skillhub_core::DeploymentId> = fact
                 .consumer_deployment_ids
@@ -8668,18 +8669,27 @@ impl LocalApplicationFacade {
                             items.push(base(None));
                         }
                         Err(error) => {
-                            let _ = std::fs::remove_dir_all(&destination_path);
-                            let _ = std::fs::rename(&backup, &proof.destination_path);
+                            let restored = filesystem.remove_owned(&applied.ownership).is_ok()
+                                && restore_save_as_copy_backup(
+                                    &filesystem,
+                                    &proof,
+                                    &backup,
+                                    &destination_path,
+                                );
+                            recovery_required |= !restored;
                             items.push(base(Some(error.code)));
                         }
                     }
                 }
                 Err(error) => {
                     let _ = std::fs::remove_dir_all(&staging);
-                    if destination_path != proof.destination_path {
-                        let _ = std::fs::remove_dir_all(&destination_path);
-                    }
-                    let _ = std::fs::rename(&backup, &proof.destination_path);
+                    let restored = restore_save_as_copy_backup(
+                        &filesystem,
+                        &proof,
+                        &backup,
+                        &destination_path,
+                    );
+                    recovery_required |= !restored;
                     items.push(base(Some(error.code)));
                 }
             }
@@ -8690,10 +8700,10 @@ impl LocalApplicationFacade {
             .all(|item| item.status == skillhub_core::api::SaveAsCopyTargetStatus::Applied);
         if all_applied {
             self.journal_settle(operation_id, SAVE_MARKDOWN_AS_COPY_KIND, None);
-            Ok(SaveAsCopyInheritanceOutcome::Replaced { items })
+            Ok((SaveAsCopyInheritanceOutcome::Replaced { items }, false))
         } else {
-            // 恢复依据：Applying 相位 + 逐项载荷持久化；该行出现在恢复
-            // 候选中，重启后仍可逐项核对真实结果。
+            // 每项均有稳定结果时，部分失败是已完成的结果，不应阻断
+            // 全局操作；只有文件补偿未能验证时才保留恢复门禁。
             let items_payload = serde_json::to_value(&items).map_err(|error| {
                 AppError::new(ErrorCode::InternalError, Severity::Error)
                     .with_param("source", error.to_string())
@@ -8702,16 +8712,24 @@ impl LocalApplicationFacade {
             let mut record = journal_record(
                 operation_id,
                 SAVE_MARKDOWN_AS_COPY_KIND,
-                skillhub_core::OperationPhase::Applying,
+                if recovery_required {
+                    skillhub_core::OperationPhase::Applying
+                } else {
+                    skillhub_core::OperationPhase::Committed
+                },
                 None,
             );
             record.recovery_data = serde_json::json!({
                 "skill_id": copy.id().to_string(),
                 "version_id": version_id.to_string(),
                 "items": items_payload,
+                "recovery_required": recovery_required,
             });
             self.journal_write(record);
-            Ok(SaveAsCopyInheritanceOutcome::PartiallyReplaced { items })
+            Ok((
+                SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
+                recovery_required,
+            ))
         }
     }
 
@@ -9099,13 +9117,13 @@ impl LocalApplicationFacade {
                 .central
                 .finalize_visible_tree_replacement(replacement);
             let (content_identity, _) = library.read_file(&version.id, &request.path, 1_048_576)?;
-            // K5：替换继承在新主体建立并通过验证之后逐项执行。执行器负责
-            // journal 结算：全部成功 → Committed；任一失败 → Applying 相位
-            // + 逐项载荷持久化（恢复候选）。绝不因部分失败删除新主体——
-            // 已成功目标可能正在使用它；也绝不回滚已成功目标。
+            // K5：替换继承在新主体建立并通过验证之后逐项执行。执行器将
+            // 稳定的逐项部分结果结算为 Committed；只有文件补偿无法验证时
+            // 才保留 Applying 恢复门禁。绝不因部分失败删除新主体——已成功
+            // 目标可能正在使用它；也绝不回滚已成功目标。
             let (inheritance, recovery_operation_id) = match replacement_plan {
                 Some(plan) => {
-                    let outcome = self.execute_save_as_copy_replacement(
+                    let (outcome, recovery_required) = self.execute_save_as_copy_replacement(
                         &library,
                         &copy,
                         &version.id,
@@ -9113,12 +9131,7 @@ impl LocalApplicationFacade {
                         request.target_runtime_name.as_deref(),
                         plan,
                     )?;
-                    let recovery = match outcome {
-                        SaveAsCopyInheritanceOutcome::PartiallyReplaced { .. } => {
-                            Some(operation_id)
-                        }
-                        _ => None,
-                    };
+                    let recovery = recovery_required.then_some(operation_id);
                     (outcome, recovery)
                 }
                 None => {
@@ -18266,6 +18279,24 @@ impl SaveAsCopyReplacementSnapshot {
 const SAVE_AS_COPY_REPLACEMENT_PREVIEW_KIND: &str = "save_as_copy_replacement_preview";
 const SAVE_AS_COPY_REPLACEMENT_PREVIEW_TTL_SECONDS: i64 = 900;
 const SAVE_MARKDOWN_AS_COPY_KIND: &str = "save_markdown_as_copy";
+
+/// 只有替换目标路径不存在时才恢复原目录。写入失败留下的目标归属未知时，
+/// 不能只凭路径删除它来给备份腾位置。
+fn restore_save_as_copy_backup(
+    filesystem: &DeploymentFilesystem,
+    original: &OwnershipProof,
+    backup: &std::path::Path,
+    attempted_destination: &std::path::Path,
+) -> bool {
+    match std::fs::symlink_metadata(attempted_destination) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return false,
+    }
+    if std::fs::rename(backup, &original.destination_path).is_err() {
+        return false;
+    }
+    filesystem.verify_ownership(original).is_ok()
+}
 
 /// K5：按最新部署记账收集替换目标事实。共享语义与 K2 一致：同一物理
 /// 目标上存在多个活跃部署即为共享目标，消费者列出全部活跃部署。

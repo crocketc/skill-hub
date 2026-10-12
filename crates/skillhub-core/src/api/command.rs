@@ -183,9 +183,9 @@ pub struct SaveAsCopyTargetResult {
     pub error_code: Option<ErrorCode>,
 }
 
-/// K5：替换继承的批次结果。部分失败时成功项保留，`recovery_operation_id`
-/// 指向携带逐项恢复依据的 journal 行；仍在使用新主体的已成功目标
-/// 绝不因其他项失败而被回滚。
+/// K5：替换继承的批次结果。部分失败时成功项保留；目标结果已稳定时
+/// 作为已完成的部分结果结算。仍在使用新主体的已成功目标绝不因其他项
+/// 失败而被回滚。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub enum SaveAsCopyInheritanceOutcome {
@@ -210,7 +210,8 @@ pub struct SaveAsCopyOutcome {
     /// 「来源 skill+version → 新 skill 首版本」血缘是否已登记。
     pub lineage_registered: bool,
     pub inheritance: SaveAsCopyInheritanceOutcome,
-    /// 替换部分失败时的恢复依据（journal 操作 id）。
+    /// 文件补偿未能验证、操作仍需处理时的 journal 操作标识；稳定的逐项
+    /// 部分结果不会设置该字段。
     pub recovery_operation_id: Option<OperationId>,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
