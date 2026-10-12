@@ -453,6 +453,60 @@ async fn every_known_prepared_preview_is_settled_without_startup_recovery() {
     assert!(candidates.is_empty());
 }
 
+#[tokio::test]
+async fn unsupported_known_recovery_kind_has_no_generic_actions_or_state_mutation() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.db");
+    let library_root = workspace.path().join("library");
+    std::fs::create_dir_all(&library_root).expect("library root");
+    let operation_id = skillhub_core::OperationId::new();
+    {
+        let database = Database::open(&database_path).expect("database");
+        let mut record =
+            skillhub_core::OperationRecord::planned(operation_id, "delete_skill", "fixture-delete");
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .insert_sync(&record)
+            .expect("insert interrupted known operation");
+    }
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("open recovery fixture");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, operation_id);
+    assert!(
+        candidates[0].actions.is_empty(),
+        "known kinds without an implemented recovery path must not inherit generic actions"
+    );
+
+    let result = facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await;
+    assert!(result.is_err(), "an unsupported action must be rejected");
+
+    let database = Database::open(&database_path).expect("reopen database");
+    let record = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read operation")
+        .expect("operation remains recorded");
+    assert_eq!(record.phase, OperationPhase::NeedsRecovery);
+}
+
 /// A commit that fails *before* anything reaches the target directory must settle
 /// as `rolled_back`, not `needs_recovery`.
 ///

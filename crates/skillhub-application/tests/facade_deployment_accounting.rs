@@ -739,6 +739,39 @@ async fn rolling_back_recovery_removes_the_recorded_target() {
         "the seeded candidate must gate startup"
     );
 
+    let AppQueryResult::RecoveryCandidates(candidates) = harness
+        .facade
+        .query(RootAppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].actions,
+        vec![RecoveryAction::RollbackOperation],
+        "a deploy residue can only be removed; it cannot be marked complete"
+    );
+
+    let complete = harness
+        .facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await;
+    assert!(
+        complete.is_err(),
+        "complete must not be advertised or accepted"
+    );
+    assert!(
+        residue.exists(),
+        "rejected completion must preserve the target"
+    );
+
     harness
         .facade
         .execute(AppCommand::ResolveRecovery(

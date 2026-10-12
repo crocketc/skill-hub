@@ -26,7 +26,7 @@ it("opens the requested recovery directly and refreshes the startup state after 
   expect(await screen.findByText("删除技能：Notes")).toBeVisible();
   expect(screen.queryByText(/op-requested/)).toBeNull();
   expect(screen.queryByText("delete_skill")).toBeNull();
-  await userEvent.setup().click(screen.getByRole("button", { name: "确认恢复" }));
+  await userEvent.setup().click(screen.getByRole("button", { name: "撤销未完成改动" }));
   expect(resolveRecovery).toHaveBeenCalledWith("op-requested", "rollback_operation");
   expect(onResolved).toHaveBeenCalledOnce();
 });
@@ -77,13 +77,14 @@ it("defaults to the operation records tab", async () => {
   expect(screen.getByRole("tabpanel")).toBeVisible();
 });
 
-it("switches to the unfinished operations tab and keeps the recovery confirmation there", async () => {
+it("switches to the unfinished operations tab and shows the supported recovery actions", async () => {
   const user = userEvent.setup();
   await renderPage();
 
   await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   expect(screen.getByRole("tabpanel")).toHaveTextContent("deployment.target_conflict");
-  expect(screen.getByRole("button", { name: "确认恢复" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "继续完成操作" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "撤销未完成改动" })).toBeVisible();
 });
 
 /**
@@ -116,11 +117,46 @@ it("recovers the selected candidate through resolve_recovery", async () => {
 
   await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   await act(async () => {
-    await user.click(screen.getByRole("button", { name: "确认恢复" }));
+    await user.click(screen.getByRole("button", { name: "撤销未完成改动" }));
   });
 
   expect(resolveRecovery).toHaveBeenCalledWith("op-recover", "rollback_operation");
-  expect(screen.getByRole("status")).toHaveTextContent("已恢复");
+  expect(screen.getByRole("status")).toHaveTextContent("未完成的改动已撤销");
+});
+
+it("uses the selected candidate's complete action instead of always rolling back", async () => {
+  const user = userEvent.setup();
+  const resolveRecovery = vi.fn(async () => undefined);
+  await renderPage(createFacade({
+    async listRecoveryCandidates() {
+      return [{ operationId: "op-recover", actions: ["complete_operation"] }];
+    },
+    resolveRecovery,
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
+  await user.click(screen.getByRole("button", { name: "继续完成操作" }));
+
+  expect(resolveRecovery).toHaveBeenCalledWith("op-recover", "complete_operation");
+});
+
+it("does not offer a generic recovery action when the backend provides none", async () => {
+  const user = userEvent.setup();
+  const resolveRecovery = vi.fn(async () => undefined);
+  await renderPage(createFacade({
+    async listRecoveryCandidates() {
+      return [{ operationId: "op-recover", actions: [] }];
+    },
+    resolveRecovery,
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
+
+  expect(await screen.findByText("此操作目前没有可安全执行的自动恢复方式，请联系支持人员。"))
+    .toBeVisible();
+  expect(screen.queryByRole("button", { name: "继续完成操作" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "撤销未完成操作" })).toBeNull();
+  expect(resolveRecovery).not.toHaveBeenCalled();
 });
 
 it("reports a failed recovery readably instead of rendering [object Object]", async () => {
@@ -134,7 +170,7 @@ it("reports a failed recovery readably instead of rendering [object Object]", as
 
   await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   await act(async () => {
-    await user.click(screen.getByRole("button", { name: "确认恢复" }));
+    await user.click(screen.getByRole("button", { name: "撤销未完成改动" }));
   });
 
   const message = screen.getByRole("status");
@@ -166,13 +202,13 @@ it("keeps every recovery candidate available and retries only the selected detai
   expect(screen.getByRole("radio", { name: "导入技能：Writer" })).toBeVisible();
   expect(screen.getByRole("radio", { name: "删除技能：Notes" })).toBeVisible();
   expect(screen.getByText(/temporary detail read failure/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "确认恢复" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "撤销未完成改动" })).toBeDisabled();
 
   await user.click(screen.getByRole("button", { name: "重试加载详情" }));
 
   expect(get).toHaveBeenCalledTimes(2);
   expect(await screen.findByText(/操作未能完成/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "确认恢复" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "撤销未完成改动" })).toBeEnabled();
 });
 
 it("does not let a slower previous detail replace the newly selected operation", async () => {
@@ -210,7 +246,7 @@ it("says so plainly when nothing needs recovery", async () => {
 
   await user.click(screen.getByRole("tab", { name: "未完成操作" }));
   expect(screen.getByText("当前没有需要恢复的操作。")).toBeVisible();
-  expect(screen.queryByRole("button", { name: "确认恢复" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "撤销未完成改动" })).not.toBeInTheDocument();
 });
 
 it("wires each tab to its panel with aria-controls and roving tabindex", async () => {

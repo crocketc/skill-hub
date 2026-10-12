@@ -66,14 +66,35 @@ test("moves selection and focus with the arrow keys and updates the panel", asyn
   expect(backId).toBe("recovery-tab-records");
 });
 
-test("keeps the recovery confirmation inside the unfinished-operations tab", async ({ page }) => {
+test("keeps the supported undo action inside the unfinished-operations tab", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/recovery");
 
   await page.getByRole("tab", { name: "Unfinished operations" }).click();
   await expect(page.getByText("deployment.target_conflict")).toBeVisible();
-  await page.getByRole("button", { name: "Confirm recovery" }).click();
-  await expect(page.getByText("Recovered")).toBeVisible();
+  await page.getByRole("button", { name: "Undo unfinished changes" }).click();
+  await expect(page.getByText("unfinished changes have been undone")).toBeVisible();
+});
+
+test("dispatches the complete action advertised by the backend preview", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/__preview/recovery?complete=1");
+
+  await page.getByRole("tab", { name: "Unfinished operations" }).click();
+  await expect(page.getByRole("button", { name: "Continue operation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Continue operation" }).click();
+  await expect(page.getByText("the operation is complete")).toBeVisible();
+});
+
+test("does not invent an action for a candidate without supported recovery", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/__preview/recovery?noActions=1");
+
+  await page.getByRole("tab", { name: "Unfinished operations" }).click();
+  await expect(page.getByText("No safe automatic recovery is available for this operation.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue operation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toHaveCount(0);
 });
 
 test("keeps candidates visible and retries a single failed operation detail", async ({ page }) => {
@@ -83,13 +104,13 @@ test("keeps candidates visible and retries a single failed operation detail", as
   await page.getByRole("tab", { name: "Unfinished operations" }).click();
   await expect(page.getByRole("radio", { name: "Dispatch skill: Preview skill" })).toBeVisible();
   await expect(page.getByText("native bridge unavailable in preview")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Retry loading details" }).click();
 
   await expect(page.getByRole("radio", { name: "Dispatch skill: Preview skill" })).toBeVisible();
   await expect(page.getByText("The operation did not complete", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toBeEnabled();
 });
 
 test("surfaces a records read failure without faking an empty history", async ({ page }) => {
@@ -107,7 +128,7 @@ test.describe("recovery width matrix", () => {
       const backup = page.getByRole("tab", { name: "Unfinished operations" });
       await expect(backup).toBeVisible();
       await backup.click();
-      await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toBeVisible();
       await expectNoRootHorizontalOverflow(page);
     });
   }
@@ -126,7 +147,7 @@ test.describe("recovery 9-theme matrix at 1280x900", () => {
       const records = page.getByRole("tab", { name: "Operation records" });
       await expect(records).toHaveAttribute("aria-selected", "true");
       await page.getByRole("tab", { name: "Unfinished operations" }).click();
-      await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toBeVisible();
       await expect(page.getByText("Needs recovery")).toBeVisible();
     });
   }

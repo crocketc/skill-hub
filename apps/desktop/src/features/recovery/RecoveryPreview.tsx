@@ -53,7 +53,16 @@ export function RecoveryPreview() {
           objectName: "Preview skill",
         };
       },
-      listRecoveryCandidates: async () => (previewFlag("empty") ? [] : [{ operationId: "op-deploy-9", actions: ["rollback_operation"], kind: "deploy_skill", objectName: "Preview skill" }]),
+      listRecoveryCandidates: async () => (previewFlag("empty") ? [] : [{
+        operationId: "op-deploy-9",
+        actions: previewFlag("noActions")
+          ? []
+          : previewFlag("complete")
+            ? ["complete_operation"]
+            : ["rollback_operation"],
+        kind: "deploy_skill",
+        objectName: "Preview skill",
+      }]),
       resolveRecovery: async () => undefined,
     };
   }, []);

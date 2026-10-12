@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { RecoveryAction } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
 import { resolveLocale } from "../../i18n";
 import { Button } from "../../ui/Button";
@@ -15,6 +16,11 @@ import "./recovery.css";
 
 const TAB_ORDER = ["records", "backupRestore"] as const;
 type RecoveryTab = (typeof TAB_ORDER)[number];
+type RecoveryResolutionAction = Extract<RecoveryAction, "complete_operation" | "rollback_operation">;
+
+function isRecoveryResolutionAction(action: RecoveryAction): action is RecoveryResolutionAction {
+  return action === "complete_operation" || action === "rollback_operation";
+}
 
 const TAB_IDS: Record<RecoveryTab, string> = {
   records: "recovery-tab-records",
@@ -29,8 +35,8 @@ const PANEL_IDS: Record<RecoveryTab, string> = {
 /**
  * 恢复页是恢复闸门的唯一出口：闸门在 `recovery_state !== "clean"` 时阻断其余
  * 全部路由，所以这一页必须列出 `list_recovery_candidates` 的**所有**候选，
- * 而不是只认「最新一条」。处置走 `resolve_recovery`（统一回滚语义，用户可见
- * 文案只说「恢复」，不出现「回滚」）。
+ * 而不是只认「最新一条」。处置按钮严格按候选声明的能力调用，不能为所有操作
+ * 假定都能完成或撤销。
  */
 export function RecoveryPage({ facade = unavailableOperationFacade, recent = nativeRecentOperations, initialOperationId, onResolved }: { facade?: OperationFacade; recent?: RecentOperationsReader; initialOperationId?: string; onResolved?: () => Promise<void> }) {
   const { t } = useTranslation();
@@ -42,7 +48,7 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
   const [operationError, setOperationError] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   const [operationLoading, setOperationLoading] = useState(false);
-  const [resolved, setResolved] = useState(false);
+  const [resolvedAction, setResolvedAction] = useState<RecoveryResolutionAction>();
   const [busy, setBusy] = useState(false);
   const tabRefs = useRef<Partial<Record<RecoveryTab, HTMLButtonElement | null>>>({});
   const candidateRequest = useRef(0);
@@ -97,14 +103,16 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
     return () => { operationRequest.current += 1; };
   }, [selectedId, loadOperation]);
 
-  const confirmRecovery = async () => {
-    if (!selectedId || !operation || operation.operationId !== selectedId || operationLoading || operationError) return;
+  const selectedCandidate = candidates?.find((candidate) => candidate.operationId === selectedId);
+
+  const confirmRecovery = async (action: RecoveryResolutionAction) => {
+    if (!selectedId || !selectedCandidate?.actions.includes(action) || !operation || operation.operationId !== selectedId || operationLoading || operationError) return;
     setBusy(true);
     setActionError(undefined);
-    setResolved(false);
+    setResolvedAction(undefined);
     try {
-      await facade.resolveRecovery(selectedId, "rollback_operation");
-      setResolved(true);
+      await facade.resolveRecovery(selectedId, action);
+      setResolvedAction(action);
       await loadCandidates();
       await onResolved?.();
     } catch (reason: unknown) {
@@ -176,14 +184,14 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
               busy={busy}
               candidateError={candidateError}
               candidates={candidates}
+              onConfirm={(action) => void confirmRecovery(action)}
               operationError={operationError}
               operationLoading={operationLoading}
-              onConfirm={() => void confirmRecovery()}
               onRetryCandidates={() => void loadCandidates()}
               onRetryOperation={() => { if (selectedId) void loadOperation(selectedId); }}
-              onSelect={(operationId) => { setSelectedId(operationId); setActionError(undefined); }}
+              onSelect={(operationId) => { setSelectedId(operationId); setActionError(undefined); setResolvedAction(undefined); }}
               operation={operation}
-              resolved={resolved}
+              resolvedAction={resolvedAction}
               selectedId={selectedId}
             />
           </div>
@@ -193,7 +201,7 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
   );
 }
 
-function RecoveryCandidatesTab({ candidates, selectedId, operation, candidateError, operationError, operationLoading, actionError, resolved, busy, onSelect, onConfirm, onRetryCandidates, onRetryOperation }: {
+function RecoveryCandidatesTab({ candidates, selectedId, operation, candidateError, operationError, operationLoading, actionError, resolvedAction, busy, onSelect, onConfirm, onRetryCandidates, onRetryOperation }: {
   candidates?: RecoveryCandidate[];
   selectedId?: string;
   operation?: OperationState;
@@ -201,10 +209,10 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, candidateErr
   operationError?: string;
   operationLoading: boolean;
   actionError?: string;
-  resolved: boolean;
+  resolvedAction?: RecoveryResolutionAction;
   busy: boolean;
   onSelect: (operationId: string) => void;
-  onConfirm: () => void;
+  onConfirm: (action: RecoveryResolutionAction) => void;
   onRetryCandidates: () => void;
   onRetryOperation: () => void;
 }) {
@@ -220,10 +228,12 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, candidateErr
       <>
         <p className="sh-eyebrow">{t("recovery.tabs.backupRestoreHint")}</p>
         <p>{t("recovery.noCandidates")}</p>
-        {resolved ? <p role="status">{t("recovery.resolved")}</p> : null}
+        {resolvedAction ? <p role="status">{t(`recovery.resolved.${resolvedAction}`)}</p> : null}
       </>
     );
   }
+  const selectedCandidate = candidates.find((candidate) => candidate.operationId === selectedId);
+  const availableActions = selectedCandidate?.actions.filter(isRecoveryResolutionAction) ?? [];
   return (
     <>
       <p className="sh-eyebrow">{t("recovery.tabs.backupRestoreHint")}</p>
@@ -250,10 +260,20 @@ function RecoveryCandidatesTab({ candidates, selectedId, operation, candidateErr
       </fieldset>
       {operationError ? <><DataState message={operationError} state="unavailable" /><Button onClick={onRetryOperation}>{t("recovery.retryDetails")}</Button></> : operationLoading || !operation || operation.operationId !== selectedId ? <DataState message={t("recovery.loading")} state="loading" /> : <OperationSummary operation={operation} />}
       <div className="sh-recovery__actions">
-        <Button disabled={busy || !selectedId || !operation || operation.operationId !== selectedId || operationLoading || Boolean(operationError)} onClick={onConfirm} variant="primary">{t("recovery.acknowledge")}</Button>
+        {availableActions.map((action) => (
+          <Button
+            disabled={busy || !selectedId || !operation || operation.operationId !== selectedId || operationLoading || Boolean(operationError)}
+            key={action}
+            onClick={() => onConfirm(action)}
+            variant="primary"
+          >
+            {t(`recovery.actions.${action}`)}
+          </Button>
+        ))}
       </div>
+      {selectedCandidate && availableActions.length === 0 ? <p role="note">{t("recovery.noSupportedActions")}</p> : null}
       {actionError ? <p role="status">{actionError}</p> : null}
-      {resolved ? <p role="status">{t("recovery.resolved")}</p> : null}
+      {resolvedAction ? <p role="status">{t(`recovery.resolved.${resolvedAction}`)}</p> : null}
     </>
   );
 }

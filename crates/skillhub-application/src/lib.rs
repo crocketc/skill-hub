@@ -17234,6 +17234,25 @@ fn pending_recovery_targets(
     serde_json::json!({ "pending_targets": pending })
 }
 
+fn has_deployment_recovery_targets(recovery_data: &serde_json::Value) -> bool {
+    recovery_data
+        .get("pending_targets")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|targets| {
+            !targets.is_empty()
+                && targets.iter().all(|target| {
+                    target
+                        .get("path")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|path| !path.is_empty())
+                        && matches!(
+                            target.get("mode").and_then(serde_json::Value::as_str),
+                            Some("managed_copy" | "symbolic_link" | "directory_junction")
+                        )
+                })
+        })
+}
+
 /// Runtime-name comparison for occupancy facts, matching the planner's own
 /// per-target case rule (Windows destinations compare case-insensitively).
 fn occupancy_names_equal(left: &str, right: &str, case_sensitive: bool) -> bool {
@@ -18933,6 +18952,12 @@ fn database_error(operation: &'static str, source: String) -> AppError {
         .with_action(RecoveryAction::Retry)
 }
 
+fn recovery_conflict(reason: &'static str) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("reason", reason)
+        .with_action(RecoveryAction::Retry)
+}
+
 #[async_trait]
 impl HealthBackend for LocalHealthBackend {
     async fn check(&self) -> AppResult<Vec<HealthFinding>> {
@@ -18992,27 +19017,30 @@ impl RecoveryBackend for LocalRecoveryBackend {
             }
             candidates.push(RecoveryCandidate {
                 operation_id: record.operation_id,
-                actions: if !skillhub_core::is_known_operation_kind(&record.kind) {
-                    Vec::new()
-                } else {
-                    match record.kind.as_str() {
-                        "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
-                        "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
-                        "subject_runtime_rename"
-                            if record
-                                .recovery_data
-                                .get("metadata_committed")
-                                .and_then(serde_json::Value::as_bool)
-                                .unwrap_or(false) =>
-                        {
-                            vec![RecoveryAction::CompleteOperation]
-                        }
-                        "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
-                        _ => vec![
-                            RecoveryAction::CompleteOperation,
-                            RecoveryAction::RollbackOperation,
-                        ],
+                actions: match record.kind.as_str() {
+                    "usage_release" => vec![
+                        RecoveryAction::CompleteOperation,
+                        RecoveryAction::RollbackOperation,
+                    ],
+                    "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                    "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
+                    "subject_runtime_rename"
+                        if record
+                            .recovery_data
+                            .get("metadata_committed")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false) =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
                     }
+                    "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
+                    "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
+                    // A known journal kind is not proof that this version can
+                    // recover it. Never expose the old generic status-only
+                    // action or delete arbitrary pending_targets for other kinds.
+                    _ => Vec::new(),
                 },
             });
         }
@@ -19063,39 +19091,32 @@ impl RecoveryBackend for LocalRecoveryBackend {
         if operation_kind.as_deref() == Some("shared_usage_migration") {
             return Err(unsupported("recovery.shared_usage_migration"));
         }
-        let (phase, state, rolls_back) = match action {
-            RecoveryAction::CompleteOperation => ("committed", "completed", false),
-            RecoveryAction::RollbackOperation => ("rolled_back", "rolled_back", true),
-            _ => return Err(unsupported("recovery.resolve")),
-        };
-        // Undo the disk first: once the row is settled the user has no second
-        // chance to clean up, so a failed removal must keep the candidate in
-        // the recovery entry instead of recording a rollback that never
-        // happened.
-        if rolls_back {
+        if operation_kind.as_deref() == Some("deploy_skill") {
+            if action != RecoveryAction::RollbackOperation {
+                return Err(unsupported("recovery.resolve.deploy_skill"));
+            }
             self.roll_back_pending_targets(operation_id)?;
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.deploy_skill"))?;
+            let record = database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+            if record.kind != "deploy_skill"
+                || !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+            {
+                return Err(unsupported("recovery.resolve.deploy_skill"));
+            }
+            let mut record = record;
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.message_code = "recovery.resolved".to_owned();
+            database.operation_repository().update_sync(&record)?;
+            return Ok(());
         }
-        let database = self
-            .database
-            .lock()
-            .map_err(|_| internal("recovery.resolve"))?;
-        let operation_id = operation_id.to_string();
-        let changed = database
-            .connection_for_test()
-            .execute(
-                &format!(
-                    "UPDATE operations SET phase='{}', state='{}' WHERE operation_id='{}' AND phase IN ('planned','prepared','applying','verifying','needs_recovery')",
-                    phase, state, operation_id
-                ),
-                [],
-            )
-            .map_err(|error| database_error("recovery.resolve", error.to_string()))?;
-        if changed == 0 {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                .with_param("field", "recovery_candidate")
-                .with_action(RecoveryAction::Retry));
-        }
-        Ok(())
+        Err(unsupported("recovery.resolve"))
     }
 }
 
@@ -19110,25 +19131,30 @@ impl LocalRecoveryBackend {
             .map_err(|_| internal("recovery.resolve"))?
             .operation_repository()
             .get_sync(operation_id)?;
-        let Some(record) = record else {
-            return Ok(());
-        };
-        let Some(pending) = record
+        let record = record.ok_or_else(|| unsupported("recovery.resolve.deploy_skill"))?;
+        if record.kind != "deploy_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+        {
+            return Err(unsupported("recovery.resolve.deploy_skill"));
+        }
+        let pending = record
             .recovery_data
             .get("pending_targets")
             .and_then(serde_json::Value::as_array)
-        else {
-            return Ok(());
-        };
+            .filter(|targets| !targets.is_empty())
+            .ok_or_else(|| unsupported("recovery.resolve.deploy_skill"))?;
         let filesystem = DeploymentFilesystem::new();
         for target in pending {
-            let Some(path) = target.get("path").and_then(serde_json::Value::as_str) else {
-                continue;
-            };
+            let path = target
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| recovery_conflict("deploy_recovery_target_path_missing"))?;
             let mode = match target.get("mode").and_then(serde_json::Value::as_str) {
                 Some("symbolic_link") => DeploymentMode::SymbolicLink,
                 Some("directory_junction") => DeploymentMode::DirectoryJunction,
-                _ => DeploymentMode::ManagedCopy,
+                Some("managed_copy") => DeploymentMode::ManagedCopy,
+                _ => return Err(recovery_conflict("deploy_recovery_target_mode_invalid")),
             };
             filesystem.remove_residue(Path::new(path), mode)?;
         }

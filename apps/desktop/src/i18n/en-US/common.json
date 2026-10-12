@@ -2704,13 +2704,20 @@
   "recovery": {
     "eyebrow": "Recovery",
     "heading": "Recover the unfinished operation",
-    "description": "The last operation did not finish and may have been written halfway. Confirming recovery makes SkillHub undo that unfinished change and put things back the way they were.",
+    "description": "Choose an available action to continue or undo the unfinished change. SkillHub checks the result afterward and explains when no safe automatic recovery is available.",
     "loading": "Loading recovery state",
-    "acknowledge": "Confirm recovery",
+    "actions": {
+      "complete_operation": "Continue operation",
+      "rollback_operation": "Undo unfinished changes"
+    },
     "retryDetails": "Retry loading details",
     "noCandidates": "Nothing needs recovery right now.",
     "candidatesHeading": "Operations requiring recovery",
-    "resolved": "Recovered: the unfinished change has been undone.",
+    "noSupportedActions": "No safe automatic recovery is available for this operation. Contact support.",
+    "resolved": {
+      "complete_operation": "Recovered: the operation is complete.",
+      "rollback_operation": "Recovered: the unfinished changes have been undone."
+    },
     "errors": {
       "generic": "Recovery failed (error code: {{code}}). Retry; if it keeps failing, pass the code to support."
     },
