@@ -13,18 +13,24 @@ export const nativeRecentOperations: RecentOperationsReader = {
 
 export const nativeOperationFacade: OperationFacade = {
   async get(operationId) {
-    const result = await queryApplication({ type: "get_bootstrap_snapshot" });
-    if (result.type !== "bootstrap_snapshot") throw new Error("operation query returned an unexpected result");
-    const item = result.payload.recent_operations.find((operation) => operation.operation_id === operationId)
-      ?? (operationId === "latest" ? result.payload.recent_operations[0] : undefined);
-    if (!item) throw new Error("operation was not found");
+    let selectedOperationId = operationId;
+    if (operationId === "latest") {
+      const snapshot = await queryApplication({ type: "get_bootstrap_snapshot" });
+      if (snapshot.type !== "bootstrap_snapshot") throw new Error("operation query returned an unexpected result");
+      const latest = snapshot.payload.recent_operations[0];
+      if (!latest) throw new Error("operation was not found");
+      selectedOperationId = latest.operation_id;
+    }
+    const result = await queryApplication({ type: "get_operation_details", payload: { operation_id: selectedOperationId } });
+    if (result.type !== "operation_details") throw new Error("operation query returned an unexpected result");
+    const item = result.payload;
     const state: OperationState = {
       operationId: item.operation_id,
       phase: item.phase,
-      completed: item.phase === "committed" || item.phase === "rolled_back" ? 1 : 0,
-      total: 1,
+      completed: item.progress.completed,
+      total: item.progress.total,
       message: item.error_code ?? item.kind,
-      // DEV-98：展示事实与 message 同源（recent_operations 快照）。
+      // 展示事实来自按 operation_id 读取的完整持久化记录。
       kind: item.kind,
       objectName: item.object_name,
       createdAt: item.created_at,

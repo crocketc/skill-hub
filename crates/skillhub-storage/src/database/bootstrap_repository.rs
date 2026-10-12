@@ -2,12 +2,14 @@ use super::Database;
 use rusqlite::{params, OptionalExtension};
 use skillhub_core::bootstrap::{
     BootstrapSnapshot, DeploymentChartCategory, DeploymentDimension, InitializationStatus,
-    PendingSummary, RecentOperationSummary, RecentOperationTarget, StartupRecoveryState,
-    TagChartCategory,
+    OperationDetails, PendingSummary, RecentOperationSummary, RecentOperationTarget,
+    StartupRecoveryState, TagChartCategory,
 };
 use skillhub_core::pending::{PendingItem, PendingKind};
 use skillhub_core::OperationPhase;
-use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, OperationId, RecoveryAction, Severity, SkillId,
+};
 
 const SNAPSHOT_KEY: &str = "bootstrap_snapshot";
 const INITIALIZATION_KEY: &str = "bootstrap_initialization";
@@ -51,6 +53,45 @@ impl<'a> BootstrapRepository<'a> {
         value
             .map(|json| serde_json::from_str(&json).map_err(|_| invalid_snapshot()))
             .transpose()
+    }
+
+    /// Loads the durable record by id without applying the bootstrap snapshot's
+    /// recent-operation limit.
+    pub fn get_operation_details(
+        &self,
+        operation_id: OperationId,
+    ) -> AppResult<Option<OperationDetails>> {
+        let Some(record) = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+        else {
+            return Ok(None);
+        };
+        let created_at = self
+            .database
+            .connection
+            .query_row(
+                "SELECT created_at FROM operations WHERE operation_id=?1",
+                [operation_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(error)?;
+        let Some(created_at) = created_at else {
+            return Ok(None);
+        };
+        let result = record.result.as_ref();
+        Ok(Some(OperationDetails {
+            operation_id,
+            kind: record.kind,
+            phase: record.phase,
+            progress: record.progress,
+            error_code: record.error_code,
+            created_at: created_at.to_string(),
+            object_name: operation_object_name(result),
+            targets: operation_target_details(result),
+        }))
     }
 
     pub fn save(&self, snapshot: &BootstrapSnapshot) -> AppResult<()> {
@@ -442,20 +483,26 @@ fn parse_skill(value: String) -> AppResult<SkillId> {
 /// payload yields `None` rather than failing the whole snapshot.
 fn stored_object_name(progress_json: &str) -> Option<String> {
     let stored = serde_json::from_str::<serde_json::Value>(progress_json).ok()?;
-    stored
-        .get("result")?
-        .get("object_name")?
-        .as_str()
-        .map(ToOwned::to_owned)
-        .filter(|name| !name.trim().is_empty())
+    operation_object_name(stored.get("result"))
 }
 
 fn stored_target_details(progress_json: &str) -> Vec<RecentOperationTarget> {
     let Ok(stored) = serde_json::from_str::<serde_json::Value>(progress_json) else {
         return Vec::new();
     };
-    let Some(targets) = stored
-        .get("result")
+    operation_target_details(stored.get("result"))
+}
+
+fn operation_object_name(result: Option<&serde_json::Value>) -> Option<String> {
+    result?
+        .get("object_name")?
+        .as_str()
+        .map(ToOwned::to_owned)
+        .filter(|name| !name.trim().is_empty())
+}
+
+fn operation_target_details(result: Option<&serde_json::Value>) -> Vec<RecentOperationTarget> {
+    let Some(targets) = result
         .and_then(|result| result.get("targets"))
         .and_then(serde_json::Value::as_array)
     else {

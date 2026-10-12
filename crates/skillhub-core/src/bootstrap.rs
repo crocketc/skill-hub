@@ -1,6 +1,6 @@
-use crate::operation::OperationPhase;
+use crate::operation::{OperationPhase, OperationProgress};
 use crate::pending::{PendingItem, PendingKind};
-use crate::OperationId;
+use crate::{ErrorCode, OperationId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -123,6 +123,21 @@ pub struct RecentOperationSummary {
     /// 操作为空。前端据此在标题中给出「针对什么」而不是裸 kind。
     pub object_name: Option<String>,
     /// 目标级明细；仅带目标结果的操作（当前为部署类）非空。
+    pub targets: Vec<RecentOperationTarget>,
+}
+
+/// Complete user-facing operation projection loaded by id. Bootstrap keeps a
+/// small recent window; recovery and deep links use this query for older rows.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct OperationDetails {
+    pub operation_id: OperationId,
+    pub kind: String,
+    pub phase: OperationPhase,
+    pub progress: OperationProgress,
+    pub error_code: Option<ErrorCode>,
+    /// Unix epoch seconds as a string for the TypeScript IPC boundary.
+    pub created_at: String,
+    pub object_name: Option<String>,
     pub targets: Vec<RecentOperationTarget>,
 }
 

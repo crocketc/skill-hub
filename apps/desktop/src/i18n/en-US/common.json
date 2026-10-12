@@ -2707,6 +2707,7 @@
     "description": "The last operation did not finish and may have been written halfway. Confirming recovery makes SkillHub undo that unfinished change and put things back the way they were.",
     "loading": "Loading recovery state",
     "acknowledge": "Confirm recovery",
+    "retryDetails": "Retry loading details",
     "noCandidates": "Nothing needs recovery right now.",
     "candidatesHeading": "Operations requiring recovery",
     "resolved": "Recovered: the unfinished change has been undone.",

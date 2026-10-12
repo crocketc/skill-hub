@@ -36,17 +36,27 @@ function previewPhase(): OperationPhase {
  * Query knobs: ?phase=rolled_back and ?error=1 for the unavailable state.
  */
 export function RecoveryPreview() {
-  const facade = useMemo<OperationFacade>(() => ({
-    get: async () => ({
-      operationId: "op-deploy-9",
-      phase: previewPhase(),
-      completed: 0,
-      total: 1,
-      message: "deployment.target_conflict",
-    }),
-    listRecoveryCandidates: async () => (previewFlag("empty") ? [] : [{ operationId: "op-deploy-9", actions: ["rollback_operation"] }]),
-    resolveRecovery: async () => undefined,
-  }), []);
+  const facade = useMemo<OperationFacade>(() => {
+    let detailAttempts = 0;
+    return {
+      get: async (operationId) => {
+        if (previewFlag("detailError") && detailAttempts++ === 0) {
+          throw new Error("native bridge unavailable in preview");
+        }
+        return {
+          operationId,
+          phase: previewPhase(),
+          completed: 0,
+          total: 1,
+          message: "deployment.target_conflict",
+          kind: "deploy_skill",
+          objectName: "Preview skill",
+        };
+      },
+      listRecoveryCandidates: async () => (previewFlag("empty") ? [] : [{ operationId: "op-deploy-9", actions: ["rollback_operation"], kind: "deploy_skill", objectName: "Preview skill" }]),
+      resolveRecovery: async () => undefined,
+    };
+  }, []);
   const recent = useMemo<RecentOperationsReader>(() => (
     previewFlag("error")
       ? { listRecentOperations: () => Promise.reject(new Error("native bridge unavailable in preview")) }

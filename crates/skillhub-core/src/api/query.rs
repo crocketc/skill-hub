@@ -12,7 +12,8 @@ use crate::project::{AssemblyPlan, Project, SavedProjectView};
 use crate::search::{SearchHit, SearchQuery};
 use crate::source::{SourceDescriptor, SourceSearchPage, SourceSearchQuery, SourceState};
 use crate::{
-    BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, Severity, SkillId, VersionId,
+    BootstrapSnapshot, DeploymentPlan, DeploymentPlanRequest, OperationDetails, OperationId,
+    Severity, SkillId, VersionId,
 };
 
 use crate::relationship::{
@@ -609,6 +610,12 @@ pub struct CombinationResult {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetBootstrapSnapshot;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct GetOperationDetails {
+    pub operation_id: OperationId,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListPendingItems;
@@ -1313,6 +1320,8 @@ pub enum AppQuery {
     SearchOnlineSourcesAssisted(SearchOnlineSourcesAssisted),
     #[serde(rename = "get_bootstrap_snapshot")]
     GetBootstrapSnapshot,
+    #[serde(rename = "get_operation_details")]
+    GetOperationDetails(GetOperationDetails),
     #[serde(rename = "get_desktop_preferences")]
     GetDesktopPreferences,
     #[serde(rename = "list_pending_items")]
@@ -1452,6 +1461,8 @@ pub enum AppQueryResult {
     GlobalSkillEvidence(UsageEvidenceAnalysis),
     #[serde(rename = "bootstrap_snapshot")]
     BootstrapSnapshot(BootstrapSnapshot),
+    #[serde(rename = "operation_details")]
+    OperationDetails(OperationDetails),
     #[serde(rename = "desktop_preferences")]
     DesktopPreferences(crate::DesktopPreferences),
     #[serde(rename = "pending_items")]

@@ -23,6 +23,7 @@ it("opens the requested recovery directly and refreshes the startup state after 
   // DEV-98：候选与摘要用「本地化操作名：对象名」呈现，技术 id 和原始 kind
   // 不再出现在界面（operation id 只作为内部 value）。
   expect(await screen.findByRole("radio", { name: "删除技能：Notes" })).toBeChecked();
+  expect(await screen.findByText("删除技能：Notes")).toBeVisible();
   expect(screen.queryByText(/op-requested/)).toBeNull();
   expect(screen.queryByText("delete_skill")).toBeNull();
   await userEvent.setup().click(screen.getByRole("button", { name: "确认恢复" }));
@@ -40,8 +41,8 @@ const operation: OperationState = {
 
 function createFacade(overrides: Partial<OperationFacade> = {}): OperationFacade {
   return {
-    async get() {
-      return operation;
+    async get(operationId) {
+      return { ...operation, operationId };
     },
     async listRecoveryCandidates() {
       return [{ operationId: "op-recover", actions: ["complete_operation", "rollback_operation"] }];
@@ -140,6 +141,67 @@ it("reports a failed recovery readably instead of rendering [object Object]", as
   expect(message).toHaveTextContent("恢复失败");
   expect(message).toHaveTextContent("operation.conflict");
   expect(message).not.toHaveTextContent("[object Object]");
+});
+
+it("keeps every recovery candidate available and retries only the selected detail after a read failure", async () => {
+  const user = userEvent.setup();
+  const get = vi.fn()
+    .mockRejectedValueOnce(new Error("temporary detail read failure"))
+    .mockResolvedValueOnce({
+      ...operation,
+      kind: "import_skill",
+      objectName: "Writer",
+    });
+  await renderPage(createFacade({
+    get,
+    async listRecoveryCandidates() {
+      return [
+        { operationId: "op-recover", actions: ["rollback_operation"], kind: "import_skill", objectName: "Writer" },
+        { operationId: "op-other", actions: ["rollback_operation"], kind: "delete_skill", objectName: "Notes" },
+      ];
+    },
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
+  expect(screen.getByRole("radio", { name: "导入技能：Writer" })).toBeVisible();
+  expect(screen.getByRole("radio", { name: "删除技能：Notes" })).toBeVisible();
+  expect(screen.getByText(/temporary detail read failure/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "确认恢复" })).toBeDisabled();
+
+  await user.click(screen.getByRole("button", { name: "重试加载详情" }));
+
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(await screen.findByText(/操作未能完成/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "确认恢复" })).toBeEnabled();
+});
+
+it("does not let a slower previous detail replace the newly selected operation", async () => {
+  const user = userEvent.setup();
+  let resolveFirst: ((state: OperationState) => void) | undefined;
+  const firstDetail = new Promise<OperationState>((resolve) => { resolveFirst = resolve; });
+  const get = vi.fn((operationId: string) => operationId === "op-recover"
+    ? firstDetail
+    : Promise.resolve({ ...operation, operationId, kind: "delete_skill", objectName: "Notes" }));
+  await renderPage(createFacade({
+    get,
+    async listRecoveryCandidates() {
+      return [
+        { operationId: "op-recover", actions: ["rollback_operation"], kind: "import_skill", objectName: "Writer" },
+        { operationId: "op-other", actions: ["rollback_operation"], kind: "delete_skill", objectName: "Notes" },
+      ];
+    },
+  }));
+
+  await user.click(screen.getByRole("tab", { name: "未完成操作" }));
+  await user.click(screen.getByRole("radio", { name: "删除技能：Notes" }));
+  expect(await screen.findByText("删除技能：Notes", { selector: "strong" })).toBeVisible();
+
+  await act(async () => {
+    resolveFirst?.({ ...operation, operationId: "op-recover", kind: "import_skill", objectName: "Writer" });
+  });
+
+  expect(screen.getByText("删除技能：Notes", { selector: "strong" })).toBeVisible();
+  expect(screen.queryByText("导入技能：Writer", { selector: "strong" })).toBeNull();
 });
 
 it("says so plainly when nothing needs recovery", async () => {

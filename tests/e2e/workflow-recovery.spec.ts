@@ -76,6 +76,22 @@ test("keeps the recovery confirmation inside the unfinished-operations tab", asy
   await expect(page.getByText("Recovered")).toBeVisible();
 });
 
+test("keeps candidates visible and retries a single failed operation detail", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/__preview/recovery?detailError=1");
+
+  await page.getByRole("tab", { name: "Unfinished operations" }).click();
+  await expect(page.getByRole("radio", { name: "Dispatch skill: Preview skill" })).toBeVisible();
+  await expect(page.getByText("native bridge unavailable in preview")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Retry loading details" }).click();
+
+  await expect(page.getByRole("radio", { name: "Dispatch skill: Preview skill" })).toBeVisible();
+  await expect(page.getByText("The operation did not complete", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm recovery" })).toBeEnabled();
+});
+
 test("surfaces a records read failure without faking an empty history", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/__preview/recovery?error=1");

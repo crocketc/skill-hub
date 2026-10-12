@@ -9,11 +9,33 @@ vi.mock("../../api/bindings", async (importOriginal) => {
 
 beforeEach(() => { vi.mocked(queryApplication).mockReset(); vi.mocked(executeCommand).mockReset(); });
 
-it("reads an operation state from the native bootstrap projection", async () => {
-  vi.mocked(queryApplication).mockResolvedValue({ type: "bootstrap_snapshot", payload: {
-    recent_operations: [{ operation_id: "op-1", kind: "import_skill", state: "committed", phase: "committed", error_code: null, created_at: "now" }],
-  } as never });
-  await expect(nativeOperationFacade.get("op-1")).resolves.toMatchObject({ operationId: "op-1", phase: "committed", total: 1 });
+it("loads an old operation by its id even when it is outside the recent-operation window", async () => {
+  const oldestOperationId = "op-oldest-of-238";
+  vi.mocked(queryApplication).mockResolvedValue({ type: "operation_details", payload: {
+    operation_id: oldestOperationId,
+    kind: "import_skill",
+    phase: "needs_recovery",
+    progress: { operation_id: oldestOperationId, phase: "needs_recovery", completed: 17, total: 238, message_code: "operation.import_skill.failed" },
+    error_code: "operation.conflict",
+    created_at: "1789890340",
+    object_name: "Older skill",
+    targets: [],
+  } } as never);
+
+  await expect(nativeOperationFacade.get(oldestOperationId)).resolves.toMatchObject({
+    operationId: oldestOperationId,
+    phase: "needs_recovery",
+    completed: 17,
+    total: 238,
+    message: "operation.conflict",
+    kind: "import_skill",
+    objectName: "Older skill",
+    createdAt: "1789890340",
+  });
+  expect(queryApplication).toHaveBeenCalledWith({
+    type: "get_operation_details",
+    payload: { operation_id: oldestOperationId },
+  });
 });
 
 it("lists the recovery candidates the backend reports", async () => {

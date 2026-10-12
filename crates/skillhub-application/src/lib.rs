@@ -9712,6 +9712,19 @@ impl ApplicationFacade for LocalApplicationFacade {
                         .map(AppQueryResult::BootstrapSnapshot)
                 })
             }
+            AppQuery::GetOperationDetails(request) => {
+                self.with_database("query.get_operation_details", |database| {
+                    let details = database
+                        .bootstrap_repository()
+                        .get_operation_details(request.operation_id)?
+                        .ok_or_else(|| {
+                            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                                .with_param("operation_id", request.operation_id.to_string())
+                                .with_action(RecoveryAction::Retry)
+                        })?;
+                    Ok(AppQueryResult::OperationDetails(details))
+                })
+            }
             AppQuery::GetDesktopPreferences => {
                 self.with_database("query.get_desktop_preferences", |database| {
                     database
@@ -18737,6 +18750,50 @@ mod tests {
             invalid_recovery.code,
             skillhub_core::ErrorCode::ObjectNotFound
         );
+    }
+
+    #[tokio::test]
+    async fn operation_details_query_reads_an_operation_outside_the_recent_ten() {
+        let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+        let mut operation_ids = Vec::new();
+        {
+            let database = facade.database_for_tests();
+            let database = database.lock().unwrap();
+            for index in 0..238 {
+                let operation_id = skillhub_core::OperationId::new();
+                let mut record = OperationRecord::planned(
+                    operation_id,
+                    "import_skill",
+                    format!("fingerprint-{index}"),
+                );
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.completed = 17;
+                record.progress.total = 238;
+                record.progress.message_code = "operation.import_skill.failed".into();
+                record.result = Some(serde_json::json!({ "object_name": "Older skill" }));
+                database
+                    .operation_repository()
+                    .insert_sync(&record)
+                    .unwrap();
+                operation_ids.push(operation_id);
+            }
+        }
+
+        let operation_id = operation_ids[0];
+        let query = serde_json::from_value::<AppQuery>(serde_json::json!({
+            "type": "get_operation_details",
+            "payload": { "operation_id": operation_id.to_string() }
+        }))
+        .expect("the operation details query is part of the application contract");
+        let response = facade.query(query).await.unwrap();
+        let value = serde_json::to_value(response).unwrap();
+
+        assert_eq!(value["type"], "operation_details");
+        assert_eq!(value["payload"]["operation_id"], operation_id.to_string());
+        assert_eq!(value["payload"]["progress"]["completed"], 17);
+        assert_eq!(value["payload"]["progress"]["total"], 238);
+        assert_eq!(value["payload"]["object_name"], "Older skill");
     }
 }
 
