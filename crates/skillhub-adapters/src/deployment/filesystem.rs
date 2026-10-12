@@ -159,6 +159,47 @@ impl DeploymentFilesystem {
         identity.ok_or_else(|| ownership_mismatch(path))
     }
 
+    /// Renames an already verified recovery entry without following links.
+    /// Source and destination must be siblings so the move stays on one
+    /// filesystem and remains atomic on supported filesystems.
+    pub fn rename_recovery_entry(
+        &self,
+        mode: DeploymentMode,
+        source: &Path,
+        destination: &Path,
+        expected_identity: &str,
+    ) -> AppResult<()> {
+        if source.parent() != destination.parent()
+            || self.recovery_entry_identity(mode, source)? != expected_identity
+        {
+            return Err(ownership_mismatch(source));
+        }
+        match fs::symlink_metadata(destination) {
+            Ok(_) => return Err(ownership_mismatch(destination)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io_error(error)),
+        }
+        fs::rename(source, destination).map_err(io_error)?;
+        if self.recovery_entry_identity(mode, destination)? != expected_identity {
+            return Err(ownership_mismatch(destination));
+        }
+        Ok(())
+    }
+
+    /// Removes a recovery entry only while its physical entry identity still
+    /// matches the durable checkpoint.
+    pub fn remove_recovery_entry_if_identity(
+        &self,
+        mode: DeploymentMode,
+        path: &Path,
+        expected_identity: &str,
+    ) -> AppResult<()> {
+        if self.recovery_entry_identity(mode, path)? != expected_identity {
+            return Err(ownership_mismatch(path));
+        }
+        remove_residue_path(path, mode)
+    }
+
     /// Probes directory-link creation at the exact location where a relation
     /// conversion would create the replacement entry.  The global
     /// [`Self::available_capabilities`] probe cannot answer per-volume
@@ -340,6 +381,13 @@ impl DeploymentFilesystem {
         verify_owned(proof)
     }
 
+    /// Verifies the durable ownership identity without requiring the content
+    /// to match the originally deployed tree. Reconciliation uses this after
+    /// the user has explicitly chosen to replace external edits.
+    pub fn verify_target_identity(&self, proof: &OwnershipProof) -> AppResult<()> {
+        verify_identity(proof)
+    }
+
     pub fn remove_owned(&self, proof: &OwnershipProof) -> AppResult<()> {
         verify_owned(proof)?;
         remove_target(proof)
@@ -482,6 +530,57 @@ mod tests {
             physical_id_for_path(&entry),
             physical_id_for_path(&target),
             "both links still resolve to the same target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rename_and_remove_only_the_recorded_link_entry() {
+        use super::symlink;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let backup = workspace.path().join("skill-backup");
+        std::fs::create_dir(&target).expect("target directory");
+        std::fs::write(target.join("user-data.txt"), "preserve").expect("target data");
+        symlink::create_dir_link(&target, &entry).expect("directory symlink");
+
+        let filesystem = DeploymentFilesystem::new();
+        let identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("link entry identity");
+        assert!(filesystem
+            .rename_recovery_entry(
+                DeploymentMode::SymbolicLink,
+                &entry,
+                &backup,
+                "wrong-identity",
+            )
+            .is_err());
+        assert!(entry.is_symlink(), "mismatched entry is left in place");
+        assert!(!backup.exists());
+
+        filesystem
+            .rename_recovery_entry(DeploymentMode::SymbolicLink, &entry, &backup, &identity)
+            .expect("move verified link entry");
+        symlink::create_dir_link(&target, &entry).expect("replacement link");
+        assert!(filesystem
+            .remove_recovery_entry_if_identity(
+                DeploymentMode::SymbolicLink,
+                &backup,
+                "wrong-identity",
+            )
+            .is_err());
+        filesystem
+            .remove_recovery_entry_if_identity(DeploymentMode::SymbolicLink, &backup, &identity)
+            .expect("remove verified backup link");
+
+        assert!(entry.is_symlink(), "replacement entry is preserved");
+        assert_eq!(
+            std::fs::read_to_string(target.join("user-data.txt")).expect("target data"),
+            "preserve",
+            "removing a link entry must not remove its target"
         );
     }
 

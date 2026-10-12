@@ -26,7 +26,11 @@ pub trait ReconcileBackend: Send + Sync {
     async fn collect_target_changes(&self, deployment: &DeploymentRecord) -> AppResult<VersionId>;
     /// Reapply the selected version to the owned target after explicit user
     /// confirmation.
-    async fn restore_target(&self, deployment: &DeploymentRecord) -> AppResult<()>;
+    async fn restore_target(
+        &self,
+        deployment: &DeploymentRecord,
+        operation_id: crate::OperationId,
+    ) -> AppResult<()>;
     /// Remove the management relation while leaving target files untouched.
     async fn keep_independent(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     /// Persist a scoped dismissal/evidence record without changing files.
@@ -64,10 +68,16 @@ where
         })
     }
 
-    pub async fn restore(&self, deployment_id: DeploymentId) -> AppResult<ReconcileResult> {
+    pub async fn restore(
+        &self,
+        deployment_id: DeploymentId,
+        operation_id: crate::OperationId,
+    ) -> AppResult<ReconcileResult> {
         let (deployment, observation) = self.load_observation(deployment_id).await?;
         ensure_allowed(observation.state, ReconcileAction::Restore)?;
-        self.backend.restore_target(&deployment).await?;
+        self.backend
+            .restore_target(&deployment, operation_id)
+            .await?;
         Ok(ReconcileResult {
             deployment_id,
             state_before: observation.state,

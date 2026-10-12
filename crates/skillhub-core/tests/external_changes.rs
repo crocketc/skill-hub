@@ -46,7 +46,11 @@ impl ReconcileBackend for FakeReconcileBackend {
             .map_err(|_| AppError::new(ErrorCode::InternalError, skillhub_core::Severity::Error))
     }
 
-    async fn restore_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+    async fn restore_target(
+        &self,
+        deployment: &DeploymentRecord,
+        _operation_id: skillhub_core::OperationId,
+    ) -> AppResult<()> {
         self.restored.lock().unwrap().push(deployment.id);
         Ok(())
     }

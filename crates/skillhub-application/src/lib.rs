@@ -272,6 +272,18 @@ struct LocalDeploymentBackend {
     injected_targets: Arc<Mutex<Option<RegisteredTargetIndex>>>,
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReconcileRestoreRecoverySnapshot {
+    deployment: DeploymentRecord,
+    target_root: String,
+    target_root_identity: String,
+    destination_path: String,
+    backup_path: String,
+    original_entry_identity: Option<String>,
+    original_observed_hash: Option<String>,
+}
+
 #[derive(Clone)]
 struct SharedLlmRunner(Arc<dyn LlmTaskRunner>);
 
@@ -795,6 +807,156 @@ fn deployed_link_anchor_paths(
         }
     }
     Ok(anchors)
+}
+
+fn reconcile_restore_backup_path(
+    target_root: &Path,
+    deployment: &DeploymentRecord,
+    operation_id: OperationId,
+) -> PathBuf {
+    target_root.join(format!(
+        ".{}.skillhub-restore-{operation_id}",
+        deployment.runtime_name
+    ))
+}
+
+fn persist_reconcile_restore_checkpoint(
+    database: &Arc<Mutex<Database>>,
+    operation_id: OperationId,
+    snapshot: &ReconcileRestoreRecoverySnapshot,
+) -> AppResult<()> {
+    let recovery_data = serde_json::to_value(snapshot)
+        .map_err(|error| internal_with_detail("reconcile_restore.checkpoint", error.to_string()))?;
+    let database = database
+        .lock()
+        .map_err(|_| internal("reconcile_restore.checkpoint"))?;
+    let repository = database.operation_repository();
+    let mut record = repository
+        .get_sync(operation_id)?
+        .ok_or_else(|| recovery_conflict("reconcile_restore_operation_missing"))?;
+    if record.kind != "reconcile_restore_deployment"
+        || record.phase != skillhub_core::OperationPhase::Prepared
+    {
+        return Err(recovery_conflict(
+            "reconcile_restore_operation_not_prepared",
+        ));
+    }
+    record.phase = skillhub_core::OperationPhase::Applying;
+    record.progress.phase = record.phase;
+    record.progress.message_code = "operation.reconcile_restore_deployment.applying".to_owned();
+    record.recovery_data = recovery_data;
+    repository.update_sync(&record)
+}
+
+fn mark_reconcile_restore_needs_recovery(
+    database: &Arc<Mutex<Database>>,
+    operation_id: OperationId,
+    error_code: ErrorCode,
+) -> AppResult<()> {
+    let database = database
+        .lock()
+        .map_err(|_| internal("reconcile_restore.needs_recovery"))?;
+    let repository = database.operation_repository();
+    let mut record = repository
+        .get_sync(operation_id)?
+        .ok_or_else(|| recovery_conflict("reconcile_restore_operation_missing"))?;
+    if record.kind != "reconcile_restore_deployment"
+        || !matches!(
+            record.phase,
+            skillhub_core::OperationPhase::Applying | skillhub_core::OperationPhase::NeedsRecovery
+        )
+    {
+        return Err(recovery_conflict(
+            "reconcile_restore_operation_not_applying",
+        ));
+    }
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = record.phase;
+    record.progress.message_code =
+        "operation.reconcile_restore_deployment.needs_recovery".to_owned();
+    record.error_code = Some(error_code);
+    repository.update_sync(&record)
+}
+
+fn reconcile_restore_has_filesystem_effect(
+    snapshot: &ReconcileRestoreRecoverySnapshot,
+    filesystem: &DeploymentFilesystem,
+) -> bool {
+    let destination = Path::new(&snapshot.destination_path);
+    let backup = Path::new(&snapshot.backup_path);
+    if path_entry_exists_for_recovery(backup).unwrap_or(true) {
+        return true;
+    }
+    if !path_entry_exists_for_recovery(destination).unwrap_or(true) {
+        return snapshot.original_entry_identity.is_some();
+    }
+    let (Some(identity), Some(hash)) = (
+        snapshot.original_entry_identity.as_deref(),
+        snapshot.original_observed_hash.as_deref(),
+    ) else {
+        return true;
+    };
+    filesystem
+        .recovery_entry_identity(snapshot.deployment.mode, destination)
+        .map_or(true, |current| current != identity)
+        || DeploymentFilesystem::hash_tree(destination).map_or(true, |current| current != hash)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReconcileRestoreTargetState {
+    Original,
+    Restored,
+    Missing,
+}
+
+fn inspect_reconcile_restore_target(
+    snapshot: &ReconcileRestoreRecoverySnapshot,
+    filesystem: &DeploymentFilesystem,
+) -> AppResult<(ReconcileRestoreTargetState, bool)> {
+    let destination = Path::new(&snapshot.destination_path);
+    let backup = Path::new(&snapshot.backup_path);
+    let backup_exists = path_entry_exists_for_recovery(backup)?;
+    if backup_exists {
+        let (Some(identity), Some(hash)) = (
+            snapshot.original_entry_identity.as_deref(),
+            snapshot.original_observed_hash.as_deref(),
+        ) else {
+            return Err(recovery_conflict("reconcile_restore_unexpected_backup"));
+        };
+        if filesystem.recovery_entry_identity(snapshot.deployment.mode, backup)? != identity
+            || DeploymentFilesystem::hash_tree(backup)? != hash
+        {
+            return Err(recovery_conflict("reconcile_restore_backup_changed"));
+        }
+    }
+    if !path_entry_exists_for_recovery(destination)? {
+        if snapshot.original_entry_identity.is_some() && !backup_exists {
+            return Err(recovery_conflict(
+                "reconcile_restore_target_and_backup_missing",
+            ));
+        }
+        if snapshot.original_entry_identity.is_none() && backup_exists {
+            return Err(recovery_conflict("reconcile_restore_unexpected_backup"));
+        }
+        return Ok((ReconcileRestoreTargetState::Missing, backup_exists));
+    }
+    let identity = filesystem.recovery_entry_identity(snapshot.deployment.mode, destination)?;
+    let hash = DeploymentFilesystem::hash_tree(destination)?;
+    let is_original = snapshot
+        .original_entry_identity
+        .as_deref()
+        .zip(snapshot.original_observed_hash.as_deref())
+        .is_some_and(|(old_identity, old_hash)| identity == old_identity && hash == old_hash);
+    if is_original {
+        if backup_exists {
+            return Err(recovery_conflict("reconcile_restore_duplicate_original"));
+        }
+        return Ok((ReconcileRestoreTargetState::Original, false));
+    }
+    if hash == snapshot.deployment.expected_hash {
+        return Ok((ReconcileRestoreTargetState::Restored, backup_exists));
+    }
+    Err(recovery_conflict("reconcile_restore_target_changed"))
 }
 
 /// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
@@ -1523,6 +1685,213 @@ fn recovery_filesystem_error(operation: &'static str, error: std::io::Error) -> 
         .with_action(RecoveryAction::Retry)
 }
 
+impl LocalDeploymentBackend {
+    fn validate_reconcile_restore_snapshot(
+        &self,
+        operation_id: OperationId,
+        snapshot: &ReconcileRestoreRecoverySnapshot,
+    ) -> AppResult<(ReconcileRestoreTargetState, bool)> {
+        validate_deployment_runtime_name(&snapshot.deployment)?;
+        if snapshot.deployment.state != DeploymentState::Deployed || !snapshot.deployment.managed {
+            return Err(recovery_conflict(
+                "reconcile_restore_deployment_not_managed",
+            ));
+        }
+        let target_root = self.target_root(&snapshot.deployment)?;
+        let destination = self.deployment_destination(&snapshot.deployment)?;
+        let backup =
+            reconcile_restore_backup_path(&target_root, &snapshot.deployment, operation_id);
+        if target_root.to_string_lossy() != snapshot.target_root
+            || destination.to_string_lossy() != snapshot.destination_path
+            || backup.to_string_lossy() != snapshot.backup_path
+            || physical_id_for_path(&target_root).as_deref()
+                != Some(snapshot.target_root_identity.as_str())
+            || snapshot.target_root_identity != snapshot.deployment.target_id
+        {
+            return Err(recovery_conflict("reconcile_restore_target_root_changed"));
+        }
+        let current = self
+            .active_deployments()?
+            .into_iter()
+            .find(|deployment| deployment.id == snapshot.deployment.id)
+            .ok_or_else(|| recovery_conflict("reconcile_restore_deployment_changed"))?;
+        if current.id != snapshot.deployment.id
+            || current.skill_id != snapshot.deployment.skill_id
+            || current.version_id != snapshot.deployment.version_id
+            || current.target_id != snapshot.deployment.target_id
+            || current.mode != snapshot.deployment.mode
+            || current.managed != snapshot.deployment.managed
+            || current.runtime_name != snapshot.deployment.runtime_name
+            || current.expected_hash != snapshot.deployment.expected_hash
+            || ![
+                snapshot.deployment.observed_hash.as_deref(),
+                Some(current.expected_hash.as_str()),
+            ]
+            .contains(&current.observed_hash.as_deref())
+        {
+            return Err(recovery_conflict("reconcile_restore_deployment_changed"));
+        }
+        self.library_runtime
+            .snapshot()?
+            .store
+            .load_manifest(&snapshot.deployment.version_id)?;
+        let (state, backup_exists) = inspect_reconcile_restore_target(snapshot, &self.filesystem)?;
+        if state == ReconcileRestoreTargetState::Restored
+            && snapshot.deployment.mode.is_directory_link()
+        {
+            let proof = self.deployment_proof(&snapshot.deployment)?;
+            self.filesystem.verify_target_identity(&proof)?;
+        }
+        Ok((state, backup_exists))
+    }
+
+    fn continue_reconcile_restore(
+        &self,
+        operation_id: OperationId,
+        snapshot: &ReconcileRestoreRecoverySnapshot,
+    ) -> AppResult<()> {
+        let (initial_state, backup_exists) =
+            self.validate_reconcile_restore_snapshot(operation_id, snapshot)?;
+        let deployment = &snapshot.deployment;
+        let destination = PathBuf::from(&snapshot.destination_path);
+        let backup_path = PathBuf::from(&snapshot.backup_path);
+        if initial_state != ReconcileRestoreTargetState::Restored {
+            let library = self.library_runtime.snapshot()?;
+            let source_path = library
+                .root
+                .join("versions")
+                .join(deployment.skill_id.to_string())
+                .join(deployment.version_id.as_str());
+            let target = TargetPlan {
+                physical_target_id: deployment.target_id.clone(),
+                logical_target_ids: Vec::new(),
+                target_path: snapshot.target_root.clone(),
+                destination_path: snapshot.destination_path.clone(),
+                source_path: source_path.to_string_lossy().into_owned(),
+                runtime_name: deployment.runtime_name.clone(),
+                skill_id: deployment.skill_id,
+                version_id: deployment.version_id.clone(),
+                mode: deployment.mode,
+                change: skillhub_core::TargetChange::Create,
+                warnings: Vec::new(),
+                conflicts: Vec::new(),
+            };
+            let materialized = self.materialized_source(&target)?;
+            let mut prepare_target = target;
+            prepare_target.source_path = materialized.to_string_lossy().into_owned();
+            if initial_state == ReconcileRestoreTargetState::Original {
+                let reserved = destination.with_file_name(format!(
+                    ".{}.reconcile-restore-{operation_id}",
+                    deployment.runtime_name
+                ));
+                if path_entry_exists_for_recovery(&reserved)? {
+                    return Err(recovery_conflict("reconcile_restore_staging_occupied"));
+                }
+                prepare_target.destination_path = reserved.to_string_lossy().into_owned();
+            }
+            let mut prepared = self.filesystem.prepare(&prepare_target)?;
+            prepared.destination_path = destination.clone();
+
+            // Recheck the exact preflight state immediately before renaming.
+            let (current_state, current_backup_exists) =
+                self.validate_reconcile_restore_snapshot(operation_id, snapshot)?;
+            if current_state != initial_state || current_backup_exists != backup_exists {
+                return Err(recovery_conflict("reconcile_restore_target_changed"));
+            }
+            if current_state == ReconcileRestoreTargetState::Original {
+                let identity = snapshot.original_entry_identity.as_deref().ok_or_else(|| {
+                    recovery_conflict("reconcile_restore_original_identity_missing")
+                })?;
+                self.filesystem.rename_recovery_entry(
+                    deployment.mode,
+                    &destination,
+                    &backup_path,
+                    identity,
+                )?;
+            }
+            self.filesystem.apply(prepared)?;
+        }
+
+        let observed_hash = DeploymentFilesystem::hash_tree(&destination)?;
+        if observed_hash != deployment.expected_hash {
+            return Err(recovery_conflict("reconcile_restore_result_changed")
+                .with_param("expected_hash", deployment.expected_hash.clone())
+                .with_param("observed_hash", observed_hash));
+        }
+        if deployment.mode.is_directory_link() {
+            let proof = self.deployment_proof(deployment)?;
+            self.filesystem.verify_target_identity(&proof)?;
+        }
+        {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("reconcile_restore.database"))?;
+            database
+                .deployment_repository()
+                .update_reconcile_facts_sync(
+                    deployment.id,
+                    &deployment.version_id,
+                    &deployment.expected_hash,
+                    Some(&observed_hash),
+                )?;
+        }
+        if snapshot.original_entry_identity.is_some()
+            && path_entry_exists_for_recovery(&backup_path)?
+        {
+            let identity = snapshot
+                .original_entry_identity
+                .as_deref()
+                .ok_or_else(|| recovery_conflict("reconcile_restore_original_identity_missing"))?;
+            let expected_hash = snapshot
+                .original_observed_hash
+                .as_deref()
+                .ok_or_else(|| recovery_conflict("reconcile_restore_original_hash_missing"))?;
+            if self
+                .filesystem
+                .recovery_entry_identity(deployment.mode, &backup_path)?
+                != identity
+                || DeploymentFilesystem::hash_tree(&backup_path)? != expected_hash
+            {
+                return Err(recovery_conflict("reconcile_restore_backup_changed"));
+            }
+            self.filesystem.remove_recovery_entry_if_identity(
+                deployment.mode,
+                &backup_path,
+                identity,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn validate_reconcile_restore_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<(
+        ReconcileRestoreRecoverySnapshot,
+        ReconcileRestoreTargetState,
+        bool,
+    )> {
+        if record.kind != "reconcile_restore_deployment"
+            || !matches!(
+                record.phase,
+                skillhub_core::OperationPhase::Applying
+                    | skillhub_core::OperationPhase::NeedsRecovery
+            )
+        {
+            return Err(recovery_conflict(
+                "reconcile_restore_operation_not_recoverable",
+            ));
+        }
+        let snapshot: ReconcileRestoreRecoverySnapshot =
+            serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| recovery_conflict("reconcile_restore_recovery_data_invalid"))?;
+        let (state, backup_exists) =
+            self.validate_reconcile_restore_snapshot(record.operation_id, &snapshot)?;
+        Ok((snapshot, state, backup_exists))
+    }
+}
+
 #[async_trait]
 impl ReconcileBackend for LocalDeploymentBackend {
     async fn get_deployment(&self, id: skillhub_core::DeploymentId) -> AppResult<DeploymentRecord> {
@@ -1587,53 +1956,57 @@ impl ReconcileBackend for LocalDeploymentBackend {
         Ok(version.id)
     }
 
-    async fn restore_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
-        let library = self.library_runtime.snapshot()?;
+    async fn restore_target(
+        &self,
+        deployment: &DeploymentRecord,
+        operation_id: OperationId,
+    ) -> AppResult<()> {
         let destination = self.deployment_destination(deployment)?;
-        let source = library
-            .root
-            .join("versions")
-            .join(deployment.skill_id.to_string())
-            .join(deployment.version_id.as_str());
-        let target = TargetPlan {
-            physical_target_id: deployment.target_id.clone(),
-            logical_target_ids: Vec::new(),
-            target_path: destination
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_string_lossy()
-                .into_owned(),
-            destination_path: destination.to_string_lossy().into_owned(),
-            source_path: source.to_string_lossy().into_owned(),
-            runtime_name: deployment.runtime_name.clone(),
-            skill_id: deployment.skill_id,
-            version_id: deployment.version_id.clone(),
-            mode: deployment.mode,
-            change: skillhub_core::TargetChange::Create,
-            warnings: Vec::new(),
-            conflicts: Vec::new(),
-        };
-        let proof = self.deployment_proof(deployment)?;
-        self.filesystem.replace_owned(&proof)?;
-        let source = self.materialized_source(&target)?;
-        let mut effective = target;
-        effective.source_path = source.to_string_lossy().into_owned();
-        let applied = self
-            .filesystem
-            .apply(self.filesystem.prepare(&effective)?)?;
-        let observed_hash = applied.observed_tree_hash.clone();
-        let database = self
-            .database
-            .lock()
-            .map_err(|_| internal("reconcile.restore"))?;
-        database
-            .deployment_repository()
-            .update_reconcile_facts_sync(
-                deployment.id,
-                &deployment.version_id,
-                &deployment.expected_hash,
-                Some(&observed_hash),
+        let target_root = self.target_root(deployment)?;
+        let target_root_identity = physical_id_for_path(&target_root)
+            .filter(|identity| identity == &deployment.target_id)
+            .ok_or_else(|| recovery_conflict("reconcile_restore_target_root_changed"))?;
+        let original_entry_identity = if path_entry_exists_for_recovery(&destination)? {
+            Some(
+                self.filesystem
+                    .recovery_entry_identity(deployment.mode, &destination)?,
             )
+        } else {
+            None
+        };
+        let original_observed_hash = if original_entry_identity.is_some() {
+            Some(DeploymentFilesystem::hash_tree(&destination)?)
+        } else {
+            None
+        };
+        if original_entry_identity.is_some() {
+            // The initial restore request already consented to replacing an
+            // externally modified target, but its physical entry must still
+            // match the registered deployment immediately before checkpoint.
+            let proof = self.deployment_proof(deployment)?;
+            self.filesystem.verify_target_identity(&proof)?;
+        }
+        let backup_path = reconcile_restore_backup_path(&target_root, deployment, operation_id);
+        if path_entry_exists_for_recovery(&backup_path)? {
+            return Err(recovery_conflict("reconcile_restore_backup_occupied"));
+        }
+        let snapshot = ReconcileRestoreRecoverySnapshot {
+            deployment: deployment.clone(),
+            target_root: target_root.to_string_lossy().into_owned(),
+            target_root_identity,
+            destination_path: destination.to_string_lossy().into_owned(),
+            backup_path: backup_path.to_string_lossy().into_owned(),
+            original_entry_identity,
+            original_observed_hash,
+        };
+        persist_reconcile_restore_checkpoint(&self.database, operation_id, &snapshot)?;
+        if let Err(error) = self.continue_reconcile_restore(operation_id, &snapshot) {
+            if reconcile_restore_has_filesystem_effect(&snapshot, &self.filesystem) {
+                mark_reconcile_restore_needs_recovery(&self.database, operation_id, error.code)?;
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     async fn keep_independent(&self, deployment: &DeploymentRecord) -> AppResult<()> {
@@ -16028,17 +16401,43 @@ impl LocalApplicationFacade {
         deployment_id: skillhub_core::DeploymentId,
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "reconcile_restore_deployment");
+        self.journal_prepared(operation_id, "reconcile_restore_deployment");
         let result = self
             .reconcile_service
-            .restore(deployment_id)
+            .restore(deployment_id, operation_id)
             .await
             .map(AppCommandResult::ReconcileResult);
-        self.journal_settle(
-            operation_id,
-            "reconcile_restore_deployment",
-            result.as_ref().err(),
-        );
+        let recovery_already_marked = result.is_err()
+            && self
+                .with_database("reconcile_restore.check_recovery_state", |database| {
+                    let record = database.operation_repository().get_sync(operation_id)?;
+                    Ok(record.is_some_and(|record| {
+                        if record.phase == skillhub_core::OperationPhase::NeedsRecovery {
+                            return true;
+                        }
+                        if record.phase != skillhub_core::OperationPhase::Applying {
+                            return false;
+                        }
+                        serde_json::from_value::<ReconcileRestoreRecoverySnapshot>(
+                            record.recovery_data,
+                        )
+                        .map(|snapshot| {
+                            reconcile_restore_has_filesystem_effect(
+                                &snapshot,
+                                &DeploymentFilesystem::new(),
+                            )
+                        })
+                        .unwrap_or(true)
+                    }))
+                })
+                .unwrap_or(true);
+        if !recovery_already_marked {
+            self.journal_settle(
+                operation_id,
+                "reconcile_restore_deployment",
+                result.as_ref().err(),
+            );
+        }
         result
     }
 
@@ -20505,6 +20904,16 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
+                    "reconcile_restore_deployment"
+                        if LocalDeploymentBackend::new(
+                            Arc::clone(&self.database),
+                            Arc::clone(&self.library_runtime),
+                        )
+                        .validate_reconcile_restore_recovery(&record)
+                        .is_ok() =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "save_markdown_as_copy"
                         if self.validate_save_as_copy_recovery(&record).is_ok() =>
                     {
@@ -20597,6 +21006,42 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 return Err(unsupported("recovery.resolve.undeploy_skill"));
             }
             return self.complete_undeploy_operation(operation_id);
+        }
+        if operation_kind.as_deref() == Some("reconcile_restore_deployment") {
+            if action != RecoveryAction::CompleteOperation {
+                return Err(unsupported("recovery.resolve.reconcile_restore_deployment"));
+            }
+            let mut record = {
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.reconcile_restore"))?;
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?
+            };
+            let backend = LocalDeploymentBackend::new(
+                Arc::clone(&self.database),
+                Arc::clone(&self.library_runtime),
+            );
+            let (snapshot, _, _) = backend.validate_reconcile_restore_recovery(&record)?;
+            if let Err(error) = backend.continue_reconcile_restore(operation_id, &snapshot) {
+                mark_reconcile_restore_needs_recovery(&self.database, operation_id, error.code)?;
+                return Err(error);
+            }
+            backend.validate_reconcile_restore_snapshot(operation_id, &snapshot)?;
+            record.phase = skillhub_core::OperationPhase::Committed;
+            record.progress.phase = record.phase;
+            record.progress.completed = record.progress.total.max(1);
+            record.progress.message_code = "recovery.resolved".to_owned();
+            record.error_code = None;
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.reconcile_restore"))?;
+            database.operation_repository().update_sync(&record)?;
+            return Ok(());
         }
         if operation_kind.as_deref() == Some("save_markdown_as_copy") {
             if action != RecoveryAction::CompleteOperation {
