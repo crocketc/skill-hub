@@ -3353,6 +3353,51 @@ impl LocalApplicationFacade {
         self.journal_write(record);
     }
 
+    /// Unlike ordinary status logging, a replacement checkpoint must be
+    /// durable before the original target is moved. A failure here stops the
+    /// filesystem mutation instead of leaving an untracked backup directory.
+    fn persist_save_as_copy_recovery_checkpoint(
+        &self,
+        operation_id: OperationId,
+        snapshot: &SaveAsCopyReplacementRecoverySnapshot,
+        phase: skillhub_core::OperationPhase,
+    ) -> AppResult<()> {
+        let recovery_data = serde_json::to_value(snapshot).map_err(|error| {
+            internal_with_detail(
+                "operation_journal.save_as_copy.serialize",
+                error.to_string(),
+            )
+        })?;
+        let record =
+            self.with_database("operation_journal.save_as_copy_checkpoint", |database| {
+                let repository = database.operation_repository();
+                let mut record = repository
+                    .get_sync(operation_id)?
+                    .ok_or_else(|| recovery_conflict("save_as_copy_operation_missing"))?;
+                if record.kind != SAVE_MARKDOWN_AS_COPY_KIND
+                    || !matches!(
+                        record.phase,
+                        skillhub_core::OperationPhase::Applying
+                            | skillhub_core::OperationPhase::NeedsRecovery
+                    )
+                {
+                    return Err(recovery_conflict("save_as_copy_operation_not_applying"));
+                }
+                record.phase = phase;
+                record.progress.phase = phase;
+                record.progress.message_code = format!(
+                    "operation.save_markdown_as_copy.{}",
+                    operation_phase_code(phase)
+                );
+                record.error_code = None;
+                record.recovery_data = recovery_data;
+                repository.update_sync(&record)?;
+                Ok(record)
+            })?;
+        self.log_journal_record(&record);
+        Ok(())
+    }
+
     fn journal_write(&self, record: skillhub_core::OperationRecord) {
         self.log_journal_record(&record);
         let updated = self.with_database("operation_journal.advance", |database| {
@@ -8480,44 +8525,76 @@ impl LocalApplicationFacade {
         plan: Vec<(SaveAsCopyReplacementTargetFact, bool)>,
     ) -> AppResult<(SaveAsCopyInheritanceOutcome, bool)> {
         let filesystem = DeploymentFilesystem::new();
-        let mut items: Vec<skillhub_core::api::SaveAsCopyTargetResult> = Vec::new();
-        let mut recovery_required = false;
-        for (fact, _confirm) in &plan {
-            let consumers: Vec<skillhub_core::DeploymentId> = fact
-                .consumer_deployment_ids
-                .iter()
-                .filter_map(|raw| raw.parse().ok())
-                .collect();
-            let replacement_runtime_name = requested_runtime_name
-                .or(fact.runtime_name.as_deref())
-                .unwrap_or(copy.runtime_name());
-            let replacement_path = fact.path.as_deref().map(|path| {
-                let old_path = std::path::Path::new(path);
-                if let Some(runtime_name) = requested_runtime_name {
-                    old_path
-                        .parent()
-                        .unwrap_or_else(|| std::path::Path::new(""))
-                        .join(runtime_name)
-                } else {
-                    old_path.to_path_buf()
+        let targets = plan
+            .into_iter()
+            .map(|(fact, _confirm)| {
+                let runtime_name = requested_runtime_name
+                    .or(fact.runtime_name.as_deref())
+                    .unwrap_or(copy.runtime_name())
+                    .to_owned();
+                let replacement_path = fact
+                    .path
+                    .as_deref()
+                    .map(|path| {
+                        let old_path = Path::new(path);
+                        if requested_runtime_name.is_some() {
+                            old_path
+                                .parent()
+                                .unwrap_or_else(|| Path::new(""))
+                                .join(&runtime_name)
+                        } else {
+                            old_path.to_path_buf()
+                        }
+                    })
+                    .unwrap_or_default();
+                SaveAsCopyReplacementTargetRecovery {
+                    fact,
+                    replacement_path,
+                    runtime_name,
+                    state: SaveAsCopyReplacementTargetState::Pending,
                 }
-            });
-            let base = |error_code: Option<ErrorCode>| skillhub_core::api::SaveAsCopyTargetResult {
-                deployment_id: fact.deployment_id,
-                target_id: fact.target_id.clone().unwrap_or_default(),
-                path: replacement_path
-                    .as_ref()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                runtime_name: replacement_runtime_name.to_owned(),
-                consumer_deployment_ids: consumers.clone(),
-                status: match error_code {
-                    Some(_) => skillhub_core::api::SaveAsCopyTargetStatus::Failed,
-                    None => skillhub_core::api::SaveAsCopyTargetStatus::Applied,
-                },
-                error_code,
+            })
+            .collect();
+        let mut recovery = SaveAsCopyReplacementRecoverySnapshot {
+            schema_version: 1,
+            copy_skill_id: copy.id(),
+            copy_version_id: version_id.clone(),
+            targets,
+        };
+        // Persist the target plan first. Each eligible target is then changed
+        // to InFlight and persisted again before its original directory moves.
+        self.persist_save_as_copy_recovery_checkpoint(
+            operation_id,
+            &recovery,
+            skillhub_core::OperationPhase::Applying,
+        )?;
+
+        for index in 0..recovery.targets.len() {
+            let target = recovery.targets[index].clone();
+            let fact = target.fact.clone();
+            let fail = |error_code| {
+                save_as_copy_target_result(
+                    &target,
+                    skillhub_core::api::SaveAsCopyTargetStatus::Failed,
+                    Some(error_code),
+                )
             };
-            // 预检：部署记录仍存在、仍受管、仍归属来源主体。
+            if fact.blocker.is_some() || target.replacement_path.as_os_str().is_empty() {
+                recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                    error_code: ErrorCode::OperationConflict,
+                };
+                self.persist_save_as_copy_recovery_checkpoint(
+                    operation_id,
+                    &recovery,
+                    skillhub_core::OperationPhase::Applying,
+                )?;
+                continue;
+            }
+
+            // Recheck the complete preview row, not only its owner. The
+            // operation can spend time adopting the new Skill before it gets
+            // here, and any intervening database drift must leave this target
+            // untouched.
             let record = self.with_database(
                 "execute.save_markdown_as_copy.replacement.load",
                 |database| {
@@ -8532,65 +8609,151 @@ impl LocalApplicationFacade {
                 Some(record)
                     if record.state == DeploymentState::Deployed
                         && record.managed
-                        && fact
-                            .owner_skill_id
-                            .is_some_and(|owner| record.skill_id == owner) =>
+                        && Some(record.target_id.as_str()) == fact.target_id.as_deref()
+                        && Some(record.skill_id) == fact.owner_skill_id
+                        && Some(&record.version_id) == fact.version_id.as_ref()
+                        && Some(record.mode) == fact.mode
+                        && Some(record.runtime_name.as_str()) == fact.runtime_name.as_deref()
+                        && Some(record.expected_hash.as_str()) == fact.expected_hash.as_deref() =>
                 {
                     record
                 }
                 _ => {
-                    items.push(base(Some(ErrorCode::OperationConflict)));
+                    recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::OperationConflict,
+                    };
+                    self.persist_save_as_copy_recovery_checkpoint(
+                        operation_id,
+                        &recovery,
+                        skillhub_core::OperationPhase::Applying,
+                    )?;
                     continue;
                 }
             };
             let proof = match self.save_as_copy_deployment_proof(&record) {
                 Ok(proof) => proof,
                 Err(error) => {
-                    items.push(base(Some(error.code)));
+                    recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: error.code,
+                    };
+                    self.persist_save_as_copy_recovery_checkpoint(
+                        operation_id,
+                        &recovery,
+                        skillhub_core::OperationPhase::Applying,
+                    )?;
                     continue;
                 }
             };
-            // 所有权验证：身份或内容漂移 → 本项失败，条目保持原状。
             if let Err(error) = filesystem.verify_ownership(&proof) {
-                items.push(base(Some(error.code)));
+                recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                    error_code: error.code,
+                };
+                self.persist_save_as_copy_recovery_checkpoint(
+                    operation_id,
+                    &recovery,
+                    skillhub_core::OperationPhase::Applying,
+                )?;
                 continue;
             }
-            let destination_path = replacement_path
-                .clone()
-                .unwrap_or_else(|| proof.destination_path.clone());
-            if destination_path != proof.destination_path
-                && std::fs::symlink_metadata(&destination_path).is_ok()
+            if target.replacement_path != proof.destination_path
+                && path_entry_exists_for_recovery(&target.replacement_path)?
             {
-                items.push(base(Some(ErrorCode::OperationConflict)));
+                recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                    error_code: ErrorCode::OperationConflict,
+                };
+                self.persist_save_as_copy_recovery_checkpoint(
+                    operation_id,
+                    &recovery,
+                    skillhub_core::OperationPhase::Applying,
+                )?;
                 continue;
             }
-            // 交接：先把原条目改名为备份（可还原），再把新版本树原子
-            // 就位；任何失败都还原备份并按本项失败归属。
-            let backup = proof.destination_path.with_file_name(format!(
-                "{}.skillhub-replacing-{}",
-                proof
-                    .destination_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("entry"),
-                OperationId::new()
-            ));
+            let backup = save_as_copy_replacement_backup_path(
+                &proof.destination_path,
+                operation_id,
+                record.id,
+            );
+            if path_entry_exists_for_recovery(&backup)? {
+                recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                    error_code: ErrorCode::OperationConflict,
+                };
+                self.persist_save_as_copy_recovery_checkpoint(
+                    operation_id,
+                    &recovery,
+                    skillhub_core::OperationPhase::Applying,
+                )?;
+                continue;
+            }
+            let source_path = library
+                .central
+                .visible_skill_path_for_runtime(copy.id(), copy.runtime_name());
+            let expected_replacement_hash = DeploymentFilesystem::hash_tree(&source_path)?;
+            let in_flight = SaveAsCopyReplacementInFlight {
+                original_deployment: record.clone(),
+                original_ownership: SaveAsCopyOwnershipSnapshot::from(&proof),
+                backup_path: backup.clone(),
+                expected_replacement_hash,
+            };
+            recovery.targets[index].state = SaveAsCopyReplacementTargetState::InFlight(in_flight);
+            // This is the write-ahead boundary. No external target path has
+            // changed unless this exact recovery payload is already durable.
+            self.persist_save_as_copy_recovery_checkpoint(
+                operation_id,
+                &recovery,
+                skillhub_core::OperationPhase::Applying,
+            )?;
+
             if std::fs::rename(&proof.destination_path, &backup).is_err() {
-                items.push(base(Some(ErrorCode::InternalError)));
-                continue;
+                if filesystem.verify_ownership(&proof).is_ok()
+                    && !path_entry_exists_for_recovery(&backup)?
+                {
+                    recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::InternalError,
+                    };
+                    self.persist_save_as_copy_recovery_checkpoint(
+                        operation_id,
+                        &recovery,
+                        skillhub_core::OperationPhase::Applying,
+                    )?;
+                    continue;
+                }
+                let result = fail(ErrorCode::InternalError);
+                let items = save_as_copy_recovery_results(&recovery);
+                let mut journal = journal_record(
+                    operation_id,
+                    SAVE_MARKDOWN_AS_COPY_KIND,
+                    skillhub_core::OperationPhase::NeedsRecovery,
+                    None,
+                );
+                journal.result = Some(serde_json::json!({ "items": &items }));
+                journal.recovery_data = serde_json::to_value(&recovery).map_err(|error| {
+                    internal_with_detail(
+                        "operation_journal.save_as_copy.serialize",
+                        error.to_string(),
+                    )
+                })?;
+                self.journal_write(journal);
+                let mut items = save_as_copy_recovery_results(&recovery);
+                items[index] = result;
+                return Ok((
+                    SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
+                    true,
+                ));
             }
-            let staging =
-                std::env::temp_dir().join(format!("skillhub-replace-{}", OperationId::new()));
+
             let target_plan = TargetPlan {
                 physical_target_id: record.target_id.clone(),
                 logical_target_ids: Vec::new(),
-                target_path: destination_path
+                target_path: target
+                    .replacement_path
                     .parent()
                     .map(|parent| parent.to_string_lossy().into_owned())
                     .unwrap_or_default(),
-                destination_path: destination_path.to_string_lossy().into_owned(),
-                source_path: staging.to_string_lossy().into_owned(),
-                runtime_name: replacement_runtime_name.to_owned(),
+                destination_path: target.replacement_path.to_string_lossy().into_owned(),
+                // Point links at the durable central visible tree. A temporary
+                // materialization would disappear when this command exits.
+                source_path: source_path.to_string_lossy().into_owned(),
+                runtime_name: target.runtime_name.clone(),
                 skill_id: copy.id(),
                 version_id: version_id.clone(),
                 mode: record.mode,
@@ -8598,9 +8761,8 @@ impl LocalApplicationFacade {
                 warnings: Vec::new(),
                 conflicts: Vec::new(),
             };
-            let applied = library
-                .materialize(version_id, &staging)
-                .and_then(|()| filesystem.prepare(&target_plan))
+            let applied = filesystem
+                .prepare(&target_plan)
                 .and_then(|prepared| filesystem.apply(prepared));
             match applied {
                 Ok(applied) => {
@@ -8612,7 +8774,7 @@ impl LocalApplicationFacade {
                         state: DeploymentState::Deployed,
                         mode: record.mode,
                         managed: true,
-                        runtime_name: replacement_runtime_name.to_owned(),
+                        runtime_name: target.runtime_name.clone(),
                         expected_hash: applied.observed_tree_hash.clone(),
                         observed_hash: Some(applied.observed_tree_hash.clone()),
                     };
@@ -8630,14 +8792,58 @@ impl LocalApplicationFacade {
                     );
                     match committed {
                         Ok(()) => {
-                            let _ = std::fs::remove_dir_all(&backup);
+                            if filesystem
+                                .remove_owned(
+                                    &SaveAsCopyOwnershipSnapshot::from(&proof)
+                                        .at_destination(backup.clone()),
+                                )
+                                .is_err()
+                            {
+                                let result = fail(ErrorCode::InternalError);
+                                let mut journal = journal_record(
+                                    operation_id,
+                                    SAVE_MARKDOWN_AS_COPY_KIND,
+                                    skillhub_core::OperationPhase::NeedsRecovery,
+                                    None,
+                                );
+                                journal.result = Some(serde_json::json!({
+                                    "items": save_as_copy_recovery_results(&recovery)
+                                }));
+                                journal.recovery_data =
+                                    serde_json::to_value(&recovery).map_err(|error| {
+                                        internal_with_detail(
+                                            "operation_journal.save_as_copy.serialize",
+                                            error.to_string(),
+                                        )
+                                    })?;
+                                self.journal_write(journal);
+                                let mut items = save_as_copy_recovery_results(&recovery);
+                                items[index] = result;
+                                return Ok((
+                                    SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
+                                    true,
+                                ));
+                            }
                             self.append_replace_inheritance_history(
                                 &record,
                                 copy,
-                                &proof.destination_path,
+                                &target.replacement_path,
                                 operation_id,
-                            );
-                            items.push(base(None));
+                            )?;
+                            recovery.targets[index].state =
+                                SaveAsCopyReplacementTargetState::Applied(
+                                    SaveAsCopyReplacementApplied {
+                                        deployment: re_pointed,
+                                        ownership: SaveAsCopyOwnershipSnapshot::from(
+                                            &applied.ownership,
+                                        ),
+                                    },
+                                );
+                            self.persist_save_as_copy_recovery_checkpoint(
+                                operation_id,
+                                &recovery,
+                                skillhub_core::OperationPhase::Applying,
+                            )?;
                         }
                         Err(error) => {
                             let restored = filesystem.remove_owned(&applied.ownership).is_ok()
@@ -8645,30 +8851,100 @@ impl LocalApplicationFacade {
                                     &filesystem,
                                     &proof,
                                     &backup,
-                                    &destination_path,
+                                    &target.replacement_path,
                                 );
-                            recovery_required |= !restored;
-                            items.push(base(Some(error.code)));
+                            if restored {
+                                recovery.targets[index].state =
+                                    SaveAsCopyReplacementTargetState::Failed {
+                                        error_code: error.code,
+                                    };
+                                self.persist_save_as_copy_recovery_checkpoint(
+                                    operation_id,
+                                    &recovery,
+                                    skillhub_core::OperationPhase::Applying,
+                                )?;
+                            } else {
+                                let mut journal = journal_record(
+                                    operation_id,
+                                    SAVE_MARKDOWN_AS_COPY_KIND,
+                                    skillhub_core::OperationPhase::NeedsRecovery,
+                                    None,
+                                );
+                                journal.result = Some(serde_json::json!({
+                                    "items": save_as_copy_recovery_results(&recovery)
+                                }));
+                                journal.recovery_data =
+                                    serde_json::to_value(&recovery).map_err(|error| {
+                                        internal_with_detail(
+                                            "operation_journal.save_as_copy.serialize",
+                                            error.to_string(),
+                                        )
+                                    })?;
+                                self.journal_write(journal);
+                                let mut items = save_as_copy_recovery_results(&recovery);
+                                items[index] = fail(error.code);
+                                return Ok((
+                                    SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
+                                    true,
+                                ));
+                            }
                         }
                     }
                 }
                 Err(error) => {
-                    let _ = std::fs::remove_dir_all(&staging);
                     let restored = restore_save_as_copy_backup(
                         &filesystem,
                         &proof,
                         &backup,
-                        &destination_path,
+                        &target.replacement_path,
                     );
-                    recovery_required |= !restored;
-                    items.push(base(Some(error.code)));
+                    if restored {
+                        recovery.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                            error_code: error.code,
+                        };
+                        self.persist_save_as_copy_recovery_checkpoint(
+                            operation_id,
+                            &recovery,
+                            skillhub_core::OperationPhase::Applying,
+                        )?;
+                    } else {
+                        let mut journal = journal_record(
+                            operation_id,
+                            SAVE_MARKDOWN_AS_COPY_KIND,
+                            skillhub_core::OperationPhase::NeedsRecovery,
+                            None,
+                        );
+                        journal.result = Some(serde_json::json!({
+                            "items": save_as_copy_recovery_results(&recovery)
+                        }));
+                        journal.recovery_data =
+                            serde_json::to_value(&recovery).map_err(|error| {
+                                internal_with_detail(
+                                    "operation_journal.save_as_copy.serialize",
+                                    error.to_string(),
+                                )
+                            })?;
+                        self.journal_write(journal);
+                        let mut items = save_as_copy_recovery_results(&recovery);
+                        items[index] = fail(error.code);
+                        return Ok((
+                            SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
+                            true,
+                        ));
+                    }
                 }
             }
-            let _ = std::fs::remove_dir_all(&staging);
         }
-        let all_applied = items
+
+        let items = save_as_copy_recovery_results(&recovery);
+        let recovery_required = recovery
+            .targets
             .iter()
-            .all(|item| item.status == skillhub_core::api::SaveAsCopyTargetStatus::Applied);
+            .any(|target| matches!(&target.state, SaveAsCopyReplacementTargetState::InFlight(_)));
+        let all_applied = recovery
+            .targets
+            .iter()
+            .all(|target| matches!(&target.state, SaveAsCopyReplacementTargetState::Applied(_)));
         if all_applied {
             self.journal_settle(operation_id, SAVE_MARKDOWN_AS_COPY_KIND, None);
             Ok((SaveAsCopyInheritanceOutcome::Replaced { items }, false))
@@ -8684,18 +8960,28 @@ impl LocalApplicationFacade {
                 operation_id,
                 SAVE_MARKDOWN_AS_COPY_KIND,
                 if recovery_required {
-                    skillhub_core::OperationPhase::Applying
+                    skillhub_core::OperationPhase::NeedsRecovery
                 } else {
                     skillhub_core::OperationPhase::Committed
                 },
                 None,
             );
-            record.recovery_data = serde_json::json!({
-                "skill_id": copy.id().to_string(),
-                "version_id": version_id.to_string(),
-                "items": items_payload,
-                "recovery_required": recovery_required,
-            });
+            record.result = Some(serde_json::json!({ "items": &items }));
+            record.recovery_data = if recovery_required {
+                serde_json::to_value(&recovery).map_err(|error| {
+                    internal_with_detail(
+                        "operation_journal.save_as_copy.serialize",
+                        error.to_string(),
+                    )
+                })?
+            } else {
+                serde_json::json!({
+                    "skill_id": copy.id().to_string(),
+                    "version_id": version_id.to_string(),
+                    "items": items_payload,
+                    "recovery_required": false,
+                })
+            };
             self.journal_write(record);
             Ok((
                 SaveAsCopyInheritanceOutcome::PartiallyReplaced { items },
@@ -8777,52 +9063,16 @@ impl LocalApplicationFacade {
         new_skill: &Skill,
         destination: &std::path::Path,
         operation_id: OperationId,
-    ) {
-        let relation_id = format!("managed:{}", old_record.id);
-        let path = destination.to_string_lossy().into_owned();
-        let _ = self.with_database("save_as_copy_replacement.history", |database| {
-            let old_display = database
-                .catalog_repository()?
-                .get_sync(old_record.skill_id)
-                .ok()
-                .flatten()
-                .map(|skill| skill.display_name().to_owned())
-                .unwrap_or_else(|| "unknown-skill".to_owned());
-            let ended = GovernanceHistoryEvent {
-                event_id: format!("hist-{}", OperationId::new()),
-                relation_id: relation_id.clone(),
-                skill_id: Some(old_record.skill_id.to_string()),
-                skill_display_name: old_display,
-                agent_presentation: serde_json::json!({ "target_id": old_record.target_id }),
-                path: path.clone(),
-                scope: "managed_deployment".to_owned(),
-                project_id: None,
-                action: "replace_inheritance".to_owned(),
-                result: "source_relation_ended".to_owned(),
-                reason: None,
-                operation_id: Some(operation_id.to_string()),
-                occurred_at: now_epoch_seconds(),
-            };
-            database.governance_history_repository().append(&ended)?;
-            let established = GovernanceHistoryEvent {
-                event_id: format!("hist-{}", OperationId::new()),
-                relation_id,
-                skill_id: Some(new_skill.id().to_string()),
-                skill_display_name: new_skill.display_name().to_owned(),
-                agent_presentation: serde_json::json!({ "target_id": old_record.target_id }),
-                path,
-                scope: "managed_deployment".to_owned(),
-                project_id: None,
-                action: "replace_inheritance".to_owned(),
-                result: "new_relation_established".to_owned(),
-                reason: None,
-                operation_id: Some(operation_id.to_string()),
-                occurred_at: now_epoch_seconds(),
-            };
-            database
-                .governance_history_repository()
-                .append(&established)
-        });
+    ) -> AppResult<()> {
+        self.with_database("save_as_copy_replacement.history", |database| {
+            append_replace_inheritance_history(
+                database,
+                old_record,
+                new_skill,
+                destination,
+                operation_id,
+            )
+        })
     }
 
     fn save_markdown_as_copy(&self, request: SaveMarkdownAsCopy) -> AppResult<AppCommandResult> {
@@ -18264,7 +18514,7 @@ fn target_changed_error(detail: impl Into<String>) -> AppError {
 
 /// K5：替换继承目标的记账事实快照（指纹与预览日志载荷共用）。阻塞目标
 /// 只保留部署 id、已知消费者与阻塞原因，其余字段为空。
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SaveAsCopyReplacementTargetFact {
     deployment_id: skillhub_core::DeploymentId,
@@ -18278,6 +18528,298 @@ struct SaveAsCopyReplacementTargetFact {
     expected_hash: Option<String>,
     consumer_deployment_ids: Vec<String>,
     blocker: Option<String>,
+}
+
+/// Durable per-target recovery state for the physical replacement performed
+/// after a Save As Copy has already been adopted into the central library.
+/// The checkpoint is written before the original target is renamed.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementRecoverySnapshot {
+    schema_version: u8,
+    copy_skill_id: skillhub_core::SkillId,
+    copy_version_id: skillhub_core::VersionId,
+    targets: Vec<SaveAsCopyReplacementTargetRecovery>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementTargetRecovery {
+    fact: SaveAsCopyReplacementTargetFact,
+    replacement_path: PathBuf,
+    runtime_name: String,
+    state: SaveAsCopyReplacementTargetState,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SaveAsCopyReplacementTargetState {
+    Pending,
+    InFlight(SaveAsCopyReplacementInFlight),
+    Applied(SaveAsCopyReplacementApplied),
+    Failed { error_code: ErrorCode },
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementInFlight {
+    original_deployment: DeploymentRecord,
+    original_ownership: SaveAsCopyOwnershipSnapshot,
+    backup_path: PathBuf,
+    expected_replacement_hash: String,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyReplacementApplied {
+    deployment: DeploymentRecord,
+    ownership: SaveAsCopyOwnershipSnapshot,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SaveAsCopyOwnershipSnapshot {
+    mode: DeploymentMode,
+    destination_path: PathBuf,
+    source_path: PathBuf,
+    expected_hash: String,
+    target_identity: String,
+    link_anchor_paths: Vec<PathBuf>,
+    skill_id: skillhub_core::SkillId,
+    version_id: skillhub_core::VersionId,
+    runtime_name: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SaveAsCopyReplacementPosition {
+    Untouched,
+    OriginalInBackup,
+    ReplacementInstalled { backup_exists: bool },
+}
+
+fn save_as_copy_replacement_backup_path(
+    original_destination: &Path,
+    operation_id: OperationId,
+    deployment_id: skillhub_core::DeploymentId,
+) -> PathBuf {
+    original_destination
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(format!(
+            ".skillhub-replacing-{operation_id}-{deployment_id}"
+        ))
+}
+
+fn save_as_copy_target_result(
+    target: &SaveAsCopyReplacementTargetRecovery,
+    status: skillhub_core::api::SaveAsCopyTargetStatus,
+    error_code: Option<ErrorCode>,
+) -> skillhub_core::api::SaveAsCopyTargetResult {
+    skillhub_core::api::SaveAsCopyTargetResult {
+        deployment_id: target.fact.deployment_id,
+        target_id: target.fact.target_id.clone().unwrap_or_default(),
+        path: target.replacement_path.to_string_lossy().into_owned(),
+        runtime_name: target.runtime_name.clone(),
+        consumer_deployment_ids: target
+            .fact
+            .consumer_deployment_ids
+            .iter()
+            .filter_map(|raw| raw.parse().ok())
+            .collect(),
+        status,
+        error_code,
+    }
+}
+
+fn save_as_copy_recovery_results(
+    recovery: &SaveAsCopyReplacementRecoverySnapshot,
+) -> Vec<skillhub_core::api::SaveAsCopyTargetResult> {
+    recovery
+        .targets
+        .iter()
+        .map(|target| match &target.state {
+            SaveAsCopyReplacementTargetState::Applied(_) => save_as_copy_target_result(
+                target,
+                skillhub_core::api::SaveAsCopyTargetStatus::Applied,
+                None,
+            ),
+            SaveAsCopyReplacementTargetState::Failed { error_code } => save_as_copy_target_result(
+                target,
+                skillhub_core::api::SaveAsCopyTargetStatus::Failed,
+                Some(*error_code),
+            ),
+            SaveAsCopyReplacementTargetState::Pending
+            | SaveAsCopyReplacementTargetState::InFlight(_) => save_as_copy_target_result(
+                target,
+                skillhub_core::api::SaveAsCopyTargetStatus::Failed,
+                Some(ErrorCode::OperationConflict),
+            ),
+        })
+        .collect()
+}
+
+fn save_as_copy_deployment_matches_fact(
+    deployment: &DeploymentRecord,
+    fact: &SaveAsCopyReplacementTargetFact,
+) -> bool {
+    deployment.id == fact.deployment_id
+        && deployment.state == DeploymentState::Deployed
+        && fact.managed == Some(deployment.managed)
+        && Some(deployment.target_id.as_str()) == fact.target_id.as_deref()
+        && Some(deployment.skill_id) == fact.owner_skill_id
+        && Some(&deployment.version_id) == fact.version_id.as_ref()
+        && Some(deployment.mode) == fact.mode
+        && Some(deployment.runtime_name.as_str()) == fact.runtime_name.as_deref()
+        && Some(deployment.expected_hash.as_str()) == fact.expected_hash.as_deref()
+}
+
+fn save_as_copy_replacement_deployment(
+    fact: &SaveAsCopyReplacementTargetFact,
+    target: &SaveAsCopyReplacementTargetRecovery,
+    copy_skill_id: skillhub_core::SkillId,
+    copy_version_id: &skillhub_core::VersionId,
+    expected_hash: &str,
+) -> AppResult<DeploymentRecord> {
+    if fact.owner_skill_id.is_none() {
+        return Err(recovery_conflict("save_as_copy_owner_skill_missing"));
+    }
+    Ok(DeploymentRecord {
+        id: fact.deployment_id,
+        skill_id: copy_skill_id,
+        version_id: copy_version_id.clone(),
+        target_id: fact
+            .target_id
+            .clone()
+            .ok_or_else(|| recovery_conflict("save_as_copy_target_id_missing"))?,
+        state: DeploymentState::Deployed,
+        mode: fact
+            .mode
+            .ok_or_else(|| recovery_conflict("save_as_copy_target_mode_missing"))?,
+        managed: true,
+        runtime_name: target.runtime_name.clone(),
+        expected_hash: expected_hash.to_owned(),
+        observed_hash: Some(expected_hash.to_owned()),
+    })
+}
+
+fn save_as_copy_ownership_matches_deployment(
+    ownership: &SaveAsCopyOwnershipSnapshot,
+    deployment: &DeploymentRecord,
+    destination: &Path,
+    expected_hash: &str,
+    expected_source: &Path,
+    expected_anchors: &[PathBuf],
+) -> AppResult<bool> {
+    let target_root = destination
+        .parent()
+        .ok_or_else(|| recovery_conflict("save_as_copy_target_root_missing"))?;
+    if physical_id_for_path(target_root).as_deref() != Some(deployment.target_id.as_str()) {
+        return Ok(false);
+    }
+    Ok(ownership.mode == deployment.mode
+        && ownership.destination_path == destination
+        && ownership.source_path == expected_source
+        && ownership.expected_hash == expected_hash
+        && !ownership.target_identity.is_empty()
+        && ownership.link_anchor_paths.as_slice() == expected_anchors
+        && ownership.skill_id == deployment.skill_id
+        && ownership.version_id == deployment.version_id
+        && ownership.runtime_name == deployment.runtime_name)
+}
+
+fn append_replace_inheritance_history(
+    database: &Database,
+    old_record: &DeploymentRecord,
+    new_skill: &Skill,
+    destination: &Path,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let relation_id = format!("managed:{}", old_record.id);
+    let operation_id_text = operation_id.to_string();
+    let repository = database.governance_history_repository();
+    let existing = repository.list_for_relation(&relation_id)?;
+    let has_event = |result: &str| {
+        existing.iter().any(|event| {
+            event.operation_id.as_deref() == Some(operation_id_text.as_str())
+                && event.action == "replace_inheritance"
+                && event.result == result
+        })
+    };
+    let path = destination.to_string_lossy().into_owned();
+    let presentation = serde_json::json!({ "target_id": old_record.target_id });
+    let old_display = database
+        .catalog_repository()?
+        .get_sync(old_record.skill_id)?
+        .map(|skill| skill.display_name().to_owned())
+        .unwrap_or_else(|| "unknown-skill".to_owned());
+
+    if !has_event("source_relation_ended") {
+        repository.append(&GovernanceHistoryEvent {
+            event_id: format!("hist-{}", OperationId::new()),
+            relation_id: relation_id.clone(),
+            skill_id: Some(old_record.skill_id.to_string()),
+            skill_display_name: old_display,
+            agent_presentation: presentation.clone(),
+            path: path.clone(),
+            scope: "managed_deployment".to_owned(),
+            project_id: None,
+            action: "replace_inheritance".to_owned(),
+            result: "source_relation_ended".to_owned(),
+            reason: None,
+            operation_id: Some(operation_id_text.clone()),
+            occurred_at: now_epoch_seconds(),
+        })?;
+    }
+    if !has_event("new_relation_established") {
+        repository.append(&GovernanceHistoryEvent {
+            event_id: format!("hist-{}", OperationId::new()),
+            relation_id,
+            skill_id: Some(new_skill.id().to_string()),
+            skill_display_name: new_skill.display_name().to_owned(),
+            agent_presentation: presentation,
+            path,
+            scope: "managed_deployment".to_owned(),
+            project_id: None,
+            action: "replace_inheritance".to_owned(),
+            result: "new_relation_established".to_owned(),
+            reason: None,
+            operation_id: Some(operation_id_text),
+            occurred_at: now_epoch_seconds(),
+        })?;
+    }
+    Ok(())
+}
+
+impl From<&OwnershipProof> for SaveAsCopyOwnershipSnapshot {
+    fn from(proof: &OwnershipProof) -> Self {
+        Self {
+            mode: proof.mode,
+            destination_path: proof.destination_path.clone(),
+            source_path: proof.source_path.clone(),
+            expected_hash: proof.expected_hash.clone(),
+            target_identity: proof.target_identity.clone(),
+            link_anchor_paths: proof.link_anchor_paths.clone(),
+            skill_id: proof.skill_id,
+            version_id: proof.version_id.clone(),
+            runtime_name: proof.runtime_name.clone(),
+        }
+    }
+}
+
+impl SaveAsCopyOwnershipSnapshot {
+    fn at_destination(&self, destination_path: PathBuf) -> OwnershipProof {
+        OwnershipProof {
+            mode: self.mode,
+            destination_path,
+            source_path: self.source_path.clone(),
+            expected_hash: self.expected_hash.clone(),
+            target_identity: self.target_identity.clone(),
+            link_anchor_paths: self.link_anchor_paths.clone(),
+            skill_id: self.skill_id,
+            version_id: self.version_id.clone(),
+            runtime_name: self.runtime_name.clone(),
+        }
+    }
 }
 
 /// K5：替换继承预览的持久化快照（操作日志 recovery_data）。
@@ -19693,6 +20235,11 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
+                    "save_markdown_as_copy"
+                        if self.validate_save_as_copy_recovery(&record).is_ok() =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
                         vec![RecoveryAction::RollbackOperation]
                     }
@@ -19773,6 +20320,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 return Err(unsupported("recovery.resolve.undeploy_skill"));
             }
             return self.complete_undeploy_operation(operation_id);
+        }
+        if operation_kind.as_deref() == Some("save_markdown_as_copy") {
+            if action != RecoveryAction::CompleteOperation {
+                return Err(unsupported("recovery.resolve.save_markdown_as_copy"));
+            }
+            return self.complete_save_as_copy_operation(operation_id);
         }
         if operation_kind.as_deref() == Some("deploy_skill") {
             if action != RecoveryAction::RollbackOperation {
@@ -19866,6 +20419,629 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
+    fn load_validated_save_as_copy_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<(
+        SaveAsCopyReplacementRecoverySnapshot,
+        Arc<library_runtime::LibraryContext>,
+        Skill,
+        Vec<SaveAsCopyReplacementPosition>,
+    )> {
+        if record.kind != SAVE_MARKDOWN_AS_COPY_KIND
+            || !matches!(
+                record.phase,
+                skillhub_core::OperationPhase::Applying
+                    | skillhub_core::OperationPhase::NeedsRecovery
+            )
+        {
+            return Err(recovery_conflict("save_as_copy_recovery_phase_invalid"));
+        }
+        let snapshot: SaveAsCopyReplacementRecoverySnapshot =
+            serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| recovery_conflict("save_as_copy_recovery_snapshot_invalid"))?;
+        if snapshot.schema_version != 1 {
+            return Err(recovery_conflict("save_as_copy_recovery_schema_invalid"));
+        }
+
+        let (copy_skill, database_version) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.save_as_copy.validate"))?;
+            let copy_skill = database
+                .catalog_repository()?
+                .get_sync(snapshot.copy_skill_id)?
+                .ok_or_else(|| recovery_conflict("save_as_copy_copy_missing"))?;
+            let current_version = database.current_version(snapshot.copy_skill_id)?;
+            (copy_skill, current_version)
+        };
+        let library = self.library_runtime.snapshot()?;
+        let portable = library
+            .central
+            .load_portable_skill(snapshot.copy_skill_id)?
+            .ok_or_else(|| recovery_conflict("save_as_copy_portable_copy_missing"))?;
+        let manifest = library.store.load_manifest(&snapshot.copy_version_id)?;
+        if manifest.skill_id != snapshot.copy_skill_id
+            || database_version.as_ref() != Some(&snapshot.copy_version_id)
+            || library.store.current(snapshot.copy_skill_id)?.as_ref()
+                != Some(&snapshot.copy_version_id)
+            || portable.1.as_ref() != Some(&snapshot.copy_version_id)
+            || portable.0.runtime_name != copy_skill.runtime_name()
+        {
+            return Err(recovery_conflict("save_as_copy_copy_version_changed"));
+        }
+        let visible_hash = library
+            .central
+            .visible_tree_fingerprint(&copy_skill)?
+            .ok_or_else(|| recovery_conflict("save_as_copy_copy_tree_missing"))?;
+        if visible_hash != manifest.tree_hash {
+            return Err(recovery_conflict("save_as_copy_copy_tree_changed"));
+        }
+        let replacement_hash = DeploymentFilesystem::hash_tree(
+            library
+                .central
+                .visible_skill_path_for_runtime(snapshot.copy_skill_id, copy_skill.runtime_name()),
+        )?;
+
+        let mut positions = Vec::with_capacity(snapshot.targets.len());
+        for target in &snapshot.targets {
+            positions.push(self.validate_save_as_copy_target(
+                record.operation_id,
+                target,
+                &snapshot,
+                &replacement_hash,
+                &library,
+            )?);
+        }
+        Ok((snapshot, library, copy_skill, positions))
+    }
+
+    fn validate_save_as_copy_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<()> {
+        self.load_validated_save_as_copy_recovery(record)
+            .map(|_| ())
+    }
+
+    fn validate_save_as_copy_target(
+        &self,
+        operation_id: OperationId,
+        target: &SaveAsCopyReplacementTargetRecovery,
+        snapshot: &SaveAsCopyReplacementRecoverySnapshot,
+        expected_hash: &str,
+        library: &library_runtime::LibraryContext,
+    ) -> AppResult<SaveAsCopyReplacementPosition> {
+        let fact = &target.fact;
+        if let Some(blocker) = fact.blocker.as_deref() {
+            let state_is_unstarted = matches!(
+                target.state,
+                SaveAsCopyReplacementTargetState::Pending
+                    | SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::OperationConflict
+                    }
+            );
+            let known_blocker = matches!(
+                blocker,
+                "target_not_found"
+                    | "target_not_managed"
+                    | "target_owner_mismatch"
+                    | "target_identity_unavailable"
+            );
+            if !state_is_unstarted
+                || !known_blocker
+                || !target.replacement_path.as_os_str().is_empty()
+                || skillhub_core::deployment::validate_runtime_name(&target.runtime_name).is_err()
+            {
+                return Err(recovery_conflict("save_as_copy_blocked_target_invalid"));
+            }
+            // A Pending or preflight-Failed target is guaranteed to have no
+            // filesystem mutation: the InFlight checkpoint is durably saved
+            // before any rename. Keep it out of recovery's write path and
+            // settle it as failed without letting stale preflight facts mask
+            // recovery of a different target that already entered InFlight.
+            return Ok(SaveAsCopyReplacementPosition::Untouched);
+        }
+        let target_id = fact
+            .target_id
+            .as_deref()
+            .ok_or_else(|| recovery_conflict("save_as_copy_target_id_missing"))?;
+        let original_path = PathBuf::from(
+            fact.path
+                .as_deref()
+                .ok_or_else(|| recovery_conflict("save_as_copy_target_path_missing"))?,
+        );
+        let original_runtime = fact
+            .runtime_name
+            .as_deref()
+            .ok_or_else(|| recovery_conflict("save_as_copy_runtime_name_missing"))?;
+        if fact.managed != Some(true)
+            || fact.owner_skill_id.is_none()
+            || fact.mode.is_none()
+            || fact.version_id.is_none()
+            || fact.expected_hash.is_none()
+            || !fact
+                .consumer_deployment_ids
+                .contains(&fact.deployment_id.to_string())
+            || skillhub_core::deployment::validate_runtime_name(original_runtime).is_err()
+            || skillhub_core::deployment::validate_runtime_name(&target.runtime_name).is_err()
+        {
+            return Err(recovery_conflict("save_as_copy_target_fact_invalid"));
+        }
+        let target_root = original_path
+            .parent()
+            .ok_or_else(|| recovery_conflict("save_as_copy_target_root_missing"))?;
+        if original_path.file_name().and_then(|name| name.to_str()) != Some(original_runtime)
+            || physical_id_for_path(target_root).as_deref() != Some(target_id)
+            || target.replacement_path.parent() != Some(target_root)
+            || target
+                .replacement_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                != Some(target.runtime_name.as_str())
+            || target.replacement_path != target_root.join(&target.runtime_name)
+        {
+            return Err(recovery_conflict("save_as_copy_target_path_changed"));
+        }
+        let expected_backup =
+            save_as_copy_replacement_backup_path(&original_path, operation_id, fact.deployment_id);
+
+        let current = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.save_as_copy.target"))?;
+            database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .find(|deployment| deployment.id == fact.deployment_id)
+        };
+        let filesystem = DeploymentFilesystem::new();
+        let replacement_record = save_as_copy_replacement_deployment(
+            fact,
+            target,
+            snapshot.copy_skill_id,
+            &snapshot.copy_version_id,
+            expected_hash,
+        )?;
+
+        match &target.state {
+            SaveAsCopyReplacementTargetState::Pending
+            | SaveAsCopyReplacementTargetState::Failed { .. } => {
+                let current = current
+                    .ok_or_else(|| recovery_conflict("save_as_copy_original_deployment_missing"))?;
+                if !save_as_copy_deployment_matches_fact(&current, fact) {
+                    return Err(recovery_conflict("save_as_copy_deployment_changed"));
+                }
+                let deployment_backend = self.deployment_backend();
+                let original_proof = deployment_backend.deployment_proof(&current)?;
+                filesystem.verify_ownership(&original_proof)?;
+                if original_proof.destination_path != original_path
+                    || path_entry_exists_for_recovery(&expected_backup)?
+                    || (target.replacement_path != original_path
+                        && path_entry_exists_for_recovery(&target.replacement_path)?)
+                {
+                    return Err(recovery_conflict("save_as_copy_pending_target_changed"));
+                }
+                Ok(SaveAsCopyReplacementPosition::Untouched)
+            }
+            SaveAsCopyReplacementTargetState::Applied(applied) => {
+                let visible_source = library
+                    .central
+                    .visible_skill_path_for_runtime(snapshot.copy_skill_id, &target.runtime_name);
+                let replacement_anchors = if replacement_record.mode.is_directory_link() {
+                    vec![visible_source.clone()]
+                } else {
+                    Vec::new()
+                };
+                if current.as_ref() != Some(&replacement_record)
+                    || path_entry_exists_for_recovery(&expected_backup)?
+                    || !save_as_copy_ownership_matches_deployment(
+                        &applied.ownership,
+                        &replacement_record,
+                        &target.replacement_path,
+                        expected_hash,
+                        &visible_source,
+                        &replacement_anchors,
+                    )?
+                {
+                    return Err(recovery_conflict("save_as_copy_applied_facts_changed"));
+                }
+                filesystem.verify_ownership(
+                    &applied
+                        .ownership
+                        .at_destination(target.replacement_path.clone()),
+                )?;
+                Ok(SaveAsCopyReplacementPosition::Untouched)
+            }
+            SaveAsCopyReplacementTargetState::InFlight(in_flight) => {
+                let original = &in_flight.original_deployment;
+                if !save_as_copy_deployment_matches_fact(original, fact) {
+                    return Err(recovery_conflict(
+                        "save_as_copy_original_deployment_changed",
+                    ));
+                }
+                if in_flight.backup_path != expected_backup {
+                    return Err(recovery_conflict("save_as_copy_backup_path_changed"));
+                }
+                if !save_as_copy_ownership_matches_deployment(
+                    &in_flight.original_ownership,
+                    original,
+                    &original_path,
+                    &original.expected_hash,
+                    &library
+                        .root
+                        .join("versions")
+                        .join(original.skill_id.to_string())
+                        .join(original.version_id.as_str()),
+                    &if original.mode.is_directory_link() {
+                        deployed_link_anchor_paths(library, original)?
+                    } else {
+                        Vec::new()
+                    },
+                )? {
+                    return Err(recovery_conflict("save_as_copy_original_ownership_changed"));
+                }
+                if in_flight.expected_replacement_hash != expected_hash {
+                    return Err(recovery_conflict("save_as_copy_replacement_hash_changed"));
+                }
+                let original_proof = in_flight
+                    .original_ownership
+                    .at_destination(original_path.clone());
+                let backup_exists = path_entry_exists_for_recovery(&expected_backup)?;
+                let original_at_backup = if backup_exists {
+                    filesystem
+                        .verify_ownership(
+                            &in_flight
+                                .original_ownership
+                                .at_destination(expected_backup.clone()),
+                        )
+                        .is_ok()
+                } else {
+                    false
+                };
+                if backup_exists && !original_at_backup {
+                    return Err(recovery_conflict("save_as_copy_backup_ownership_changed"));
+                }
+                let original_at_destination = filesystem.verify_ownership(&original_proof).is_ok();
+                let original_entry_exists = path_entry_exists_for_recovery(&original_path)?;
+                let replacement_exists = path_entry_exists_for_recovery(&target.replacement_path)?;
+                let replacement_installed = if replacement_exists {
+                    self.verify_save_as_copy_replacement(
+                        target,
+                        &replacement_record,
+                        expected_hash,
+                        library,
+                    )
+                    .is_ok()
+                } else {
+                    false
+                };
+                let database_is_original = current.as_ref() == Some(original);
+                let database_is_replacement = current.as_ref() == Some(&replacement_record);
+
+                // Same content is not enough to mistake an untouched original
+                // for a newly installed copy: the journaled old identity and
+                // still-old database row prove the pre-rename state.
+                if database_is_original
+                    && original_at_destination
+                    && !backup_exists
+                    && !replacement_exists
+                {
+                    return Ok(SaveAsCopyReplacementPosition::Untouched);
+                }
+                if database_is_original
+                    && original_at_destination
+                    && target.replacement_path == original_path
+                    && !backup_exists
+                {
+                    return Ok(SaveAsCopyReplacementPosition::Untouched);
+                }
+                if backup_exists
+                    && original_at_backup
+                    && !original_at_destination
+                    && !original_entry_exists
+                    && !replacement_exists
+                    && database_is_original
+                {
+                    return Ok(SaveAsCopyReplacementPosition::OriginalInBackup);
+                }
+                if replacement_installed
+                    && !original_at_destination
+                    && (target.replacement_path == original_path || !original_entry_exists)
+                    && (database_is_original || database_is_replacement)
+                {
+                    return Ok(SaveAsCopyReplacementPosition::ReplacementInstalled {
+                        backup_exists,
+                    });
+                }
+                Err(recovery_conflict("save_as_copy_intermediate_state_unknown"))
+            }
+        }
+    }
+
+    fn deployment_backend(&self) -> LocalDeploymentBackend {
+        LocalDeploymentBackend {
+            database: Arc::clone(&self.database),
+            library_runtime: Arc::clone(&self.library_runtime),
+            filesystem: DeploymentFilesystem::new(),
+            injected_targets: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn verify_save_as_copy_replacement(
+        &self,
+        target: &SaveAsCopyReplacementTargetRecovery,
+        replacement: &DeploymentRecord,
+        expected_hash: &str,
+        library: &library_runtime::LibraryContext,
+    ) -> AppResult<()> {
+        if replacement.mode == DeploymentMode::ManagedCopy {
+            ensure_directory(
+                &target.replacement_path,
+                "save_as_copy_replacement_not_directory",
+            )?;
+            if DeploymentFilesystem::hash_tree(&target.replacement_path)? != expected_hash {
+                return Err(recovery_conflict("save_as_copy_replacement_hash_changed"));
+            }
+        }
+        let identity = match replacement.mode {
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(&target.replacement_path),
+            DeploymentMode::DirectoryJunction => {
+                reparse_physical_id_for_path(&target.replacement_path)
+            }
+            DeploymentMode::ManagedCopy => physical_id_for_path(&target.replacement_path),
+        }
+        .ok_or_else(|| recovery_conflict("save_as_copy_replacement_identity_missing"))?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(replacement.skill_id.to_string())
+            .join(replacement.version_id.as_str());
+        let proof = OwnershipProof {
+            mode: replacement.mode,
+            destination_path: target.replacement_path.clone(),
+            source_path,
+            expected_hash: expected_hash.to_owned(),
+            target_identity: identity,
+            link_anchor_paths: if replacement.mode.is_directory_link() {
+                vec![library.central.visible_skill_path_for_runtime(
+                    replacement.skill_id,
+                    &replacement.runtime_name,
+                )]
+            } else {
+                Vec::new()
+            },
+            skill_id: replacement.skill_id,
+            version_id: replacement.version_id.clone(),
+            runtime_name: replacement.runtime_name.clone(),
+        };
+        DeploymentFilesystem::new().verify_ownership(&proof)
+    }
+
+    fn complete_save_as_copy_operation(&self, operation_id: OperationId) -> AppResult<()> {
+        let record = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.save_as_copy.load"))?;
+            database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| recovery_conflict("save_as_copy_operation_missing"))?
+        };
+        let (mut snapshot, library, copy_skill, positions) =
+            self.load_validated_save_as_copy_recovery(&record)?;
+        for (index, position) in positions.iter().copied().enumerate() {
+            let target = snapshot.targets[index].clone();
+            match (&target.state, position) {
+                (SaveAsCopyReplacementTargetState::Applied(_), _) => {}
+                (SaveAsCopyReplacementTargetState::Failed { .. }, _) => {}
+                (SaveAsCopyReplacementTargetState::Pending, _) => {
+                    snapshot.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::OperationConflict,
+                    };
+                    self.persist_save_as_copy_recovery_snapshot(operation_id, &snapshot)?;
+                }
+                (
+                    SaveAsCopyReplacementTargetState::InFlight(_),
+                    SaveAsCopyReplacementPosition::Untouched,
+                ) => {
+                    snapshot.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::OperationConflict,
+                    };
+                    self.persist_save_as_copy_recovery_snapshot(operation_id, &snapshot)?;
+                }
+                (
+                    SaveAsCopyReplacementTargetState::InFlight(in_flight),
+                    SaveAsCopyReplacementPosition::OriginalInBackup,
+                ) => {
+                    let original_path = &in_flight.original_ownership.destination_path;
+                    std::fs::rename(&in_flight.backup_path, original_path).map_err(|error| {
+                        recovery_filesystem_error("save_as_copy_restore_backup", error)
+                    })?;
+                    DeploymentFilesystem::new().verify_ownership(
+                        &in_flight
+                            .original_ownership
+                            .at_destination(original_path.clone()),
+                    )?;
+                    snapshot.targets[index].state = SaveAsCopyReplacementTargetState::Failed {
+                        error_code: ErrorCode::OperationConflict,
+                    };
+                    self.persist_save_as_copy_recovery_snapshot(operation_id, &snapshot)?;
+                }
+                (
+                    SaveAsCopyReplacementTargetState::InFlight(in_flight),
+                    SaveAsCopyReplacementPosition::ReplacementInstalled { backup_exists },
+                ) => {
+                    let replacement = save_as_copy_replacement_deployment(
+                        &target.fact,
+                        &target,
+                        snapshot.copy_skill_id,
+                        &snapshot.copy_version_id,
+                        &in_flight.expected_replacement_hash,
+                    )?;
+                    self.verify_save_as_copy_replacement(
+                        &target,
+                        &replacement,
+                        &in_flight.expected_replacement_hash,
+                        &library,
+                    )?;
+                    let current = {
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.save_as_copy.commit"))?;
+                        database
+                            .deployment_repository()
+                            .list_all()?
+                            .into_iter()
+                            .find(|deployment| deployment.id == target.fact.deployment_id)
+                    };
+                    if current.as_ref() == Some(&in_flight.original_deployment) {
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.save_as_copy.commit"))?;
+                        database
+                            .deployment_repository()
+                            .derive_managed_runtime_sync(
+                                &replacement,
+                                in_flight.original_deployment.skill_id,
+                                &in_flight.original_deployment.runtime_name,
+                            )?;
+                    } else if current.as_ref() != Some(&replacement) {
+                        return Err(recovery_conflict("save_as_copy_deployment_changed"));
+                    }
+                    if backup_exists {
+                        DeploymentFilesystem::new().remove_owned(
+                            &in_flight
+                                .original_ownership
+                                .at_destination(in_flight.backup_path.clone()),
+                        )?;
+                    }
+                    {
+                        let database = self
+                            .database
+                            .lock()
+                            .map_err(|_| internal("recovery.save_as_copy.history"))?;
+                        append_replace_inheritance_history(
+                            &database,
+                            &in_flight.original_deployment,
+                            &copy_skill,
+                            &target.replacement_path,
+                            operation_id,
+                        )?;
+                    }
+                    let identity = match replacement.mode {
+                        DeploymentMode::SymbolicLink => {
+                            symlink_physical_id_for_path(&target.replacement_path)
+                        }
+                        DeploymentMode::DirectoryJunction => {
+                            reparse_physical_id_for_path(&target.replacement_path)
+                        }
+                        DeploymentMode::ManagedCopy => {
+                            physical_id_for_path(&target.replacement_path)
+                        }
+                    }
+                    .ok_or_else(|| {
+                        recovery_conflict("save_as_copy_replacement_identity_missing")
+                    })?;
+                    let ownership = SaveAsCopyOwnershipSnapshot {
+                        mode: replacement.mode,
+                        destination_path: target.replacement_path.clone(),
+                        source_path: library.central.visible_skill_path_for_runtime(
+                            replacement.skill_id,
+                            &replacement.runtime_name,
+                        ),
+                        expected_hash: in_flight.expected_replacement_hash.clone(),
+                        target_identity: identity,
+                        link_anchor_paths: if replacement.mode.is_directory_link() {
+                            vec![library.central.visible_skill_path_for_runtime(
+                                replacement.skill_id,
+                                &replacement.runtime_name,
+                            )]
+                        } else {
+                            Vec::new()
+                        },
+                        skill_id: replacement.skill_id,
+                        version_id: replacement.version_id.clone(),
+                        runtime_name: replacement.runtime_name.clone(),
+                    };
+                    snapshot.targets[index].state =
+                        SaveAsCopyReplacementTargetState::Applied(SaveAsCopyReplacementApplied {
+                            deployment: replacement,
+                            ownership,
+                        });
+                    self.persist_save_as_copy_recovery_snapshot(operation_id, &snapshot)?;
+                }
+            }
+        }
+
+        let items = save_as_copy_recovery_results(&snapshot);
+        let mut journal = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.save_as_copy.finish"))?;
+            database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| recovery_conflict("save_as_copy_operation_missing"))?
+        };
+        if journal.kind != SAVE_MARKDOWN_AS_COPY_KIND
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("save_as_copy_operation_not_recoverable"));
+        }
+        journal.phase = skillhub_core::OperationPhase::Committed;
+        journal.progress.phase = journal.phase;
+        journal.progress.completed = journal.progress.total;
+        journal.progress.message_code = "recovery.resolved".to_owned();
+        journal.error_code = None;
+        journal.recovery_data = serde_json::json!({
+            "skill_id": snapshot.copy_skill_id,
+            "version_id": snapshot.copy_version_id,
+            "items": items,
+            "recovery_required": false,
+        });
+        journal.result = Some(serde_json::json!({ "items": items }));
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.save_as_copy.finish"))?;
+        database.operation_repository().update_sync(&journal)
+    }
+
+    fn persist_save_as_copy_recovery_snapshot(
+        &self,
+        operation_id: OperationId,
+        snapshot: &SaveAsCopyReplacementRecoverySnapshot,
+    ) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.save_as_copy.checkpoint"))?;
+        let repository = database.operation_repository();
+        let mut journal = repository
+            .get_sync(operation_id)?
+            .ok_or_else(|| recovery_conflict("save_as_copy_operation_missing"))?;
+        if journal.kind != SAVE_MARKDOWN_AS_COPY_KIND
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("save_as_copy_operation_not_recoverable"));
+        }
+        journal.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        journal.progress.phase = journal.phase;
+        journal.progress.message_code = "operation.save_markdown_as_copy.needs_recovery".into();
+        journal.recovery_data = serde_json::to_value(snapshot).map_err(|error| {
+            internal_with_detail("recovery.save_as_copy.serialize", error.to_string())
+        })?;
+        repository.update_sync(&journal)
+    }
+
     /// Accepts only exact pre-adoption or target facts on each version
     /// consumer, plus the visible-tree replacement's known intermediate states.
     /// `require_restored` is used after compensation before resolving the journal.

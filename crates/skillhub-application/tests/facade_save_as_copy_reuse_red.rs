@@ -26,7 +26,7 @@ use skillhub_core::{
     physical_id_for_path, AppCommand, AppQuery, AppResult, ApplicationFacade, DeploymentId,
     ErrorCode, OperationId, OperationPhase, RecoveryCandidate,
 };
-use skillhub_storage::{CentralLibrary, Database, VersionStore};
+use skillhub_storage::{CentralLibrary, Database, GovernanceHistoryEvent, VersionStore};
 
 struct Fixture {
     database_path: std::path::PathBuf,
@@ -841,6 +841,440 @@ async fn replacement_database_failure_restores_original_and_settles_partial_resu
     assert!(!replacement_candidates(&facade)
         .await
         .contains(&journal.operation_id));
+}
+
+#[tokio::test]
+async fn interrupted_replacement_after_backup_rename_is_recoverable() {
+    let mut fixture = Fixture::new();
+    let source = seed_source_skill(&mut fixture, "Notebook", "# Notebook\n").await;
+    let database = open_database(&fixture.database_path);
+    let deployment = seed_managed_entry(
+        &mut fixture,
+        &database,
+        source.skill.id(),
+        &source.version_id,
+        "notebook-one",
+        "# Notebook\n",
+        false,
+    );
+    drop(database);
+    let facade = fixture.facade();
+    let copy = saved_copy(
+        save_copy(&facade, &source, SaveAsCopyInheritance::None, None)
+            .await
+            .expect("create the independent copy before simulating process interruption"),
+    );
+
+    let (original, destination, target_root) = {
+        let database = fixture.audit();
+        let original = database
+            .deployment_repository()
+            .list_all()
+            .expect("list deployments")
+            .into_iter()
+            .find(|record| record.id == deployment)
+            .expect("original deployment");
+        let target_root = database
+            .connection_for_test()
+            .query_row(
+                "SELECT path FROM targets WHERE id=?1",
+                [&original.target_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("target root");
+        let destination = PathBuf::from(&target_root).join(&original.runtime_name);
+        (original, destination, PathBuf::from(target_root))
+    };
+    let operation_id = OperationId::new();
+    let backup = target_root.join(format!(
+        ".skillhub-replacing-{operation_id}-{}",
+        original.id
+    ));
+    let original_hash = DeploymentFilesystem::hash_tree(&destination).expect("original hash");
+    let original_identity = physical_id_for_path(&destination).expect("original identity");
+    let new_version_path = fixture.temp_dir();
+    VersionStore::from_library(
+        &CentralLibrary::initialize(fixture.library_root.path()).expect("library"),
+    )
+    .materialize(&copy.version_id, &new_version_path)
+    .expect("materialize new version");
+    let new_hash = DeploymentFilesystem::hash_tree(&new_version_path).expect("new version hash");
+
+    // Simulate a process exit after moving the user's previous target aside
+    // and before installing the new version tree.
+    std::fs::rename(&destination, &backup).expect("move original tree to its recovery backup");
+    let mut journal = skillhub_core::OperationRecord::planned(
+        operation_id,
+        "save_markdown_as_copy",
+        "save-copy-replacement",
+    );
+    journal.phase = OperationPhase::Applying;
+    journal.progress.phase = OperationPhase::Applying;
+    journal.recovery_data = serde_json::json!({
+        "schema_version": 1,
+        "copy_skill_id": copy.skill_id,
+        "copy_version_id": copy.version_id,
+        "targets": [{
+            "fact": {
+                "deployment_id": original.id,
+                "target_id": original.target_id,
+                "path": destination,
+                "runtime_name": original.runtime_name,
+                "mode": original.mode,
+                "managed": true,
+                "owner_skill_id": source.skill.id(),
+                "version_id": source.version_id,
+                "expected_hash": original.expected_hash,
+                "consumer_deployment_ids": [original.id.to_string()],
+                "blocker": null
+            },
+            "replacement_path": destination,
+            "runtime_name": original.runtime_name,
+            "state": {
+                "in_flight": {
+                    "original_deployment": original,
+                    "original_ownership": {
+                        "mode": "managed_copy",
+                        "destination_path": destination,
+                        "source_path": fixture.library_root.path()
+                            .join("versions")
+                            .join(source.skill.id().to_string())
+                            .join(source.version_id.as_str()),
+                        "expected_hash": original_hash,
+                        "target_identity": original_identity,
+                        "link_anchor_paths": [],
+                        "skill_id": source.skill.id(),
+                        "version_id": source.version_id,
+                        "runtime_name": original.runtime_name
+                    },
+                    "backup_path": backup,
+                    "expected_replacement_hash": new_hash
+                }
+            }
+        }, {
+            "fact": {
+                "deployment_id": DeploymentId::new(),
+                "target_id": null,
+                "path": null,
+                "runtime_name": null,
+                "mode": null,
+                "managed": null,
+                "owner_skill_id": null,
+                "version_id": null,
+                "expected_hash": null,
+                "consumer_deployment_ids": [],
+                "blocker": "target_not_found"
+            },
+            "replacement_path": "",
+            "runtime_name": "Notebook",
+            "state": "pending"
+        }]
+    });
+    fixture
+        .audit()
+        .operation_repository()
+        .insert_sync(&journal)
+        .expect("persist interrupted replacement journal");
+
+    let restarted = fixture.facade();
+    std::fs::write(backup.join("SKILL.md"), "# changed after interruption\n")
+        .expect("simulate an unrelated edit to the operation backup");
+    let result = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("load recovery candidates");
+    let AppQueryResult::RecoveryCandidates(candidates) = result else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .is_some_and(|candidate| candidate.actions.is_empty()));
+    std::fs::write(backup.join("SKILL.md"), "# Notebook\n")
+        .expect("restore the exact fixture content after drift assertion");
+
+    let mut changed_journal = fixture
+        .audit()
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read operation before blocker drift assertion")
+        .expect("operation exists");
+    changed_journal.recovery_data["targets"][1]["fact"]["blocker"] =
+        serde_json::json!("target_not_managed");
+    fixture
+        .audit()
+        .operation_repository()
+        .update_sync(&changed_journal)
+        .expect("persist a stale blocked-target fact");
+    let result = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("load recovery candidate after blocked-target fact drift");
+    let AppQueryResult::RecoveryCandidates(candidates) = result else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates.iter().any(|candidate| {
+        candidate.operation_id == operation_id
+            && candidate.actions == [skillhub_core::RecoveryAction::CompleteOperation]
+    }), "a stale fact for an untouched blocked target must not hide safe recovery of an in-flight target");
+
+    let result = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck recovery candidates after restoring exact facts");
+    let AppQueryResult::RecoveryCandidates(candidates) = result else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .map(|candidate| candidate.actions.as_slice()),
+        Some([skillhub_core::RecoveryAction::CompleteOperation].as_slice()),
+        "the exact original backup should expose the operation's verified recovery action"
+    );
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: skillhub_core::RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("restore the original target and settle the interrupted partial result");
+
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("restored original"),
+        "# Notebook\n"
+    );
+    assert!(
+        !backup.exists(),
+        "the recovery backup should be consumed once restored"
+    );
+    let journal = fixture
+        .audit()
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read recovered operation")
+        .expect("operation exists");
+    assert_eq!(journal.phase, OperationPhase::Committed);
+    assert_eq!(journal.recovery_data["recovery_required"], false);
+    assert_eq!(journal.recovery_data["items"][0]["status"], "failed");
+    assert_eq!(journal.recovery_data["items"][1]["status"], "failed");
+}
+
+#[tokio::test]
+async fn interrupted_replacement_after_install_is_completed_without_duplicate_history() {
+    let mut fixture = Fixture::new();
+    let source = seed_source_skill(&mut fixture, "Notebook", "# Notebook\n").await;
+    let database = open_database(&fixture.database_path);
+    let deployment = seed_managed_entry(
+        &mut fixture,
+        &database,
+        source.skill.id(),
+        &source.version_id,
+        "notebook-one",
+        "# Notebook\n",
+        false,
+    );
+    drop(database);
+    let facade = fixture.facade();
+    let copy = saved_copy(
+        save_copy(&facade, &source, SaveAsCopyInheritance::None, None)
+            .await
+            .expect("create the independent copy before simulating process interruption"),
+    );
+
+    let (original, destination, target_root) = {
+        let database = fixture.audit();
+        let original = database
+            .deployment_repository()
+            .list_all()
+            .expect("list deployments")
+            .into_iter()
+            .find(|record| record.id == deployment)
+            .expect("original deployment");
+        let target_root = database
+            .connection_for_test()
+            .query_row(
+                "SELECT path FROM targets WHERE id=?1",
+                [&original.target_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("target root");
+        let destination = PathBuf::from(&target_root).join(&original.runtime_name);
+        (original, destination, PathBuf::from(target_root))
+    };
+    let operation_id = OperationId::new();
+    let backup = target_root.join(format!(
+        ".skillhub-replacing-{operation_id}-{}",
+        original.id
+    ));
+    let original_hash = DeploymentFilesystem::hash_tree(&destination).expect("original hash");
+    let original_identity = physical_id_for_path(&destination).expect("original identity");
+    let new_version_path = fixture.temp_dir();
+    VersionStore::from_library(
+        &CentralLibrary::initialize(fixture.library_root.path()).expect("library"),
+    )
+    .materialize(&copy.version_id, &new_version_path)
+    .expect("materialize new version");
+    let new_hash = DeploymentFilesystem::hash_tree(&new_version_path).expect("new version hash");
+
+    // Simulate a process exit after installing the new managed directory but
+    // before the deployment row changes from the original Skill.
+    std::fs::rename(&destination, &backup).expect("move old tree to recovery backup");
+    std::fs::rename(&new_version_path, &destination).expect("install copied Skill version");
+    let mut journal = skillhub_core::OperationRecord::planned(
+        operation_id,
+        "save_markdown_as_copy",
+        "save-copy-replacement",
+    );
+    journal.phase = OperationPhase::Applying;
+    journal.progress.phase = OperationPhase::Applying;
+    journal.recovery_data = serde_json::json!({
+        "schema_version": 1,
+        "copy_skill_id": copy.skill_id,
+        "copy_version_id": copy.version_id,
+        "targets": [{
+            "fact": {
+                "deployment_id": original.id,
+                "target_id": original.target_id,
+                "path": destination,
+                "runtime_name": original.runtime_name,
+                "mode": original.mode,
+                "managed": true,
+                "owner_skill_id": source.skill.id(),
+                "version_id": source.version_id,
+                "expected_hash": original.expected_hash,
+                "consumer_deployment_ids": [original.id.to_string()],
+                "blocker": null
+            },
+            "replacement_path": destination,
+            "runtime_name": original.runtime_name,
+            "state": {
+                "in_flight": {
+                    "original_deployment": original,
+                    "original_ownership": {
+                        "mode": "managed_copy",
+                        "destination_path": destination,
+                        "source_path": fixture.library_root.path()
+                            .join("versions")
+                            .join(source.skill.id().to_string())
+                            .join(source.version_id.as_str()),
+                        "expected_hash": original_hash,
+                        "target_identity": original_identity,
+                        "link_anchor_paths": [],
+                        "skill_id": source.skill.id(),
+                        "version_id": source.version_id,
+                        "runtime_name": original.runtime_name
+                    },
+                    "backup_path": backup,
+                    "expected_replacement_hash": new_hash
+                }
+            }
+        }]
+    });
+    fixture
+        .audit()
+        .operation_repository()
+        .insert_sync(&journal)
+        .expect("persist interrupted replacement journal");
+    // Simulate history's first append also surviving a process exit. Recovery
+    // must append the missing event without duplicating this one.
+    fixture
+        .audit()
+        .governance_history_repository()
+        .append(&GovernanceHistoryEvent {
+            event_id: format!("hist-{}", OperationId::new()),
+            relation_id: format!("managed:{deployment}"),
+            skill_id: Some(source.skill.id().to_string()),
+            skill_display_name: source.skill.display_name().to_owned(),
+            agent_presentation: serde_json::json!({ "target_id": original.target_id }),
+            path: destination.to_string_lossy().into_owned(),
+            scope: "managed_deployment".to_owned(),
+            project_id: None,
+            action: "replace_inheritance".to_owned(),
+            result: "source_relation_ended".to_owned(),
+            reason: None,
+            operation_id: Some(operation_id.to_string()),
+            occurred_at: 1,
+        })
+        .expect("persist first history event before process interruption");
+
+    let restarted = fixture.facade();
+    let result = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("load recovery candidates");
+    let AppQueryResult::RecoveryCandidates(candidates) = result else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates.iter().any(|candidate| {
+        candidate.operation_id == operation_id
+            && candidate.actions == [skillhub_core::RecoveryAction::CompleteOperation]
+    }));
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: skillhub_core::RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("finish deployment accounting and settle the interrupted replacement");
+
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("new copied Skill"),
+        "# Copied\n"
+    );
+    assert!(
+        !backup.exists(),
+        "verified old backup is removed after adoption"
+    );
+    let database = fixture.audit();
+    let deployed = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployment rows")
+        .into_iter()
+        .find(|record| record.id == deployment)
+        .expect("repointed deployment");
+    assert_eq!(deployed.skill_id, copy.skill_id);
+    assert_eq!(deployed.version_id, copy.version_id);
+    assert_eq!(deployed.state, DeploymentState::Deployed);
+    let journal = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read recovered operation")
+        .expect("operation exists");
+    assert_eq!(journal.phase, OperationPhase::Committed);
+    assert_eq!(journal.recovery_data["recovery_required"], false);
+    let history = database
+        .governance_history_repository()
+        .list_for_relation(&format!("managed:{deployment}"))
+        .expect("read replacement history");
+    assert_eq!(
+        history
+            .iter()
+            .filter(|event| {
+                event.operation_id.as_deref() == Some(operation_id.to_string().as_str())
+                    && event.result == "source_relation_ended"
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        history
+            .iter()
+            .filter(|event| {
+                event.operation_id.as_deref() == Some(operation_id.to_string().as_str())
+                    && event.result == "new_relation_established"
+            })
+            .count(),
+        1
+    );
 }
 
 /// RED：预览一次性——提交成功后同一 preview_id 复用被拒绝；记账漂移
