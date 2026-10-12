@@ -1031,6 +1031,10 @@ impl LocalDeploymentBackend {
                     .to_owned(),
                 ),
             );
+            error.params.insert(
+                "target_entry_identity".to_owned(),
+                serde_json::Value::String(applied.ownership.target_identity.clone()),
+            );
         }
         error
             .params
@@ -17658,29 +17662,11 @@ fn pending_recovery_targets(
                 "runtime_name": error.params.get("runtime_name"),
                 "mode": error.params.get("requested_mode"),
                 "physical_target_id": target.physical_target_id,
+                "target_entry_identity": error.params.get("target_entry_identity"),
             }))
         })
         .collect();
     serde_json::json!({ "pending_targets": pending })
-}
-
-fn has_deployment_recovery_targets(recovery_data: &serde_json::Value) -> bool {
-    recovery_data
-        .get("pending_targets")
-        .and_then(serde_json::Value::as_array)
-        .is_some_and(|targets| {
-            !targets.is_empty()
-                && targets.iter().all(|target| {
-                    target
-                        .get("path")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|path| !path.is_empty())
-                        && matches!(
-                            target.get("mode").and_then(serde_json::Value::as_str),
-                            Some("managed_copy" | "symbolic_link" | "directory_junction")
-                        )
-                })
-        })
 }
 
 fn has_relation_migration_recovery_journal(recovery_data: &serde_json::Value) -> bool {
@@ -19365,7 +19351,8 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 mod tests {
     use super::{
         civil_date_from_days, command_changes_version_adoption_facts, format_rfc3339_utc,
-        load_version_adoption_recovery_record, may_register_import_check, LocalApplicationFacade,
+        load_version_adoption_recovery_record, may_register_import_check, pending_recovery_targets,
+        LocalApplicationFacade,
     };
     use skillhub_core::api::{AppCommand, AppQuery, AppQueryResult};
     use skillhub_core::catalog::{CallPolicy, Skill};
@@ -19373,7 +19360,51 @@ mod tests {
         ApplicationFacade, IgnoreSubject, OperationRecord, ProjectId, RecoveryAction, SkillId,
     };
     use skillhub_storage::Database;
+    use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn deployment_recovery_journal_keeps_target_entry_identity() {
+        let version_id: skillhub_core::VersionId =
+            format!("sha256:{}", "a".repeat(64)).parse().unwrap();
+        let summary = skillhub_core::DeploymentSummary {
+            operation_id: skillhub_core::OperationId::new(),
+            skill_id: SkillId::new(),
+            version_id: version_id.clone(),
+            targets: vec![skillhub_core::TargetOperationResult {
+                physical_target_id: "fs:target-root".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                status: skillhub_core::TargetOperationStatus::Failed,
+                deployment_id: None,
+                version_id,
+                error_code: Some("operation.conflict".into()),
+                error: Some(skillhub_core::TargetOperationError {
+                    code: skillhub_core::ErrorCode::OperationConflict,
+                    severity: skillhub_core::Severity::Error,
+                    params: BTreeMap::from([
+                        ("path".into(), "/targets/skill".into()),
+                        ("runtime_name".into(), "skill".into()),
+                        ("requested_mode".into(), "managed_copy".into()),
+                        ("target_entry_identity".into(), "fs:entry".into()),
+                    ]),
+                    actions: vec![RecoveryAction::Retry],
+                }),
+                residue: true,
+            }],
+            committed: false,
+        };
+
+        let recovery = pending_recovery_targets(&summary);
+
+        assert_eq!(
+            recovery["pending_targets"][0]["physical_target_id"],
+            "fs:target-root"
+        );
+        assert_eq!(
+            recovery["pending_targets"][0]["target_entry_identity"],
+            "fs:entry"
+        );
+    }
 
     #[tokio::test]
     async fn version_adoption_recovery_reads_the_record_after_acquiring_its_lock() {
@@ -19936,22 +19967,38 @@ mod tests {
         let pending_target = workspace.path().join("pending-target-copy");
         std::fs::create_dir_all(&pending_target).unwrap();
         std::fs::write(pending_target.join("SKILL.md"), "# interrupted\n").unwrap();
+        let physical_target_id = skillhub_core::physical_id_for_path(workspace.path()).unwrap();
+        let target_entry_identity = skillhub_core::physical_id_for_path(&pending_target).unwrap();
         let operation_id = skillhub_core::OperationId::new();
         let mut deployment = OperationRecord::planned(operation_id, "deploy_skill", "fingerprint");
         deployment.recovery_data = serde_json::json!({
             "pending_targets": [{
                 "path": pending_target,
+                "runtime_name": "pending-target-copy",
                 "mode": "managed_copy",
+                "physical_target_id": physical_target_id,
+                "target_entry_identity": target_entry_identity,
             }],
         });
         let facade = LocalApplicationFacade::new(database);
-        facade
-            .database_for_tests()
-            .lock()
-            .unwrap()
-            .operation_repository()
-            .insert_sync(&deployment)
-            .unwrap();
+        {
+            let database = facade.database_for_tests();
+            let database = database.lock().unwrap();
+            database
+                .target_repository()
+                .upsert_physical_target(&skillhub_storage::PhysicalTargetRegistration {
+                    id: &physical_target_id,
+                    agent_id: "recovery-test",
+                    project_id: None,
+                    scope: "global",
+                    path: workspace.path().to_string_lossy().as_ref(),
+                })
+                .unwrap();
+            database
+                .operation_repository()
+                .insert_sync(&deployment)
+                .unwrap();
+        }
 
         let candidates = facade
             .query(AppQuery::ListRecoveryCandidates)
@@ -20240,7 +20287,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
-                    "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
+                    "deploy_skill" if self.load_validated_deployment_recovery(&record).is_ok() => {
                         vec![RecoveryAction::RollbackOperation]
                     }
                     "set_current_version"
@@ -20419,6 +20466,95 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
+    fn load_validated_deployment_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<Vec<PendingDeploymentRecoveryTarget>> {
+        if record.kind != "deploy_skill"
+            || !matches!(
+                record.phase,
+                skillhub_core::OperationPhase::Planned
+                    | skillhub_core::OperationPhase::Applying
+                    | skillhub_core::OperationPhase::Verifying
+                    | skillhub_core::OperationPhase::NeedsRecovery
+            )
+        {
+            return Err(recovery_conflict("deploy_recovery_phase_invalid"));
+        }
+        let pending = record
+            .recovery_data
+            .get("pending_targets")
+            .and_then(serde_json::Value::as_array)
+            .filter(|targets| !targets.is_empty())
+            .ok_or_else(|| recovery_conflict("deploy_recovery_targets_missing"))?;
+        let registered_roots = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.deploy_skill.validate"))?;
+            database.target_repository().paths_by_id()?
+        };
+        let filesystem = DeploymentFilesystem::new();
+        let mut seen_targets = HashSet::new();
+        let mut validated = Vec::with_capacity(pending.len());
+        for target in pending {
+            let path = target
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .ok_or_else(|| recovery_conflict("deploy_recovery_target_path_missing"))?;
+            let runtime_name = target
+                .get("runtime_name")
+                .and_then(serde_json::Value::as_str)
+                .filter(|name| is_safe_runtime_name(name))
+                .ok_or_else(|| recovery_conflict("deploy_recovery_runtime_name_invalid"))?
+                .to_owned();
+            let mode = match target.get("mode").and_then(serde_json::Value::as_str) {
+                Some("symbolic_link") => DeploymentMode::SymbolicLink,
+                Some("directory_junction") => DeploymentMode::DirectoryJunction,
+                Some("managed_copy") => DeploymentMode::ManagedCopy,
+                _ => return Err(recovery_conflict("deploy_recovery_target_mode_invalid")),
+            };
+            let physical_target_id = target
+                .get("physical_target_id")
+                .and_then(serde_json::Value::as_str)
+                .filter(|identity| !identity.is_empty())
+                .ok_or_else(|| recovery_conflict("deploy_recovery_target_identity_missing"))?
+                .to_owned();
+            let target_entry_identity = target
+                .get("target_entry_identity")
+                .and_then(serde_json::Value::as_str)
+                .filter(|identity| !identity.is_empty())
+                .ok_or_else(|| recovery_conflict("deploy_recovery_entry_identity_missing"))?
+                .to_owned();
+            if !seen_targets.insert((physical_target_id.clone(), runtime_name.clone())) {
+                return Err(recovery_conflict("deploy_recovery_target_duplicate"));
+            }
+            let root = registered_roots
+                .get(&physical_target_id)
+                .map(PathBuf::from)
+                .ok_or_else(|| recovery_conflict("deploy_recovery_registered_root_missing"))?;
+            filesystem.validate_residue_identity(
+                &root,
+                &path,
+                &runtime_name,
+                mode,
+                &physical_target_id,
+                &target_entry_identity,
+            )?;
+            validated.push(PendingDeploymentRecoveryTarget {
+                root,
+                path,
+                runtime_name,
+                mode,
+                physical_target_id,
+                target_entry_identity,
+            });
+        }
+        Ok(validated)
+    }
+
     fn load_validated_save_as_copy_recovery(
         &self,
         record: &skillhub_core::OperationRecord,
@@ -21904,26 +22040,17 @@ impl LocalRecoveryBackend {
         {
             return Err(unsupported("recovery.resolve.deploy_skill"));
         }
-        let pending = record
-            .recovery_data
-            .get("pending_targets")
-            .and_then(serde_json::Value::as_array)
-            .filter(|targets| !targets.is_empty())
-            .ok_or_else(|| unsupported("recovery.resolve.deploy_skill"))?;
+        let pending = self.load_validated_deployment_recovery(&record)?;
         let filesystem = DeploymentFilesystem::new();
         for target in pending {
-            let path = target
-                .get("path")
-                .and_then(serde_json::Value::as_str)
-                .filter(|path| !path.is_empty())
-                .ok_or_else(|| recovery_conflict("deploy_recovery_target_path_missing"))?;
-            let mode = match target.get("mode").and_then(serde_json::Value::as_str) {
-                Some("symbolic_link") => DeploymentMode::SymbolicLink,
-                Some("directory_junction") => DeploymentMode::DirectoryJunction,
-                Some("managed_copy") => DeploymentMode::ManagedCopy,
-                _ => return Err(recovery_conflict("deploy_recovery_target_mode_invalid")),
-            };
-            filesystem.remove_residue(Path::new(path), mode)?;
+            filesystem.remove_residue_if_identity(
+                &target.root,
+                &target.path,
+                &target.runtime_name,
+                target.mode,
+                &target.physical_target_id,
+                &target.target_entry_identity,
+            )?;
         }
         Ok(())
     }
@@ -22058,6 +22185,15 @@ struct LocalRecoveryBackend {
     database: Arc<Mutex<Database>>,
     library_runtime: Arc<library_runtime::LibraryRuntime>,
     version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+struct PendingDeploymentRecoveryTarget {
+    root: PathBuf,
+    path: PathBuf,
+    runtime_name: String,
+    mode: DeploymentMode,
+    physical_target_id: String,
+    target_entry_identity: String,
 }
 
 async fn load_version_adoption_recovery_record(

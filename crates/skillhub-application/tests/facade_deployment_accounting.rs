@@ -704,9 +704,12 @@ async fn a_storage_failure_rolls_back_the_written_target() {
 #[tokio::test]
 async fn rolling_back_recovery_removes_the_recorded_target() {
     let harness = harness("anthropic.claude-code", "find-skills").await;
+    let physical_target_id = register_recovery_target(&harness);
     let residue = harness.target_root.path().join("find-skills");
     std::fs::create_dir_all(&residue).expect("half-written target");
     std::fs::write(residue.join("SKILL.md"), "# half written\n").expect("half-written file");
+    let target_entry_identity =
+        skillhub_core::physical_id_for_path(&residue).expect("residue identity");
 
     let operation_id = OperationId::new();
     let progress = serde_json::json!({
@@ -722,6 +725,8 @@ async fn rolling_back_recovery_removes_the_recorded_target() {
                 "path": residue.to_string_lossy(),
                 "runtime_name": "find-skills",
                 "mode": "managed_copy",
+                "physical_target_id": physical_target_id,
+                "target_entry_identity": target_entry_identity,
             }],
         },
     });
@@ -799,6 +804,164 @@ async fn rolling_back_recovery_removes_the_recorded_target() {
         .find(|operation| operation.operation_id == operation_id)
         .expect("resolved operation stays in the history");
     assert_eq!(operation.phase, OperationPhase::RolledBack);
+}
+
+#[tokio::test]
+async fn deploy_recovery_rejects_a_residue_outside_the_registered_target_root() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let physical_target_id = register_recovery_target(&harness);
+    let outside = tempfile::tempdir().expect("outside directory");
+    let residue = outside.path().join("find-skills");
+    std::fs::create_dir_all(&residue).expect("foreign target");
+    std::fs::write(residue.join("SKILL.md"), "# preserve me\n").expect("foreign content");
+    let target_entry_identity =
+        skillhub_core::physical_id_for_path(&residue).expect("residue identity");
+    let operation_id = seed_deploy_recovery(
+        &harness,
+        &residue,
+        "find-skills",
+        "managed_copy",
+        &physical_target_id,
+        &target_entry_identity,
+    );
+
+    let candidates = recovery_candidates(&harness).await;
+    assert!(
+        candidates[0].actions.is_empty(),
+        "an escaped path has no action"
+    );
+    assert!(
+        harness
+            .facade
+            .execute(AppCommand::ResolveRecovery(
+                skillhub_core::ResolveRecovery {
+                    operation_id,
+                    action: RecoveryAction::RollbackOperation,
+                }
+            ))
+            .await
+            .is_err(),
+        "the command boundary must reject the same malformed record"
+    );
+    assert_eq!(
+        std::fs::read_to_string(residue.join("SKILL.md")).expect("foreign file survives"),
+        "# preserve me\n"
+    );
+}
+
+#[tokio::test]
+async fn deploy_recovery_rejects_a_replaced_residue_entry() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let physical_target_id = register_recovery_target(&harness);
+    let residue = harness.target_root.path().join("find-skills");
+    std::fs::create_dir_all(&residue).expect("interrupted target");
+    std::fs::write(residue.join("SKILL.md"), "# interrupted\n").expect("interrupted file");
+    let original_identity =
+        skillhub_core::physical_id_for_path(&residue).expect("original identity");
+    let moved_aside = harness.target_root.path().join("find-skills-original");
+    std::fs::rename(&residue, &moved_aside).expect("move original residue aside");
+    std::fs::create_dir_all(&residue).expect("foreign replacement");
+    std::fs::write(residue.join("SKILL.md"), "# preserve replacement\n")
+        .expect("replacement content");
+    assert_ne!(
+        skillhub_core::physical_id_for_path(&residue).as_deref(),
+        Some(original_identity.as_str()),
+        "replacement must have a different physical identity"
+    );
+    let operation_id = seed_deploy_recovery(
+        &harness,
+        &residue,
+        "find-skills",
+        "managed_copy",
+        &physical_target_id,
+        &original_identity,
+    );
+
+    let candidates = recovery_candidates(&harness).await;
+    assert!(
+        candidates[0].actions.is_empty(),
+        "a replaced entry has no action"
+    );
+    assert!(
+        harness
+            .facade
+            .execute(AppCommand::ResolveRecovery(
+                skillhub_core::ResolveRecovery {
+                    operation_id,
+                    action: RecoveryAction::RollbackOperation,
+                }
+            ))
+            .await
+            .is_err(),
+        "the command boundary must revalidate the replaced entry"
+    );
+    assert_eq!(
+        std::fs::read_to_string(residue.join("SKILL.md")).expect("replacement survives"),
+        "# preserve replacement\n"
+    );
+}
+
+fn register_recovery_target(harness: &Harness) -> String {
+    let physical_target_id =
+        skillhub_core::physical_id_for_path(harness.target_root.path()).expect("target identity");
+    side_connection(harness)
+        .execute(
+            "INSERT INTO targets (id, agent_id, project_id, scope, path, metadata_json, created_at) VALUES (?1, 'recovery-test', NULL, 'global', ?2, '{}', 0)",
+            rusqlite::params![
+                physical_target_id,
+                harness.target_root.path().to_string_lossy().as_ref()
+            ],
+        )
+        .expect("register recovery target root");
+    physical_target_id
+}
+
+fn seed_deploy_recovery(
+    harness: &Harness,
+    path: &std::path::Path,
+    runtime_name: &str,
+    mode: &str,
+    physical_target_id: &str,
+    target_entry_identity: &str,
+) -> OperationId {
+    let operation_id = OperationId::new();
+    let progress = serde_json::json!({
+        "progress": {
+            "operation_id": operation_id.to_string(),
+            "phase": "needs_recovery",
+            "completed": 0,
+            "total": 1,
+            "message_code": "operation.deploy_skill.needs_recovery",
+        },
+        "recovery_data": {
+            "pending_targets": [{
+                "path": path.to_string_lossy(),
+                "runtime_name": runtime_name,
+                "mode": mode,
+                "physical_target_id": physical_target_id,
+                "target_entry_identity": target_entry_identity,
+            }],
+        },
+    });
+    side_connection(harness)
+        .execute(
+            "INSERT INTO operations(operation_id,kind,state,phase,request_fingerprint,progress_json,inverse_json,error_code,created_at,updated_at) VALUES(?1,'deploy_skill','needs_recovery','needs_recovery','fixture',?2,'{}','operation.conflict',0,0)",
+            rusqlite::params![operation_id.to_string(), progress.to_string()],
+        )
+        .expect("seed recovery candidate");
+    operation_id
+}
+
+async fn recovery_candidates(harness: &Harness) -> Vec<skillhub_core::RecoveryCandidate> {
+    let AppQueryResult::RecoveryCandidates(candidates) = harness
+        .facade
+        .query(RootAppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    candidates
 }
 
 /// D-11 regression: a destination already occupied by a foreign directory

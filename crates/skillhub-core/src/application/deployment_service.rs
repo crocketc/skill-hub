@@ -64,6 +64,7 @@ impl From<AppError> for TargetOperationError {
             "path",
             "requested_mode",
             "runtime_name",
+            "target_entry_identity",
             "target_path",
         ];
         let params = error
@@ -84,6 +85,32 @@ impl From<AppError> for TargetOperationError {
             params,
             actions: error.actions,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TargetOperationError;
+    use crate::{AppError, ErrorCode, RecoveryAction, Severity};
+
+    #[test]
+    fn target_error_keeps_the_deployment_entry_identity_for_recovery() {
+        let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("target_entry_identity", "fs:entry-42")
+            .with_param("private_path", "/private/user/data")
+            .with_action(RecoveryAction::Retry);
+
+        let projected = TargetOperationError::from(error);
+
+        assert_eq!(
+            projected
+                .params
+                .get("target_entry_identity")
+                .map(String::as_str),
+            Some("fs:entry-42")
+        );
+        assert!(!projected.params.contains_key("private_path"));
+        assert_eq!(projected.actions, vec![RecoveryAction::Retry]);
     }
 }
 

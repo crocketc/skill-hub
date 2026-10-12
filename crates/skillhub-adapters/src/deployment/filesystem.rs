@@ -333,13 +333,74 @@ impl DeploymentFilesystem {
         if fs::symlink_metadata(path).is_err() {
             return Ok(());
         }
-        match mode {
-            DeploymentMode::ManagedCopy => fs::remove_dir_all(path).map_err(io_error),
-            DeploymentMode::SymbolicLink => symlink::remove_dir_link(path).map_err(io_error),
-            DeploymentMode::DirectoryJunction => {
-                junction_windows::remove_junction(path).map_err(io_error)
-            }
+        remove_residue_path(path, mode)
+    }
+
+    /// Checks that a deployment recovery entry is still at its recorded
+    /// registered root and has the physical identity captured when the
+    /// application attempted to undo the write. A missing entry is safe to
+    /// treat as already removed.
+    pub fn validate_residue_identity(
+        &self,
+        root: &Path,
+        path: &Path,
+        runtime_name: &str,
+        mode: DeploymentMode,
+        expected_target_id: &str,
+        expected_entry_identity: &str,
+    ) -> AppResult<bool> {
+        skillhub_core::deployment::validate_runtime_name(runtime_name)?;
+        if !root.is_dir()
+            || physical_id_for_path(root).as_deref() != Some(expected_target_id)
+            || path.parent() != Some(root)
+            || path.file_name() != Some(std::ffi::OsStr::new(runtime_name))
+        {
+            return Err(ownership_mismatch(path));
         }
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(io_error(error)),
+        };
+        let mode_matches_entry_type = residue_entry_type_matches(
+            mode,
+            metadata.is_dir(),
+            metadata.file_type().is_symlink(),
+            Self::is_directory_link_entry(path),
+        );
+        let identity = match mode {
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
+            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
+            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
+        };
+        if !mode_matches_entry_type || identity.as_deref() != Some(expected_entry_identity) {
+            return Err(ownership_mismatch(path));
+        }
+        Ok(true)
+    }
+
+    /// Removes deployment residue only after rechecking its root and entry
+    /// identity immediately before the filesystem operation.
+    pub fn remove_residue_if_identity(
+        &self,
+        root: &Path,
+        path: &Path,
+        runtime_name: &str,
+        mode: DeploymentMode,
+        expected_target_id: &str,
+        expected_entry_identity: &str,
+    ) -> AppResult<()> {
+        if self.validate_residue_identity(
+            root,
+            path,
+            runtime_name,
+            mode,
+            expected_target_id,
+            expected_entry_identity,
+        )? {
+            remove_residue_path(path, mode)?;
+        }
+        Ok(())
     }
 
     /// Removes a target after the caller has explicitly confirmed a restore.
@@ -348,6 +409,81 @@ impl DeploymentFilesystem {
     pub fn replace_owned(&self, proof: &OwnershipProof) -> AppResult<()> {
         verify_identity(proof)?;
         remove_target(proof)
+    }
+}
+
+fn remove_residue_path(path: &Path, mode: DeploymentMode) -> AppResult<()> {
+    match mode {
+        DeploymentMode::ManagedCopy => fs::remove_dir_all(path).map_err(io_error),
+        DeploymentMode::SymbolicLink => symlink::remove_dir_link(path).map_err(io_error),
+        DeploymentMode::DirectoryJunction => {
+            junction_windows::remove_junction(path).map_err(io_error)
+        }
+    }
+}
+
+fn residue_entry_type_matches(
+    mode: DeploymentMode,
+    is_directory: bool,
+    is_symlink: bool,
+    is_directory_link: bool,
+) -> bool {
+    match mode {
+        DeploymentMode::ManagedCopy => is_directory && !is_symlink && !is_directory_link,
+        DeploymentMode::SymbolicLink => is_symlink,
+        DeploymentMode::DirectoryJunction => is_directory_link,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::residue_entry_type_matches;
+    use skillhub_core::DeploymentMode;
+
+    #[cfg(windows)]
+    use super::DeploymentFilesystem;
+    #[cfg(windows)]
+    use skillhub_core::physical_id_for_path;
+
+    #[test]
+    fn managed_copy_recovery_rejects_any_directory_link() {
+        assert!(!residue_entry_type_matches(
+            DeploymentMode::ManagedCopy,
+            true,
+            false,
+            true,
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_copy_recovery_rejects_a_replaced_directory_junction() {
+        use super::junction_windows;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let root = workspace.path().join("target-root");
+        let source = workspace.path().join("source");
+        let residue = root.join("skill");
+        std::fs::create_dir(&root).expect("target root");
+        std::fs::create_dir(&source).expect("junction source");
+        std::fs::write(source.join("SKILL.md"), "# preserve\n").expect("source content");
+        junction_windows::create_junction(&source, &residue).expect("replacement junction");
+
+        let filesystem = DeploymentFilesystem::new();
+        let result = filesystem.validate_residue_identity(
+            &root,
+            &residue,
+            "skill",
+            DeploymentMode::ManagedCopy,
+            &physical_id_for_path(&root).expect("root identity"),
+            &physical_id_for_path(&residue).expect("resolved replacement identity"),
+        );
+
+        assert!(result.is_err(), "a junction is not a managed copy residue");
+        assert!(
+            source.join("SKILL.md").is_file(),
+            "junction target survives"
+        );
     }
 }
 
