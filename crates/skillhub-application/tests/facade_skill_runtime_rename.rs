@@ -574,3 +574,93 @@ async fn rename_commit_records_recovery_when_backup_cleanup_checkpoint_fails() {
         .expect("rename operation");
     assert_eq!(record.phase, skillhub_core::OperationPhase::Committed);
 }
+
+#[tokio::test]
+async fn rollback_rejects_same_content_replacement_of_created_target() {
+    let fixture = fixture_with_two_managed_targets().await;
+    let prepared = prepare_subject_rename(&fixture, "new-runtime").await;
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read prepared operation")
+        .expect("rename operation");
+    let plan = record.recovery_data["plans"][1].clone();
+    let target_root = fixture.target_paths[1].parent().expect("target root");
+    let backup = PathBuf::from(plan["backup_path"].as_str().expect("backup path"));
+    std::fs::rename(&fixture.target_paths[1], &backup).expect("simulate moved original entry");
+
+    let operation_entry = target_root.join(".operation-created-target");
+    std::fs::create_dir(&operation_entry).expect("create operation target fixture");
+    std::fs::write(operation_entry.join("SKILL.md"), "# same content\n")
+        .expect("write operation target fixture");
+    let expected_hash = DeploymentFilesystem::hash_tree(&operation_entry).expect("target hash");
+    let expected_identity = physical_id_for_path(&operation_entry).expect("target identity");
+    let moved_operation_entry = target_root.join(".operation-created-target-moved");
+    std::fs::rename(&operation_entry, &moved_operation_entry)
+        .expect("move original operation target aside");
+
+    let replacement = target_root.join("new-runtime");
+    std::fs::create_dir(&replacement).expect("create replacement target");
+    std::fs::write(replacement.join("SKILL.md"), "# same content\n")
+        .expect("write replacement content");
+    assert_eq!(
+        DeploymentFilesystem::hash_tree(&replacement).expect("replacement hash"),
+        expected_hash
+    );
+    assert_ne!(
+        physical_id_for_path(&replacement).as_deref(),
+        Some(expected_identity.as_str()),
+        "replacement must be a different physical entry"
+    );
+
+    record.recovery_data["new_target_hash"] = serde_json::json!(expected_hash);
+    record.recovery_data["plans"][1]["created_new_entry"] = serde_json::json!(true);
+    record.recovery_data["plans"][1]["created_entry_identity"] =
+        serde_json::json!(expected_identity);
+    record.recovery_data["plans"][1]["moved_previous_entry"] = serde_json::json!(true);
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.message_code = "operation.needs_recovery".to_owned();
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist interrupted rename fixture");
+
+    let recovery: AppCommand = serde_json::from_value(serde_json::json!({
+        "type": "resolve_recovery",
+        "payload": {
+            "operation_id": prepared.operation_id.to_string(),
+            "action": "rollback_operation"
+        }
+    }))
+    .expect("recovery command");
+    let error = fixture
+        .facade
+        .execute(recovery)
+        .await
+        .expect_err("same-content replacement must not be deleted");
+
+    assert_eq!(error.code, skillhub_core::ErrorCode::OperationConflict);
+    assert_eq!(
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
+        Some("subject_rename_target_identity_changed")
+    );
+    assert_eq!(
+        std::fs::read_to_string(replacement.join("SKILL.md")).expect("replacement survives"),
+        "# same content\n"
+    );
+    assert_eq!(
+        Database::open(&fixture.database_path)
+            .expect("reopen database")
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read recovery state")
+            .expect("rename operation")
+            .phase,
+        skillhub_core::OperationPhase::NeedsRecovery
+    );
+}

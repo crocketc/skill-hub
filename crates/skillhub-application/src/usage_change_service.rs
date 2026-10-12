@@ -104,6 +104,8 @@ struct SubjectRenamePlan {
     observed_identity: Option<String>,
     target_root_identity: String,
     created_new_entry: bool,
+    #[serde(default)]
+    created_entry_identity: Option<String>,
     moved_previous_entry: bool,
     deployment_record_updated: bool,
     backup_finalized: bool,
@@ -245,6 +247,8 @@ struct ManagedUsageChangePlan {
     backup_path: String,
     #[serde(default)]
     backup_created: bool,
+    #[serde(default)]
+    created_entry_identity: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -697,6 +701,7 @@ impl LocalApplicationFacade {
                 observed_identity,
                 target_root_identity,
                 created_new_entry: false,
+                created_entry_identity: None,
                 moved_previous_entry: false,
                 deployment_record_updated: false,
                 backup_finalized: false,
@@ -1380,6 +1385,7 @@ impl LocalApplicationFacade {
                 observed_identity,
                 backup_path: backup_path.to_string_lossy().into_owned(),
                 backup_created: false,
+                created_entry_identity: None,
             });
         }
         if plans.len() != requested_ids.len() {
@@ -2523,6 +2529,7 @@ impl LocalApplicationFacade {
             .clone()
             .ok_or_else(|| operation_conflict("subject_rename_version_hash_missing"))?;
         let renamed_skill = renamed_skill(journal)?;
+        let filesystem = DeploymentFilesystem::new();
         if journal.visible_rename.is_none() {
             let previous_output = library.central.visible_skill_path(&journal.original_skill);
             let output = library.central.visible_skill_path(&renamed_skill);
@@ -2549,9 +2556,19 @@ impl LocalApplicationFacade {
             .visible_rename
             .clone()
             .ok_or_else(|| operation_conflict("subject_rename_visible_journal_missing"))?;
-        if fs::symlink_metadata(&visible_rename.previous_output).is_ok()
-            && fs::symlink_metadata(&visible_rename.backup).is_err()
-        {
+        let previous_visible_exists = checked_path_exists(
+            &visible_rename.previous_output,
+            "subject_rename_visible_metadata_unavailable",
+        )?;
+        let visible_backup_exists = checked_path_exists(
+            &visible_rename.backup,
+            "subject_rename_visible_metadata_unavailable",
+        )?;
+        let renamed_visible_exists = checked_path_exists(
+            &visible_rename.output,
+            "subject_rename_visible_metadata_unavailable",
+        )?;
+        if previous_visible_exists && !visible_backup_exists {
             library.central.prepare_visible_skill_rename_with_backup(
                 &journal.original_skill,
                 &renamed_skill,
@@ -2559,9 +2576,7 @@ impl LocalApplicationFacade {
                 &visible_rename.backup,
                 &journal.original_visible_hash,
             )?;
-        } else if fs::symlink_metadata(&visible_rename.output).is_err()
-            || fs::symlink_metadata(&visible_rename.backup).is_err()
-        {
+        } else if !renamed_visible_exists || !visible_backup_exists {
             return Err(operation_conflict("subject_rename_visible_paths_changed"));
         }
 
@@ -2576,29 +2591,54 @@ impl LocalApplicationFacade {
             {
                 return Err(operation_conflict("subject_rename_target_identity_changed"));
             }
-            if fs::symlink_metadata(destination).is_err() && !plan.created_new_entry {
-                match plan.mode {
-                    DeploymentMode::ManagedCopy => {
-                        super::copy_directory_tree(&visible_rename.output, destination)?;
-                    }
-                    DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
-                        create_dir_link(&visible_rename.output, destination)?;
-                    }
-                }
-                if DeploymentFilesystem::hash_tree(destination)? != new_hash {
+            let destination_exists = match fs::symlink_metadata(destination) {
+                Ok(_) => true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                Err(_) => {
                     return Err(operation_conflict(
-                        "subject_rename_target_verification_failed",
+                        "subject_rename_target_metadata_unavailable",
                     ));
                 }
-                journal.plans[index].created_new_entry = true;
-                persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
-            } else if fs::symlink_metadata(destination).is_ok() {
-                if entry_fingerprint(destination)?.as_deref() != Some(new_hash.as_str()) {
-                    return Err(operation_conflict("subject_rename_target_changed"));
+            };
+            match (plan.created_new_entry, destination_exists) {
+                (false, false) => {
+                    match plan.mode {
+                        DeploymentMode::ManagedCopy => {
+                            super::copy_directory_tree(&visible_rename.output, destination)?;
+                        }
+                        DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                            create_dir_link(&visible_rename.output, destination)?;
+                        }
+                    }
+                    if DeploymentFilesystem::hash_tree(destination)? != new_hash {
+                        return Err(operation_conflict(
+                            "subject_rename_target_verification_failed",
+                        ));
+                    }
+                    let identity = filesystem.recovery_entry_identity(plan.mode, destination)?;
+                    journal.plans[index].created_new_entry = true;
+                    journal.plans[index].created_entry_identity = Some(identity);
+                    persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
                 }
-                journal.plans[index].created_new_entry = true;
+                (true, true) => {
+                    let expected_identity =
+                        plan.created_entry_identity.as_deref().ok_or_else(|| {
+                            operation_conflict("subject_rename_target_identity_missing")
+                        })?;
+                    if filesystem.recovery_entry_identity(plan.mode, destination)?
+                        != expected_identity
+                    {
+                        return Err(operation_conflict("subject_rename_target_identity_changed"));
+                    }
+                    if entry_fingerprint(destination)?.as_deref() != Some(new_hash.as_str()) {
+                        return Err(operation_conflict("subject_rename_target_changed"));
+                    }
+                }
+                _ => return Err(operation_conflict("subject_rename_target_identity_changed")),
             }
-            if fs::symlink_metadata(backup).is_err() && !plan.moved_previous_entry {
+            let backup_exists =
+                checked_path_exists(backup, "subject_rename_backup_metadata_unavailable")?;
+            if !backup_exists && !plan.moved_previous_entry {
                 if entry_identity(previous)? != plan.observed_identity {
                     return Err(operation_conflict("subject_rename_target_identity_changed"));
                 }
@@ -2610,11 +2650,13 @@ impl LocalApplicationFacade {
                 fs::rename(previous, backup).map_err(subject_rename_io_error)?;
                 journal.plans[index].moved_previous_entry = true;
                 persist_subject_rename(self, record, journal, OperationPhase::Applying)?;
-            } else if fs::symlink_metadata(backup).is_ok() {
+            } else if backup_exists {
                 if entry_identity(backup)? != plan.observed_identity {
                     return Err(operation_conflict("subject_rename_backup_changed"));
                 }
                 journal.plans[index].moved_previous_entry = true;
+            } else {
+                return Err(operation_conflict("subject_rename_backup_unavailable"));
             }
 
             if !plan.deployment_record_updated {
@@ -2681,7 +2723,7 @@ impl LocalApplicationFacade {
                 }
                 let plan = &journal.plans[index];
                 let backup = Path::new(&plan.backup_path);
-                if fs::symlink_metadata(backup).is_ok() {
+                if checked_path_exists(backup, "subject_rename_backup_metadata_unavailable")? {
                     if entry_identity(backup)? != plan.observed_identity {
                         return Err(operation_conflict("subject_rename_backup_changed"));
                     }
@@ -3816,6 +3858,11 @@ impl LocalApplicationFacade {
             let effective = source_plan;
             let prepared = filesystem.prepare(&effective)?;
             let applied = filesystem.apply(prepared)?;
+            plan.created_entry_identity = Some(
+                filesystem
+                    .recovery_entry_identity(applied.ownership.mode, &applied.destination_path)?,
+            );
+            self.persist_managed_usage_change_created_entry(operation_id, plan)?;
             filesystem.verify(&applied)?;
             Ok(applied.observed_tree_hash)
         })();
@@ -3840,12 +3887,27 @@ impl LocalApplicationFacade {
                 }),
             Err(error) => {
                 let restore = if backup_ready {
-                    remove_created_entry(&filesystem, &destination, deployment.mode)
-                        .and_then(|()| restore_entry(Path::new(&plan.backup_path), &destination))
-                } else if fs::symlink_metadata(&destination).is_ok() {
-                    remove_created_entry(&filesystem, &destination, deployment.mode)
+                    remove_created_entry(
+                        &filesystem,
+                        &destination,
+                        deployment.mode,
+                        plan.created_entry_identity.as_deref(),
+                    )
+                    .and_then(|()| restore_entry(Path::new(&plan.backup_path), &destination))
                 } else {
-                    Ok(())
+                    match checked_path_exists(
+                        &destination,
+                        "usage_change_created_target_metadata_unavailable",
+                    ) {
+                        Ok(true) => remove_created_entry(
+                            &filesystem,
+                            &destination,
+                            deployment.mode,
+                            plan.created_entry_identity.as_deref(),
+                        ),
+                        Ok(false) => Ok(()),
+                        Err(metadata_error) => return Err((metadata_error, true)),
+                    }
                 };
                 if let Err(restore_error) = restore {
                     Err((
@@ -3881,6 +3943,30 @@ impl LocalApplicationFacade {
                 .find(|stored| stored.deployment_id == plan.deployment_id)
                 .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
             stored.backup_created = true;
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            database.operation_repository().update_sync(&record)
+        })
+    }
+
+    fn persist_managed_usage_change_created_entry(
+        &self,
+        operation_id: OperationId,
+        plan: &ManagedUsageChangePlan,
+    ) -> AppResult<()> {
+        self.with_database("managed_usage_change.persist_created_entry", |database| {
+            let mut record = database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| operation_conflict("managed_usage_change_preview_missing"))?;
+            let mut journal: ManagedUsageChangeJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
+            let stored = journal
+                .plans
+                .iter_mut()
+                .find(|stored| stored.deployment_id == plan.deployment_id)
+                .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
+            stored.created_entry_identity = plan.created_entry_identity.clone();
             record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
             database.operation_repository().update_sync(&record)
         })
@@ -8420,19 +8506,31 @@ fn remove_plain_entry(path: &Path) -> AppResult<()> {
     }
 }
 
+fn checked_path_exists(path: &Path, unavailable_reason: &str) -> AppResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(operation_conflict(unavailable_reason)),
+    }
+}
+
 fn remove_created_entry(
     filesystem: &DeploymentFilesystem,
     path: &Path,
     mode: DeploymentMode,
+    expected_identity: Option<&str>,
 ) -> AppResult<()> {
-    if fs::symlink_metadata(path).is_err() {
+    if !checked_path_exists(path, "usage_change_created_target_metadata_unavailable")? {
         return Ok(());
     }
-    if DeploymentFilesystem::is_directory_link_entry(path) {
-        filesystem.remove_residue(path, mode)
-    } else {
-        remove_plain_entry(path)
+    let expected_identity = expected_identity
+        .ok_or_else(|| operation_conflict("usage_change_created_target_identity_missing"))?;
+    if filesystem.recovery_entry_identity(mode, path)? != expected_identity {
+        return Err(operation_conflict(
+            "usage_change_created_target_identity_changed",
+        ));
     }
+    filesystem.remove_residue(path, mode)
 }
 
 fn operation_conflict_with(reason: &str, detail: impl Into<String>) -> AppError {
@@ -8620,7 +8718,19 @@ fn rollback_subject_rename_state(
             return Err(operation_conflict("subject_rename_target_identity_changed"));
         }
 
-        if fs::symlink_metadata(destination).is_ok() {
+        if checked_path_exists(destination, "subject_rename_target_metadata_unavailable")? {
+            if !plan.created_new_entry {
+                return Err(operation_conflict(
+                    "subject_rename_target_creation_unverified",
+                ));
+            }
+            let expected_identity = plan
+                .created_entry_identity
+                .as_deref()
+                .ok_or_else(|| operation_conflict("subject_rename_target_identity_missing"))?;
+            if filesystem.recovery_entry_identity(plan.mode, destination)? != expected_identity {
+                return Err(operation_conflict("subject_rename_target_identity_changed"));
+            }
             let expected_hash = new_hash
                 .ok_or_else(|| operation_conflict("subject_rename_version_hash_missing"))?;
             if entry_fingerprint(destination)?.as_deref() != Some(expected_hash) {
@@ -8636,7 +8746,7 @@ fn rollback_subject_rename_state(
             filesystem.remove_residue(destination, plan.mode)?;
         }
 
-        if fs::symlink_metadata(backup).is_ok() {
+        if checked_path_exists(backup, "subject_rename_backup_metadata_unavailable")? {
             if entry_identity(backup)? != plan.observed_identity {
                 return Err(operation_conflict("subject_rename_backup_changed"));
             }
@@ -8645,11 +8755,11 @@ fn rollback_subject_rename_state(
             {
                 return Err(operation_conflict("subject_rename_backup_changed"));
             }
-            if fs::symlink_metadata(previous).is_ok() {
+            if checked_path_exists(previous, "subject_rename_previous_metadata_unavailable")? {
                 return Err(operation_conflict("subject_rename_previous_path_occupied"));
             }
             fs::rename(backup, previous).map_err(subject_rename_io_error)?;
-        } else if fs::symlink_metadata(previous).is_err()
+        } else if !checked_path_exists(previous, "subject_rename_previous_metadata_unavailable")?
             || entry_identity(previous)? != plan.observed_identity
             || (plan.mode == DeploymentMode::ManagedCopy
                 && entry_fingerprint(previous)?.as_deref() != plan.observed_before.as_deref())
@@ -8681,8 +8791,14 @@ fn rollback_subject_rename_state(
     }
 
     if let Some(rename) = journal.visible_rename.as_ref() {
-        let previous_exists = fs::symlink_metadata(&rename.previous_output).is_ok();
-        let backup_exists = fs::symlink_metadata(&rename.backup).is_ok();
+        let previous_exists = checked_path_exists(
+            &rename.previous_output,
+            "subject_rename_visible_metadata_unavailable",
+        )?;
+        let backup_exists = checked_path_exists(
+            &rename.backup,
+            "subject_rename_visible_metadata_unavailable",
+        )?;
         match (previous_exists, backup_exists) {
             (true, false) => {
                 if library.store.hash_tree_read_only(&rename.previous_output)?
@@ -8764,7 +8880,7 @@ fn rollback_subject_rename_state(
         if Path::new(staging_path) != expected {
             return Err(operation_conflict("subject_rename_staging_path_changed"));
         }
-        if fs::symlink_metadata(&expected).is_ok() {
+        if checked_path_exists(&expected, "subject_rename_staging_metadata_unavailable")? {
             if !fs::symlink_metadata(&expected)
                 .map_err(subject_rename_io_error)?
                 .is_dir()
@@ -8902,6 +9018,70 @@ mod tests {
             restore_target_identity: None,
             target_removed: false,
         }
+    }
+
+    #[test]
+    fn managed_change_cleanup_preserves_same_content_replacement() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let root = workspace.path();
+        let entry = root.join("created-target");
+        fs::create_dir(&entry).expect("created target");
+        fs::write(entry.join("SKILL.md"), "same content\n").expect("created content");
+        let filesystem = DeploymentFilesystem::new();
+        let expected_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::ManagedCopy, &entry)
+            .expect("created target identity");
+        let expected_hash = DeploymentFilesystem::hash_tree(&entry).expect("created hash");
+        let moved_aside = root.join("created-target-original");
+        fs::rename(&entry, &moved_aside).expect("move original target aside");
+        fs::create_dir(&entry).expect("replacement target");
+        fs::write(entry.join("SKILL.md"), "same content\n").expect("replacement content");
+        assert_eq!(
+            DeploymentFilesystem::hash_tree(&entry).expect("replacement hash"),
+            expected_hash
+        );
+
+        let error = remove_created_entry(
+            &filesystem,
+            &entry,
+            DeploymentMode::ManagedCopy,
+            Some(&expected_identity),
+        )
+        .expect_err("replacement target must not be removed");
+
+        assert_eq!(
+            error.params.get("reason").and_then(Value::as_str),
+            Some("usage_change_created_target_identity_changed")
+        );
+        assert_eq!(
+            fs::read_to_string(entry.join("SKILL.md")).expect("replacement survives"),
+            "same content\n"
+        );
+    }
+
+    #[test]
+    fn managed_change_cleanup_does_not_treat_metadata_error_as_missing() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let parent_file = workspace.path().join("not-a-directory");
+        fs::write(&parent_file, "keep\n").expect("create non-directory parent");
+        let inaccessible_target = parent_file.join("created-target");
+
+        let error = remove_created_entry(
+            &DeploymentFilesystem::new(),
+            &inaccessible_target,
+            DeploymentMode::ManagedCopy,
+            None,
+        )
+        .expect_err("metadata failure must not be treated as an absent path");
+
+        assert_eq!(
+            error.params.get("reason").and_then(Value::as_str),
+            Some("usage_change_created_target_metadata_unavailable")
+        );
+        assert_eq!(
+            fs::read_to_string(parent_file).expect("unrelated parent file survives"),
+            "keep\n"
+        );
     }
 
     #[test]

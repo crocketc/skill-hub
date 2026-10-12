@@ -136,6 +136,29 @@ impl DeploymentFilesystem {
         is_directory_link_entry(path.as_ref())
     }
 
+    /// Returns the identity of the deployed directory entry itself. Link
+    /// modes use the reparse point identity so replacing a link to the same
+    /// source does not inherit the original entry's identity.
+    pub fn recovery_entry_identity(&self, mode: DeploymentMode, path: &Path) -> AppResult<String> {
+        let metadata = fs::symlink_metadata(path).map_err(io_error)?;
+        let is_directory_link = Self::is_directory_link_entry(path);
+        if !residue_entry_type_matches(
+            mode,
+            metadata.is_dir(),
+            metadata.file_type().is_symlink(),
+            is_directory_link,
+        ) {
+            return Err(ownership_mismatch(path));
+        }
+        let identity = match mode {
+            DeploymentMode::ManagedCopy => physical_id_for_path(path),
+            DeploymentMode::SymbolicLink | DeploymentMode::DirectoryJunction => {
+                reparse_physical_id_for_path(path)
+            }
+        };
+        identity.ok_or_else(|| ownership_mismatch(path))
+    }
+
     /// Probes directory-link creation at the exact location where a relation
     /// conversion would create the replacement entry.  The global
     /// [`Self::available_capabilities`] probe cannot answer per-volume
@@ -357,23 +380,12 @@ impl DeploymentFilesystem {
         {
             return Err(ownership_mismatch(path));
         }
-        let metadata = match fs::symlink_metadata(path) {
-            Ok(metadata) => metadata,
+        match fs::symlink_metadata(path) {
+            Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(io_error(error)),
-        };
-        let mode_matches_entry_type = residue_entry_type_matches(
-            mode,
-            metadata.is_dir(),
-            metadata.file_type().is_symlink(),
-            Self::is_directory_link_entry(path),
-        );
-        let identity = match mode {
-            DeploymentMode::ManagedCopy => physical_id_for_path(path),
-            DeploymentMode::SymbolicLink => symlink_physical_id_for_path(path),
-            DeploymentMode::DirectoryJunction => reparse_physical_id_for_path(path),
-        };
-        if !mode_matches_entry_type || identity.as_deref() != Some(expected_entry_identity) {
+        }
+        if self.recovery_entry_identity(mode, path)? != expected_entry_identity {
             return Err(ownership_mismatch(path));
         }
         Ok(true)
@@ -437,11 +449,67 @@ fn residue_entry_type_matches(
 
 #[cfg(test)]
 mod tests {
-    use super::residue_entry_type_matches;
+    use super::{residue_entry_type_matches, DeploymentFilesystem};
     use skillhub_core::DeploymentMode;
 
+    #[cfg(unix)]
+    use skillhub_core::physical_id_for_path;
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_identity_tracks_symbolic_link_entry_not_its_target() {
+        use super::symlink;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let retired = workspace.path().join("retired-skill-link");
+        std::fs::create_dir(&target).expect("target directory");
+        symlink::create_dir_link(&target, &entry).expect("initial directory symlink");
+
+        let filesystem = DeploymentFilesystem::new();
+        let original_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("original link identity");
+        std::fs::rename(&entry, &retired).expect("retain original link inode");
+        symlink::create_dir_link(&target, &entry).expect("replacement to same target");
+
+        let replacement_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("replacement link identity");
+        assert_ne!(replacement_identity, original_identity);
+        assert_eq!(
+            physical_id_for_path(&entry),
+            physical_id_for_path(&target),
+            "both links still resolve to the same target"
+        );
+    }
+
     #[cfg(windows)]
-    use super::DeploymentFilesystem;
+    #[test]
+    fn recovery_identity_tracks_junction_entry_not_its_target() {
+        use super::junction_windows;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let retired = workspace.path().join("retired-skill-junction");
+        std::fs::create_dir(&target).expect("target directory");
+        junction_windows::create_junction(&target, &entry).expect("initial junction");
+
+        let filesystem = DeploymentFilesystem::new();
+        let original_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
+            .expect("original junction identity");
+        std::fs::rename(&entry, &retired).expect("retain original junction");
+        junction_windows::create_junction(&target, &entry).expect("replacement to same target");
+
+        let replacement_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
+            .expect("replacement junction identity");
+        assert_ne!(replacement_identity, original_identity);
+    }
+
     #[cfg(windows)]
     use skillhub_core::physical_id_for_path;
 

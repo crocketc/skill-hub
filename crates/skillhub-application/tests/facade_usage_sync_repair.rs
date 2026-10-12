@@ -377,6 +377,18 @@ async fn missing_entry_requires_explicit_restore() {
         std::fs::read_to_string(destination.join("SKILL.md")).expect("restored copy"),
         "# First\n"
     );
+    let database = Database::open(&fixture.database_path).expect("database after restore");
+    let operation = database
+        .operation_repository()
+        .get_sync(result.operation_id)
+        .expect("read restore operation")
+        .expect("restore operation exists");
+    assert!(
+        operation.recovery_data["plans"][0]["created_entry_identity"]
+            .as_str()
+            .is_some(),
+        "the created entry identity is persisted in the operation journal"
+    );
 }
 
 #[cfg(unix)]

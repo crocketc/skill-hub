@@ -1031,10 +1031,15 @@ impl LocalDeploymentBackend {
                     .to_owned(),
                 ),
             );
-            error.params.insert(
-                "target_entry_identity".to_owned(),
-                serde_json::Value::String(applied.ownership.target_identity.clone()),
-            );
+            if let Ok(identity) = self.filesystem.recovery_entry_identity(
+                applied.ownership.mode,
+                &applied.ownership.destination_path,
+            ) {
+                error.params.insert(
+                    "target_entry_identity".to_owned(),
+                    serde_json::Value::String(identity),
+                );
+            }
         }
         error
             .params
