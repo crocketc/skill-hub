@@ -21,7 +21,7 @@ struct FakeRemovalBackend {
     skill_id: SkillId,
     deployment: DeploymentRecord,
     delete_impact: Arc<Mutex<RemovalImpact>>,
-    undeploy_impact: RemovalImpact,
+    undeploy_impact: Arc<Mutex<RemovalImpact>>,
     removed_targets: Arc<Mutex<Vec<DeploymentId>>>,
     removed_relations: Arc<Mutex<Vec<DeploymentId>>>,
     detached: Arc<Mutex<Vec<DeploymentId>>>,
@@ -54,7 +54,7 @@ impl RemovalBackend for FakeRemovalBackend {
 
     async fn inspect_undeploy(&self, deployment_id: DeploymentId) -> AppResult<RemovalImpact> {
         if deployment_id == self.deployment.id {
-            Ok(self.undeploy_impact.clone())
+            Ok(self.undeploy_impact.lock().unwrap().clone())
         } else {
             Err(AppError::new(
                 ErrorCode::ObjectNotFound,
@@ -208,7 +208,7 @@ fn fixture_with_undeploy_shared_choice(
         skill_id,
         deployment: deployment.clone(),
         delete_impact: Arc::new(Mutex::new(impact.clone())),
-        undeploy_impact: RemovalImpact {
+        undeploy_impact: Arc::new(Mutex::new(RemovalImpact {
             operation_id: OperationId::new(),
             skill_id,
             deployments: vec![deployment.clone()],
@@ -220,7 +220,7 @@ fn fixture_with_undeploy_shared_choice(
             related_skills: Vec::new(),
             unknown_external_references: Vec::new(),
             draft_count: 0,
-        },
+        })),
         removed_targets: Arc::new(Mutex::new(Vec::new())),
         removed_relations: Arc::new(Mutex::new(Vec::new())),
         detached: Arc::new(Mutex::new(Vec::new())),
@@ -517,17 +517,102 @@ fn undeploy_requires_explicit_confirmation_before_removing_a_shared_target() {
 }
 
 #[test]
+fn undeploy_rejects_changed_deployment_facts_before_the_applying_checkpoint() {
+    block_on(async {
+        let (service, backend) = fixture_with_undeploy_shared_choice(false);
+        let impact = service
+            .prepare_undeploy(backend.deployment.id)
+            .await
+            .unwrap();
+        backend.events.lock().unwrap().clear();
+        backend.checkpoint_snapshots.lock().unwrap().clear();
+        backend.undeploy_impact.lock().unwrap().deployments[0].runtime_name =
+            "replacement-name".to_owned();
+
+        let error = service
+            .commit_undeploy(
+                impact.operation_id,
+                RemovalDecision::RemoveOwnedTarget,
+                false,
+            )
+            .await
+            .expect_err("a changed destination invalidates the preview confirmation");
+
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(backend.events.lock().unwrap().is_empty());
+        assert!(backend.checkpoint_snapshots.lock().unwrap().is_empty());
+        assert!(backend.removed_targets.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn undeploy_cancel_decision_does_not_advance_the_recovery_checkpoint() {
+    block_on(async {
+        let (service, backend) = fixture_with_undeploy_shared_choice(false);
+        let impact = service
+            .prepare_undeploy(backend.deployment.id)
+            .await
+            .unwrap();
+        backend.events.lock().unwrap().clear();
+        backend.checkpoint_snapshots.lock().unwrap().clear();
+
+        let error = service
+            .commit_undeploy(impact.operation_id, RemovalDecision::Cancel, false)
+            .await
+            .expect_err("cancel is not an executable undeploy decision");
+
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+        assert!(backend.events.lock().unwrap().is_empty());
+        assert!(backend.checkpoint_snapshots.lock().unwrap().is_empty());
+        assert!(backend.removed_targets.lock().unwrap().is_empty());
+        assert!(backend.removed_relations.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
 fn undeploy_removes_owned_target_and_preserves_central_skill() {
     block_on(async {
         let (service, backend) = fixture_with_undeploy_shared_choice(false);
+        let impact = service
+            .prepare_undeploy(backend.deployment.id)
+            .await
+            .unwrap();
+        backend.events.lock().unwrap().clear();
+        backend.checkpoint_snapshots.lock().unwrap().clear();
         service
-            .undeploy(
-                backend.deployment.id,
+            .commit_undeploy(
+                impact.operation_id,
                 RemovalDecision::RemoveOwnedTarget,
                 false,
             )
             .await
             .unwrap();
+        let events = backend.events.lock().unwrap().clone();
+        assert_eq!(events.first().map(String::as_str), Some("checkpoint"));
+        assert_eq!(
+            events.get(1).map(String::as_str),
+            Some(format!("target:{}", backend.deployment.id).as_str())
+        );
+        let checkpoint = backend.checkpoint_snapshots.lock().unwrap()[0].clone();
+        assert_eq!(
+            checkpoint.kind,
+            skillhub_core::PreparedRemovalKind::UndeploySkill
+        );
+        assert_eq!(checkpoint.decisions.len(), 1);
+        assert_eq!(checkpoint.decisions[0].deployment_id, backend.deployment.id);
+        assert_eq!(
+            checkpoint.decisions[0].decision,
+            RemovalDecision::RemoveOwnedTarget
+        );
+        assert!(checkpoint.applied_deployment_ids.is_empty());
+        assert_eq!(
+            checkpoint.remaining_deployment_ids,
+            vec![backend.deployment.id]
+        );
+        assert_eq!(
+            checkpoint.state,
+            skillhub_core::PreparedRemovalState::Applying
+        );
         assert_eq!(
             backend.removed_targets.lock().unwrap().as_slice(),
             &[backend.deployment.id]

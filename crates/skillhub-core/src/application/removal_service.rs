@@ -56,6 +56,7 @@ where
                 kind: PreparedRemovalKind::DeleteSkill,
                 impact: impact.clone(),
                 central_runtime_name: None,
+                target_entry_identity: None,
                 decisions: Vec::new(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: Vec::new(),
@@ -73,6 +74,7 @@ where
                 kind: PreparedRemovalKind::UndeploySkill,
                 impact: impact.clone(),
                 central_runtime_name: None,
+                target_entry_identity: None,
                 decisions: Vec::new(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: Vec::new(),
@@ -107,23 +109,48 @@ where
             .cloned()
             .ok_or_else(|| conflict("undeploy target relation is missing"))?;
         // 提交端重新核对：预览之后关系漂移必须作废本次确认。
-        let fresh = self.backend.inspect_undeploy(deployment.id).await?;
-        let current = fresh.deployments.first();
-        let unchanged = match current {
-            Some(record) => record.id == deployment.id,
-            None => false,
-        };
-        if !unchanged {
+        let mut fresh = self.backend.inspect_undeploy(deployment.id).await?;
+        // The inspection creates a new operation id, so normalize it to the
+        // prepared preview before comparing every confirmed fact. Matching
+        // only the relation id would allow a changed target path, mode, or
+        // ownership hash to inherit the user's older confirmation.
+        fresh.operation_id = operation_id;
+        if fresh != record.impact {
             return Err(conflict("deployment relation changed since the preview"));
         }
-        let current = current.expect("checked above");
+        let current = fresh
+            .deployments
+            .first()
+            .cloned()
+            .ok_or_else(|| conflict("deployment relation changed since the preview"))?;
+        if decision == RemovalDecision::Cancel {
+            return Err(conflict("removal cancelled"));
+        }
         if fresh.requires_shared_target_choice
             && decision == RemovalDecision::RemoveOwnedTarget
             && !confirm_shared_target_removal
         {
             return Err(shared_confirmation_conflict());
         }
-        let result = self.apply_decision(current, decision).await?;
+        let decision = RemovalChoice {
+            deployment_id: current.id,
+            decision,
+            confirm_shared_target_removal,
+        };
+        self.backend
+            .save_prepared_removal(&PreparedRemovalRecord {
+                kind: PreparedRemovalKind::UndeploySkill,
+                impact: fresh.clone(),
+                central_runtime_name: None,
+                target_entry_identity: None,
+                decisions: vec![decision],
+                applied_deployment_ids: Vec::new(),
+                remaining_deployment_ids: vec![current.id],
+                state: PreparedRemovalState::Applying,
+                last_error_code: None,
+            })
+            .await?;
+        let result = self.apply_decision(&current, decision.decision).await?;
         self.backend.settle_prepared_removal(operation_id).await?;
         Ok(RemovalResult {
             operation_id,
@@ -182,6 +209,7 @@ where
                 kind: PreparedRemovalKind::DeleteSkill,
                 impact: record.impact.clone(),
                 central_runtime_name: None,
+                target_entry_identity: None,
                 decisions: decisions.clone(),
                 applied_deployment_ids: Vec::new(),
                 remaining_deployment_ids: remaining.clone(),
@@ -276,6 +304,7 @@ where
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
                     central_runtime_name: None,
+                    target_entry_identity: None,
                     decisions: decisions.clone(),
                     applied_deployment_ids: applied.clone(),
                     remaining_deployment_ids: remaining.clone(),
@@ -293,6 +322,7 @@ where
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
                     central_runtime_name: None,
+                    target_entry_identity: None,
                     decisions,
                     applied_deployment_ids: applied,
                     remaining_deployment_ids: remaining,
@@ -326,6 +356,7 @@ where
                     kind: PreparedRemovalKind::DeleteSkill,
                     impact: record.impact.clone(),
                     central_runtime_name: None,
+                    target_entry_identity: None,
                     decisions,
                     applied_deployment_ids: applied,
                     remaining_deployment_ids: Vec::new(),

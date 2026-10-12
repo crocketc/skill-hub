@@ -637,6 +637,7 @@ impl LocalDeploymentBackend {
     }
 
     fn deployment_proof(&self, deployment: &DeploymentRecord) -> AppResult<OwnershipProof> {
+        validate_deployment_runtime_name(deployment)?;
         let target_root = self.target_root(deployment)?;
         if physical_id_for_path(&target_root).as_deref() != Some(deployment.target_id.as_str()) {
             return Err(AppError::new(ErrorCode::OwnershipMismatch, Severity::Error)
@@ -697,6 +698,7 @@ impl LocalDeploymentBackend {
     }
 
     fn deployment_destination(&self, deployment: &DeploymentRecord) -> AppResult<PathBuf> {
+        validate_deployment_runtime_name(deployment)?;
         Ok(self.target_root(deployment)?.join(&deployment.runtime_name))
     }
 
@@ -1252,13 +1254,33 @@ impl RemovalBackend for LocalDeploymentBackend {
                 skillhub_core::OperationPhase::Applying
             }
         };
+        let mut persisted_record = record.clone();
+        if record.kind == skillhub_core::PreparedRemovalKind::UndeploySkill
+            && record.state == PreparedRemovalState::Applying
+            && record
+                .decisions
+                .iter()
+                .any(|choice| choice.decision == skillhub_core::RemovalDecision::RemoveOwnedTarget)
+        {
+            let deployment = record
+                .impact
+                .deployments
+                .first()
+                .ok_or_else(|| recovery_conflict("undeploy_target_missing"))?;
+            let proof = self.deployment_proof(deployment)?;
+            // Ownership validation is read-only, so finish it before advancing
+            // the journal to Applying. A rejected preview remains safe to
+            // abandon and must not strand the recovery gate.
+            self.filesystem.verify_ownership(&proof)?;
+            persisted_record.target_entry_identity = Some(proof.target_identity);
+        }
         let mut journal = journal_record(
             record.impact.operation_id,
             record.kind.as_journal_kind(),
             phase,
             record.last_error_code,
         );
-        journal.recovery_data = serde_json::to_value(record)
+        journal.recovery_data = serde_json::to_value(&persisted_record)
             .map_err(|error| internal_with_detail("removal.save_prepared", error.to_string()))?;
         let database = self
             .database
@@ -1451,6 +1473,20 @@ fn same_deployment_identity(expected: &DeploymentRecord, current: &DeploymentRec
         && expected.observed_hash == current.observed_hash
 }
 
+fn same_undeploy_deployment_identity(
+    expected: &DeploymentRecord,
+    current: &DeploymentRecord,
+) -> bool {
+    expected.id == current.id
+        && expected.skill_id == current.skill_id
+        && expected.version_id == current.version_id
+        && expected.target_id == current.target_id
+        && expected.mode == current.mode
+        && expected.runtime_name == current.runtime_name
+        && expected.expected_hash == current.expected_hash
+        && expected.observed_hash == current.observed_hash
+}
+
 fn path_entry_exists_for_recovery(path: &Path) -> AppResult<bool> {
     match std::fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -1497,7 +1533,7 @@ impl ReconcileBackend for LocalDeploymentBackend {
     ) -> AppResult<skillhub_core::ExternalChangeObservation> {
         let root = self.target_root(deployment)?;
         let root_identity = physical_id_for_path(&root);
-        let destination = root.join(&deployment.runtime_name);
+        let destination = self.deployment_destination(deployment)?;
         if root_identity.as_deref() != Some(deployment.target_id.as_str()) || !destination.exists()
         {
             return Ok(skillhub_core::ExternalChangeObservation {
@@ -7166,8 +7202,8 @@ impl LocalApplicationFacade {
             skillhub_core::DeploymentMode::SymbolicLink => "symbolic_link",
             skillhub_core::DeploymentMode::DirectoryJunction => "directory_junction",
         };
-        let destination = match self.backend.target_root(record) {
-            Ok(root) => root.join(&record.runtime_name),
+        let destination = match self.backend.deployment_destination(record) {
+            Ok(destination) => destination,
             Err(error) => {
                 return ManagedDeploymentRewriteOutcome::failed(
                     relation_id,
@@ -8684,6 +8720,7 @@ impl LocalApplicationFacade {
         &self,
         deployment: &DeploymentRecord,
     ) -> AppResult<OwnershipProof> {
+        validate_deployment_runtime_name(deployment)?;
         let target_root: String =
             self.with_database("save_as_copy_replacement.target_root", |database| {
                 database
@@ -17518,6 +17555,49 @@ fn parse_delete_recovery_candidate(
     Some(prepared)
 }
 
+fn parse_undeploy_recovery_candidate(
+    operation_id: OperationId,
+    phase: skillhub_core::OperationPhase,
+    recovery_data: &serde_json::Value,
+) -> Option<PreparedRemovalRecord> {
+    if !matches!(
+        phase,
+        skillhub_core::OperationPhase::Applying
+            | skillhub_core::OperationPhase::Verifying
+            | skillhub_core::OperationPhase::NeedsRecovery
+    ) {
+        return None;
+    }
+    let prepared: PreparedRemovalRecord = serde_json::from_value(recovery_data.clone()).ok()?;
+    if prepared.kind != skillhub_core::PreparedRemovalKind::UndeploySkill
+        || prepared.impact.operation_id != operation_id
+        || prepared.state != skillhub_core::PreparedRemovalState::Applying
+        || prepared.impact.deployments.len() != 1
+        || prepared.decisions.len() != 1
+        || !prepared.applied_deployment_ids.is_empty()
+        || prepared.remaining_deployment_ids != vec![prepared.impact.deployments[0].id]
+    {
+        return None;
+    }
+    let deployment = &prepared.impact.deployments[0];
+    let choice = &prepared.decisions[0];
+    if deployment.state != DeploymentState::Deployed
+        || !is_safe_runtime_name(&deployment.runtime_name)
+        || choice.deployment_id != deployment.id
+        || choice.decision == skillhub_core::RemovalDecision::Cancel
+        || (choice.decision == skillhub_core::RemovalDecision::RemoveOwnedTarget
+            && ((prepared.impact.requires_shared_target_choice
+                && !choice.confirm_shared_target_removal)
+                || prepared
+                    .target_entry_identity
+                    .as_deref()
+                    .is_none_or(str::is_empty)))
+    {
+        return None;
+    }
+    Some(prepared)
+}
+
 fn deployment_for_choice(
     prepared: &PreparedRemovalRecord,
     deployment_id: skillhub_core::DeploymentId,
@@ -19238,6 +19318,11 @@ fn recovery_conflict(reason: &'static str) -> AppError {
         .with_action(RecoveryAction::Retry)
 }
 
+fn validate_deployment_runtime_name(deployment: &DeploymentRecord) -> AppResult<()> {
+    skillhub_core::deployment::validate_runtime_name(&deployment.runtime_name)
+        .map_err(|_| recovery_conflict("deployment_runtime_name_invalid"))
+}
+
 #[async_trait]
 impl HealthBackend for LocalHealthBackend {
     async fn check(&self) -> AppResult<Vec<HealthFinding>> {
@@ -19330,6 +19415,18 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
+                    "undeploy_skill"
+                        if parse_undeploy_recovery_candidate(
+                            record.operation_id,
+                            record.phase,
+                            &record.recovery_data,
+                        )
+                        .is_some_and(|prepared| {
+                            self.validate_undeploy_recovery_facts(&prepared).is_ok()
+                        }) =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
                         vec![RecoveryAction::RollbackOperation]
                     }
@@ -19398,6 +19495,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
             }
             return self.complete_delete_operation(operation_id);
         }
+        if operation_kind.as_deref() == Some("undeploy_skill") {
+            if action != RecoveryAction::CompleteOperation {
+                return Err(unsupported("recovery.resolve.undeploy_skill"));
+            }
+            return self.complete_undeploy_operation(operation_id);
+        }
         if operation_kind.as_deref() == Some("deploy_skill") {
             if action != RecoveryAction::RollbackOperation {
                 return Err(unsupported("recovery.resolve.deploy_skill"));
@@ -19428,6 +19531,209 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
+    fn validate_undeploy_recovery_facts(&self, prepared: &PreparedRemovalRecord) -> AppResult<()> {
+        let expected = prepared
+            .impact
+            .deployments
+            .first()
+            .ok_or_else(|| recovery_conflict("undeploy_target_missing"))?;
+        let current = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.undeploy.validate"))?;
+            database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .find(|deployment| deployment.id == expected.id)
+                .ok_or_else(|| recovery_conflict("undeploy_relation_missing"))?
+        };
+        if !same_undeploy_deployment_identity(expected, &current) {
+            return Err(recovery_conflict("undeploy_relation_identity_changed"));
+        }
+        if !matches!(
+            current.state,
+            DeploymentState::Deployed | DeploymentState::Removed
+        ) {
+            return Err(recovery_conflict("undeploy_relation_state_invalid"));
+        }
+
+        let choice = prepared
+            .decisions
+            .first()
+            .ok_or_else(|| recovery_conflict("undeploy_decision_missing"))?;
+        if choice.decision == skillhub_core::RemovalDecision::RemoveOwnedTarget {
+            if !current.managed {
+                return Err(recovery_conflict("undeploy_target_is_not_managed"));
+            }
+            self.undeploy_target_proof(&current, prepared, current.state)?;
+        } else if choice.decision == skillhub_core::RemovalDecision::DetachManagement
+            && current.state == DeploymentState::Removed
+        {
+            return Err(recovery_conflict("undeploy_detached_relation_was_removed"));
+        }
+        Ok(())
+    }
+
+    fn undeploy_target_proof(
+        &self,
+        deployment: &DeploymentRecord,
+        prepared: &PreparedRemovalRecord,
+        state: DeploymentState,
+    ) -> AppResult<Option<OwnershipProof>> {
+        let expected_identity = prepared
+            .target_entry_identity
+            .as_deref()
+            .filter(|identity| !identity.is_empty())
+            .ok_or_else(|| recovery_conflict("undeploy_target_identity_missing"))?;
+        let backend =
+            LocalDeploymentBackend::new(self.database.clone(), self.library_runtime.clone());
+        let target_root = backend.target_root(deployment)?;
+        match std::fs::symlink_metadata(&target_root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(recovery_filesystem_error(
+                    "undeploy_target_root_stat",
+                    error,
+                ))
+            }
+            Ok(_)
+                if physical_id_for_path(&target_root).as_deref()
+                    == Some(deployment.target_id.as_str()) => {}
+            Ok(_) => return Err(recovery_conflict("undeploy_target_root_identity_changed")),
+        }
+        let destination = target_root.join(&deployment.runtime_name);
+        if !path_entry_exists_for_recovery(&destination)? {
+            return Ok(None);
+        }
+        if state == DeploymentState::Removed {
+            return Err(recovery_conflict("undeploy_target_reappeared"));
+        }
+        let proof = backend.deployment_proof(deployment)?;
+        if proof.target_identity != expected_identity {
+            return Err(recovery_conflict("undeploy_target_entry_identity_changed"));
+        }
+        backend.filesystem.verify_ownership(&proof)?;
+        Ok(Some(proof))
+    }
+
+    fn complete_undeploy_operation(&self, operation_id: OperationId) -> AppResult<()> {
+        let journal = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.undeploy"))?;
+            database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| recovery_conflict("undeploy_operation_missing"))?
+        };
+        if journal.kind != "undeploy_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("undeploy_operation_not_recoverable"));
+        }
+        let mut prepared =
+            parse_undeploy_recovery_candidate(operation_id, journal.phase, &journal.recovery_data)
+                .ok_or_else(|| recovery_conflict("undeploy_recovery_facts_invalid"))?;
+        self.validate_undeploy_recovery_facts(&prepared)?;
+        let expected = prepared
+            .impact
+            .deployments
+            .first()
+            .ok_or_else(|| recovery_conflict("undeploy_target_missing"))?;
+        let deployment = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.undeploy.revalidate"))?;
+            database
+                .deployment_repository()
+                .list_all()?
+                .into_iter()
+                .find(|deployment| deployment.id == expected.id)
+                .ok_or_else(|| recovery_conflict("undeploy_relation_missing"))?
+        };
+        if !same_undeploy_deployment_identity(expected, &deployment) {
+            return Err(recovery_conflict("undeploy_relation_identity_changed"));
+        }
+        let choice = prepared
+            .decisions
+            .first()
+            .ok_or_else(|| recovery_conflict("undeploy_decision_missing"))?;
+        match choice.decision {
+            skillhub_core::RemovalDecision::RemoveOwnedTarget => {
+                let proof = self.undeploy_target_proof(&deployment, &prepared, deployment.state)?;
+                if let Some(proof) = proof {
+                    let backend = LocalDeploymentBackend::new(
+                        self.database.clone(),
+                        self.library_runtime.clone(),
+                    );
+                    backend.filesystem.remove_owned(&proof)?;
+                }
+                if deployment.state == DeploymentState::Deployed {
+                    let database = self
+                        .database
+                        .lock()
+                        .map_err(|_| internal("recovery.undeploy.mark_removed"))?;
+                    database
+                        .deployment_repository()
+                        .mark_removed_sync(deployment.id)?;
+                }
+            }
+            skillhub_core::RemovalDecision::KeepSharedDeployment
+            | skillhub_core::RemovalDecision::RemoveRelationOnly => {
+                if deployment.state == DeploymentState::Deployed {
+                    let database = self
+                        .database
+                        .lock()
+                        .map_err(|_| internal("recovery.undeploy.mark_relation_removed"))?;
+                    database
+                        .deployment_repository()
+                        .mark_removed_sync(deployment.id)?;
+                }
+            }
+            skillhub_core::RemovalDecision::DetachManagement => {
+                if deployment.managed {
+                    let database = self
+                        .database
+                        .lock()
+                        .map_err(|_| internal("recovery.undeploy.detach_management"))?;
+                    database
+                        .deployment_repository()
+                        .detach_management_sync(deployment.id)?;
+                }
+            }
+            skillhub_core::RemovalDecision::Cancel => {
+                return Err(recovery_conflict("undeploy_cancel_decision_invalid"));
+            }
+        }
+
+        prepared.applied_deployment_ids = vec![deployment.id];
+        prepared.remaining_deployment_ids.clear();
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.undeploy.finish"))?;
+        let repository = database.operation_repository();
+        let mut journal = repository
+            .get_sync(operation_id)?
+            .ok_or_else(|| recovery_conflict("undeploy_operation_missing"))?;
+        if journal.kind != "undeploy_skill"
+            || !skillhub_core::operation_requires_recovery_gate(&journal.kind, journal.phase)
+        {
+            return Err(recovery_conflict("undeploy_operation_not_recoverable"));
+        }
+        journal.phase = skillhub_core::OperationPhase::Committed;
+        journal.progress.phase = skillhub_core::OperationPhase::Committed;
+        journal.progress.message_code = "recovery.resolved".to_owned();
+        journal.recovery_data = serde_json::to_value(&prepared).map_err(|error| {
+            internal_with_detail("recovery.undeploy.serialize", error.to_string())
+        })?;
+        repository.update_sync(&journal)
+    }
+
     fn validate_delete_recovery_facts(
         &self,
         prepared: &PreparedRemovalRecord,

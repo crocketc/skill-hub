@@ -8,8 +8,8 @@
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, CancelDeleteSkill, CommitDeleteSkill, ListDeployments,
-    PrepareDeleteSkill, ResolveRecovery,
+    AppCommandResult, AppQueryResult, ApplyUninstallDecision, CancelDeleteSkill, CommitDeleteSkill,
+    ListDeployments, PrepareDeleteSkill, PrepareUninstall, ResolveRecovery,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentRecord, DeploymentState};
@@ -170,6 +170,55 @@ async fn recovery_candidates(facade: &LocalApplicationFacade) -> Vec<RecoveryCan
     candidates
 }
 
+fn persist_undeploy_recovery(
+    database: &Database,
+    deployment: DeploymentRecord,
+    target_entry_identity: Option<String>,
+) -> OperationId {
+    let operation_id = OperationId::new();
+    let impact = RemovalImpact {
+        operation_id,
+        skill_id: deployment.skill_id,
+        deployments: vec![deployment.clone()],
+        requires_shared_target_choice: false,
+        dependencies: Vec::new(),
+        project_configs: Vec::new(),
+        pinned_versions: Vec::new(),
+        combinations: Vec::new(),
+        related_skills: Vec::new(),
+        unknown_external_references: Vec::new(),
+        draft_count: 0,
+    };
+    let mut journal = skillhub_core::OperationRecord::planned(
+        operation_id,
+        "undeploy_skill",
+        "undeploy-recovery-fixture",
+    );
+    journal.phase = skillhub_core::OperationPhase::Applying;
+    journal.progress.phase = journal.phase;
+    journal.recovery_data = serde_json::to_value(PreparedRemovalRecord {
+        kind: skillhub_core::PreparedRemovalKind::UndeploySkill,
+        impact,
+        central_runtime_name: None,
+        target_entry_identity,
+        decisions: vec![choice(
+            deployment.id,
+            RemovalDecision::RemoveOwnedTarget,
+            false,
+        )],
+        applied_deployment_ids: Vec::new(),
+        remaining_deployment_ids: vec![deployment.id],
+        state: PreparedRemovalState::Applying,
+        last_error_code: None,
+    })
+    .expect("serialize interrupted undeploy");
+    database
+        .operation_repository()
+        .insert_sync(&journal)
+        .expect("persist interrupted undeploy");
+    operation_id
+}
+
 fn journal_record(
     database: &Database,
     operation_id: OperationId,
@@ -304,6 +353,411 @@ async fn prepared_delete_preview_is_not_a_recovery_candidate() {
                 if snapshot.recovery_state == StartupRecoveryState::Clean
         ),
         "a read-only delete preview must not send the user to a recovery page with no candidate"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_undeploy_resumes_when_the_confirmed_target_is_already_removed() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Interrupted undeploy").await;
+    let target_root = ws.scratch_dir.path().join("undeploy-target");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let deployment = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("seeded deployment");
+    let target_entry = target_root.join(&deployment.runtime_name);
+    std::fs::create_dir_all(&target_entry).expect("create deployed entry");
+    std::fs::write(target_entry.join("SKILL.md"), "# deployed\n").expect("write deployed file");
+    let original_entry_identity =
+        skillhub_core::physical_id_for_path(&target_entry).expect("entry identity");
+    std::fs::remove_dir_all(&target_entry).expect("simulate interruption after target removal");
+    let operation_id =
+        persist_undeploy_recovery(&database, deployment.clone(), Some(original_entry_identity));
+
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("an interrupted undeploy remains visible");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("recovery should reconcile the removed target and close its relation");
+
+    let audit_database = open_database(&ws.database_path);
+    let current = audit_database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments after recovery")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("deployment relation remains in history");
+    assert_eq!(current.state, DeploymentState::Removed);
+    assert_eq!(
+        journal_record(&audit_database, operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
+    assert!(!recovery_candidate_ids(&facade)
+        .await
+        .contains(&operation_id));
+}
+
+#[tokio::test]
+async fn interrupted_undeploy_hides_recovery_when_the_target_entry_was_replaced() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Replaced undeploy target").await;
+    let target_root = ws.scratch_dir.path().join("replaced-undeploy-target");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let deployment = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("seeded deployment");
+    let target_entry = target_root.join(&deployment.runtime_name);
+    std::fs::create_dir_all(&target_entry).expect("create original deployed entry");
+    std::fs::write(target_entry.join("SKILL.md"), "# original\n").expect("write original file");
+    let original_entry_identity =
+        skillhub_core::physical_id_for_path(&target_entry).expect("original entry identity");
+    std::fs::remove_dir_all(&target_entry).expect("simulate interrupted target removal");
+    std::fs::create_dir_all(&target_entry).expect("create replacement entry");
+    std::fs::write(target_entry.join("SKILL.md"), "# user replacement\n")
+        .expect("write replacement file");
+    let operation_id =
+        persist_undeploy_recovery(&database, deployment.clone(), Some(original_entry_identity));
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("the unsafe record keeps the recovery gate visible");
+    assert!(candidate.actions.is_empty());
+    let error = facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect_err("a replacement target must not be treated as the old deployment");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        std::fs::read_to_string(target_entry.join("SKILL.md")).expect("replacement survives"),
+        "# user replacement\n"
+    );
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), operation_id).phase,
+        skillhub_core::OperationPhase::NeedsRecovery
+    );
+}
+
+#[tokio::test]
+async fn interrupted_undeploy_hides_recovery_for_an_unsafe_runtime_name() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Unsafe undeploy runtime name").await;
+    let target_root = ws.scratch_dir.path().join("unsafe-undeploy-target");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let deployment = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("seeded deployment");
+    let target_entry = target_root.join(&deployment.runtime_name);
+    std::fs::create_dir_all(&target_entry).expect("create deployed entry");
+    let target_entry_identity =
+        skillhub_core::physical_id_for_path(&target_entry).expect("entry identity");
+    let operation_id =
+        persist_undeploy_recovery(&database, deployment.clone(), Some(target_entry_identity));
+
+    let unsafe_runtime_name = "../outside";
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET runtime_name=?1 WHERE id=?2",
+            rusqlite::params![unsafe_runtime_name, deployment_id.to_string()],
+        )
+        .expect("inject an invalid stored runtime name");
+    let mut journal = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read journal")
+        .expect("journal exists");
+    journal.recovery_data["impact"]["deployments"][0]["runtime_name"] =
+        serde_json::Value::String(unsafe_runtime_name.to_owned());
+    database
+        .operation_repository()
+        .update_sync(&journal)
+        .expect("persist matching invalid recovery facts");
+
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("unsafe recovery record keeps the recovery gate visible");
+    assert!(
+        candidate.actions.is_empty(),
+        "an unsafe runtime name must never be joined to the verified target root"
+    );
+}
+
+#[tokio::test]
+async fn undeploy_ownership_preflight_failure_does_not_create_recovery_blocker() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Undeploy checkpoint").await;
+    let target_root = ws.scratch_dir.path().join("undeploy-checkpoint-target");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let deployment = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("seeded deployment");
+    let target_entry = target_root.join(&deployment.runtime_name);
+    std::fs::create_dir_all(&target_entry).expect("create deployed entry");
+    std::fs::write(target_entry.join("SKILL.md"), "# identity checkpoint\n")
+        .expect("write deployed file");
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    facade
+        .execute(AppCommand::PrepareUninstall(PrepareUninstall {
+            deployment_ids: vec![deployment_id],
+        }))
+        .await
+        .expect("prepare uninstall");
+
+    let error = facade
+        .execute(AppCommand::ApplyUninstallDecision(ApplyUninstallDecision {
+            actions: vec![skillhub_core::UninstallAction::UndeployAll],
+        }))
+        .await
+        .expect_err("ownership mismatch must stop removal before its checkpoint");
+    assert_eq!(error.code, ErrorCode::OwnershipMismatch);
+
+    let audit_database = open_database(&ws.database_path);
+    let journal = audit_database
+        .operation_repository()
+        .list_sync()
+        .expect("list operation records")
+        .into_iter()
+        .find(|record| record.kind == "undeploy_skill")
+        .expect("undeploy child operation is recorded");
+    assert_eq!(journal.phase, skillhub_core::OperationPhase::Prepared);
+    assert!(
+        !recovery_candidate_ids(&facade)
+            .await
+            .contains(&journal.operation_id),
+        "read-only ownership validation must not leave a recovery blocker"
+    );
+    assert!(
+        target_entry.exists(),
+        "failed preflight must preserve the entry"
+    );
+}
+
+#[tokio::test]
+async fn undeploy_rejects_unsafe_stored_runtime_name_before_touching_outside_path() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Unsafe undeploy runtime name").await;
+    let target_root = ws.scratch_dir.path().join("unsafe-runtime-target");
+    let outside_target = ws.scratch_dir.path().join("outside");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    std::fs::create_dir_all(&outside_target).expect("create outside target");
+    let marker = outside_target.join("keep.txt");
+    std::fs::write(&marker, "outside data must survive\n").expect("write outside marker");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let outside_hash =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&outside_target)
+            .expect("hash outside target");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET runtime_name=?1, expected_hash=?2, observed_hash=?2 WHERE id=?3",
+            rusqlite::params!["../outside", outside_hash, deployment_id.to_string()],
+        )
+        .expect("inject unsafe stored destination facts");
+
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    facade
+        .execute(AppCommand::PrepareUninstall(PrepareUninstall {
+            deployment_ids: vec![deployment_id],
+        }))
+        .await
+        .expect("prepare uninstall preview");
+    let error = facade
+        .execute(AppCommand::ApplyUninstallDecision(ApplyUninstallDecision {
+            actions: vec![skillhub_core::UninstallAction::UndeployAll],
+        }))
+        .await
+        .expect_err("unsafe stored runtime name must be rejected before removal");
+
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert_eq!(
+        std::fs::read_to_string(&marker).expect("outside marker remains"),
+        "outside data must survive\n"
+    );
+    let audit_database = open_database(&ws.database_path);
+    let undeploy = audit_database
+        .operation_repository()
+        .list_sync()
+        .expect("list operation records")
+        .into_iter()
+        .find(|record| record.kind == "undeploy_skill")
+        .expect("undeploy operation is recorded");
+    assert_eq!(undeploy.phase, skillhub_core::OperationPhase::Prepared);
+    assert!(
+        !recovery_candidate_ids(&facade)
+            .await
+            .contains(&undeploy.operation_id),
+        "rejected read-only preflight must not leave a recovery blocker"
+    );
+}
+
+#[tokio::test]
+async fn undeploy_recovery_resumes_after_target_removal_precedes_relation_checkpoint() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Undeploy checkpoint").await;
+    let target_root = ws.scratch_dir.path().join("undeploy-checkpoint-target");
+    std::fs::create_dir_all(&target_root).expect("create target root");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    let deployment_id = seed_deployment(&database, skill.id(), &target_id, &target_root).await;
+    let deployment = database
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("seeded deployment");
+    let target_entry = target_root.join(&deployment.runtime_name);
+    std::fs::create_dir_all(&target_entry).expect("create deployed entry");
+    std::fs::write(target_entry.join("SKILL.md"), "# identity checkpoint\n")
+        .expect("write deployed file");
+    let target_entry_identity =
+        skillhub_core::physical_id_for_path(&target_entry).expect("entry identity");
+    let expected_hash =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&target_entry)
+            .expect("hash owned deployment");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET expected_hash=?1, observed_hash=?1 WHERE id=?2",
+            rusqlite::params![expected_hash, deployment_id.to_string()],
+        )
+        .expect("persist matching ownership proof");
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER block_undeploy_relation_checkpoint
+             BEFORE UPDATE OF state ON deployments
+             WHEN NEW.state='removed'
+             BEGIN SELECT RAISE(ABORT, 'injected undeploy relation checkpoint failure'); END;",
+        )
+        .expect("inject relation checkpoint failure");
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    facade
+        .execute(AppCommand::PrepareUninstall(PrepareUninstall {
+            deployment_ids: vec![deployment_id],
+        }))
+        .await
+        .expect("prepare uninstall");
+
+    facade
+        .execute(AppCommand::ApplyUninstallDecision(ApplyUninstallDecision {
+            actions: vec![skillhub_core::UninstallAction::UndeployAll],
+        }))
+        .await
+        .expect_err("the injected database failure follows physical removal");
+    assert!(!target_entry.exists(), "the selected target was removed");
+
+    let audit_database = open_database(&ws.database_path);
+    let journal = audit_database
+        .operation_repository()
+        .list_sync()
+        .expect("list operation records")
+        .into_iter()
+        .find(|record| record.kind == "undeploy_skill")
+        .expect("undeploy child operation is recorded");
+    assert_eq!(journal.phase, skillhub_core::OperationPhase::Applying);
+    let checkpoint: PreparedRemovalRecord =
+        serde_json::from_value(journal.recovery_data).expect("decode undeploy checkpoint");
+    assert_eq!(
+        checkpoint.target_entry_identity.as_deref(),
+        Some(target_entry_identity.as_str()),
+        "recovery must retain the identity of the confirmed physical entry"
+    );
+    let candidate = recovery_candidates(&facade)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == checkpoint.impact.operation_id)
+        .expect("the interrupted operation stays visible");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    audit_database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER block_undeploy_relation_checkpoint")
+        .expect("remove injected database failure");
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: checkpoint.impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("recovery reconciles the completed file removal");
+    let completed = open_database(&ws.database_path);
+    let relation = completed
+        .deployment_repository()
+        .list_all()
+        .expect("list deployments after recovery")
+        .into_iter()
+        .find(|record| record.id == deployment_id)
+        .expect("deployment relation remains in history");
+    assert_eq!(relation.state, DeploymentState::Removed);
+    assert_eq!(
+        journal_record(&completed, checkpoint.impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
     );
 }
 

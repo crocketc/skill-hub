@@ -175,6 +175,10 @@ pub struct PreparedRemovalRecord {
     /// 应用层持久化此事实；恢复载荷不接受任意删除路径。
     #[serde(default)]
     pub central_runtime_name: Option<String>,
+    /// 解除单个目标前记录的物理目标项身份。恢复时若同一路径被替换，
+    /// 不得把后来出现的文件当作本次操作的残留继续删除。
+    #[serde(default)]
+    pub target_entry_identity: Option<String>,
     /// 最近一次提交尝试中用户给出的决定（含共享目标确认标记）。
     pub decisions: Vec<RemovalChoice>,
     pub applied_deployment_ids: Vec<DeploymentId>,
