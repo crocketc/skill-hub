@@ -19461,6 +19461,13 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
                         vec![RecoveryAction::RollbackOperation]
                     }
+                    "set_current_version"
+                        if self
+                            .validate_unmutated_version_adoption_recovery(&record)
+                            .is_ok() =>
+                    {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
                     "migrate_relation" | "usage_manage"
                         if has_relation_migration_recovery_journal(&record.recovery_data) =>
                     {
@@ -19557,11 +19564,122 @@ impl RecoveryBackend for LocalRecoveryBackend {
             database.operation_repository().update_sync(&record)?;
             return Ok(());
         }
+        if operation_kind.as_deref() == Some("set_current_version") {
+            if action != RecoveryAction::RollbackOperation {
+                return Err(unsupported("recovery.resolve.set_current_version"));
+            }
+            let mut record = {
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.set_current_version"))?;
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?
+            };
+            self.validate_unmutated_version_adoption_recovery(&record)?;
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.message_code = "recovery.resolved".to_owned();
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.set_current_version"))?;
+            database.operation_repository().update_sync(&record)?;
+            return Ok(());
+        }
         Err(unsupported("recovery.resolve"))
     }
 }
 
 impl LocalRecoveryBackend {
+    /// Allows a no-op rollback only when an interrupted version adoption has
+    /// not changed any of the four version consumers. Partial adoption and
+    /// changed visible content remain gated until a complete recovery path is
+    /// available for those states.
+    fn validate_unmutated_version_adoption_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<()> {
+        if record.kind != "set_current_version"
+            || !matches!(
+                record.phase,
+                skillhub_core::OperationPhase::Applying
+                    | skillhub_core::OperationPhase::NeedsRecovery
+            )
+        {
+            return Err(recovery_conflict("version_adoption_phase_invalid"));
+        }
+        let snapshot: VersionAdoptionSnapshot =
+            serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| recovery_conflict("version_adoption_snapshot_invalid"))?;
+        if record.request_fingerprint != snapshot.confirmation_fingerprint {
+            return Err(recovery_conflict(
+                "version_adoption_journal_identity_changed",
+            ));
+        }
+        let previous_portable = snapshot
+            .portable_previous_record
+            .as_ref()
+            .filter(|portable| {
+                portable.id == snapshot.skill_id
+                    && portable.current_version == snapshot.previous_version_id
+            })
+            .ok_or_else(|| recovery_conflict("version_adoption_portable_snapshot_invalid"))?;
+
+        let (skill, database_version) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.version_adoption.validate"))?;
+            let skill = database
+                .catalog_repository()?
+                .get_sync(snapshot.skill_id)?
+                .ok_or_else(|| recovery_conflict("version_adoption_skill_missing"))?;
+            let current = database.current_version(snapshot.skill_id)?;
+            (skill, current)
+        };
+        let context = self.library_runtime.snapshot()?;
+        let target = context.store.load_manifest(&snapshot.target_version_id)?;
+        if target.skill_id != snapshot.skill_id || target.tree_hash != snapshot.target_tree_hash {
+            return Err(recovery_conflict("version_adoption_target_changed"));
+        }
+        if context.store.current(snapshot.skill_id)? != snapshot.previous_version_id
+            || database_version != snapshot.database_previous_version_id
+        {
+            return Err(recovery_conflict("version_adoption_pointer_changed"));
+        }
+        let portable = context
+            .central
+            .load_portable_skill(snapshot.skill_id)?
+            .map(|(record, _)| record);
+        if portable.as_ref() != Some(previous_portable) {
+            return Err(recovery_conflict("version_adoption_portable_changed"));
+        }
+        if context.central.visible_tree_fingerprint(&skill)? != snapshot.visible_tree_fingerprint {
+            return Err(recovery_conflict("version_adoption_visible_tree_changed"));
+        }
+
+        let expected_backup = snapshot.visible_tree_fingerprint.as_ref().map(|_| {
+            context.central.paths().tmp_dir.join(format!(
+                "visible-backup-{}-{}",
+                snapshot.skill_id, record.operation_id
+            ))
+        });
+        if snapshot.visible_backup_path != expected_backup {
+            return Err(recovery_conflict(
+                "version_adoption_backup_identity_changed",
+            ));
+        }
+        if let Some(backup) = expected_backup {
+            if path_entry_exists_for_recovery(&backup)? {
+                return Err(recovery_conflict("version_adoption_backup_already_created"));
+            }
+        }
+        Ok(())
+    }
+
     fn validate_undeploy_recovery_facts(&self, prepared: &PreparedRemovalRecord) -> AppResult<()> {
         let expected = prepared
             .impact

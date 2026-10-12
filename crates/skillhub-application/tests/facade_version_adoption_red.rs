@@ -1,10 +1,11 @@
 use skillhub_application::library_runtime::LibraryContext;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommand, AppCommandResult, AppQuery, AppQueryResult, GetRollbackImpact, SetCurrentVersion,
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, GetRollbackImpact, ResolveRecovery,
+    SetCurrentVersion,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
-use skillhub_core::{ApplicationFacade, ErrorCode, OperationPhase};
+use skillhub_core::{ApplicationFacade, ErrorCode, OperationPhase, RecoveryAction};
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -376,6 +377,288 @@ async fn restart_sweep_relables_an_applying_version_adoption_for_recovery() {
         "# First\n",
         "清扫绝不碰磁盘：当前版本与可见树保持中断前原样，等待恢复页用户决策"
     );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_can_be_settled_when_all_consumers_are_unchanged() {
+    let fixture = version_fixture().await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+    drop(fixture.facade);
+
+    let facade = LocalApplicationFacade::open_with_library(
+        &fixture.database_path,
+        fixture._root.path().join("library"),
+    )
+    .expect("reopen interrupted adoption");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted adoption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted adoption is visible");
+    assert_eq!(candidate.actions, vec![RecoveryAction::RollbackOperation]);
+
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("settle adoption that did not mutate its consumers");
+
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let record = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.phase, OperationPhase::RolledBack);
+    assert_eq!(
+        database.current_version(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    let active = facade.library_runtime().snapshot().unwrap();
+    assert_eq!(
+        VersionStore::from_library(&active.central)
+            .current(fixture.skill.id())
+            .unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        active
+            .central
+            .load_portable_skill(fixture.skill.id())
+            .unwrap()
+            .unwrap()
+            .0
+            .current_version,
+        Some(fixture.first_version.id)
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# First\n"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_hides_rollback_after_visible_tree_drift() {
+    let fixture = version_fixture().await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    std::fs::write(
+        active
+            .central
+            .visible_skill_path(&fixture.skill)
+            .join("SKILL.md"),
+        "# User edit after interruption\n",
+    )
+    .unwrap();
+    drop(fixture.facade);
+
+    let facade = LocalApplicationFacade::open_with_library(
+        &fixture.database_path,
+        fixture._root.path().join("library"),
+    )
+    .expect("reopen interrupted adoption with drift");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted adoption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted adoption is visible");
+    assert!(candidate.actions.is_empty());
+
+    let result = facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await;
+    assert!(result.is_err(), "drifted content must not be overwritten");
+    assert_eq!(
+        std::fs::read_to_string(
+            facade
+                .library_runtime()
+                .snapshot()
+                .unwrap()
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# User edit after interruption\n"
+    );
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap()
+            .phase,
+        OperationPhase::NeedsRecovery
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_hides_rollback_when_any_pointer_or_backup_drifts() {
+    for drift in [
+        "store-pointer",
+        "database-pointer",
+        "portable-record",
+        "backup",
+    ] {
+        let fixture = version_fixture().await;
+        let operation_id = prepare_adoption(
+            &fixture.facade,
+            fixture.skill.id(),
+            fixture.target_version.id.clone(),
+        )
+        .await;
+        {
+            let database = fixture.facade.database_for_tests();
+            let database = database.lock().unwrap();
+            let mut record = database
+                .operation_repository()
+                .get_sync(operation_id)
+                .unwrap()
+                .unwrap();
+            record.phase = OperationPhase::Applying;
+            record.progress.phase = OperationPhase::Applying;
+            database
+                .operation_repository()
+                .update_sync(&record)
+                .unwrap();
+        }
+        let active = fixture.facade.library_runtime().snapshot().unwrap();
+        match drift {
+            "store-pointer" => active
+                .store
+                .set_current(fixture.skill.id(), &fixture.target_version.id)
+                .unwrap(),
+            "database-pointer" => fixture
+                .facade
+                .database_for_tests()
+                .lock()
+                .unwrap()
+                .record_current_version(fixture.skill.id(), &fixture.target_version)
+                .unwrap(),
+            "portable-record" => active
+                .central
+                .set_portable_current_version(fixture.skill.id(), Some(&fixture.target_version.id))
+                .unwrap(),
+            "backup" => {
+                let backup = active.central.paths().tmp_dir.join(format!(
+                    "visible-backup-{}-{operation_id}",
+                    fixture.skill.id()
+                ));
+                std::fs::create_dir_all(&backup).unwrap();
+                std::fs::copy(
+                    active
+                        .central
+                        .visible_skill_path(&fixture.skill)
+                        .join("SKILL.md"),
+                    backup.join("SKILL.md"),
+                )
+                .unwrap();
+            }
+            _ => unreachable!("all drift cases are enumerated"),
+        }
+        drop(fixture.facade);
+
+        let facade = LocalApplicationFacade::open_with_library(
+            &fixture.database_path,
+            fixture._root.path().join("library"),
+        )
+        .expect("reopen drifted adoption");
+        let AppQueryResult::RecoveryCandidates(candidates) = facade
+            .query(AppQuery::ListRecoveryCandidates)
+            .await
+            .expect("list drifted adoption")
+        else {
+            panic!("expected recovery candidates");
+        };
+        let candidate = candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .unwrap_or_else(|| panic!("missing {drift} recovery candidate"));
+        assert!(candidate.actions.is_empty(), "{drift}");
+
+        let result = facade
+            .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+                operation_id,
+                action: RecoveryAction::RollbackOperation,
+            }))
+            .await;
+        assert!(result.is_err(), "{drift} must keep the operation gated");
+        let database = Database::open(&fixture.database_path).expect("reopen database");
+        assert_eq!(
+            database
+                .operation_repository()
+                .get_sync(operation_id)
+                .unwrap()
+                .unwrap()
+                .phase,
+            OperationPhase::NeedsRecovery,
+            "{drift}"
+        );
+    }
 }
 
 #[tokio::test]
