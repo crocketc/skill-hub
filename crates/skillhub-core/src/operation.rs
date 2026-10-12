@@ -23,10 +23,10 @@ pub enum OperationPhase {
     RolledBack,
 }
 
-/// Operation kinds whose prepared phase contains only a preview or an
-/// in-memory plan. Their first external mutation is checkpointed as Applying,
-/// so an abandoned Prepared record can be safely settled without a recovery
-/// decision.
+/// Operation kinds whose prepared phase contains only a preview, an in-memory
+/// plan, or immutable unreferenced version capture. Their first mutation of
+/// active consumer state is checkpointed as Applying, so an abandoned Prepared
+/// record can be safely settled without a recovery decision.
 pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "import_skill",
     "deploy_skill",
@@ -47,6 +47,8 @@ pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "shared_usage_migration",
     "migrate_relation",
     "relation_governance_batch",
+    "save_skill_content",
+    "save_markdown_content",
 ];
 
 /// Operation kinds written by the current application. Recovery UI must not
@@ -136,6 +138,16 @@ mod recovery_policy_tests {
             "deploy_skill",
             OperationPhase::Applying
         ));
+        for kind in ["save_skill_content", "save_markdown_content"] {
+            assert!(
+                !operation_requires_recovery_gate(kind, OperationPhase::Prepared),
+                "immutable capture for {kind} must not gate before active consumers change"
+            );
+            assert!(operation_requires_recovery_gate(
+                kind,
+                OperationPhase::Applying
+            ));
+        }
         assert!(!operation_requires_recovery_gate(
             "future_operation_kind",
             OperationPhase::RolledBack

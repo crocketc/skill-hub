@@ -242,12 +242,27 @@ impl CentralLibrary {
 
     pub fn save_portable_skill(&self, skill: &Skill, current: Option<&VersionId>) -> AppResult<()> {
         let mut manifest = self.load_manifest()?;
-        let mut record = manifest
+        let previous = manifest
             .skills
             .iter()
             .find(|record| record.id == skill.id())
-            .cloned()
-            .unwrap_or_else(|| PortableSkillRecord::new(skill.id(), skill.display_name()));
+            .cloned();
+        let record = Self::project_portable_skill_record(skill, current, previous);
+        manifest.skills.retain(|existing| existing.id != skill.id());
+        manifest.skills.push(record);
+        self.write_manifest_atomic(&manifest)
+    }
+
+    /// Projects the portable record produced by `save_portable_skill` without
+    /// writing it. Recovery snapshots use this to verify the exact metadata
+    /// state that a content adoption may have persisted.
+    pub fn project_portable_skill_record(
+        skill: &Skill,
+        current: Option<&VersionId>,
+        previous: Option<PortableSkillRecord>,
+    ) -> PortableSkillRecord {
+        let mut record =
+            previous.unwrap_or_else(|| PortableSkillRecord::new(skill.id(), skill.display_name()));
         record.runtime_name = skill.runtime_name().to_owned();
         record.description = skill.original_description().to_owned();
         record.note = skill.note().map(str::to_owned);
@@ -270,9 +285,7 @@ impl CentralLibrary {
         );
         record.invocation_field = skill.invocation_field().map(str::to_owned);
         record.current_version = current.cloned();
-        manifest.skills.retain(|existing| existing.id != skill.id());
-        manifest.skills.push(record);
-        self.write_manifest_atomic(&manifest)
+        record
     }
 
     /// Updates only the portable manifest's current-version field, preserving
@@ -1067,6 +1080,19 @@ impl CentralLibrary {
                     {
                         return Ok(());
                     }
+                } else if !path_entry_exists(&output)? {
+                    return Ok(());
+                } else {
+                    let expected_tree_hash = VersionStore::from_library(self)
+                        .load_manifest(expected_version)?
+                        .tree_hash;
+                    return self.rollback_visible_tree_replacement(&VisibleTreeReplacement {
+                        skill_id: skill.id(),
+                        output,
+                        backup: None,
+                        expected_tree_hash,
+                        expected_backup_tree_hash: None,
+                    });
                 }
                 return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
                     .with_param("reason", "visible_backup_missing_or_invalid")

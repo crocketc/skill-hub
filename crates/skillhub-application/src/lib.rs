@@ -7680,7 +7680,64 @@ impl LocalApplicationFacade {
                 operation_id
             ))),
             visible_tree_fingerprint,
+            skill_runtime_name: Some(skill.runtime_name().to_owned()),
+            target_version_id: None,
+            target_tree_hash: None,
+            target_portable_record: None,
+            captured_version_created: None,
         })
+    }
+
+    /// Content capture only writes immutable, unreferenced objects and a
+    /// version manifest until its identity is known. Keep that interval in
+    /// Prepared so a restart can abandon it safely; the next checkpoint moves
+    /// to Applying immediately before the first live consumer can change.
+    fn content_adoption_capture_checkpoint(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        snapshot: &ContentAdoptionSnapshot,
+    ) -> AppResult<()> {
+        let mut record = journal_record(
+            operation_id,
+            kind,
+            skillhub_core::OperationPhase::Prepared,
+            None,
+        );
+        record.recovery_data = serde_json::to_value(snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        self.persist_version_adoption_record(&record)
+    }
+
+    /// Adds the immutable target identity and exact portable projection before
+    /// changing the visible tree or either current-version pointer.
+    fn content_adoption_target_checkpoint(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+        skill: &Skill,
+        snapshot: &mut ContentAdoptionSnapshot,
+        version: &skillhub_core::VersionRecord,
+        captured_created: bool,
+    ) -> AppResult<()> {
+        snapshot.target_version_id = Some(version.id.clone());
+        snapshot.target_tree_hash = Some(version.manifest.tree_hash.clone());
+        snapshot.captured_version_created = Some(captured_created);
+        snapshot.target_portable_record = Some(match snapshot.portable_previous_record.clone() {
+            Some(mut previous) => {
+                previous.current_version = Some(version.id.clone());
+                previous
+            }
+            None => skillhub_storage::CentralLibrary::project_portable_skill_record(
+                skill,
+                Some(&version.id),
+                None,
+            ),
+        });
+        self.content_adoption_checkpoint(operation_id, kind, snapshot)
     }
 
     /// Persists the durable Applying checkpoint that carries the recovery
@@ -7783,57 +7840,16 @@ impl LocalApplicationFacade {
         captured_created: bool,
         new_skill: bool,
     ) -> Vec<(&'static str, ErrorCode)> {
-        let mut failures = Vec::new();
-        if new_skill {
-            // remove_sync 是幂等 DELETE：行尚未插入时同样视为已清理。
-            let catalog_result = self
-                .with_database("content_adoption.compensate_catalog", |database| {
-                    database.catalog_repository()?.remove_sync(skill.id())
-                });
-            if let Err(error) = catalog_result {
-                failures.push(("catalog_record", error.code));
-            }
-        }
-        let pointer_result = match snapshot.previous_version_id.as_ref() {
-            Some(version_id) => context.store.set_current(skill.id(), version_id),
-            None => context.store.clear_current(skill.id()),
-        };
-        if let Err(error) = pointer_result {
-            failures.push(("version_store_pointer", error.code));
-        }
-        if let Err(error) = context
-            .central
-            .restore_portable_skill_record(skill.id(), snapshot.portable_previous_record.clone())
-        {
-            failures.push(("portable_manifest", error.code));
-        }
-        let database_result = self.with_database("content_adoption.restore_catalog", |database| {
-            database.restore_current_version_pointer(
-                skill.id(),
-                snapshot.database_previous_version_id.as_ref(),
-            )
-        });
-        if let Err(error) = database_result {
-            failures.push(("database_current_pointer", error.code));
-        }
-        if failures.is_empty() {
-            if let Some(replacement) = replacement {
-                if let Err(error) = context
-                    .central
-                    .rollback_visible_tree_replacement(replacement)
-                {
-                    failures.push(("visible_tree", error.code));
-                }
-            }
-            if captured_created {
-                if let Some(version) = captured {
-                    if let Err(error) = context.store.discard_sync(version) {
-                        failures.push(("version_object", error.code));
-                    }
-                }
-            }
-        }
-        failures
+        compensate_content_adoption_with_database(
+            &self.database,
+            context,
+            skill,
+            snapshot,
+            replacement,
+            captured,
+            captured_created,
+            new_skill,
+        )
     }
 
     /// Settles a failed content adoption: compensates every consumer, journals
@@ -8083,7 +8099,8 @@ impl LocalApplicationFacade {
         Ok(progress)
     }
 
-    fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
+    async fn save_skill_content(&self, request: SaveSkillContent) -> AppResult<AppCommandResult> {
+        let _guard = self.version_adoption_lock.lock().await;
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_skill_content");
         self.save_skill_content_flow(request, operation_id)
@@ -8117,13 +8134,14 @@ impl LocalApplicationFacade {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+        let mut snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+        if let Err(error) = self.content_adoption_capture_checkpoint(operation_id, KIND, &snapshot)
+        {
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
         let captured = match library.capture_with_status(request.skill_id, source) {
@@ -8133,6 +8151,26 @@ impl LocalApplicationFacade {
             }
         };
         let version = captured.record;
+        if let Err(error) = self.content_adoption_target_checkpoint(
+            operation_id,
+            KIND,
+            &skill,
+            &mut snapshot,
+            &version,
+            captured.created,
+        ) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                None,
+                Some((&version, captured.created)),
+                false,
+                error,
+            ));
+        }
         let replacement =
             match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
                 Ok(replacement) => replacement,
@@ -8164,7 +8202,11 @@ impl LocalApplicationFacade {
         ))
     }
 
-    fn save_markdown_content(&self, request: SaveMarkdownContent) -> AppResult<AppCommandResult> {
+    async fn save_markdown_content(
+        &self,
+        request: SaveMarkdownContent,
+    ) -> AppResult<AppCommandResult> {
+        let _guard = self.version_adoption_lock.lock().await;
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_markdown_content");
         self.save_markdown_content_flow(request, operation_id)
@@ -8229,13 +8271,14 @@ impl LocalApplicationFacade {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+        let mut snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+        if let Err(error) = self.content_adoption_capture_checkpoint(operation_id, KIND, &snapshot)
+        {
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
         let staging =
@@ -8255,6 +8298,26 @@ impl LocalApplicationFacade {
                 }
             };
             let version = captured.record;
+            if let Err(error) = self.content_adoption_target_checkpoint(
+                operation_id,
+                KIND,
+                &skill,
+                &mut snapshot,
+                &version,
+                captured.created,
+            ) {
+                return Err(self.settle_content_adoption_failure(
+                    &library,
+                    &skill,
+                    operation_id,
+                    KIND,
+                    &snapshot,
+                    None,
+                    Some((&version, captured.created)),
+                    false,
+                    error,
+                ));
+            }
             let replacement =
                 match self.adopt_captured_version(&library, &skill, &snapshot, &version, false) {
                     Ok(replacement) => replacement,
@@ -9850,8 +9913,12 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppCommand::SetCurrentVersion(request) => {
                 return self.set_current_version(request).await;
             }
-            AppCommand::SaveSkillContent(request) => return self.save_skill_content(request),
-            AppCommand::SaveMarkdownContent(request) => return self.save_markdown_content(request),
+            AppCommand::SaveSkillContent(request) => {
+                return self.save_skill_content(request).await;
+            }
+            AppCommand::SaveMarkdownContent(request) => {
+                return self.save_markdown_content(request).await;
+            }
             AppCommand::SaveMarkdownDraft(request) => return self.save_markdown_draft(request),
             AppCommand::DiscardMarkdownDraft(request) => {
                 return self.discard_markdown_draft(request);
@@ -18105,9 +18172,9 @@ struct VersionAdoptionSnapshot {
 
 /// Pre-adoption facts of the four version consumers for one content adoption
 /// (CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy
-/// / CommitSourceUpdate). Persisted in the operation journal's Applying
-/// checkpoint before the first physical mutation; a failed adopt may only
-/// roll back to exactly these facts.
+/// / CommitSourceUpdate). Save flows persist these pre-adoption facts before
+/// capture, then complete the target identity in Applying before the first
+/// active-consumer mutation; a failed adopt may only roll back to these facts.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct ContentAdoptionSnapshot {
     skill_id: skillhub_core::SkillId,
@@ -18116,6 +18183,16 @@ struct ContentAdoptionSnapshot {
     portable_previous_record: Option<skillhub_core::PortableSkillRecord>,
     visible_backup_path: Option<PathBuf>,
     visible_tree_fingerprint: Option<String>,
+    #[serde(default)]
+    skill_runtime_name: Option<String>,
+    #[serde(default)]
+    target_version_id: Option<skillhub_core::VersionId>,
+    #[serde(default)]
+    target_tree_hash: Option<String>,
+    #[serde(default)]
+    target_portable_record: Option<skillhub_core::PortableSkillRecord>,
+    #[serde(default)]
+    captured_version_created: Option<bool>,
 }
 
 /// K6：来源更新候选预览的 TTL（与版本采用预览同口径，秒）。
@@ -18374,6 +18451,82 @@ fn recovery_object_results(
             },
         )
         .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compensate_content_adoption_with_database(
+    database: &Arc<Mutex<Database>>,
+    context: &library_runtime::LibraryContext,
+    skill: &Skill,
+    snapshot: &ContentAdoptionSnapshot,
+    replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
+    captured: Option<&skillhub_core::VersionRecord>,
+    captured_created: bool,
+    new_skill: bool,
+) -> Vec<(&'static str, ErrorCode)> {
+    let mut failures = Vec::new();
+    if new_skill {
+        // remove_sync 是幂等 DELETE：行尚未插入时同样视为已清理。
+        let catalog_result = database
+            .lock()
+            .map_err(|_| internal("content_adoption.compensate_catalog"))
+            .and_then(|database| database.catalog_repository()?.remove_sync(skill.id()));
+        if let Err(error) = catalog_result {
+            failures.push(("catalog_record", error.code));
+        }
+    }
+    let pointer_result = match snapshot.previous_version_id.as_ref() {
+        Some(version_id) => context.store.set_current(skill.id(), version_id),
+        None => context.store.clear_current(skill.id()),
+    };
+    if let Err(error) = pointer_result {
+        failures.push(("version_store_pointer", error.code));
+    }
+    if let Err(error) = context
+        .central
+        .restore_portable_skill_record(skill.id(), snapshot.portable_previous_record.clone())
+    {
+        failures.push(("portable_manifest", error.code));
+    }
+    let database_result = database
+        .lock()
+        .map_err(|_| internal("content_adoption.restore_catalog"))
+        .and_then(|database| {
+            database.restore_current_version_pointer(
+                skill.id(),
+                snapshot.database_previous_version_id.as_ref(),
+            )
+        });
+    if let Err(error) = database_result {
+        failures.push(("database_current_pointer", error.code));
+    }
+    if failures.is_empty() {
+        let visible_result = if let Some(replacement) = replacement {
+            context
+                .central
+                .rollback_visible_tree_replacement(replacement)
+        } else if let Some(target_version_id) = snapshot.target_version_id.as_ref() {
+            context.central.recover_visible_tree_adoption(
+                skill,
+                target_version_id,
+                snapshot.visible_backup_path.as_deref(),
+                snapshot.visible_tree_fingerprint.as_deref(),
+            )
+        } else {
+            Ok(())
+        };
+        if let Err(error) = visible_result {
+            failures.push(("visible_tree", error.code));
+        }
+        if failures.is_empty() && captured_created {
+            if let Some(version) = captured {
+                if let Err(error) = context.store.discard_sync(version) {
+                    failures.push(("version_object", error.code));
+                }
+            }
+        }
+    }
+    failures
 }
 
 fn compensate_version_adoption_with_database(
@@ -20230,6 +20383,7 @@ impl HealthBackend for LocalHealthBackend {
 #[async_trait]
 impl RecoveryBackend for LocalRecoveryBackend {
     async fn list_candidates(&self) -> AppResult<Vec<RecoveryCandidate>> {
+        let _adoption_guard = self.version_adoption_lock.lock().await;
         let records = {
             let database = self
                 .database
@@ -20306,6 +20460,13 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     "set_current_version"
                         if self
                             .validate_version_adoption_recovery(&record, false)
+                            .is_ok() =>
+                    {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
+                    "save_skill_content" | "save_markdown_content"
+                        if self
+                            .validate_content_adoption_recovery(&record, false)
                             .is_ok() =>
                     {
                         vec![RecoveryAction::RollbackOperation]
@@ -20471,6 +20632,108 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .database
                 .lock()
                 .map_err(|_| internal("recovery.resolve.set_current_version"))?;
+            database.operation_repository().update_sync(&record)?;
+            return Ok(());
+        }
+        if matches!(
+            operation_kind.as_deref(),
+            Some("save_skill_content" | "save_markdown_content")
+        ) {
+            if action != RecoveryAction::RollbackOperation {
+                return Err(unsupported("recovery.resolve.content_adoption"));
+            }
+            let _guard = self.version_adoption_lock.clone().lock_owned().await;
+            let mut record = {
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.content_adoption"))?;
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)?
+                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?
+            };
+            let (snapshot, skill, context, target) =
+                self.validate_content_adoption_recovery(&record, false)?;
+            let failures = compensate_content_adoption_with_database(
+                &self.database,
+                &context,
+                &skill,
+                &snapshot,
+                None,
+                None,
+                false,
+                false,
+            );
+            if !failures.is_empty() {
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = record.phase;
+                record.progress.message_code = format!("operation.{}.needs_recovery", record.kind);
+                record.error_code = failures.first().map(|(_, code)| *code);
+                record.object_results = recovery_object_results(&failures);
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.content_adoption"))?;
+                database.operation_repository().update_sync(&record)?;
+                return Err(recovery_conflict("content_adoption_recovery_incomplete"));
+            }
+            if let Err(error) = self.validate_content_adoption_recovery(&record, true) {
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = record.phase;
+                record.progress.message_code = format!("operation.{}.needs_recovery", record.kind);
+                record.error_code = Some(error.code);
+                record.object_results =
+                    recovery_object_results(&[("content_adoption", error.code)]);
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.content_adoption"))?;
+                database.operation_repository().update_sync(&record)?;
+                return Err(error);
+            }
+            if let Some(target) = target.filter(|_| snapshot.captured_version_created == Some(true))
+            {
+                if let Err(error) = context.store.discard_sync(&target) {
+                    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                    record.progress.phase = record.phase;
+                    record.progress.message_code =
+                        format!("operation.{}.needs_recovery", record.kind);
+                    record.error_code = Some(error.code);
+                    record.object_results =
+                        recovery_object_results(&[("version_object", error.code)]);
+                    let database = self
+                        .database
+                        .lock()
+                        .map_err(|_| internal("recovery.resolve.content_adoption"))?;
+                    database.operation_repository().update_sync(&record)?;
+                    return Err(error);
+                }
+            }
+            if let Err(error) = self.validate_content_adoption_recovery(&record, true) {
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = record.phase;
+                record.progress.message_code = format!("operation.{}.needs_recovery", record.kind);
+                record.error_code = Some(error.code);
+                record.object_results =
+                    recovery_object_results(&[("content_adoption", error.code)]);
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.content_adoption"))?;
+                database.operation_repository().update_sync(&record)?;
+                return Err(error);
+            }
+            record.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.completed = record.progress.total;
+            record.progress.message_code = "recovery.resolved".to_owned();
+            record.error_code = None;
+            record.object_results = recovery_object_results(&[]);
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.content_adoption"))?;
             database.operation_repository().update_sync(&record)?;
             return Ok(());
         }
@@ -21337,6 +21600,197 @@ impl LocalRecoveryBackend {
         }
 
         Ok((snapshot, skill, context))
+    }
+
+    /// Validates a content save against the exact old/target version consumers
+    /// and the operation-scoped visible-tree backup. Older snapshots that do
+    /// not identify the captured target intentionally keep the gate without an
+    /// automatic action.
+    fn validate_content_adoption_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+        require_restored: bool,
+    ) -> AppResult<(
+        ContentAdoptionSnapshot,
+        Skill,
+        Arc<library_runtime::LibraryContext>,
+        Option<skillhub_core::VersionRecord>,
+    )> {
+        if !matches!(
+            record.kind.as_str(),
+            "save_skill_content" | "save_markdown_content"
+        ) || !matches!(
+            record.phase,
+            skillhub_core::OperationPhase::Applying | skillhub_core::OperationPhase::NeedsRecovery
+        ) {
+            return Err(recovery_conflict("content_adoption_phase_invalid"));
+        }
+        let snapshot: ContentAdoptionSnapshot =
+            serde_json::from_value(record.recovery_data.clone())
+                .map_err(|_| recovery_conflict("content_adoption_snapshot_invalid"))?;
+        let target_version_id = snapshot
+            .target_version_id
+            .as_ref()
+            .ok_or_else(|| recovery_conflict("content_adoption_target_identity_missing"))?;
+        let target_tree_hash = snapshot
+            .target_tree_hash
+            .as_deref()
+            .filter(|hash| !hash.is_empty())
+            .ok_or_else(|| recovery_conflict("content_adoption_target_hash_missing"))?;
+        let target_portable_record = snapshot
+            .target_portable_record
+            .as_ref()
+            .ok_or_else(|| recovery_conflict("content_adoption_portable_target_missing"))?;
+        let captured_version_created = snapshot
+            .captured_version_created
+            .ok_or_else(|| recovery_conflict("content_adoption_capture_state_missing"))?;
+        let runtime_name = snapshot
+            .skill_runtime_name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| recovery_conflict("content_adoption_runtime_identity_missing"))?;
+
+        let (skill, database_version) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.content_adoption.validate"))?;
+            let skill = database
+                .catalog_repository()?
+                .get_sync(snapshot.skill_id)?
+                .ok_or_else(|| recovery_conflict("content_adoption_skill_missing"))?;
+            let current = database.current_version(snapshot.skill_id)?;
+            (skill, current)
+        };
+        if skill.runtime_name() != runtime_name {
+            return Err(recovery_conflict(
+                "content_adoption_runtime_identity_changed",
+            ));
+        }
+        if snapshot
+            .portable_previous_record
+            .as_ref()
+            .is_some_and(|previous| {
+                previous.id != snapshot.skill_id || previous.runtime_name != runtime_name
+            })
+        {
+            return Err(recovery_conflict(
+                "content_adoption_portable_snapshot_invalid",
+            ));
+        }
+        let expected_target_portable = match snapshot.portable_previous_record.clone() {
+            Some(mut previous) => {
+                previous.current_version = Some(target_version_id.clone());
+                previous
+            }
+            None => skillhub_storage::CentralLibrary::project_portable_skill_record(
+                &skill,
+                Some(target_version_id),
+                None,
+            ),
+        };
+        if target_portable_record != &expected_target_portable
+            || target_portable_record.id != snapshot.skill_id
+            || target_portable_record.runtime_name != runtime_name
+            || target_portable_record.current_version.as_ref() != Some(target_version_id)
+        {
+            return Err(recovery_conflict(
+                "content_adoption_portable_target_invalid",
+            ));
+        }
+
+        let context = self.library_runtime.snapshot()?;
+        let store_version = context.store.current(snapshot.skill_id)?;
+        let store_at_previous = store_version == snapshot.previous_version_id;
+        let store_at_target = store_version.as_ref() == Some(target_version_id);
+        let database_at_previous = database_version == snapshot.database_previous_version_id;
+        let database_at_target = database_version.as_ref() == Some(target_version_id);
+        if !(store_at_previous || store_at_target) || !(database_at_previous || database_at_target)
+        {
+            return Err(recovery_conflict("content_adoption_pointer_changed"));
+        }
+
+        let portable = context
+            .central
+            .load_portable_skill(snapshot.skill_id)?
+            .map(|(record, _)| record);
+        let portable_at_previous = portable.as_ref() == snapshot.portable_previous_record.as_ref();
+        let portable_at_target = portable.as_ref() == Some(target_portable_record);
+        if !portable_at_previous && !portable_at_target {
+            return Err(recovery_conflict("content_adoption_portable_changed"));
+        }
+
+        let visible_tree = context.central.visible_tree_fingerprint(&skill)?;
+        let backup_path = context.central.paths().tmp_dir.join(format!(
+            "visible-backup-{}-{}",
+            snapshot.skill_id, record.operation_id
+        ));
+        if snapshot.visible_backup_path.as_ref() != Some(&backup_path) {
+            return Err(recovery_conflict(
+                "content_adoption_backup_identity_changed",
+            ));
+        }
+        let backup_exists = path_entry_exists_for_recovery(&backup_path)?;
+        let visible_is_previous = visible_tree == snapshot.visible_tree_fingerprint;
+        let visible_is_target = visible_tree.as_deref() == Some(target_tree_hash);
+        if let Some(previous_tree) = snapshot.visible_tree_fingerprint.as_deref() {
+            if backup_exists {
+                ensure_directory(&backup_path, "content_adoption_backup_not_directory")?;
+                let backup_hash = VersionStore::from_library(&context.central)
+                    .hash_tree_read_only(&backup_path)?;
+                if backup_hash != previous_tree
+                    || (!visible_is_previous && !visible_is_target && visible_tree.is_some())
+                {
+                    return Err(recovery_conflict("content_adoption_visible_tree_changed"));
+                }
+                if visible_is_previous {
+                    context
+                        .central
+                        .ensure_visible_backup_recovery_quarantine_available(
+                            snapshot.skill_id,
+                            &backup_path,
+                        )?;
+                }
+            } else if !visible_is_previous {
+                return Err(recovery_conflict(
+                    "content_adoption_backup_missing_or_visible_tree_changed",
+                ));
+            }
+        } else if backup_exists || (visible_tree.is_some() && !visible_is_target) {
+            return Err(recovery_conflict("content_adoption_visible_tree_changed"));
+        }
+
+        let restored = store_at_previous
+            && database_at_previous
+            && portable_at_previous
+            && visible_is_previous
+            && !backup_exists;
+        if require_restored && !restored {
+            return Err(recovery_conflict("content_adoption_rollback_not_verified"));
+        }
+
+        let target_manifest = match context.store.load_manifest(target_version_id) {
+            Ok(manifest) => {
+                if manifest.skill_id != snapshot.skill_id || manifest.tree_hash != target_tree_hash
+                {
+                    return Err(recovery_conflict("content_adoption_target_changed"));
+                }
+                Some(skillhub_core::VersionRecord {
+                    id: target_version_id.clone(),
+                    manifest,
+                })
+            }
+            Err(error)
+                if error.code == ErrorCode::ObjectNotFound
+                    && captured_version_created
+                    && restored =>
+            {
+                None
+            }
+            Err(error) => return Err(error),
+        };
+
+        Ok((snapshot, skill, context, target_manifest))
     }
 
     fn validate_undeploy_recovery_facts(&self, prepared: &PreparedRemovalRecord) -> AppResult<()> {

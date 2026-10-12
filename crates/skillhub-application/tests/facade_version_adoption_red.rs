@@ -1461,8 +1461,9 @@ async fn adoption_rejects_a_shared_relation_link_replaced_with_another_directory
 // CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy /
 // ApplySourceUpdate 与版本采用（SetCurrentVersion）共享同一批消费面：
 // ①版本库指针 ②可见树 ③portable manifest ④DB current_pointers。
-// 物理变更前必须先持久化恢复快照（Applying 检查点）；补偿全部成功 →
-// RolledBack，任何补偿面失败 → NeedsRecovery 并保留恢复事实。
+// 改变活动消费面前必须先持久化 Applying 恢复快照；内容保存目标版本身份
+// 确认前处于 Prepared，只进行不可变版本捕获。补偿全部成功 → RolledBack，
+// 任何补偿面失败 → NeedsRecovery 并保留恢复事实。
 // ============================================================================
 
 type ContentFaultHandler = skillhub_storage::ManifestFaultHandler;
@@ -1477,22 +1478,32 @@ struct ContentFault {
 
 impl ContentFault {
     fn one_shot() -> Self {
-        Self::build(false)
+        Self::build(false, false)
     }
 
     fn persistent() -> Self {
-        Self::build(true)
+        Self::build(true, false)
     }
 
-    fn build(persistent: bool) -> Self {
+    fn one_shot_visible_restore_failure() -> Self {
+        Self::build(false, true)
+    }
+
+    fn build(persistent: bool, fail_visible_restore: bool) -> Self {
         let armed = Arc::new(AtomicBool::new(false));
         let handler = {
             let armed = Arc::clone(&armed);
-            let fired = Arc::new(AtomicBool::new(false));
+            let manifest_write_fired = Arc::new(AtomicBool::new(false));
+            let visible_restore_fired = Arc::new(AtomicBool::new(false));
             Arc::new(move |point: &str| {
-                point == "before_manifest_replace"
-                    && armed.load(Ordering::SeqCst)
-                    && (persistent || !fired.swap(true, Ordering::SeqCst))
+                if !armed.load(Ordering::SeqCst) {
+                    return false;
+                }
+                (point == "before_manifest_replace"
+                    && (persistent || !manifest_write_fired.swap(true, Ordering::SeqCst)))
+                    || (fail_visible_restore
+                        && point == "before_visible_restore"
+                        && !visible_restore_fired.swap(true, Ordering::SeqCst))
             }) as ContentFaultHandler
         };
         Self { armed, handler }
@@ -1598,6 +1609,35 @@ fn portable_current_version(
         .and_then(|record| record.current_version)
 }
 
+fn assert_content_adoption_pointers_and_versions(
+    database_path: &Path,
+    library_root: &Path,
+    skill_id: skillhub_core::SkillId,
+    expected: &skillhub_core::VersionId,
+) {
+    let library = CentralLibrary::open_existing(library_root).expect("open central library");
+    let store = VersionStore::from_library(&library);
+    assert_eq!(
+        store.current(skill_id).expect("version-store pointer"),
+        Some(expected.clone())
+    );
+    let versions = store.list(skill_id).expect("skill versions");
+    assert_eq!(versions.len(), 1, "new target manifest must be removed");
+    assert_eq!(versions[0].id, *expected);
+
+    let database = Database::open(database_path).expect("reopen database");
+    assert_eq!(
+        database
+            .current_version(skill_id)
+            .expect("database pointer"),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        portable_current_version(library_root, skill_id),
+        Some(expected.clone())
+    );
+}
+
 fn journal_phase(database_path: &Path, kind: &str) -> String {
     let database = Database::open(database_path).expect("reopen database");
     database
@@ -1608,6 +1648,18 @@ fn journal_phase(database_path: &Path, kind: &str) -> String {
             |row| row.get(0),
         )
         .expect("journal row for kind")
+}
+
+fn journal_operation_id(database_path: &Path, kind: &str) -> skillhub_core::OperationId {
+    Database::open(database_path)
+        .expect("reopen database")
+        .operation_repository()
+        .list_sync()
+        .expect("list operation journal")
+        .into_iter()
+        .find(|record| record.kind == kind)
+        .map(|record| record.operation_id)
+        .expect("operation row for kind")
 }
 
 /// K1b-1：SaveMarkdownContent 在 portable 写入处失败（one-shot）。
@@ -1732,6 +1784,232 @@ async fn k1b_persistent_portable_failure_during_save_markdown_retains_recovery_f
         backups >= 1,
         "补偿失败时必须保留 visible-backup-<skill_id>-* 恢复事实"
     );
+
+    let backup_path = std::fs::read_dir(fixture.library_root.join(".skillhub").join("tmp"))
+        .expect("library tmp directory")
+        .flatten()
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(backup_prefix.as_str())
+        })
+        .expect("operation-scoped visible backup")
+        .path();
+    std::fs::write(backup_path.join("SKILL.md"), "# External change\n")
+        .expect("simulate backup drift");
+
+    let operation_id = journal_operation_id(&fixture.database_path, "save_markdown_content");
+    let facade =
+        LocalApplicationFacade::open_with_library(&fixture.database_path, &fixture.library_root)
+            .expect("reopen interrupted markdown save");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted markdown save")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted markdown save remains visible");
+    assert!(
+        candidate.actions.is_empty(),
+        "a changed backup must not authorize restoring over the live tree"
+    );
+    assert!(facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .is_err());
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_markdown_content"),
+        "needs_recovery",
+        "drift keeps the operation gated"
+    );
+
+    std::fs::write(backup_path.join("SKILL.md"), "# First\n")
+        .expect("restore exact backup contents");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck the restored backup")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted markdown save remains visible");
+    assert_eq!(candidate.actions, vec![RecoveryAction::RollbackOperation]);
+
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("recover the interrupted markdown save");
+    drop(facade);
+
+    assert_eq!(
+        std::fs::read_to_string(
+            visible_skill_tree(&fixture.library_root, fixture.skill.id()).join("SKILL.md")
+        )
+        .expect("restored visible SKILL.md"),
+        "# First\n"
+    );
+    assert_content_adoption_pointers_and_versions(
+        &fixture.database_path,
+        &fixture.library_root,
+        fixture.skill.id(),
+        &fixture.first_version.id,
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_markdown_content"),
+        "rolled_back"
+    );
+    let remaining_backups = std::fs::read_dir(fixture.library_root.join(".skillhub").join("tmp"))
+        .expect("library tmp directory after recovery")
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(backup_prefix.as_str())
+        })
+        .count();
+    assert_eq!(
+        remaining_backups, 0,
+        "verified backup is consumed on recovery"
+    );
+}
+
+#[tokio::test]
+async fn k1b_persistent_portable_failure_during_save_skill_content_recovers_after_restart() {
+    let fixture = content_fixture(ContentFault::persistent()).await;
+    let authoring = tempfile::tempdir().expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Second\n").expect("updated content");
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::SaveSkillContent(
+            skillhub_core::api::SaveSkillContent {
+                skill_id: fixture.skill.id(),
+                source_path: authoring.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("a persistent portable write failure must be recoverable");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    drop(fixture.facade);
+
+    let operation_id = journal_operation_id(&fixture.database_path, "save_skill_content");
+    let facade =
+        LocalApplicationFacade::open_with_library(&fixture.database_path, &fixture.library_root)
+            .expect("reopen interrupted content save");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted content save")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .expect("interrupted content save remains visible")
+            .actions,
+        vec![RecoveryAction::RollbackOperation]
+    );
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("recover the interrupted content save");
+    drop(facade);
+
+    assert_eq!(
+        std::fs::read_to_string(
+            visible_skill_tree(&fixture.library_root, fixture.skill.id()).join("SKILL.md")
+        )
+        .expect("restored visible SKILL.md"),
+        "# First\n"
+    );
+    assert_content_adoption_pointers_and_versions(
+        &fixture.database_path,
+        &fixture.library_root,
+        fixture.skill.id(),
+        &fixture.first_version.id,
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_skill_content"),
+        "rolled_back"
+    );
+}
+
+#[tokio::test]
+async fn k1b_save_skill_content_recovery_removes_target_when_no_visible_tree_existed() {
+    let fixture = content_fixture(ContentFault::persistent()).await;
+    std::fs::remove_dir_all(visible_skill_tree(
+        &fixture.library_root,
+        fixture.skill.id(),
+    ))
+    .expect("remove the prior visible projection");
+    let authoring = tempfile::tempdir().expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Second\n").expect("updated content");
+
+    fixture
+        .facade
+        .execute(AppCommand::SaveSkillContent(
+            skillhub_core::api::SaveSkillContent {
+                skill_id: fixture.skill.id(),
+                source_path: authoring.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("a persistent portable failure must retain recovery facts");
+    drop(fixture.facade);
+
+    let operation_id = journal_operation_id(&fixture.database_path, "save_skill_content");
+    let facade =
+        LocalApplicationFacade::open_with_library(&fixture.database_path, &fixture.library_root)
+            .expect("reopen interrupted content save");
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("rollback must remove the exact new projection when the old tree was absent");
+    drop(facade);
+
+    assert!(
+        std::fs::read_dir(fixture.library_root.join("skills"))
+            .expect("visible skills")
+            .flatten()
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .contains(&fixture.skill.id().to_string())),
+        "rollback must restore the originally absent visible tree"
+    );
+    assert_content_adoption_pointers_and_versions(
+        &fixture.database_path,
+        &fixture.library_root,
+        fixture.skill.id(),
+        &fixture.first_version.id,
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_skill_content"),
+        "rolled_back"
+    );
 }
 
 /// K1b-3：SaveSkillContent（源目录内容改为 "# Second"）在 portable 写入处
@@ -1776,6 +2054,85 @@ async fn k1b_save_skill_content_portable_failure_restores_all_content_consumers(
     assert_eq!(
         portable_current_version(&fixture.library_root, fixture.skill.id()),
         Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_skill_content"),
+        "rolled_back"
+    );
+}
+
+#[tokio::test]
+async fn k1b_visible_restore_failure_keeps_target_version_for_restart_recovery() {
+    let fixture = content_fixture(ContentFault::one_shot_visible_restore_failure()).await;
+    let authoring = tempfile::tempdir().expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Second\n").expect("updated content");
+
+    fixture
+        .facade
+        .execute(AppCommand::SaveSkillContent(
+            skillhub_core::api::SaveSkillContent {
+                skill_id: fixture.skill.id(),
+                source_path: authoring.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("visible-tree compensation failure must retain recovery facts");
+    assert_eq!(
+        journal_phase(&fixture.database_path, "save_skill_content"),
+        "needs_recovery"
+    );
+    let library = CentralLibrary::open_existing(&fixture.library_root).expect("open library");
+    assert_eq!(
+        VersionStore::from_library(&library)
+            .list(fixture.skill.id())
+            .expect("captured versions")
+            .len(),
+        2,
+        "the captured target manifest must remain until the visible tree is restored"
+    );
+    drop(fixture.facade);
+
+    let operation_id = journal_operation_id(&fixture.database_path, "save_skill_content");
+    let facade =
+        LocalApplicationFacade::open_with_library(&fixture.database_path, &fixture.library_root)
+            .expect("reopen interrupted content save");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted content save")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .expect("interrupted content save remains visible")
+            .actions,
+        vec![RecoveryAction::RollbackOperation],
+        "the retained target identity must make restart recovery available"
+    );
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("recover the interrupted content save after restart");
+    drop(facade);
+
+    assert_eq!(
+        std::fs::read_to_string(
+            visible_skill_tree(&fixture.library_root, fixture.skill.id()).join("SKILL.md")
+        )
+        .expect("restored visible SKILL.md"),
+        "# First\n"
+    );
+    assert_content_adoption_pointers_and_versions(
+        &fixture.database_path,
+        &fixture.library_root,
+        fixture.skill.id(),
+        &fixture.first_version.id,
     );
     assert_eq!(
         journal_phase(&fixture.database_path, "save_skill_content"),
