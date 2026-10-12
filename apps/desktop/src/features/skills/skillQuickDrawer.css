@@ -1029,15 +1029,27 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__summary-grid {
-  gap: var(--space-1) var(--space-3);
+  grid-template-rows: repeat(3, max-content);
+  grid-auto-rows: max-content;
+  align-content: start;
+  row-gap: var(--space-1);
+  column-gap: var(--space-3);
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__summary-item {
+  /* Avoid WebKit inflating intrinsic heights of nested grid/flex values. */
+  display: flex;
+  flex-direction: column;
   gap: 0;
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__summary-value {
   min-height: 1.75rem;
+  align-items: flex-start;
+}
+
+.sh-skill-drawer--prototype .sh-skill-drawer__summary-tags .sh-skill-drawer__edit-icon {
+  align-self: flex-start;
 }
 
 .sh-skill-drawer--prototype .sh-skill-drawer__description-block {
@@ -1304,7 +1316,7 @@ html:has(.sh-skill-drawer--prototype) .sh-overlay {
 .sh-skill-drawer--prototype .sh-skill-drawer__prototype-lifecycle {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 2px var(--space-1);
 }
