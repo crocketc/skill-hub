@@ -426,6 +426,70 @@ function importBatchFinalized(result: AppCommandResult) {
 }
 
 const discoveredCandidates = new Map<string, NativeImportCandidate>();
+type ImportPreparationSession = {
+  cancelled: boolean;
+  ids: Set<string>;
+  settlements: Map<string, Promise<void>>;
+};
+
+const importPreparationSessions = new Set<ImportPreparationSession>();
+
+function beginImportPreparationSession(): ImportPreparationSession {
+  const session: ImportPreparationSession = {
+    cancelled: false,
+    ids: new Set(),
+    settlements: new Map(),
+  };
+  importPreparationSessions.add(session);
+  return session;
+}
+
+function settlePreparedImport(
+  session: ImportPreparationSession,
+  preparedImportId: string,
+): Promise<void> {
+  const existing = session.settlements.get(preparedImportId);
+  if (existing) return existing;
+  const settlement = Promise.resolve()
+    .then(() => executeCommand({
+      type: "cancel_import",
+      payload: { prepared_import_id: preparedImportId },
+    }))
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      session.settlements.delete(preparedImportId);
+      throw error;
+    });
+  session.settlements.set(preparedImportId, settlement);
+  return settlement;
+}
+
+function registerPreparedImport(
+  session: ImportPreparationSession,
+  preparedImportId: string,
+) {
+  session.ids.add(preparedImportId);
+  if (session.cancelled) {
+    // cancel() may have run while the native prepare request was in flight.
+    // The analysis finalizer awaits this same settlement before returning.
+    void settlePreparedImport(session, preparedImportId).catch(() => undefined);
+  }
+}
+
+function preparedImportForSession(
+  session: ImportPreparationSession,
+  result: AppCommandResult,
+) {
+  if (result.type === "prepared_import") {
+    registerPreparedImport(session, result.payload.id);
+  }
+  return preparedImport(result);
+}
+
+async function settleImportPreparationSession(session: ImportPreparationSession) {
+  await Promise.all([...session.ids].map((id) => settlePreparedImport(session, id)));
+}
+
 function reconstructedCandidate(candidate: ImportCandidate): NativeImportCandidate {
   return {
     absolute_root: candidate.path,
@@ -466,6 +530,7 @@ export const nativeImportFacade: ImportFacade = {
   },
 
   async analyzeConflicts(candidates, onProgress) {
+    const preparationSession = beginImportPreparationSession();
     const conflicts: ImportConflict[] = [];
     let completed = 0;
     // W2-2：批内互检与逐候选库内分析并行发出（展示阶段还没有批次号，
@@ -493,10 +558,8 @@ export const nativeImportFacade: ImportFacade = {
       .then(queryImportBatchAnalysis)
       .catch(() => undefined);
     // W3-1：逐候选 prepare 带回安全分级摘要（与后端留存报告同一份发现）
-    // 与真实 check_state。prepare 只写会话内存、放弃无残留（后端语义）；
-    // 单个候选准备失败诚实降级为无安全摘要 + 徽标保持未检查，不让其
-    // 拖垮整个分析阶段——提交期门禁仍由后端错误码把守。经一次微任务
-    // 再调用，避免同步抛错打断并发装配。
+    // 与真实 check_state。此准备只用于分析展示；提交会重新 prepare，故
+    // 必须逐项结算这些日志记录。单个候选准备失败诚实降级，不拖垮分析。
     const prepareQueries = candidates.map((candidate) =>
       Promise.resolve()
         .then(() => executeCommand({
@@ -506,62 +569,75 @@ export const nativeImportFacade: ImportFacade = {
             tree_hash: null,
           },
         }))
-        .then(preparedImport)
+        .then((result) => preparedImportForSession(preparationSession, result))
         .catch(() => undefined));
     // 各候选互不依赖，并行分析以避免 N 次串行 IPC 往返。候选数组长度即真实
     // 总数，每个候选查询 resolve 即累计一次真实已完成数；进度只反映已完成的
     // IPC 查询，不做任何估算（OPT-20260914-01）。
-    const [analyses, batchAnalysis, prepares] = await Promise.all([
-      Promise.all(analysisQueries),
-      batchAnalysisQuery,
-      Promise.all(prepareQueries),
-    ]);
-    const security: ImportSecurityPlan = {};
-    const preparedCandidates = candidates.map((candidate, index) => {
-      const prepared = prepares[index];
-      if (!prepared) return candidate;
-      if (prepared.security) security[candidate.id] = securitySummaryView(prepared.security);
-      const checkState = prepared.security?.check_state;
-      // §6.0 债务清偿：候选徽标用 prepare 的真实 check_state 替换硬编码
-      // 的“尚未检查”；prepare 失败（无返回）时保持 not_checked。
-      return checkState ? { ...candidate, basicCheck: checkState } : candidate;
-    });
-    for (const { candidate, analysis } of analyses) {
-      for (const conflict of analysis.conflicts) {
-        if (!conflict.requires_choice) continue;
-        const kind = conflictKind(conflict.kind);
-        if (!kind) continue;
-        const allowedActions = analysis.actions
-          .map(actionForDecision)
-          .filter((action): action is ImportAction => action !== undefined)
-          .filter((action, index, actions) => actions.indexOf(action) === index);
-        conflicts.push({
-          allowedActions,
-          candidateId: candidate.id,
-          candidateName: candidate.name,
-          candidatePath: candidate.path,
-          duplicateKind: analysis.duplicate_kind,
-          kind,
-          matchedSkillIds: analysis.matches.map((match) => match.skill_id),
-          matchedSkills: analysis.matches
-            .filter((match) => match.skill_id === conflict.skill_id)
-            .map(matchedSkill),
-          required: true,
-          summary: conflict.reason_code,
-        });
+    const analysesResult = Promise.all(analysisQueries).then(
+      (analyses) => ({ ok: true as const, analyses }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    let preparationSettled = false;
+    try {
+      const [analysisResult, batchAnalysis, prepares] = await Promise.all([
+        analysesResult,
+        batchAnalysisQuery,
+        Promise.all(prepareQueries),
+      ]);
+      await settleImportPreparationSession(preparationSession);
+      preparationSettled = true;
+      if (preparationSession.cancelled) throw new ImportCancelledError();
+      if (!analysisResult.ok) throw analysisResult.error;
+      const analyses = analysisResult.analyses;
+      const security: ImportSecurityPlan = {};
+      const preparedCandidates = candidates.map((candidate, index) => {
+        const prepared = prepares[index];
+        if (!prepared) return candidate;
+        if (prepared.security) security[candidate.id] = securitySummaryView(prepared.security);
+        const checkState = prepared.security?.check_state;
+        // 候选徽标使用 prepare 的真实 check_state；失败时保持 not_checked。
+        return checkState ? { ...candidate, basicCheck: checkState } : candidate;
+      });
+      for (const { candidate, analysis } of analyses) {
+        for (const conflict of analysis.conflicts) {
+          if (!conflict.requires_choice) continue;
+          const kind = conflictKind(conflict.kind);
+          if (!kind) continue;
+          const allowedActions = analysis.actions
+            .map(actionForDecision)
+            .filter((action): action is ImportAction => action !== undefined)
+            .filter((action, index, actions) => actions.indexOf(action) === index);
+          conflicts.push({
+            allowedActions,
+            candidateId: candidate.id,
+            candidateName: candidate.name,
+            candidatePath: candidate.path,
+            duplicateKind: analysis.duplicate_kind,
+            kind,
+            matchedSkillIds: analysis.matches.map((match) => match.skill_id),
+            matchedSkills: analysis.matches
+              .filter((match) => match.skill_id === conflict.skill_id)
+              .map(matchedSkill),
+            required: true,
+            summary: conflict.reason_code,
+          });
+        }
       }
+      return {
+        candidates: preparedCandidates,
+        conflicts,
+        governanceGroups: mergeGovernanceGroups(
+          analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
+        ),
+        ...(Object.keys(security).length ? { security } : {}),
+        ...(batchAnalysis
+          ? { batchAnalysis: batchAnalysisFromNative(batchAnalysis, candidates) }
+          : {}),
+      };
+    } finally {
+      if (preparationSettled) importPreparationSessions.delete(preparationSession);
     }
-    return {
-      candidates: preparedCandidates,
-      conflicts,
-      governanceGroups: mergeGovernanceGroups(
-        analyses.flatMap(({ analysis }) => analysis.governance_groups ?? []),
-      ),
-      ...(Object.keys(security).length ? { security } : {}),
-      ...(batchAnalysis
-        ? { batchAnalysis: batchAnalysisFromNative(batchAnalysis, candidates) }
-        : {}),
-    };
   },
 
   async commitImport(plan, actions, onProgress, governanceDecision = { group_actions: {}, item_overrides: {} }, dispositions) {
@@ -667,31 +743,79 @@ export const nativeImportFacade: ImportFacade = {
 
   cancel: () => {
     discoveredCandidates.clear();
-    return Promise.resolve();
+    const sessions = [...importPreparationSessions];
+    for (const session of sessions) session.cancelled = true;
+    return Promise.all(sessions.map(settleImportPreparationSession)).then(() => undefined);
   },
 
   async runAiPreChecks(plan) {
     // Step-5 advisory pre-check: stage every candidate exactly like the
     // commit loop does, then run one batched AI safety analysis. Findings
     // never change the deterministic gates; commit re-prepares its own ids.
-    const preparedIds: string[] = [];
+    const preparationSession = beginImportPreparationSession();
     const candidateIds: string[] = [];
     // 各候选互不依赖，并行 prepare 以避免 N 次串行 IPC 往返；顺序按原候选顺序保留。
-    const preparedList = await Promise.all(plan.candidates.map((candidate) => executeCommand({
-      type: "prepare_import",
-      payload: {
-        candidate: nativeCandidateFor(candidate),
-        tree_hash: null,
-      },
-    }).then(preparedImport)));
-    for (const [index, prepared] of preparedList.entries()) {
-      preparedIds.push(prepared.id);
-      candidateIds.push(plan.candidates[index].id);
+    const preparedResults = await Promise.all(plan.candidates.map((candidate) =>
+      Promise.resolve()
+        .then(() => executeCommand({
+          type: "prepare_import",
+          payload: {
+            candidate: nativeCandidateFor(candidate),
+            tree_hash: null,
+          },
+        }))
+        .then((result) => preparedImportForSession(preparationSession, result))
+        .then((prepared) => ({ ok: true as const, prepared }),
+          (error: unknown) => ({ ok: false as const, error })),
+    ));
+    const firstFailure = preparedResults.find((result) => !result.ok);
+    if (firstFailure && !firstFailure.ok) {
+      let preparationSettled = false;
+      try {
+        await settleImportPreparationSession(preparationSession);
+        preparationSettled = true;
+      } finally {
+        if (preparationSettled) importPreparationSessions.delete(preparationSession);
+      }
+      throw firstFailure.error;
     }
-    const result: AppCommandResult = await executeCommand({
-      type: "run_import_ai_checks",
-      payload: { prepared_import_ids: preparedIds },
+    const preparedList = preparedResults.map((result) => {
+      if (!result.ok) throw result.error;
+      return result.prepared;
     });
+    if (preparationSession.cancelled) {
+      let preparationSettled = false;
+      try {
+        await settleImportPreparationSession(preparationSession);
+        preparationSettled = true;
+      } finally {
+        if (preparationSettled) importPreparationSessions.delete(preparationSession);
+      }
+      throw new ImportCancelledError();
+    }
+    const preparedIds = preparedList.map((prepared, index) => {
+      candidateIds.push(plan.candidates[index].id);
+      return prepared.id;
+    });
+    // Ownership of these ids now belongs to the backend command, whose finally
+    // path settles every advisory preparation even when AI checks fail early.
+    importPreparationSessions.delete(preparationSession);
+    let result: AppCommandResult;
+    try {
+      result = await executeCommand({
+        type: "run_import_ai_checks",
+        payload: { prepared_import_ids: preparedIds },
+      });
+    } catch (error) {
+      // The backend settles these ids in its finally path. If the native call
+      // failed before dispatch, explicitly request the same safe cancellation;
+      // already-settled ids may report not found and are harmless here.
+      await Promise.allSettled(preparedIds.map((id) => executeCommand({
+        type: "cancel_import",
+        payload: { prepared_import_id: id },
+      })));
+      throw error;
+    }
     if (result.type !== "import_ai_checks_report") {
       throw new Error("run_import_ai_checks returned an unexpected native result.");
     }

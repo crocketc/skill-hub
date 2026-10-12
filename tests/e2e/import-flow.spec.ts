@@ -78,6 +78,69 @@ async function parseSource(page: import("@playwright/test").Page, source = "C:/s
   await expect(page.getByRole("button", { name: "分析冲突" })).toBeVisible();
 }
 
+test("native import analysis settles its temporary prepared journal row", async ({ page }) => {
+  await page.goto(PREVIEW);
+  const result = await page.evaluate(async () => {
+    const calls: Array<{ command: string; type: string }> = [];
+    const internals = {
+      invoke: async (command: string, args?: unknown) => {
+        const input = args as {
+          query?: { type?: string };
+          command?: { type?: string };
+        } | undefined;
+        const type = input?.query?.type ?? input?.command?.type ?? "";
+        calls.push({ command, type });
+        if (command === "query_application" && type === "analyze_import") {
+          return {
+            type: "import_analysis",
+            payload: {
+              actions: ["copy_into_library"],
+              candidate: {},
+              conflicts: [],
+              duplicate_kind: null,
+              matches: [],
+            },
+          };
+        }
+        if (command === "query_application" && type === "analyze_import_batch") {
+          return {
+            type: "import_batch_analysis",
+            payload: { same_content_groups: [], same_name_groups: [], signature: "fixture" },
+          };
+        }
+        if (command === "execute_command" && type === "prepare_import") {
+          return {
+            type: "prepared_import",
+            payload: { id: "analysis-only-preview", candidate: {}, analysis: {} },
+          };
+        }
+        if (command === "execute_command" && type === "cancel_import") {
+          return { type: "operation_summary", payload: {} };
+        }
+        throw new Error(`Unexpected native call: ${command}/${type}`);
+      },
+    };
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: internals });
+    const { nativeImportFacade } = await import("/src/features/import/nativeApi.ts");
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const plan = await nativeImportFacade.analyzeConflicts([{
+      basicCheck: "not_checked",
+      id: "C:/incoming/notes#.",
+      name: "notes",
+      ownership: "unknown",
+      path: "C:/incoming/notes",
+      source,
+    }]);
+    return { calls, candidateCount: plan.candidates.length };
+  });
+
+  expect(result.candidateCount).toBe(1);
+  expect(result.calls.filter((call) => call.type === "prepare_import")).toHaveLength(1);
+  expect(result.calls.filter((call) => call.type === "cancel_import")).toHaveLength(1);
+  expect(result.calls.findIndex((call) => call.type === "cancel_import"))
+    .toBeGreaterThan(result.calls.findIndex((call) => call.type === "prepare_import"));
+});
+
 test("keeps the step rail, 44px primary actions and one stable footer across the whole flow", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(PREVIEW);

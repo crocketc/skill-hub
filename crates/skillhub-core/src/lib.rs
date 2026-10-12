@@ -152,9 +152,11 @@ pub use external_link::{
 };
 pub use local_open::{ChooseExternalApplication, OpenDefaultApplication, OpenSkillFolder};
 pub use operation::{
-    InverseOperation, OperationContext, OperationJournal, OperationObjectResult, OperationPhase,
-    OperationProgress, OperationRecord, OperationRepository, OperationStatus, OperationSummary,
-    PreparedRelationMigration, RelationMigrationResult, RelationMigrationState, UndoPlan,
+    is_known_operation_kind, operation_requires_recovery_gate, InverseOperation, OperationContext,
+    OperationJournal, OperationObjectResult, OperationPhase, OperationProgress, OperationRecord,
+    OperationRepository, OperationStatus, OperationSummary, PreparedRelationMigration,
+    RelationMigrationResult, RelationMigrationState, UndoPlan, KNOWN_OPERATION_KINDS,
+    SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS,
 };
 pub use path_policy::{
     paths_share_volume, physical_id_for_path, reparse_physical_id_for_path,

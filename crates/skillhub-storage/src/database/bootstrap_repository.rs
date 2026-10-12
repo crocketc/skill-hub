@@ -432,12 +432,42 @@ impl<'a> BootstrapRepository<'a> {
             )
             .map_err(error)?
             .map(|value| value.to_string());
-        let recovery_state = if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state='needs_recovery' OR phase='needs_recovery')", [], |row| row.get(0)).map_err(error)? != 0 {
-            StartupRecoveryState::NeedsRecovery
-        } else if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state NOT IN ('completed','failed','rolled_back') AND phase NOT IN ('committed','rolled_back','needs_recovery') AND NOT (kind='delete_skill' AND phase='prepared'))", [], |row| row.get(0)).map_err(error)? != 0 {
-            StartupRecoveryState::InProgress
-        } else {
-            StartupRecoveryState::Clean
+        let recovery_state = {
+            let mut statement = self
+                .database
+                .connection
+                .prepare(
+                    "SELECT kind,state,phase FROM operations WHERE state='needs_recovery' OR phase='needs_recovery' OR (state NOT IN ('completed','failed','rolled_back') AND phase NOT IN ('committed','rolled_back','needs_recovery'))",
+                )
+                .map_err(error)?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(error)?;
+            let mut recovery_state = StartupRecoveryState::Clean;
+            for row in rows {
+                let (kind, state, phase) = row.map_err(error)?;
+                if state == "needs_recovery" || phase == "needs_recovery" {
+                    recovery_state = StartupRecoveryState::NeedsRecovery;
+                    break;
+                }
+                let phase = match parse_phase(&phase) {
+                    Ok(phase) => phase,
+                    Err(_) => {
+                        recovery_state = StartupRecoveryState::NeedsRecovery;
+                        break;
+                    }
+                };
+                if skillhub_core::operation_requires_recovery_gate(&kind, phase) {
+                    recovery_state = StartupRecoveryState::InProgress;
+                }
+            }
+            recovery_state
         };
         Ok(BootstrapSnapshot {
             initialization_state: Default::default(),

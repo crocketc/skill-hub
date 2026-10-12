@@ -345,6 +345,55 @@ fn unfinished_operation_is_reported_as_in_progress_recovery_state() {
 }
 
 #[test]
+fn prepared_read_only_previews_do_not_block_application_use() {
+    let db = Database::open_in_memory().unwrap();
+    for (index, kind) in skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS
+        .iter()
+        .enumerate()
+    {
+        db.connection_for_test()
+            .execute(
+                "INSERT INTO operations (operation_id,kind,state,phase,request_fingerprint,created_at,updated_at) VALUES (?1,?2,'running','prepared','fingerprint',0,0)",
+                rusqlite::params![format!("00000000-0000-4000-8000-{index:012}"), kind],
+            )
+            .unwrap();
+    }
+
+    let snapshot = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 10, 13))
+        .unwrap();
+
+    assert_eq!(
+        snapshot.recovery_state,
+        StartupRecoveryState::Clean,
+        "prepared read-only previews must not block the app"
+    );
+}
+
+#[test]
+fn unknown_prepared_operation_keeps_the_recovery_gate_closed() {
+    let db = Database::open_in_memory().unwrap();
+    db.connection_for_test()
+        .execute(
+            "INSERT INTO operations (operation_id,kind,state,phase,request_fingerprint,created_at,updated_at) VALUES (?1,'future_operation','running','prepared','fingerprint',0,0)",
+            [OperationId::new().to_string()],
+        )
+        .unwrap();
+
+    let snapshot = db
+        .bootstrap_repository()
+        .build_snapshot((2026, 10, 13))
+        .unwrap();
+
+    assert_eq!(
+        snapshot.recovery_state,
+        StartupRecoveryState::InProgress,
+        "an unclassified prepared operation must remain visible to recovery"
+    );
+}
+
+#[test]
 fn deterministic_duplicates_match_by_current_version_content_hash() {
     // N12：两个 Skill 的当前版本内容哈希相同时互为确定性重复；
     // 哈希不同或未部署指针的不计入。

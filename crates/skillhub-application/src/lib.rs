@@ -2974,34 +2974,61 @@ impl LocalApplicationFacade {
     // 中的运行元数据（如部署目标路径、影响快照与剩余项）。
     // ------------------------------------------------------------------
 
-    /// DEV-101：`planned`/`prepared` 行的可提交状态只活在进程内存里，上一个
-    /// 会话残留的这类行永远无法提交，却会让启动恢复闸门永远亮着（用户每次
-    /// 取消删除/部署确认框都会留下一条）。四类 prepare 都是只读检查或内存
-    /// 计划，没有磁盘副作用需要回滚，故在会话打开时直接结算为 `rolled_back`；
-    /// `applying`/`verifying` 行可能有真实磁盘效果（#11 裁决）：只把记账标签
-    /// 转入 `needs_recovery`，绝不碰磁盘——启动快照随即落在如实的
-    /// NeedsRecovery 态，每个候选仍由恢复页用户显式决定「完成操作／回滚
-    /// 操作」。每个持有 `Database` 的构造路径都必须调用本函数。返回两类
-    /// 结算行数，供日志器接上时补发启动事件。
+    /// 上一会话的计划行继续按原契约结算为 rolled_back。已知纯预览的
+    /// prepared 行也可安全结束；未知 prepared 不猜测其副作用，保留为
+    /// needs_recovery。applying/verifying 可能已有真实磁盘效果，只转入
+    /// needs_recovery，绝不在启动清扫中改动磁盘。每个持有 Database 的构造
+    /// 路径都必须调用本函数。
     fn sweep_stale_journal(database: &Mutex<Database>) -> (usize, usize) {
         let locked = database
             .lock()
             .map_err(|_| internal("journal.sweep_stale"))
             .expect("journal sweep requires the database lock");
-        let rolled_back = locked
-            .connection_for_test()
-            .execute(
-                "UPDATE operations SET phase='rolled_back', state='rolled_back', updated_at=strftime('%s','now') WHERE phase IN ('planned','prepared')",
-                [],
-            )
-            .expect("settle stale planned/prepared journal rows from the previous session");
-        let needs_recovery = locked
-            .connection_for_test()
-            .execute(
-                "UPDATE operations SET phase='needs_recovery', state='needs_recovery', updated_at=strftime('%s','now') WHERE phase IN ('applying','verifying')",
-                [],
-            )
-            .expect("relabel stale applying/verifying journal rows as recovery candidates");
+        let records = locked
+            .operation_repository()
+            .list_sync()
+            .expect("read operation journal rows before startup sweep");
+        let mut rolled_back = 0;
+        let mut needs_recovery = 0;
+        for mut record in records {
+            let next_phase = match record.phase {
+                skillhub_core::OperationPhase::Planned => {
+                    Some(skillhub_core::OperationPhase::RolledBack)
+                }
+                skillhub_core::OperationPhase::Prepared
+                    if !skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS
+                        .contains(&record.kind.as_str()) =>
+                {
+                    Some(skillhub_core::OperationPhase::NeedsRecovery)
+                }
+                skillhub_core::OperationPhase::Prepared => {
+                    Some(skillhub_core::OperationPhase::RolledBack)
+                }
+                skillhub_core::OperationPhase::Applying
+                | skillhub_core::OperationPhase::Verifying => {
+                    Some(skillhub_core::OperationPhase::NeedsRecovery)
+                }
+                _ => None,
+            };
+            let Some(next_phase) = next_phase else {
+                continue;
+            };
+            record.phase = next_phase;
+            record.progress.phase = next_phase;
+            record.progress.message_code = match next_phase {
+                skillhub_core::OperationPhase::NeedsRecovery => "operation.needs_recovery",
+                _ => "operation.rolled_back",
+            }
+            .to_owned();
+            locked
+                .operation_repository()
+                .update_sync(&record)
+                .expect("settle stale operation journal row during startup sweep");
+            match next_phase {
+                skillhub_core::OperationPhase::NeedsRecovery => needs_recovery += 1,
+                _ => rolled_back += 1,
+            }
+        }
         (rolled_back, needs_recovery)
     }
 
@@ -11824,7 +11851,8 @@ impl LocalApplicationFacade {
         let runtime_name = candidate.runtime_name.clone();
         // W2-2（FB-007）：同名不同内容项的独立命名。覆盖名在准备期校验
         // 非空，分析按"覆盖名生效后的候选"重跑；暂存候选保留发现时的
-        // 事实名，提交期才以覆盖名落地。准备期不写库，放弃无残留。
+        // 事实名，提交期才以覆盖名落地。准备期写入可恢复的操作记录，
+        // 取消或提交完成后会结算该记录。
         let runtime_name_override = request
             .runtime_name_override
             .as_deref()
@@ -18546,6 +18574,107 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn health_repair_only_gates_prepared_operations_that_need_recovery() {
+        let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
+        let database = facade.database_for_tests();
+        let database_guard = database.lock().unwrap();
+        let repository = database_guard.operation_repository();
+
+        for kind in skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS {
+            let mut record = OperationRecord::planned(
+                skillhub_core::OperationId::new(),
+                *kind,
+                "health-safe-prepared",
+            );
+            record.phase = skillhub_core::OperationPhase::Prepared;
+            record.progress.phase = skillhub_core::OperationPhase::Prepared;
+            repository.insert_sync(&record).unwrap();
+        }
+
+        let mut unknown = OperationRecord::planned(
+            skillhub_core::OperationId::new(),
+            "future_operation_kind",
+            "health-unknown-prepared",
+        );
+        unknown.phase = skillhub_core::OperationPhase::Prepared;
+        unknown.progress.phase = skillhub_core::OperationPhase::Prepared;
+        let unknown_id = unknown.operation_id;
+        repository.insert_sync(&unknown).unwrap();
+
+        let planned = OperationRecord::planned(
+            skillhub_core::OperationId::new(),
+            "deploy_skill",
+            "health-planned",
+        );
+        let planned_id = planned.operation_id;
+        repository.insert_sync(&planned).unwrap();
+
+        let mut already_needs_recovery = OperationRecord::planned(
+            skillhub_core::OperationId::new(),
+            "deploy_skill",
+            "health-already-needs-recovery",
+        );
+        already_needs_recovery.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        already_needs_recovery.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        let already_needs_recovery_id = already_needs_recovery.operation_id;
+        repository.insert_sync(&already_needs_recovery).unwrap();
+        drop(database_guard);
+
+        let report = match facade
+            .execute(AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck))
+            .await
+            .unwrap()
+        {
+            skillhub_core::AppCommandResult::HealthReport(report) => report,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        assert_eq!(report.findings.len(), 2);
+
+        let repair = match facade
+            .execute(AppCommand::PrepareRepair(skillhub_core::PrepareRepair {
+                health_report_id: report.id,
+                finding_index: 0,
+            }))
+            .await
+            .unwrap()
+        {
+            skillhub_core::AppCommandResult::RepairPlan(plan) => plan,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        facade
+            .execute(AppCommand::CommitRepair(skillhub_core::CommitRepair {
+                repair_id: repair.id,
+            }))
+            .await
+            .unwrap();
+
+        let database = facade.database_for_tests();
+        let records = database
+            .lock()
+            .unwrap()
+            .operation_repository()
+            .list_sync()
+            .unwrap();
+        for kind in skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS {
+            assert!(records.iter().any(|record| {
+                record.kind == *kind && record.phase == skillhub_core::OperationPhase::Prepared
+            }));
+        }
+        assert!(records.iter().any(|record| {
+            record.operation_id == unknown_id
+                && record.phase == skillhub_core::OperationPhase::NeedsRecovery
+        }));
+        assert!(records.iter().any(|record| {
+            record.operation_id == planned_id
+                && record.phase == skillhub_core::OperationPhase::NeedsRecovery
+        }));
+        assert!(records.iter().any(|record| {
+            record.operation_id == already_needs_recovery_id
+                && record.phase == skillhub_core::OperationPhase::NeedsRecovery
+        }));
+    }
+
     #[test]
     fn production_llm_runtime_installs_runner_credentials_and_admin() {
         let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap())
@@ -18638,7 +18767,7 @@ mod tests {
             .operation_repository()
             .insert_sync(&OperationRecord::planned(
                 operation_id,
-                "test",
+                "deploy_skill",
                 "fingerprint",
             ))
             .unwrap();
@@ -18808,25 +18937,20 @@ fn database_error(operation: &'static str, source: String) -> AppError {
 impl HealthBackend for LocalHealthBackend {
     async fn check(&self) -> AppResult<Vec<HealthFinding>> {
         let database = self.database.lock().map_err(|_| internal("health.check"))?;
-        let mut statement = database
-            .connection_for_test()
-            .prepare(
-                "SELECT operation_id FROM operations WHERE phase IN ('planned','prepared','applying','verifying') ORDER BY operation_id",
-            )
-            .map_err(|error| database_error("health.check", error.to_string()))?;
-        let rows = statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| database_error("health.check", error.to_string()))?;
-        let mut findings = Vec::new();
-        for row in rows {
-            row.map_err(|error| database_error("health.check", error.to_string()))?;
-            findings.push(HealthFinding {
+        Ok(database
+            .operation_repository()
+            .list_sync()?
+            .into_iter()
+            .filter(|record| {
+                record.phase != skillhub_core::OperationPhase::NeedsRecovery
+                    && skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+            })
+            .map(|_| HealthFinding {
                 code: "health.unfinished_operation".to_owned(),
                 severity: Severity::Warning,
                 repair: RepairAction::MarkOperationNeedsRecovery,
-            });
-        }
-        Ok(findings)
+            })
+            .collect())
     }
 
     async fn repair(&self, finding: &HealthFinding) -> AppResult<()> {
@@ -18837,13 +18961,18 @@ impl HealthBackend for LocalHealthBackend {
             .database
             .lock()
             .map_err(|_| internal("health.repair"))?;
-        database
-            .connection_for_test()
-            .execute(
-                "UPDATE operations SET phase='needs_recovery', state='needs_recovery' WHERE phase IN ('planned','prepared','applying','verifying')",
-                [],
-            )
-            .map_err(|error| database_error("health.repair", error.to_string()))?;
+        let records = database.operation_repository().list_sync()?;
+        for mut record in records.into_iter().filter(|record| {
+            skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+        }) {
+            if record.phase == skillhub_core::OperationPhase::NeedsRecovery {
+                continue;
+            }
+            record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+            record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+            record.progress.message_code = "operation.needs_recovery".to_owned();
+            database.operation_repository().update_sync(&record)?;
+        }
         Ok(())
     }
 }
@@ -18858,39 +18987,32 @@ impl RecoveryBackend for LocalRecoveryBackend {
         let records = database.operation_repository().list_sync()?;
         let mut candidates = Vec::new();
         for record in records {
-            if !matches!(
-                record.phase,
-                skillhub_core::OperationPhase::Planned
-                    | skillhub_core::OperationPhase::Prepared
-                    | skillhub_core::OperationPhase::Applying
-                    | skillhub_core::OperationPhase::Verifying
-                    | skillhub_core::OperationPhase::NeedsRecovery
-            ) || (matches!(
-                record.kind.as_str(),
-                "usage_duplicate_cleanup" | "subject_runtime_rename" | "delete_skill"
-            ) && record.phase == skillhub_core::OperationPhase::Prepared)
-            {
+            if !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase) {
                 continue;
             }
             candidates.push(RecoveryCandidate {
                 operation_id: record.operation_id,
-                actions: match record.kind.as_str() {
-                    "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
-                    "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
-                    "subject_runtime_rename"
-                        if record
-                            .recovery_data
-                            .get("metadata_committed")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false) =>
-                    {
-                        vec![RecoveryAction::CompleteOperation]
+                actions: if !skillhub_core::is_known_operation_kind(&record.kind) {
+                    Vec::new()
+                } else {
+                    match record.kind.as_str() {
+                        "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                        "shared_usage_migration" => vec![RecoveryAction::CompleteOperation],
+                        "subject_runtime_rename"
+                            if record
+                                .recovery_data
+                                .get("metadata_committed")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false) =>
+                        {
+                            vec![RecoveryAction::CompleteOperation]
+                        }
+                        "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
+                        _ => vec![
+                            RecoveryAction::CompleteOperation,
+                            RecoveryAction::RollbackOperation,
+                        ],
                     }
-                    "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
-                    _ => vec![
-                        RecoveryAction::CompleteOperation,
-                        RecoveryAction::RollbackOperation,
-                    ],
                 },
             });
         }

@@ -354,6 +354,105 @@ async fn a_failed_create_skill_is_a_terminal_rolled_back_record_without_recovery
     );
 }
 
+#[tokio::test]
+async fn unknown_prepared_operation_is_preserved_as_a_recovery_candidate_without_actions() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.db");
+    let library_root = workspace.path().join("library");
+    std::fs::create_dir_all(&library_root).expect("library root");
+    let operation_id = skillhub_core::OperationId::new();
+    {
+        let database = Database::open(&database_path).expect("seed database");
+        let mut record = skillhub_core::OperationRecord::planned(
+            operation_id,
+            "future_operation_kind",
+            "fixture",
+        );
+        record.phase = OperationPhase::Prepared;
+        record.progress.phase = OperationPhase::Prepared;
+        database
+            .operation_repository()
+            .insert_sync(&record)
+            .expect("seed unknown prepared operation");
+    }
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("open with an unclassified prepared operation");
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::NeedsRecovery,
+        "an unknown prepared operation must remain behind the recovery gate"
+    );
+    let result = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates");
+    let AppQueryResult::RecoveryCandidates(candidates) = result else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, operation_id);
+    assert!(
+        candidates[0].actions.is_empty(),
+        "unknown operation kinds must not receive generic complete/rollback actions"
+    );
+}
+
+#[tokio::test]
+async fn every_known_prepared_preview_is_settled_without_startup_recovery() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.db");
+    let library_root = workspace.path().join("library");
+    std::fs::create_dir_all(&library_root).expect("library root");
+    let expected_kinds = skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS;
+    {
+        let database = Database::open(&database_path).expect("seed database");
+        for kind in expected_kinds {
+            let operation_id = skillhub_core::OperationId::new();
+            let mut record = skillhub_core::OperationRecord::planned(
+                operation_id,
+                *kind,
+                format!("fixture-{kind}"),
+            );
+            record.phase = OperationPhase::Prepared;
+            record.progress.phase = OperationPhase::Prepared;
+            database
+                .operation_repository()
+                .insert_sync(&record)
+                .expect("seed known prepared preview");
+        }
+    }
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("open with known prepared previews");
+    assert_eq!(
+        recovery_state(&facade).await,
+        StartupRecoveryState::Clean,
+        "known prepared previews have no external side effects to recover"
+    );
+    let database = Database::open(&database_path).expect("reopen swept database");
+    let operations = database
+        .operation_repository()
+        .list_sync()
+        .expect("read all swept operations");
+    assert_eq!(operations.len(), expected_kinds.len());
+    for kind in expected_kinds {
+        let record = operations
+            .iter()
+            .find(|record| record.kind == *kind)
+            .unwrap_or_else(|| panic!("missing journal row for {kind}"));
+        assert_eq!(record.phase, OperationPhase::RolledBack, "{kind}");
+    }
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates.is_empty());
+}
+
 /// A commit that fails *before* anything reaches the target directory must settle
 /// as `rolled_back`, not `needs_recovery`.
 ///

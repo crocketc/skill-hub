@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { executeCommand, queryApplication } from "../../api/bindings";
+import { executeCommand, queryApplication, type ImportAnalysis } from "../../api/bindings";
 import { nativeImportFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
@@ -413,6 +413,10 @@ describe("native import facade", () => {
         },
       },
     });
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "operation_summary",
+      payload: {} as never,
+    });
     vi.mocked(queryApplication)
       .mockResolvedValueOnce({ type: "import_candidates", payload: [nativeCandidate] })
       .mockResolvedValueOnce({
@@ -470,7 +474,7 @@ describe("native import facade", () => {
       type: "prepare_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
-    expect(executeCommand).toHaveBeenNthCalledWith(3, {
+    expect(executeCommand).toHaveBeenNthCalledWith(4, {
       type: "prepare_import",
       payload: { candidate: nativeCandidate, tree_hash: null },
     });
@@ -1069,6 +1073,160 @@ it("keeps the analysis usable when prepare-time security staging fails", async (
   expect(plan.candidates[0]?.basicCheck).toBe("not_checked");
   expect(plan.conflicts).toEqual([]);
 });
+
+  it("settles every analysis-only prepared import before returning the plan", async () => {
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: { actions: ["copy_into_library"], candidate: {} as never, conflicts: [], duplicate_kind: null, matches: [] },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+      });
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "prepared_import",
+      payload: { id: "analysis-preview", candidate: {} as never, analysis: { actions: ["copy_into_library"] } as never },
+    });
+
+    const candidate = securityCandidate();
+    await nativeImportFacade.analyzeConflicts([candidate]);
+
+    expect(executeCommand).toHaveBeenLastCalledWith({
+      type: "cancel_import",
+      payload: { prepared_import_id: "analysis-preview" },
+    });
+  });
+
+  it("settles separate previews when conflict analysis is repeated", async () => {
+    const emptyAnalysis: ImportAnalysis = {
+      actions: ["copy_into_library"],
+      candidate: {} as never,
+      conflicts: [],
+      duplicate_kind: null,
+      matches: [],
+    };
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({ type: "import_analysis", payload: emptyAnalysis })
+      .mockResolvedValueOnce({ type: "import_batch_analysis", payload: { same_content_groups: [], same_name_groups: [], signature: "first" } })
+      .mockResolvedValueOnce({ type: "import_analysis", payload: emptyAnalysis })
+      .mockResolvedValueOnce({ type: "import_batch_analysis", payload: { same_content_groups: [], same_name_groups: [], signature: "second" } });
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({ type: "prepared_import", payload: { id: "first-analysis", candidate: {} as never, analysis: emptyAnalysis } })
+      .mockResolvedValueOnce({ type: "operation_summary", payload: {} as never })
+      .mockResolvedValueOnce({ type: "prepared_import", payload: { id: "second-analysis", candidate: {} as never, analysis: emptyAnalysis } })
+      .mockResolvedValueOnce({ type: "operation_summary", payload: {} as never });
+
+    const candidate = securityCandidate();
+    await nativeImportFacade.analyzeConflicts([candidate]);
+    await nativeImportFacade.analyzeConflicts([candidate]);
+
+    expect(executeCommand).toHaveBeenNthCalledWith(2, {
+      type: "cancel_import",
+      payload: { prepared_import_id: "first-analysis" },
+    });
+    expect(executeCommand).toHaveBeenNthCalledWith(4, {
+      type: "cancel_import",
+      payload: { prepared_import_id: "second-analysis" },
+    });
+  });
+
+  it("settles a prepared import that resolves after analysis was cancelled", async () => {
+    let resolvePrepare!: (value: Awaited<ReturnType<typeof executeCommand>>) => void;
+    const pendingPrepare = new Promise<Awaited<ReturnType<typeof executeCommand>>>((resolve) => {
+      resolvePrepare = resolve;
+    });
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: { actions: ["copy_into_library"], candidate: {} as never, conflicts: [], duplicate_kind: null, matches: [] },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+      });
+    vi.mocked(executeCommand).mockReturnValueOnce(pendingPrepare);
+
+    const analysis = nativeImportFacade.analyzeConflicts([securityCandidate()]);
+    await Promise.resolve();
+    await nativeImportFacade.cancel();
+    resolvePrepare({
+      type: "prepared_import",
+      payload: { id: "late-preview", candidate: {} as never, analysis: { actions: ["copy_into_library"] } as never },
+    });
+    await expect(analysis).rejects.toThrow("import acquisition was cancelled");
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "cancel_import",
+      payload: { prepared_import_id: "late-preview" },
+    });
+  });
+
+  it("settles successful analysis preparations when another candidate prepare fails", async () => {
+    vi.mocked(queryApplication)
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: { actions: ["copy_into_library"], candidate: {} as never, conflicts: [], duplicate_kind: null, matches: [] },
+      })
+      .mockResolvedValueOnce({
+        type: "import_analysis",
+        payload: { actions: ["copy_into_library"], candidate: {} as never, conflicts: [], duplicate_kind: null, matches: [] },
+      })
+      .mockResolvedValueOnce({
+        type: "import_batch_analysis",
+        payload: { same_content_groups: [], same_name_groups: [], signature: "sig" },
+      });
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: { id: "successful-preview", candidate: {} as never, analysis: { actions: ["copy_into_library"] } as never },
+      })
+      .mockRejectedValueOnce(new Error("second prepare failed"));
+
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const candidates = ["one", "two"].map((name) => ({
+      basicCheck: "not_checked" as const,
+      id: `C:/incoming/${name}#${name}`,
+      name,
+      ownership: "unknown" as const,
+      path: `C:/incoming/${name}`,
+      source,
+    }));
+    await nativeImportFacade.analyzeConflicts(candidates);
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "cancel_import",
+      payload: { prepared_import_id: "successful-preview" },
+    });
+  });
+
+  it("settles successful AI pre-check preparations when another candidate prepare fails", async () => {
+    vi.mocked(executeCommand)
+      .mockResolvedValueOnce({
+        type: "prepared_import",
+        payload: { id: "ai-successful-preview", candidate: {} as never, analysis: { actions: ["copy_into_library"] } as never },
+      })
+      .mockRejectedValueOnce(new Error("second prepare failed"));
+    const source = await nativeImportFacade.parseSource("C:/incoming");
+    const candidates = ["one", "two"].map((name) => ({
+      basicCheck: "not_checked" as const,
+      id: `C:/incoming/${name}#${name}`,
+      name,
+      ownership: "unknown" as const,
+      path: `C:/incoming/${name}`,
+      source,
+    }));
+
+    await expect(nativeImportFacade.runAiPreChecks!({ candidates, conflicts: [] })).rejects.toThrow(
+      "second prepare failed",
+    );
+
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "cancel_import",
+      payload: { prepared_import_id: "ai-successful-preview" },
+    });
+    expect(executeCommand).not.toHaveBeenCalledWith(expect.objectContaining({ type: "run_import_ai_checks" }));
+  });
 
 it("forwards explicit security decisions on commit_import", async () => {
   for (const decision of ["proceed", "skip"] as const) {
