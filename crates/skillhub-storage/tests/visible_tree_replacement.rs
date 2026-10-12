@@ -117,6 +117,101 @@ fn failed_staging_and_backup_restore_keeps_a_recoverable_backup() {
 }
 
 #[test]
+fn recovery_discards_a_verified_duplicate_backup_after_startup_rebuilds_previous_tree() {
+    let fixture = Fixture::new();
+    let replacement = fixture
+        .library
+        .prepare_visible_tree_replacement(&fixture.skill, &fixture.target.id)
+        .expect("prepare visible replacement");
+    let backup = replacement.backup_path().unwrap().to_path_buf();
+    drop(replacement);
+    fs::remove_dir_all(fixture.output()).expect("simulate interruption before target placement");
+    fixture
+        .library
+        .materialize_current_skill(&fixture.skill, &fixture.previous.id)
+        .expect("startup rebuilds the missing visible tree from the previous pointer");
+
+    fixture
+        .library
+        .recover_visible_tree_backup(
+            &fixture.skill,
+            &backup,
+            &fixture.target.id,
+            &fixture.previous.manifest.tree_hash,
+        )
+        .expect("keep the verified visible tree and discard its duplicate backup");
+    assert_eq!(
+        fs::read_to_string(fixture.output().join("SKILL.md")).unwrap(),
+        "# Previous\n"
+    );
+    assert!(!backup.exists(), "the duplicate internal backup is removed");
+}
+
+#[test]
+fn recovery_can_retry_after_verified_backup_cleanup_is_interrupted() {
+    let fixture = Fixture::new();
+    let replacement = fixture
+        .library
+        .prepare_visible_tree_replacement(&fixture.skill, &fixture.target.id)
+        .expect("prepare visible replacement");
+    let backup = replacement.backup_path().unwrap().to_path_buf();
+    drop(replacement);
+    fs::remove_dir_all(fixture.output()).expect("simulate interruption before target placement");
+    fixture
+        .library
+        .materialize_current_skill(&fixture.skill, &fixture.previous.id)
+        .expect("startup rebuilds the missing visible tree from the previous pointer");
+    fixture.arm(&["after_visible_backup_quarantine"]);
+
+    let interrupted = fixture
+        .library
+        .recover_visible_tree_backup(
+            &fixture.skill,
+            &backup,
+            &fixture.target.id,
+            &fixture.previous.manifest.tree_hash,
+        )
+        .expect_err("an interrupted cleanup keeps the operation retryable");
+    assert_eq!(
+        interrupted
+            .params
+            .get("fault")
+            .and_then(serde_json::Value::as_str),
+        Some("after_visible_backup_quarantine")
+    );
+    assert!(
+        !backup.exists(),
+        "the recovery-owned path is retired atomically"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.output().join("SKILL.md")).unwrap(),
+        "# Previous\n",
+        "the verified visible tree remains intact"
+    );
+
+    fixture
+        .library
+        .recover_visible_tree_backup(
+            &fixture.skill,
+            &backup,
+            &fixture.target.id,
+            &fixture.previous.manifest.tree_hash,
+        )
+        .expect("retry settles after an interrupted quarantine cleanup");
+    assert!(!backup.exists());
+    assert!(
+        fs::read_dir(&fixture.library.paths().tmp_dir)
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("recovery-cleanup-visible-backup-")),
+        "a retry removes a complete quarantined duplicate"
+    );
+}
+
+#[test]
 fn materialize_replaces_an_existing_tree_and_can_repeat() {
     let fixture = Fixture::new();
 

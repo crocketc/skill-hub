@@ -543,14 +543,14 @@ async fn derived_skill_has_no_inherited_update_source() {
 }
 
 #[tokio::test]
-async fn partial_failure_is_recoverable() {
+async fn partial_failure_with_verified_ownership_is_a_stable_result() {
     let mut fixture = Fixture::new();
     let source = seed_source(&fixture);
     let (successful, _) = seed_managed_target(&mut fixture, &source, "Notebook-one", false);
     let (failing, _) = seed_managed_target(&mut fixture, &source, "Notebook-two", true);
     let facade = fixture.facade();
 
-    let (_, receipt) = prepare_and_commit(
+    let (prepared, receipt) = prepare_and_commit(
         &facade,
         derive_request(
             &source,
@@ -562,10 +562,20 @@ async fn partial_failure_is_recoverable() {
     .await;
     let derived_id: SkillId = serde_json::from_value(receipt["derived_skill_id"].clone())
         .expect("partial result keeps the new subject");
-    assert_eq!(receipt["recovery_required"], true);
-    assert!(receipt["item_results"]
+    assert_eq!(receipt["recovery_required"], false);
+    assert_eq!(receipt["recovery_operation_id"], serde_json::Value::Null);
+    assert_eq!(
+        receipt["item_results"].as_array().map(Vec::len),
+        Some(2),
+        "both selected targets receive a durable result"
+    );
+    let statuses = receipt["item_results"]
         .as_array()
-        .is_some_and(|items| !items.is_empty()));
+        .unwrap()
+        .iter()
+        .map(|item| item["status"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(statuses, vec!["applied", "failed"]);
     assert!(skill_view(&facade, derived_id)
         .await
         .upstream_lineage
@@ -573,6 +583,23 @@ async fn partial_failure_is_recoverable() {
     let current = deployments(&facade, source.id).await;
     assert!(current.iter().any(|deployment| deployment.id == failing));
     assert!(!current.iter().any(|deployment| deployment.id == successful));
+    let operation = fixture
+        .database()
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .unwrap()
+        .expect("stable partial result remains in the operation journal");
+    assert_eq!(operation.phase, skillhub_core::OperationPhase::Committed);
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recoverable operations")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(!candidates
+        .iter()
+        .any(|candidate| candidate.operation_id == prepared.operation_id));
 }
 
 #[tokio::test]

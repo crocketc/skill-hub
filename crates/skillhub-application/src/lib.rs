@@ -169,7 +169,7 @@ pub struct LocalApplicationFacade {
     relation_migration_lock: Mutex<()>,
     /// Serializes the preview validation and cross-store write sequence for a
     /// current-version adoption.
-    version_adoption_lock: tokio::sync::Mutex<()>,
+    version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
     /// Serializes writes to facts captured by version-adoption previews.
     version_adoption_facts_lock: tokio::sync::Mutex<()>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
@@ -2491,6 +2491,7 @@ impl LocalApplicationFacade {
         let database = Arc::new(Mutex::new(database));
         let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
+        let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
             library_runtime.clone(),
@@ -2506,6 +2507,7 @@ impl LocalApplicationFacade {
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
             library_runtime: library_runtime.clone(),
+            version_adoption_lock: version_adoption_lock.clone(),
         })));
         let call_policy_service =
             Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
@@ -2545,7 +2547,7 @@ impl LocalApplicationFacade {
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock: Mutex::new(()),
-            version_adoption_lock: tokio::sync::Mutex::new(()),
+            version_adoption_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -2612,6 +2614,7 @@ impl LocalApplicationFacade {
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::from_active(Arc::new(
             library_runtime::LibraryContext::from_library(central),
         )));
+        let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
             library_runtime.clone(),
@@ -2625,6 +2628,7 @@ impl LocalApplicationFacade {
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
             library_runtime: library_runtime.clone(),
+            version_adoption_lock: version_adoption_lock.clone(),
         })));
         let call_policy_service =
             Arc::new(CallPolicyService::new(Arc::new(LocalCallPolicyBackend {
@@ -2664,7 +2668,7 @@ impl LocalApplicationFacade {
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock: Mutex::new(()),
-            version_adoption_lock: tokio::sync::Mutex::new(()),
+            version_adoption_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -6955,7 +6959,6 @@ impl LocalApplicationFacade {
             }
         }
 
-        let _facts_write_guard = self.version_adoption_facts_lock.lock().await;
         let mut revalidated = self.version_adoption_facts(request.skill_id, &request.version_id)?;
         let check_is_complete = !revalidated.target_basic_check_required;
         if !check_is_complete {
@@ -7570,45 +7573,13 @@ impl LocalApplicationFacade {
         snapshot: &VersionAdoptionSnapshot,
         replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
     ) -> Vec<(&'static str, ErrorCode)> {
-        let mut failures = Vec::new();
-        let visible_result = if let Some(replacement) = replacement {
-            context
-                .central
-                .rollback_visible_tree_replacement(replacement)
-        } else {
-            context.central.recover_visible_tree_adoption(
-                skill,
-                &snapshot.target_version_id,
-                snapshot.visible_backup_path.as_deref(),
-                snapshot.visible_tree_fingerprint.as_deref(),
-            )
-        };
-        if let Err(error) = visible_result {
-            failures.push(("visible_tree", error.code));
-        }
-        let pointer_result = match snapshot.previous_version_id.as_ref() {
-            Some(version_id) => context.store.set_current(snapshot.skill_id, version_id),
-            None => context.store.clear_current(snapshot.skill_id),
-        };
-        if let Err(error) = pointer_result {
-            failures.push(("version_store_pointer", error.code));
-        }
-        if let Err(error) = context.central.restore_portable_skill_record(
-            snapshot.skill_id,
-            snapshot.portable_previous_record.clone(),
-        ) {
-            failures.push(("portable_manifest", error.code));
-        }
-        let database_result = self.with_database("version_adoption.restore_catalog", |database| {
-            database.restore_current_version_pointer(
-                snapshot.skill_id,
-                snapshot.database_previous_version_id.as_ref(),
-            )
-        });
-        if let Err(error) = database_result {
-            failures.push(("database_current_pointer", error.code));
-        }
-        failures
+        compensate_version_adoption_with_database(
+            &self.database,
+            context,
+            skill,
+            snapshot,
+            replacement,
+        )
     }
 
     /// Settles a content-adoption failure that happened before any physical
@@ -17816,10 +17787,10 @@ fn attach_target_occupancy_with(
     Ok(())
 }
 
-/// Commands that can change a fact bound by GetRollbackImpact hold the
-/// same gate from before mutation until completion. SetCurrentVersion is
-/// excluded because it acquires the gate only after its awaited basic check,
-/// then performs a fresh full-facts comparison while holding the gate.
+/// Commands that can change a fact bound by GetRollbackImpact hold the same
+/// gate at the execute boundary through validation and mutation. In particular,
+/// SetCurrentVersion takes this gate before its operation lock and awaited check,
+/// matching recovery's lock order and preventing a lock inversion.
 fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
     matches!(
         command,
@@ -17842,6 +17813,7 @@ fn command_changes_version_adoption_facts(command: &AppCommand) -> bool {
             // deployment_relations——正是采用预览指纹读取的关系表。
             | AppCommand::CommitProjectAssembly(_)
             | AppCommand::CommitSourceUpdate(_)
+            | AppCommand::SetCurrentVersion(_)
             | AppCommand::CommitDeploymentPreview(_)
             | AppCommand::CommitDeployment(_)
             | AppCommand::CommitUsageChange(_)
@@ -18161,6 +18133,57 @@ fn recovery_object_results(
             },
         )
         .collect()
+}
+
+fn compensate_version_adoption_with_database(
+    database: &Arc<Mutex<Database>>,
+    context: &library_runtime::LibraryContext,
+    skill: &Skill,
+    snapshot: &VersionAdoptionSnapshot,
+    replacement: Option<&skillhub_storage::VisibleTreeReplacement>,
+) -> Vec<(&'static str, ErrorCode)> {
+    let mut failures = Vec::new();
+    let visible_result = if let Some(replacement) = replacement {
+        context
+            .central
+            .rollback_visible_tree_replacement(replacement)
+    } else {
+        context.central.recover_visible_tree_adoption(
+            skill,
+            &snapshot.target_version_id,
+            snapshot.visible_backup_path.as_deref(),
+            snapshot.visible_tree_fingerprint.as_deref(),
+        )
+    };
+    if let Err(error) = visible_result {
+        failures.push(("visible_tree", error.code));
+    }
+    let pointer_result = match snapshot.previous_version_id.as_ref() {
+        Some(version_id) => context.store.set_current(snapshot.skill_id, version_id),
+        None => context.store.clear_current(snapshot.skill_id),
+    };
+    if let Err(error) = pointer_result {
+        failures.push(("version_store_pointer", error.code));
+    }
+    if let Err(error) = context
+        .central
+        .restore_portable_skill_record(snapshot.skill_id, snapshot.portable_previous_record.clone())
+    {
+        failures.push(("portable_manifest", error.code));
+    }
+    let database_result = database
+        .lock()
+        .map_err(|_| internal("version_adoption.restore_catalog"))
+        .and_then(|database| {
+            database.restore_current_version_pointer(
+                snapshot.skill_id,
+                snapshot.database_previous_version_id.as_ref(),
+            )
+        });
+    if let Err(error) = database_result {
+        failures.push(("database_current_pointer", error.code));
+    }
+    failures
 }
 
 /// Merged capabilities over one physical-target group; the planner applies
@@ -18800,14 +18823,213 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 mod tests {
     use super::{
         civil_date_from_days, command_changes_version_adoption_facts, format_rfc3339_utc,
-        may_register_import_check, LocalApplicationFacade,
+        load_version_adoption_recovery_record, may_register_import_check, LocalApplicationFacade,
     };
-    use skillhub_core::api::{AppCommand, AppQuery};
+    use skillhub_core::api::{AppCommand, AppQuery, AppQueryResult};
     use skillhub_core::catalog::{CallPolicy, Skill};
     use skillhub_core::{
         ApplicationFacade, IgnoreSubject, OperationRecord, ProjectId, RecoveryAction, SkillId,
     };
     use skillhub_storage::Database;
+    use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn version_adoption_recovery_reads_the_record_after_acquiring_its_lock() {
+        let database = Arc::new(Mutex::new(Database::open_in_memory().unwrap()));
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        let operation_id = skillhub_core::OperationId::new();
+        let mut record = OperationRecord::planned(
+            operation_id,
+            "set_current_version",
+            "version-adoption-fingerprint",
+        );
+        record.phase = skillhub_core::OperationPhase::Applying;
+        record.progress.phase = record.phase;
+        database
+            .lock()
+            .unwrap()
+            .operation_repository()
+            .insert_sync(&record)
+            .unwrap();
+
+        let held_guard = lock.clone().lock_owned().await;
+        let pending = load_version_adoption_recovery_record(
+            Arc::clone(&database),
+            Arc::clone(&lock),
+            operation_id,
+        );
+        tokio::pin!(pending);
+        tokio::select! {
+            biased;
+            result = &mut pending => panic!("recovery should wait for the adoption lock: {result:?}"),
+            _ = tokio::task::yield_now() => {},
+        }
+
+        let database_guard = database.lock().unwrap();
+        let mut committed = database_guard
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        committed.phase = skillhub_core::OperationPhase::Committed;
+        committed.progress.phase = committed.phase;
+        database_guard
+            .operation_repository()
+            .update_sync(&committed)
+            .unwrap();
+        drop(database_guard);
+        drop(held_guard);
+
+        let (_recovery_guard, current_record) = pending.await.unwrap();
+        assert_eq!(
+            current_record.phase,
+            skillhub_core::OperationPhase::Committed
+        );
+    }
+
+    #[tokio::test]
+    async fn version_adoption_and_recovery_commands_do_not_invert_their_locks() {
+        use skillhub_core::api::{GetRollbackImpact, ResolveRecovery, SetCurrentVersion};
+        use skillhub_storage::{CentralLibrary, VersionStore};
+        use std::future::Future;
+        use std::time::Duration;
+
+        fn spawn_until_pending<F>(
+            future: F,
+        ) -> (
+            tokio::task::JoinHandle<F::Output>,
+            tokio::sync::oneshot::Receiver<()>,
+        )
+        where
+            F: Future + Send + 'static,
+            F::Output: Send + 'static,
+        {
+            let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+            let task = tokio::spawn(async move {
+                let mut future = Box::pin(future);
+                let mut pending_tx = Some(pending_tx);
+                std::future::poll_fn(move |context| {
+                    let result = future.as_mut().poll(context);
+                    if result.is_pending() {
+                        if let Some(pending_tx) = pending_tx.take() {
+                            let _ = pending_tx.send(());
+                        }
+                    }
+                    result
+                })
+                .await
+            });
+            (task, pending_rx)
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let database_path = root.path().join("skillhub.sqlite");
+        let library_path = root.path().join("library");
+        let database = Database::open(&database_path).unwrap();
+        let skill = Skill::new(SkillId::new(), "Concurrent recovery");
+        database
+            .catalog_repository()
+            .unwrap()
+            .insert_sync(&skill)
+            .unwrap();
+        let library = CentralLibrary::initialize(&library_path).unwrap();
+        let store = VersionStore::from_library(&library);
+        let previous_source = tempfile::tempdir().unwrap();
+        std::fs::write(previous_source.path().join("SKILL.md"), "# Previous\n").unwrap();
+        let previous = store.capture(skill.id(), previous_source.path()).unwrap();
+        let target_source = tempfile::tempdir().unwrap();
+        std::fs::write(target_source.path().join("SKILL.md"), "# Target\n").unwrap();
+        let target = store.capture(skill.id(), target_source.path()).unwrap();
+        store.set_current(skill.id(), &previous.id).unwrap();
+        database
+            .record_current_version(skill.id(), &previous)
+            .unwrap();
+        library
+            .materialize_current_skill(&skill, &previous.id)
+            .unwrap();
+        library
+            .save_portable_skill(&skill, Some(&previous.id))
+            .unwrap();
+        let facade = Arc::new(LocalApplicationFacade::new_with_library_and_faults(
+            database,
+            &library_path,
+            Arc::new(|_| false),
+        ));
+
+        let AppQueryResult::RollbackImpact(preview) = facade
+            .query(AppQuery::GetRollbackImpact(GetRollbackImpact {
+                skill_id: skill.id(),
+                target_version_id: target.id.clone(),
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("expected version adoption preview");
+        };
+        let recovery_id = skillhub_core::OperationId::new();
+        let mut recovery_record = OperationRecord::planned(
+            recovery_id,
+            "set_current_version",
+            "interrupted-version-adoption",
+        );
+        recovery_record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        recovery_record.progress.phase = recovery_record.phase;
+        facade
+            .database_for_tests()
+            .lock()
+            .unwrap()
+            .operation_repository()
+            .insert_sync(&recovery_record)
+            .unwrap();
+
+        // Keep the facts lock occupied while recovery queues first. On the
+        // broken lock order, adoption then holds its own lock while waiting
+        // for facts, and recovery holds facts while waiting for adoption.
+        let facts_guard = facade.version_adoption_facts_lock.lock().await;
+        let recovery_facade = Arc::clone(&facade);
+        let (recovery, recovery_pending) = spawn_until_pending(async move {
+            recovery_facade
+                .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+                    operation_id: recovery_id,
+                    action: RecoveryAction::RollbackOperation,
+                }))
+                .await
+        });
+        recovery_pending
+            .await
+            .expect("recovery reached the held facts gate");
+
+        let adoption_facade = Arc::clone(&facade);
+        let (adoption, adoption_pending) = spawn_until_pending(async move {
+            adoption_facade
+                .execute(AppCommand::SetCurrentVersion(SetCurrentVersion {
+                    skill_id: skill.id(),
+                    version_id: target.id,
+                    preview_id: preview.preview_id,
+                }))
+                .await
+        });
+        adoption_pending
+            .await
+            .expect("adoption reached the held facts gate");
+        assert!(
+            facade.version_adoption_lock.try_lock().is_ok(),
+            "version adoption must wait for the facts gate before taking its operation lock"
+        );
+        drop(facts_guard);
+
+        let completed = tokio::time::timeout(Duration::from_secs(2), async {
+            let (adoption, recovery) = tokio::join!(adoption, recovery);
+            (adoption.unwrap(), recovery.unwrap())
+        })
+        .await
+        .expect("adoption and recovery must not deadlock");
+        assert!(completed.0.is_ok(), "version adoption should complete");
+        assert!(
+            completed.1.is_err(),
+            "invalid recovery snapshot is rejected"
+        );
+    }
 
     /// 契约（K0 §2/D2）：可能改变版本采用预览事实的命令必须全部被事实写锁
     /// 门控。组合部署经 DeploymentRepository::insert_sync 内部同步
@@ -19168,18 +19390,25 @@ mod tests {
         // DEV-101：先构造 facade 再种行。跨会话残留的 planned 行已被启动
         // 清扫结算，不再作为恢复候选；本测试覆盖的是「本会话内」未完成
         // 操作的修复闭环，行必须在构造之后写入。
+        let workspace = tempfile::tempdir().unwrap();
+        let pending_target = workspace.path().join("pending-target-copy");
+        std::fs::create_dir_all(&pending_target).unwrap();
+        std::fs::write(pending_target.join("SKILL.md"), "# interrupted\n").unwrap();
         let operation_id = skillhub_core::OperationId::new();
+        let mut deployment = OperationRecord::planned(operation_id, "deploy_skill", "fingerprint");
+        deployment.recovery_data = serde_json::json!({
+            "pending_targets": [{
+                "path": pending_target,
+                "mode": "managed_copy",
+            }],
+        });
         let facade = LocalApplicationFacade::new(database);
         facade
             .database_for_tests()
             .lock()
             .unwrap()
             .operation_repository()
-            .insert_sync(&OperationRecord::planned(
-                operation_id,
-                "deploy_skill",
-                "fingerprint",
-            ))
+            .insert_sync(&deployment)
             .unwrap();
 
         let candidates = facade
@@ -19189,7 +19418,9 @@ mod tests {
         assert!(matches!(
             candidates,
             skillhub_core::AppQueryResult::RecoveryCandidates(ref values)
-                if values.len() == 1 && values[0].operation_id == operation_id
+                if values.len() == 1
+                    && values[0].operation_id == operation_id
+                    && values[0].actions == vec![RecoveryAction::RollbackOperation]
         ));
         let report = match facade
             .execute(AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck))
@@ -19230,6 +19461,10 @@ mod tests {
             ))
             .await
             .unwrap();
+        assert!(
+            !pending_target.exists(),
+            "the validated interrupted deployment residue is removed"
+        );
         assert!(matches!(
             facade.query(AppQuery::ListRecoveryCandidates).await.unwrap(),
             skillhub_core::AppQueryResult::RecoveryCandidates(values) if values.is_empty()
@@ -19463,7 +19698,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     }
                     "set_current_version"
                         if self
-                            .validate_unmutated_version_adoption_recovery(&record)
+                            .validate_version_adoption_recovery(&record, false)
                             .is_ok() =>
                     {
                         vec![RecoveryAction::RollbackOperation]
@@ -19568,20 +19803,57 @@ impl RecoveryBackend for LocalRecoveryBackend {
             if action != RecoveryAction::RollbackOperation {
                 return Err(unsupported("recovery.resolve.set_current_version"));
             }
-            let mut record = {
+            let (_guard, mut record) = load_version_adoption_recovery_record(
+                Arc::clone(&self.database),
+                Arc::clone(&self.version_adoption_lock),
+                operation_id,
+            )
+            .await?;
+            let (snapshot, skill, context) =
+                self.validate_version_adoption_recovery(&record, false)?;
+            let failures = compensate_version_adoption_with_database(
+                &self.database,
+                &context,
+                &skill,
+                &snapshot,
+                None,
+            );
+            if !failures.is_empty() {
+                let error = recovery_conflict("version_adoption_recovery_incomplete");
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = record.phase;
+                record.progress.message_code =
+                    "operation.set_current_version.needs_recovery".to_owned();
+                record.error_code = failures.first().map(|(_, code)| *code);
+                record.object_results = recovery_object_results(&failures);
                 let database = self
                     .database
                     .lock()
                     .map_err(|_| internal("recovery.resolve.set_current_version"))?;
-                database
-                    .operation_repository()
-                    .get_sync(operation_id)?
-                    .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?
-            };
-            self.validate_unmutated_version_adoption_recovery(&record)?;
+                database.operation_repository().update_sync(&record)?;
+                return Err(error);
+            }
+            if let Err(error) = self.validate_version_adoption_recovery(&record, true) {
+                record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+                record.progress.phase = record.phase;
+                record.progress.message_code =
+                    "operation.set_current_version.needs_recovery".to_owned();
+                record.error_code = Some(error.code);
+                record.object_results =
+                    recovery_object_results(&[("version_adoption", error.code)]);
+                let database = self
+                    .database
+                    .lock()
+                    .map_err(|_| internal("recovery.resolve.set_current_version"))?;
+                database.operation_repository().update_sync(&record)?;
+                return Err(error);
+            }
             record.phase = skillhub_core::OperationPhase::RolledBack;
-            record.progress.phase = skillhub_core::OperationPhase::RolledBack;
+            record.progress.phase = record.phase;
+            record.progress.completed = record.progress.total;
             record.progress.message_code = "recovery.resolved".to_owned();
+            record.error_code = None;
+            record.object_results = recovery_object_results(&[]);
             let database = self
                 .database
                 .lock()
@@ -19594,14 +19866,18 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
-    /// Allows a no-op rollback only when an interrupted version adoption has
-    /// not changed any of the four version consumers. Partial adoption and
-    /// changed visible content remain gated until a complete recovery path is
-    /// available for those states.
-    fn validate_unmutated_version_adoption_recovery(
+    /// Accepts only exact pre-adoption or target facts on each version
+    /// consumer, plus the visible-tree replacement's known intermediate states.
+    /// `require_restored` is used after compensation before resolving the journal.
+    fn validate_version_adoption_recovery(
         &self,
         record: &skillhub_core::OperationRecord,
-    ) -> AppResult<()> {
+        require_restored: bool,
+    ) -> AppResult<(
+        VersionAdoptionSnapshot,
+        Skill,
+        Arc<library_runtime::LibraryContext>,
+    )> {
         if record.kind != "set_current_version"
             || !matches!(
                 record.phase,
@@ -19627,6 +19903,11 @@ impl LocalRecoveryBackend {
                     && portable.current_version == snapshot.previous_version_id
             })
             .ok_or_else(|| recovery_conflict("version_adoption_portable_snapshot_invalid"))?;
+        if previous_portable.runtime_name.is_empty() {
+            return Err(recovery_conflict(
+                "version_adoption_runtime_identity_missing",
+            ));
+        }
 
         let (skill, database_version) = {
             let database = self
@@ -19640,13 +19921,22 @@ impl LocalRecoveryBackend {
             let current = database.current_version(snapshot.skill_id)?;
             (skill, current)
         };
+        if skill.runtime_name() != previous_portable.runtime_name {
+            return Err(recovery_conflict(
+                "version_adoption_runtime_identity_changed",
+            ));
+        }
         let context = self.library_runtime.snapshot()?;
         let target = context.store.load_manifest(&snapshot.target_version_id)?;
         if target.skill_id != snapshot.skill_id || target.tree_hash != snapshot.target_tree_hash {
             return Err(recovery_conflict("version_adoption_target_changed"));
         }
-        if context.store.current(snapshot.skill_id)? != snapshot.previous_version_id
-            || database_version != snapshot.database_previous_version_id
+        let store_version = context.store.current(snapshot.skill_id)?;
+        let store_at_previous = store_version == snapshot.previous_version_id;
+        let store_at_target = store_version.as_ref() == Some(&snapshot.target_version_id);
+        let database_at_previous = database_version == snapshot.database_previous_version_id;
+        let database_at_target = database_version.as_ref() == Some(&snapshot.target_version_id);
+        if !(store_at_previous || store_at_target) || !(database_at_previous || database_at_target)
         {
             return Err(recovery_conflict("version_adoption_pointer_changed"));
         }
@@ -19654,30 +19944,74 @@ impl LocalRecoveryBackend {
             .central
             .load_portable_skill(snapshot.skill_id)?
             .map(|(record, _)| record);
-        if portable.as_ref() != Some(previous_portable) {
+        let mut target_portable = previous_portable.clone();
+        target_portable.current_version = Some(snapshot.target_version_id.clone());
+        let portable_at_previous = portable.as_ref() == Some(previous_portable);
+        let portable_at_target = portable.as_ref() == Some(&target_portable);
+        if !(portable_at_previous || portable_at_target) {
             return Err(recovery_conflict("version_adoption_portable_changed"));
         }
-        if context.central.visible_tree_fingerprint(&skill)? != snapshot.visible_tree_fingerprint {
-            return Err(recovery_conflict("version_adoption_visible_tree_changed"));
-        }
+        let visible_tree = context.central.visible_tree_fingerprint(&skill)?;
 
-        let expected_backup = snapshot.visible_tree_fingerprint.as_ref().map(|_| {
-            context.central.paths().tmp_dir.join(format!(
-                "visible-backup-{}-{}",
-                snapshot.skill_id, record.operation_id
-            ))
-        });
+        let backup_path = context.central.paths().tmp_dir.join(format!(
+            "visible-backup-{}-{}",
+            snapshot.skill_id, record.operation_id
+        ));
+        let expected_backup = snapshot
+            .visible_tree_fingerprint
+            .as_ref()
+            .map(|_| backup_path.clone());
         if snapshot.visible_backup_path != expected_backup {
             return Err(recovery_conflict(
                 "version_adoption_backup_identity_changed",
             ));
         }
-        if let Some(backup) = expected_backup {
-            if path_entry_exists_for_recovery(&backup)? {
-                return Err(recovery_conflict("version_adoption_backup_already_created"));
+
+        let backup_exists = path_entry_exists_for_recovery(&backup_path)?;
+        if let Some(previous_tree) = snapshot.visible_tree_fingerprint.as_deref() {
+            if backup_exists {
+                ensure_directory(&backup_path, "version_adoption_backup_not_directory")?;
+                let backup_hash = VersionStore::from_library(&context.central)
+                    .hash_tree_read_only(&backup_path)?;
+                if backup_hash != previous_tree
+                    || visible_tree.as_deref().is_some_and(|tree| {
+                        tree != snapshot.target_tree_hash && tree != previous_tree
+                    })
+                {
+                    return Err(recovery_conflict("version_adoption_visible_tree_changed"));
+                }
+                if visible_tree.as_deref() == Some(previous_tree) {
+                    context
+                        .central
+                        .ensure_visible_backup_recovery_quarantine_available(
+                            snapshot.skill_id,
+                            &backup_path,
+                        )?;
+                }
+            } else if visible_tree.as_deref() != Some(previous_tree) {
+                return Err(recovery_conflict(
+                    "version_adoption_backup_missing_or_visible_tree_changed",
+                ));
             }
+        } else if backup_exists
+            || visible_tree
+                .as_deref()
+                .is_some_and(|tree| tree != snapshot.target_tree_hash)
+        {
+            return Err(recovery_conflict("version_adoption_visible_tree_changed"));
         }
-        Ok(())
+
+        if require_restored
+            && (store_version != snapshot.previous_version_id
+                || database_version != snapshot.database_previous_version_id
+                || !portable_at_previous
+                || visible_tree != snapshot.visible_tree_fingerprint
+                || backup_exists)
+        {
+            return Err(recovery_conflict("version_adoption_rollback_not_verified"));
+        }
+
+        Ok((snapshot, skill, context))
     }
 
     fn validate_undeploy_recovery_facts(&self, prepared: &PreparedRemovalRecord) -> AppResult<()> {
@@ -20547,6 +20881,28 @@ struct LocalHealthBackend {
 struct LocalRecoveryBackend {
     database: Arc<Mutex<Database>>,
     library_runtime: Arc<library_runtime::LibraryRuntime>,
+    version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+async fn load_version_adoption_recovery_record(
+    database: Arc<Mutex<Database>>,
+    version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
+    operation_id: OperationId,
+) -> AppResult<(
+    tokio::sync::OwnedMutexGuard<()>,
+    skillhub_core::OperationRecord,
+)> {
+    let guard = version_adoption_lock.lock_owned().await;
+    let record = {
+        let database = database
+            .lock()
+            .map_err(|_| internal("recovery.resolve.set_current_version"))?;
+        database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?
+    };
+    Ok((guard, record))
 }
 
 struct LocalCallPolicyBackend {

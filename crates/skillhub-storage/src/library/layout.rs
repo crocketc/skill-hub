@@ -915,6 +915,52 @@ impl CentralLibrary {
             && VersionStore::from_library(self).hash_tree_read_only(&output)?
                 == expected_backup_tree_hash
         {
+            let quarantine = self.visible_backup_recovery_quarantine_path(skill.id(), backup)?;
+            self.remove_verified_visible_backup_quarantine(&quarantine, expected_backup_tree_hash)?;
+            return Ok(());
+        }
+        if path_entry_exists(backup)?
+            && path_entry_exists(&output)?
+            && is_real_directory(&output)?
+            && VersionStore::from_library(self).hash_tree_read_only(&output)?
+                == expected_backup_tree_hash
+        {
+            if VersionStore::from_library(self).hash_tree_read_only(backup)?
+                != expected_backup_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_backup_identity_changed")
+                    .with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    )
+                    .with_action(RecoveryAction::InspectTarget));
+            }
+            self.ensure_visible_backup_recovery_quarantine_available(skill.id(), backup)?;
+            let quarantine = self.visible_backup_recovery_quarantine_path(skill.id(), backup)?;
+            fs::rename(backup, &quarantine).map_err(io_error)?;
+            if self.store.should_fail("after_visible_backup_quarantine") {
+                return Err(
+                    injected_fault("after_visible_backup_quarantine").with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    ),
+                );
+            }
+            fs::remove_dir_all(&quarantine).map_err(io_error)?;
+            if path_entry_exists(backup)?
+                || !is_real_directory(&output)?
+                || VersionStore::from_library(self).hash_tree_read_only(&output)?
+                    != expected_backup_tree_hash
+            {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "visible_backup_reconciliation_failed")
+                    .with_param(
+                        "recovery_backup_path",
+                        backup.to_string_lossy().into_owned(),
+                    )
+                    .with_action(RecoveryAction::InspectTarget));
+            }
             return Ok(());
         }
         let expected_tree_hash = VersionStore::from_library(self)
@@ -928,6 +974,69 @@ impl CentralLibrary {
             expected_backup_tree_hash: Some(expected_backup_tree_hash.to_owned()),
         };
         self.rollback_visible_tree_replacement(&replacement)
+    }
+
+    fn visible_backup_recovery_quarantine_path(
+        &self,
+        skill_id: SkillId,
+        backup: &Path,
+    ) -> AppResult<std::path::PathBuf> {
+        self.validate_visible_backup_entry(skill_id, backup)?;
+        let filename = backup.file_name().ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_backup_path")
+                .with_action(RecoveryAction::InspectTarget)
+        })?;
+        Ok(self
+            .paths
+            .tmp_dir
+            .join(format!("recovery-cleanup-{}", filename.to_string_lossy())))
+    }
+
+    /// Rejects a recovery state whose verified backup cleanup path is already
+    /// occupied. The recovery candidate uses this same check before offering
+    /// rollback, so the action is hidden instead of advertising a retry that
+    /// must fail.
+    pub fn ensure_visible_backup_recovery_quarantine_available(
+        &self,
+        skill_id: SkillId,
+        backup: &Path,
+    ) -> AppResult<()> {
+        let quarantine = self.visible_backup_recovery_quarantine_path(skill_id, backup)?;
+        if path_entry_exists(&quarantine)? {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_backup_quarantine_already_exists")
+                .with_param(
+                    "recovery_backup_path",
+                    backup.to_string_lossy().into_owned(),
+                )
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        Ok(())
+    }
+
+    fn remove_verified_visible_backup_quarantine(
+        &self,
+        quarantine: &Path,
+        expected_tree_hash: &str,
+    ) -> AppResult<()> {
+        if quarantine.parent() != Some(self.paths.tmp_dir.as_path()) {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "visible_backup_quarantine_path")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if path_entry_exists(quarantine)?
+            && is_real_directory(quarantine)?
+            && VersionStore::from_library(self)
+                .hash_tree_read_only(quarantine)
+                .is_ok_and(|hash| hash == expected_tree_hash)
+        {
+            // This directory is already outside the operation's recovery
+            // path. Cleanup is best effort so a partial filesystem delete
+            // cannot keep the operation gated on a backup it no longer needs.
+            let _ = fs::remove_dir_all(quarantine);
+        }
+        Ok(())
     }
 
     /// Idempotently restores the visible-tree part of an interrupted version

@@ -40,6 +40,12 @@ struct VersionFixture {
 }
 
 async fn version_fixture() -> VersionFixture {
+    version_fixture_with_fault(Arc::new(|_| false)).await
+}
+
+async fn version_fixture_with_fault(
+    fault_handler: skillhub_storage::ManifestFaultHandler,
+) -> VersionFixture {
     let root = tempfile::tempdir().expect("isolated fixture root");
     let database_path = root.path().join("skillhub.sqlite");
     let library_root = root.path().join("library");
@@ -52,7 +58,9 @@ async fn version_fixture() -> VersionFixture {
         .await
         .expect("insert skill");
 
-    let library = CentralLibrary::initialize(&library_root).expect("central library");
+    let library =
+        CentralLibrary::initialize_with_fault_handler(&library_root, Arc::clone(&fault_handler))
+            .expect("central library");
     let store = VersionStore::from_library(&library);
     let first_source = tempfile::tempdir().expect("first version source");
     std::fs::write(first_source.path().join("SKILL.md"), "# First\n").expect("first content");
@@ -80,7 +88,11 @@ async fn version_fixture() -> VersionFixture {
     VersionFixture {
         _root: root,
         database_path,
-        facade: LocalApplicationFacade::new_with_library(database, &library_root),
+        facade: LocalApplicationFacade::new_with_library_and_faults(
+            database,
+            &library_root,
+            fault_handler,
+        ),
         skill,
         first_version: first,
         target_version: target,
@@ -444,6 +456,20 @@ async fn interrupted_version_adoption_can_be_settled_when_all_consumers_are_unch
     );
     let active = facade.library_runtime().snapshot().unwrap();
     assert_eq!(
+        active.store.current(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        active
+            .central
+            .load_portable_skill(fixture.skill.id())
+            .unwrap()
+            .unwrap()
+            .0
+            .current_version,
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
         VersionStore::from_library(&active.central)
             .current(fixture.skill.id())
             .unwrap(),
@@ -468,6 +494,584 @@ async fn interrupted_version_adoption_can_be_settled_when_all_consumers_are_unch
         )
         .unwrap(),
         "# First\n"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_offers_rollback_after_a_partial_pointer_switch() {
+    let fixture = version_fixture().await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    let old_visible_hash = active
+        .central
+        .visible_tree_fingerprint(&fixture.skill)
+        .unwrap()
+        .unwrap();
+    let backup = active.central.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{operation_id}",
+        fixture.skill.id()
+    ));
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+
+    // Simulate interruption after the visible tree, VersionStore pointer and
+    // portable pointer switched, while the database pointer still has the old value.
+    let replacement = active
+        .central
+        .prepare_visible_tree_replacement_with_backup(
+            &fixture.skill,
+            &fixture.target_version.id,
+            &backup,
+            Some(&old_visible_hash),
+        )
+        .unwrap();
+    drop(replacement);
+    active
+        .store
+        .set_current(fixture.skill.id(), &fixture.target_version.id)
+        .unwrap();
+    active
+        .central
+        .set_portable_current_version(fixture.skill.id(), Some(&fixture.target_version.id))
+        .unwrap();
+    drop(fixture.facade);
+
+    let facade = LocalApplicationFacade::open_with_library(
+        &fixture.database_path,
+        fixture._root.path().join("library"),
+    )
+    .expect("reopen partially applied version adoption");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted adoption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted adoption is visible");
+    assert_eq!(candidate.actions, vec![RecoveryAction::RollbackOperation]);
+
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("rollback the partially switched adoption");
+
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let record = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.phase, OperationPhase::RolledBack);
+    assert_eq!(
+        database.current_version(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    let active = facade.library_runtime().snapshot().unwrap();
+    assert_eq!(
+        active.store.current(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        active
+            .central
+            .load_portable_skill(fixture.skill.id())
+            .unwrap()
+            .unwrap()
+            .0
+            .current_version,
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# First\n"
+    );
+    assert!(
+        !backup.exists(),
+        "verified backup should be consumed on rollback"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_hides_rollback_when_backup_quarantine_is_occupied() {
+    let fixture = version_fixture().await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    let old_visible_hash = active
+        .central
+        .visible_tree_fingerprint(&fixture.skill)
+        .unwrap()
+        .unwrap();
+    let backup = active.central.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{operation_id}",
+        fixture.skill.id()
+    ));
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+
+    let replacement = active
+        .central
+        .prepare_visible_tree_replacement_with_backup(
+            &fixture.skill,
+            &fixture.target_version.id,
+            &backup,
+            Some(&old_visible_hash),
+        )
+        .unwrap();
+    drop(replacement);
+
+    // Reproduce restart reconciliation: the persisted old pointer recreates
+    // the old visible tree while the separately verified backup still exists.
+    let output = active.central.visible_skill_path(&fixture.skill);
+    std::fs::remove_dir_all(&output).unwrap();
+    active
+        .central
+        .materialize_current_skill(&fixture.skill, &fixture.first_version.id)
+        .unwrap();
+    let backup_name = backup.file_name().unwrap().to_string_lossy();
+    let quarantine = active
+        .central
+        .paths()
+        .tmp_dir
+        .join(format!("recovery-cleanup-{backup_name}"));
+    std::fs::write(&quarantine, "unrelated data").unwrap();
+    drop(fixture.facade);
+
+    let facade = LocalApplicationFacade::open_with_library(
+        &fixture.database_path,
+        fixture._root.path().join("library"),
+    )
+    .expect("reopen adoption with occupied backup quarantine");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted adoption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted adoption remains visible");
+    assert!(candidate.actions.is_empty());
+
+    let result = facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await;
+    assert!(
+        result.is_err(),
+        "an occupied quarantine path must not be used"
+    );
+    assert_eq!(std::fs::read(&quarantine).unwrap(), b"unrelated data");
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap()
+            .phase,
+        OperationPhase::NeedsRecovery
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_restores_when_backup_exists_and_visible_tree_is_absent() {
+    let fixture = version_fixture().await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    let old_visible_hash = active
+        .central
+        .visible_tree_fingerprint(&fixture.skill)
+        .unwrap()
+        .unwrap();
+    let backup = active.central.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{operation_id}",
+        fixture.skill.id()
+    ));
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+
+    let replacement = active
+        .central
+        .prepare_visible_tree_replacement_with_backup(
+            &fixture.skill,
+            &fixture.target_version.id,
+            &backup,
+            Some(&old_visible_hash),
+        )
+        .unwrap();
+    drop(replacement);
+    std::fs::remove_dir_all(active.central.visible_skill_path(&fixture.skill))
+        .expect("simulate interruption between backup and target placement");
+    drop(fixture.facade);
+
+    let facade = LocalApplicationFacade::open_with_library(
+        &fixture.database_path,
+        fixture._root.path().join("library"),
+    )
+    .expect("reopen adoption while visible tree is temporarily absent");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted adoption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("interrupted adoption is visible");
+    assert_eq!(candidate.actions, vec![RecoveryAction::RollbackOperation]);
+
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("restore old visible tree from the verified backup");
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    assert_eq!(
+        database.current_version(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    let active = facade.library_runtime().snapshot().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# First\n"
+    );
+    assert!(
+        !backup.exists(),
+        "verified backup should be consumed on rollback"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_can_retry_after_backup_cleanup_is_interrupted() {
+    let armed = Arc::new(AtomicBool::new(false));
+    let fault_handler = {
+        let armed = Arc::clone(&armed);
+        Arc::new(move |point: &str| {
+            point == "after_visible_backup_quarantine" && armed.swap(false, Ordering::SeqCst)
+        }) as skillhub_storage::ManifestFaultHandler
+    };
+    let fixture = version_fixture_with_fault(fault_handler).await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    let old_visible_hash = active
+        .central
+        .visible_tree_fingerprint(&fixture.skill)
+        .unwrap()
+        .unwrap();
+    let backup = active.central.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{operation_id}",
+        fixture.skill.id()
+    ));
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+
+    let replacement = active
+        .central
+        .prepare_visible_tree_replacement_with_backup(
+            &fixture.skill,
+            &fixture.target_version.id,
+            &backup,
+            Some(&old_visible_hash),
+        )
+        .unwrap();
+    drop(replacement);
+    active
+        .central
+        .materialize_current_skill(&fixture.skill, &fixture.first_version.id)
+        .expect("startup rebuilds the old tree while retaining the verified backup");
+    armed.store(true, Ordering::SeqCst);
+
+    let error = fixture
+        .facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect_err("interrupted backup cleanup must remain retryable");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert!(
+        !backup.exists(),
+        "the interrupted backup is outside the recovery path"
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# First\n"
+    );
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap()
+            .phase,
+        OperationPhase::NeedsRecovery
+    );
+
+    fixture
+        .facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("retry settles after the visible tree was verified and restored");
+    let record = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.phase, OperationPhase::RolledBack);
+    assert!(!backup.exists());
+}
+
+#[tokio::test]
+async fn interrupted_version_adoption_can_retry_after_recovery_write_fails() {
+    let armed = Arc::new(AtomicBool::new(false));
+    let fired = Arc::new(AtomicBool::new(false));
+    let fault_handler = {
+        let armed = Arc::clone(&armed);
+        let fired = Arc::clone(&fired);
+        Arc::new(move |point: &str| {
+            point == "before_visible_restore"
+                && armed.load(Ordering::SeqCst)
+                && !fired.swap(true, Ordering::SeqCst)
+        }) as skillhub_storage::ManifestFaultHandler
+    };
+    let fixture = version_fixture_with_fault(fault_handler).await;
+    let operation_id = prepare_adoption(
+        &fixture.facade,
+        fixture.skill.id(),
+        fixture.target_version.id.clone(),
+    )
+    .await;
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    let old_visible_hash = active
+        .central
+        .visible_tree_fingerprint(&fixture.skill)
+        .unwrap()
+        .unwrap();
+    let backup = active.central.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{operation_id}",
+        fixture.skill.id()
+    ));
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap();
+        record.phase = OperationPhase::Applying;
+        record.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .unwrap();
+    }
+
+    let replacement = active
+        .central
+        .prepare_visible_tree_replacement_with_backup(
+            &fixture.skill,
+            &fixture.target_version.id,
+            &backup,
+            Some(&old_visible_hash),
+        )
+        .unwrap();
+    drop(replacement);
+    active
+        .store
+        .set_current(fixture.skill.id(), &fixture.target_version.id)
+        .unwrap();
+    active
+        .central
+        .set_portable_current_version(fixture.skill.id(), Some(&fixture.target_version.id))
+        .unwrap();
+    armed.store(true, Ordering::SeqCst);
+
+    let rollback = || {
+        AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        })
+    };
+    assert!(fixture.facade.execute(rollback()).await.is_err());
+    assert!(
+        fired.load(Ordering::SeqCst),
+        "visible restore fault was injected"
+    );
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        assert_eq!(
+            database
+                .operation_repository()
+                .get_sync(operation_id)
+                .unwrap()
+                .unwrap()
+                .phase,
+            OperationPhase::NeedsRecovery
+        );
+    }
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list retryable recovery candidate")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == operation_id)
+        .expect("failed recovery remains available");
+    assert_eq!(candidate.actions, vec![RecoveryAction::RollbackOperation]);
+
+    fixture
+        .facade
+        .execute(rollback())
+        .await
+        .expect("retry rollback after one-shot fault was consumed");
+    let database = fixture.facade.database_for_tests();
+    let database = database.lock().unwrap();
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .unwrap()
+            .unwrap()
+            .phase,
+        OperationPhase::RolledBack
+    );
+    drop(database);
+
+    let active = fixture.facade.library_runtime().snapshot().unwrap();
+    assert_eq!(
+        active.store.current(fixture.skill.id()).unwrap(),
+        Some(fixture.first_version.id.clone())
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            active
+                .central
+                .visible_skill_path(&fixture.skill)
+                .join("SKILL.md")
+        )
+        .unwrap(),
+        "# First\n"
+    );
+    assert!(
+        !backup.exists(),
+        "verified backup should be consumed on retry"
     );
 }
 
@@ -559,9 +1163,9 @@ async fn interrupted_version_adoption_hides_rollback_after_visible_tree_drift() 
 #[tokio::test]
 async fn interrupted_version_adoption_hides_rollback_when_any_pointer_or_backup_drifts() {
     for drift in [
-        "store-pointer",
-        "database-pointer",
-        "portable-record",
+        "missing-store-pointer",
+        "missing-database-pointer",
+        "missing-portable-pointer",
         "backup",
     ] {
         let fixture = version_fixture().await;
@@ -588,20 +1192,17 @@ async fn interrupted_version_adoption_hides_rollback_when_any_pointer_or_backup_
         }
         let active = fixture.facade.library_runtime().snapshot().unwrap();
         match drift {
-            "store-pointer" => active
-                .store
-                .set_current(fixture.skill.id(), &fixture.target_version.id)
-                .unwrap(),
-            "database-pointer" => fixture
+            "missing-store-pointer" => active.store.clear_current(fixture.skill.id()).unwrap(),
+            "missing-database-pointer" => fixture
                 .facade
                 .database_for_tests()
                 .lock()
                 .unwrap()
-                .record_current_version(fixture.skill.id(), &fixture.target_version)
+                .restore_current_version_pointer(fixture.skill.id(), None)
                 .unwrap(),
-            "portable-record" => active
+            "missing-portable-pointer" => active
                 .central
-                .set_portable_current_version(fixture.skill.id(), Some(&fixture.target_version.id))
+                .set_portable_current_version(fixture.skill.id(), None)
                 .unwrap(),
             "backup" => {
                 let backup = active.central.paths().tmp_dir.join(format!(
@@ -609,14 +1210,7 @@ async fn interrupted_version_adoption_hides_rollback_when_any_pointer_or_backup_
                     fixture.skill.id()
                 ));
                 std::fs::create_dir_all(&backup).unwrap();
-                std::fs::copy(
-                    active
-                        .central
-                        .visible_skill_path(&fixture.skill)
-                        .join("SKILL.md"),
-                    backup.join("SKILL.md"),
-                )
-                .unwrap();
+                std::fs::write(backup.join("SKILL.md"), "# Unexpected backup\n").unwrap();
             }
             _ => unreachable!("all drift cases are enumerated"),
         }
