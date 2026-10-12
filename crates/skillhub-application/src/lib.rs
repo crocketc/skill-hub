@@ -5562,7 +5562,12 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         const KIND: &str = "create_skill";
-        let library = self.library_runtime.snapshot()?;
+        let library = match self.library_runtime.snapshot() {
+            Ok(library) => library,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         let source = Path::new(&request.source_path);
         let skill = match validate_skill_source(source).and_then(|()| {
             let skill = Skill::new(skillhub_core::SkillId::new(), request.name);
@@ -8137,7 +8142,12 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         const KIND: &str = "save_skill_content";
-        let library = self.library_runtime.snapshot()?;
+        let library = match self.library_runtime.snapshot() {
+            Ok(library) => library,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         let source = Path::new(&request.source_path);
         if let Err(error) = validate_skill_source(source) {
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
@@ -8243,7 +8253,12 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         const KIND: &str = "save_markdown_content";
-        let library = self.library_runtime.snapshot()?;
+        let library = match self.library_runtime.snapshot() {
+            Ok(library) => library,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         let relative = match validate_markdown_path(&request.path) {
             Ok(relative) => relative,
             Err(error) => {
@@ -9186,7 +9201,12 @@ impl LocalApplicationFacade {
         operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         const KIND: &str = "save_markdown_as_copy";
-        let library = self.library_runtime.snapshot()?;
+        let library = match self.library_runtime.snapshot() {
+            Ok(library) => library,
+            Err(error) => {
+                return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
+            }
+        };
         let relative = match validate_markdown_path(&request.path) {
             Ok(relative) => relative,
             Err(error) => {
@@ -14980,12 +15000,14 @@ impl LocalApplicationFacade {
         // 新目录核验（文件系统短操作）：存在、是真实目录、声明了 Skill
         // 身份；集中库内部路径不是用户来源。
         let new_path = PathBuf::from(&request.new_source_path);
-        let metadata = std::fs::symlink_metadata(&new_path).map_err(|_| {
-            AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("path", request.new_source_path.clone())
-                .with_param("detail", "chosen directory does not exist")
-                .with_action(RecoveryAction::ChooseAnotherName)
-        })?;
+        let metadata = std::fs::symlink_metadata(&new_path)
+            .map_err(|_| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("path", request.new_source_path.clone())
+                    .with_param("detail", "chosen directory does not exist")
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })
+            .inspect_err(journal_denied)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             let error = AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("path", request.new_source_path.clone())
@@ -14994,19 +15016,26 @@ impl LocalApplicationFacade {
             journal_denied(&error);
             return Err(error);
         }
-        let markdown = std::fs::read_to_string(new_path.join("SKILL.md")).map_err(|_| {
-            AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("path", request.new_source_path.clone())
-                .with_param("detail", "chosen directory has no SKILL.md")
-                .with_action(RecoveryAction::ChooseAnotherName)
-        })?;
-        let declared_name = read_frontmatter_name(&markdown).ok_or_else(|| {
-            AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("path", request.new_source_path.clone())
-                .with_param("detail", "chosen directory does not declare a skill name")
-                .with_action(RecoveryAction::ChooseAnotherName)
-        })?;
-        let library = self.library_runtime.snapshot()?;
+        let markdown = std::fs::read_to_string(new_path.join("SKILL.md"))
+            .map_err(|_| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("path", request.new_source_path.clone())
+                    .with_param("detail", "chosen directory has no SKILL.md")
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })
+            .inspect_err(journal_denied)?;
+        let declared_name = read_frontmatter_name(&markdown)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("path", request.new_source_path.clone())
+                    .with_param("detail", "chosen directory does not declare a skill name")
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })
+            .inspect_err(journal_denied)?;
+        let library = self
+            .library_runtime
+            .snapshot()
+            .inspect_err(journal_denied)?;
         let canonical = Self::canonical_path_string(&request.new_source_path);
         // 库根与候选路径同走规范化，避免 Windows 扩展长度前缀（\\?\）
         // 造成前缀比较失效（与导入分类的库根比较同款处理）。
@@ -15048,15 +15077,17 @@ impl LocalApplicationFacade {
         }
         // 新物理身份（8.8）：恢复/移动后的目录是新的物理目录；身份可建立
         // 且槽位（物理身份、路径键）不被活动关系占用。
-        let physical_source_id = physical_id_for_path(&new_path).ok_or_else(|| {
-            AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("path", canonical.clone())
-                .with_param(
-                    "detail",
-                    "cannot establish a physical identity for the path",
-                )
-                .with_action(RecoveryAction::ChooseAnotherName)
-        })?;
+        let physical_source_id = physical_id_for_path(&new_path)
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("path", canonical.clone())
+                    .with_param(
+                        "detail",
+                        "cannot establish a physical identity for the path",
+                    )
+                    .with_action(RecoveryAction::ChooseAnotherName)
+            })
+            .inspect_err(journal_denied)?;
         let source_path_key = observed_path_key(&canonical);
         let mut relation = old.clone();
         relation.relation_id = format!("rel-{}", OperationId::new());

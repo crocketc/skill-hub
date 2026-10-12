@@ -11,11 +11,16 @@ use skillhub_core::agent::{
 };
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CreateIgnoreRule, CreateSkill,
-    ListDeployments, PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveSkillContent,
+    ListDeployments, PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveMarkdownAsCopy,
+    SaveMarkdownContent, SaveSkillContent,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentPlan, TargetChange, TargetPlan};
 use skillhub_core::import::ImportCandidate;
+use skillhub_core::import::ImportSourceClass;
+use skillhub_core::relationship::{
+    SourceCopyArchiveReason, SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact,
+};
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
     AppCommand, AppQuery, ApplicationFacade, CommitImport, ErrorCode, ImportDecision,
@@ -184,6 +189,187 @@ async fn save_skill_content_is_journalled_as_a_committed_record() {
     assert_eq!(record.kind, "save_skill_content");
     assert_eq!(record.state, "completed");
     assert_eq!(record.phase, OperationPhase::Committed);
+}
+
+#[tokio::test]
+async fn library_preflight_failures_settle_content_operations_without_recovery_gate() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+    let skill_id = skillhub_core::SkillId::new();
+    let expected_kinds = [
+        "create_skill",
+        "save_skill_content",
+        "save_markdown_content",
+        "save_markdown_as_copy",
+    ];
+    let commands = [
+        (
+            "create_skill",
+            AppCommand::CreateSkill(CreateSkill {
+                name: "Notes".into(),
+                source_path: "unused-source".into(),
+            }),
+        ),
+        (
+            "save_skill_content",
+            AppCommand::SaveSkillContent(SaveSkillContent {
+                skill_id,
+                source_path: "unused-source".into(),
+            }),
+        ),
+        (
+            "save_markdown_content",
+            AppCommand::SaveMarkdownContent(SaveMarkdownContent {
+                skill_id,
+                path: "SKILL.md".into(),
+                markdown: "# Notes".into(),
+                expected_identity: "unused-identity".into(),
+            }),
+        ),
+        (
+            "save_markdown_as_copy",
+            AppCommand::SaveMarkdownAsCopy(SaveMarkdownAsCopy {
+                skill_id,
+                path: "SKILL.md".into(),
+                markdown: "# Notes".into(),
+                expected_identity: "unused-identity".into(),
+                origin: None,
+                inheritance: Default::default(),
+                target_display_name: None,
+                target_runtime_name: None,
+            }),
+        ),
+    ];
+
+    for (_, command) in commands {
+        let error = facade
+            .execute(command)
+            .await
+            .expect_err("a library snapshot is required before content changes");
+        assert_eq!(error.code, ErrorCode::OperationConflict);
+    }
+
+    let operations = recent_operations(&facade).await;
+    assert_eq!(operations.len(), 4);
+    for kind in expected_kinds {
+        let record = operations
+            .iter()
+            .find(|record| record.kind == kind)
+            .unwrap_or_else(|| panic!("missing operation record for {kind}"));
+        assert_eq!(record.state, "rolled_back", "{kind}");
+        assert_eq!(record.phase, OperationPhase::RolledBack, "{kind}");
+    }
+    assert_eq!(recovery_state(&facade).await, StartupRecoveryState::Clean);
+}
+
+#[tokio::test]
+async fn relink_source_copy_preflight_failures_settle_without_recovery_gate() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Archived source");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let old_source = tempfile::tempdir().expect("old source");
+    std::fs::write(old_source.path().join("SKILL.md"), "# Archived\n").expect("write old source");
+    let old_physical_id =
+        skillhub_core::physical_id_for_path(old_source.path()).expect("old source identity");
+    database
+        .provenance_repository()
+        .begin_import_batch("import-batch", 1)
+        .expect("seed import batch");
+    database
+        .provenance_repository()
+        .append_provenance_event(&skillhub_core::import::ImportProvenanceEvent {
+            provenance_id: "import-event".into(),
+            batch_id: "import-batch".into(),
+            skill_id: skill.id(),
+            source_class: ImportSourceClass::UserLocal,
+            source: SourceDescriptor::new(
+                skillhub_core::source::SourceKind::Local,
+                skillhub_core::source::SourceLocator::local_path(old_source.path()),
+            ),
+            local_source_path: Some(old_source.path().to_string_lossy().into_owned()),
+            source_container_id: None,
+            physical_source_id: Some(old_physical_id.clone()),
+            agent_client_id: None,
+            content_fingerprint: "sha256:archived".into(),
+            imported_at: 1,
+        })
+        .expect("seed import provenance");
+    let archived = SourceCopyRelationFact {
+        relation_id: "archived-source-relation".into(),
+        skill_id: skill.id(),
+        latest_provenance_id: "import-event".into(),
+        source_class: ImportSourceClass::UserLocal,
+        source_path: old_source.path().to_string_lossy().into_owned(),
+        source_path_key: old_source.path().to_string_lossy().to_lowercase(),
+        physical_source_id: old_physical_id,
+        source_container_id: None,
+        directory_node_id: None,
+        agent_client_id: None,
+        expected_fingerprint: "sha256:archived".into(),
+        current_fingerprint: None,
+        decision: SourceCopyDecision::Retained,
+        health: SourceCopyHealth::OperationFailed,
+        health_reasons: None,
+        active: false,
+        last_verified_at: None,
+        archived_at: Some(1),
+        archive_reason: Some(SourceCopyArchiveReason::ExternalRemoved),
+    };
+    database
+        .relationship_repository()
+        .upsert_source_copy_relation(&archived, "fs", 1)
+        .expect("seed archived source relation");
+
+    let facade = LocalApplicationFacade::new(database);
+    let missing_directory = old_source.path().join("missing");
+    let empty_directory = tempfile::tempdir().expect("empty directory");
+    let invalid_frontmatter = tempfile::tempdir().expect("invalid frontmatter");
+    std::fs::write(
+        invalid_frontmatter.path().join("SKILL.md"),
+        "No declared name\n",
+    )
+    .expect("write malformed skill");
+    let valid_directory = tempfile::tempdir().expect("valid directory");
+    std::fs::write(
+        valid_directory.path().join("SKILL.md"),
+        "---\nname: Archived source\n---\n",
+    )
+    .expect("write valid skill");
+    let paths = [
+        missing_directory,
+        empty_directory.path().to_path_buf(),
+        invalid_frontmatter.path().to_path_buf(),
+        valid_directory.path().to_path_buf(),
+    ];
+
+    for path in paths {
+        let error = facade
+            .execute(AppCommand::RelinkSourceCopy(
+                skillhub_core::api::RelinkSourceCopy {
+                    source_relation_id: archived.relation_id.clone(),
+                    new_source_path: path.to_string_lossy().into_owned(),
+                },
+            ))
+            .await
+            .expect_err("preflight must reject these candidates");
+        assert!(matches!(
+            error.code,
+            ErrorCode::InvalidInput | ErrorCode::OperationConflict
+        ));
+    }
+
+    let operations = recent_operations(&facade).await;
+    assert_eq!(operations.len(), 4);
+    for record in operations {
+        assert_eq!(record.kind, "relink_source_copy");
+        assert_eq!(record.state, "rolled_back");
+        assert_eq!(record.phase, OperationPhase::RolledBack);
+    }
+    assert_eq!(recovery_state(&facade).await, StartupRecoveryState::Clean);
 }
 
 #[tokio::test]
