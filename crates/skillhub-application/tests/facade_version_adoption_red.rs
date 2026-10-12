@@ -2217,6 +2217,101 @@ async fn k1b_create_skill_portable_failure_removes_the_new_visible_tree() {
     );
 }
 
+#[tokio::test]
+async fn k1b_create_skill_visible_restore_failure_can_recover_after_restart() {
+    let fixture_root = tempfile::tempdir().expect("isolated fixture root");
+    let database_path = fixture_root.path().join("skillhub.sqlite");
+    let library_root = fixture_root.path().join("library");
+    let fault = ContentFault::one_shot_visible_restore_failure();
+    let database = Database::open(&database_path).expect("database");
+    let facade = LocalApplicationFacade::new_with_library_and_faults(
+        database,
+        &library_root,
+        Arc::clone(&fault.handler),
+    );
+    fault.arm();
+    let authoring = tempfile::tempdir_in(fixture_root.path()).expect("authoring dir");
+    std::fs::write(authoring.path().join("SKILL.md"), "# Fresh\n").expect("fresh content");
+
+    facade
+        .execute(AppCommand::CreateSkill(skillhub_core::api::CreateSkill {
+            name: "Fresh skill".into(),
+            source_path: authoring.path().to_string_lossy().into_owned(),
+        }))
+        .await
+        .expect_err("visible-tree compensation failure must retain recovery facts");
+    assert_eq!(
+        journal_phase(&database_path, "create_skill"),
+        "needs_recovery"
+    );
+    let operation_id = journal_operation_id(&database_path, "create_skill");
+    let record = Database::open(&database_path)
+        .expect("reopen database")
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("load create record")
+        .expect("create record exists");
+    let skill_id = serde_json::from_value(record.recovery_data["skill_id"].clone())
+        .expect("recovery snapshot identifies the new skill");
+    let library = CentralLibrary::open_existing(&library_root).expect("open library");
+    assert_eq!(
+        VersionStore::from_library(&library)
+            .list(skill_id)
+            .expect("captured target version")
+            .len(),
+        1,
+        "the captured target must remain available for recovery"
+    );
+    drop(facade);
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("reopen interrupted create");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted create")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .expect("interrupted create remains visible")
+            .actions,
+        vec![RecoveryAction::RollbackOperation],
+        "create recovery must expose rollback only when its durable facts validate"
+    );
+    facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("roll back the interrupted create after restart");
+    drop(facade);
+
+    let database = Database::open(&database_path).expect("reopen database after recovery");
+    let catalog_rows: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM skills", [], |row| row.get(0))
+        .expect("catalog count");
+    assert_eq!(catalog_rows, 0, "rolled-back create leaves no skill row");
+    let library =
+        CentralLibrary::open_existing(&library_root).expect("reopen library after recovery");
+    let store = VersionStore::from_library(&library);
+    assert!(store.list(skill_id).expect("remaining versions").is_empty());
+    assert_eq!(store.current(skill_id).expect("current pointer"), None);
+    assert!(std::fs::read_dir(library_root.join("skills"))
+        .expect("visible skills")
+        .flatten()
+        .all(|entry| !entry
+            .file_name()
+            .to_string_lossy()
+            .contains(&skill_id.to_string())));
+    assert_eq!(journal_phase(&database_path, "create_skill"), "rolled_back");
+}
+
 // ---- K1b-5：TakeUpstream 成功路径复用 upstream fixture ----
 
 fn archive_server(route: &'static str, body: Vec<u8>) -> String {

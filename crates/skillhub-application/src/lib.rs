@@ -5547,15 +5547,15 @@ impl LocalApplicationFacade {
         })
     }
 
-    fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
+    async fn create_skill(&self, request: CreateSkill) -> AppResult<AppCommandResult> {
+        let _guard = self.version_adoption_lock.lock().await;
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "create_skill");
         self.create_skill_flow(request, operation_id)
     }
 
-    /// 新建主体：与版本采用共享"快照 → Applying 检查点 → 四消费面 → 终相"
-    /// 的统一采用流。快照四项全 None；失败补偿额外删除 catalog 行并丢弃
-    /// 已捕获的版本对象。
+    /// 新建主体：捕获阶段只写未引用版本，目标身份进入 Applying 检查点后
+    /// 才新增 catalog 行和其余消费面；失败补偿额外删除新主体。
     fn create_skill_flow(
         &self,
         request: CreateSkill,
@@ -5574,13 +5574,15 @@ impl LocalApplicationFacade {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        let snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
+        let mut snapshot = match self.content_adoption_snapshot(&library, &skill, operation_id) {
             Ok(snapshot) => snapshot,
             Err(error) => {
                 return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
             }
         };
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+        snapshot.recovery_skill = Some(skill.clone());
+        if let Err(error) = self.content_adoption_capture_checkpoint(operation_id, KIND, &snapshot)
+        {
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
         let captured = match library.capture_with_status(skill.id(), source) {
@@ -5590,6 +5592,26 @@ impl LocalApplicationFacade {
             }
         };
         let version = captured.record;
+        if let Err(error) = self.content_adoption_target_checkpoint(
+            operation_id,
+            KIND,
+            &skill,
+            &mut snapshot,
+            &version,
+            captured.created,
+        ) {
+            return Err(self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                None,
+                Some((&version, captured.created)),
+                true,
+                error,
+            ));
+        }
         if let Err(error) = self.with_database("execute.create_skill", |database| {
             database.catalog_repository()?.insert_sync(&skill)
         }) {
@@ -7670,6 +7692,7 @@ impl LocalApplicationFacade {
                 ))
             })?;
         Ok(ContentAdoptionSnapshot {
+            recovery_skill: None,
             skill_id: skill.id(),
             previous_version_id,
             database_previous_version_id,
@@ -9851,7 +9874,7 @@ impl ApplicationFacade for LocalApplicationFacade {
                 return self.set_finding_disposition(request);
             }
             AppCommand::RenameSkill(request) => return self.rename_skill(request),
-            AppCommand::CreateSkill(request) => return self.create_skill(request),
+            AppCommand::CreateSkill(request) => return self.create_skill(request).await,
             AppCommand::CreateCombination(request) => return self.create_combination(request),
             AppCommand::UpdateCombination(request) => return self.update_combination(request),
             AppCommand::DeleteCombination(request) => return self.delete_combination(request),
@@ -18177,6 +18200,8 @@ struct VersionAdoptionSnapshot {
 /// active-consumer mutation; a failed adopt may only roll back to these facts.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct ContentAdoptionSnapshot {
+    #[serde(default)]
+    recovery_skill: Option<Skill>,
     skill_id: skillhub_core::SkillId,
     previous_version_id: Option<skillhub_core::VersionId>,
     database_previous_version_id: Option<skillhub_core::VersionId>,
@@ -20464,7 +20489,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::RollbackOperation]
                     }
-                    "save_skill_content" | "save_markdown_content"
+                    "create_skill" | "save_skill_content" | "save_markdown_content"
                         if self
                             .validate_content_adoption_recovery(&record, false)
                             .is_ok() =>
@@ -20637,7 +20662,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
         }
         if matches!(
             operation_kind.as_deref(),
-            Some("save_skill_content" | "save_markdown_content")
+            Some("create_skill" | "save_skill_content" | "save_markdown_content")
         ) {
             if action != RecoveryAction::RollbackOperation {
                 return Err(unsupported("recovery.resolve.content_adoption"));
@@ -20663,7 +20688,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 None,
                 None,
                 false,
-                false,
+                record.kind == "create_skill",
             );
             if !failures.is_empty() {
                 record.phase = skillhub_core::OperationPhase::NeedsRecovery;
@@ -21618,7 +21643,7 @@ impl LocalRecoveryBackend {
     )> {
         if !matches!(
             record.kind.as_str(),
-            "save_skill_content" | "save_markdown_content"
+            "create_skill" | "save_skill_content" | "save_markdown_content"
         ) || !matches!(
             record.phase,
             skillhub_core::OperationPhase::Applying | skillhub_core::OperationPhase::NeedsRecovery
@@ -21650,17 +21675,30 @@ impl LocalRecoveryBackend {
             .filter(|name| !name.is_empty())
             .ok_or_else(|| recovery_conflict("content_adoption_runtime_identity_missing"))?;
 
-        let (skill, database_version) = {
+        let (catalog_skill, database_version) = {
             let database = self
                 .database
                 .lock()
                 .map_err(|_| internal("recovery.content_adoption.validate"))?;
-            let skill = database
-                .catalog_repository()?
-                .get_sync(snapshot.skill_id)?
-                .ok_or_else(|| recovery_conflict("content_adoption_skill_missing"))?;
+            let skill = database.catalog_repository()?.get_sync(snapshot.skill_id)?;
             let current = database.current_version(snapshot.skill_id)?;
             (skill, current)
+        };
+        let skill = if record.kind == "create_skill" {
+            let recovery_skill = snapshot
+                .recovery_skill
+                .clone()
+                .filter(|skill| skill.id() == snapshot.skill_id)
+                .ok_or_else(|| recovery_conflict("content_adoption_recovery_skill_missing"))?;
+            if catalog_skill
+                .as_ref()
+                .is_some_and(|catalog_skill| catalog_skill != &recovery_skill)
+            {
+                return Err(recovery_conflict("content_adoption_created_skill_changed"));
+            }
+            catalog_skill.unwrap_or(recovery_skill)
+        } else {
+            catalog_skill.ok_or_else(|| recovery_conflict("content_adoption_skill_missing"))?
         };
         if skill.runtime_name() != runtime_name {
             return Err(recovery_conflict(

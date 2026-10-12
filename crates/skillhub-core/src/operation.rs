@@ -47,6 +47,7 @@ pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "shared_usage_migration",
     "migrate_relation",
     "relation_governance_batch",
+    "create_skill",
     "save_skill_content",
     "save_markdown_content",
 ];
