@@ -2854,6 +2854,119 @@ async fn relation_migration_can_resume_from_a_new_facade_using_the_durable_journ
 }
 
 #[tokio::test]
+async fn recovery_center_runs_the_relation_migration_rollback_handler() {
+    let fixture = fixture().await;
+    if missing_symlink_capability() {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+    fixture
+        .facade
+        .execute(AppCommand::CommitRelationMigration(
+            skillhub_core::api::CommitRelationMigration {
+                prepared_relation_migration_id: prepared.operation_id,
+            },
+        ))
+        .await
+        .expect("commit");
+
+    // Simulate a process restart after the migration's durable operation journal
+    // has been classified as needing recovery.
+    {
+        let database = fixture.database.lock().expect("database");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("mark interrupted");
+    }
+    let restarted = LocalApplicationFacade::new_with_library(
+        Database::open(&fixture.db_path).expect("reopen database"),
+        &fixture.library_root,
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, prepared.operation_id);
+    assert_eq!(
+        candidates[0].actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+    let completion = restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: skillhub_core::RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await;
+    assert!(
+        completion.is_err(),
+        "migration recovery only supports rollback"
+    );
+    {
+        let database = restarted.database_for_tests();
+        let database = database.lock().expect("database");
+        let record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation remains recorded");
+        assert_eq!(record.phase, OperationPhase::NeedsRecovery);
+    }
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("recovery center rollback");
+
+    let metadata = std::fs::symlink_metadata(&fixture.source).expect("restored source");
+    assert!(!metadata.file_type().is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(fixture.source.join("SKILL.md")).expect("restored body"),
+        BODY
+    );
+    let database = restarted.database_for_tests();
+    let database = database.lock().expect("database");
+    let record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read settled operation")
+        .expect("operation remains recorded");
+    assert_eq!(record.phase, OperationPhase::RolledBack);
+}
+
+#[tokio::test]
 async fn failed_relation_commit_re_reads_facts_on_retry_instead_of_returning_stale_failure() {
     let fixture = fixture().await;
     if missing_symlink_capability() {

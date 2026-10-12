@@ -9255,6 +9255,19 @@ impl ApplicationFacade for LocalApplicationFacade {
                         },
                     ));
                 }
+                if self
+                    .resolve_relation_migration_recovery(request.operation_id, request.action)
+                    .await?
+                {
+                    return Ok(AppCommandResult::OperationSummary(
+                        skillhub_core::OperationSummary {
+                            operation_id: request.operation_id,
+                            phase: skillhub_core::OperationPhase::RolledBack,
+                            message_code: "recovery.resolved".to_owned(),
+                            error_code: None,
+                        },
+                    ));
+                }
                 self.recovery_service
                     .resolve(request.operation_id, request.action)
                     .await?;
@@ -17253,6 +17266,16 @@ fn has_deployment_recovery_targets(recovery_data: &serde_json::Value) -> bool {
         })
 }
 
+fn has_relation_migration_recovery_journal(recovery_data: &serde_json::Value) -> bool {
+    recovery_data
+        .get("journal")
+        .and_then(|journal| journal.get("prepared"))
+        .cloned()
+        .is_some_and(|prepared| {
+            serde_json::from_value::<skillhub_core::PreparedRelationMigration>(prepared).is_ok()
+        })
+}
+
 /// Runtime-name comparison for occupancy facts, matching the planner's own
 /// per-target case rule (Windows destinations compare case-insensitively).
 fn occupancy_names_equal(left: &str, right: &str, case_sensitive: bool) -> bool {
@@ -19035,6 +19058,11 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     }
                     "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
                     "deploy_skill" if has_deployment_recovery_targets(&record.recovery_data) => {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
+                    "migrate_relation" | "usage_manage"
+                        if has_relation_migration_recovery_journal(&record.recovery_data) =>
+                    {
                         vec![RecoveryAction::RollbackOperation]
                     }
                     // A known journal kind is not proof that this version can

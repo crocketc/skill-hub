@@ -1438,6 +1438,51 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::RelationMigrationResult(result))
     }
 
+    pub(crate) async fn resolve_relation_migration_recovery(
+        &self,
+        operation_id: skillhub_core::OperationId,
+        action: RecoveryAction,
+    ) -> AppResult<bool> {
+        let kind = self
+            .database
+            .lock()
+            .map_err(|_| internal("recovery.relation_migration"))?
+            .operation_repository()
+            .get_sync(operation_id)?
+            .map(|record| record.kind);
+        if !matches!(kind.as_deref(), Some("migrate_relation" | "usage_manage")) {
+            return Ok(false);
+        }
+        if action != RecoveryAction::RollbackOperation {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "relation_migration_rollback_only")
+                .with_action(RecoveryAction::Retry));
+        }
+        match self
+            .rollback_relation_migration(skillhub_core::api::RollbackRelationMigration {
+                operation_id,
+            })
+            .await?
+        {
+            AppCommandResult::RelationMigrationResult(result)
+                if matches!(
+                    result.state,
+                    RelationMigrationState::RolledBack | RelationMigrationState::Cancelled
+                ) =>
+            {
+                Ok(true)
+            }
+            AppCommandResult::RelationMigrationResult(_) => {
+                Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "relation_migration_rollback_incomplete")
+                    .with_action(RecoveryAction::Retry))
+            }
+            _ => Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "relation_migration_recovery_result_invalid")
+                .with_action(RecoveryAction::Retry)),
+        }
+    }
+
     pub(crate) async fn rollback_relation_migration(
         &self,
         request: skillhub_core::api::RollbackRelationMigration,
