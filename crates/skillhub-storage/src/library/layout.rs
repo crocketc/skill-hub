@@ -871,6 +871,12 @@ impl CentralLibrary {
     /// treat a failure here as best-effort cleanup.
     pub fn discard_visible_tree_removal(&self, backup: &Path) -> AppResult<()> {
         if path_entry_exists(backup)? {
+            if self.store.should_fail("before_visible_removal_discard") {
+                return Err(io_error(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "injected permission denial while removing deletion backup",
+                )));
+            }
             fs::remove_dir_all(backup).map_err(io_error)?;
         }
         Ok(())

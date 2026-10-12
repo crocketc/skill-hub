@@ -1321,6 +1321,111 @@ async fn delete_recovery_resumes_after_visible_tree_and_version_manifest_were_re
 }
 
 #[tokio::test]
+async fn delete_recovery_can_retry_after_backup_cleanup_permission_denied() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Retry permission denied cleanup").await;
+    let library = CentralLibrary::initialize(ws.library_root.path()).expect("central library");
+    let version_id = seed_central_version(&library, &skill);
+    library
+        .materialize_current_skill(&skill, &version_id)
+        .expect("materialize visible tree");
+    let facade = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let impact = prepare_delete(&facade, skill.id()).await;
+    let audit_database = open_database(&ws.database_path);
+    persist_applying_delete(
+        &audit_database,
+        &impact,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        skill.runtime_name(),
+    );
+
+    let visible_backup = library.paths().tmp_dir.join(format!(
+        "visible-backup-{}-{}",
+        skill.id(),
+        impact.operation_id
+    ));
+    assert!(library
+        .prepare_visible_tree_removal(&skill, &visible_backup)
+        .expect("move visible tree to the operation backup"));
+    let manifest = library
+        .paths()
+        .versions_dir
+        .join(skill.id().to_string())
+        .join(format!(
+            "{}.json",
+            version_id
+                .as_str()
+                .strip_prefix("sha256:")
+                .unwrap_or(version_id.as_str())
+        ));
+    std::fs::remove_file(&manifest).expect("simulate interruption after manifest removal");
+
+    let fail_cleanup_once = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let fail_cleanup = fail_cleanup_once.clone();
+    let recovery = LocalApplicationFacade::new_with_library_and_faults(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+        std::sync::Arc::new(move |point| {
+            point == "before_visible_removal_discard"
+                && fail_cleanup.swap(false, std::sync::atomic::Ordering::SeqCst)
+        }),
+    );
+    let first_attempt = recovery
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await;
+    let error = first_attempt
+        .expect_err("a permission failure while discarding the backup must interrupt recovery");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    assert!(error.params["source"]
+        .as_str()
+        .expect("filesystem error source")
+        .contains("injected permission denial"));
+    assert!(visible_backup.exists(), "the backup must remain available");
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::NeedsRecovery,
+        "failed cleanup must not commit the operation"
+    );
+    drop(recovery);
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        open_database(&ws.database_path),
+        ws.library_root.path(),
+    );
+    let candidate = recovery_candidates(&restarted)
+        .await
+        .into_iter()
+        .find(|candidate| candidate.operation_id == impact.operation_id)
+        .expect("the cleanup failure must remain visible after restart");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: impact.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("retry should finish the central deletion");
+
+    assert!(!visible_backup.exists());
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::Committed
+    );
+}
+
+#[tokio::test]
 async fn delete_recovery_refuses_a_replaced_target_without_deleting_it() {
     let ws = workspace();
     let database = open_database(&ws.database_path);
