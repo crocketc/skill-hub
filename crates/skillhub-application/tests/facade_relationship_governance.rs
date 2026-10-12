@@ -391,6 +391,9 @@ fn mark_relation_operation_applying(fixture: &Fixture, operation_id: skillhub_co
             [operation_id.to_string()],
         )
         .expect("mark operation applying");
+    mutate_relation_journal_record(fixture, operation_id, |journal| {
+        journal["stage"] = Value::String("filesystem_applying".into());
+    });
 }
 
 #[cfg(unix)]
@@ -1164,7 +1167,7 @@ async fn prepare_refuses_conversion_when_the_relation_volume_cannot_host_links()
 }
 
 #[tokio::test]
-async fn commit_rejects_a_changed_fingerprint_and_leaves_a_recovery_task() {
+async fn commit_rejects_a_changed_fingerprint_without_a_recovery_gate() {
     let fixture = fixture().await;
     let prepared = fixture
         .facade
@@ -1202,15 +1205,32 @@ async fn commit_rejects_a_changed_fingerprint_and_leaves_a_recovery_task() {
         .expect("source metadata")
         .file_type()
         .is_symlink());
-    assert!(fixture
-        .database
-        .lock()
-        .expect("database lock")
-        .governance_task_repository()
-        .list_pending()
-        .expect("pending tasks")
-        .iter()
-        .any(|task| task.kind == GovernanceTaskKind::OperationFailureRecovery));
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == prepared.operation_id),
+        "a failure detected before filesystem writes must not gate the app"
+    );
+    assert!(
+        !fixture
+            .database
+            .lock()
+            .expect("database lock")
+            .governance_task_repository()
+            .list_pending()
+            .expect("pending tasks")
+            .iter()
+            .any(|task| task.kind == GovernanceTaskKind::OperationFailureRecovery),
+        "a read-only precondition failure must not create an operation-recovery task"
+    );
 }
 
 #[tokio::test]
@@ -1266,6 +1286,20 @@ async fn commit_rejects_changed_relation_facts_even_when_content_is_unchanged() 
         .expect("source metadata")
         .file_type()
         .is_symlink());
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == prepared.operation_id),
+        "changed relation facts are a pre-write failure and must not gate the app"
+    );
     assert!(fixture
         .database
         .lock()
@@ -1274,7 +1308,7 @@ async fn commit_rejects_changed_relation_facts_even_when_content_is_unchanged() 
         .list_pending()
         .expect("pending tasks")
         .iter()
-        .any(|task| task.kind == GovernanceTaskKind::OperationFailureRecovery));
+        .all(|task| task.kind != GovernanceTaskKind::OperationFailureRecovery));
 }
 
 #[tokio::test]
@@ -2749,6 +2783,23 @@ async fn rollback_refuses_to_remove_a_path_that_no_longer_matches_the_prepared_l
     let AppCommandResult::RelationMigrationResult(committed) = committed else {
         panic!("expected committed result");
     };
+    let record = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .operation_repository()
+        .get_sync(committed.operation_id)
+        .expect("read committed journal")
+        .expect("operation exists");
+    assert_eq!(
+        record.recovery_data["journal"]["stage"], "filesystem_applying",
+        "the committed journal must preserve that filesystem writes occurred"
+    );
+    // Older committed journals incorrectly kept the original `prepared`
+    // stage. A committed result must still retain rollback recovery semantics.
+    mutate_relation_journal_record(&fixture, committed.operation_id, |journal| {
+        journal["stage"] = Value::String("prepared".into());
+    });
 
     std::fs::remove_file(&fixture.source).expect("remove managed link");
     write_skill(&fixture.source);
@@ -4995,6 +5046,28 @@ async fn governance_batch_partial_failure_keeps_successes_with_per_item_retry_in
         "the drifting row keeps its original entry"
     );
 
+    let failed_operation_id = failed.operation_id.expect("failed child operation");
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after a pre-write failure")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == prepared.batch_id),
+        "a settled batch summary must not independently block the app"
+    );
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == failed_operation_id),
+        "a target drift detected before filesystem writes must not require recovery"
+    );
+
     // 逐项回退信息：成功项仍可单独回退。
     let rolled_back = batch_outcome(
         fixture
@@ -5015,6 +5088,91 @@ async fn governance_batch_partial_failure_keeps_successes_with_per_item_retry_in
     assert!(
         !fixture.entry_is_symlink(0),
         "the rolled-back row is restored to its original entry"
+    );
+}
+
+#[tokio::test]
+async fn governance_batch_recovery_gate_belongs_to_the_child_operation() {
+    if missing_symlink_capability() {
+        return;
+    }
+    let fixture = batch_fixture(&["agent.demo"]).await;
+    let relation_id = fixture.relation_id(0);
+    let prepared = prepare_batch(&fixture.facade, vec![relation_id.clone()], Vec::new()).await;
+    let committed = batch_outcome(
+        fixture
+            .facade
+            .execute(AppCommand::CommitRelationGovernanceBatch(
+                CommitRelationGovernanceBatch {
+                    batch_id: prepared.batch_id,
+                    relation_ids: vec![relation_id.clone()],
+                },
+            ))
+            .await
+            .expect("commit governance batch"),
+    );
+    let child_operation_id = batch_item(&committed, &relation_id)
+        .operation_id
+        .expect("child operation id");
+
+    // Simulate a child left at a durable recovery checkpoint after a process
+    // interruption. The parent has already persisted the batch outcome.
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut child = database
+            .operation_repository()
+            .get_sync(child_operation_id)
+            .expect("read child operation")
+            .expect("child operation exists");
+        child.phase = OperationPhase::NeedsRecovery;
+        child.progress.phase = OperationPhase::NeedsRecovery;
+        database
+            .operation_repository()
+            .update_sync(&child)
+            .expect("mark interrupted child");
+    }
+
+    let (parent_kind, parent_phase, _) =
+        governance_batch_operation_row(&fixture.facade, prepared.batch_id);
+    assert_eq!(parent_kind, "relation_governance_batch");
+    assert_eq!(parent_phase, "committed");
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == prepared.batch_id),
+        "the batch summary must not gate an unresolved child"
+    );
+    let child_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == child_operation_id)
+        .expect("the child that needs recovery remains visible");
+    assert_eq!(
+        child_candidate.actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+
+    fixture
+        .facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id: child_operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("recover child operation");
+    assert!(
+        !fixture.entry_is_symlink(0),
+        "the child recovery restores the original entry"
     );
 }
 

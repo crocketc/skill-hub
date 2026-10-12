@@ -1365,7 +1365,7 @@ impl LocalApplicationFacade {
             None,
             None,
         ) {
-            return self.handle_post_filesystem_failure(&journal, error, false);
+            return self.handle_post_filesystem_failure(&applying, error, false);
         }
 
         let original_usage_relations = if journal.usage_manage_relations.is_empty() {
@@ -1403,7 +1403,7 @@ impl LocalApplicationFacade {
                     .upsert_deployment_relations(&normalized_relations)
             });
         if let Err(error) = persisted {
-            return self.handle_post_filesystem_failure(&journal, error, true);
+            return self.handle_post_filesystem_failure(&applying, error, true);
         }
 
         let result = RelationMigrationResult {
@@ -1425,11 +1425,11 @@ impl LocalApplicationFacade {
             result.operation_id,
             OperationPhase::Committed,
             RelationMigrationState::Committed,
-            &journal,
+            &applying,
             Some(&result),
             None,
         ) {
-            return self.handle_post_filesystem_failure(&journal, error, true);
+            return self.handle_post_filesystem_failure(&applying, error, true);
         }
         self.relation_migration_results
             .lock()
@@ -1489,7 +1489,7 @@ impl LocalApplicationFacade {
     ) -> AppResult<AppCommandResult> {
         let _relation_migration_guard =
             self.lock_relation_migration("execute.rollback_relation_migration")?;
-        let (journal, existing_result, journal_phase) =
+        let (mut journal, existing_result, journal_phase) =
             self.load_relation_migration_journal(request.operation_id)?;
         let prepared = journal.prepared.clone();
         if let Some(existing) = existing_result.as_ref() {
@@ -1498,17 +1498,27 @@ impl LocalApplicationFacade {
             {
                 return Ok(AppCommandResult::RelationMigrationResult(existing.clone()));
             }
+            if existing.state == RelationMigrationState::Committed
+                && journal.stage == RelationMigrationStage::Prepared
+            {
+                // Older committed records persisted the original prepared
+                // snapshot after writing files. A committed result itself is
+                // proof that rollback must keep the recovery path available.
+                journal.stage = RelationMigrationStage::FilesystemApplying;
+            }
         }
 
         let committed = existing_result.as_ref().is_some_and(|result| {
-            matches!(
-                result.state,
-                RelationMigrationState::Committed | RelationMigrationState::Failed
-            )
-        }) || matches!(
-            journal_phase,
-            OperationPhase::Applying | OperationPhase::Verifying | OperationPhase::NeedsRecovery
-        );
+            result.state == RelationMigrationState::Committed
+                || (result.state == RelationMigrationState::Failed
+                    && journal.stage != RelationMigrationStage::Prepared)
+        }) || (journal.stage != RelationMigrationStage::Prepared
+            && matches!(
+                journal_phase,
+                OperationPhase::Applying
+                    | OperationPhase::Verifying
+                    | OperationPhase::NeedsRecovery
+            ));
         if !committed {
             let result = migration_result_from_prepared(
                 &prepared,
@@ -1661,6 +1671,10 @@ impl LocalApplicationFacade {
         journal: &RelationMigrationJournal,
         error: AppError,
     ) -> AppResult<AppCommandResult> {
+        if journal.stage == RelationMigrationStage::Prepared {
+            return self.failed_relation_prewrite_result(journal, error);
+        }
+
         let prepared = &journal.prepared;
         let task = governance_task(
             &prepared.relation_id,
@@ -1709,6 +1723,45 @@ impl LocalApplicationFacade {
         self.relation_migration_results
             .lock()
             .map_err(|_| internal("execute.relation_migration.failure"))?
+            .insert(result.operation_id, result.clone());
+        Ok(AppCommandResult::RelationMigrationResult(result))
+    }
+
+    /// A prepared journal proves that no filesystem write checkpoint was
+    /// crossed. Keep the user-visible failure, but settle it without a
+    /// recovery gate or a misleading rollback offer.
+    fn failed_relation_prewrite_result(
+        &self,
+        journal: &RelationMigrationJournal,
+        error: AppError,
+    ) -> AppResult<AppCommandResult> {
+        let prepared = &journal.prepared;
+        let mut result = migration_result_from_prepared(
+            prepared,
+            RelationMigrationState::Failed,
+            None,
+            Some(error.code),
+            prepared.governance_tasks.clone(),
+        );
+        result.rollback_available = false;
+        if let Some(reason) = error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str)
+        {
+            result.detail = Some(reason.to_owned());
+        }
+        self.persist_relation_operation(
+            result.operation_id,
+            OperationPhase::RolledBack,
+            RelationMigrationState::Failed,
+            journal,
+            Some(&result),
+            Some(error.code),
+        )?;
+        self.relation_migration_results
+            .lock()
+            .map_err(|_| internal("execute.relationship_migration.prewrite_failure"))?
             .insert(result.operation_id, result.clone());
         Ok(AppCommandResult::RelationMigrationResult(result))
     }

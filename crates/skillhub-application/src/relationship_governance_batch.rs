@@ -710,12 +710,18 @@ impl LocalApplicationFacade {
             cancelled_count,
             relationship_revision: String::new(),
         })?;
-        let phase = if failed_count == 0 && blocked_count == 0 {
-            OperationPhase::Committed
-        } else {
-            OperationPhase::NeedsRecovery
-        };
-        self.persist_governance_batch(request.batch_id, action, phase, &children, &outcome, None)?;
+        // The parent is an orchestration summary, not the owner of child
+        // filesystem state. Once every returned child result is persisted,
+        // settle the parent; a child that still needs recovery keeps its own
+        // recovery gate and candidate.
+        self.persist_governance_batch(
+            request.batch_id,
+            action,
+            OperationPhase::Committed,
+            &children,
+            &outcome,
+            None,
+        )?;
         Ok(AppCommandResult::RelationGovernanceBatch(outcome))
     }
 
@@ -779,11 +785,9 @@ impl LocalApplicationFacade {
         self.persist_governance_batch(
             request.batch_id,
             action,
-            if failed_count == 0 {
-                OperationPhase::RolledBack
-            } else {
-                OperationPhase::NeedsRecovery
-            },
+            // As above, the parent records a completed orchestration attempt.
+            // Any unresolved rollback belongs to its child operation.
+            OperationPhase::Committed,
             &children,
             &outcome,
             None,
