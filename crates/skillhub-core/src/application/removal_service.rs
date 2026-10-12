@@ -23,7 +23,7 @@ pub trait RemovalBackend: Send + Sync {
     async fn remove_relation(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     async fn detach_management(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     async fn delete_skill(&self, skill_id: SkillId) -> AppResult<()>;
-    /// K2：持久化 prepared 记录（影响快照 + 用户决定 + 已处理/剩余项）。
+    /// 持久化删除阶段（影响快照 + 用户决定 + 已处理/剩余项）。
     async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()>;
     /// K2：读取仍可提交（journal `prepared` 相位）的记录；过期/已推进的
     /// 记录返回 `None`，提交端据此要求重新预览。
@@ -153,17 +153,40 @@ where
         let record = self.commitable_prepared(operation_id).await?;
         // 重新核对消费者快照：预览之后出现或消失的关系都会作废本次提交，
         // 必须重新 prepare（不允许对过期快照盲重放）。
-        let fresh = self.backend.inspect_delete(record.impact.skill_id).await?;
-        ensure_same_consumers(&record.impact, &fresh)?;
-        validate_decisions(&fresh, &decisions)?;
-        ensure_shared_confirmations(&fresh, &decisions)?;
+        let fresh = self
+            .backend
+            .inspect_delete(record.impact.skill_id)
+            .await
+            .map_err(delete_failed_before_writes)?;
+        ensure_same_consumers(&record.impact, &fresh).map_err(delete_failed_before_writes)?;
+        validate_decisions(&fresh, &decisions).map_err(delete_failed_before_writes)?;
+        ensure_shared_confirmations(&fresh, &decisions).map_err(delete_failed_before_writes)?;
 
         let mut results: Vec<DeploymentRemovalResult> = Vec::new();
         let mut applied: Vec<DeploymentId> = Vec::new();
-        let mut remaining: Vec<DeploymentId> = Vec::new();
+        let mut remaining: Vec<DeploymentId> = decisions
+            .iter()
+            .map(|choice| choice.deployment_id)
+            .collect();
         let mut first_failure: Option<ErrorCode> = None;
         let mut removed_physical_targets: HashSet<String> = HashSet::new();
         let mut abandoned_groups: HashSet<String> = HashSet::new();
+
+        // Persist the confirmed decision set before the first external write.
+        // Startup may safely abandon Prepared previews, so a delete that has
+        // begun must already be classified as Applying with its full intent.
+        self.backend
+            .save_prepared_removal(&PreparedRemovalRecord {
+                kind: PreparedRemovalKind::DeleteSkill,
+                impact: record.impact.clone(),
+                decisions: decisions.clone(),
+                applied_deployment_ids: Vec::new(),
+                remaining_deployment_ids: remaining.clone(),
+                state: PreparedRemovalState::Applying,
+                last_error_code: None,
+            })
+            .await
+            .map_err(delete_failed_before_writes)?;
 
         for choice in &decisions {
             let deployment = fresh
@@ -225,6 +248,7 @@ where
                 Ok(mut item) => {
                     item.relation_removed = true;
                     applied.push(choice.deployment_id);
+                    remaining.retain(|id| *id != choice.deployment_id);
                     results.push(item);
                 }
                 Err(error) => {
@@ -238,13 +262,23 @@ where
                         abandoned_groups.insert(deployment.target_id.clone());
                     }
                     first_failure.get_or_insert(error.code);
-                    remaining.push(choice.deployment_id);
                     let mut item =
                         item_result(deployment, choice.decision, RemovalItemStatus::Failed);
                     item.error_code = Some(error.code);
                     results.push(item);
                 }
             }
+            self.backend
+                .save_prepared_removal(&PreparedRemovalRecord {
+                    kind: PreparedRemovalKind::DeleteSkill,
+                    impact: record.impact.clone(),
+                    decisions: decisions.clone(),
+                    applied_deployment_ids: applied.clone(),
+                    remaining_deployment_ids: remaining.clone(),
+                    state: PreparedRemovalState::Applying,
+                    last_error_code: first_failure,
+                })
+                .await?;
         }
 
         if !remaining.is_empty() {
@@ -345,6 +379,10 @@ where
         }
         Ok(result)
     }
+}
+
+fn delete_failed_before_writes(error: AppError) -> AppError {
+    error.with_param("delete_skill.compensation", "complete")
 }
 
 fn item_result(

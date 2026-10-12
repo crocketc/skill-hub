@@ -1252,7 +1252,9 @@ impl RemovalBackend for LocalDeploymentBackend {
     async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()> {
         let phase = match record.state {
             PreparedRemovalState::Prepared => skillhub_core::OperationPhase::Prepared,
-            PreparedRemovalState::PartiallyCommitted => skillhub_core::OperationPhase::Applying,
+            PreparedRemovalState::Applying | PreparedRemovalState::PartiallyCommitted => {
+                skillhub_core::OperationPhase::Applying
+            }
         };
         let mut journal = journal_record(
             record.impact.operation_id,
@@ -15599,7 +15601,7 @@ impl LocalApplicationFacade {
                     Some(error.code),
                 )
             }
-            Some(error) => self.journal_advance(
+            Some(error) => self.journal_advance_keeping_payload(
                 operation_id,
                 kind,
                 skillhub_core::OperationPhase::NeedsRecovery,

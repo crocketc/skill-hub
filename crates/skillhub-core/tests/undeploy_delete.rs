@@ -34,6 +34,9 @@ struct FakeRemovalBackend {
     /// K2：prepared 持久化载体（生产实现写操作日志，测试用内存映射）。
     prepared_store: Arc<Mutex<HashMap<OperationId, PreparedRemovalRecord>>>,
     settled_prepared: Arc<Mutex<Vec<OperationId>>>,
+    events: Arc<Mutex<Vec<String>>>,
+    checkpoint_snapshots: Arc<Mutex<Vec<PreparedRemovalRecord>>>,
+    pause_after_relation: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 #[async_trait]
@@ -61,6 +64,10 @@ impl RemovalBackend for FakeRemovalBackend {
     }
 
     async fn remove_owned_target(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("target:{}", deployment.id));
         self.attempted_targets.lock().unwrap().push(deployment.id);
         self.attempted_physical_targets
             .lock()
@@ -77,7 +84,16 @@ impl RemovalBackend for FakeRemovalBackend {
     }
 
     async fn remove_relation(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("relation:{}", deployment.id));
         self.removed_relations.lock().unwrap().push(deployment.id);
+        let resume = self.pause_after_relation.lock().unwrap().take();
+        if let Some(resume) = resume {
+            let _ = resume.send(());
+            std::future::pending::<()>().await;
+        }
         Ok(())
     }
 
@@ -98,6 +114,11 @@ impl RemovalBackend for FakeRemovalBackend {
     }
 
     async fn save_prepared_removal(&self, record: &PreparedRemovalRecord) -> AppResult<()> {
+        self.events.lock().unwrap().push("checkpoint".to_owned());
+        self.checkpoint_snapshots
+            .lock()
+            .unwrap()
+            .push(record.clone());
         self.prepared_store
             .lock()
             .unwrap()
@@ -210,6 +231,9 @@ fn fixture_with_undeploy_shared_choice(
         failing_delete: Arc::new(Mutex::new(false)),
         prepared_store: Arc::new(Mutex::new(HashMap::new())),
         settled_prepared: Arc::new(Mutex::new(Vec::new())),
+        events: Arc::new(Mutex::new(Vec::new())),
+        checkpoint_snapshots: Arc::new(Mutex::new(Vec::new())),
+        pause_after_relation: Arc::new(Mutex::new(None)),
     };
     (RemovalService::new(Arc::new(backend.clone())), backend)
 }
@@ -225,6 +249,97 @@ fn delete_with_deployments_requires_explicit_relationship_decisions() {
             .await
             .is_err());
         assert!(backend.deleted_skills.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn delete_persists_confirmed_decisions_before_the_first_external_write() {
+    block_on(async {
+        let (service, backend) = fixture();
+        let mut impact = backend.delete_impact.lock().unwrap().clone();
+        impact.deployments.truncate(1);
+        impact.requires_shared_target_choice = false;
+        *backend.delete_impact.lock().unwrap() = impact;
+        let impact = service.prepare_delete(backend.skill_id).await.unwrap();
+        let decision = RemovalChoice {
+            deployment_id: impact.deployments[0].id,
+            decision: RemovalDecision::RemoveRelationOnly,
+            confirm_shared_target_removal: false,
+        };
+        backend.events.lock().unwrap().clear();
+        backend.checkpoint_snapshots.lock().unwrap().clear();
+
+        service
+            .commit_delete(impact.operation_id, vec![decision])
+            .await
+            .expect("delete should complete");
+
+        let events = backend.events.lock().unwrap().clone();
+        assert_eq!(events.first().map(String::as_str), Some("checkpoint"));
+        assert_eq!(
+            events.get(1).map(String::as_str),
+            Some(format!("relation:{}", decision.deployment_id).as_str()),
+            "the first externally visible write must follow the durable checkpoint"
+        );
+        let checkpoint = backend.checkpoint_snapshots.lock().unwrap()[0].clone();
+        assert_eq!(checkpoint.decisions, vec![decision]);
+        assert!(checkpoint.applied_deployment_ids.is_empty());
+        assert_eq!(
+            checkpoint.remaining_deployment_ids,
+            vec![decision.deployment_id]
+        );
+        assert_eq!(
+            checkpoint.state,
+            skillhub_core::PreparedRemovalState::Applying,
+            "the persisted record must classify this as applying, not a read-only preview"
+        );
+    });
+}
+
+#[test]
+fn interrupted_delete_keeps_an_applying_checkpoint_after_a_target_write() {
+    block_on(async {
+        let (_, backend) = fixture();
+        let mut impact = backend.delete_impact.lock().unwrap().clone();
+        impact.deployments.truncate(1);
+        impact.requires_shared_target_choice = false;
+        *backend.delete_impact.lock().unwrap() = impact;
+        let service = RemovalService::new(Arc::new(backend.clone()));
+        let prepared = service.prepare_delete(backend.skill_id).await.unwrap();
+        let operation_id = prepared.operation_id;
+        let deployment_id = prepared.deployments[0].id;
+        let decision = RemovalChoice {
+            deployment_id,
+            decision: RemovalDecision::RemoveRelationOnly,
+            confirm_shared_target_removal: false,
+        };
+        let (resume, interrupted) = tokio::sync::oneshot::channel();
+        *backend.pause_after_relation.lock().unwrap() = Some(resume);
+
+        let task =
+            tokio::spawn(async move { service.commit_delete(operation_id, vec![decision]).await });
+        interrupted.await.expect("relation write was reached");
+        task.abort();
+        let _ = task.await;
+
+        let checkpoint = backend
+            .prepared_store
+            .lock()
+            .unwrap()
+            .get(&operation_id)
+            .cloned()
+            .expect("write-ahead checkpoint survives interruption");
+        assert_eq!(
+            checkpoint.state,
+            skillhub_core::PreparedRemovalState::Applying
+        );
+        assert!(checkpoint.applied_deployment_ids.is_empty());
+        assert_eq!(checkpoint.remaining_deployment_ids, vec![deployment_id]);
+        assert_eq!(
+            backend.removed_relations.lock().unwrap().as_slice(),
+            &[deployment_id],
+            "the interruption happens after a real mutation but before its progress checkpoint"
+        );
     });
 }
 

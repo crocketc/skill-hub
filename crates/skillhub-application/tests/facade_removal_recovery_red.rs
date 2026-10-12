@@ -262,6 +262,39 @@ async fn prepared_delete_preview_is_not_a_recovery_candidate() {
     );
 }
 
+/// A decision rejected before the first write settles the preview instead of
+/// turning a read-only validation error into a global recovery blocker.
+#[tokio::test]
+async fn rejected_delete_decision_before_writes_does_not_create_recovery_blocker() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Rejected before write").await;
+    seed_deployment(
+        &database,
+        skill.id(),
+        "target-rejected-before-write",
+        &ws.scratch_dir.path().join("target-does-not-exist"),
+    )
+    .await;
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    let impact = prepare_delete(&facade, skill.id()).await;
+
+    let error = commit_delete(&facade, impact.operation_id, Vec::new())
+        .await
+        .expect_err("every deployment requires an explicit choice");
+    assert_eq!(error.code, ErrorCode::OperationConflict);
+    assert!(!recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+
+    let audit_database = open_database(&ws.database_path);
+    assert_eq!(
+        journal_record(&audit_database, impact.operation_id).phase,
+        skillhub_core::OperationPhase::RolledBack,
+        "a no-write validation failure is safely settled as rolled back"
+    );
+}
+
 #[tokio::test]
 async fn canceling_delete_preview_settles_it_without_changing_skill_or_relations() {
     let ws = workspace();

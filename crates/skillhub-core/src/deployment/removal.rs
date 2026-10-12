@@ -151,18 +151,21 @@ impl PreparedRemovalKind {
     }
 }
 
-/// 持久化 prepared 记录的阶段：`prepared` 本会话可提交；`partially_committed`
-/// 已有真实副作用（journal `applying` 相位），只能通过重新 prepare 续作。
+/// 删除日志载荷阶段：`prepared` 是只读预览；`applying` 已持久化确认决定并
+/// 处于真实写入过程中；`partially_committed` 是已返回的部分完成结果。
+/// 后两者对应 journal `applying` 相位，必须进入逐种恢复流程。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PreparedRemovalState {
     Prepared,
+    /// 用户已确认删除，决定和待处理项已经持久化；逐项文件/关系写入正在执行。
+    Applying,
     PartiallyCommitted,
 }
 
-/// K2：prepared 状态的持久化载荷。存于操作日志恢复载荷中，含影响快照、
-/// 用户已给出的共享目标决定与已处理/剩余项，重启后既不能误放行过期预览，
-/// 也不丢失已确认的决定。
+/// 删除操作的持久化载荷。存于操作日志恢复载荷中，含影响快照、用户已给出的
+/// 共享目标决定与已处理/剩余项，重启后既不能误放行过期预览，也不丢失已确认
+/// 的决定。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedRemovalRecord {
