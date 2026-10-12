@@ -2364,10 +2364,14 @@
       "eyebrow": "Batch deletion impact",
       "heading": "Review batch deletion impact",
       "description": "You selected {{count}} Skills to delete from the library. Handle their usage relationships first.",
+      "summary": {
+        "skills": "{{count}} Skills: each Skill's record, contents, and version history will be deleted"
+      },
       "noDeployments": "There are no usage relationships to handle before deletion.",
       "continue": "Continue deletion",
       "forceConfirm": "Force delete {{count}} Skills",
       "loadError": "Could not read the batch deletion impact. Please try again.",
+      "cancelError": "Some deletion previews could not be canceled. Check and try again.",
       "commitError": "The batch deletion did not fully complete. Skills not yet deleted remain unchanged; please review and try again.",
       "centralDeleteOutcome": "Targets were removed, but the library Skill was not deleted; see the per-target outcome.",
       "missingPreparation": "No prepared deletion record exists for this item; it cannot be committed.",

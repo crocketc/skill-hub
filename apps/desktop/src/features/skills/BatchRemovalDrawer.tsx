@@ -3,26 +3,63 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
-import type { RemovalChoice, RemovalImpact } from "../removal/api";
+import type { RemovalChoice, RemovalDeployment, RemovalImpact } from "../removal/api";
 import { RemovalDeploymentTarget, RemovalImpactMatrix } from "../removal/RemovalImpactPieces";
 import { displayPath } from "../../platform/displayPath";
 import "./batchRemovalDrawer.css";
 
+const LINK_MODES: ReadonlySet<NonNullable<RemovalDeployment["mode"]>> = new Set([
+  "symbolic_link",
+  "directory_junction",
+]);
+
+function isLinkDeployment(deployment: RemovalDeployment): boolean {
+  return deployment.mode !== undefined && LINK_MODES.has(deployment.mode);
+}
+
+function defaultChoices(impacts: readonly RemovalImpact[]): Record<string, Record<string, RemovalChoice>> {
+  return Object.fromEntries(impacts.map((impact) => [
+    impact.operationId ?? "",
+    Object.fromEntries(impact.deployments.map((deployment) => [
+      deployment.id,
+      isLinkDeployment(deployment) ? "remove_deployment" : "convert_to_copy",
+    ])),
+  ]));
+}
+
+function sharedDeploymentIds(impact: RemovalImpact): Set<string> {
+  const targetCounts = new Map<string, number>();
+  for (const deployment of impact.deployments) {
+    if (deployment.targetId) {
+      targetCounts.set(deployment.targetId, (targetCounts.get(deployment.targetId) ?? 0) + 1);
+    }
+  }
+  return new Set(impact.deployments
+    .filter((deployment) => deployment.targetId && (targetCounts.get(deployment.targetId) ?? 0) > 1)
+    .map((deployment) => deployment.id));
+}
+
+type SharedConfirmations = Record<string, ReadonlySet<string>>;
+
 /**
- * M-21 #4：批量删除确认从“页面流末尾的嵌入对话框”改为自下而上滑出的
- * 底部抽屉——用户不再被要求跳到页面底部、原列表也不滚动/跳转。
- * 确认内容与既有删除影响预览保持同一语义：逐 Skill 列出部署关系与
- * 影响维度，保留/恢复说明常驻，二次点击确认（QA-001）后才提交。
+ * Batch review keeps the single-delete contract: links are removed, full copies
+ * are kept independently by default, and removing a shared target needs an
+ * explicit per-entry confirmation.
  */
 export interface BatchRemovalDrawerProps {
+  commitAllowed?: boolean;
   error?: string;
   impacts: RemovalImpact[];
   onCancel: () => void;
-  onConfirm: (choices: Record<string, Record<string, RemovalChoice>>) => void | Promise<void>;
+  onConfirm: (
+    choices: Record<string, Record<string, RemovalChoice>>,
+    confirmedSharedTargets: SharedConfirmations,
+  ) => void | Promise<void>;
   submitting?: boolean;
 }
 
 export function BatchRemovalDrawer({
+  commitAllowed = true,
   error,
   impacts,
   onCancel,
@@ -30,28 +67,56 @@ export function BatchRemovalDrawer({
   submitting = false,
 }: BatchRemovalDrawerProps): JSX.Element {
   const { t } = useTranslation();
-  const [choices, setChoices] = useState<Record<string, Record<string, RemovalChoice>>>({});
-  // 抽屉挂载（确认流程打开）时记录触发元素，关闭后焦点回到原位
-  // （与 RemovalShell 的返回焦点语义一致）。
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    returnFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  }, []);
-  // QA-001：二次点击确认取代 FORCE DELETE 文本输入——第一次点击
-  // 只改变按钮文案要求再次确认，第二次点击才真正提交。
+  const [choices, setChoices] = useState<Record<string, Record<string, RemovalChoice>>>(() => defaultChoices(impacts));
+  const [confirmedSharedTargets, setConfirmedSharedTargets] = useState<SharedConfirmations>({});
   const [armed, setArmed] = useState(false);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const previousImpactsRef = useRef(impacts);
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, []);
+  useEffect(() => {
+    if (previousImpactsRef.current === impacts) return;
+    previousImpactsRef.current = impacts;
+    setChoices(defaultChoices(impacts));
+    setConfirmedSharedTargets({});
+    setArmed(false);
+  }, [impacts]);
+
+  // QA-001: the first click summarizes the destructive choice; the second
+  // click commits it. The action is disabled until any shared-target choices
+  // have been explicitly confirmed.
   const count = impacts.length;
   const anyDeployments = impacts.some((impact) => impact.deployments.length > 0);
-  const complete = impacts.every((impact) =>
-    impact.deployments.every(
-      (deployment) => choices[impact.operationId ?? ""]?.[deployment.id],
-    ),
+  const linkCount = impacts.reduce((total, impact) => total + impact.deployments.filter(isLinkDeployment).length, 0);
+  const copyCount = impacts.reduce((total, impact) => total + impact.deployments.filter((deployment) => !isLinkDeployment(deployment)).length, 0);
+  const requiresSharedConfirmations = impacts.flatMap((impact) => {
+    const operationId = impact.operationId ?? "";
+    return [...sharedDeploymentIds(impact)]
+      .filter((deploymentId) => choices[operationId]?.[deploymentId] === "remove_deployment")
+      .map((deploymentId) => ({ operationId, deploymentId }));
+  });
+  const complete = requiresSharedConfirmations.every(({ operationId, deploymentId }) =>
+    confirmedSharedTargets[operationId]?.has(deploymentId),
   );
+
+  const toggleSharedConfirmation = (operationId: string, deploymentId: string, confirmed: boolean) => {
+    setConfirmedSharedTargets((current) => {
+      const next = new Set(current[operationId] ?? []);
+      if (confirmed) next.add(deploymentId);
+      else next.delete(deploymentId);
+      return { ...current, [operationId]: next };
+    });
+  };
+
   const confirmChoices = () => {
-    void onConfirm(Object.fromEntries(
-      impacts.map((impact) => [impact.operationId ?? "", choices[impact.operationId ?? ""] ?? {}]),
-    ));
+    void onConfirm(
+      Object.fromEntries(impacts.map((impact) => [
+        impact.operationId ?? "",
+        choices[impact.operationId ?? ""] ?? {},
+      ])),
+      confirmedSharedTargets,
+    );
   };
 
   return (
@@ -66,44 +131,97 @@ export function BatchRemovalDrawer({
       title={t("removal.batch.heading")}
     >
       <div className="sh-skill-library__removal">
-        {/* DEV-97：流程说明由抽屉头部 description 承担，正文不再重复。 */}
-        {/* P1-15：批量删除同属“删除库中 Skill”对象——提交前固定说明
-           保留什么（库外原文件）与恢复方式（仅事先导出的备份）。 */}
+        <section aria-label={t("removal.summary.title")} className="sh-removal-impact__summary">
+          <h3 className="sh-removal-impact__summary-title">{t("removal.summary.title")}</h3>
+          <ul className="sh-removal-impact__summary-lines">
+            <li>{t("removal.batch.summary.skills", { count })}</li>
+            {linkCount > 0 ? <li>{t("removal.summary.links", { count: linkCount })}</li> : null}
+            {copyCount > 0 ? <li>{t("removal.summary.copies", { count: copyCount })}</li> : null}
+          </ul>
+        </section>
         <div className="sh-skill-library__removal-disclaimer">
           <p>{t("removal.retained")}</p>
           <p>{t("removal.recovery")}</p>
         </div>
-        {impacts.map((impact) => (
-          <section className="sh-skill-library__removal-skill" key={impact.operationId ?? impact.skillId}>
-            <h3>{impact.skillName}</h3>
-            {impact.deployments.length === 0 ? <p>{t("removal.batch.noDeployments")}</p> : null}
-            {impact.deployments.map((deployment) => (
-              <label className="sh-skill-library__removal-deployment" key={deployment.id}>
-                {/* DEV-97：品牌厂商 + 类型徽标呈现部署目标（共享组件）。 */}
-                <RemovalDeploymentTarget deployment={deployment} />
-                <select
-                  aria-label={`${t("removal.choiceLabel")}: ${displayPath(deployment.path)}`}
-                  onChange={(event) => setChoices((current) => ({
-                    ...current,
-                    [impact.operationId ?? ""]: {
-                      ...current[impact.operationId ?? ""],
-                      [deployment.id]: event.target.value as RemovalChoice,
-                    },
-                  }))}
-                  value={choices[impact.operationId ?? ""]?.[deployment.id] ?? ""}
-                >
-                  <option value="">{t("removal.choose")}</option>
-                  <option value="keep_deployed">{t("removal.choices.keep")}</option>
-                  <option value="remove_deployment">{t("removal.choices.remove")}</option>
-                  <option value="convert_to_copy">{t("removal.choices.convert")}</option>
-            </select>
-              </label>
-            ))}
-            {/* QA-001：完整影响矩阵逐项提示（DEV-97 结构化呈现，共享组件）；
-                未知外部内容只提示、不修改。 */}
-            <RemovalImpactMatrix impact={impact} />
-          </section>
-        ))}
+        {impacts.map((impact) => {
+          const operationId = impact.operationId ?? "";
+          const links = impact.deployments.filter(isLinkDeployment);
+          const copies = impact.deployments.filter((deployment) => !isLinkDeployment(deployment));
+          const sharedIds = sharedDeploymentIds(impact);
+          return (
+            <section className="sh-skill-library__removal-skill" key={impact.operationId ?? impact.skillId}>
+              <h3>{impact.skillName}</h3>
+              {impact.deployments.length === 0 ? <p>{t("removal.batch.noDeployments")}</p> : null}
+              {impact.deployments.length > 0 ? (
+                <ul className="sh-usage-release-impact__items">
+                  {links.map((deployment) => (
+                    <li key={deployment.id}>
+                      <RemovalDeploymentTarget deployment={deployment} />
+                      <p className="sh-removal-impact__fixed-outcome">{t("removal.groups.linkWillBeDeleted")}</p>
+                    </li>
+                  ))}
+                  {copies.map((deployment) => {
+                    const needsSharedConfirmation = sharedIds.has(deployment.id)
+                      && choices[operationId]?.[deployment.id] === "remove_deployment";
+                    return (
+                      <li key={deployment.id}>
+                        <RemovalDeploymentTarget deployment={deployment} />
+                        <fieldset
+                          aria-label={`${t("removal.choiceLabel")}: ${displayPath(deployment.path)}`}
+                          className="sh-removal-impact__choice"
+                        >
+                          <label className="sh-removal-impact__choice-option">
+                            <input
+                              checked={choices[operationId]?.[deployment.id] === "convert_to_copy"}
+                              name={`removal-choice-${operationId}-${deployment.id}`}
+                              onChange={() => setChoices((current) => ({
+                                ...current,
+                                [operationId]: { ...current[operationId], [deployment.id]: "convert_to_copy" },
+                              }))}
+                              type="radio"
+                              value="convert_to_copy"
+                            />
+                            <span className="sh-removal-impact__choice-text">
+                              <span>{t("removal.groups.copyKeep")}</span>
+                              <small>{t("removal.groups.copyKeepHint")}</small>
+                            </span>
+                          </label>
+                          <label className="sh-removal-impact__choice-option">
+                            <input
+                              checked={choices[operationId]?.[deployment.id] === "remove_deployment"}
+                              name={`removal-choice-${operationId}-${deployment.id}`}
+                              onChange={() => setChoices((current) => ({
+                                ...current,
+                                [operationId]: { ...current[operationId], [deployment.id]: "remove_deployment" },
+                              }))}
+                              type="radio"
+                              value="remove_deployment"
+                            />
+                            <span className="sh-removal-impact__choice-text">
+                              <span>{t("removal.groups.copyDelete")}</span>
+                              <small>{t("removal.groups.copyDeleteHint")}</small>
+                            </span>
+                          </label>
+                        </fieldset>
+                        {needsSharedConfirmation ? (
+                          <label className="sh-removal-impact__shared-confirm">
+                            <input
+                              checked={confirmedSharedTargets[operationId]?.has(deployment.id) ?? false}
+                              onChange={(event) => toggleSharedConfirmation(operationId, deployment.id, event.target.checked)}
+                              type="checkbox"
+                            />
+                            <span>{t("removal.groups.sharedConfirm")}</span>
+                          </label>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              <RemovalImpactMatrix impact={impact} />
+            </section>
+          );
+        })}
         {error ? <p role="alert">{error}</p> : null}
         {submitting ? (
           <p className="sh-skill-library__removal-status" role="status">
@@ -115,15 +233,13 @@ export function BatchRemovalDrawer({
           <Button disabled={submitting} onClick={onCancel} variant="secondary">
             {t("actions.cancel")}
           </Button>
-          {/* 非原子批量风险提示紧邻提交动作，与危险主操作同处一行。 */}
           <small className="sh-skill-library__removal-risk">{t("removal.batch.nonAtomicNotice")}</small>
           {armed ? (
-            <Button disabled={submitting} onClick={confirmChoices} variant="danger">
+            <Button disabled={submitting || !commitAllowed || !complete} onClick={confirmChoices} variant="danger">
               {t("removal.batch.armConfirm", { count })}
             </Button>
           ) : (
-            <Button disabled={!complete || submitting} onClick={() => setArmed(true)} variant="danger">
-              {/* DEV-97：没有部署关系时语义就是删除本身；有部署关系才谈“继续”。 */}
+            <Button disabled={!commitAllowed || !complete || submitting} onClick={() => setArmed(true)} variant="danger">
               {anyDeployments ? t("removal.batch.continue") : t("removal.batch.deleteAll")}
             </Button>
           )}

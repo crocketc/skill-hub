@@ -1314,6 +1314,39 @@ impl RemovalBackend for LocalDeploymentBackend {
         );
         repository.update_sync(&journal)
     }
+
+    async fn cancel_prepared_delete(&self, operation_id: OperationId) -> AppResult<()> {
+        let database = self
+            .database
+            .lock()
+            .map_err(|_| internal("removal.cancel_prepared_delete"))?;
+        let repository = database.operation_repository();
+        let existing = repository.get_sync(operation_id)?.ok_or_else(|| {
+            AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "prepared_delete")
+                .with_action(RecoveryAction::Retry)
+        })?;
+        if existing.kind != "delete_skill"
+            || existing.phase != skillhub_core::OperationPhase::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_action(RecoveryAction::Retry));
+        }
+        let prepared: PreparedRemovalRecord =
+            serde_json::from_value(existing.recovery_data.clone()).map_err(|error| {
+                internal_with_detail("removal.cancel_prepared_delete", error.to_string())
+            })?;
+        if prepared.kind != skillhub_core::PreparedRemovalKind::DeleteSkill
+            || prepared.state != skillhub_core::PreparedRemovalState::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_action(RecoveryAction::Retry));
+        }
+        let mut journal = existing;
+        journal.phase = skillhub_core::OperationPhase::RolledBack;
+        journal.progress.phase = skillhub_core::OperationPhase::RolledBack;
+        repository.update_sync(&journal)
+    }
 }
 
 /// Compensates a deletion that failed before any version object was
@@ -9133,6 +9166,9 @@ impl ApplicationFacade for LocalApplicationFacade {
                     .commit_delete_skill(request.prepared_delete_id, request.decisions)
                     .await;
             }
+            AppCommand::CancelDeleteSkill(request) => {
+                return self.cancel_delete_skill(request.prepared_delete_id).await;
+            }
             AppCommand::DetachManagement(_) => {
                 return Err(usage_change_service::legacy_release_endpoint_error())
             }
@@ -15383,6 +15419,18 @@ impl LocalApplicationFacade {
         result.map(AppCommandResult::RemovalResult)
     }
 
+    async fn cancel_delete_skill(&self, operation_id: OperationId) -> AppResult<AppCommandResult> {
+        self.removal_service.cancel_delete(operation_id).await?;
+        Ok(AppCommandResult::OperationSummary(
+            skillhub_core::OperationSummary {
+                operation_id,
+                phase: skillhub_core::OperationPhase::RolledBack,
+                message_code: "removal.preview_canceled".to_owned(),
+                error_code: None,
+            },
+        ))
+    }
+
     async fn remove_ignore_rule(&self, rule_id: String) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "remove_ignore_rule");
@@ -18762,7 +18810,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     | skillhub_core::OperationPhase::NeedsRecovery
             ) || (matches!(
                 record.kind.as_str(),
-                "usage_duplicate_cleanup" | "subject_runtime_rename"
+                "usage_duplicate_cleanup" | "subject_runtime_rename" | "delete_skill"
             ) && record.phase == skillhub_core::OperationPhase::Prepared)
             {
                 continue;

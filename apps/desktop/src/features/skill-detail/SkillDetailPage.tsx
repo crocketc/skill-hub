@@ -429,6 +429,24 @@ export function SkillDetailPage({
     }
   };
 
+  const cancelRemoval = async () => {
+    const operationId = removalImpact?.operationId;
+    if (!operationId || !effectiveRemovalFacade.cancelDelete) {
+      setRemovalImpact(null);
+      return;
+    }
+    setRemovalSubmitting(true);
+    setRemovalError(undefined);
+    try {
+      await effectiveRemovalFacade.cancelDelete(operationId);
+      setRemovalImpact(null);
+    } catch (reason) {
+      setRemovalError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "removal.commitError"));
+    } finally {
+      setRemovalSubmitting(false);
+    }
+  };
+
   // W3-1（FB-003 裁决第 1 节）：待办「不信任（删除）」经 removalRequest 状态
   // 直达既有删除影响确认——复用 startRemoval 同一条流程，不造第二套删除；
   // 每次挂载至多自动触发一次，且只响应当前 Skill 的请求。
@@ -546,7 +564,7 @@ export function SkillDetailPage({
         <RemovalImpactDialog
           error={removalError}
           impact={removalImpact}
-          onCancel={() => setRemovalImpact(null)}
+          onCancel={cancelRemoval}
           onConfirm={commitRemoval}
           submitting={removalSubmitting}
         />

@@ -313,17 +313,24 @@ test.describe("removal confirmations", () => {
     await expect(confirm).toBeEnabled();
   });
 
-  test("keeps the batch risk next to the forced-deletion action and requires the second click", async ({ page }) => {
+  test("defaults batch deletion safely, keeps the risk adjacent, and requires the second click", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/removal?scenario=batch");
 
     const dialog = page.getByRole("dialog");
     const proceed = page.getByRole("button", { name: "Continue deletion" });
-    await expect(proceed).toBeDisabled();
-    await dialog.getByRole("combobox", { name: /Target copy handling: Codex CLI/ }).selectOption("remove_deployment");
+    await expect(proceed).toBeEnabled();
+    const summary = dialog.getByRole("region", { name: "Deletion summary" });
+    await expect(summary).toContainText("2 Skills:");
+    await expect(summary).toContainText("1 links:");
+    await expect(summary).toContainText("1 full copies:");
+    await expect(dialog.getByText("The link file here will be removed")).toBeVisible();
+    const keepCopy = dialog.getByRole("radio", { name: /Keep as an independent copy/ });
+    await expect(keepCopy).toBeChecked();
+    await dialog.getByRole("radio", { name: /Delete the copy too/ }).check();
     await expect(proceed).toBeEnabled();
 
-    // 非原子批量风险与强制删除动作相邻（同一 footer 操作区）。
+    // 非原子批量风险与删除动作相邻（同一 footer 操作区）。
     const actions = dialog.locator("footer");
     await expect(actions).toContainText(/not atomic/i);
     await expect(actions.getByRole("button", { name: "Continue deletion" })).toBeVisible();

@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import { BatchRemovalImpactDialog } from "./BatchRemovalImpactDialog";
 import { useTranslation } from "react-i18next";
 import type { UsageRelationView } from "../../api/bindings";
 import { RemovalImpactDialog } from "./RemovalImpactDialog";
 import { UndeployDialog } from "./UndeployDialog";
 import { Icon } from "../../ui/Icon";
 import { removalImpactFixture, type RemovalImpact } from "./api";
+import { BatchRemovalDrawer } from "../skills/BatchRemovalDrawer";
 
 type PreviewScenario =
   | "impact"
@@ -39,7 +39,24 @@ function batchImpacts(count: number, withMatrix: boolean): RemovalImpact[] {
     skillId: `preview-skill-${index + 1}`,
     skillName: `Preview Skill ${index + 1}`,
     deployments: index === 0
-      ? [{ id: "codex", label: "Codex CLI", path: "C:/Users/demo/.codex/skills", physicalId: "codex-skills" }]
+      ? [
+        {
+          id: "codex-link",
+          label: "Codex CLI",
+          path: "C:/Users/demo/.codex/skills",
+          physicalId: "codex-skills",
+          mode: "symbolic_link",
+          targetId: "codex-skills",
+        },
+        {
+          id: "shared-copy",
+          label: "Shared Skills directory",
+          path: "C:/Users/demo/.skillhub/shared",
+          physicalId: "shared-skills",
+          mode: "managed_copy",
+          targetId: "shared-skills",
+        },
+      ]
       : [],
     dependentProjects: withMatrix && index === 0 ? ["Aurora", "Very Long Preview Project Name For Layout Checks"] : [],
     declaredDependencies: withMatrix && index === 0 ? ["python 3.11 runtime"] : [],
@@ -117,7 +134,7 @@ export function RemovalPreview() {
 
   if (scenario.startsWith("batch")) {
     return (
-      <BatchRemovalImpactDialog
+      <BatchRemovalDrawer
         impacts={batchImpacts(scenario === "batch-bulk" ? 12 : 2, scenario !== "batch-busy")}
         onCancel={noop}
         onConfirm={noop}

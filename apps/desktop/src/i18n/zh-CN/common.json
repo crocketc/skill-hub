@@ -2364,10 +2364,14 @@
       "eyebrow": "批量删除影响",
       "heading": "检查批量删除影响",
       "description": "已选择从技能库删除 {{count}} 个 Skill。请先处理相关使用关系。",
+      "summary": {
+        "skills": "{{count}} 个 Skill：将删除每个 Skill 的记录、内容和版本历史"
+      },
       "noDeployments": "没有相关使用关系，可以直接删除。",
       "continue": "继续删除",
       "forceConfirm": "强制删除 {{count}} 个 Skill",
       "loadError": "无法读取批量删除影响，请稍后重试。",
+      "cancelError": "部分删除预览未能取消，请检查后重试。",
       "commitError": "批量删除未能全部完成。尚未删除的 Skill 保持不变，请检查后重试。",
       "centralDeleteOutcome": "目标已回收，但中央 Skill 未删除；请查看逐项目标结果。",
       "missingPreparation": "缺少已准备的删除记录，无法提交该项。",

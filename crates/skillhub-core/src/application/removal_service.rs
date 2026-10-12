@@ -33,6 +33,8 @@ pub trait RemovalBackend: Send + Sync {
     ) -> AppResult<Option<PreparedRemovalRecord>>;
     /// K2：全部决定成功执行并删除主体后，将 journal 行结算为 `committed`。
     async fn settle_prepared_removal(&self, operation_id: OperationId) -> AppResult<()>;
+    /// 取消尚未执行的删除预览；实现必须仅结算 `prepared` 删除记录。
+    async fn cancel_prepared_delete(&self, operation_id: OperationId) -> AppResult<()>;
 }
 
 pub struct RemovalService<B> {
@@ -77,6 +79,16 @@ where
             })
             .await?;
         Ok(impact)
+    }
+
+    pub async fn cancel_delete(&self, operation_id: OperationId) -> AppResult<()> {
+        let record = self.commitable_prepared(operation_id).await?;
+        if record.kind != PreparedRemovalKind::DeleteSkill
+            || record.state != PreparedRemovalState::Prepared
+        {
+            return Err(conflict("only an unstarted delete preview can be canceled"));
+        }
+        self.backend.cancel_prepared_delete(operation_id).await
     }
 
     pub async fn commit_undeploy(

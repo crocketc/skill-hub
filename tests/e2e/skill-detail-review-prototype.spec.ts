@@ -343,6 +343,14 @@ test("review toolbar routes dispatch and export to their real flows and previews
   await expect(deleteDialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
   await deleteDialog.getByRole("button", { name: "取消" }).click();
   await expect(deleteDialog).toHaveCount(0);
+  // 取消预览后页面仍可继续使用：先导航详情分区，再次打开删除预览并正常取消。
+  await page.getByRole("link", { name: "版本历史" }).click();
+  await expect(page.locator("#review-versions")).toBeInViewport();
+  await page.getByRole("button", { name: "删除", exact: true }).click();
+  const reopenedDeleteDialog = page.getByRole("dialog");
+  await expect(reopenedDeleteDialog.getByRole("button", { name: "确认从库中删除" })).toBeEnabled();
+  await reopenedDeleteDialog.getByRole("button", { name: "取消" }).click();
+  await expect(reopenedDeleteDialog).toHaveCount(0);
 });
 
 test("review source replacement and adoption stay distinct flows with honest results", async ({ page }) => {

@@ -44,6 +44,16 @@ function deploymentTargetUnavailable() {
   } as const;
 }
 
+async function cancelPreparedDelete(operationId: string): Promise<void> {
+  const result = await executeCommand({
+    type: "cancel_delete_skill",
+    payload: { prepared_delete_id: operationId },
+  });
+  if (result.type !== "operation_summary") {
+    throw new Error("removal.cancel_unexpected_result");
+  }
+}
+
 function canonicalDeploymentTargetPath(path: string): string {
   const trimmed = path.trim().replaceAll("\\", "/");
   const isWindowsPath = /^[a-zA-Z]:\//.test(trimmed) || trimmed.startsWith("//");
@@ -103,6 +113,7 @@ export const nativeRemovalFacade = {
       type: "prepare_delete_skill",
       payload: { skill_id: skillId },
     }));
+    try {
     let targets: Map<string, DeploymentTarget> = new Map();
     if (impact.deployments.length > 0) {
       let targetsResult: AppQueryResult;
@@ -175,6 +186,18 @@ export const nativeRemovalFacade = {
       draftCount: impact.draft_count ?? 0,
       importRelationCount,
     };
+    } catch (error) {
+      // prepare_delete_skill persists a read-only preview before target facts are
+      // projected. If that projection fails, settle the journal row so it cannot
+      // be mistaken for an unfinished deletion. Preserve the original error.
+      try {
+        await cancelPreparedDelete(impact.operation_id);
+      } catch {
+        // The preview is still non-destructive; bootstrap also ignores prepared
+        // delete previews if cancellation itself cannot be recorded.
+      }
+      throw error;
+    }
   },
 
   async commitDelete(operationId: string, choices: Record<string, RemovalChoice>, confirmSharedTargetRemoval?: ReadonlySet<string>): Promise<DesktopRemovalResult> {
@@ -202,6 +225,10 @@ export const nativeRemovalFacade = {
         errorCode: decision.error_code ?? null,
       })),
     };
+  },
+
+  async cancelDelete(operationId: string): Promise<void> {
+    await cancelPreparedDelete(operationId);
   },
 };
 
@@ -250,6 +277,9 @@ export const unavailableRemovalFacade: RemovalFacade = {
     throw new Error("removal.delete_not_wired");
   },
   commitDelete: async () => {
+    throw new Error("removal.delete_not_wired");
+  },
+  cancelDelete: async () => {
     throw new Error("removal.delete_not_wired");
   },
 };

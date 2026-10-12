@@ -482,6 +482,7 @@ export function SkillLibraryPage({
   const [saveViewError, setSaveViewError] = useState<string>();
   const [saveViewPending, setSaveViewPending] = useState(false);
   const [batchRemovalImpacts, setBatchRemovalImpacts] = useState<RemovalImpact[] | null>(null);
+  const [batchRemovalCommitAllowed, setBatchRemovalCommitAllowed] = useState(true);
   // K2/G-07：中央删除失败（目标已回收、中央 Skill 未删除）的逐项结果面板数据，
   // 提交后常驻页面（toast 自动消退），直到下一次批量删除重新准备时清除。
   const [batchRemovalOutcomes, setBatchRemovalOutcomes] = useState<Array<{
@@ -1040,10 +1041,36 @@ export function SkillLibraryPage({
     dismissByKind("removal-summary");
     try {
       const selected = single ? [single] : await selectedSkillsForRemoval();
-      // prepare_delete 是只读准备，各项独立；仍保持首错即停的外层 catch 语义。
-      const impacts: RemovalImpact[] = await Promise.all(
+      // Each prepared row is persisted. Settle successful rows if any selected
+      // Skill cannot be prepared, instead of leaving invisible previews behind.
+      const results = await Promise.allSettled(
         selected.map((skill) => removalFacade.prepareDelete(skill.id, skill.name)),
       );
+      const impacts = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+      const preparationFailure = results.find((result) => result.status === "rejected");
+      if (preparationFailure?.status === "rejected") {
+        const message = describeError(preparationFailure.reason, "removal.batch.loadError");
+        const cancellations = await Promise.allSettled(impacts.map((impact) => {
+          if (!impact.operationId || !removalFacade.cancelDelete) {
+            return Promise.reject(new Error("removal.cancel_not_available"));
+          }
+          return removalFacade.cancelDelete(impact.operationId);
+        }));
+        const remaining = impacts.filter((_, index) => cancellations[index].status === "rejected");
+        if (remaining.length > 0) {
+          setBatchRemovalImpacts(remaining);
+          setBatchRemovalCommitAllowed(false);
+          setBatchRemovalError(`${message} ${t("removal.batch.cancelError")}`);
+          notify({ source: "library", kind: "removal-summary", title: message, tone: "danger" });
+        } else {
+          setBatchRemovalImpacts(null);
+          setBatchRemovalCommitAllowed(true);
+          setBatchRemovalError(message);
+          notify({ source: "library", kind: "removal-summary", title: message, tone: "danger" });
+        }
+        return;
+      }
+      setBatchRemovalCommitAllowed(true);
       setBatchRemovalImpacts(impacts);
     } catch (reason: unknown) {
       const message = describeError(reason, "removal.batch.loadError");
@@ -1055,7 +1082,10 @@ export function SkillLibraryPage({
     }
   };
 
-  const commitBatchRemoval = async (choices: Record<string, Record<string, RemovalChoice>>) => {
+  const commitBatchRemoval = async (
+    choices: Record<string, Record<string, RemovalChoice>>,
+    confirmedSharedTargets: Record<string, ReadonlySet<string>>,
+  ) => {
     if (!batchRemovalImpacts) return;
     setBatchRemovalSubmitting(true);
     setBatchRemovalError(undefined);
@@ -1090,7 +1120,10 @@ export function SkillLibraryPage({
             continue;
           }
           try {
-            const result = await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
+            const selectedConfirmations = confirmedSharedTargets[impact.operationId];
+            const result = selectedConfirmations?.size
+              ? await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {}, selectedConfirmations)
+              : await removalFacade.commitDelete(impact.operationId, choices[impact.operationId] ?? {});
             if (!result.centralSkillDeleted) {
               // K2/G-07：中央删除失败（目标已回收、中央 Skill 未删除）不抛原始
               // 开发错误串——记录失败项并保留逐项结果面板数据。
@@ -1130,6 +1163,31 @@ export function SkillLibraryPage({
     setBatchRemovalOutcomes(partialRemovalResults);
     setBatchRemovalImpacts(null);
     changeSelection({ kind: "none" });
+    setBatchRemovalSubmitting(false);
+  };
+
+  const cancelBatchRemoval = async () => {
+    if (!batchRemovalImpacts) return;
+    const impacts = batchRemovalImpacts;
+    setBatchRemovalSubmitting(true);
+    setBatchRemovalError(undefined);
+    const results = await Promise.allSettled(impacts.map((impact) => {
+      if (!impact.operationId || !removalFacade.cancelDelete) {
+        return Promise.reject(new Error("removal.cancel_not_available"));
+      }
+      return removalFacade.cancelDelete(impact.operationId);
+    }));
+    const remaining = impacts.filter((_, index) => results[index].status === "rejected");
+    if (remaining.length === 0) {
+      setBatchRemovalImpacts(null);
+      setBatchRemovalCommitAllowed(true);
+    } else {
+      setBatchRemovalImpacts(remaining);
+      setBatchRemovalError(describeError(
+        (results.find((result) => result.status === "rejected") as PromiseRejectedResult).reason,
+        "removal.batch.cancelError",
+      ));
+    }
     setBatchRemovalSubmitting(false);
   };
 
@@ -1699,9 +1757,10 @@ export function SkillLibraryPage({
       />
       {batchRemovalLoading ? <p role="status">{t("removal.loading")}</p> : null}
       {batchRemovalImpacts ? <BatchRemovalDrawer
+        commitAllowed={batchRemovalCommitAllowed}
         error={batchRemovalError}
         impacts={batchRemovalImpacts}
-        onCancel={() => setBatchRemovalImpacts(null)}
+        onCancel={cancelBatchRemoval}
         onConfirm={commitBatchRemoval}
         submitting={batchRemovalSubmitting}
       /> : null}

@@ -29,6 +29,7 @@ const previewRemovalFacade: RemovalFacade = {
   async commitDelete() {
     return { centralSkillDeleted: true, state: "committed", recoveryOperationId: null, items: [] };
   },
+  async cancelDelete() {},
 };
 
 /** State is local to this opt-in preview; production and other fixtures keep their contracts. */

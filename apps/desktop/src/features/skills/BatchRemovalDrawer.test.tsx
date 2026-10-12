@@ -98,5 +98,5 @@ it("uses the plain delete action when no deployment relations need handling", as
   fireEvent.click(
     screen.getByRole("button", { name: "Click again to confirm deleting 1 Skills" }),
   );
-  expect(onConfirm).toHaveBeenCalledWith({ "delete-cangjie": {} });
+  expect(onConfirm).toHaveBeenCalledWith({ "delete-cangjie": {} }, {});
 });

@@ -78,6 +78,63 @@ test("skill detail preview keeps a single route-level h1 with markdown content",
   ).toBeVisible();
 });
 
+test("skill detail file rail truncates long paths and scrolls independently", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/__preview/skill-detail/skill-pdf#description");
+
+  const rail = page.getByRole("navigation", { name: "File structure" });
+  await expect(rail).toBeVisible();
+  const primaryFile = rail.locator("button").first();
+  await expect(primaryFile).toHaveAttribute("title", "SKILL.md");
+  const fullPath = "references/" + "long-directory-name/".repeat(12) + "reference-file.md";
+  await primaryFile.evaluate((button, path) => {
+    button.setAttribute("title", path);
+    const element = button.querySelector(".sh-markdown-workspace__rail-path");
+    if (!element) throw new Error("Expected a file path label");
+    element.textContent = path;
+  }, fullPath);
+
+  const pathDisplay = primaryFile.locator(".sh-markdown-workspace__rail-path");
+  await expect(primaryFile).toHaveAttribute("title", fullPath);
+  const pathLayout = await pathDisplay.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    height: element.getBoundingClientRect().height,
+    overflow: getComputedStyle(element).overflow,
+    rowFlexWrap: getComputedStyle(element.closest("button") as Element).flexWrap,
+    scrollWidth: element.scrollWidth,
+    textOverflow: getComputedStyle(element).textOverflow,
+    whiteSpace: getComputedStyle(element).whiteSpace,
+  }));
+  expect(pathLayout.whiteSpace).toBe("nowrap");
+  expect(pathLayout.textOverflow).toBe("ellipsis");
+  expect(pathLayout.overflow).toBe("hidden");
+  expect(pathLayout.rowFlexWrap).toBe("nowrap");
+  expect(pathLayout.clientWidth).toBeGreaterThan(0);
+  expect(pathLayout.scrollWidth).toBeGreaterThan(pathLayout.clientWidth);
+  expect(pathLayout.height).toBeLessThanOrEqual(32);
+  const railHorizontalOverflow = await rail.evaluate(
+    (element) => element.scrollWidth - element.clientWidth,
+  );
+  expect(railHorizontalOverflow).toBeLessThanOrEqual(1);
+
+  await rail.locator("ul").evaluate((list) => {
+    const item = list.querySelector("li");
+    if (!item) throw new Error("Expected at least one file entry");
+    for (let index = 0; index < 40; index += 1) list.append(item.cloneNode(true));
+  });
+  const scrollLayout = await rail.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    maxHeight: getComputedStyle(element).maxHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(scrollLayout.maxHeight).not.toBe("none");
+  expect(["auto", "scroll"]).toContain(scrollLayout.overflowY);
+  expect(scrollLayout.scrollHeight).toBeGreaterThan(scrollLayout.clientHeight);
+  await rail.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect(await rail.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+});
+
 const rootHorizontalOverflow = (page: import("@playwright/test").Page) =>
   page.evaluate(
     () =>

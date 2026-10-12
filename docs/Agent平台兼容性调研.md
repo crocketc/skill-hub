@@ -1,10 +1,10 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研完成；2026-09-29 已同步 Agent 根目录识别、共享目录品牌交集和待建 Skill 目录规则；2026-09-27 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整产品链路真机验证仍待后续测试阶段。
+> 文档状态：官方资料调研持续更新；2026-10-12 新增 MiniMax Code（桌面端、CLI/ACP）资料，并补充 DeepSeek Harness Desktop/Web 共用的六类 Skill 根与优先级；2026-09-29 已同步 Agent 根目录识别、共享目录品牌交集和待建 Skill 目录规则；2026-09-27 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整产品链路真机验证仍待后续测试阶段。
 >
 > 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
-> 调研基准日：2026-08-28；豆包工作真机补充复核日：2026-09-25（profile 落地核实）；此前复核日 2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
+> 调研基准日：2026-10-12（MiniMax Code、DeepSeek Harness Desktop 官方资料）；豆包工作真机补充复核日：2026-09-25（profile 落地核实）；此前复核日 2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
 >
 > 适用项目：SkillHub
 >
@@ -47,7 +47,7 @@
 
 ### 1.2 候选平台
 
-本次共调研 24 个平台品牌：
+本次共调研 25 个平台品牌：
 
 1. OpenAI Codex
 2. Claude Code
@@ -73,6 +73,7 @@
 22. Pi coding agent（Pi）
 23. DeepSeek Harness（`dsh`）
 24. 豆包工作（Doubao Work）
+25. MiniMax Code（桌面端、`mcode` CLI / ACP）
 
 同一平台品牌下的客户端形态不额外增加候选平台数量，但会在 profile 层拆分。例如 OpenAI 需要区分 ChatGPT desktop app、Codex CLI 和 Codex IDE extension；Anthropic 需要区分 Claude Code 与 Claude / Claude Desktop 聊天 Skills；Grok 需要区分 Grok Build、Grok Web/iOS/Android 与 Grok Bot；字节跳动需要区分普通豆包桌面端、豆包工作独立办公 Agent 与豆包工作任务模式的移动/云电脑执行环境。
 
@@ -99,7 +100,7 @@
 
 目录不存在不等于目录规则错误。客户端已安装但未观察到 skill 目录时，只写“客户端已安装，目录按需生成，验证时点未创建”，不据此判定官方文档有误；官方资料与真机事实冲突时，以官方文档为准，真机差异另列为观察项。
 
-真机确认以既定的 24 个候选平台为限。扫描过程中发现的其他客户端目录（如 Continue、Kiro、Qwen Code、Augment、Goose、Crush、Roo Code）按当前产品范围不纳入候选池，不在本文展开。
+真机确认以既定的 25 个候选平台为限。扫描过程中发现的其他客户端目录（如 Continue、Kiro、Qwen Code、Augment、Goose、Crush、Roo Code）按当前产品范围不纳入候选池，不在本文展开。
 
 ### 2.2 候选分类
 
@@ -120,8 +121,8 @@
 
 | 分类 | 平台 |
 |---|---|
-| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、ZCode、WorkBuddy、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness、Grok Build CLI / TUI / ACP |
-| 部分文件管理接入候选 | ChatGPT desktop app 中的 standalone skills、GitHub Copilot、Cline、Google Antigravity、豆包工作 |
+| 完整文件管理接入候选 | OpenAI Codex CLI / Codex IDE extension、Claude Code、Gemini CLI、Cursor、Windsurf、OpenCode、TraeCode、通义灵码（Qoder CN）、CodeBuddy Code、文心快码 Comate、Kimi Code、ZCode、WorkBuddy、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness CLI/TUI/Web/Desktop、Grok Build CLI / TUI / ACP |
+| 部分文件管理接入候选 | ChatGPT desktop app 中的 standalone skills、GitHub Copilot、Cline、Google Antigravity、豆包工作、MiniMax Code CLI / ACP / 桌面端 |
 | 有限文件接入候选 | Claude / Claude Desktop 聊天 Skills、TraeWork、Kimi Work、Grok Web/iOS/Android Skills、Grok Bot desktop/iOS Skills |
 | 暂不支持 | 当前无；Roo Code 已按产品范围决定移出候选池 |
 
@@ -182,7 +183,7 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 - profile schema 同步新增 `display_name`（必填，官方产品名）与 `shared_reference`（可选布尔）字段；`ClientKind` 新增 `shared_directory`。
 - 旧库快照缺省字段时按 `shared_reference: false` 反序列化，行为与迁移前一致，重新扫描后收敛到新归属。
 
-产品形态与目录核验结论（核验日期 2026-09-15，仅采官方文档/官方仓库/已记录真机证据）：
+产品形态与目录核验结论（基础核验日期 2026-09-15；MiniMax Code 与 DeepSeek Harness Desktop 于 2026-10-12 补充，仅采官方文档/官方仓库/已记录真机证据）：
 
 | 产品（官方形态名） | 形态 | 本地 Skill 目录 | `~/.agents/skills` 官方支持 | 证据等级 | 主要来源 |
 |---|---|---|---|---|---|
@@ -194,6 +195,8 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | TraeWork（trae.work） | 桌面/Web/移动办公 Agent | 未公开 | 待测试确认 | 官方未公开（有限接入候选，维持） | [TraeWork](https://www.trae.ai/work) |
 | Claude Code | 终端 CLI（官方另提供 IDE/桌面应用/网页入口） | `~/.claude/skills/`；`.claude/skills/`；企业托管目录；插件 `skills/`；`~/.claude/skills/synced/` | 官方文档未提及 | 官方明确 | [Claude Code Skills](https://code.claude.com/docs/en/skills) |
 | Claude Desktop | 桌面聊天应用 | 无公开稳定本地目录（Customize > Skills 上传 ZIP，账号/组织管理） | 官方文档未提及 | 官方明确（无本地目录） | [Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)、[Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude) |
+| DeepSeek Harness Desktop / Web | 桌面端 Electron shell 与 Web 客户端 | 两端共用六类 Skill 根：项目 `.dsh/skills`、项目 `.agents/skills`、`customSkillDirs`、`~/.dsh/skills`（跳过 `.system`）、`~/.agents/skills`、bundled 根 | 两端 Skill provider 相同；`.agents/skills` 是显式标准根 | 用户提供的 Desktop/Web 目录识别核验；官方 provider 文档作规则依据 | [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md) |
+| MiniMax Code | 桌面端、终端 TUI/CLI、ACP | 共享数据根 `~/.minimax` 下的 `skills/`；桌面标准根另有 `.builtin-skills/` 与 `agents/<agent>/skills/`；工作区根见官方文档 | CLI 与桌面共用数据根；`~/.agents/skills` 对桌面实测生效，CLI 未确认 | Windows 本机确认桌面三个运行时根；CLI 与桌面共享数据根为本机核验 | [MiniMax Code](https://github.com/MiniMax-AI/minimax-code)、[TUI capabilities](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md)、[Desktop download](https://agent.minimax.io/download) |
 
 补充约束：
 
@@ -231,7 +234,8 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | OpenClaw | `SKILL.md` 目录 | `~/.agents/skills`、`~/.openclaw/skills` | `<workspace>/skills`、`<workspace>/.agents/skills` | Extra dirs、插件 Skill | Workspace > Project Agent > Personal > Managed > Bundled/Extra | 默认 watcher，下一次 Agent turn 生效 | 官方有显式信任与目标约束 | 完整适配候选 |
 | Hermes Agent | `SKILL.md` 目录 | `~/.hermes/skills` | `.hermes/skills`、`.agents/skills`，需要项目信任 | `skills.external_dirs`、插件 Skill | Project > Local > External | 新会话、`--now` 或 reset；完整 watcher 待验证 | 推荐 external dirs；Skill 目录链接待验证 | 完整适配候选 |
 | Pi coding agent | Agent Skills 目录；原生目录还允许带有效 frontmatter 的根级 `.md` | `~/.pi/agent/skills`、`~/.agents/skills` | `.pi/skills`；`.agents/skills` 从 cwd 和祖先目录扫描至 Git 根或文件系统根，项目资源需先通过信任 | `package.json` 的 `pi.skills`、包内 `skills/`、`settings.json` 的 `skills`、CLI `--skill` | 同名冲突告警并保留先发现项；完整顺序及多源精确优先级需真机/源码复核 | 启动扫描；交互模式 `/reload` 可重载 skills；热刷新未确认 | Windows 目录联接本机已观察；Agent 跟随行为待测试 | 完整适配候选 |
-| DeepSeek Harness (`dsh`) | 目录型 `SKILL.md` 与扁平 `<name>.md`；不支持嵌套递归 `**/SKILL.md` | `<dshHome>/skills`；`<agentsHome>/skills` | `<projectRoot>/.dsh/skills`、`<projectRoot>/.agents/skills` | `Config.customSkillDirs`、`Config.bundledSkillDir`、包内 provider；本机 `~/.dsh` 存在 `dsh-tui` 与 `web` profile | 官方 rank：project-dsh 100、project-agents 200、custom 300、user-dsh 400、user-agents 500、bundled 600；host/per-scope 最近层优先 | Chokidar 监听现有根与目录入口变更；watcher 变化通过 `skills/change` 触发重新读取 | 未确认 | 完整适配候选 |
+| DeepSeek Harness (`dsh`) | 目录型 `SKILL.md` 与扁平 `<name>.md`；不支持嵌套递归 `**/SKILL.md` | `~/.dsh/skills`（跳过 `.system`）；`~/.agents/skills` | `<projectRoot>/.dsh/skills`；`<projectRoot>/.agents/skills` | `customSkillDirs`（无默认值；`cordis` preset 会加应用内 `@deepseek-ai/dsh-agent-preset/skills`）；bundled 根由 `DSH_BUNDLED_SKILL_DIR` / `bundledSkillDir` 指定 | Desktop/Web 共用 rank：100 project-dsh、200 project-agents、300 custom、400 user-dsh、500 user-agents、600 bundled；同名时低 rank 胜出并覆盖后续项 | Chokidar 监听 provider 根与入口变更，通过 `skills/change` 通知；Desktop/Web 目录规则一致 | 未确认 | CLI/TUI/Web/Desktop 完整适配候选 |
+| MiniMax Code (`mcode`) CLI / ACP / 桌面端 | 目录型 `SKILL.md`；CLI 与桌面共用默认数据根 `~/.minimax` 及用户级 `skills/`；桌面另有 `.builtin-skills/`、`agents/<agent>/skills/` 标准根；工作区根按官方文档 | 默认数据根可被 `MINIMAX_DATA_DIR` 重定向，优先于 `MAVIS_DATA_DIR`；两客户端可通过不同 override 分离 | 桌面实测可用 `~/.agents/skills`；CLI 是否读取该共享目录待验证 | 桌面 `app.asar` 有 47 个只读内置 Skill，CLI 不含 Electron 打包资源；插件目录 Skill 不纳入 SkillHub 支持范围 | 同名优先与跨来源顺序待验证 | CLI `/skills [filter]`、`/mcp`、`/doctor`；刷新语义待验证 | 工作区目录链接有官方依据；用户根与 Windows Junction 行为待验证 | 部分适配候选 |
 | 豆包工作（Doubao Work） | 目录型 `SKILL.md`；Windows 真机确认导入 Skill 位于应用工作区 `.user_skills/<name>/` | 内部用户 Skill 存储：应用工作区 `.user_skills/<name>/`；内置/工作区 Skill 目录 `.skills/` | 用户级 `~/.agents/skills`：Windows 真机确认可识别并正常调用；项目级目录待确认 | 在线技能/连接器/工作伙伴与本地文件 Skill 分开；本地与云电脑执行环境分离 | 未公开；项目级与内部目录同名优先级待确认 | UI 管理；新会话/重启与本地文件变更可见时机待验证 | 未确认 | 已预置适配（2026-09-25，doubao-work profile，仅共享目录） |
 | Grok Build CLI / TUI / ACP | `SKILL.md` 目录 | `$GROK_HOME/skills`，默认 `~/.grok/skills`；`~/.agents/skills`；兼容 Claude/Cursor 用户目录 | 从当前目录到仓库根扫描 `.grok/skills`、`.agents/skills` 及已启用兼容目录 | `[skills].paths`、Bundled Skill、插件 `skills/`、Marketplace 插件 | 当前目录 > 较上层项目目录 > 用户；原生同名按高层级覆盖；Bundled 可被原生覆盖；插件冲突保留限定名 | 文件变化后数秒内自动重载；`grok inspect [--json]` 可查看发现结果 | 未确认 | 完整适配候选 |
 | Grok Web / iOS / Android Skills | 官方确认内置和自定义 Skills，但属于账号同步能力 | 未公开稳定本地扫描目录 | 未公开 | 可通过对话、上传文件或从头创建；内置 Skill 随账号提供 | 官方说明用户自定义版本优先于同名内置版本 | 云端/UI 管理；客户端间账号同步 | 不适用 | 有限接入候选 |
@@ -504,17 +508,47 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 本文中的 DeepSeek Harness 指 DeepSeek 官方的 `dsh` Agent Harness 开发者预览，不是单独的 DeepSeek 模型或 API 接入。其能力由插件组合提供，Skill 子系统由本地文件 provider、打包 provider 和 Consumer 共同组成；SkillHub 应把它作为独立的本地文件管理 profile。
 
-- 本机目录观察（Windows，2026-09-12）：`dsh --version` 返回 `0.1.1-rc.2`；`~/.dsh` 存在 `profiles/dsh-tui` 与 `profiles/web` 两套本地 profile；`dsh-tui` 的包内 `skills/` 实际包含 7 个目录型 Skill 和 7 个 `SKILL.md` 入口。`web` 与 `dsh-tui` 是 profile packaging 差异，不应直接推断为两套不同的用户 Skill 根目录。
-- 已确认：官方 local provider 的 rank 顺序为 `project-dsh`（100，`<projectRoot>/.dsh/skills`）、`project-agents`（200，`<projectRoot>/.agents/skills`）、`custom`（300）、`user-dsh`（400，`<dshHome>/skills`）、`user-agents`（500，`<agentsHome>/skills`）、`bundled`（600）。同一层内低 rank 优先；host/per-scope 合并时最近 scope 覆盖重复名称。
+- 本机目录观察（Windows，2026-09-12）：`dsh --version` 返回 `0.1.1-rc.2`；`~/.dsh` 存在 `profiles/dsh-tui` 与 `profiles/web` 两套本地 profile；`dsh-tui` 的包内 `skills/` 实际包含 7 个目录型 Skill 和 7 个 `SKILL.md` 入口。`web` 与 `dsh-tui` 是 profile packaging 差异，不应直接推断为两套不同的用户 Skill 根目录。2026-10-12 官方新增 Desktop 客户端；它作为新的客户端形态纳入 profile 清单，不是另一个 Agent 品牌。
+- 已确认（Desktop/Web 运行时目录核验，2026-10-12）：两端默认使用相同的六类 Skill 根，按 rank 递增扫描，数值越小越优先；遇到同名 Skill 时前面的高优先级来源覆盖后面的来源：
+
+  | Rank | Skill 根 | 规则 |
+  |---:|---|---|
+  | 100 | `<projectRoot>/.dsh/skills` | 项目原生根 |
+  | 200 | `<projectRoot>/.agents/skills` | 项目共享根 |
+  | 300 | `customSkillDirs` 配置的目录 | 无默认值；`cordis` preset 会加入应用内 `@deepseek-ai/dsh-agent-preset/skills` |
+  | 400 | `~/.dsh/skills` | 跳过其 `.system/` 子目录 |
+  | 500 | `~/.agents/skills` | 用户共享根 |
+  | 600 | `DSH_BUNDLED_SKILL_DIR` / `bundledSkillDir` 指向的 bundled 根 | Desktop 可用；Web 默认未设置，因此通常不存在 |
+
+- 两端共用六类根与 rank 规则；Web bundled 根默认未设置这一点不改变其他来源的排序。`<dshHome>` / `<agentsHome>` 对应本机用户目录，当前 Windows 下分别解析为 `~/.dsh`、`~/.agents`。
 - 已确认：项目根为最近的含 `.git` 的祖先目录；无 Git 根时使用当前工作目录。provider 支持目录型 `<name>/SKILL.md` 和扁平 `<name>.md`，不支持嵌套递归 `**/SKILL.md`。包、embedded、remote provider 也可以贡献 Skill，但其文件生命周期由对应 provider/包管理器负责。
 - 已确认：local provider 使用 Chokidar 监听 Skill 根和直接入口的增加、删除及入口内容变化，并通过 `skills/change` 使 consumer 重新读取；bundle 内的普通资源文件变化不单独产生目录清单变化。Skill 的模型/用户调用策略由 `disable-model-invocation` 与 `user-invocable` 归一化，缺省均可调用。
-- 必须验证：`<dshHome>` 与 `<agentsHome>` 在不同安装方式/profile 下的最终解析路径、`.dsh/skills` 与 `.agents/skills` 的真实扫描结果、重复 Skill 的跨 scope 展示、Windows 符号链接/目录联接和权限错误、web/TUI profile 的 watcher 行为，以及外部修改后 UI 和当前会话的可见时机。
+- 必须验证：`.dsh/skills` 与 `.agents/skills` 的同名覆盖实测、`customSkillDirs` 和 `cordis` preset 的应用内目录行为、Web bundled 根显式配置后的扫描、Windows 符号链接/目录联接和权限错误、Desktop/Web/TUI profile 的 watcher 行为，以及外部修改后 UI 和当前会话的可见时机。Desktop 与 Web 的六类根及 rank 已核验；TUI 对相同根集合的行为仍按其本机安装版本补充确认。
+- 已确认（DeepSeek 官方产品页及仓库桌面端说明，2026-10-12）：DeepSeek Harness 已提供 Apple Silicon macOS 13+ 与 Windows 64-bit 下载。桌面端是官方 Electron shell，使用共享 Harness Web 应用及 profile runner；可以选择工作区、管理插件，并可选注册随应用提供的 `dsh` 命令。桌面端与 CLI 共享会话、设置、凭据、工作区和存储，桌面 profile 使用独立的 profile 选择器/路径。桌面端默认还注册 `office-docx`、`office-pptx`、`office-xlsx` 三个内置 Skill；这些随应用发布的资源不属于 SkillHub 可写的用户文件。
+- 桌面版对现有兼容性规则的影响：Desktop 与 Web 共用本节六类本地 provider 根和 rank，不因 Electron shell 增加另一套通用用户目录；`cordis` preset 可在 custom rank 注入应用内 preset Skills，bundled 根仍按各 host 配置处理。桌面内置 Skill 与 bundled/package 只读来源保持只读边界。
 - 调用证据：官方 runtime 有 `ctx.skills.list()`、`ctx.skills.get()`、模型侧 `skill` tool 和用户侧 Skill catalog，但没有稳定的按 Skill 使用次数接口；SkillHub 不把 session log 中的事件直接等价为完整调用统计。
-- 结论：完整适配候选。预置 profile 应至少覆盖 `<projectRoot>/.dsh/skills`、`<projectRoot>/.agents/skills`、`<dshHome>/skills`、`<agentsHome>/skills` 和自定义目录，并保留 bundled/package 只读边界。当前本机证据为安装和目录观察，尚未通过真实 Skill 创建、刷新、部署/解除部署和链接全量验证。
+- 结论：DeepSeek Harness CLI/TUI/Web/Desktop 均为完整适配候选。预置 profile 覆盖六类根，并按 rank 100→600 保留同名覆盖关系；`~/.dsh/skills/.system` 排除在普通用户 Skill 扫描之外，Web bundled 根默认未设置，`customSkillDirs` 默认为空但可由 `cordis` preset 注入应用内目录。仍需按适用 host 验证 custom、bundled、刷新和链接边界；当前软件实现尚不等于已通过每个桌面/Web/TUI 的真实部署验收。
 
-主要来源：[DeepSeek Harness 官方介绍](https://deepseek.com/harness/en/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)。资料复核日期：2026-09-12。
+主要来源：[DeepSeek Harness 官方介绍](https://www.deepseek.com/en/harness/)、[DeepSeek 官方下载页](https://www.deepseek.com/en/download/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Desktop 官方说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)。资料复核日期：2026-10-12（桌面版）；原 Skill provider 规则复核日期：2026-09-12。
 
-### 5.23 豆包工作（Doubao Work）
+### 5.23 MiniMax Code
+
+本文中的 MiniMax Code 指 MiniMax 官方本地 Agent 产品，包括桌面端和开源仓库公开的 `mcode` 终端 TUI、headless CLI 与 ACP；MiniMax Agent 网页版是云端任务产品，不因同品牌或可创建 Skills 而成为本地文件管理目标。MiniMax Code 的 Skill 支持以 Agent Skills 目录型 `SKILL.md` 为主，客户端 profile 必须区分 CLI/ACP 与桌面端，不能把仓库公开范围误当成桌面应用源码或全部内部契约。
+
+- 已确认（本机桌面版与 CLI 对照，2026-10-12）：两者默认共用 `~/.minimax` 数据根，配置文件均为 `<data-dir>/config.yaml`。`MINIMAX_DATA_DIR` 可重定向数据根，优先级高于兼容回退变量 `MAVIS_DATA_DIR`；为两个进程配置不同的数据根时，数据与用户 Skill 可分离。CLI 文档对内置 Skills 的具体目录布局未逐项列出，说明其来源取决于数据目录、项目与 host。
+- 本机目录与运行时观察（Windows，2026-10-12；用户提供的 `sandboxAllowPaths` 日志证据）：MiniMax Code 桌面程序已安装并运行，版本 `3.1.1.171`。日志中每次工具调用的权限上下文表明 MCode 的三个标准扫描根为 `~/.minimax/.builtin-skills`、`~/.minimax/skills` 和当前 Agent 专属的 `~/.minimax/agents/<agent>/skills`（本机当前 Agent 为 `mavis`）。其中 `.builtin-skills` 存在 21 个内置 Skill；两个自定义根当时不存在，但用户确认在 `~/.minimax/skills` 放入目录型 Skill 后即可被识别。此前只看到 `~/.minimax/agents/.builtin/`，它是内置资产目录，不等同于 `agents/mavis/skills`。
+- 另外三类有效来源（用户本机核验，2026-10-12）：① 插件缓存 `~/.minimax/v2/plugin-cache/official/<pluginTree>/skills/`；② 桌面安装包 `resources/app.asar` 索引中的 47 个 `SKILL.md` 资源（包括 `minimax-code-product`、`mavis-doctor`、`genui-widget` 和 24 个 `lark-*`），不作为普通磁盘目录；③ 跨工具共享库 `~/.agents/skills/`，本机有 38 个 Skill。共享库多数为用户自定义 Skill；目录名与 frontmatter 注册名可能不同，例如 `source-reading-methodology` 注册为 `source-reading`。SkillHub 当前不支持插件目录 Skill 的识别和管理，因此插件缓存来源不纳入 MiniMax profile 的扫描或部署目标。
+- CLI 与桌面的已知差异（本机核验及官方 host 能力说明）：用户放入共享数据根 `~/.minimax/skills/` 的自定义 Skill 可由 CLI 与桌面共用；桌面打包在 `app.asar` 中的 47 个资源 Skill 不随 CLI 提供。Browser / Computer Use / 桌面面板属于 host 显式提供的能力，CLI 不带 Electron host，因此不应列为 CLI 可用能力。桌面版实测识别 `~/.agents/skills/` 中 38 个共享 Skill；官方 CLI 文档未提及该目录约定，CLI 是否读取尚未验证。
+- 已确认（官方源码文档）：工作区目录包括 `<projectRoot>/.minimax/skills`、`.agents/skills` 和 `.claude/skills`；三类工作区 Skill 根及单 Skill 目录均支持目录符号链接，外部来源仍受启用设置和同名优先规则约束，失效链接跳过，`SKILL.md` 本身必须是普通文件。链接 watcher 观察 `SKILL.md` 创建和编辑。仓库没有在该能力文档中完整说明工作区根识别与跨层优先级，需保留待验证。
+- 已确认（官方产品文档）：桌面端可访问用户授权的本地文件、项目与工具，并提供 Coding / Work 模式；它与 MiniMax Agent 网页版的云端任务边界不同。官方公开仓库声明仅包含 CLI/TUI、headless CLI 和 ACP，不含桌面应用源码。
+- CLI 操作入口（本机核验）：使用 `/skills [filter]` 查看技能，`/mcp` 查看 MCP，`/doctor` 检查配置。命令可发现或列出 Skill 不等于 SkillHub 已验证部署和解除部署流程。
+- 必须验证：桌面三个标准根在不同 Agent/profile 与数据根 override 下的具体解析、CLI 对 `~/.agents/skills` 的支持、Skills 刷新时机、同名优先级、符号链接 / Windows Directory Junction，以及 Windows/macOS 的写入、删除与恢复行为。插件 Skill 明确不在本项目当前支持范围；`app.asar` 内置资源和 `~/.agents/skills` 共享目录分别按平台内置资产与共享来源处理。网页 MiniMax Agent 的账号内 Skills 不纳入本地目录 profile。
+- 调用证据：CLI 提供 `/skills`、`/mcp` 与 `/doctor` 命令，但目前没有纳入本文证据的稳定按 Skill 调用次数接口；安装或命令可见不代表运行时任务正确执行。
+- 结论：MiniMax Code CLI / ACP 与桌面端均为部分文件管理接入候选。桌面版三个标准扫描根、桌面与 CLI 共享用户数据根以及桌面侧共享目录识别已有本机证据；桌面 app.asar Skill 与 host 能力不随 CLI 提供，插件目录 Skill 排除在 SkillHub 当前支持范围外。仍需确认跨 Agent/profile 的路径解析、CLI 对共享 `.agents/skills` 的发现、优先级、刷新与链接行为。MiniMax Agent 网页版只作为云端能力边界说明，不创建文件部署 profile。
+
+主要来源：[MiniMax Code 官方仓库与 README](https://github.com/MiniMax-AI/minimax-code)、[MiniMax Code 官方安装及数据目录文档](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/installation.md)、[MiniMax Code 官方 TUI 能力与 Skill 链接说明](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md)、[MiniMax Code 官方产品下载与桌面/网页边界](https://agent.minimax.io/download)。资料复核日期：2026-10-12。
+
+### 5.24 豆包工作（Doubao Work）
 
 本文中的豆包工作指字节跳动面向办公任务的独立 Agent 产品，以及豆包桌面端中的同名工作任务入口；普通豆包聊天、豆包浏览器插件、云端工作伙伴和连接器不自动成为 SkillHub 的本地文件管理目标。公开产品资料显示，豆包工作支持桌面端工作任务、本地电脑与云电脑两种执行环境、本地文件夹授权、技能/连接器/工作伙伴以及自定义技能；2026-09-16 的 Windows 真机观察进一步确认了目录型 Skill 的本地存储，以及 `.agents/skills` 共享目录中的 Skill 可被识别并正常调用。
 
@@ -707,7 +741,7 @@ Windows 必须分别验证：
 | 顺序 | 平台 | 原因 |
 |---|---|---|
 | 第一批 | OpenAI Codex CLI、Codex IDE extension、ChatGPT desktop app、Claude Code、Claude Desktop、Gemini CLI、Cursor、TraeCode、通义灵码、CodeBuddy Code、文心快码 Comate、Kimi Code | 用户覆盖面高，且 OpenAI/Anthropic 多客户端拆分会直接影响 profile 模型和部署目标 |
-| 第二批 | Windsurf、OpenCode、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness、ZCode、WorkBuddy | 本地能力完整，但层级、额外目录、链接安全或刷新机制仍需验证 |
+| 第二批 | Windsurf、OpenCode、OpenClaw、Hermes Agent、Pi coding agent、DeepSeek Harness（含官方 Desktop）、MiniMax Code、ZCode、WorkBuddy | 本地能力已有依据，但层级、额外目录、链接安全或刷新机制仍需验证；MiniMax Code 的 `.agents/skills` CLI 发现、跨 Agent/profile 路径及刷新优先级待核验 |
 | 第三批 | GitHub Copilot、Cline、Google Antigravity、豆包工作 | 关键规则或客户端差异尚未完全公开；豆包工作已取得 Windows 目录观察和 `.agents/skills` 识别/调用行为反查，仍需补齐项目级与动态行为 |
 | 第四批 | TraeWork、Kimi Work | 需要先确认是否存在稳定、公开、可由外部管理的目录 |
 
@@ -756,6 +790,7 @@ Windows 必须分别验证：
 - Anthropic：Claude Code CLI/本地会话、Claude Desktop/Cowork/Chat、Claude Web、Microsoft 365 add-ins；Claude Code 有公开本地目录，Claude 聊天 Skills 主要通过上传和账号/组织管理。
 - Pi：Pi coding agent CLI；Skill 目录、项目 trust、包和 settings 入口属于 Pi profile，不能把 Pi 的 SDK、Slack bot 或其他集成形态自动视为同一文件管理目标。
 - DeepSeek：DeepSeek Harness `dsh` CLI/TUI/Web；不同 profile 共享 Harness 的 Skill provider 语义，但 bundled/package Skill 与用户本地目录必须按来源和所有权拆分。
+- MiniMax：MiniMax Code 桌面端、`mcode` CLI / ACP 与 MiniMax Agent 网页版必须区分。桌面与 CLI 默认共享数据根及用户自定义 Skill 目录，`MINIMAX_DATA_DIR` 优先于兼容回退变量 `MAVIS_DATA_DIR`；桌面安装包中的内置 Skill 与 Electron host 能力不随 CLI 提供。插件目录 Skill 不纳入 SkillHub 当前支持范围；CLI 对共享 `.agents/skills` 的发现仍待验证。网页 Skills 属云端能力，不推导为本地文件目标。
 - 字节跳动：普通豆包桌面端、豆包工作独立办公 Agent、豆包桌面端工作任务入口以及移动/云电脑执行环境必须分开；豆包工作已确认 `.user_skills/<name>/` 内部用户 Skill 存储和 `~/.agents/skills` 共享目录 Skill 的识别/调用，但只有本地电脑模式涉及本机授权文件夹，不能把该工作区或在线技能市场当作稳定 Skill 部署目标。
 - GitHub Copilot CLI、VS Code/JetBrains、本地与云端 Agent。
 - Cursor editor 与 Cursor CLI。
@@ -793,14 +828,14 @@ Windows 必须分别验证：
 
 ## 9. 当前结论
 
-24 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
+25 个候选平台品牌均存在继续调研或文件管理接入价值，但接入深度不同；同品牌多客户端需要在 profile 层继续拆分：
 
-- 19 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI，DeepSeek 侧指 `dsh` CLI/TUI/Web；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据；Pi 与 DeepSeek Harness 已取得本机安装/目录观察，其余仍依据官方资料。SkillHub 0.2.0 已落地其中的目录型 `SKILL.md` 前后端 profile。
-- 5 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；豆包工作已确认目录型 Skill 导入，以及 `~/.agents/skills` 中 Skill 的识别和正常调用，但项目级规则、优先级、刷新和链接仍待验证。ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标仍待确认；Google Antigravity 的全局目录按官方资料保留 `~/.gemini/config/skills`，真机上另有 `~/.gemini/antigravity/` 下的两个 Skill 目录，二者关系待验证。
+- 20 个本地文件管理 profile 可以按现有资料实现完整接入，其中 OpenAI 侧仅指 Codex CLI / Codex IDE extension，Grok 侧仅指 Grok Build CLI / TUI / ACP，Pi 侧仅指 Pi coding agent CLI，DeepSeek 侧指 `dsh` CLI/TUI/Web/Desktop；ZCode 因官方补全工作区级目录由部分上调为完整。Codex、Claude Code、Cursor、Kimi Code、TraeCode、通义灵码（CLI 侧）、CodeBuddy Code、WorkBuddy 等平台已取得 Windows 真机证据；Pi 与 DeepSeek Harness 已取得本机安装/目录观察，其余仍依据官方资料。MiniMax Code 桌面版已取得安装和运行时目录证据，但尚未纳入软件实现。SkillHub 0.2.0 已落地其中的目录型 `SKILL.md` 前后端 profile。
+- 7 个部分文件管理 profile 可以先实现，未知规则显示“无法判断”并保留自定义目录兜底；豆包工作已确认目录型 Skill 导入，以及 `~/.agents/skills` 中 Skill 的识别和正常调用，但项目级规则、优先级、刷新和链接仍待验证；MiniMax Code 的根路径已有运行时证据，跨 Agent/profile 一致性、优先级、刷新和链接仍待验证。ChatGPT desktop app 的 standalone skills 是否可作为独立文件目标仍待确认；Google Antigravity 的全局目录按官方资料保留 `~/.gemini/config/skills`，真机上另有 `~/.gemini/antigravity/` 下的两个 Skill 目录，二者关系待验证。
 - 5 个上传、云端或办公型 profile 暂时只展示能力边界、官方帮助链接和通用标准导出；Claude / Claude Desktop 聊天 Skills 不能套用 Claude Code 的 `.claude/skills`，Grok consumer 与 Grok Bot 也不能套用 Grok Build 的 `.grok/skills`。
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
-下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。Pi 与 DeepSeek Harness 的目录型 `SKILL.md` profile 已进入 0.2.0；真机测试仍用于修正目录和部署规则，所有未覆盖平台继续使用用户自选 Skill 目录兜底。
+下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。Pi 与 DeepSeek Harness CLI/TUI/Web/Desktop 的目录型 Skill 根规则已收口；SkillHub 0.2.0 当前实现仍需完成 Desktop profile 与各 host 的真实链路验证。MiniMax Code 尚未纳入软件实现，本次仅更新调研文档。真机测试仍用于修正目录和部署规则，所有未覆盖平台继续使用用户自选 Skill 目录兜底。
 
 Task11 的当前证据除 profile 文件事实和跨平台占位验收记录外，新增 2026-09-05 的 Windows 真机确认记录，见各章节标注为“真机确认”的条目及 2.1 的证据口径说明。Windows 侧的目录存在性证据已经采集，但同名优先级、刷新行为、链接支持、部署与解除部署结果以及全部 macOS 结论仍未覆盖，不得据此宣称任何 Agent 的文件管理接入已通过验证。Universal DMG 和 Draft Release 产物仍须在后续设备或 CI 环境中补采证据。

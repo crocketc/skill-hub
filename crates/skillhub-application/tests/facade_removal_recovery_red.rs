@@ -8,14 +8,15 @@
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, CommitDeleteSkill, ListDeployments, PrepareDeleteSkill,
+    AppCommandResult, AppQueryResult, CancelDeleteSkill, CommitDeleteSkill, ListDeployments,
+    PrepareDeleteSkill,
 };
 use skillhub_core::catalog::Skill;
 use skillhub_core::deployment::{DeploymentMode, DeploymentRecord, DeploymentState};
 use skillhub_core::{
     AppCommand, AppQuery, AppResult, ApplicationFacade, DeploymentId, ErrorCode, OperationId,
     PreparedRemovalRecord, PreparedRemovalState, RecoveryCandidate, RemovalChoice, RemovalDecision,
-    RemovalImpact, RemovalItemStatus, RemovalResultState, VersionId,
+    RemovalImpact, RemovalItemStatus, RemovalResultState, StartupRecoveryState, VersionId,
 };
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 
@@ -230,6 +231,84 @@ async fn prepared_delete_rejects_commit_after_restart_but_keeps_journal_payload(
     );
 }
 
+/// A prepared delete is only a read-only impact preview. It must not block
+/// normal work by appearing as an unfinished recovery action before commit.
+#[tokio::test]
+async fn prepared_delete_preview_is_not_a_recovery_candidate() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Preview only").await;
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+
+    let impact = prepare_delete(&facade, skill.id()).await;
+
+    assert!(
+        !recovery_candidate_ids(&facade)
+            .await
+            .contains(&impact.operation_id),
+        "opening a delete preview must not create a recovery blocker"
+    );
+    let snapshot = facade
+        .query(AppQuery::GetBootstrapSnapshot)
+        .await
+        .expect("read bootstrap snapshot");
+    assert!(
+        matches!(
+            snapshot,
+            AppQueryResult::BootstrapSnapshot(snapshot)
+                if snapshot.recovery_state == StartupRecoveryState::Clean
+        ),
+        "a read-only delete preview must not send the user to a recovery page with no candidate"
+    );
+}
+
+#[tokio::test]
+async fn canceling_delete_preview_settles_it_without_changing_skill_or_relations() {
+    let ws = workspace();
+    let database = open_database(&ws.database_path);
+    let skill = seed_skill(&database, "Canceled preview").await;
+    let deployment = seed_deployment(
+        &database,
+        skill.id(),
+        "target-cancel",
+        ws.scratch_dir.path(),
+    )
+    .await;
+    let facade = LocalApplicationFacade::new_with_library(database, ws.library_root.path());
+    let impact = prepare_delete(&facade, skill.id()).await;
+
+    let canceled = facade
+        .execute(AppCommand::CancelDeleteSkill(CancelDeleteSkill {
+            prepared_delete_id: impact.operation_id,
+        }))
+        .await
+        .expect("canceling an untouched delete preview should succeed");
+    assert!(
+        matches!(canceled, AppCommandResult::OperationSummary(summary)
+        if summary.phase == skillhub_core::OperationPhase::RolledBack)
+    );
+    assert!(!recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+    assert_eq!(active_deployments(&facade, skill.id()).await.len(), 1);
+    assert_eq!(
+        journal_record(&open_database(&ws.database_path), impact.operation_id).phase,
+        skillhub_core::OperationPhase::RolledBack,
+    );
+    assert!(active_deployments(&facade, skill.id())
+        .await
+        .iter()
+        .any(|row| row.id == deployment));
+
+    let repeated = facade
+        .execute(AppCommand::CancelDeleteSkill(CancelDeleteSkill {
+            prepared_delete_id: impact.operation_id,
+        }))
+        .await
+        .expect_err("a settled preview cannot be canceled twice");
+    assert_eq!(repeated.code, ErrorCode::ObjectNotFound);
+}
+
 /// RED：3 目标中第 2 项失败 → 结果逐项可归属、恢复候选存在、用户决定与
 /// 剩余项持久化；重启（清扫只处理 prepared 相位）后决定仍在。
 #[tokio::test]
@@ -279,6 +358,17 @@ async fn a_partially_failed_delete_registers_recovery_and_preserves_decisions() 
     );
     assert_eq!(by_id(third).status, RemovalItemStatus::Applied);
 
+    assert!(recovery_candidate_ids(&facade)
+        .await
+        .contains(&impact.operation_id));
+
+    let cancel_partial = facade
+        .execute(AppCommand::CancelDeleteSkill(CancelDeleteSkill {
+            prepared_delete_id: impact.operation_id,
+        }))
+        .await
+        .expect_err("a partially applied deletion must remain recoverable, not be canceled");
+    assert_eq!(cancel_partial.code, ErrorCode::ObjectNotFound);
     assert!(recovery_candidate_ids(&facade)
         .await
         .contains(&impact.operation_id));

@@ -459,15 +459,23 @@
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-sm);
   background: var(--ui-surface-subtle);
+  max-block-size: var(--sh-md-stage);
   min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sh-markdown-workspace__rail ul {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.sh-markdown-workspace__rail li {
+  min-width: 0;
 }
 
 .sh-markdown-workspace__rail button {
@@ -478,7 +486,7 @@
   color: var(--ui-ink-muted);
   cursor: pointer;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   font: inherit;
   gap: var(--space-1) var(--space-2);
   min-width: 0;
@@ -500,6 +508,7 @@
 }
 
 .sh-markdown-workspace__rail-path {
+  flex: 1 1 0%;
   overflow: hidden;
   min-width: 0;
   text-overflow: ellipsis;

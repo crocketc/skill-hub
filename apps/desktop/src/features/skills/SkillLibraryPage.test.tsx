@@ -253,17 +253,13 @@ describe("SkillLibraryPage", () => {
 
     // 确认/取消语义与既有删除影响预览一致：先处理部署关系，再两步确认。
     // DEV-97：下拉名称改用规范化路径标识行，不再暴露技术 label。
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling: C:\\codex" }),
-      { target: { value: "keep_deployed" } },
-    );
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }),
     );
     await waitFor(() =>
       expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {
-        "dep-1": "keep_deployed",
+        "dep-1": "convert_to_copy",
       }),
     );
   });
@@ -275,6 +271,7 @@ describe("SkillLibraryPage", () => {
         deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
         declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
       }),
+      cancelDelete: vi.fn().mockResolvedValue(undefined),
       commitDelete: vi.fn(),
     };
     renderLibrary({ facade, removalFacade });
@@ -290,6 +287,71 @@ describe("SkillLibraryPage", () => {
     expect(removalFacade.commitDelete).not.toHaveBeenCalled();
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).toBeChecked();
     expect(screen.getByRole("complementary", { name: "Batch actions" })).toBeVisible();
+  });
+
+  it("cancels every deletion preview that succeeded when another selected Skill fails to prepare", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const cancelDelete = vi.fn().mockResolvedValue(undefined);
+    const removalFacade: RemovalFacade = {
+      prepareDelete: vi.fn()
+        .mockResolvedValueOnce({
+          deployments: [], dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+          declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+        })
+        .mockRejectedValueOnce({ code: "removal.deployment_target_unavailable", severity: "error", params: {}, actions: [] }),
+      cancelDelete,
+      commitDelete: vi.fn(),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+
+    await waitFor(() => expect(cancelDelete).toHaveBeenCalledWith("delete-pdf"));
+    expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+    expect(await screen.findByText("Usage relationship target details could not be verified, so removal was not prepared.")).toBeVisible();
+  });
+
+  it("uses the single-delete rules for links and full copies in batch review", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const removalFacade: RemovalFacade = {
+      prepareDelete: vi.fn().mockResolvedValue({
+        deployments: [
+          { id: "dep-link", label: "Codex", path: "C:/codex/skills", physicalId: "codex", mode: "symbolic_link", targetId: "target-link" },
+          { id: "dep-copy-1", label: "Claude", path: "C:/claude/skills", physicalId: "claude", mode: "managed_copy", targetId: "target-shared" },
+          { id: "dep-copy-2", label: "Claude", path: "C:/claude/skills", physicalId: "claude", mode: "managed_copy", targetId: "target-shared" },
+        ],
+        dependentProjects: [], operationId: "delete-pdf", skillId: "skill-pdf", skillName: "PDF Reader",
+        declaredDependencies: [], pinnedVersions: [], combinations: [], relatedSkills: [], unknownExternalReferences: [],
+      }),
+      commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
+    };
+    renderLibrary({ facade, removalFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
+
+    expect(within(dialog).getByText("The link file here will be removed")).toBeVisible();
+    expect(within(dialog).getAllByRole("radio", { name: /Keep as an independent copy/ }).every((radio) => (radio as HTMLInputElement).checked)).toBe(true);
+    expect(within(dialog).getByText(/full copies.*kept as independent copies by default/i)).toBeVisible();
+
+    fireEvent.click(within(dialog).getAllByRole("radio", { name: /Delete the copy too/ })[0]);
+    const sharedConfirmation = within(dialog).getByRole("checkbox", {
+      name: "This directory is used by multiple usage relationships. I confirm deleting its files.",
+    });
+    expect(within(dialog).getByRole("button", { name: "Continue deletion" })).toBeDisabled();
+    fireEvent.click(sharedConfirmation);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
+
+    await waitFor(() => expect(removalFacade.commitDelete).toHaveBeenCalledWith("delete-pdf", {
+      "dep-link": "remove_deployment",
+      "dep-copy-1": "remove_deployment",
+      "dep-copy-2": "convert_to_copy",
+    }, new Set(["dep-copy-1"])));
   });
 
   it("sends success outcomes to the auto-dismissing global toast instead of a local notice list (M-21)", async () => {
@@ -450,14 +512,7 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling: C:\\codex" }),
-      { target: { value: "keep_deployed" } },
-    );
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling: C:\\claude" }),
-      { target: { value: "remove_deployment" } },
-    );
+    fireEvent.click(within(dialog).getAllByRole("radio", { name: /Delete the copy too/ })[1]);
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
 
@@ -502,10 +557,6 @@ describe("SkillLibraryPage", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
-    fireEvent.change(
-      within(dialog).getByRole("combobox", { name: "Target copy handling: C:\\codex" }),
-      { target: { value: "keep_deployed" } },
-    );
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
 

@@ -903,6 +903,12 @@ pub struct CommitDeleteSkill {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct CancelDeleteSkill {
+    pub prepared_delete_id: OperationId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct DetachManagement {
     pub deployment_id: crate::DeploymentId,
 }
@@ -1555,6 +1561,8 @@ pub enum AppCommand {
     PrepareDeleteSkill(PrepareDeleteSkill),
     #[serde(rename = "commit_delete_skill")]
     CommitDeleteSkill(CommitDeleteSkill),
+    #[serde(rename = "cancel_delete_skill")]
+    CancelDeleteSkill(CancelDeleteSkill),
     #[serde(rename = "detach_management")]
     DetachManagement(DetachManagement),
     #[serde(rename = "run_health_check")]

@@ -723,6 +723,7 @@ describe("SkillDetailPage shell", () => {
   });
 
   it("opens the real removal confirmation from the header delete action", async () => {
+    const cancelDelete = vi.fn().mockResolvedValue(undefined);
     const removalFacade: RemovalFacade = {
       prepareDelete: vi.fn().mockResolvedValue({
         operationId: "op-delete",
@@ -731,6 +732,7 @@ describe("SkillDetailPage shell", () => {
         deployments: [],
         dependentProjects: [],
       }),
+      cancelDelete,
       commitDelete: vi.fn().mockResolvedValue({ centralSkillDeleted: true }),
     };
     await renderDetail({ removalFacade });
@@ -741,6 +743,11 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.prepareDelete).toHaveBeenCalledWith("skill-pdf", "PDF Reader");
     expect(screen.queryByText("本次示例影响")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认删除" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(cancelDelete).toHaveBeenCalledWith("op-delete"));
+    expect(removalFacade.commitDelete).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   // 详情头部与关系治理页共用使用关系 prepare/commit 契约。

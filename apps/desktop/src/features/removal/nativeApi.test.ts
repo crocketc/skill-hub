@@ -228,7 +228,8 @@ it("omits the imported-copy relation count when the governance ledger is unreach
 });
 
 it("rejects deletion preparation when deployment target facts cannot be loaded", async () => {
-  vi.mocked(executeCommand).mockResolvedValue({
+  vi.mocked(executeCommand)
+    .mockResolvedValueOnce({
     type: "removal_impact",
     payload: {
       operation_id: "op-delete",
@@ -255,12 +256,20 @@ it("rejects deletion preparation when deployment target facts cannot be loaded",
       related_skills: [],
       unknown_external_references: [],
     },
-  } as never);
+    } as never)
+    .mockResolvedValueOnce({
+      type: "operation_summary",
+      payload: { operation_id: "op-delete", phase: "rolled_back", message_code: "removal.preview_canceled", error_code: null },
+    } as never);
   vi.mocked(queryApplication).mockRejectedValue(new Error("deployment target lookup failed"));
 
   await expect(nativeRemovalFacade.prepareDelete("skill-notes", "Notes")).rejects.toMatchObject({
     code: "removal.deployment_target_unavailable",
     params: {},
+  });
+  expect(executeCommand).toHaveBeenNthCalledWith(2, {
+    type: "cancel_delete_skill",
+    payload: { prepared_delete_id: "op-delete" },
   });
 });
 
@@ -560,6 +569,19 @@ it("forwards explicit shared-target confirmations into the commit payload", asyn
         { deployment_id: "dep-2", decision: "remove_relation_only", confirm_shared_target_removal: false },
       ],
     },
+  });
+});
+
+it("settles a canceled delete preview through its dedicated command", async () => {
+  vi.mocked(executeCommand).mockResolvedValueOnce({
+    type: "operation_summary",
+    payload: { operation_id: "op-cancel", phase: "rolled_back", message_code: "removal.preview_canceled", error_code: null },
+  });
+
+  await expect(nativeRemovalFacade.cancelDelete("op-cancel")).resolves.toBeUndefined();
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "cancel_delete_skill",
+    payload: { prepared_delete_id: "op-cancel" },
   });
 });
 

@@ -122,6 +122,23 @@ impl RemovalBackend for FakeRemovalBackend {
         self.settled_prepared.lock().unwrap().push(operation_id);
         Ok(())
     }
+
+    async fn cancel_prepared_delete(&self, operation_id: OperationId) -> AppResult<()> {
+        let mut store = self.prepared_store.lock().unwrap();
+        let record = store.get(&operation_id).ok_or_else(|| {
+            AppError::new(ErrorCode::ObjectNotFound, skillhub_core::Severity::Error)
+        })?;
+        if record.kind != skillhub_core::PreparedRemovalKind::DeleteSkill
+            || record.state != skillhub_core::PreparedRemovalState::Prepared
+        {
+            return Err(AppError::new(
+                ErrorCode::OperationConflict,
+                skillhub_core::Severity::Error,
+            ));
+        }
+        store.remove(&operation_id);
+        Ok(())
+    }
 }
 
 fn fixture() -> (RemovalService<FakeRemovalBackend>, FakeRemovalBackend) {

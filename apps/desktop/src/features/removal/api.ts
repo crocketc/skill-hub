@@ -70,6 +70,7 @@ export type RemovalResult = {
 
 export interface RemovalFacade {
   prepareDelete(skillId: string, skillName?: string): Promise<RemovalImpact>;
+  cancelDelete?(operationId: string): Promise<void>;
   commitDelete(
     operationId: string,
     choices: Record<string, RemovalChoice>,

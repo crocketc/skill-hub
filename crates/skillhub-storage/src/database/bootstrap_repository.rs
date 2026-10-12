@@ -393,7 +393,7 @@ impl<'a> BootstrapRepository<'a> {
             .map(|value| value.to_string());
         let recovery_state = if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state='needs_recovery' OR phase='needs_recovery')", [], |row| row.get(0)).map_err(error)? != 0 {
             StartupRecoveryState::NeedsRecovery
-        } else if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state NOT IN ('completed','failed','rolled_back') AND phase NOT IN ('committed','rolled_back','needs_recovery'))", [], |row| row.get(0)).map_err(error)? != 0 {
+        } else if self.database.connection.query_row::<i64, _, _>("SELECT EXISTS(SELECT 1 FROM operations WHERE state NOT IN ('completed','failed','rolled_back') AND phase NOT IN ('committed','rolled_back','needs_recovery') AND NOT (kind='delete_skill' AND phase='prepared'))", [], |row| row.get(0)).map_err(error)? != 0 {
             StartupRecoveryState::InProgress
         } else {
             StartupRecoveryState::Clean

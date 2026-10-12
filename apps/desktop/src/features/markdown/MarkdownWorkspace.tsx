@@ -274,9 +274,10 @@ export function MarkdownWorkspace({
                       aria-current={entry.path === selectedPath ? "true" : undefined}
                       className={entry.path === selectedPath ? "is-active" : undefined}
                       onClick={() => selectFile(entry.path)}
+                      title={entry.path}
                       type="button"
                     >
-                      <span className="sh-markdown-workspace__rail-path" title={entry.path}>{entry.label}</span>
+                      <span className="sh-markdown-workspace__rail-path">{entry.label}</span>
                       {entry.primary ? <span className="sh-markdown-workspace__rail-badge">{t("markdown.workspace.primaryFile")}</span> : null}
                     </button>
                   </li>
