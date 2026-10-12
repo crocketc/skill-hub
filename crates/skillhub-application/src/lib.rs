@@ -6676,14 +6676,15 @@ impl LocalApplicationFacade {
                 return Err(error);
             }
         };
-        let snapshot_facts = match self.content_adoption_snapshot(&library, &skill, operation_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
-                self.journal_note_source_update_decision(operation_id, request.decision);
-                return Err(error);
-            }
-        };
+        let mut snapshot_facts =
+            match self.content_adoption_snapshot(&library, &skill, operation_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+                    self.journal_note_source_update_decision(operation_id, request.decision);
+                    return Err(error);
+                }
+            };
         if snapshot_facts.previous_version_id != snapshot.current_version_id {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_facts_changed")
@@ -6692,7 +6693,9 @@ impl LocalApplicationFacade {
             self.journal_note_source_update_decision(operation_id, request.decision);
             return Err(error);
         }
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot_facts) {
+        if let Err(error) =
+            self.content_adoption_capture_checkpoint(operation_id, KIND, &snapshot_facts)
+        {
             let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
             self.journal_note_source_update_decision(operation_id, request.decision);
             return Err(error);
@@ -6706,11 +6709,43 @@ impl LocalApplicationFacade {
             }
         };
         let version = captured.record;
+        if let Err(error) = self.content_adoption_target_checkpoint(
+            operation_id,
+            KIND,
+            &skill,
+            &mut snapshot_facts,
+            &version,
+            captured.created,
+        ) {
+            let error = self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot_facts,
+                None,
+                Some((&version, captured.created)),
+                false,
+                error,
+            );
+            self.journal_note_source_update_decision(operation_id, request.decision);
+            return Err(error);
+        }
         if version.manifest.tree_hash != snapshot.candidate_identity {
             let error = AppError::new(ErrorCode::OperationConflict, Severity::Error)
                 .with_param("reason", "source_update_preview_drifted")
                 .with_action(RecoveryAction::Retry);
-            let error = self.settle_content_adoption_rejected(operation_id, KIND, error);
+            let error = self.settle_content_adoption_failure(
+                &library,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot_facts,
+                None,
+                Some((&version, captured.created)),
+                false,
+                error,
+            );
             self.journal_note_source_update_decision(operation_id, request.decision);
             return Err(error);
         }
@@ -20929,7 +20964,10 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::RollbackOperation]
                     }
-                    "create_skill" | "save_skill_content" | "save_markdown_content"
+                    "create_skill"
+                    | "commit_source_update"
+                    | "save_skill_content"
+                    | "save_markdown_content"
                         if self
                             .validate_content_adoption_recovery(&record, false)
                             .is_ok() =>
@@ -21138,7 +21176,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
         }
         if matches!(
             operation_kind.as_deref(),
-            Some("create_skill" | "save_skill_content" | "save_markdown_content")
+            Some(
+                "create_skill"
+                    | "commit_source_update"
+                    | "save_skill_content"
+                    | "save_markdown_content"
+            )
         ) {
             if action != RecoveryAction::RollbackOperation {
                 return Err(unsupported("recovery.resolve.content_adoption"));
@@ -22119,7 +22162,10 @@ impl LocalRecoveryBackend {
     )> {
         if !matches!(
             record.kind.as_str(),
-            "create_skill" | "save_skill_content" | "save_markdown_content"
+            "create_skill"
+                | "commit_source_update"
+                | "save_skill_content"
+                | "save_markdown_content"
         ) || !matches!(
             record.phase,
             skillhub_core::OperationPhase::Applying | skillhub_core::OperationPhase::NeedsRecovery

@@ -28,9 +28,10 @@ use skillhub_core::source::{
 };
 use skillhub_core::{
     AppResult, ApplicationFacade, ErrorCode, ImportCandidate, ImportDecision, PrepareImport,
-    RelinkSource, UpstreamCheckResult, UpstreamOrigin,
+    RecoveryAction, RelinkSource, UpstreamCheckResult, UpstreamOrigin,
 };
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 fn facade_with_library(
     database_path: &std::path::Path,
@@ -503,6 +504,125 @@ async fn commit_adopts_candidate_across_all_four_consumers() {
             .expect("read revision"),
         Some(preview.candidate_identity.clone()),
         "采纳后必须记录来源 revision（候选身份=候选树哈希）"
+    );
+}
+
+#[tokio::test]
+async fn source_update_adoption_compensation_failure_exposes_rollback_after_restart() {
+    let base = mutable_archive_server(repo_zip(vec![(
+        "skills-main/pdf/SKILL.md".into(),
+        b"# Changed upstream\n".to_vec(),
+    )]));
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let armed = Arc::new(AtomicBool::new(false));
+    let manifest_failed = Arc::new(AtomicBool::new(false));
+    let restore_failed = Arc::new(AtomicBool::new(false));
+    let fault_handler: skillhub_storage::ManifestFaultHandler = {
+        let armed = Arc::clone(&armed);
+        let manifest_failed = Arc::clone(&manifest_failed);
+        let restore_failed = Arc::clone(&restore_failed);
+        Arc::new(move |point| {
+            if !armed.load(Ordering::SeqCst) {
+                return false;
+            }
+            (point == "before_manifest_replace" && !manifest_failed.swap(true, Ordering::SeqCst))
+                || (point == "before_visible_restore"
+                    && !restore_failed.swap(true, Ordering::SeqCst))
+        })
+    };
+    let facade = LocalApplicationFacade::new_with_library_and_faults(
+        Database::open(&database_path).expect("database"),
+        &library_root,
+        Arc::clone(&fault_handler),
+    );
+    facade.set_repo_discovery_provider_for_tests(Arc::new(
+        RepoDiscoveryProvider::with_archive_base_for_tests(&base.0),
+    ));
+    let skill_id = import_skill_with_upstream(&facade, "# Portable\n").await;
+    let before = Database::open(&database_path)
+        .expect("database read")
+        .current_version(skill_id)
+        .expect("initial database version")
+        .expect("initial version exists");
+    let preview = prepare_preview(&facade, skill_id).await;
+    armed.store(true, Ordering::SeqCst);
+
+    let error = commit(&facade, preview.preview_id, UpdateDecision::TakeUpstream)
+        .await
+        .expect_err("injected portable and compensation failures must preserve recovery facts");
+    assert_eq!(error.code, ErrorCode::InternalError);
+    assert_eq!(
+        journal_phase(&database_path, "commit_source_update"),
+        "needs_recovery"
+    );
+    drop(facade);
+
+    let facade = facade_with_library(&database_path, &library_root);
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recoverable source update")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let operation_id = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id != preview.preview_id)
+        .expect("source update operation remains a candidate");
+    assert_eq!(
+        operation_id.actions,
+        vec![RecoveryAction::RollbackOperation],
+        "persisted target identity must enable a verified rollback"
+    );
+    let operation_id = operation_id.operation_id;
+    facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id,
+                action: RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("rollback interrupted source update");
+    drop(facade);
+
+    let database = Database::open(&database_path).expect("reopen database");
+    assert_eq!(
+        database
+            .current_version(skill_id)
+            .expect("database version"),
+        Some(before.clone())
+    );
+    let library = CentralLibrary::open_existing(&library_root).expect("reopen library");
+    assert_eq!(
+        VersionStore::from_library(&library)
+            .current(skill_id)
+            .expect("store version"),
+        Some(before.clone())
+    );
+    let versions = VersionStore::from_library(&library)
+        .list(skill_id)
+        .expect("list restored versions");
+    assert_eq!(
+        versions.len(),
+        1,
+        "rollback removes the newly captured version"
+    );
+    assert_eq!(versions[0].id, before);
+    assert_eq!(
+        portable_current_version(&library_root, skill_id),
+        Some(versions[0].id.clone())
+    );
+    assert_eq!(
+        std::fs::read_to_string(visible_skill_tree(&library_root, skill_id).join("SKILL.md"))
+            .expect("restored visible content"),
+        "# Portable\n"
+    );
+    assert_eq!(
+        journal_phase(&database_path, "commit_source_update"),
+        "rolled_back"
     );
 }
 
