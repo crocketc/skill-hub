@@ -11,7 +11,7 @@
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CommitDeploymentPreview,
-    CommitDeploymentPreviewPair, DeploymentBatchPreviewRequestItem, GetDeploymentBatchPreview,
+    DeploymentBatchPreviewRequestItem, DeploymentPairSelection, GetDeploymentBatchPreview,
     GetDeploymentPlan, GetSkill, ListSkills, PrepareDeployment, PrepareImport, TrustSkillSecurity,
     TrustSkillSecurityOutcome,
 };
@@ -629,10 +629,10 @@ async fn changed_security_assessment_blocks_a_stale_preview_before_writing() {
         .execute(AppCommand::CommitDeploymentPreview(
             CommitDeploymentPreview {
                 preview_id,
-                pairs: vec![CommitDeploymentPreviewPair {
+                pairs: vec![DeploymentPairSelection {
                     pair_id,
+                    disposition: skillhub_core::deployment::DeploymentPairDisposition::Deploy,
                     confirm_fallback: false,
-                    exclude: false,
                 }],
             },
         ))

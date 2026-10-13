@@ -491,20 +491,7 @@ export type CommitDeployment = {
 
 export type CommitDeploymentPreview = {
 	preview_id: string,
-	pairs: CommitDeploymentPreviewPair[],
-};
-
-/**
- *  One pair of a trusted preview commit.  The request only ever names the
- *  preview, the pair, an explicit fallback confirmation and an exclusion;
- *  the backend re-plans every executable pair itself.
- */
-export type CommitDeploymentPreviewPair = {
-	pair_id: string,
-	/**  `true` accepts the recommended managed-copy fallback. */
-	confirm_fallback: boolean,
-	/**  `true` leaves the pair out of the batch without touching any file. */
-	exclude: boolean,
+	pairs: DeploymentPairSelection[],
 };
 
 export type CommitImport = {
@@ -1036,10 +1023,10 @@ export type DeploymentId = string;
 export type DeploymentMode = "symbolic_link" | "directory_junction" | "managed_copy";
 
 /**
- *  Terminal outcome of one pair in a preview commit.  Excluded and unchanged
- *  pairs perform no filesystem work but are still reported per pair.
+ *  Terminal outcome of one pair in a preview commit. Excluded and skipped
+ *  pairs perform no filesystem work but retain distinct user intent.
  */
-export type DeploymentPairCommitOutcome = "deployed" | "no_change" | "excluded" | "blocked" | "failed";
+export type DeploymentPairCommitOutcome = "deployed" | "no_change" | "excluded" | "skipped" | "blocked" | "failed";
 
 export type DeploymentPairCommitResult = {
 	pair_id: string,
@@ -1051,6 +1038,14 @@ export type DeploymentPairCommitResult = {
 	operation_id: OperationId | null,
 	error: TargetOperationError | null,
 };
+
+/**
+ *  The explicit disposition selected for one Skill × physical-target pair.
+ *  Fallback confirmation is carried independently by the API selection DTO.
+ */
+export type DeploymentPairDisposition = "deploy" | "replace_target" | { rename_and_deploy: {
+	runtime_name: string,
+} } | "skip" | "exclude";
 
 /**
  *  One Skill × physical-target pair of a batch deployment preview.  Pair ids
@@ -1085,6 +1080,17 @@ export type DeploymentPairPreview = {
 	 *  area only; the user-facing reason is `block_reason`.
 	 */
 	technical_error: TargetOperationError | null,
+};
+
+/**
+ *  One explicit choice for a pair in a trusted preview commit. Fallback
+ *  confirmation is independent from the target disposition.
+ */
+export type DeploymentPairSelection = {
+	pair_id: string,
+	disposition: DeploymentPairDisposition,
+	/**  `true` accepts the recommended managed-copy fallback. */
+	confirm_fallback: boolean,
 };
 
 export type DeploymentPlan = {

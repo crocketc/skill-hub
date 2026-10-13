@@ -1187,8 +1187,8 @@ async fn replanning_after_undeploy_offers_a_clean_readd() {
 
 use skillhub_core::agent::DeploymentCapability;
 use skillhub_core::api::{
-    CommitDeploymentPreview, CommitDeploymentPreviewPair, DeploymentBatchPreview,
-    DeploymentBatchPreviewRequestItem, DeploymentPairCommitOutcome, DeploymentPairPreview,
+    CommitDeploymentPreview, DeploymentBatchPreview, DeploymentBatchPreviewRequestItem,
+    DeploymentPairCommitOutcome, DeploymentPairPreview, DeploymentPairSelection,
     DeploymentPreviewCommitResult, GetDeploymentBatchPreview,
 };
 use skillhub_core::deployment::{
@@ -1387,7 +1387,7 @@ fn item(
 async fn commit_preview(
     harness: &TargetedHarness,
     preview_id: &str,
-    pairs: Vec<CommitDeploymentPreviewPair>,
+    pairs: Vec<DeploymentPairSelection>,
 ) -> DeploymentPreviewCommitResult {
     let response = harness
         .facade
@@ -1405,12 +1405,77 @@ async fn commit_preview(
     result
 }
 
-fn fallback_pair(pair_id: &str, confirm: bool, exclude: bool) -> CommitDeploymentPreviewPair {
-    CommitDeploymentPreviewPair {
+fn fallback_pair(pair_id: &str, confirm: bool, exclude: bool) -> DeploymentPairSelection {
+    DeploymentPairSelection {
         pair_id: pair_id.into(),
+        disposition: if exclude {
+            skillhub_core::deployment::DeploymentPairDisposition::Exclude
+        } else {
+            skillhub_core::deployment::DeploymentPairDisposition::Deploy
+        },
         confirm_fallback: confirm,
-        exclude,
     }
+}
+
+fn skip_pair(pair_id: &str) -> DeploymentPairSelection {
+    DeploymentPairSelection {
+        pair_id: pair_id.into(),
+        disposition: skillhub_core::deployment::DeploymentPairDisposition::Skip,
+        confirm_fallback: false,
+    }
+}
+
+async fn deploy_second_skill_to_target(harness: &TargetedHarness) -> skillhub_core::DeploymentId {
+    let planned = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::DeploymentPlanRequest {
+                skill_id: harness.second_skill.id(),
+                version_id: harness.second_version_id.clone(),
+                runtime_name: "find-skills".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("managed target plan");
+    let AppQueryResult::DeploymentPlan(plan) = planned else {
+        panic!("expected deployment plan");
+    };
+    let prepared = harness
+        .facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare managed deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+    let committed = harness
+        .facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("commit managed deployment");
+    let AppCommandResult::DeploymentSummary(summary) = committed else {
+        panic!("expected deployment summary");
+    };
+    assert!(
+        summary.committed,
+        "managed deployment failed: {:?}",
+        summary.targets
+    );
+    let listed = harness
+        .facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(harness.second_skill.id()),
+        }))
+        .await
+        .expect("list managed deployment");
+    let AppQueryResult::Deployments(rows) = listed else {
+        panic!("expected deployment rows");
+    };
+    rows.into_iter().next().expect("new deployment row").id
 }
 
 fn deployment_rows_accounting(harness: &TargetedHarness) -> Vec<(String, String, String)> {
@@ -1432,6 +1497,351 @@ fn deployment_rows_accounting(harness: &TargetedHarness) -> Vec<(String, String,
         })
         .expect("deployments rows");
     rows.map(|row| row.expect("deployment row")).collect()
+}
+
+fn deployment_relation_count(harness: &TargetedHarness) -> i64 {
+    let connection = rusqlite::Connection::open_with_flags(
+        harness.database_dir.path().join("skillhub.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("read connection");
+    connection
+        .query_row("SELECT count(*) FROM deployment_relations", [], |row| {
+            row.get(0)
+        })
+        .expect("deployment relation count")
+}
+
+/// A conflict preview exposes the exact unknown occupant. Default skip keeps
+/// both filesystem bytes and the deployment accounting unchanged.
+#[tokio::test]
+async fn unknown_occupant_preview_defaults_to_zero_write_skip() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let occupant = harness.target_root.path().join("find-skills");
+    std::fs::create_dir(&occupant).expect("create unknown occupant");
+    std::fs::write(occupant.join("SKILL.md"), "foreign original bytes\n")
+        .expect("write unknown occupant");
+    let original = std::fs::read(occupant.join("SKILL.md")).expect("read original bytes");
+    let deployments_before = deployment_rows_accounting(&harness);
+    let relations_before = deployment_relation_count(&harness);
+
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    assert_eq!(
+        serde_json::to_value(pair.disposition).expect("serialize disposition"),
+        serde_json::json!("conflict_decision_required")
+    );
+    let conflict = pair.conflict.as_ref().expect("conflict facts are visible");
+    assert_eq!(
+        conflict.default_action,
+        skillhub_core::deployment::DeploymentConflictAction::Skip
+    );
+    assert_eq!(conflict.occupants.len(), 1);
+    assert_eq!(
+        conflict.occupants[0].ownership,
+        skillhub_core::ExistingOwnership::Unknown
+    );
+    assert!(!conflict.occupants[0].entry_identity.is_empty());
+    assert!(conflict.occupants[0].content_fingerprint.is_some());
+
+    let result = commit_preview(&harness, &preview.preview_id, Vec::new()).await;
+    assert_eq!(
+        serde_json::to_value(result.pairs[0].outcome).expect("serialize outcome"),
+        serde_json::json!("skipped")
+    );
+    let explicit = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![skip_pair(&pair.pair_id)],
+    )
+    .await;
+    assert_eq!(
+        serde_json::to_value(explicit.pairs[0].outcome).expect("serialize explicit outcome"),
+        serde_json::json!("skipped")
+    );
+    assert_eq!(std::fs::read(occupant.join("SKILL.md")).unwrap(), original);
+    assert_eq!(deployment_rows_accounting(&harness), deployments_before);
+    assert_eq!(deployment_relation_count(&harness), relations_before);
+}
+
+#[tokio::test]
+async fn conflict_skip_rejects_content_changes_since_preview() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let occupant = harness.target_root.path().join("find-skills");
+    std::fs::create_dir(&occupant).expect("create unknown occupant");
+    let content_path = occupant.join("SKILL.md");
+    std::fs::write(&content_path, "foreign original bytes\n").expect("write occupant");
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    let original_fingerprint = pair.confirmation_fingerprint.clone();
+    std::fs::write(&content_path, "changed after preview\n").expect("mutate occupant");
+    let changed = std::fs::read(&content_path).expect("read changed occupant");
+    let refreshed = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let refreshed_pair = find_pair(&refreshed, &harness.skill.id(), "claude-global");
+    assert_ne!(
+        refreshed_pair.confirmation_fingerprint,
+        original_fingerprint
+    );
+    let deployments_before = deployment_rows_accounting(&harness);
+    let relations_before = deployment_relation_count(&harness);
+
+    let result = commit_preview(
+        &harness,
+        &preview.preview_id,
+        vec![skip_pair(&pair.pair_id)],
+    )
+    .await;
+    assert_eq!(
+        result.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Blocked
+    );
+    assert_eq!(
+        result.pairs[0].error.as_ref().map(|error| error.code),
+        Some(skillhub_core::ErrorCode::TargetChanged)
+    );
+    assert_eq!(std::fs::read(content_path).unwrap(), changed);
+    assert_eq!(deployment_rows_accounting(&harness), deployments_before);
+    assert_eq!(deployment_relation_count(&harness), relations_before);
+}
+
+#[tokio::test]
+async fn conflict_commit_refuses_an_action_not_offered_by_preview() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let occupant = harness.target_root.path().join("find-skills");
+    std::fs::create_dir(&occupant).expect("create unknown occupant");
+    let content_path = occupant.join("SKILL.md");
+    std::fs::write(&content_path, "foreign original bytes\n").expect("write occupant");
+    let before = std::fs::read(&content_path).expect("read occupant");
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    assert_eq!(
+        pair.conflict.as_ref().unwrap().available_actions,
+        vec![skillhub_core::deployment::DeploymentConflictAction::Skip]
+    );
+    let pair_id = pair.pair_id.clone();
+
+    let error = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id.clone(),
+                pairs: vec![fallback_pair(&pair_id, false, false)],
+            },
+        ))
+        .await
+        .expect_err("deploy was not offered for this conflict");
+    assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
+    assert_eq!(std::fs::read(content_path).unwrap(), before);
+    assert!(deployment_rows_accounting(&harness).is_empty());
+}
+
+#[tokio::test]
+async fn conflict_commit_rejects_duplicate_pair_selections() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let occupant = harness.target_root.path().join("find-skills");
+    std::fs::create_dir(&occupant).expect("create unknown occupant");
+    std::fs::write(occupant.join("SKILL.md"), "foreign original bytes\n")
+        .expect("write unknown occupant");
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    let duplicate = skip_pair(&pair.pair_id);
+
+    let error = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![duplicate.clone(), duplicate],
+            },
+        ))
+        .await
+        .expect_err("a pair selection may appear only once");
+
+    assert_eq!(error.code, skillhub_core::ErrorCode::InvalidInput);
+    assert_eq!(
+        std::fs::read(occupant.join("SKILL.md")).unwrap(),
+        b"foreign original bytes\n"
+    );
+    assert!(deployment_rows_accounting(&harness).is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unknown_symlink_conflict_preview_never_follows_external_target() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let external = tempfile::tempdir().expect("external directory");
+    let external_file = external.path().join("private.txt");
+    std::fs::write(&external_file, "external original\n").expect("external content");
+    let link = harness.target_root.path().join("find-skills");
+    std::os::unix::fs::symlink(external.path(), &link).expect("create unknown symlink");
+
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    let occupant = &pair.conflict.as_ref().unwrap().occupants[0];
+    assert!(occupant.entry_identity.contains("link"));
+    let link_fingerprint = occupant.content_fingerprint.clone();
+    std::fs::write(&external_file, "external changed\n").expect("change linked target");
+
+    let result = commit_preview(&harness, &preview.preview_id, Vec::new()).await;
+    assert_eq!(
+        result.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Skipped
+    );
+    assert_eq!(
+        pair.conflict.as_ref().unwrap().occupants[0].content_fingerprint,
+        link_fingerprint
+    );
+    assert_eq!(
+        std::fs::read(&external_file).unwrap(),
+        b"external changed\n"
+    );
+    assert!(std::fs::symlink_metadata(link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
+#[tokio::test]
+async fn managed_conflict_preview_names_occupant_and_consumers() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let existing_id = deploy_second_skill_to_target(&harness).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    assert_eq!(
+        pair.disposition,
+        DeploymentPreviewDisposition::ConflictDecisionRequired
+    );
+    let conflict = pair.conflict.as_ref().expect("managed conflict facts");
+    assert_eq!(conflict.occupants.len(), 1);
+    assert_eq!(
+        conflict.occupants[0].ownership,
+        skillhub_core::ExistingOwnership::Managed
+    );
+    assert_eq!(
+        conflict.occupants[0].skill_id,
+        Some(harness.second_skill.id())
+    );
+    assert_eq!(
+        conflict.occupants[0].skill_display_name.as_deref(),
+        Some("Second")
+    );
+    assert_eq!(conflict.occupants[0].deployment_id, Some(existing_id));
+    assert_eq!(conflict.occupants[0].consumers, vec![existing_id]);
+    assert_eq!(
+        conflict.available_actions,
+        vec![skillhub_core::deployment::DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn conflict_skip_rejects_managed_deployment_consumer_changes() {
+    let harness = targeted_harness(DeploymentCapability::new(true, false, true), false).await;
+    let existing_id = deploy_second_skill_to_target(&harness).await;
+    let preview = batch_preview(
+        &harness,
+        vec![item(
+            harness.skill.id(),
+            Some(harness.version_id.clone()),
+            &["claude-global"],
+            DeploymentPreference::Automatic,
+        )],
+    )
+    .await;
+    let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
+    assert_eq!(
+        pair.conflict.as_ref().unwrap().occupants[0].consumers,
+        vec![existing_id]
+    );
+    let connection =
+        rusqlite::Connection::open(harness.database_dir.path().join("skillhub.sqlite"))
+            .expect("open deployment facts");
+    connection
+        .execute(
+            "UPDATE deployments SET state='removed' WHERE id=?1",
+            [existing_id.to_string()],
+        )
+        .expect("simulate a deployment consumer leaving after preview");
+    drop(connection);
+    let deployments_after_drift = deployment_rows_accounting(&harness);
+    let relations_after_drift = deployment_relation_count(&harness);
+
+    let result = commit_preview(&harness, &preview.preview_id, Vec::new()).await;
+    assert_eq!(
+        result.pairs[0].outcome,
+        DeploymentPairCommitOutcome::Blocked
+    );
+    assert_eq!(
+        result.pairs[0].error.as_ref().map(|error| error.code),
+        Some(skillhub_core::ErrorCode::TargetChanged)
+    );
+    assert_eq!(
+        deployment_rows_accounting(&harness),
+        deployments_after_drift
+    );
+    assert_eq!(deployment_relation_count(&harness), relations_after_drift);
 }
 
 /// 13.6: every Skill x target pair is reported on its own; one pair's failure

@@ -67,6 +67,26 @@ fn deployment_pair_disposition_uses_a_stable_explicit_name_shape() {
 }
 
 #[test]
+fn deployment_pair_selection_keeps_fallback_confirmation_orthogonal() {
+    let request = skillhub_core::api::CommitDeploymentPreview {
+        preview_id: "preview-1".to_owned(),
+        pairs: vec![skillhub_core::api::DeploymentPairSelection {
+            pair_id: "skill-1:target-1".to_owned(),
+            disposition: skillhub_core::deployment::DeploymentPairDisposition::RenameAndDeploy {
+                runtime_name: "pdf-review".to_owned(),
+            },
+            confirm_fallback: true,
+        }],
+    };
+    let json = serde_json::to_value(request).unwrap();
+    assert_eq!(
+        json["pairs"][0]["disposition"],
+        serde_json::json!({ "rename_and_deploy": { "runtime_name": "pdf-review" } })
+    );
+    assert_eq!(json["pairs"][0]["confirm_fallback"], true);
+}
+
+#[test]
 fn progress_event_has_stable_wire_shape() {
     let event = AppEvent::OperationProgress(OperationProgress {
         operation_id: OperationId::new(),

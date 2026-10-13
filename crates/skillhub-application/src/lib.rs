@@ -12671,15 +12671,53 @@ impl LocalApplicationFacade {
                     // mapped reason stays conservative and the original
                     // error travels as technical detail.
                     let error_code = error.code;
-                    (
-                        Some(error.into()),
-                        Some(error_code),
-                        None,
-                        TargetChange::Create,
-                        Vec::new(),
-                        Vec::new(),
-                        group_logical_ids.clone(),
-                    )
+                    if error_code == ErrorCode::TargetExists {
+                        let conflicts = occupancy
+                            .iter()
+                            .filter(|existing| {
+                                !(existing.ownership == ExistingOwnership::Managed
+                                    && existing.skill_id == Some(item.skill_id))
+                            })
+                            .map(|existing| skillhub_core::deployment::TargetConflict {
+                                physical_target_id: physical_id.clone(),
+                                target_path: target_path.clone(),
+                                runtime_name: existing.runtime_name.clone(),
+                                reason: match existing.ownership {
+                                    ExistingOwnership::Unknown => {
+                                        skillhub_core::deployment::TargetConflictReason::OwnershipUnknown
+                                    }
+                                    ExistingOwnership::Managed => {
+                                        skillhub_core::deployment::TargetConflictReason::ManagedByAnotherSkill
+                                    }
+                                    ExistingOwnership::AgentBuiltin
+                                    | ExistingOwnership::Plugin
+                                    | ExistingOwnership::OtherTool => {
+                                        skillhub_core::deployment::TargetConflictReason::RuntimeNameAlreadyExists
+                                    }
+                                },
+                                existing_ownership: existing.ownership.clone(),
+                            })
+                            .collect();
+                        (
+                            None,
+                            Some(error_code),
+                            None,
+                            TargetChange::Create,
+                            conflicts,
+                            Vec::new(),
+                            group_logical_ids.clone(),
+                        )
+                    } else {
+                        (
+                            Some(error.into()),
+                            Some(error_code),
+                            None,
+                            TargetChange::Create,
+                            Vec::new(),
+                            Vec::new(),
+                            group_logical_ids.clone(),
+                        )
+                    }
                 }
             };
             let shared = discovery_targets
@@ -12708,6 +12746,7 @@ impl LocalApplicationFacade {
                     Some(
                         ErrorCode::AgentProfileInvalidCapability
                             | ErrorCode::DeploymentTargetNotWritable
+                            | ErrorCode::TargetExists
                     )
                 )
             {
@@ -12722,6 +12761,27 @@ impl LocalApplicationFacade {
                 facts.path_available = false;
             }
             let mut decision = plan_target_preview(&facts);
+            let conflict = if decision.disposition
+                == skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired
+            {
+                Some(
+                    self.with_database("query.get_deployment_batch_preview", |database| {
+                        deployment_conflict_preview(
+                            database,
+                            &facts.physical_target_id,
+                            &target_path,
+                            &facts.runtime_name,
+                            &facts.occupancy,
+                        )
+                    })?,
+                )
+            } else {
+                None
+            };
+            if let Some(conflict) = &conflict {
+                decision.confirmation_fingerprint =
+                    bind_conflict_facts_fingerprint(&decision.confirmation_fingerprint, conflict);
+            }
             if security.danger_untrusted {
                 decision.disposition =
                     skillhub_core::deployment::DeploymentPreviewDisposition::Blocked;
@@ -12754,7 +12814,7 @@ impl LocalApplicationFacade {
                 destination_path: facts.destination_path.clone(),
                 preference: decision.preference,
                 disposition: decision.disposition,
-                conflict: None,
+                conflict,
                 mode: decision.mode,
                 fallback_mode: decision.fallback_mode,
                 block_reason: decision.block_reason,
@@ -12831,16 +12891,17 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::api::CommitDeploymentPreview,
     ) -> AppResult<AppCommandResult> {
+        let mut requested_pair_ids = HashSet::new();
         for requested in &request.pairs {
             if requested.pair_id.trim().is_empty() {
                 return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                     .with_param("field", "pair_id")
                     .with_action(RecoveryAction::Retry));
             }
-            if requested.exclude && requested.confirm_fallback {
+            if !requested_pair_ids.insert(requested.pair_id.as_str()) {
                 return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                     .with_param("field", "pair_id")
-                    .with_param("detail", "a pair cannot be excluded and confirmed at once")
+                    .with_param("detail", "a pair may only be selected once")
                     .with_action(RecoveryAction::Retry));
             }
         }
@@ -12875,13 +12936,23 @@ impl LocalApplicationFacade {
             serde_json::from_str(&snapshot.payload_json)
                 .map_err(|_| internal("execute.commit_deployment_preview"))?;
         for requested in &request.pairs {
-            if !stored_pairs
+            let Some(pair) = stored_pairs
                 .iter()
-                .any(|pair| pair.pair_id == requested.pair_id)
-            {
+                .find(|pair| pair.pair_id == requested.pair_id)
+            else {
                 return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                     .with_param("field", "pair_id")
                     .with_param("pair_id", requested.pair_id.clone())
+                    .with_action(RecoveryAction::Retry));
+            };
+            if !deployment_pair_selection_supported(pair, &requested.disposition) {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "disposition")
+                    .with_param("pair_id", requested.pair_id.clone())
+                    .with_param(
+                        "detail",
+                        "the selected action is not available for this preview",
+                    )
                     .with_action(RecoveryAction::Retry));
             }
         }
@@ -12896,10 +12967,14 @@ impl LocalApplicationFacade {
                 .pairs
                 .iter()
                 .find(|requested| requested.pair_id == pair.pair_id);
-            let requested = match requested {
-                Some(requested) => requested,
+            let disposition = match requested {
+                Some(requested) => requested.disposition.clone(),
+                None if pair.conflict.is_some() => {
+                    // Conflict previews have a server-issued safe default.
+                    skillhub_core::deployment::DeploymentPairDisposition::Skip
+                }
                 None => {
-                    // Unlisted pairs count as cancelled; they touch nothing.
+                    // Unlisted ordinary pairs count as cancelled.
                     results.push(pair_result(
                         pair,
                         skillhub_core::api::DeploymentPairCommitOutcome::Excluded,
@@ -12909,10 +12984,30 @@ impl LocalApplicationFacade {
                     continue;
                 }
             };
-            if requested.exclude {
+            if disposition == skillhub_core::deployment::DeploymentPairDisposition::Exclude {
                 results.push(pair_result(
                     pair,
                     skillhub_core::api::DeploymentPairCommitOutcome::Excluded,
+                    None,
+                    None,
+                ));
+                continue;
+            }
+            if disposition == skillhub_core::deployment::DeploymentPairDisposition::Skip {
+                if pair.conflict.is_some() {
+                    if let Err(error) = self.revalidate_stored_conflict(pair) {
+                        results.push(pair_result(
+                            pair,
+                            skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                            None,
+                            Some(error.into()),
+                        ));
+                        continue;
+                    }
+                }
+                results.push(pair_result(
+                    pair,
+                    skillhub_core::api::DeploymentPairCommitOutcome::Skipped,
                     None,
                     None,
                 ));
@@ -12930,7 +13025,8 @@ impl LocalApplicationFacade {
             }
             let confirmed_fallback = pair.disposition
                 == skillhub_core::deployment::DeploymentPreviewDisposition::RecommendCopy;
-            if confirmed_fallback && !requested.confirm_fallback {
+            if confirmed_fallback && !requested.is_some_and(|requested| requested.confirm_fallback)
+            {
                 // 未确认的 RecommendCopy 不进入 prepare。
                 results.push(pair_result(
                     pair,
@@ -13082,6 +13178,73 @@ impl LocalApplicationFacade {
             })?;
         }
         Ok(AppCommandResult::DeploymentPreviewCommitResult(result))
+    }
+
+    fn revalidate_stored_conflict(
+        &self,
+        pair: &skillhub_core::api::DeploymentPairPreview,
+    ) -> AppResult<()> {
+        let expected_conflict = pair.conflict.as_ref().ok_or_else(|| {
+            target_changed_error("the stored pair is no longer a conflict preview")
+        })?;
+        let expected_physical_target = expected_conflict
+            .occupants
+            .first()
+            .map(|occupant| occupant.physical_target_id.as_str())
+            .ok_or_else(|| target_changed_error("the conflict preview has no occupant"))?;
+        let injected = self.deployment_targets.as_ref();
+        let discovered = if injected.is_none() {
+            Some(self.discovery_target_index()?)
+        } else {
+            None
+        };
+        let mut verified = Vec::new();
+        for logical_id in &pair.logical_target_ids {
+            let ids = vec![logical_id.clone()];
+            let resolved = match injected {
+                Some(index) => index.resolve(&ids),
+                None => discovered
+                    .as_ref()
+                    .expect("discovered index exists when none is injected")
+                    .resolve(&ids),
+            }
+            .map_err(|_| target_changed_error("a registered target is no longer available"))?;
+            verified.extend(resolved);
+        }
+        if verified.is_empty()
+            || verified
+                .iter()
+                .any(|target| target.physical_target_id() != expected_physical_target)
+            || verified
+                .first()
+                .is_none_or(|target| target.path() != pair.target_path)
+        {
+            return Err(target_changed_error(
+                "the conflict target identity or path changed since preview",
+            ));
+        }
+        self.with_database("execute.commit_deployment_preview", |database| {
+            attach_target_occupancy_with(database, &pair.runtime_name, &mut verified)
+        })?;
+        let current = self.with_database("execute.commit_deployment_preview", |database| {
+            let occupancy = verified
+                .iter()
+                .flat_map(|target| target.existing().iter().cloned())
+                .collect::<Vec<_>>();
+            deployment_conflict_preview(
+                database,
+                expected_physical_target,
+                &pair.target_path,
+                &pair.runtime_name,
+                &occupancy,
+            )
+        })?;
+        if &current != expected_conflict {
+            return Err(target_changed_error(
+                "the conflict occupant, content or consumers changed since preview",
+            ));
+        }
+        Ok(())
     }
 
     /// Re-derives one stored pair from current registered reality, refuses on
@@ -19439,6 +19602,128 @@ fn attach_target_occupancy_with(
     Ok(())
 }
 
+fn deployment_conflict_preview(
+    database: &skillhub_storage::Database,
+    physical_target_id: &str,
+    target_path: &str,
+    runtime_name: &str,
+    occupancy: &[ExistingDeployment],
+) -> AppResult<skillhub_core::api::DeploymentConflictPreview> {
+    let consumers = occupancy
+        .iter()
+        .filter(|entry| entry.ownership == ExistingOwnership::Managed)
+        .filter_map(|entry| entry.deployment_id)
+        .collect::<Vec<_>>();
+    let mut consumers = consumers;
+    consumers.sort_by_key(|id| id.to_string());
+    consumers.dedup();
+    let catalog = database.catalog_repository()?;
+    let target_entry = Path::new(target_path).join(runtime_name);
+    let occupants = occupancy
+        .iter()
+        .map(|entry| {
+            let identity = conflict_entry_identity(&target_entry).unwrap_or_else(|| {
+                entry
+                    .deployment_id
+                    .map(|id| format!("deployment:{id}"))
+                    .unwrap_or_else(|| "unavailable:unknown-entry".to_owned())
+            });
+            let skill_display_name = entry
+                .skill_id
+                .and_then(|skill_id| catalog.get_identity(skill_id).ok().flatten())
+                .map(|identity| identity.0);
+            skillhub_core::api::DeploymentConflictOccupant {
+                ownership: entry.ownership.clone(),
+                deployment_id: entry.deployment_id,
+                skill_id: entry.skill_id,
+                version_id: entry.version_id.clone(),
+                skill_display_name,
+                physical_target_id: physical_target_id.to_owned(),
+                runtime_name: entry.runtime_name.clone(),
+                target_path: target_entry.to_string_lossy().into_owned(),
+                consumers: consumers.clone(),
+                entry_identity: identity,
+                content_fingerprint: conflict_content_fingerprint(&target_entry),
+            }
+        })
+        .collect();
+    Ok(skillhub_core::api::DeploymentConflictPreview {
+        occupants,
+        // Task 2 can safely honor skip only. Replacement and rename are added
+        // only after their recovery and relationship paths are implemented.
+        available_actions: vec![skillhub_core::deployment::DeploymentConflictAction::Skip],
+        default_action: skillhub_core::deployment::DeploymentConflictAction::Skip,
+    })
+}
+
+fn conflict_entry_identity(path: &Path) -> Option<String> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if metadata.file_type().is_symlink() {
+        return symlink_physical_id_for_path(path);
+    }
+    if DeploymentFilesystem::is_directory_link_entry(path) {
+        return reparse_physical_id_for_path(path);
+    }
+    physical_id_for_path(path)
+}
+
+fn conflict_content_fingerprint(path: &Path) -> Option<String> {
+    let mut hasher = Sha256::new();
+    hash_conflict_entry(path, path, &mut hasher).ok()?;
+    Some(format!("sha256:{:x}", hasher.finalize()))
+}
+
+fn bind_conflict_facts_fingerprint(
+    base_fingerprint: &str,
+    conflict: &skillhub_core::api::DeploymentConflictPreview,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"deployment-conflict-facts-v1\n");
+    hasher.update(base_fingerprint.as_bytes());
+    hasher.update([0]);
+    if let Ok(serialized) = serde_json::to_vec(conflict) {
+        hasher.update(serialized);
+    }
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+/// Hashes an occupant without traversing symbolic links or reparse points.
+/// Link entries contribute only their own link text, never the linked target.
+fn hash_conflict_entry(root: &Path, path: &Path, hasher: &mut Sha256) -> std::io::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    let relative = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    hasher.update(relative.as_bytes());
+    hasher.update([0]);
+    if metadata.file_type().is_symlink() || DeploymentFilesystem::is_directory_link_entry(path) {
+        hasher.update(b"link\0");
+        let link_target = std::fs::read_link(path)?;
+        hasher.update(link_target.to_string_lossy().as_bytes());
+        hasher.update([0]);
+    } else if metadata.is_dir() {
+        hasher.update(b"directory\0");
+        let mut children = std::fs::read_dir(path)?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<Result<Vec<_>, _>>()?;
+        children.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
+        for child in children {
+            hash_conflict_entry(root, &child, hasher)?;
+        }
+    } else if metadata.is_file() {
+        hasher.update(b"file\0");
+        let bytes = std::fs::read(path)?;
+        hasher.update(Sha256::digest(bytes));
+    } else {
+        hasher.update(b"other\0");
+        hasher.update(metadata.len().to_le_bytes());
+    }
+    hasher.update([0xff]);
+    Ok(())
+}
+
 /// Commands that can change a fact bound by GetRollbackImpact hold the same
 /// gate at the execute boundary through validation and mutation. In particular,
 /// SetCurrentVersion takes this gate before its operation lock and awaited check,
@@ -19988,17 +20273,41 @@ fn pair_result(
     }
 }
 
+fn deployment_pair_selection_supported(
+    pair: &skillhub_core::api::DeploymentPairPreview,
+    disposition: &skillhub_core::deployment::DeploymentPairDisposition,
+) -> bool {
+    use skillhub_core::deployment::{
+        DeploymentConflictAction as Action, DeploymentPairDisposition as Selection,
+    };
+    match disposition {
+        Selection::Skip | Selection::Exclude => true,
+        Selection::Deploy => pair.conflict.is_none(),
+        Selection::ReplaceTarget => pair
+            .conflict
+            .as_ref()
+            .is_some_and(|conflict| conflict.available_actions.contains(&Action::ReplaceTarget)),
+        Selection::RenameAndDeploy { .. } => pair.conflict.as_ref().is_some_and(|conflict| {
+            conflict
+                .available_actions
+                .contains(&Action::RenameAndDeploy)
+        }),
+    }
+}
+
 /// Deterministic idempotency key for one preview commit: the preview id plus
-/// the sorted per-pair decision set.  Text, not a hash, so a recorded key
-/// stays readable in diagnostics.
+/// the sorted per-pair decision set. Text, not a hash, so a recorded key stays
+/// readable in diagnostics.
 fn preview_commit_key(request: &skillhub_core::api::CommitDeploymentPreview) -> String {
     let mut entries = request
         .pairs
         .iter()
         .map(|pair| {
+            let disposition =
+                serde_json::to_string(&pair.disposition).unwrap_or_else(|_| "invalid".into());
             format!(
-                "{}|confirm:{}|exclude:{}",
-                pair.pair_id, pair.confirm_fallback, pair.exclude
+                "{}|disposition:{}|confirm:{}",
+                pair.pair_id, disposition, pair.confirm_fallback
             )
         })
         .collect::<Vec<_>>();

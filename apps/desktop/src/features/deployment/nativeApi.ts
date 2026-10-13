@@ -80,6 +80,7 @@ function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
 }
 
 function toPair(pair: NativePairPreview): DeploymentPairPreview {
+  const conflict = pair.conflict ?? null;
   return {
     pairId: pair.pair_id,
     skillId: pair.skill_id,
@@ -90,7 +91,12 @@ function toPair(pair: NativePairPreview): DeploymentPairPreview {
     destinationPath: pair.destination_path,
     logicalTargetIds: pair.logical_target_ids,
     preference: pair.preference as DeploymentPreference,
-    disposition: pair.disposition as DeploymentPreviewDisposition,
+    // The current UI has no conflict-choice controls yet; keep the pair in
+    // the blocked presentation group until Task 7 adds those controls.
+    disposition: (pair.disposition === "conflict_decision_required"
+      ? "blocked"
+      : pair.disposition) as DeploymentPreviewDisposition,
+    conflict,
     mode: (pair.mode ?? null) as DeploymentMode | null,
     fallbackMode: (pair.fallback_mode ?? null) as DeploymentMode | null,
     blockReason: (pair.block_reason ?? null) as DeploymentBlockReason | null,
@@ -105,7 +111,7 @@ function toPair(pair: NativePairPreview): DeploymentPairPreview {
 function resultMessage(outcome: NativePairCommitResult["outcome"]): string {
   if (outcome === "deployed") return "deployment.results.status.message.succeeded";
   if (outcome === "no_change") return "deployment.results.status.message.succeeded";
-  if (outcome === "excluded") return "deployment.results.status.message.skipped";
+  if (outcome === "excluded" || outcome === "skipped") return "deployment.results.status.message.skipped";
   if (outcome === "blocked") return "deployment.blockReason.committedBlocked";
   return "deployment.results.status.message.failed";
 }
@@ -182,11 +188,14 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
         type: "commit_deployment_preview",
         payload: {
           preview_id: preview.previewId,
-          pairs: selections.map((selection) => ({
-            pair_id: selection.pairId,
-            confirm_fallback: selection.confirmFallback,
-            exclude: selection.exclude,
-          })),
+          pairs: selections.map((selection) => {
+            const facts = preview.pairs.find((pair) => pair.pairId === selection.pairId);
+            return {
+              pair_id: selection.pairId,
+              disposition: selection.exclude ? "exclude" : facts?.conflict ? "skip" : "deploy",
+              confirm_fallback: selection.confirmFallback,
+            };
+          }),
         },
       });
       const payload = commitResult(result);
@@ -207,7 +216,8 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
         };
       });
       // 一次 IPC 返回全部 pair 结果；进度按可执行 pair 总数一次性落定。
-      const executable = selections.filter((selection) => !selection.exclude).length;
+      const executable = selections.filter((selection) =>
+        !selection.exclude && !preview.pairs.find((pair) => pair.pairId === selection.pairId)?.conflict).length;
       onProgress?.(executable);
       return results;
     },

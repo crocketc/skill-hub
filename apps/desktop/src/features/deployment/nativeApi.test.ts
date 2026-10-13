@@ -50,6 +50,7 @@ const previewBatch: DeploymentPreviewBatch = {
     destinationPath: "C:/Users/demo/.codex/skills/pdf",
     preference: "link",
     disposition: "recommend_copy",
+    conflict: null,
     mode: null,
     fallbackMode: "managed_copy",
     blockReason: "link_permission_unavailable",
@@ -228,7 +229,7 @@ it("commits only the preview id and per-pair selections, then joins Skill facts 
     type: "commit_deployment_preview",
     payload: {
       preview_id: "preview-1",
-      pairs: [{ pair_id: "skill-pdf:fs-codex", confirm_fallback: true, exclude: false }],
+      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "deploy", confirm_fallback: true }],
     },
   });
   // 路由/汇总沿用的三态投影 + Skill 展示名由预览 facts 联接而来（DEV-18-A）。
@@ -240,6 +241,42 @@ it("commits only the preview id and per-pair selections, then joins Skill facts 
     status: "succeeded",
     operationId: "op-1",
   })]);
+});
+
+it("submits a conflict preview as an explicit skip until conflict controls ship", async () => {
+  const conflictPreview: DeploymentPreviewBatch = {
+    ...previewBatch,
+    pairs: [{
+      ...previewBatch.pairs[0],
+      disposition: "blocked",
+      blockReason: "target_occupied",
+      conflict: {
+        occupants: [],
+        available_actions: ["skip"],
+        default_action: "skip",
+      },
+    }],
+  };
+  vi.mocked(executeCommand).mockResolvedValue({
+    type: "deployment_preview_commit_result",
+    payload: {
+      preview_id: "preview-1",
+      replayed: false,
+      pairs: [{ pair_id: "skill-pdf:fs-codex", outcome: "skipped", operation_id: null, error: null }],
+    },
+  });
+
+  const results = await createNativeBatchDeploymentFacade().commit(conflictPreview, [
+    { pairId: "skill-pdf:fs-codex", confirmFallback: false, exclude: false },
+  ]);
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "commit_deployment_preview",
+    payload: {
+      preview_id: "preview-1",
+      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "skip", confirm_fallback: false }],
+    },
+  });
+  expect(results[0].status).toBe("skipped");
 });
 
 it("projects every pair outcome, including excluded and blocked, without hiding any", async () => {

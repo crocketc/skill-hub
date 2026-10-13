@@ -753,34 +753,33 @@ pub struct CommitDeployment {
     pub prepared_deployment_id: OperationId,
 }
 
-/// One pair of a trusted preview commit.  The request only ever names the
-/// preview, the pair, an explicit fallback confirmation and an exclusion;
-/// the backend re-plans every executable pair itself.
+/// One explicit choice for a pair in a trusted preview commit. Fallback
+/// confirmation is independent from the target disposition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
-pub struct CommitDeploymentPreviewPair {
+pub struct DeploymentPairSelection {
     pub pair_id: String,
+    pub disposition: crate::deployment::DeploymentPairDisposition,
     /// `true` accepts the recommended managed-copy fallback.
     pub confirm_fallback: bool,
-    /// `true` leaves the pair out of the batch without touching any file.
-    pub exclude: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct CommitDeploymentPreview {
     pub preview_id: String,
-    pub pairs: Vec<CommitDeploymentPreviewPair>,
+    pub pairs: Vec<DeploymentPairSelection>,
 }
 
-/// Terminal outcome of one pair in a preview commit.  Excluded and unchanged
-/// pairs perform no filesystem work but are still reported per pair.
+/// Terminal outcome of one pair in a preview commit. Excluded and skipped
+/// pairs perform no filesystem work but retain distinct user intent.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DeploymentPairCommitOutcome {
     Deployed,
     NoChange,
     Excluded,
+    Skipped,
     Blocked,
     Failed,
 }

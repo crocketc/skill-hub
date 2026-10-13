@@ -1,5 +1,6 @@
 import type {
   AgentDirectoryMemberFact,
+  DeploymentConflictPreview as NativeDeploymentConflictPreview,
   DirectoryObservationStatus,
   TargetOperationError,
 } from "../../api/bindings";
@@ -168,7 +169,7 @@ export function deploymentBlockReasonKey(reason: DeploymentBlockReason): string 
 }
 
 /** 提交后一个 pair 的终态（任务 14.9 词表）。 */
-export type DeploymentPairOutcome = "deployed" | "no_change" | "excluded" | "blocked" | "failed";
+export type DeploymentPairOutcome = "deployed" | "no_change" | "excluded" | "skipped" | "blocked" | "failed";
 
 /** pair 终态 → 既有三态结果投影：路由/汇总继续按 succeeded/failed/skipped 工作。 */
 export function pairOutcomeStatus(outcome: DeploymentPairOutcome): DeploymentResult["status"] {
@@ -177,6 +178,8 @@ export function pairOutcomeStatus(outcome: DeploymentPairOutcome): DeploymentRes
     case "no_change":
       return "succeeded";
     case "excluded":
+      return "skipped";
+    case "skipped":
       return "skipped";
     case "blocked":
     case "failed":
@@ -197,6 +200,8 @@ export type DeploymentPairPreview = {
   destinationPath: string;
   preference: DeploymentPreference;
   disposition: DeploymentPreviewDisposition;
+  /** Server-observed conflict details; rendering choices are added in Task 7. */
+  conflict?: NativeDeploymentConflictPreview | null;
   mode: DeploymentMode | null;
   fallbackMode: DeploymentMode | null;
   blockReason: DeploymentBlockReason | null;
