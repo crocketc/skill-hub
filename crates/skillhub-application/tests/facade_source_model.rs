@@ -574,6 +574,122 @@ async fn candidate_mutations_write_operation_journal_records() {
     assert_eq!(dismissed.phase, OperationPhase::Committed);
 }
 
+fn reject_candidate_operation_commit(facade: &LocalApplicationFacade, kind: &str) {
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER reject_candidate_operation_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = '{kind}' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected candidate operation commit failure'); END;"
+        ))
+        .expect("install operation commit failure trigger");
+}
+
+#[tokio::test]
+async fn saving_search_candidates_rolls_back_when_journal_commit_fails() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_library(
+        &workspace.path().join("db.sqlite"),
+        &workspace.path().join("library"),
+    );
+    reject_candidate_operation_commit(&facade, "save_search_candidates");
+
+    let result = facade
+        .execute(AppCommand::SaveSearchCandidates(SaveSearchCandidates {
+            page: search_page(&["acme/pdf", "acme/image"]),
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the save command"
+    );
+    assert!(list_candidates(&facade).await.is_empty());
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "save_search_candidates"
+            && record.phase == OperationPhase::RolledBack));
+}
+
+#[tokio::test]
+async fn confirming_search_candidate_rolls_back_when_journal_commit_fails() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_library(
+        &workspace.path().join("db.sqlite"),
+        &workspace.path().join("library"),
+    );
+    facade
+        .execute(AppCommand::SaveSearchCandidates(SaveSearchCandidates {
+            page: search_page(&["acme/pdf"]),
+        }))
+        .await
+        .expect("save initial candidate");
+    let candidate_id = list_candidates(&facade).await[0].id.clone();
+    reject_candidate_operation_commit(&facade, "confirm_search_candidate");
+
+    let result = facade
+        .execute(AppCommand::ConfirmSearchCandidate(ConfirmSearchCandidate {
+            candidate_id: candidate_id.clone(),
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the confirm command"
+    );
+    assert_eq!(
+        list_candidates(&facade).await[0].status,
+        SearchCandidateStatus::Pending
+    );
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "confirm_search_candidate"
+            && record.phase == OperationPhase::RolledBack));
+}
+
+#[tokio::test]
+async fn dismissing_search_candidate_rolls_back_when_journal_commit_fails() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_library(
+        &workspace.path().join("db.sqlite"),
+        &workspace.path().join("library"),
+    );
+    facade
+        .execute(AppCommand::SaveSearchCandidates(SaveSearchCandidates {
+            page: search_page(&["acme/pdf"]),
+        }))
+        .await
+        .expect("save initial candidate");
+    let candidate_id = list_candidates(&facade).await[0].id.clone();
+    reject_candidate_operation_commit(&facade, "dismiss_search_candidate");
+
+    let result = facade
+        .execute(AppCommand::DismissSearchCandidate(DismissSearchCandidate {
+            candidate_id,
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the dismiss command"
+    );
+    assert_eq!(
+        list_candidates(&facade).await[0].status,
+        SearchCandidateStatus::Pending
+    );
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "dismiss_search_candidate"
+            && record.phase == OperationPhase::RolledBack));
+}
+
 /// 单路由 zip 归档 fixture 服务器共用的打包函数（与 facade_upstream_check 相同模式）。
 fn repo_zip(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
     use zip::write::SimpleFileOptions;

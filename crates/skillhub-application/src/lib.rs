@@ -2744,17 +2744,20 @@ impl LocalApplicationFacade {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "save_search_candidates");
         let result = self.with_database("execute.save_search_candidates", |database| {
-            let saved = database
+            database
                 .search_candidate_repository()
-                .save_page(&request.page, now_seconds())?;
-            Ok(AppCommandResult::SearchCandidates(saved))
+                .save_page_with_operation(&request.page, now_seconds(), operation_id)
         });
-        self.journal_settle(
-            operation_id,
-            "save_search_candidates",
-            result.as_ref().err(),
-        );
-        result
+        match result {
+            Ok((saved, record)) => {
+                self.log_journal_record(&record);
+                Ok(AppCommandResult::SearchCandidates(saved))
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "save_search_candidates", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     fn confirm_search_candidate(
@@ -2764,25 +2767,31 @@ impl LocalApplicationFacade {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "confirm_search_candidate");
         let result = self.with_database("execute.confirm_search_candidate", |database| {
-            database.search_candidate_repository().set_status(
-                &request.candidate_id,
-                skillhub_core::SearchCandidateStatus::Confirmed,
-            )?;
-            Ok(AppCommandResult::OperationSummary(
-                skillhub_core::OperationSummary {
+            database
+                .search_candidate_repository()
+                .set_status_with_operation(
+                    &request.candidate_id,
+                    skillhub_core::SearchCandidateStatus::Confirmed,
                     operation_id,
-                    phase: skillhub_core::OperationPhase::Committed,
-                    message_code: "source.search_candidate_confirmed".to_owned(),
-                    error_code: None,
-                },
-            ))
+                )
         });
-        self.journal_settle(
-            operation_id,
-            "confirm_search_candidate",
-            result.as_ref().err(),
-        );
-        result
+        match result {
+            Ok((_candidate, record)) => {
+                self.log_journal_record(&record);
+                Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "source.search_candidate_confirmed".to_owned(),
+                        error_code: None,
+                    },
+                ))
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "confirm_search_candidate", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     fn dismiss_search_candidate(
@@ -2792,25 +2801,31 @@ impl LocalApplicationFacade {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "dismiss_search_candidate");
         let result = self.with_database("execute.dismiss_search_candidate", |database| {
-            database.search_candidate_repository().set_status(
-                &request.candidate_id,
-                skillhub_core::SearchCandidateStatus::Dismissed,
-            )?;
-            Ok(AppCommandResult::OperationSummary(
-                skillhub_core::OperationSummary {
+            database
+                .search_candidate_repository()
+                .set_status_with_operation(
+                    &request.candidate_id,
+                    skillhub_core::SearchCandidateStatus::Dismissed,
                     operation_id,
-                    phase: skillhub_core::OperationPhase::Committed,
-                    message_code: "source.search_candidate_dismissed".to_owned(),
-                    error_code: None,
-                },
-            ))
+                )
         });
-        self.journal_settle(
-            operation_id,
-            "dismiss_search_candidate",
-            result.as_ref().err(),
-        );
-        result
+        match result {
+            Ok((_candidate, record)) => {
+                self.log_journal_record(&record);
+                Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "source.search_candidate_dismissed".to_owned(),
+                        error_code: None,
+                    },
+                ))
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "dismiss_search_candidate", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     /// Opens a file-backed facade, creating its parent directory when needed.

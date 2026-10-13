@@ -136,6 +136,43 @@ impl<'a> OperationRepositorySqlite<'a> {
         Ok(())
     }
 
+    /// Atomically commits a planned single-step operation alongside its
+    /// database facts. The phase predicate prevents an old request from
+    /// overwriting a journal row that has already been settled.
+    pub fn commit_planned_tx(
+        transaction: &Transaction<'_>,
+        record: &OperationRecord,
+    ) -> AppResult<()> {
+        if record.phase != OperationPhase::Committed
+            || record.progress.phase != OperationPhase::Committed
+        {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "operation_phase"));
+        }
+        let (progress, inverse) = encode_record(record)?;
+        let changed = transaction
+            .execute(
+                "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1 AND kind=?9 AND phase='planned'",
+                params![
+                    record.operation_id.to_string(),
+                    state_code(record.phase),
+                    phase_code(record.phase),
+                    record.request_fingerprint,
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                    record.kind,
+                ],
+            )
+            .map_err(error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("operation_id", record.operation_id.to_string()));
+        }
+        Ok(())
+    }
+
     pub fn get_sync(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
         let row = self
             .database

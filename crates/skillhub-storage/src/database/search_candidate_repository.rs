@@ -1,12 +1,14 @@
 use super::source_repository::{decode_source, encode_source};
 use super::Database;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use skillhub_core::source::{
     SearchCandidateRecord, SearchCandidateStatus, SearchHitOrigin, SourceDescriptor,
     SourceSearchHit, SourceSearchPage,
 };
-use skillhub_core::{AppError, AppResult, ErrorCode, Severity};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, OperationId, OperationPhase, OperationRecord, Severity,
+};
 
 /// Persistence boundary for P1-05 search candidates.
 ///
@@ -38,29 +40,34 @@ impl<'a> SearchCandidateRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(error)?;
-        for hit in &page.items {
-            let record = candidate_record(hit, now);
-            let (kind, locator) = encode_source(&record.source)?;
-            transaction
-                .execute(
-                    "INSERT OR IGNORE INTO search_candidates (id, provider, provider_source_id, name, kind, locator, page_url, installs, via, status, first_seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)",
-                    rusqlite::params![
-                        record.id,
-                        record.provider,
-                        record.provider_source_id,
-                        record.name,
-                        kind,
-                        locator,
-                        record.page_url,
-                        record.installs,
-                        via_to_str(record.via),
-                        record.first_seen_at,
-                    ],
-                )
-                .map_err(error)?;
-        }
+        save_page_tx(&transaction, page, now)?;
         transaction.commit().map_err(error)?;
         self.list()
+    }
+
+    /// Saves one result page and commits its operation record in the same
+    /// transaction, so a failed journal write cannot leave partial candidates.
+    pub fn save_page_with_operation(
+        &self,
+        page: &SourceSearchPage,
+        now: i64,
+        operation_id: OperationId,
+    ) -> AppResult<(Vec<SearchCandidateRecord>, OperationRecord)> {
+        let operation =
+            self.planned_operation_for_commit(operation_id, "save_search_candidates")?;
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        save_page_tx(&transaction, page, now)?;
+        let candidates = list_from_transaction(&transaction)?;
+        super::operation_repository::OperationRepositorySqlite::commit_planned_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(error)?;
+        Ok((candidates, operation))
     }
 
     /// 待确认候选列表（按首次发现时间稳定排序）。
@@ -114,6 +121,57 @@ impl<'a> SearchCandidateRepository<'a> {
             .ok_or_else(|| object_not_found("search candidate"))
     }
 
+    /// Applies one candidate status transition and settles its planned
+    /// operation atomically.
+    pub fn set_status_with_operation(
+        &self,
+        candidate_id: &str,
+        status: SearchCandidateStatus,
+        operation_id: OperationId,
+    ) -> AppResult<(SearchCandidateRecord, OperationRecord)> {
+        let operation_kind = match status {
+            SearchCandidateStatus::Confirmed => "confirm_search_candidate",
+            SearchCandidateStatus::Dismissed => "dismiss_search_candidate",
+            SearchCandidateStatus::Pending => {
+                return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                    .with_param("field", "candidate_status"));
+            }
+        };
+        let operation = self.planned_operation_for_commit(operation_id, operation_kind)?;
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let candidate = set_status_tx(&transaction, candidate_id, status)?;
+        super::operation_repository::OperationRepositorySqlite::commit_planned_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(error)?;
+        Ok((candidate, operation))
+    }
+
+    fn planned_operation_for_commit(
+        &self,
+        operation_id: OperationId,
+        expected_kind: &str,
+    ) -> AppResult<OperationRecord> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| operation_conflict(operation_id))?;
+        if operation.kind != expected_kind || operation.phase != OperationPhase::Planned {
+            return Err(operation_conflict(operation_id));
+        }
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.message_code = format!("operation.{expected_kind}.committed");
+        operation.error_code = None;
+        Ok(operation)
+    }
+
     fn get(&self, candidate_id: &str) -> AppResult<Option<SearchCandidateRecord>> {
         self.database
             .connection
@@ -125,6 +183,84 @@ impl<'a> SearchCandidateRepository<'a> {
             .optional()
             .map_err(error)
     }
+}
+
+fn save_page_tx(transaction: &Transaction<'_>, page: &SourceSearchPage, now: i64) -> AppResult<()> {
+    for hit in &page.items {
+        let record = candidate_record(hit, now);
+        let (kind, locator) = encode_source(&record.source)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO search_candidates (id, provider, provider_source_id, name, kind, locator, page_url, installs, via, status, first_seen_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)",
+                rusqlite::params![
+                    record.id,
+                    record.provider,
+                    record.provider_source_id,
+                    record.name,
+                    kind,
+                    locator,
+                    record.page_url,
+                    record.installs,
+                    via_to_str(record.via),
+                    record.first_seen_at,
+                ],
+            )
+            .map_err(error)?;
+    }
+    Ok(())
+}
+
+fn list_from_transaction(transaction: &Transaction<'_>) -> AppResult<Vec<SearchCandidateRecord>> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT id, provider, provider_source_id, name, kind, locator, page_url, installs, via, status, first_seen_at FROM search_candidates ORDER BY first_seen_at ASC, id ASC",
+        )
+        .map_err(error)?;
+    let rows = statement.query_map([], row_to_record).map_err(error)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(error)
+}
+
+fn set_status_tx(
+    transaction: &Transaction<'_>,
+    candidate_id: &str,
+    status: SearchCandidateStatus,
+) -> AppResult<SearchCandidateRecord> {
+    let current = transaction
+        .query_row(
+            "SELECT id, provider, provider_source_id, name, kind, locator, page_url, installs, via, status, first_seen_at FROM search_candidates WHERE id=?1",
+            [candidate_id],
+            row_to_record,
+        )
+        .optional()
+        .map_err(error)?
+        .ok_or_else(|| object_not_found("search candidate"))?;
+    if current.status == SearchCandidateStatus::Dismissed
+        && status == SearchCandidateStatus::Confirmed
+    {
+        return Err(
+            AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                .with_param("reason", "candidate_dismissed")
+                .with_param("candidate_id", candidate_id.to_string())
+                .with_action(skillhub_core::RecoveryAction::Acknowledge),
+        );
+    }
+    if current.status != status {
+        transaction
+            .execute(
+                "UPDATE search_candidates SET status=?1 WHERE id=?2",
+                rusqlite::params![status_to_str(status), candidate_id],
+            )
+            .map_err(error)?;
+    }
+    transaction
+        .query_row(
+            "SELECT id, provider, provider_source_id, name, kind, locator, page_url, installs, via, status, first_seen_at FROM search_candidates WHERE id=?1",
+            [candidate_id],
+            row_to_record,
+        )
+        .optional()
+        .map_err(error)?
+        .ok_or_else(|| object_not_found("search candidate"))
 }
 
 fn candidate_record(hit: &SourceSearchHit, now: i64) -> SearchCandidateRecord {
@@ -212,6 +348,12 @@ fn object_not_found(kind: &str) -> AppError {
     AppError::new(ErrorCode::ObjectNotFound, Severity::Warning)
         .with_param("kind", kind.to_string())
         .with_action(skillhub_core::RecoveryAction::ChooseAnotherName)
+}
+
+fn operation_conflict(operation_id: OperationId) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("operation_id", operation_id.to_string())
+        .with_action(skillhub_core::RecoveryAction::Retry)
 }
 
 fn error(error: rusqlite::Error) -> AppError {
