@@ -270,6 +270,29 @@ pub enum ExistingOwnership {
     OtherTool,
 }
 
+/// Conflict actions the server may expose for one occupied deployment target.
+/// The application layer narrows this set using current ownership, backup,
+/// permissions, name availability, and shared-consumer facts.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentConflictAction {
+    ReplaceTarget,
+    RenameAndDeploy,
+    Skip,
+}
+
+/// The explicit disposition selected for one Skill × physical-target pair.
+/// Fallback confirmation is carried independently by the API selection DTO.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum DeploymentPairDisposition {
+    Deploy,
+    ReplaceTarget,
+    RenameAndDeploy { runtime_name: String },
+    Skip,
+    Exclude,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct ExistingDeployment {

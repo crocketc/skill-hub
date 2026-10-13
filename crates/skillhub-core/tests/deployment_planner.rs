@@ -1462,6 +1462,10 @@ fn preference_and_disposition_words_are_stable_on_the_wire() {
         serde_json::json!("no_change")
     );
     assert_eq!(
+        serde_json::to_value(DeploymentPreviewDisposition::ConflictDecisionRequired).unwrap(),
+        serde_json::json!("conflict_decision_required")
+    );
+    assert_eq!(
         serde_json::to_value(DeploymentPreviewDisposition::Blocked).unwrap(),
         serde_json::json!("blocked")
     );
@@ -1675,8 +1679,8 @@ fn unchanged_pairs_and_blockers_carry_structured_reasons() {
     assert_eq!(preview.mode, Some(DeploymentMode::SymbolicLink));
     assert_eq!(preview.block_reason, None);
 
-    // Occupied runtime names block regardless of the preferred mode, for
-    // every ownership fact that makes replacement unsafe.
+    // Occupied runtime names require a per-pair decision regardless of the
+    // preferred mode. The application layer later narrows actions by ownership.
     for (reason, ownership) in [
         (
             TargetConflictReason::RuntimeNameAlreadyExists,
@@ -1701,7 +1705,10 @@ fn unchanged_pairs_and_blockers_carry_structured_reasons() {
             }],
             ..pair_facts(capabilities(true, true, true))
         });
-        assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+        assert_eq!(
+            preview.disposition,
+            DeploymentPreviewDisposition::ConflictDecisionRequired
+        );
         assert_eq!(
             preview.block_reason,
             Some(DeploymentBlockReason::TargetOccupied)

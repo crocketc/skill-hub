@@ -7,11 +7,11 @@ pub mod staging;
 
 pub use crate::relationship::DeploymentRelationFact;
 pub use model::{
-    DeploymentCapabilities, DeploymentMode, DeploymentPlan, DeploymentPlanInput,
-    DeploymentPlanRequest, DeploymentRecord, DeploymentRequest, DeploymentSecurityGate,
-    DeploymentState, ExistingDeployment, ExistingOwnership, PlannerInput, RegisteredTargetIndex,
-    TargetCapabilities, TargetChange, TargetConflict, TargetConflictReason, TargetFact,
-    TargetFactSource, TargetPlan, VerifiedTarget,
+    DeploymentCapabilities, DeploymentConflictAction, DeploymentMode, DeploymentPairDisposition,
+    DeploymentPlan, DeploymentPlanInput, DeploymentPlanRequest, DeploymentRecord,
+    DeploymentRequest, DeploymentSecurityGate, DeploymentState, ExistingDeployment,
+    ExistingOwnership, PlannerInput, RegisteredTargetIndex, TargetCapabilities, TargetChange,
+    TargetConflict, TargetConflictReason, TargetFact, TargetFactSource, TargetPlan, VerifiedTarget,
 };
 pub use observed::{
     observed_path_key, path_lives_under, reconcile_missing_observed_row, reconcile_observed_row,

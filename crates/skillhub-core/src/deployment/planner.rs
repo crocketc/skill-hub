@@ -581,6 +581,8 @@ pub enum DeploymentPreviewDisposition {
     RecommendCopy,
     /// The same managed deployment is already in place.
     NoChange,
+    /// The target name is occupied and the user must choose a conflict action.
+    ConflictDecisionRequired,
     /// The pair cannot execute; `block_reason` carries the structured cause.
     Blocked,
 }
@@ -673,7 +675,7 @@ pub fn plan_target_preview(facts: &DeploymentPairFacts) -> PairPreview {
         return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetNotWritable));
     }
     if !facts.conflicts.is_empty() {
-        return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetOccupied));
+        return preview_with_fingerprint(facts, conflict_decision_required());
     }
     if facts.requires_shared_impact_confirmation {
         return preview_with_fingerprint(
@@ -765,6 +767,17 @@ fn blocked(reason: DeploymentBlockReason) -> PairPreview {
         mode: None,
         fallback_mode: None,
         block_reason: Some(reason),
+        confirmation_fingerprint: String::new(),
+    }
+}
+
+fn conflict_decision_required() -> PairPreview {
+    PairPreview {
+        preference: DeploymentPreference::Automatic,
+        disposition: DeploymentPreviewDisposition::ConflictDecisionRequired,
+        mode: None,
+        fallback_mode: None,
+        block_reason: Some(DeploymentBlockReason::TargetOccupied),
         confirmation_fingerprint: String::new(),
     }
 }
@@ -882,6 +895,7 @@ fn disposition_word(disposition: DeploymentPreviewDisposition) -> &'static str {
         DeploymentPreviewDisposition::SelectedMode => "selected_mode",
         DeploymentPreviewDisposition::RecommendCopy => "recommend_copy",
         DeploymentPreviewDisposition::NoChange => "no_change",
+        DeploymentPreviewDisposition::ConflictDecisionRequired => "conflict_decision_required",
         DeploymentPreviewDisposition::Blocked => "blocked",
     }
 }

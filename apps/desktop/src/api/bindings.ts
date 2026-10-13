@@ -990,6 +990,38 @@ export type DeploymentChartCategory = {
 	count: number,
 };
 
+/**
+ *  Conflict actions the server may expose for one occupied deployment target.
+ *  The application layer narrows this set using current ownership, backup,
+ *  permissions, name availability, and shared-consumer facts.
+ */
+export type DeploymentConflictAction = "replace_target" | "rename_and_deploy" | "skip";
+
+/**  One observed occupant of a requested physical target and runtime name. */
+export type DeploymentConflictOccupant = {
+	ownership: ExistingOwnership,
+	deployment_id: DeploymentId | null,
+	skill_id: SkillId | null,
+	version_id: VersionId | null,
+	skill_display_name: string | null,
+	physical_target_id: string,
+	runtime_name: string,
+	target_path: string,
+	/**  Deployment identities known to consume the same physical entry. */
+	consumers: DeploymentId[],
+	/**  Stable identity for the filesystem entry; not an authorization token. */
+	entry_identity: string,
+	/**  Content identity when the occupant is a regular file/tree and can be read. */
+	content_fingerprint: string | null,
+};
+
+/**  Server-computed conflict facts and the actions currently safe to offer. */
+export type DeploymentConflictPreview = {
+	occupants: DeploymentConflictOccupant[],
+	available_actions: DeploymentConflictAction[],
+	default_action: DeploymentConflictAction,
+};
+
 export type DeploymentDimension = "agent" | "project";
 
 export type DeploymentId = string;
@@ -1037,6 +1069,7 @@ export type DeploymentPairPreview = {
 	destination_path: string,
 	preference: DeploymentPreference,
 	disposition: DeploymentPreviewDisposition,
+	conflict: DeploymentConflictPreview | null,
 	mode: DeploymentMode | null,
 	fallback_mode: DeploymentMode | null,
 	block_reason: DeploymentBlockReason | null,
@@ -1114,6 +1147,8 @@ export type DeploymentPreviewDisposition =
 "recommend_copy" |
 /**  The same managed deployment is already in place. */
 "no_change" |
+/**  The target name is occupied and the user must choose a conflict action. */
+"conflict_decision_required" |
 /**  The pair cannot execute; `block_reason` carries the structured cause. */
 "blocked";
 

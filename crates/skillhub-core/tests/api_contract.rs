@@ -5,6 +5,68 @@ use skillhub_core::{
 };
 
 #[test]
+fn deployment_conflict_preview_has_an_explicit_default_and_stable_shape() {
+    let conflict = skillhub_core::api::DeploymentConflictPreview {
+        occupants: vec![skillhub_core::api::DeploymentConflictOccupant {
+            ownership: skillhub_core::ExistingOwnership::Unknown,
+            deployment_id: None,
+            skill_id: None,
+            version_id: None,
+            skill_display_name: None,
+            physical_target_id: "fs:agent-skills".to_owned(),
+            runtime_name: "pdf".to_owned(),
+            target_path: "/agents/skills/pdf".to_owned(),
+            consumers: Vec::new(),
+            entry_identity: "file-id:17".to_owned(),
+            content_fingerprint: Some("sha256:original".to_owned()),
+        }],
+        available_actions: vec![
+            skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+            skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy,
+            skillhub_core::deployment::DeploymentConflictAction::Skip,
+        ],
+        default_action: skillhub_core::deployment::DeploymentConflictAction::Skip,
+    };
+    let json = serde_json::to_value(conflict).unwrap();
+    assert_eq!(json["default_action"], "skip");
+    assert_eq!(
+        json["available_actions"],
+        serde_json::json!(["replace_target", "rename_and_deploy", "skip"])
+    );
+    assert_eq!(json["occupants"][0]["ownership"], "unknown");
+    assert_eq!(
+        json["occupants"][0]["content_fingerprint"],
+        "sha256:original"
+    );
+
+    let mut unknown_field = json;
+    unknown_field["unrecognized"] = serde_json::json!(true);
+    assert!(
+        serde_json::from_value::<skillhub_core::api::DeploymentConflictPreview>(unknown_field)
+            .is_err()
+    );
+}
+
+#[test]
+fn deployment_pair_disposition_uses_a_stable_explicit_name_shape() {
+    let disposition = skillhub_core::deployment::DeploymentPairDisposition::RenameAndDeploy {
+        runtime_name: "pdf-review".to_owned(),
+    };
+    assert_eq!(
+        serde_json::to_value(disposition).unwrap(),
+        serde_json::json!({ "rename_and_deploy": { "runtime_name": "pdf-review" } })
+    );
+    assert!(
+        serde_json::from_value::<skillhub_core::deployment::DeploymentPairDisposition>(
+            serde_json::json!({
+                "rename_and_deploy": { "runtime_name": "pdf-review", "unrecognized": true }
+            })
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn progress_event_has_stable_wire_shape() {
     let event = AppEvent::OperationProgress(OperationProgress {
         operation_id: OperationId::new(),

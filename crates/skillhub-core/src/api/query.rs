@@ -765,6 +765,35 @@ pub struct GetDeploymentBatchPreview {
     pub exclusions: Vec<String>,
 }
 
+/// One observed occupant of a requested physical target and runtime name.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentConflictOccupant {
+    pub ownership: crate::deployment::ExistingOwnership,
+    pub deployment_id: Option<crate::DeploymentId>,
+    pub skill_id: Option<SkillId>,
+    pub version_id: Option<VersionId>,
+    pub skill_display_name: Option<String>,
+    pub physical_target_id: String,
+    pub runtime_name: String,
+    pub target_path: String,
+    /// Deployment identities known to consume the same physical entry.
+    pub consumers: Vec<crate::DeploymentId>,
+    /// Stable identity for the filesystem entry; not an authorization token.
+    pub entry_identity: String,
+    /// Content identity when the occupant is a regular file/tree and can be read.
+    pub content_fingerprint: Option<String>,
+}
+
+/// Server-computed conflict facts and the actions currently safe to offer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentConflictPreview {
+    pub occupants: Vec<DeploymentConflictOccupant>,
+    pub available_actions: Vec<crate::deployment::DeploymentConflictAction>,
+    pub default_action: crate::deployment::DeploymentConflictAction,
+}
+
 /// One Skill × physical-target pair of a batch deployment preview.  Pair ids
 /// are stable UI identity derived from the Skill and the physical target;
 /// they never authorize anything by themselves.
@@ -782,6 +811,7 @@ pub struct DeploymentPairPreview {
     pub destination_path: String,
     pub preference: crate::deployment::DeploymentPreference,
     pub disposition: crate::deployment::DeploymentPreviewDisposition,
+    pub conflict: Option<DeploymentConflictPreview>,
     pub mode: Option<DeploymentMode>,
     pub fallback_mode: Option<DeploymentMode>,
     pub block_reason: Option<crate::deployment::DeploymentBlockReason>,
