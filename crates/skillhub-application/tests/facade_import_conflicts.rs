@@ -41,7 +41,6 @@ async fn prepare(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -70,7 +69,6 @@ async fn commit_copy(
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -103,6 +101,56 @@ async fn begin_batch(facade: &LocalApplicationFacade) -> String {
     started.batch_id
 }
 
+async fn imported_markdown_and_version(
+    facade: &LocalApplicationFacade,
+    skill_id: skillhub_core::SkillId,
+) -> (String, skillhub_core::VersionId) {
+    let detail = facade
+        .query(AppQuery::GetSkill(skillhub_core::api::GetSkill {
+            skill_id,
+        }))
+        .await
+        .expect("get imported skill");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    let version_id = detail.current_version.expect("current version");
+    let markdown = facade
+        .query(AppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id,
+                path: "SKILL.md".into(),
+                version_id: Some(version_id.clone()),
+            },
+        ))
+        .await
+        .expect("read imported markdown");
+    let AppQueryResult::MarkdownFile(markdown) = markdown else {
+        panic!("expected markdown content");
+    };
+    (markdown.markdown, version_id)
+}
+
+async fn imported_runtime_names(facade: &LocalApplicationFacade) -> Vec<String> {
+    let page = facade
+        .query(AppQuery::ListSkills(skillhub_core::api::ListSkills {
+            text: String::new(),
+            page: 1,
+            page_size: 50,
+            filters: Default::default(),
+            sort: Default::default(),
+        }))
+        .await
+        .expect("list imported skills");
+    let AppQueryResult::SkillPage(page) = page else {
+        panic!("expected skill page");
+    };
+    page.items
+        .into_iter()
+        .map(|item| item.runtime_name)
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn commit_in_batch(
     facade: &LocalApplicationFacade,
@@ -126,7 +174,6 @@ async fn commit_in_batch(
             },
             batch_id: Some(batch_id.to_owned()),
             candidate_key: Some(candidate_key.to_owned()),
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -249,7 +296,6 @@ async fn commit_with(
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -333,6 +379,26 @@ async fn keep_independent_import_persists_the_conflict_case_for_the_relationship
     );
     let summary = commit_with(&facade, &second, ImportDecision::KeepIndependent).await;
     let imported_skill = summary.items[0].skill_id.expect("independent import");
+    assert_ne!(library_skill, imported_skill);
+    assert_eq!(
+        imported_runtime_names(&facade).await,
+        vec!["Notes".to_owned(), "Notes".to_owned()]
+    );
+    let (library_content, library_version) =
+        imported_markdown_and_version(&facade, library_skill).await;
+    let (independent_content, independent_version) =
+        imported_markdown_and_version(&facade, imported_skill).await;
+    assert_eq!(library_content, "# Notes\n");
+    assert_eq!(independent_content, "# Notes rewritten\n");
+    assert_ne!(library_version, independent_version);
+    assert_eq!(
+        std::fs::read_to_string(source.path().join("SKILL.md")).unwrap(),
+        "# Notes\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(second_source.path().join("SKILL.md")).unwrap(),
+        "# Notes rewritten\n"
+    );
 
     let cases = conflict_cases_for_skill(&facade, imported_skill).await;
     assert_eq!(
@@ -571,7 +637,6 @@ async fn failed_import_compensation_retains_recovery_snapshot_for_restart() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -661,7 +726,6 @@ async fn failed_reuse_conflict_write_does_not_leave_partial_import_outcome() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -757,7 +821,6 @@ async fn failed_skip_batch_write_does_not_leave_governance_tasks() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -839,7 +902,6 @@ async fn failed_new_import_conflict_write_does_not_leave_successful_provenance()
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

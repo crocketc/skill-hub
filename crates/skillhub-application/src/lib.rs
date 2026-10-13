@@ -12,7 +12,7 @@ pub mod relationship_watch_confirmation;
 mod update_service;
 mod usage_change_service;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -231,12 +231,11 @@ pub struct ClassifiedImportSource {
 }
 
 /// W2-2：`analyze_import_batch` 暂存的批内分析。除纯函数结果外，保留
-/// 候选键 → 规范化发现名 的映射，供提交期核对覆盖名与批内其他候选的
-/// 命名冲突（纯分析结果不含该项，避免向调用方多暴露一层）。
+/// 全部候选键，供提交期核对候选属于已分析的批次组成。
 #[derive(Clone)]
 struct AnalyzedImportBatch {
     analysis: skillhub_core::ImportBatchConflictAnalysis,
-    candidate_names: BTreeMap<String, String>,
+    candidate_keys: BTreeSet<String>,
 }
 
 /// 一次成功导入在持久层的落点摘要。事件/关系/批次项的具体 ID 以不可变
@@ -13043,9 +13042,9 @@ impl LocalApplicationFacade {
 
     /// W2-2（FB-007）：批内冲突分析查询。对发现产物做纯函数互检：
     /// 同内容同来源 → 合并建议（保留一个、其余建议跳过）；同名不同
-    /// 内容 → 逐项显式处置。`batch_id` 提供时把分析与"候选键 → 规范化
-    /// 发现名"一并暂存在会话内存，供提交期核对组成签名、同名处置与
-    /// 覆盖名冲突；暂存随进程结束即清，未暂存时提交期不做批内守卫
+    /// 内容 → 逐项显式处置。`batch_id` 提供时把分析与候选键一并暂存，
+    /// 供提交期核对组成签名、同名处置与候选成员身份；暂存随进程结束即清，
+    /// 未暂存时提交期不做批内守卫
     /// （与既有单导入流兼容）。
     async fn analyze_import_batch(
         &self,
@@ -13053,13 +13052,10 @@ impl LocalApplicationFacade {
     ) -> AppResult<AppQueryResult> {
         let batch_id = request.batch_id.clone().filter(|id| !id.trim().is_empty());
         let mut batch_candidates = Vec::with_capacity(request.candidates.len());
-        let mut candidate_names = BTreeMap::new();
+        let mut candidate_keys = BTreeSet::new();
         for candidate in &request.candidates {
             let candidate_key = Self::candidate_key_for(candidate);
-            candidate_names.insert(
-                candidate_key.clone(),
-                skillhub_core::normalize_runtime_name(&candidate.runtime_name),
-            );
+            candidate_keys.insert(candidate_key.clone());
             batch_candidates.push(skillhub_core::ImportBatchCandidate {
                 candidate_key,
                 runtime_name: candidate.runtime_name.clone(),
@@ -13080,7 +13076,7 @@ impl LocalApplicationFacade {
                     batch_id,
                     AnalyzedImportBatch {
                         analysis: analysis.clone(),
-                        candidate_names,
+                        candidate_keys,
                     },
                 );
         }
@@ -13091,28 +13087,6 @@ impl LocalApplicationFacade {
         let operation_id = OperationId::new();
         let candidate = request.candidate;
         let runtime_name = candidate.runtime_name.clone();
-        // W2-2（FB-007）：同名不同内容项的独立命名。覆盖名在准备期校验
-        // 非空，分析按"覆盖名生效后的候选"重跑；暂存候选保留发现时的
-        // 事实名，提交期才以覆盖名落地。准备期写入可恢复的操作记录，
-        // 取消或提交完成后会结算该记录。
-        let runtime_name_override = request
-            .runtime_name_override
-            .as_deref()
-            .map(str::trim)
-            .map(str::to_owned)
-            .filter(|name| !name.is_empty());
-        // 显式提供但 trim 后为空是无效覆盖名：拒绝，不静默当作未提供。
-        let override_error =
-            if request.runtime_name_override.is_some() && runtime_name_override.is_none() {
-                Some(
-                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                        .with_param("field", "runtime_name_override")
-                        .with_param("reason", "import.runtime_name_invalid")
-                        .with_action(RecoveryAction::ChooseAnotherName),
-                )
-            } else {
-                None
-            };
         let tree_hash = self.candidate_tree_hash(&candidate, request.tree_hash.as_deref());
         // W3-1（FB-003 裁决第 1 节 / §23）：扫描从 commit 末段提前到
         // prepare（candidate_tree_hash 确定之后）。分级摘要随 prepared
@@ -13127,48 +13101,39 @@ impl LocalApplicationFacade {
                 ..Default::default()
             },
         };
-        let mut analysis_candidate = candidate.clone();
-        if let Some(name) = &runtime_name_override {
-            analysis_candidate.runtime_name = name.clone();
-        }
-        let result = if let Some(error) = override_error {
-            Err(error)
-        } else {
-            self.with_database("execute.prepare_import", |database| {
-                let facts = Self::import_source_facts(database, &analysis_candidate)?;
-                let analysis = database.import_repository().analyze(
-                    analysis_candidate,
-                    tree_hash.as_deref(),
-                    &facts,
-                )?;
-                let prepared = PreparedImport {
-                    id: operation_id,
-                    candidate,
-                    analysis,
-                    runtime_name_override: runtime_name_override.clone(),
-                    security: security.clone(),
-                };
-                self.prepared_imports
+        let result = self.with_database("execute.prepare_import", |database| {
+            let facts = Self::import_source_facts(database, &candidate)?;
+            let analysis = database.import_repository().analyze(
+                candidate.clone(),
+                tree_hash.as_deref(),
+                &facts,
+            )?;
+            let prepared = PreparedImport {
+                id: operation_id,
+                candidate: candidate.clone(),
+                analysis,
+                security: security.clone(),
+            };
+            self.prepared_imports
+                .lock()
+                .map_err(|_| {
+                    AppError::new(ErrorCode::InternalError, Severity::Error)
+                        .with_param("operation", "execute.prepare_import")
+                        .with_action(RecoveryAction::Retry)
+                })?
+                .insert(prepared.id, prepared.clone());
+            if let Some(report) = security_report {
+                self.prepared_import_security_reports
                     .lock()
                     .map_err(|_| {
                         AppError::new(ErrorCode::InternalError, Severity::Error)
                             .with_param("operation", "execute.prepare_import")
                             .with_action(RecoveryAction::Retry)
                     })?
-                    .insert(prepared.id, prepared.clone());
-                if let Some(report) = security_report {
-                    self.prepared_import_security_reports
-                        .lock()
-                        .map_err(|_| {
-                            AppError::new(ErrorCode::InternalError, Severity::Error)
-                                .with_param("operation", "execute.prepare_import")
-                                .with_action(RecoveryAction::Retry)
-                        })?
-                        .insert(prepared.id, report);
-                }
-                Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
-            })
-        };
+                    .insert(prepared.id, report);
+            }
+            Ok(AppCommandResult::PreparedImport(Box::new(prepared)))
+        });
         match result.as_ref() {
             Ok(_) => self.journal_import(
                 operation_id,
@@ -13829,61 +13794,9 @@ impl LocalApplicationFacade {
         batch_id: &str,
         candidate_key: &str,
     ) -> AppResult<AppCommandResult> {
-        // W2-2（FB-007）：提交期批内守卫。先核对覆盖名本身的一致性与
-        // 合法性，再核对批内分析（暂存于会话内存）的组成签名与同名处置；
+        // W2-2（FB-007）：提交期批内守卫核对批次分析的组成签名与同名处置；
         // 任何拒绝都走 commit_import_flow 的失败路径：failed 批次项 +
         // RolledBack 日志，不产生库内事实。
-        let override_name = match request.runtime_name_override.as_deref() {
-            Some(name) => {
-                let trimmed = name.trim();
-                if trimmed.is_empty() {
-                    return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                        .with_param("field", "runtime_name_override")
-                        .with_param("reason", "import.runtime_name_invalid")
-                        .with_action(RecoveryAction::ChooseAnotherName));
-                }
-                Some(trimmed.to_owned())
-            }
-            None => None,
-        };
-        if override_name.is_some() && request.decision == skillhub_core::ImportDecision::Skip {
-            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("field", "runtime_name_override")
-                .with_param("reason", "import.skip_with_runtime_name_override")
-                .with_action(RecoveryAction::ChooseAnotherName));
-        }
-        // prepared.runtime_name_override 在准备期已 trim 校验；提交必须
-        // 携带同一覆盖名（None ↔ Some 或值不同都算改口）。
-        if override_name != prepared.runtime_name_override {
-            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
-                .with_param("field", "runtime_name_override")
-                .with_param("reason", "import.runtime_name_override_mismatch")
-                .with_action(RecoveryAction::Retry));
-        }
-        if let Some(name) = &override_name {
-            // 覆盖名与库内既有 runtime 名冲突 → 拒绝。同批已提交的候选
-            // 此刻已是库内事实，同样被这里拦下。
-            let normalized = skillhub_core::normalize_runtime_name(name);
-            let conflicts_library =
-                self.with_database("execute.commit_import.override_check", |database| {
-                    Ok(database
-                        .import_repository()
-                        .list_existing()?
-                        .iter()
-                        .any(|record| {
-                            skillhub_core::normalize_runtime_name(&record.runtime_name)
-                                == normalized
-                        }))
-                })?;
-            if conflicts_library {
-                return Err(
-                    AppError::new(ErrorCode::ImportRuntimeNameConflict, Severity::Error)
-                        .with_param("runtime_name", name.clone())
-                        .with_param("reason", "import.runtime_name_exists_in_library")
-                        .with_action(RecoveryAction::ChooseAnotherName),
-                );
-            }
-        }
         let stored = self
             .analyzed_import_batches
             .lock()
@@ -13894,8 +13807,9 @@ impl LocalApplicationFacade {
             })?
             .get(batch_id)
             .cloned();
+        let mut same_name_batch_member = false;
         if let Some(stored) = stored {
-            if !stored.candidate_names.contains_key(candidate_key) {
+            if !stored.candidate_keys.contains(candidate_key) {
                 // 提交的候选不在已分析的批内组成里（分析之后批内新增）
                 // → 拒绝并要求重新分析。
                 return Err(AppError::new(
@@ -13920,19 +13834,20 @@ impl LocalApplicationFacade {
                     .with_action(RecoveryAction::Retry));
                 }
             }
-            let same_name_member = stored
+            same_name_batch_member = stored
                 .analysis
                 .same_name_groups
                 .iter()
                 .any(|group| group.candidate_keys.iter().any(|key| key == candidate_key));
-            if same_name_member {
-                // 同名不同内容：只有"跳过"或"独立命名（携带覆盖名，导入
-                // 决策本身仍受 analysis.actions 约束）"两种合法处置；既不
-                // 跳过也不改名的静默导入一律拒绝，不给静默默认。
-                let dispositioned = match request.decision {
-                    skillhub_core::ImportDecision::Skip => true,
-                    _ => override_name.is_some(),
-                };
+            if same_name_batch_member {
+                // 同名不同内容：只有"跳过"或独立导入两种显式处置；未选
+                // 处置的一律拒绝，不给静默默认。具体动作仍受 analysis.actions 约束。
+                let dispositioned = matches!(
+                    request.decision,
+                    skillhub_core::ImportDecision::Skip
+                        | skillhub_core::ImportDecision::KeepIndependent
+                        | skillhub_core::ImportDecision::CopyAsIndependentManagedSkill
+                );
                 if !dispositioned {
                     return Err(AppError::new(
                         ErrorCode::ImportSameNameDispositionRequired,
@@ -13940,32 +13855,13 @@ impl LocalApplicationFacade {
                     )
                     .with_param("batch_id", batch_id.to_owned())
                     .with_param("candidate_key", candidate_key.to_owned())
-                    .with_action(RecoveryAction::ChooseAnotherName));
-                }
-            }
-            if let Some(name) = &override_name {
-                // 覆盖名与批内其他候选的发现名撞名 → 拒绝（同批尚未提交
-                // 的候选不在库内，库内检查看不到它们）。
-                let normalized = skillhub_core::normalize_runtime_name(name);
-                let collides = stored
-                    .candidate_names
-                    .iter()
-                    .any(|(key, existing)| key != candidate_key && *existing == normalized);
-                if collides {
-                    return Err(AppError::new(
-                        ErrorCode::ImportRuntimeNameConflict,
-                        Severity::Error,
-                    )
-                    .with_param("runtime_name", name.clone())
-                    .with_param(
-                        "reason",
-                        "import.runtime_name_conflicts_with_batch_candidate",
-                    )
-                    .with_action(RecoveryAction::ChooseAnotherName));
+                    .with_action(RecoveryAction::Retry));
                 }
             }
         }
-        if !prepared.analysis.actions.contains(&request.decision) {
+        let independent_batch_decision = same_name_batch_member
+            && request.decision == skillhub_core::ImportDecision::KeepIndependent;
+        if !prepared.analysis.actions.contains(&request.decision) && !independent_batch_decision {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                 .with_param("field", "decision")
                 .with_action(RecoveryAction::ChooseAnotherName));
@@ -14173,11 +14069,8 @@ impl LocalApplicationFacade {
             let version = captured.record;
             // QA-009：导入时读取 SKILL.md 头部 description 作为原始说明；
             // 头部缺失或不可读时保持空串，不阻塞导入。
-            // W2-2：覆盖名在守卫里已核对与 prepare 一致；这里解析最终
-            // 落库名（覆盖名优先，否则发现名）。
-            let final_runtime_name = override_name
-                .clone()
-                .unwrap_or_else(|| prepared.candidate.runtime_name.clone());
+            // 同名候选以独立 SkillId 入库，运行时名称保留来源中的事实。
+            let final_runtime_name = prepared.candidate.runtime_name.clone();
             let mut skill = Skill::new(skill_id, final_runtime_name.clone());
             if let Some(description) = read_frontmatter_description(source) {
                 skill = skill.with_description(description);

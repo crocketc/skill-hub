@@ -91,7 +91,6 @@ async fn prepare_candidate(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -119,7 +118,6 @@ async fn commit_with_decision(
             governance_decision: skillhub_core::ImportGovernanceDecision::default(),
             batch_id: batch_id.map(str::to_owned),
             candidate_key: candidate_key.map(str::to_owned),
-            runtime_name_override: None,
             batch_signature: None,
             security_decision,
         }))
@@ -233,7 +231,6 @@ async fn prepare_reports_unavailable_when_scan_fails() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await;
     // prepare 的冲突分析本身可以失败（候选不可读），此时整次 prepare 失败
@@ -321,7 +318,7 @@ async fn danger_candidate_without_decision_is_rejected_and_batch_is_unaffected()
     assert_eq!(names, vec!["Clean Skill".to_string()]);
 }
 
-/// ②b 被拒之后补携 security_decision=proceed 重试同一 prepared 导入成功：
+/// ②b 被拒后重新准备并携带 security_decision=proceed 提交成功：
 /// 决策不阻断该 Skill 的导入，其他候选依旧不受牵连。
 #[tokio::test]
 async fn danger_candidate_proceed_imports_after_rejection() {
@@ -340,9 +337,16 @@ async fn danger_candidate_proceed_imports_after_rejection() {
         .expect_err("first commit without decision is rejected");
     assert_eq!(error.code, ErrorCode::ImportSecurityDecisionRequired);
 
+    // 第一次提交已将其 operation journal（操作日志）结算为回滚；重试应
+    // 创建新的准备操作，不能复用已结束的 operation id（操作标识）。
+    let retry = prepare_candidate(
+        &facade,
+        candidate_for(workspace.path(), "danger", "Danger Skill"),
+    )
+    .await;
     let summary = commit_with_decision(
         &facade,
-        &danger,
+        &retry,
         ImportDecision::CopyIntoLibrary,
         None,
         None,

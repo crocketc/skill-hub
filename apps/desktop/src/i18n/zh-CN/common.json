@@ -275,7 +275,7 @@
       "exactDuplicateConflict": "候选内容与已有 Skill 重复，未自动覆盖原内容。",
       "takeoverVerificationMismatch": "纳入管理后的内容核验未通过，原始来源已保留。",
       "runtimeNameConflict": "导入时发现运行时名称冲突：该名称已被其他 Skill 占用。请为该候选项更换名称后重试。",
-      "sameNameDispositionRequired": "批内存在同名不同内容的候选项：请为每一项选择独立导入（填写新名称）或跳过后，再重新提交。",
+      "sameNameDispositionRequired": "批内存在同名不同内容的候选项：请为每一项选择独立导入或跳过后，再重新提交。独立导入会保留原名称。",
       "batchCompositionChanged": "批内组成已变化，本次提交没有执行任何导入；请重新分析冲突并确认处置后再次提交。",
       "securityDecisionRequired": "有危险级技能未做安全决策：请为每个危险级技能选择仍然导入或不导入后再提交。"
     },
@@ -457,12 +457,7 @@
         "keepBadge": "建议保留",
         "skipBadge": "建议跳过",
         "sameNameTitle": "批内同名：内容不同",
-        "sameNameDescription": "这些候选项的运行时名称相同但内容不同，必须逐项处置：为每一项选择独立导入并填写新名称，或跳过。处置完成前无法提交。",
-        "renameLabel": "新名称",
-        "renameGuidance": "新名称不能与批内其他候选或库内已有 Skill 重名；最终以提交时的校验结果为准。",
-        "renameEmpty": "请先填写新名称，再选择独立导入。",
-        "renameBatchCollision": "该名称与批内其他候选重名，请换一个。",
-        "renameLibraryCollision": "该名称与库内已有 Skill 重名，请换一个。",
+        "sameNameDescription": "这些候选项的运行时名称相同但内容不同，请逐项选择独立导入或跳过。独立导入会保留原名称，并分别保存为不同技能。处置完成前无法提交。",
         "pendingAlert": "还有 {{count}} 个同名不同内容的候选项未处置，请为每一项选择独立导入或跳过后再提交。"
       },
       "security": {

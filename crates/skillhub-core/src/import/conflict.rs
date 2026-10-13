@@ -392,8 +392,8 @@ fn governance_group(
     }
 }
 
-/// 规范化 runtime 名：trim + 小写。批内同名分组、覆盖名冲突检查与
-/// 单导入库内冲突核对共用同一形态，避免各层自造大小写规则。
+/// 规范化 runtime 名：trim + 小写。批内同名分组与单导入库内冲突核对
+/// 共用同一形态，避免各层自造大小写规则。
 pub fn normalize_runtime_name(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -434,7 +434,7 @@ pub struct ImportBatchSameContentGroup {
     pub candidate_tree_hash: String,
 }
 
-/// 同名不同内容组：每一项都需要用户显式处置（独立命名或跳过），
+/// 同名不同内容组：每一项都需要用户显式处置（独立导入或跳过），
 /// 不给静默默认。
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]

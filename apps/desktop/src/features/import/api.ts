@@ -217,8 +217,6 @@ export interface ImportProgress {
 
 /** W2-2/W3-1：提交时随处置透传的数据；门面自行映射到 prepare/commit 字段。 */
 export interface ImportCommitDispositions {
-  /** candidateId → 独立导入的新名；仅动作为 independent 的项会被透传。 */
-  runtimeNameOverrides?: Record<string, string>;
   /**
    * 提交期刷新的批次组成签名（native 门面在 begin_import_batch 后重跑
    * analyze_import_batch 取得）；与 analyze 阶段不一致即被后端拒绝。
@@ -879,8 +877,8 @@ export function createMockImportFacade(
           results,
         });
       }
-      // 2) 处置门——同名不同内容组的成员必须逐项跳过或独立命名（新名非空
-      //    且不等于组名），否则该行失败并给出补处置指引；其余行照常。
+      // 2) 处置门——同名不同内容组的成员必须逐项选择独立导入或跳过，
+      //    否则该行失败并给出补处置指引；独立导入保留候选原名。
       const sameNameMembers = new Map(
         (analysis?.sameNameGroups ?? []).flatMap((group) =>
           group.candidateIds.map((id) => [id, group] as const),
@@ -922,13 +920,7 @@ export function createMockImportFacade(
         }
         const group = sameNameMembers.get(candidate.id);
         if (group) {
-          const override = dispositions?.runtimeNameOverrides?.[candidate.id] ?? "";
-          const normalized = override.trim().toLowerCase();
-          if (
-            action !== "independent" ||
-            !normalized ||
-            normalized === group.normalizedRuntimeName
-          ) {
+          if (action !== "independent") {
             return {
               action,
               candidateId: candidate.id,

@@ -48,7 +48,6 @@ async fn import_copy(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -70,7 +69,6 @@ async fn import_copy(
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -271,7 +269,6 @@ async fn batch_scope_selects_relations_created_inside_the_batch() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -293,7 +290,6 @@ async fn batch_scope_selects_relations_created_inside_the_batch() {
             },
             batch_id: Some(started.batch_id.clone()),
             candidate_key: Some("acq|batched".to_owned()),
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

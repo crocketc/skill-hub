@@ -275,7 +275,7 @@
       "exactDuplicateConflict": "The candidate duplicates an existing Skill; existing content was not overwritten.",
       "takeoverVerificationMismatch": "Verification failed after takeover; the original source was preserved.",
       "runtimeNameConflict": "A runtime name conflict was detected while importing: the name is already taken by another Skill. Choose a different name for this candidate and try again.",
-      "sameNameDispositionRequired": "The batch contains same-name candidates with different content. Dispose of each one — import it independently with a new name, or skip it — then submit again.",
+      "sameNameDispositionRequired": "The batch contains same-name candidates with different content. Choose independent import or skip for each one, then submit again. Independent imports keep the original name.",
       "batchCompositionChanged": "The batch composition changed, so nothing was imported in this submission. Run the conflict analysis again, confirm the dispositions, and submit again.",
       "securityDecisionRequired": "A danger-level skill has no security decision yet: choose import anyway or do not import for each danger-level skill, then commit again."
     },
@@ -457,12 +457,7 @@
         "keepBadge": "Suggested to keep",
         "skipBadge": "Suggested to skip",
         "sameNameTitle": "Name taken in this import",
-        "sameNameDescription": "These candidates share a runtime name but have different content, so each one needs an explicit disposition: import it independently with a new name, or skip it. Submission stays locked until every member is decided.",
-        "renameLabel": "New name",
-        "renameGuidance": "The new name must not collide with other batch candidates or existing library Skills; the final decision happens at submission.",
-        "renameEmpty": "Enter a new name before choosing independent import.",
-        "renameBatchCollision": "This name collides with another candidate in the batch. Choose a different one.",
-        "renameLibraryCollision": "This name collides with an existing Skill in the library. Choose a different one.",
+        "sameNameDescription": "These candidates share a runtime name but have different content. Choose independent import or skip for each one. Independent imports keep the original name and are stored as separate Skills. Submission stays locked until every member is decided.",
         "pendingAlert": "{{count}} same-name candidates with different content are still undecided. Choose independent import or skip for each one before submitting."
       },
       "security": {

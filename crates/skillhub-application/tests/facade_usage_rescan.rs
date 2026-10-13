@@ -311,7 +311,6 @@ async fn reuse_import_from_path(facade: &LocalApplicationFacade, path: &Path, sk
             skillhub_core::api::PrepareImport {
                 candidate,
                 tree_hash: None,
-                runtime_name_override: None,
             },
         ))
         .await
@@ -340,7 +339,6 @@ async fn reuse_import_from_path(facade: &LocalApplicationFacade, path: &Path, sk
             governance_decision,
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

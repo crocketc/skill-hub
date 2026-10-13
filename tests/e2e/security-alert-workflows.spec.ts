@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
  * W2-2 / W3-1 安全链路预览验收（DEV-only 预览路由，全部走 mock 门面）。
  * 覆盖：
  * 1. 批内冲突链路（?scenario=batch-conflicts）：同内容建议保留/跳过、
- *    同名独立命名（含即时重名反馈）、未处置提交在 UI 层被拦。
+ *    同名独立导入保留原名、未处置提交在 UI 层被拦。
  * 2. 危险级候选决策链路（?scenario=security-danger）：置顶决策区块 →
  *    仍然导入 → 完成导入；警告级按 §24 默认导入并给出三档批量语义。
  * 2.5 警告级多来源去重（?scenario=security-warning-duplicates）：同身份
@@ -35,7 +35,7 @@ async function reachConflictStep(page: import("@playwright/test").Page, scenario
   await expect(page.getByRole("button", { name: "提交导入" })).toBeVisible();
 }
 
-test("batch conflicts: suggests keep/skip for identical content and blocks unhandled same-name commit", async ({ page }) => {
+test("batch conflicts: suggests keep/skip and imports same-name candidates without renaming", async ({ page }) => {
   await reachConflictStep(page, "batch-conflicts", "C:/skills/batch-preview");
 
   // 批内同内容组：建议保留一项复制、其余跳过，且建议即默认勾选状态。
@@ -61,14 +61,10 @@ test("batch conflicts: suggests keep/skip for identical content and blocks unhan
   const pendingAlert = page.getByRole("alert").filter({ hasText: "还有 2 个同名不同内容的候选项未处置" });
   await expect(pendingAlert).toBeVisible();
 
-  // 独立命名：先留空与撞名都被即时拦截，换有效新名后解除。
+  // 独立导入保留候选原名，不要求新名称。
   const codexRow = sameName.locator("li").filter({ hasText: "codex/alpha" });
   await codexRow.getByRole("radio", { name: "独立导入" }).check();
-  await expect(commit).toBeDisabled();
-  await codexRow.getByLabel("新名称").fill("alpha");
-  await expect(codexRow.getByText("该名称与批内其他候选重名，请换一个。")).toBeVisible();
-  await codexRow.getByLabel("新名称").fill("Alpha Codex");
-  await expect(codexRow.getByText(/重名，请换一个/)).toHaveCount(0);
+  await expect(codexRow.getByLabel("新名称")).toHaveCount(0);
 
   // 第二个同名成员选择跳过后，处置齐备，提交解锁并完成。
   const claudeRow = sameName.locator("li").filter({ hasText: "claude/alpha" });

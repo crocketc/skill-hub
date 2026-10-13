@@ -1795,12 +1795,11 @@ it("seeds the merge suggestion and gates commit until every batch same-name memb
     /还有 2 个同名不同内容的候选项未处置/,
   );
 
-  // 逐项处置：第一个 Alpha 独立导入并改名，第二个 Alpha 跳过。
+  // 逐项处置：第一个 Alpha 独立导入并保留原名，第二个 Alpha 跳过。
   const sameNameSection = screen.getByText("批内同名：内容不同").closest("section");
   expect(sameNameSection).not.toBeNull();
   const scope = within(sameNameSection as HTMLElement);
   await user.click(scope.getAllByRole("radio", { name: "独立导入" })[0]);
-  await user.type(scope.getAllByLabelText("新名称")[0], "Alpha Prime");
   await user.click(scope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
 
   // 全部处置后门禁解除，告警消失。
@@ -1996,7 +1995,6 @@ it("discards conflict dispositions when a security decision changes the effectiv
   expect(sameNameSection).not.toBeNull();
   const scope = within(sameNameSection as HTMLElement);
   await user.click(scope.getAllByRole("radio", { name: "独立导入" })[0]);
-  await user.type(scope.getAllByLabelText("新名称")[0], "Alpha Prime");
   await user.click(scope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
   expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
 
@@ -2016,16 +2014,13 @@ it("discards conflict dispositions when a security decision changes the effectiv
     /还有 2 个同名不同内容的候选项未处置/,
   );
 
-  // 重新逐项处置后门禁解除；提交携带的是新决策（skip）与新命名。
+  // 重新逐项处置后门禁解除；提交携带的是新决策（skip）与最新签名。
   await user.click(staleScope.getAllByRole("radio", { name: "独立导入" })[0]);
-  await user.type(staleScope.getAllByLabelText("新名称")[0], "Alpha Prime");
   await user.click(staleScope.getAllByRole("radio", { name: "跳过此候选项" })[1]);
   await user.click(screen.getByRole("button", { name: "提交导入" }));
 
   expect(facade.calls.committedDispositions[0]?.securityDecisions).toEqual({
     "alpha-a": "skip",
   });
-  expect(facade.calls.committedDispositions[0]?.runtimeNameOverrides).toEqual({
-    "alpha-a": "Alpha Prime",
-  });
+  expect(facade.calls.committedDispositions[0]).not.toHaveProperty("runtimeNameOverrides");
 });

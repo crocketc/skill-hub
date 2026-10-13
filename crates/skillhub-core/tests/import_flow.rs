@@ -174,7 +174,6 @@ fn import_batch_contract_is_serde_stable_and_legacy_payloads_survive() {
         governance_decision: Default::default(),
         batch_id: Some("batch-1".into()),
         candidate_key: Some("acq|notes".into()),
-        runtime_name_override: None,
         batch_signature: None,
         security_decision: None,
     };

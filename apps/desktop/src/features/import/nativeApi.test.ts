@@ -793,15 +793,15 @@ describe("native import facade", () => {
     expect(outcome.results.map((result) => result.sourceRelationId)).toEqual(["rel-a", undefined]);
   });
 
-  // W2-2（FB-007）：独立命名与批内签名贯穿 prepare/commit 出参。
-  it("carries the independent rename and the fresh batch signature through prepare and commit", async () => {
-    mockBeginBatch("batch-rename");
+  // W2-2（FB-007）：独立导入保留候选名称，批内签名贯穿 prepare/commit。
+  it("carries the independent action and fresh batch signature without a rename field", async () => {
+    mockBeginBatch("batch-independent");
     mockCommitBatchAnalysis("fresh-sig");
     vi.mocked(executeCommand)
       .mockResolvedValueOnce({
         type: "prepared_import",
         payload: {
-          id: "operation-rename",
+          id: "operation-independent",
           candidate: {} as never,
           analysis: { actions: ["copy_as_independent_managed_skill", "skip"] } as never,
         },
@@ -810,12 +810,12 @@ describe("native import facade", () => {
         type: "import_summary",
         payload: {
           committed: true,
-          batch: { batch_id: "batch-rename" },
-          items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-renamed", status: "succeeded" }],
-          operation_id: "operation-rename",
+          batch: { batch_id: "batch-independent" },
+          items: [{ decision: "copy_as_independent_managed_skill", governance_tasks: [], original_preserved: true, provenance: null, reason_code: null, skill_id: "skill-original-name", status: "succeeded" }],
+          operation_id: "operation-independent",
         },
       });
-    mockFinalizeBatch("batch-rename", "1");
+    mockFinalizeBatch("batch-independent", "1");
 
     const source = await nativeImportFacade.parseSource("C:/incoming");
     const candidate = {
@@ -831,24 +831,23 @@ describe("native import facade", () => {
       { [candidate.id]: "independent" },
       undefined,
       undefined,
-      { runtimeNameOverrides: { [candidate.id]: "Notes Renamed" }, batchSignature: "plan-sig" },
+      { batchSignature: "plan-sig" },
     );
 
     // 提交期以真实批次号重跑批内分析（存储分析 + 取最新签名）。
     expect(queryApplication).toHaveBeenLastCalledWith({
       type: "analyze_import_batch",
       payload: {
-        batch_id: "batch-rename",
+        batch_id: "batch-independent",
         candidates: [expect.objectContaining({ runtime_name: "notes" })],
       },
     });
-    // prepare 与 commit 携带同一覆盖名（后端要求两次一致）。
+    // 独立导入不需要覆盖运行时名称；批次签名仍由后端验证。
     expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "prepare_import",
       payload: {
         candidate: expect.anything(),
         tree_hash: null,
-        runtime_name_override: "Notes Renamed",
       },
     });
     expect(executeCommand).toHaveBeenNthCalledWith(3, {
@@ -856,16 +855,15 @@ describe("native import facade", () => {
       payload: {
         decision: "copy_as_independent_managed_skill",
         governance_decision: { group_actions: {}, item_overrides: {} },
-        prepared_import_id: "operation-rename",
-        batch_id: "batch-rename",
+        prepared_import_id: "operation-independent",
+        batch_id: "batch-independent",
         batch_signature: "fresh-sig",
-        runtime_name_override: "Notes Renamed",
       },
     });
     expect(outcome.results[0]).toEqual(expect.objectContaining({ status: "succeeded" }));
   });
 
-  it("does not attach a runtime override to a skipped candidate", async () => {
+  it("submits a skipped candidate without a runtime-name field", async () => {
     mockBeginBatch();
     mockCommitBatchAnalysis();
     vi.mocked(executeCommand)
@@ -902,18 +900,24 @@ describe("native import facade", () => {
       { [candidate.id]: "skip" },
       undefined,
       undefined,
-      { runtimeNameOverrides: { [candidate.id]: "Notes Renamed" }, batchSignature: null },
+      { batchSignature: null },
     );
 
-    // skip + 覆盖名是非法组合（后端拒绝）：出参绝不携带覆盖名。
+    // 所有导入动作均不再携带运行时名称覆盖字段。
     expect(executeCommand).toHaveBeenNthCalledWith(2, {
       type: "prepare_import",
       payload: { candidate: expect.anything(), tree_hash: null },
     });
-    expect(executeCommand).toHaveBeenNthCalledWith(3, expect.objectContaining({
+    expect(executeCommand).toHaveBeenNthCalledWith(3, {
       type: "commit_import",
-      payload: expect.not.objectContaining({ runtime_name_override: expect.anything() }),
-    }));
+      payload: {
+        decision: "skip",
+        governance_decision: { group_actions: {}, item_overrides: {} },
+        prepared_import_id: "operation-skip",
+        batch_id: "batch-1",
+        batch_signature: "commit-batch-sig",
+      },
+    });
   });
 
   // W2-2：三个新错误码映射为可读引导文案，不裸码上屏。

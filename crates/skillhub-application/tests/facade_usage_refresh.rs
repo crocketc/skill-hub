@@ -48,7 +48,6 @@ async fn import_original(facade: &LocalApplicationFacade, source: &Path) -> skil
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepare import");
@@ -70,7 +69,6 @@ async fn import_original(facade: &LocalApplicationFacade, source: &Path) -> skil
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

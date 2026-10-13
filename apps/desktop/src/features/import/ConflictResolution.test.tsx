@@ -359,9 +359,7 @@ const batchAnalysis: ImportBatchAnalysis = {
 
 function renderBatch(props: {
   actions: Record<string, string>;
-  overrides?: Record<string, string>;
   onAction?: (candidateId: string, action: ImportAction) => void;
-  onOverrideName?: (candidateId: string, name: string) => void;
   conflicts?: ImportConflict[];
 }) {
   return render(
@@ -372,8 +370,6 @@ function renderBatch(props: {
         candidates={batchCandidates}
         conflicts={props.conflicts ?? []}
         onAction={props.onAction ?? vi.fn()}
-        onOverrideName={props.onOverrideName ?? vi.fn()}
-        overrides={props.overrides ?? {}}
       />
     </I18nextProvider>,
   );
@@ -414,7 +410,6 @@ it("requires an explicit disposition for every batch same-name member with no de
   renderBatch({ actions: {} });
 
   expect(screen.getByText("批内同名：内容不同")).toBeVisible();
-  expect(screen.getByText(/必须逐项处置/)).toBeVisible();
   for (const radio of screen.getAllByRole("radio", { name: "独立导入" })) {
     expect(radio).not.toBeChecked();
   }
@@ -423,76 +418,12 @@ it("requires an explicit disposition for every batch same-name member with no de
   }
 });
 
-it("reveals an inline rename input for the independent disposition and reports collisions", async () => {
+it("lets independent import retain the candidate name without a rename input", async () => {
   i18nForBatch = await createSkillHubI18n(["zh-CN"]);
-  const onOverrideName = vi.fn();
-  const user = userEvent.setup();
-  renderBatch({ actions: { "alpha-a": "independent" }, onOverrideName });
+  renderBatch({ actions: { "alpha-a": "independent" } });
 
-  const input = screen.getByLabelText("新名称");
-  expect(input).toBeVisible();
-  // 库内冲突展示名参与即时校验说明。
-  expect(screen.getByText(/不能与批内其他候选或库内已有 Skill 重名/)).toBeVisible();
-
-  await user.type(input, "A");
-  expect(onOverrideName).toHaveBeenLastCalledWith("alpha-a", "A");
-});
-
-it("marks an empty override as invalid and keeps guidance visible", async () => {
-  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
-  renderBatch({ actions: { "alpha-a": "independent" }, overrides: { "alpha-a": "  " } });
-
-  const input = screen.getByLabelText("新名称");
-  expect(input).toHaveAttribute("aria-invalid", "true");
-  expect(screen.getByText("请先填写新名称，再选择独立导入。")).toBeVisible();
-});
-
-it("marks batch-colliding overrides as invalid with a distinct message", async () => {
-  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
-  renderBatch({
-    actions: { "alpha-a": "independent" },
-    overrides: { "alpha-a": "Alpha" },
-  });
-
-  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "true");
-  expect(screen.getByText("该名称与批内其他候选重名，请换一个。")).toBeVisible();
-});
-
-it("marks library-colliding overrides as invalid with a distinct message", async () => {
-  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
-  const libraryConflict: ImportConflict = {
-    candidateId: "alpha-a",
-    candidateName: "Alpha",
-    kind: "same_name",
-    matchedSkills: [
-      {
-        displayName: "Library Alpha",
-        id: "lib-1",
-        runtimeName: "Library Alpha",
-      },
-    ],
-    summary: "import.same_runtime_name_conflict",
-    allowedActions: ["independent", "skip"],
-    required: true,
-  };
-  renderBatch({
-    actions: { "alpha-a": "independent" },
-    conflicts: [libraryConflict],
-    overrides: { "alpha-a": "Library Alpha" },
-  });
-
-  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "true");
-  expect(screen.getByText("该名称与库内已有 Skill 重名，请换一个。")).toBeVisible();
-});
-
-it("shows no invalid marking while the typed rename is fresh", async () => {
-  i18nForBatch = await createSkillHubI18n(["zh-CN"]);
-  renderBatch({
-    actions: { "alpha-a": "independent" },
-    overrides: { "alpha-a": "Alpha Prime" },
-  });
-
-  expect(screen.getByLabelText("新名称")).toHaveAttribute("aria-invalid", "false");
+  expect(screen.getAllByText("Alpha")).toHaveLength(2);
+  expect(screen.queryByLabelText("新名称")).not.toBeInTheDocument();
 });
 
 it("keeps both batch sections out of the way when the plan carries no batch analysis", async () => {

@@ -89,11 +89,6 @@ interface WizardState {
   plan?: ImportPlan;
   actions: Record<string, ImportAction>;
   /**
-   * W2-2（FB-007）：candidateId → 独立导入的新名。与 actions 同生命周期：
-   * 只对动作为 independent 的候选随 prepare/commit 透传。
-   */
-  overrides: Record<string, string>;
-  /**
    * W3-1（FB-003）：candidateId → 危险级候选的安全决策（proceed=仍然导入，
    * skip=不导入）。与 actions 同生命周期：新计划重置；提交时随处置透传。
    */
@@ -140,7 +135,6 @@ type WizardEvent =
   | { type: "proceed_to_conflicts" }
   | { type: "back_to_security" }
   | { type: "action_selected"; candidateId: string; action: ImportAction }
-  | { type: "override_changed"; candidateId: string; name: string }
   | { type: "security_decision_selected"; candidateId: string; decision: ImportSecurityDecision }
   | { type: "commit_started"; total: number }
   | { type: "commit_progress"; progress: ImportProgress }
@@ -156,7 +150,6 @@ const initialState: WizardState = {
   actions: {},
   candidates: [],
   candidatesBySource: [],
-  overrides: {},
   phase: "source",
   results: [],
   securityDecisions: {},
@@ -201,7 +194,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidates: [],
         descriptor: undefined,
         error: undefined,
-        overrides: {},
         securityDecisions: {},
         dispositionBaseline: undefined,
         phase: "source",
@@ -222,7 +214,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidatesBySource: [],
         commitProgress: undefined,
         error: undefined,
-        overrides: {},
         securityDecisions: {},
         dispositionBaseline: undefined,
         phase: "source",
@@ -364,11 +355,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return { ...state, phase: "security" };
     case "action_selected":
       return { ...state, actions: { ...state.actions, [event.candidateId]: event.action } };
-    case "override_changed":
-      return {
-        ...state,
-        overrides: { ...state.overrides, [event.candidateId]: event.name },
-      };
     case "security_decision_selected": {
       const securityDecisions = {
         ...state.securityDecisions,
@@ -377,8 +363,8 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       if (!state.plan) return { ...state, securityDecisions };
       // 第 24 节（C）：安全决策使生效候选组成变化（如把成员改为“不导入”）
       // 时，已形成的冲突处置整体失效，不得沿用——与提交期
-      // batch_composition_changed 的整批拒绝同口径：建议按新组成重新播种，
-      // 独立命名清空，逐项处置重新确认。
+      // batch_composition_changed 的整批拒绝同口径：按新组成重新播种，
+      // 逐项处置重新确认。
       const baseline = state.dispositionBaseline
         ?? effectiveCandidateIds(state.plan, state.securityDecisions);
       const effective = effectiveCandidateIds(state.plan, securityDecisions);
@@ -400,7 +386,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         actions: reseededActions,
-        overrides: {},
         securityDecisions,
         dispositionBaseline: effective,
       };
@@ -432,7 +417,6 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
       return {
         ...state,
         actions: state.previousPhase === "conflicts" ? {} : state.actions,
-        overrides: state.previousPhase === "conflicts" ? {} : state.overrides,
         securityDecisions: state.previousPhase === "conflicts" ? {} : state.securityDecisions,
         // 处置清空时组成基线一并作废；重新分析会建立新基线。
         dispositionBaseline: state.previousPhase === "conflicts" ? undefined : state.dispositionBaseline,
@@ -897,8 +881,7 @@ type: "failed",
     const operation = ++operationRef.current;
     const total = state.plan.candidates.length;
     dispatch({ type: "commit_started", total });
-    // W2-2：独立命名只对动作为 independent 的候选随 prepare/commit 透传；
-    // 批内签名随处置一起携带（native 门面以提交期重跑的分析为准，mock
+    // W2-2：批内签名随处置一起携带（native 门面以提交期重跑的分析为准，mock
     // 门面据此演示组成变化的整批拒绝）。无批内分析时不携带处置。
     // W3-1：危险级候选的安全决策随处置透传（skip=不导入按跳过落账；
     // proceed=仍要导入进入预警状态）；只携带本计划候选的决策。
@@ -914,12 +897,6 @@ type: "failed",
         ? {
             ...(state.plan.batchAnalysis
               ? {
-                  runtimeNameOverrides: Object.fromEntries(
-                    Object.entries(state.overrides).filter(
-                      ([candidateId, name]) =>
-                        state.actions[candidateId] === "independent" && name.trim().length > 0,
-                    ),
-                  ),
                   batchSignature: state.plan.batchAnalysis.signature,
                 }
               : {}),
@@ -1042,15 +1019,12 @@ type: "failed",
       ),
     [state.plan?.candidates],
   );
-  // W2-2：同名不同内容组的成员未逐项处置（跳过或有效独立命名）前，
+  // W2-2：同名不同内容组的成员未逐项处置（独立导入或跳过）前，
   // 提交在 UI 层先行拦截；与后端 import.same_name_disposition_required 同口径。
   const pendingBatchDispositionCount = state.plan?.batchAnalysis
     ? pendingBatchDispositionIds(
         state.plan.batchAnalysis,
-        state.plan.conflicts,
-        state.plan.candidates,
         state.actions,
-        state.overrides,
       ).length
     : 0;
   // W3-1 + 第 24 节：危险级候选未做安全决策（仍然导入/不导入）前，禁止
@@ -1545,8 +1519,6 @@ type: "failed",
             candidates={state.plan.candidates}
             conflicts={state.plan.conflicts}
             onAction={(candidateId, action) => dispatch({ type: "action_selected", candidateId, action })}
-            onOverrideName={(candidateId, name) => dispatch({ type: "override_changed", candidateId, name })}
-            overrides={state.overrides}
           />
           {pendingBatchDispositionCount > 0 ? (
             <p aria-live="polite" role="alert" className="sh-import-source__notice">

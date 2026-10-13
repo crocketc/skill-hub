@@ -670,11 +670,6 @@ export const nativeImportFacade: ImportFacade = {
       });
       const selectedAction = actions[candidate.id];
       let action = selectedAction ?? "copy";
-      // W2-2：独立命名只对非跳过项透传（skip 与改名互斥）；空白名视同未填。
-      const rawOverride = dispositions?.runtimeNameOverrides?.[candidate.id];
-      const rename = selectedAction !== "skip" && rawOverride !== undefined && rawOverride.trim()
-        ? rawOverride.trim()
-        : null;
       // W3-1：危险级候选的显式安全决策随 commit_import 透传（skip=不导入，
       // 后端按跳过落账；proceed=仍要导入）。未决策的候选不携带该字段——
       // 危险级缺决策由后端以 import.security_decision_required 拒绝该候选。
@@ -685,7 +680,6 @@ export const nativeImportFacade: ImportFacade = {
           payload: {
             candidate: nativeCandidateFor(candidate),
             tree_hash: null,
-            ...(rename ? { runtime_name_override: rename } : {}),
           },
         }));
         const decision = selectedAction
@@ -700,7 +694,6 @@ export const nativeImportFacade: ImportFacade = {
             prepared_import_id: prepared.id,
             batch_id: batchId,
             ...(batchSignature ? { batch_signature: batchSignature } : {}),
-            ...(rename && action !== "skip" ? { runtime_name_override: rename } : {}),
             ...(securityDecision ? { security_decision: securityDecision } : {}),
           },
         }));

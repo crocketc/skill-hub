@@ -120,7 +120,7 @@ describe("ImportFacade contract", () => {
       }));
     }
 
-    // 逐项处置（独立命名 + 跳过）后成功；出参如实记录处置与签名。
+    // 逐项处置（独立导入保留原名 + 跳过）后成功；出参如实记录处置与签名。
     const signature = plan.batchAnalysis!.signature;
     const settled = await facade.commitImport(
       plan,
@@ -133,7 +133,6 @@ describe("ImportFacade contract", () => {
       undefined,
       undefined,
       {
-        runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" },
         batchSignature: signature,
       },
     );
@@ -143,9 +142,7 @@ describe("ImportFacade contract", () => {
       "succeeded",
       "skipped",
     ]);
-    expect(facade.calls.committedDispositions).toEqual([
-      { batchSignature: signature, runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" } },
-    ]);
+    expect(facade.calls.committedDispositions).toEqual([{ batchSignature: signature }]);
   });
 
   it("rejects a stale batch signature with the composition-changed guidance", async () => {
@@ -165,7 +162,6 @@ describe("ImportFacade contract", () => {
       undefined,
       undefined,
       {
-        runtimeNameOverrides: { [candidates[2].id]: "Alpha Prime" },
         batchSignature: "mock-stale-signature",
       },
     );

@@ -151,7 +151,6 @@ async fn prepare(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate: candidate_for(workspace, dir, display_name),
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -184,7 +183,6 @@ async fn pass_judgment_never_reads_ai_results() {
             governance_decision: skillhub_core::ImportGovernanceDecision::default(),
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -247,7 +245,6 @@ async fn danger_grading_stays_deterministic_even_when_ai_is_present() {
             governance_decision: skillhub_core::ImportGovernanceDecision::default(),
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -275,7 +272,6 @@ async fn alert_state_and_dispatch_gate_ignore_ai_entirely() {
             governance_decision: skillhub_core::ImportGovernanceDecision::default(),
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: Some(skillhub_core::application::ImportSecurityDecision::Proceed),
         }))

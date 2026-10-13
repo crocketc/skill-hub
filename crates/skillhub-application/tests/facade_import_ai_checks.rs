@@ -111,7 +111,6 @@ async fn prepared_import(
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -194,7 +193,6 @@ async fn import_ai_checks_report_per_object_and_leave_import_gates_intact() {
             governance_decision: governance_confirm(&group_id),
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

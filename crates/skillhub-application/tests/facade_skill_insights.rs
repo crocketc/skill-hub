@@ -116,7 +116,6 @@ async fn prepare_and_commit_copy(
             skillhub_core::api::PrepareImport {
                 candidate,
                 tree_hash: None,
-                runtime_name_override: None,
             },
         ))
         .await
@@ -140,7 +139,6 @@ async fn prepare_and_commit_copy(
             governance_decision,
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

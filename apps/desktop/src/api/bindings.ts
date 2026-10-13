@@ -519,11 +519,6 @@ export type CommitImport = {
 	 */
 	candidate_key?: string | null,
 	/**
-	 *  W2-2：独立命名的覆盖名。必须与 prepare 时一致；批内同名不同内容
-	 *  候选只有 Skip 或“独立导入＋覆盖名”两种合法处置，未处置即拒绝。
-	 */
-	runtime_name_override?: string | null,
-	/**
 	 *  W2-2：决策所依据的批内分析签名（analyze_import_batch 返回）。
 	 *  批内已有分析而提交签名缺失或不符 → 拒绝并要求重新分析。
 	 */
@@ -1979,7 +1974,7 @@ export type ImportBatchSameContentGroup = {
 };
 
 /**
- *  同名不同内容组：每一项都需要用户显式处置（独立命名或跳过），
+ *  同名不同内容组：每一项都需要用户显式处置（独立导入或跳过），
  *  不给静默默认。
  */
 export type ImportBatchSameNameGroup = {
@@ -3034,12 +3029,6 @@ export type PrepareDeployment = {
 export type PrepareImport = {
 	candidate: ImportCandidate,
 	tree_hash: string | null,
-	/**
-	 *  W2-2（FB-007）：同名不同内容处置＝独立命名时使用的覆盖名。仅在
-	 *  用户显式处置后传入；prepare 以覆盖名参与库内冲突校验，提交时以
-	 *  覆盖名落库。缺省 None 表示沿用发现的 runtime 名。
-	 */
-	runtime_name_override?: string | null,
 };
 
 export type PrepareInitialRestore = {
@@ -3152,17 +3141,8 @@ export type PreparedDeployment = {
 
 export type PreparedImport = {
 	id: OperationId,
-	/**
-	 *  发现时的原始候选（runtime 名保持发现事实）；落库名以
-	 *  `runtime_name_override` 解析：有覆盖名用覆盖名，否则用候选名。
-	 */
 	candidate: ImportCandidate,
 	analysis: ImportAnalysis,
-	/**
-	 *  W2-2（FB-007）：同名不同内容处置＝独立命名的覆盖名；prepare 时
-	 *  已校验非空并以此名重跑库内冲突校验。提交必须携带同一覆盖名。
-	 */
-	runtime_name_override?: string | null,
 	/**
 	 *  W3-1（FB-003）：prepare 阶段确定性扫描的分级摘要与基础检查状态。
 	 *  扫描失败时 check_state=unavailable，不假显示已检查。提交期的门禁
@@ -4150,9 +4130,9 @@ export type SaveAsCopyInheritance =
 } };
 
 /**
- *  K5：替换继承的批次结果。部分失败时成功项保留，`recovery_operation_id`
- *  指向携带逐项恢复依据的 journal 行；仍在使用新主体的已成功目标
- *  绝不因其他项失败而被回滚。
+ *  K5：替换继承的批次结果。部分失败时成功项保留；目标结果已稳定时
+ *  作为已完成的部分结果结算。仍在使用新主体的已成功目标绝不因其他项
+ *  失败而被回滚。
  */
 export type SaveAsCopyInheritanceOutcome =
 /**  未请求替换继承。 */
@@ -4187,7 +4167,10 @@ export type SaveAsCopyOutcome = {
 	/**  「来源 skill+version → 新 skill 首版本」血缘是否已登记。 */
 	lineage_registered: boolean,
 	inheritance: SaveAsCopyInheritanceOutcome,
-	/**  替换部分失败时的恢复依据（journal 操作 id）。 */
+	/**
+	 *  文件补偿未能验证、操作仍需处理时的 journal 操作标识；稳定的逐项
+	 *  部分结果不会设置该字段。
+	 */
 	recovery_operation_id: OperationId | null,
 };
 

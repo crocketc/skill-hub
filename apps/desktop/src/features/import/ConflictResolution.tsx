@@ -22,9 +22,6 @@ export interface ConflictResolutionProps {
   batchAnalysis?: ImportBatchAnalysis;
   /** 批内候选（把候选 id 显示为名称与路径）；缺省时仅显示候选 id。 */
   candidates?: ImportCandidate[];
-  /** candidateId → 独立导入已填写的新名（受控值由向导持有）。 */
-  overrides?: Record<string, string>;
-  onOverrideName?: (candidateId: string, name: string) => void;
 }
 
 /** W2-2：批内同内容组——明显重复，建议保留一项（复制）、其余跳过；建议可改。 */
@@ -109,8 +106,6 @@ export function ConflictResolution({
   onAction,
   batchAnalysis,
   candidates,
-  overrides = {},
-  onOverrideName,
 }: ConflictResolutionProps) {
   const { t } = useTranslation();
 
@@ -124,11 +119,6 @@ export function ConflictResolution({
           ],
         ),
       ),
-    [candidates],
-  );
-  // 即时重名校验需要全部批内候选的发现名（含同组兄弟与同批其他组）。
-  const batchCandidateNames = useMemo(
-    () => Object.fromEntries((candidates ?? []).map((candidate) => [candidate.id, candidate.name])),
     [candidates],
   );
   const batchSections = useMemo(() => {
@@ -171,14 +161,10 @@ export function ConflictResolution({
             ) : (
               <BatchSameNameSection
                 actions={actions}
-                candidateNames={batchCandidateNames}
-                conflicts={conflicts}
                 group={section.group}
                 key={section.key}
                 labels={batchLabels}
                 onAction={onAction}
-                onOverrideName={onOverrideName}
-                overrides={overrides}
               />
             ),
           )}

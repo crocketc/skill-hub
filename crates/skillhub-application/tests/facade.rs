@@ -2686,7 +2686,6 @@ async fn prepare_import_command_persists_a_retryable_preparation() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -2728,7 +2727,6 @@ async fn commit_import_copies_skill_into_the_central_library() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -2751,7 +2749,6 @@ async fn commit_import_copies_skill_into_the_central_library() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -2808,7 +2805,6 @@ async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -2830,7 +2826,6 @@ async fn get_skill_detail_projection_carries_source_check_and_pending_facts() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -2887,7 +2882,6 @@ async fn commit_import_blocks_a_source_with_basic_security_findings_before_copyi
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepare import remains read-only");
@@ -2910,7 +2904,6 @@ async fn commit_import_blocks_a_source_with_basic_security_findings_before_copyi
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -2972,7 +2965,6 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -2995,7 +2987,6 @@ async fn commit_import_reads_frontmatter_description_into_the_catalog() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -3039,7 +3030,6 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3061,7 +3051,6 @@ async fn get_skill_exposes_capture_sequence_as_current_version_label() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -3109,7 +3098,6 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3131,7 +3119,6 @@ async fn named_version_label_takes_priority_over_capture_sequence() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -3189,7 +3176,6 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3211,7 +3197,6 @@ async fn read_markdown_file_reports_ownership_from_the_domain_matrix() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))
@@ -3403,7 +3388,6 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: None,
         }))
         .await
         .expect("prepared import");
@@ -3426,7 +3410,6 @@ async fn failed_import_commit_removes_partial_catalog_and_version_state() {
             },
             batch_id: None,
             candidate_key: None,
-            runtime_name_override: None,
             batch_signature: None,
             security_decision: None,
         }))

@@ -221,8 +221,8 @@ describe("nativeErrors", () => {
     expect(message).toBe("deployment.results.failure.nameMismatch");
   });
 
-  // W2-2（FB-007）：批内守卫三错误码 → 专属引导文案键（改名重试 /
-  // 补处置 / 重新分析），绝不裸码上屏。
+  // W2-2（FB-007）：批内守卫错误码 → 专属引导文案键（补处置 / 重新分析），
+  // 绝不裸码上屏。
   it("maps the batch import guard codes to dedicated guidance keys", () => {
     expect(keyedMessage("import.runtime_name_conflict", undefined)).toBe(
       "importWorkflow.errors.runtimeNameConflict",

@@ -1,15 +1,14 @@
-//! W2-2（FB-007 第一期）：批内冲突分析与独立命名的验收回归。
+//! W2-2（FB-007 第一期）：批内冲突分析与独立导入的验收回归。
 //!
 //! 覆盖：
 //! ① 同内容同来源 → 合并建议（保留候选键字典序最小者、其余建议跳过）；
-//! ② 同名不同内容未显式处置（既不跳过也未独立命名）→ 提交拒绝；
-//! ③ 独立导入＋互不冲突的覆盖名 → 两候选都成功入库且覆盖名生效；
-//! ④ 覆盖名与库内 runtime 名冲突（含大小写/空白形态）→ 提交拒绝；
+//! ② 同名不同内容未显式处置（既不跳过也未独立导入）→ 提交拒绝；
+//! ③ 同名不同内容选择独立导入 → 两候选保留原名，以不同 SkillId 入库；
 //! ⑤ 提交期批内组成与决策时不一致（新增候选 / 签名不符）→ 拒绝并要求
 //!    重新分析；
 //! ⑥ 纯函数边界（空批/单候选/同内容异源/签名）由 core
 //!    `import::conflict::batch_tests` 覆盖；这里补批分析入口的空批边界。
-//! ⑦ 覆盖名必须与 prepare 一致；Skip 携带覆盖名无效。
+//! ⑦ 来源文件保持不变；库内同名 Skill 以独立身份保存。
 //!
 //! 全部通过公开 Facade（AnalyzeImportBatch/PrepareImport/CommitImport）
 //! 驱动，无手工 SQL；内容指纹由真实文件树计算。
@@ -82,16 +81,14 @@ async fn analyze_batch(
     analysis
 }
 
-async fn prepare_with_override(
+async fn prepare(
     facade: &LocalApplicationFacade,
     candidate: ImportCandidate,
-    runtime_name_override: Option<&str>,
 ) -> Box<skillhub_core::PreparedImport> {
     let prepared = facade
         .execute(AppCommand::PrepareImport(PrepareImport {
             candidate,
             tree_hash: None,
-            runtime_name_override: runtime_name_override.map(str::to_owned),
         }))
         .await
         .expect("prepared import");
@@ -102,14 +99,12 @@ async fn prepare_with_override(
 }
 
 /// 全参数提交：返回 Err 时透传错误供调用方断言错误码。
-#[allow(clippy::too_many_arguments)]
 async fn commit_full(
     facade: &LocalApplicationFacade,
     prepared: &skillhub_core::PreparedImport,
     decision: ImportDecision,
     batch_id: Option<&str>,
     candidate_key: Option<&str>,
-    runtime_name_override: Option<&str>,
     batch_signature: Option<&str>,
 ) -> Result<Box<skillhub_core::ImportSummary>, skillhub_core::AppError> {
     let committed = facade
@@ -127,7 +122,6 @@ async fn commit_full(
             },
             batch_id: batch_id.map(str::to_owned),
             candidate_key: candidate_key.map(str::to_owned),
-            runtime_name_override: runtime_name_override.map(str::to_owned),
             batch_signature: batch_signature.map(str::to_owned),
             security_decision: None,
         }))
@@ -157,6 +151,48 @@ async fn listed_runtime_names(facade: &LocalApplicationFacade) -> Vec<String> {
         .into_iter()
         .map(|item| item.runtime_name)
         .collect()
+}
+
+async fn current_markdown_and_versions(
+    facade: &LocalApplicationFacade,
+    skill_id: skillhub_core::SkillId,
+) -> (String, Vec<skillhub_core::api::VersionResult>) {
+    let detail = facade
+        .query(AppQuery::GetSkill(skillhub_core::api::GetSkill {
+            skill_id,
+        }))
+        .await
+        .expect("get imported skill");
+    let AppQueryResult::Skill(detail) = detail else {
+        panic!("expected skill detail");
+    };
+    let current_version = detail.current_version.expect("imported current version");
+
+    let markdown = facade
+        .query(AppQuery::ReadMarkdownFile(
+            skillhub_core::api::ReadMarkdownFile {
+                skill_id,
+                path: "SKILL.md".into(),
+                version_id: Some(current_version.clone()),
+            },
+        ))
+        .await
+        .expect("read imported version content");
+    let AppQueryResult::MarkdownFile(markdown) = markdown else {
+        panic!("expected markdown file content");
+    };
+
+    let versions = facade
+        .query(AppQuery::ListVersions(skillhub_core::api::ListVersions {
+            skill_id,
+        }))
+        .await
+        .expect("list imported skill versions");
+    let AppQueryResult::Versions(versions) = versions else {
+        panic!("expected versions");
+    };
+
+    (markdown.markdown, versions)
 }
 
 /// ① 同内容同来源：建议保留候选键字典序最小者，其余建议跳过；
@@ -192,7 +228,7 @@ async fn same_content_same_source_suggests_merge_with_deterministic_keep() {
     assert!(!analysis.signature.is_empty());
 }
 
-/// ② 同名不同内容：未显式处置（CopyIntoLibrary 且无覆盖名）→ 提交拒绝，
+/// ② 同名不同内容：未显式处置（CopyIntoLibrary）→ 提交拒绝，
 /// 错误码 import.same_name_disposition_required。
 #[tokio::test]
 async fn same_name_different_content_requires_explicit_disposition() {
@@ -214,19 +250,13 @@ async fn same_name_different_content_requires_explicit_disposition() {
     assert_eq!(group.candidate_keys.len(), 2);
     assert!(group.candidate_keys.contains(&key_one));
 
-    let prepared = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "one", "Alpha"),
-        None,
-    )
-    .await;
+    let prepared = prepare(&facade, candidate_for(workspace.path(), "one", "Alpha")).await;
     let error = commit_full(
         &facade,
         &prepared,
         ImportDecision::CopyIntoLibrary,
         Some("batch-samename"),
         Some(&key_one),
-        None,
         Some(&analysis.signature),
     )
     .await
@@ -234,14 +264,15 @@ async fn same_name_different_content_requires_explicit_disposition() {
     assert_eq!(error.code, ErrorCode::ImportSameNameDispositionRequired);
 }
 
-/// ③ 同名不同内容：各自独立命名（携带互不冲突的覆盖名，导入决策仍走
-/// CopyIntoLibrary）→ 两个候选都成功入库，且库内 runtime 名就是覆盖名。
+/// 独立导入只需明确选择处置方式；同名候选保留原名并以不同 SkillId 入库。
 #[tokio::test]
-async fn independent_dispositions_with_distinct_overrides_import_both() {
+async fn independent_import_preserves_duplicate_runtime_names_and_skill_identity() {
     let workspace = tempfile::tempdir().expect("workspace");
     let facade = facade_with(workspace.path());
-    write_skill(&workspace.path().join("one"), "# Alpha v1\n");
-    write_skill(&workspace.path().join("two"), "# Alpha v2\n");
+    let source_one = "# Alpha v1\n";
+    let source_two = "# Alpha v2\n";
+    write_skill(&workspace.path().join("one"), source_one);
+    write_skill(&workspace.path().join("two"), source_two);
 
     let candidates = vec![
         candidate_for(workspace.path(), "one", "Alpha"),
@@ -249,102 +280,70 @@ async fn independent_dispositions_with_distinct_overrides_import_both() {
     ];
     let key_one = expected_candidate_key(&candidates[0]);
     let key_two = expected_candidate_key(&candidates[1]);
-    let analysis = analyze_batch(&facade, Some("batch-independent"), candidates).await;
+    let analysis =
+        analyze_batch(&facade, Some("batch-independent-original-name"), candidates).await;
     assert_eq!(analysis.same_name_groups.len(), 1);
 
-    // 两个准备都在任何提交之前完成：prepare 的库内分析是"准备时刻"的
-    // 事实，先到先得，不随后续提交滚动。
-    let prepared_one = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "one", "Alpha"),
-        Some("Alpha One"),
-    )
-    .await;
-    let prepared_two = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "two", "Alpha"),
-        Some("Alpha Two"),
-    )
-    .await;
+    let prepared_one = prepare(&facade, candidate_for(workspace.path(), "one", "Alpha")).await;
+    let prepared_two = prepare(&facade, candidate_for(workspace.path(), "two", "Alpha")).await;
     let summary_one = commit_full(
         &facade,
         &prepared_one,
-        ImportDecision::CopyIntoLibrary,
-        Some("batch-independent"),
+        ImportDecision::KeepIndependent,
+        Some("batch-independent-original-name"),
         Some(&key_one),
-        Some("Alpha One"),
         Some(&analysis.signature),
     )
     .await
-    .expect("first independent import");
-    assert!(summary_one.items[0].skill_id.is_some());
-
+    .expect("first independent import retains its name");
     let summary_two = commit_full(
         &facade,
         &prepared_two,
-        ImportDecision::CopyIntoLibrary,
-        Some("batch-independent"),
+        ImportDecision::KeepIndependent,
+        Some("batch-independent-original-name"),
         Some(&key_two),
-        Some("Alpha Two"),
         Some(&analysis.signature),
     )
     .await
-    .expect("second independent import");
-    assert!(summary_two.items[0].skill_id.is_some());
+    .expect("second independent import retains its name");
+
+    let skill_one = summary_one.items[0].skill_id.expect("first skill id");
+    let skill_two = summary_two.items[0].skill_id.expect("second skill id");
+    assert_ne!(skill_one, skill_two);
+
+    let (content_one, versions_one) = current_markdown_and_versions(&facade, skill_one).await;
+    let (content_two, versions_two) = current_markdown_and_versions(&facade, skill_two).await;
+    assert_eq!(content_one, source_one);
+    assert_eq!(content_two, source_two);
+    assert_eq!(versions_one.len(), 1);
+    assert_eq!(versions_two.len(), 1);
+    assert!(versions_one[0].current);
+    assert!(versions_two[0].current);
+    assert_ne!(versions_one[0].version_id, versions_two[0].version_id);
+
+    let repeated_commit = commit_full(
+        &facade,
+        &prepared_one,
+        ImportDecision::KeepIndependent,
+        Some("batch-independent-original-name"),
+        Some(&key_one),
+        Some(&analysis.signature),
+    )
+    .await
+    .expect_err("a completed prepare operation cannot be submitted twice");
+    assert_eq!(repeated_commit.code, ErrorCode::ObjectNotFound);
 
     let mut names = listed_runtime_names(&facade).await;
     names.sort();
-    assert_eq!(names, vec!["Alpha One".to_owned(), "Alpha Two".to_owned()]);
-}
-
-/// ④ 覆盖名与库内 runtime 名冲突（大小写/空白按规范化比较）→ 提交拒绝，
-/// 错误码 import.runtime_name_conflict；库内容不受影响。
-#[tokio::test]
-async fn override_conflicting_with_library_runtime_name_is_rejected() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let facade = facade_with(workspace.path());
-    write_skill(&workspace.path().join("notes"), "# Notes v1\n");
-    write_skill(&workspace.path().join("diary"), "# Diary v1\n");
-
-    let seeded = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "notes", "Notes"),
-        None,
-    )
-    .await;
-    commit_full(
-        &facade,
-        &seeded,
-        ImportDecision::CopyIntoLibrary,
-        None,
-        None,
-        None,
-        None,
-    )
-    .await
-    .expect("seed library skill");
-
-    let prepared = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "diary", "Diary"),
-        Some(" notes "),
-    )
-    .await;
-    let error = commit_full(
-        &facade,
-        &prepared,
-        ImportDecision::CopyIntoLibrary,
-        Some("batch-implicit-no-analysis"),
-        None,
-        Some(" notes "),
-        None,
-    )
-    .await
-    .expect_err("override colliding with library runtime name must be rejected");
-    assert_eq!(error.code, ErrorCode::ImportRuntimeNameConflict);
-
-    let names = listed_runtime_names(&facade).await;
-    assert_eq!(names, vec!["Notes".to_owned()]);
+    assert_eq!(names, vec!["Alpha".to_owned(), "Alpha".to_owned()]);
+    assert_eq!(
+        std::fs::read_to_string(workspace.path().join("one/SKILL.md")).unwrap(),
+        source_one
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.path().join("two/SKILL.md")).unwrap(),
+        source_two
+    );
 }
 
 /// ⑤ 提交期批内组成与决策时不一致：未分析的候选提交（新增）或回传签名
@@ -362,18 +361,8 @@ async fn commit_rejects_batch_composition_change() {
     let key_beta = expected_candidate_key(&candidate_for(workspace.path(), "two", "Beta"));
     let stale = analyze_batch(&facade, Some("batch-comp"), only_alpha).await;
 
-    let prepared_alpha = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "one", "Alpha"),
-        None,
-    )
-    .await;
-    let prepared_beta = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "two", "Beta"),
-        None,
-    )
-    .await;
+    let prepared_alpha = prepare(&facade, candidate_for(workspace.path(), "one", "Alpha")).await;
+    let prepared_beta = prepare(&facade, candidate_for(workspace.path(), "two", "Beta")).await;
 
     // 新增候选：Beta 不在已分析组成里 → 拒绝。
     let error = commit_full(
@@ -382,7 +371,6 @@ async fn commit_rejects_batch_composition_change() {
         ImportDecision::CopyIntoLibrary,
         Some("batch-comp"),
         Some(&key_beta),
-        None,
         Some(&stale.signature),
     )
     .await
@@ -396,7 +384,6 @@ async fn commit_rejects_batch_composition_change() {
         ImportDecision::CopyIntoLibrary,
         Some("batch-comp"),
         Some(&key_alpha),
-        None,
         Some("deadbeef"),
     )
     .await
@@ -413,13 +400,15 @@ async fn commit_rejects_batch_composition_change() {
         ],
     )
     .await;
+    // 两次被拒绝的提交已经结算其准备记录；采用新组成重试时重新准备候选。
+    let prepared_alpha = prepare(&facade, candidate_for(workspace.path(), "one", "Alpha")).await;
+    let prepared_beta = prepare(&facade, candidate_for(workspace.path(), "two", "Beta")).await;
     commit_full(
         &facade,
         &prepared_alpha,
         ImportDecision::CopyIntoLibrary,
         Some("batch-comp"),
         Some(&key_alpha),
-        None,
         Some(&fresh.signature),
     )
     .await
@@ -430,7 +419,6 @@ async fn commit_rejects_batch_composition_change() {
         ImportDecision::CopyIntoLibrary,
         Some("batch-comp"),
         Some(&key_beta),
-        None,
         Some(&fresh.signature),
     )
     .await
@@ -450,59 +438,4 @@ async fn empty_batch_analysis_yields_empty_groups() {
     assert!(analysis.same_content_groups.is_empty());
     assert!(analysis.same_name_groups.is_empty());
     assert!(!analysis.signature.is_empty());
-}
-
-/// ⑦ 覆盖名契约：提交覆盖名必须与 prepare 一致（改口拒绝）；Skip 携带
-/// 覆盖名拒绝；一致时按覆盖名落库。
-#[tokio::test]
-async fn override_must_match_prepare_and_skip_rejects_override() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let facade = facade_with(workspace.path());
-    write_skill(&workspace.path().join("one"), "# Alpha v1\n");
-
-    let prepared = prepare_with_override(
-        &facade,
-        candidate_for(workspace.path(), "one", "Alpha"),
-        Some("One"),
-    )
-    .await;
-
-    let error = commit_full(
-        &facade,
-        &prepared,
-        ImportDecision::CopyIntoLibrary,
-        None,
-        None,
-        Some("Two"),
-        None,
-    )
-    .await
-    .expect_err("changed override must be rejected");
-    assert_eq!(error.code, ErrorCode::InvalidInput);
-
-    let error = commit_full(
-        &facade,
-        &prepared,
-        ImportDecision::Skip,
-        None,
-        None,
-        Some("One"),
-        None,
-    )
-    .await
-    .expect_err("skip with override must be rejected");
-    assert_eq!(error.code, ErrorCode::InvalidInput);
-
-    commit_full(
-        &facade,
-        &prepared,
-        ImportDecision::CopyIntoLibrary,
-        None,
-        None,
-        Some("One"),
-        None,
-    )
-    .await
-    .expect("consistent override imports");
-    assert_eq!(listed_runtime_names(&facade).await, vec!["One".to_owned()]);
 }

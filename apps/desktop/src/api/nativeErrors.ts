@@ -126,7 +126,7 @@ export function keyedMessage(
   if (code === "import.exact_duplicate_conflict") return "importWorkflow.errors.exactDuplicateConflict";
   if (code === "import.takeover_verification_mismatch") return "importWorkflow.errors.takeoverVerificationMismatch";
   if (code === "import.unknown_failure") return "importWorkflow.errors.unknown";
-  // W2-2（FB-007）批内守卫三错误码：改名重试 / 补处置 / 重新分析，
+  // W2-2（FB-007）批内守卫错误码：补处置 / 重新分析，
   // 绝不让裸错误码直达用户界面。
   if (code === "import.runtime_name_conflict") return "importWorkflow.errors.runtimeNameConflict";
   if (code === "import.same_name_disposition_required") return "importWorkflow.errors.sameNameDispositionRequired";

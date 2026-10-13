@@ -143,14 +143,8 @@ pub trait ImportBackend: Send + Sync {
 #[serde(deny_unknown_fields)]
 pub struct PreparedImport {
     pub id: OperationId,
-    /// 发现时的原始候选（runtime 名保持发现事实）；落库名以
-    /// `runtime_name_override` 解析：有覆盖名用覆盖名，否则用候选名。
     pub candidate: ImportCandidate,
     pub analysis: ImportAnalysis,
-    /// W2-2（FB-007）：同名不同内容处置＝独立命名的覆盖名；prepare 时
-    /// 已校验非空并以此名重跑库内冲突校验。提交必须携带同一覆盖名。
-    #[serde(default)]
-    pub runtime_name_override: Option<String>,
     /// W3-1（FB-003）：prepare 阶段确定性扫描的分级摘要与基础检查状态。
     /// 扫描失败时 check_state=unavailable，不假显示已检查。提交期的门禁
     /// 决策依据同一份分级（完整发现由应用层留存，不随 wire 暴露内部
@@ -257,7 +251,6 @@ where
                 source_facts,
             ),
             candidate,
-            runtime_name_override: None,
             security: ImportSecuritySummary::default(),
         };
         self.prepared
