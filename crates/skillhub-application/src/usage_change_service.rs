@@ -1421,10 +1421,25 @@ pub(crate) fn managed_usage_change_completion_available(
     else {
         return Ok(false);
     };
-    let Some(result) = record
-        .result
+    let Some(result_value) = record.result.as_ref() else {
+        return Ok(false);
+    };
+    if serde_json::from_value::<PreparedUsageChange>(result_value.clone())
+        .ok()
         .as_ref()
-        .and_then(|value| serde_json::from_value::<UsageChangeResult>(value.clone()).ok())
+        == Some(&journal.prepared)
+    {
+        if journal.completed.len() == journal.plans.len() {
+            return managed_usage_change_prepared_receipt_available(record, &journal);
+        }
+        let Ok(library) = library_runtime.snapshot() else {
+            return Ok(false);
+        };
+        return managed_usage_change_interrupted_repair_available(
+            database, &library, record, &journal,
+        );
+    }
+    let Some(result) = serde_json::from_value::<UsageChangeResult>(result_value.clone()).ok()
     else {
         return Ok(false);
     };
@@ -1607,6 +1622,299 @@ pub(crate) fn managed_usage_change_completion_available(
     Ok(has_resumable_target)
 }
 
+/// The last per-target journal write can succeed immediately before process
+/// exit, leaving only the terminal operation receipt unwritten. Reconstructing
+/// that receipt performs no filesystem or relationship mutation.
+fn managed_usage_change_prepared_receipt_available(
+    record: &OperationRecord,
+    journal: &ManagedUsageChangeJournal,
+) -> AppResult<bool> {
+    if record.phase != OperationPhase::NeedsRecovery
+        || record
+            .result
+            .as_ref()
+            .and_then(|value| serde_json::from_value::<PreparedUsageChange>(value.clone()).ok())
+            .as_ref()
+            != Some(&journal.prepared)
+        || journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.plans.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.prepared.impacts.len()
+        || journal.completed.len() != journal.plans.len()
+    {
+        return Ok(false);
+    }
+    for (index, (plan, item)) in journal.plans.iter().zip(&journal.completed).enumerate() {
+        let relation_id = format!("managed:{}", plan.deployment_id);
+        let Some(impact) = journal
+            .prepared
+            .impacts
+            .iter()
+            .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+        else {
+            return Ok(false);
+        };
+        if item.relation_ids != impact.relation_ids
+            || item.skill_id != impact.skill_id
+            || item.target != impact.target
+            || item.action != impact.action
+            || !matches!(
+                item.status,
+                UsageChangeItemStatus::Applied | UsageChangeItemStatus::Failed
+            )
+            || item.status == UsageChangeItemStatus::Applied && item.reason.is_some()
+            || journal.prepared.entry_evidence[index].path != plan.destination
+            || plan.repair_removal_started
+            || plan.repair_restore_started
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// A process can stop after a repair link has been installed but before its
+/// identity and item result reach the operation journal. In that one state,
+/// allow recovery to infer ownership only from the exact registered target,
+/// the exact version source, a matching tree hash, and the verified backup.
+fn managed_usage_change_interrupted_repair_available(
+    database: &Database,
+    library: &super::library_runtime::LibraryContext,
+    record: &OperationRecord,
+    journal: &ManagedUsageChangeJournal,
+) -> AppResult<bool> {
+    if record.phase != OperationPhase::NeedsRecovery
+        || record
+            .result
+            .as_ref()
+            .and_then(|value| serde_json::from_value::<PreparedUsageChange>(value.clone()).ok())
+            .as_ref()
+            != Some(&journal.prepared)
+        || journal.request.action != UsageChangeAction::Repair
+        || journal.prepared.action != UsageChangeAction::Repair
+        || journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.plans.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.prepared.impacts.len()
+        || journal.completed.len() >= journal.plans.len()
+        || journal.completed.iter().any(|item| {
+            item.status == UsageChangeItemStatus::RecoveryRequired
+                || item.status == UsageChangeItemStatus::Applied && item.reason.is_some()
+        })
+    {
+        return Ok(false);
+    }
+
+    for (index, item) in journal.completed.iter().enumerate() {
+        let plan = &journal.plans[index];
+        let relation_id = format!("managed:{}", plan.deployment_id);
+        let Some(impact) = journal
+            .prepared
+            .impacts
+            .iter()
+            .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+        else {
+            return Ok(false);
+        };
+        if item.relation_ids != impact.relation_ids
+            || item.skill_id != impact.skill_id
+            || item.target != impact.target
+            || item.action != impact.action
+            || !matches!(
+                item.status,
+                UsageChangeItemStatus::Applied | UsageChangeItemStatus::Failed
+            )
+            || plan.repair_removal_started
+            || plan.repair_restore_started
+        {
+            return Ok(false);
+        }
+    }
+
+    let index = journal.completed.len();
+    let plan = &journal.plans[index];
+    let evidence = &journal.prepared.entry_evidence[index];
+    let Some(original_deployment) = plan.original_deployment.as_ref() else {
+        return Ok(false);
+    };
+    let Some(original_relation) = plan.original_relation.as_ref() else {
+        return Ok(false);
+    };
+    let Some(expected_fingerprint) = plan.observed_before.as_deref() else {
+        return Ok(false);
+    };
+    let Some(expected_identity) = plan.observed_identity.as_deref() else {
+        return Ok(false);
+    };
+    let relation_id = format!("managed:{}", plan.deployment_id);
+    let Some(impact) = journal
+        .prepared
+        .impacts
+        .iter()
+        .find(|impact| impact.relation_ids == [relation_id.clone()])
+    else {
+        return Ok(false);
+    };
+    let deployments = database.deployment_repository().list_all()?;
+    let relations = database.relationship_repository().list_relations()?;
+    let target_paths = database.target_repository().paths_by_id()?;
+    let Some(current_deployment) = deployments
+        .iter()
+        .find(|deployment| deployment.id == plan.deployment_id)
+    else {
+        return Ok(false);
+    };
+    let Some(current_relation) = relations
+        .iter()
+        .find(|relation| relation.relation_id == relation_id && relation.active)
+    else {
+        return Ok(false);
+    };
+    let Some(target_root) = target_paths.get(&original_deployment.target_id) else {
+        return Ok(false);
+    };
+    let destination = Path::new(target_root).join(&original_deployment.runtime_name);
+    let (manifest, deployment_hash) =
+        match deployment_hash_for_version(&library.store, &plan.subject_version_id) {
+            Ok((manifest, hash)) if manifest.skill_id == original_deployment.skill_id => {
+                (manifest, hash)
+            }
+            _ => return Ok(false),
+        };
+    let backup_is_verified = managed_usage_change_backup_matches(
+        &library.central.paths().backups_dir,
+        record.operation_id,
+        journal.prepared.prepared_id,
+        plan,
+        expected_fingerprint,
+    );
+    let observed_created_identity = DeploymentFilesystem::new()
+        .recovery_entry_identity(original_deployment.mode, &destination)
+        .ok();
+    let target_identity_is_valid = match plan.created_entry_identity.as_deref() {
+        Some(expected_identity) => observed_created_identity.as_deref() == Some(expected_identity),
+        None => plan.repair_removal_started && observed_created_identity.is_some(),
+    };
+    let target_resolves_to_version = managed_usage_change_link_resolves_to_version(
+        library,
+        original_deployment,
+        &plan.subject_version_id,
+        &destination,
+        &deployment_hash,
+    );
+    let checkpoint_is_consistent = match plan.created_entry_identity.as_deref() {
+        Some(_) => !plan.repair_removal_started,
+        None => plan.repair_removal_started,
+    };
+    let mut reconciled_deployment = original_deployment.clone();
+    reconciled_deployment.version_id = plan.subject_version_id.clone();
+    reconciled_deployment.expected_hash = deployment_hash.clone();
+    reconciled_deployment.observed_hash = Some(deployment_hash.clone());
+    let mut reconciled_relation = original_relation.clone();
+    reconciled_relation.content_fingerprint = deployment_hash.clone();
+    reconciled_relation.match_state = skillhub_core::ObservedMatchState::ContentVerified;
+    reconciled_relation.health_reasons = Some(Vec::new());
+    reconciled_relation.active = true;
+    reconciled_relation.released_at = None;
+    let relation_is_reconciled =
+        relation_matches_except_observed_at(current_relation, &reconciled_relation);
+    let is_before_reconcile = current_deployment == original_deployment
+        && relation_is_original_or_failed(original_relation, current_relation);
+    let is_after_reconcile = current_deployment == &reconciled_deployment && relation_is_reconciled;
+
+    if impact.action != UsageChangeImpactAction::Repair
+        || plan.deployment_id != original_deployment.id
+        || plan.destination != destination.to_string_lossy()
+        || !original_deployment.mode.is_directory_link()
+        || !checkpoint_is_consistent
+        || plan.repair_restore_started
+        || !plan.backup_created
+        || evidence.path != plan.destination
+        || !evidence.exists
+        || evidence.content_fingerprint.as_deref() != Some(expected_fingerprint)
+        || evidence.physical_source_ids != [original_deployment.target_id.clone()]
+        || evidence.skill_id != original_deployment.skill_id
+        || entry_fingerprint(&destination).ok().flatten().as_deref()
+            != Some(deployment_hash.as_str())
+        || !target_identity_is_valid
+        || !target_resolves_to_version
+        || !backup_is_verified
+        || !(is_before_reconcile || plan.created_entry_identity.is_some() && is_after_reconcile)
+        || original_relation.relation_id != relation_id
+        || original_deployment.runtime_name.is_empty()
+        || super::validate_deployment_runtime_name(original_deployment).is_err()
+        || original_deployment.skill_id != manifest.skill_id
+        || skillhub_core::physical_id_for_path(target_root).as_deref()
+            != Some(original_deployment.target_id.as_str())
+        || Path::new(&plan.destination) != destination.as_path()
+        || plan.observed_identity.as_deref() != Some(expected_identity)
+    {
+        return Ok(false);
+    }
+
+    for unstarted in journal.plans.iter().skip(index + 1) {
+        if unstarted.backup_created
+            || unstarted.repair_removal_started
+            || unstarted.repair_restore_started
+            || unstarted.created_entry_identity.is_some()
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn managed_usage_change_link_resolves_to_version(
+    library: &super::library_runtime::LibraryContext,
+    deployment: &DeploymentRecord,
+    version_id: &VersionId,
+    destination: &Path,
+    expected_hash: &str,
+) -> bool {
+    if !deployment.mode.is_directory_link() {
+        return false;
+    }
+    let visible_source = library
+        .central
+        .load_portable_skill(deployment.skill_id)
+        .ok()
+        .flatten()
+        .and_then(|(record, current)| {
+            (current.as_ref() == Some(version_id))
+                .then(|| {
+                    library
+                        .central
+                        .visible_skill_path_for_runtime(deployment.skill_id, &record.runtime_name)
+                })
+                .filter(|path| path.is_dir())
+        });
+    let source = visible_source.unwrap_or_else(|| {
+        skillhub_core::LibraryPaths::from_root(library.root.clone())
+            .management_dir
+            .join("deployment-trees")
+            .join(deployment.skill_id.to_string())
+            .join(skillhub_core::deployment::deployment_tree_dir_name(
+                version_id,
+            ))
+    });
+    let Ok(metadata) = fs::symlink_metadata(&source) else {
+        return false;
+    };
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || DeploymentFilesystem::is_directory_link_entry(&source)
+        || entry_fingerprint(&source).ok().flatten().as_deref() != Some(expected_hash)
+    {
+        return false;
+    }
+    matches!(
+        (fs::canonicalize(destination), fs::canonicalize(&source)),
+        (Ok(destination), Ok(source)) if destination == source
+    )
+}
+
 /// A recovery copy is trusted only at this operation's derived path and when
 /// its ordinary file/directory tree still matches the captured source hash.
 fn managed_usage_change_backup_matches(
@@ -1653,14 +1961,50 @@ pub(crate) fn complete_managed_usage_change_recovery(
     let mut journal: ManagedUsageChangeJournal =
         serde_json::from_value(record.recovery_data.clone())
             .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
-    let mut result: UsageChangeResult = record
+    let interrupted_prepared = record
         .result
         .as_ref()
-        .cloned()
-        .and_then(|value| serde_json::from_value(value).ok())
-        .ok_or_else(|| operation_conflict("managed_usage_change_receipt_missing"))?;
+        .and_then(|value| serde_json::from_value::<PreparedUsageChange>(value.clone()).ok())
+        .as_ref()
+        == Some(&journal.prepared);
+    if interrupted_prepared && journal.completed.len() == journal.plans.len() {
+        let result = UsageChangeResult {
+            operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            recovery_required: false,
+            item_results: journal.completed.clone(),
+            derived_skill_id: None,
+            recovery_operation_id: None,
+        };
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+        set_phase(
+            &mut record,
+            OperationPhase::Committed,
+            journal.plans.len() as u32,
+            journal.plans.len() as u32,
+        );
+        record.progress.message_code = "recovery.managed_usage_change.completed".to_owned();
+        record.error_code = None;
+        return database.operation_repository().update_sync(&record);
+    }
+    let mut result = if interrupted_prepared {
+        normalize_interrupted_managed_repair_completion(
+            database,
+            library_runtime,
+            &mut record,
+            &mut journal,
+        )?
+    } else {
+        record
+            .result
+            .as_ref()
+            .cloned()
+            .and_then(|value| serde_json::from_value(value).ok())
+            .ok_or_else(|| operation_conflict("managed_usage_change_receipt_missing"))?
+    };
 
-    for (index, plan) in journal.plans.iter().enumerate() {
+    for index in 0..journal.plans.len() {
         if journal.completed[index].status != UsageChangeItemStatus::RecoveryRequired {
             continue;
         }
@@ -1672,6 +2016,7 @@ pub(crate) fn complete_managed_usage_change_recovery(
                 "managed_usage_change_recovery_state_changed",
             ));
         }
+        let plan = journal.plans[index].clone();
         let original = plan
             .original_deployment
             .as_ref()
@@ -1723,6 +2068,149 @@ pub(crate) fn complete_managed_usage_change_recovery(
     record.progress.message_code = "recovery.managed_usage_change.completed".to_owned();
     record.error_code = None;
     database.operation_repository().update_sync(&record)
+}
+
+fn normalize_interrupted_managed_repair_completion(
+    database: &Database,
+    library_runtime: &super::library_runtime::LibraryRuntime,
+    record: &mut OperationRecord,
+    journal: &mut ManagedUsageChangeJournal,
+) -> AppResult<UsageChangeResult> {
+    let library = library_runtime.snapshot()?;
+    if !managed_usage_change_interrupted_repair_available(
+        database,
+        library.as_ref(),
+        record,
+        journal,
+    )? {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let index = journal.completed.len();
+    let plan = journal.plans[index].clone();
+    let deployment = plan
+        .original_deployment
+        .as_ref()
+        .ok_or_else(|| operation_conflict("managed_usage_change_deployment_missing"))?;
+    let original_relation = plan
+        .original_relation
+        .as_ref()
+        .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
+    let library = library_runtime.snapshot()?;
+    let (manifest, expected_hash) =
+        deployment_hash_for_version(&library.store, &plan.subject_version_id)?;
+    let destination = Path::new(&plan.destination);
+    if manifest.skill_id != deployment.skill_id
+        || !managed_usage_change_link_resolves_to_version(
+            &library,
+            deployment,
+            &plan.subject_version_id,
+            destination,
+            &expected_hash,
+        )
+        || entry_fingerprint(destination)?.as_deref() != Some(expected_hash.as_str())
+    {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let current_deployment = database
+        .deployment_repository()
+        .list_all()?
+        .into_iter()
+        .find(|current| current.id == plan.deployment_id)
+        .ok_or_else(|| operation_conflict("managed_usage_change_deployment_missing"))?;
+    let relation_id = format!("managed:{}", plan.deployment_id);
+    let current_relation = database
+        .relationship_repository()
+        .list_relations()?
+        .into_iter()
+        .find(|relation| relation.relation_id == relation_id && relation.active)
+        .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
+    let before_reconcile = current_deployment == *deployment
+        && relation_is_original_or_failed(original_relation, &current_relation);
+    let mut reconciled_deployment = deployment.clone();
+    reconciled_deployment.version_id = plan.subject_version_id.clone();
+    reconciled_deployment.expected_hash = expected_hash.clone();
+    reconciled_deployment.observed_hash = Some(expected_hash.clone());
+    let mut reconciled_relation = original_relation.clone();
+    reconciled_relation.content_fingerprint = expected_hash;
+    reconciled_relation.match_state = skillhub_core::ObservedMatchState::ContentVerified;
+    reconciled_relation.health_reasons = Some(Vec::new());
+    reconciled_relation.active = true;
+    reconciled_relation.released_at = None;
+    let after_reconcile = current_deployment == reconciled_deployment
+        && relation_matches_except_observed_at(&current_relation, &reconciled_relation);
+    if !before_reconcile && !after_reconcile {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let created_entry_identity =
+        DeploymentFilesystem::new().recovery_entry_identity(deployment.mode, destination)?;
+
+    // The database transaction may already have committed before the process
+    // stopped. Only classify this as a recovery item when it has not.
+    if before_reconcile {
+        database
+            .deployment_repository()
+            .mark_managed_usage_change_failed(plan.deployment_id)?;
+    }
+
+    let impact = journal
+        .prepared
+        .impacts
+        .iter()
+        .find(|impact| impact.relation_ids == [relation_id.clone()])
+        .ok_or_else(|| operation_conflict("managed_usage_change_impact_missing"))?;
+    journal.plans[index].created_entry_identity = Some(created_entry_identity);
+    journal.plans[index].repair_removal_started = false;
+    journal.plans[index].repair_restore_started = false;
+    journal.completed.push(UsageChangeItemResult {
+        relation_ids: impact.relation_ids.clone(),
+        skill_id: impact.skill_id,
+        target: impact.target.clone(),
+        action: impact.action,
+        status: if after_reconcile {
+            UsageChangeItemStatus::Applied
+        } else {
+            UsageChangeItemStatus::RecoveryRequired
+        },
+        reason: (!after_reconcile)
+            .then(|| "repair_install_interrupted_before_database_reconcile".to_owned()),
+        recovery_point: Some(UsageRecoveryPoint {
+            path: plan.backup_path.clone(),
+            fingerprint: plan.observed_before.clone(),
+            representation: journal.prepared.entry_evidence[index].representation,
+        }),
+    });
+    while journal.completed.len() < journal.plans.len() {
+        let index = journal.completed.len();
+        journal.completed.push(managed_usage_change_failed_item(
+            journal,
+            index,
+            "not_attempted_after_recovery",
+        )?);
+    }
+    let recovery_required = journal
+        .completed
+        .iter()
+        .any(|item| item.status == UsageChangeItemStatus::RecoveryRequired);
+    let result = UsageChangeResult {
+        operation_id: record.operation_id,
+        prepared_id: journal.prepared.prepared_id,
+        recovery_required,
+        item_results: journal.completed.clone(),
+        derived_skill_id: None,
+        recovery_operation_id: None,
+    };
+    record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+    record.recovery_data = serde_json::to_value(&*journal).map_err(serialization_error)?;
+    record.progress.completed = index as u32;
+    record.progress.total = journal.plans.len() as u32;
+    database.operation_repository().update_sync(record)?;
+    Ok(result)
 }
 
 fn relation_matches_except_observed_at(
@@ -5312,7 +5800,39 @@ impl LocalApplicationFacade {
                     ));
                 }
             }
+            let needs_recovery = item.status == UsageChangeItemStatus::RecoveryRequired;
             journal.completed.push(item);
+            if needs_recovery {
+                while journal.completed.len() < journal.plans.len() {
+                    let index = journal.completed.len();
+                    journal.completed.push(managed_usage_change_failed_item(
+                        &journal,
+                        index,
+                        "not_attempted_after_recovery",
+                    )?);
+                }
+                let result = UsageChangeResult {
+                    operation_id: journal.prepared.operation_id,
+                    prepared_id: journal.prepared.prepared_id,
+                    recovery_required: true,
+                    item_results: journal.completed.clone(),
+                    derived_skill_id: None,
+                    recovery_operation_id: None,
+                };
+                record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+                record.recovery_data =
+                    serde_json::to_value(&journal).map_err(serialization_error)?;
+                set_phase(
+                    &mut record,
+                    OperationPhase::NeedsRecovery,
+                    (index + 1) as u32,
+                    journal.plans.len() as u32,
+                );
+                self.with_database("managed_usage_change.commit.progress", |database| {
+                    database.operation_repository().update_sync(&record)
+                })?;
+                break;
+            }
             record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
             set_phase(
                 &mut record,

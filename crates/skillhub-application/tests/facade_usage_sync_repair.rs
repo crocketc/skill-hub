@@ -1141,6 +1141,270 @@ async fn restore_uses_real_target_mode() {
 }
 
 #[tokio::test]
+async fn managed_batch_stops_after_first_recovery_required_item() {
+    let fixture = fixture().await;
+    let (first_id, first_destination) = seed_managed_copy(
+        &fixture,
+        "batch-first-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# First\n",
+    );
+    let (second_id, second_destination) = seed_managed_copy(
+        &fixture,
+        "batch-second-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# First\n",
+    );
+    let app = facade(&fixture);
+    let library = CentralLibrary::initialize(&fixture.library_root).expect("open library");
+    VersionStore::from_library(&library)
+        .set_current(fixture.skill.id(), &fixture.target_version.id)
+        .expect("adopt target version in library");
+    Database::open(&fixture.database_path)
+        .expect("open database")
+        .record_current_version(fixture.skill.id(), &fixture.target_version)
+        .expect("adopt target version in database");
+    library
+        .materialize_current_skill(&fixture.skill, &fixture.target_version.id)
+        .expect("materialize adopted target version");
+    library
+        .save_portable_skill(&fixture.skill, Some(&fixture.target_version.id))
+        .expect("save adopted target version");
+    let mut request = usage_change(
+        "sync",
+        &format!("managed:{first_id}"),
+        Some("library_current"),
+    );
+    request.relation_ids.push(format!("managed:{second_id}"));
+    let prepared = app
+        .prepare_usage_change(request)
+        .expect("prepare managed sync batch");
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read prepared batch")
+        .expect("prepared operation exists");
+    let first_plan_id = record.recovery_data["plans"][0]["deployment_id"]
+        .as_str()
+        .expect("first plan deployment id");
+    let first_plan_is_first = first_plan_id == first_id.to_string();
+    let failing_id = if first_plan_is_first {
+        first_id
+    } else {
+        second_id
+    };
+    let failing_destination = if first_plan_is_first {
+        &first_destination
+    } else {
+        &second_destination
+    };
+    let untouched_destination = if first_plan_is_first {
+        &second_destination
+    } else {
+        &first_destination
+    };
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_batch_first_reconcile BEFORE UPDATE ON deployments
+             WHEN OLD.id = '{}'
+             BEGIN SELECT RAISE(ABORT, 'injected first batch reconcile failure'); END;",
+            failing_id
+        ))
+        .expect("install first target database fault");
+    drop(database);
+
+    let result = app
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("return the per-target recovery result");
+    assert_eq!(result.item_results.len(), 2);
+    assert_eq!(
+        result.item_results[0].status,
+        UsageChangeItemStatus::RecoveryRequired
+    );
+    assert_eq!(result.item_results[1].status, UsageChangeItemStatus::Failed);
+    assert_eq!(
+        result.item_results[1].reason.as_deref(),
+        Some("not_attempted_after_recovery")
+    );
+    assert_eq!(
+        std::fs::read_to_string(failing_destination.join("SKILL.md"))
+            .expect("first target content"),
+        "# Target\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(untouched_destination.join("SKILL.md"))
+            .expect("untouched target content"),
+        "# First\n",
+        "the batch must stop after plan {failing_id}; untouched path is {}",
+        untouched_destination.display()
+    );
+    drop(app);
+    let database = Database::open(&fixture.database_path).expect("open database after batch");
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_batch_first_reconcile;")
+        .expect("remove first target database fault");
+    drop(database);
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list batch recovery candidate")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("paused batch remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("settle the interrupted first target without starting the tail");
+    assert_eq!(
+        std::fs::read_to_string(untouched_destination.join("SKILL.md"))
+            .expect("untouched target after recovery"),
+        "# First\n"
+    );
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen settled database")
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read settled batch")
+        .expect("batch operation exists");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    let settled_result: UsageChangeResult =
+        serde_json::from_value(settled.result.expect("settled result"))
+            .expect("decode settled batch result");
+    assert_eq!(
+        settled_result.item_results[1].status,
+        UsageChangeItemStatus::Failed
+    );
+}
+
+#[tokio::test]
+async fn managed_repair_crash_after_identity_checkpoint_before_reconcile_is_recoverable() {
+    let fixture = fixture().await;
+    let (deployment_id, destination, _visible_tree) = seed_managed_link(&fixture);
+    #[cfg(unix)]
+    std::fs::remove_file(&destination).expect("remove old symlink");
+    #[cfg(windows)]
+    std::fs::remove_dir(&destination).expect("remove old junction");
+    std::fs::create_dir_all(&destination).expect("replace link with a directory");
+    std::fs::write(destination.join("user.txt"), "keep me").expect("replacement content");
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "repair",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed repair");
+
+    let database = Database::open(&fixture.database_path).expect("open database");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_repair_reconcile BEFORE UPDATE ON deployments
+             WHEN OLD.id = '{}'
+             BEGIN SELECT RAISE(ABORT, 'injected repair reconcile failure'); END;",
+            deployment_id
+        ))
+        .expect("install deployment update fault");
+    drop(database);
+    let interrupted = app
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("return a recoverable repair failure");
+    assert_eq!(
+        interrupted.item_results[0].status,
+        UsageChangeItemStatus::RecoveryRequired
+    );
+    drop(app);
+
+    let database = Database::open(&fixture.database_path).expect("open database after fault");
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_repair_reconcile;")
+        .expect("remove deployment update fault");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read interrupted operation")
+        .expect("operation exists");
+    let created_identity = record.recovery_data["plans"][0]["created_entry_identity"]
+        .as_str()
+        .expect("new link identity was persisted before reconciliation")
+        .to_owned();
+    assert_eq!(
+        DeploymentFilesystem::new()
+            .recovery_entry_identity(deploy_row(&fixture, deployment_id).mode, &destination)
+            .expect("read installed link identity"),
+        created_identity
+    );
+    let original_relation: skillhub_core::relationship::DeploymentRelationFact =
+        serde_json::from_value(record.recovery_data["plans"][0]["original_relation"].clone())
+            .expect("original relationship fact");
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&original_relation)
+        .expect("restore relationship facts from before reconciliation");
+    record.recovery_data["completed"] = serde_json::json!([]);
+    record.result = Some(record.recovery_data["prepared"].clone());
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("simulate process exit after identity but before database receipt");
+    drop(database);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted repair candidate")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("interrupted repair remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("finish reconciliation for the verified link");
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.first_version.id
+    );
+}
+
+#[tokio::test]
 async fn managed_restore_after_filesystem_write_can_resume_database_commit_after_restart() {
     let fixture = fixture().await;
     let (deployment_id, destination) = seed_managed_copy(
@@ -1667,9 +1931,112 @@ async fn managed_repair_rollback_rejects_recovery_item_without_removal_checkpoin
 }
 
 #[tokio::test]
-async fn managed_repair_after_filesystem_write_can_resume_when_backup_is_intact() {
+async fn managed_repair_crash_after_reconcile_before_item_receipt_keeps_success_facts() {
     let fixture = fixture().await;
     let (deployment_id, destination, _visible_tree) = seed_managed_link(&fixture);
+    let library = CentralLibrary::initialize(&fixture.library_root).expect("open library");
+    VersionStore::from_library(&library)
+        .set_current(fixture.skill.id(), &fixture.target_version.id)
+        .expect("adopt target version in library");
+    Database::open(&fixture.database_path)
+        .expect("open database")
+        .record_current_version(fixture.skill.id(), &fixture.target_version)
+        .expect("adopt target version in database");
+    library
+        .materialize_current_skill(&fixture.skill, &fixture.target_version.id)
+        .expect("materialize adopted target version");
+    library
+        .save_portable_skill(&fixture.skill, Some(&fixture.target_version.id))
+        .expect("save adopted target version");
+    #[cfg(unix)]
+    std::fs::remove_file(&destination).expect("remove old symlink");
+    #[cfg(windows)]
+    std::fs::remove_dir(&destination).expect("remove old junction");
+    std::fs::create_dir_all(&destination).expect("replace link with a directory");
+    std::fs::write(destination.join("user.txt"), "keep me").expect("replacement content");
+
+    let app = facade(&fixture);
+    let result = prepare_and_commit(
+        &app,
+        usage_change(
+            "repair",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ),
+    );
+    assert_eq!(
+        result.item_results[0].status,
+        UsageChangeItemStatus::Applied
+    );
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(result.operation_id)
+        .expect("read completed operation")
+        .expect("operation exists");
+    assert!(record.recovery_data["plans"][0]["created_entry_identity"]
+        .as_str()
+        .is_some());
+    record.recovery_data["completed"] = serde_json::json!([]);
+    record.result = Some(record.recovery_data["prepared"].clone());
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("simulate process exit after database reconciliation");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == result.operation_id)
+            .expect("interrupted repair remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: result.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("settle the already reconciled repair without marking it failed");
+
+    let settled_database = Database::open(&fixture.database_path).expect("reopen database");
+    let settled = settled_database
+        .operation_repository()
+        .get_sync(result.operation_id)
+        .expect("read settled operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.target_version.id
+    );
+    let relation = settled_database
+        .relationship_repository()
+        .list_relations()
+        .expect("read reconciled relationship")
+        .into_iter()
+        .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
+        .expect("managed relationship exists");
+    assert_eq!(relation.health_reasons, Some(Vec::new()));
+}
+
+#[tokio::test]
+async fn managed_repair_crash_after_link_install_before_identity_checkpoint_is_recoverable() {
+    let fixture = fixture().await;
+    let (deployment_id, destination, visible_tree) = seed_managed_link(&fixture);
     #[cfg(unix)]
     std::fs::remove_file(&destination).expect("remove old symlink");
     #[cfg(windows)]
@@ -1724,6 +2091,28 @@ async fn managed_repair_after_filesystem_write_can_resume_when_backup_is_intact(
         .connection_for_test()
         .execute_batch("DROP TRIGGER fail_repair_reconcile;")
         .expect("remove deployment update fault");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation before simulating process interruption")
+        .expect("operation exists");
+    let original_relation: skillhub_core::relationship::DeploymentRelationFact =
+        serde_json::from_value(record.recovery_data["plans"][0]["original_relation"].clone())
+            .expect("original relationship fact");
+    database
+        .relationship_repository()
+        .upsert_deployment_relation(&original_relation)
+        .expect("restore relationship state from before the process interruption");
+    record.recovery_data["plans"][0]["created_entry_identity"] = serde_json::Value::Null;
+    record.recovery_data["plans"][0]["repair_removal_started"] = serde_json::json!(true);
+    record.recovery_data["completed"] = serde_json::json!([]);
+    record.result = Some(record.recovery_data["prepared"].clone());
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist the durable state left before the process interruption");
     drop(database);
     let restarted = facade(&fixture);
     let AppQueryResult::RecoveryCandidates(candidates) = restarted
@@ -1741,6 +2130,51 @@ async fn managed_repair_after_filesystem_write_can_resume_when_backup_is_intact(
             .actions,
         vec![skillhub_core::RecoveryAction::CompleteOperation]
     );
+
+    let unrelated_source = fixture._root.path().join("same-content-unrelated-source");
+    copy_test_tree(&visible_tree, &unrelated_source);
+    assert_eq!(
+        DeploymentFilesystem::hash_tree(&unrelated_source).expect("hash unrelated source"),
+        DeploymentFilesystem::hash_tree(&visible_tree).expect("hash expected source"),
+        "the safety check must distinguish source identity from content equality"
+    );
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(&destination).expect("remove recovered link");
+        std::os::unix::fs::symlink(&unrelated_source, &destination)
+            .expect("install a different link with identical content");
+    }
+    #[cfg(windows)]
+    {
+        std::fs::remove_dir(&destination).expect("remove recovered junction");
+        skillhub_adapters::deployment::create_junction(&unrelated_source, &destination)
+            .expect("install a different junction with identical content");
+    }
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck candidates after replacing the link source")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("replaced repair remains visible")
+        .actions
+        .is_empty());
+    #[cfg(unix)]
+    {
+        std::fs::remove_file(&destination).expect("remove unrelated symlink");
+        std::os::unix::fs::symlink(&visible_tree, &destination)
+            .expect("restore link to the expected version source");
+    }
+    #[cfg(windows)]
+    {
+        std::fs::remove_dir(&destination).expect("remove unrelated junction");
+        skillhub_adapters::deployment::create_junction(&visible_tree, &destination)
+            .expect("restore junction to the expected version source");
+    }
 
     std::fs::write(Path::new(&backup).join("user.txt"), "backup changed")
         .expect("simulate recovery backup drift");
@@ -1775,15 +2209,138 @@ async fn managed_repair_after_filesystem_write_can_resume_when_backup_is_intact(
             .expect("verified recovery backup remains available"),
         "keep me"
     );
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen recovered database")
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read recovered operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    assert!(settled.recovery_data["plans"][0]["created_entry_identity"]
+        .as_str()
+        .is_some());
     assert_eq!(
-        Database::open(&fixture.database_path)
-            .expect("reopen recovered database")
-            .operation_repository()
-            .get_sync(prepared.operation_id)
-            .expect("read recovered operation")
-            .expect("operation remains recorded")
-            .phase,
-        skillhub_core::OperationPhase::Committed
+        settled.recovery_data["plans"][0]["repair_removal_started"],
+        serde_json::json!(false)
+    );
+}
+
+fn copy_test_tree(source: &Path, destination: &Path) {
+    std::fs::create_dir_all(destination).expect("create copied tree root");
+    for entry in std::fs::read_dir(source).expect("read copied tree") {
+        let entry = entry.expect("read copied tree entry");
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let metadata = std::fs::symlink_metadata(&source_path).expect("inspect copied entry");
+        assert!(!metadata.file_type().is_symlink(), "source tree is plain");
+        if metadata.is_dir() {
+            copy_test_tree(&source_path, &destination_path);
+        } else if metadata.is_file() {
+            std::fs::copy(source_path, destination_path).expect("copy tree file");
+        } else {
+            panic!("unsupported test tree entry");
+        }
+    }
+}
+
+#[tokio::test]
+async fn managed_change_crash_after_all_item_receipts_can_write_terminal_receipt() {
+    let fixture = fixture().await;
+    let (deployment_id, destination) = seed_managed_copy(
+        &fixture,
+        "receipt-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# First\n",
+    );
+    let library = CentralLibrary::initialize(&fixture.library_root).expect("open library");
+    VersionStore::from_library(&library)
+        .set_current(fixture.skill.id(), &fixture.target_version.id)
+        .expect("adopt target version in library");
+    Database::open(&fixture.database_path)
+        .expect("open database")
+        .record_current_version(fixture.skill.id(), &fixture.target_version)
+        .expect("adopt target version in database");
+    library
+        .materialize_current_skill(&fixture.skill, &fixture.target_version.id)
+        .expect("materialize adopted target version");
+    library
+        .save_portable_skill(&fixture.skill, Some(&fixture.target_version.id))
+        .expect("save adopted target version");
+    let app = facade(&fixture);
+    let result = prepare_and_commit(
+        &app,
+        usage_change(
+            "sync",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ),
+    );
+    assert_eq!(
+        result.item_results[0].status,
+        UsageChangeItemStatus::Applied
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("synced target"),
+        "# Target\n"
+    );
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(result.operation_id)
+        .expect("read completed operation")
+        .expect("operation exists");
+    record.result = Some(record.recovery_data["prepared"].clone());
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("simulate process exit after item receipt but before terminal receipt");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list terminal-receipt recovery candidate")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == result.operation_id)
+            .expect("receipt-only interruption remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: result.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("write terminal receipt without repeating item effects");
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("target remains synced"),
+        "# Target\n"
+    );
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen settled database")
+        .operation_repository()
+        .get_sync(result.operation_id)
+        .expect("read settled operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    let settled_result: UsageChangeResult =
+        serde_json::from_value(settled.result.expect("terminal result"))
+            .expect("decode terminal result");
+    assert!(!settled_result.recovery_required);
+    assert_eq!(
+        settled_result.item_results[0].status,
+        UsageChangeItemStatus::Applied
     );
 }
 
