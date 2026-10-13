@@ -36,6 +36,21 @@ async fn recent_operations(facade: &LocalApplicationFacade) -> Vec<RecentOperati
     }
 }
 
+fn reject_combination_operation_commit(facade: &LocalApplicationFacade, kind: &str) {
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER reject_combination_operation_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = '{kind}' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected combination operation commit failure'); END;"
+        ))
+        .expect("install operation commit failure trigger");
+}
+
 async fn facade_with_two_skills() -> (
     LocalApplicationFacade,
     skillhub_core::SkillId,
@@ -276,4 +291,124 @@ async fn a_failed_create_combination_is_a_terminal_rolled_back_record() {
         failed.error_code.as_deref(),
         Some(ErrorCode::TargetExists.as_str())
     );
+}
+
+#[tokio::test]
+async fn creating_combination_rolls_back_when_journal_commit_fails() {
+    let (facade, first, _second) = facade_with_two_skills().await;
+    reject_combination_operation_commit(&facade, "create_combination");
+
+    let result = facade
+        .execute(AppCommand::CreateCombination(CreateCombination {
+            name: "Writing stack".into(),
+            members: vec![first],
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the create command"
+    );
+    assert!(list_combinations(&facade).await.is_empty());
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "create_combination"
+            && record.phase == OperationPhase::RolledBack));
+}
+
+#[tokio::test]
+async fn updating_combination_rolls_back_when_journal_commit_fails() {
+    let (facade, first, second) = facade_with_two_skills().await;
+    facade
+        .execute(AppCommand::CreateCombination(CreateCombination {
+            name: "Writing stack".into(),
+            members: vec![first],
+        }))
+        .await
+        .expect("create initial combination");
+    reject_combination_operation_commit(&facade, "update_combination");
+
+    let result = facade
+        .execute(AppCommand::UpdateCombination(UpdateCombination {
+            name: "Writing stack".into(),
+            members: vec![second],
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the update command"
+    );
+    assert_eq!(list_combinations(&facade).await[0].members, vec![first]);
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "update_combination"
+            && record.phase == OperationPhase::RolledBack));
+}
+
+#[tokio::test]
+async fn renaming_combination_rolls_back_when_journal_commit_fails() {
+    let (facade, first, _second) = facade_with_two_skills().await;
+    facade
+        .execute(AppCommand::CreateCombination(CreateCombination {
+            name: "Writing stack".into(),
+            members: vec![first],
+        }))
+        .await
+        .expect("create initial combination");
+    reject_combination_operation_commit(&facade, "rename_combination");
+
+    let result = facade
+        .execute(AppCommand::RenameCombination(RenameCombination {
+            from: "Writing stack".into(),
+            to: "Prose stack".into(),
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the rename command"
+    );
+    let combinations = list_combinations(&facade).await;
+    assert_eq!(combinations.len(), 1);
+    assert_eq!(combinations[0].name, "Writing stack");
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "rename_combination"
+            && record.phase == OperationPhase::RolledBack));
+}
+
+#[tokio::test]
+async fn deleting_combination_rolls_back_when_journal_commit_fails() {
+    let (facade, first, _second) = facade_with_two_skills().await;
+    facade
+        .execute(AppCommand::CreateCombination(CreateCombination {
+            name: "Writing stack".into(),
+            members: vec![first],
+        }))
+        .await
+        .expect("create initial combination");
+    reject_combination_operation_commit(&facade, "delete_combination");
+
+    let result = facade
+        .execute(AppCommand::DeleteCombination(DeleteCombination {
+            name: "Writing stack".into(),
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the delete command"
+    );
+    let combinations = list_combinations(&facade).await;
+    assert_eq!(combinations.len(), 1);
+    assert_eq!(combinations[0].members, vec![first]);
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "delete_combination"
+            && record.phase == OperationPhase::RolledBack));
 }

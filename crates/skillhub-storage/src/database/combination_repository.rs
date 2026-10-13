@@ -1,8 +1,9 @@
 use super::Database;
-use rusqlite::params;
+use rusqlite::{params, Transaction};
 use skillhub_core::api::CombinationResult;
 use skillhub_core::{
-    AppError, AppResult, CombinationId, ErrorCode, RecoveryAction, Severity, SkillId,
+    AppError, AppResult, CombinationId, ErrorCode, OperationId, OperationPhase, OperationRecord,
+    RecoveryAction, Severity, SkillId,
 };
 
 /// SQLite persistence for non-nested Skill combinations.
@@ -22,123 +23,123 @@ impl<'a> CombinationRepository<'a> {
     }
 
     pub fn create(&self, name: &str, members: &[SkillId]) -> AppResult<()> {
-        let name = name.trim();
-        if name.is_empty() || members.is_empty() {
-            return Err(invalid("combination name and members are required"));
-        }
-        let mut unique = std::collections::HashSet::new();
-        if members.iter().any(|member| !unique.insert(*member)) {
-            return Err(invalid("combination members must be unique"));
-        }
         let tx = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(error)?;
-        reject_duplicate_name(&tx, name)?;
-        for member in members {
-            let exists: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
-                    [member.to_string()],
-                    |row| row.get(0),
-                )
-                .map_err(error)?;
-            if !exists {
-                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                    .with_param("skill_id", member.to_string())
-                    .with_action(RecoveryAction::ChooseAnotherName));
-            }
-        }
-        let id = CombinationId::new();
-        tx.execute(
-            "INSERT INTO combinations(id,name,created_at,updated_at) VALUES(?1,?2,strftime('%s','now'),strftime('%s','now'))",
-            params![id.to_string(), name],
-        )
-        .map_err(error)?;
-        insert_members(&tx, &id.to_string(), members)?;
+        create_tx(&tx, name, members)?;
         tx.commit().map_err(error)
     }
 
+    pub fn create_with_operation(
+        &self,
+        name: &str,
+        members: &[SkillId],
+        operation_id: OperationId,
+    ) -> AppResult<((), OperationRecord)> {
+        self.with_planned_operation(operation_id, "create_combination", |transaction| {
+            create_tx(transaction, name, members)
+        })
+    }
+
     pub fn update_members(&self, name: &str, members: &[SkillId]) -> AppResult<()> {
-        let name = name.trim();
-        if name.is_empty() || members.is_empty() {
-            return Err(invalid("combination name and members are required"));
-        }
-        let mut unique = std::collections::HashSet::new();
-        if members.iter().any(|member| !unique.insert(*member)) {
-            return Err(invalid("combination members must be unique"));
-        }
         let tx = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(error)?;
-        let id = resolve_single_id(&tx, name)?;
-        for member in members {
-            let exists: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
-                    [member.to_string()],
-                    |row| row.get(0),
-                )
-                .map_err(error)?;
-            if !exists {
-                return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                    .with_param("skill_id", member.to_string())
-                    .with_action(RecoveryAction::ChooseAnotherName));
-            }
-        }
-        replace_members(&tx, &id, members)?;
-        tx.execute(
-            "UPDATE combinations SET updated_at=strftime('%s','now') WHERE id=?1",
-            [&id],
-        )
-        .map_err(error)?;
+        update_members_tx(&tx, name, members)?;
         tx.commit().map_err(error)
+    }
+
+    pub fn update_members_with_operation(
+        &self,
+        name: &str,
+        members: &[SkillId],
+        operation_id: OperationId,
+    ) -> AppResult<((), OperationRecord)> {
+        self.with_planned_operation(operation_id, "update_combination", |transaction| {
+            update_members_tx(transaction, name, members)
+        })
     }
 
     /// Renames a combination and returns its updated view. Validation mirrors
     /// `create`: the new name must be non-empty after trimming and must not
     /// collide with another combination.
     pub fn rename(&self, from: &str, to: &str) -> AppResult<CombinationResult> {
-        let from = from.trim();
-        let to = to.trim();
-        if from.is_empty() || to.is_empty() {
-            return Err(invalid("combination names are required"));
-        }
         let tx = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(error)?;
-        let id = resolve_single_id(&tx, from)?;
-        reject_duplicate_name_except(&tx, to, &id)?;
-        tx.execute(
-            "UPDATE combinations SET name=?1, updated_at=strftime('%s','now') WHERE id=?2",
-            params![to, id],
-        )
-        .map_err(error)?;
-        let members = load_members(&tx, &id)?;
+        let result = rename_tx(&tx, from, to)?;
         tx.commit().map_err(error)?;
-        Ok(CombinationResult {
-            name: to.to_owned(),
-            members,
+        Ok(result)
+    }
+
+    pub fn rename_with_operation(
+        &self,
+        from: &str,
+        to: &str,
+        operation_id: OperationId,
+    ) -> AppResult<(CombinationResult, OperationRecord)> {
+        self.with_planned_operation(operation_id, "rename_combination", |transaction| {
+            rename_tx(transaction, from, to)
         })
     }
 
     pub fn delete(&self, name: &str) -> AppResult<()> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(invalid("combination name is required"));
-        }
-        let id = resolve_single_id(&self.database.connection, name)?;
-        // combination_skills rows are removed by ON DELETE CASCADE.
-        self.database
+        let tx = self
+            .database
             .connection
-            .execute("DELETE FROM combinations WHERE id=?1", [&id])
+            .unchecked_transaction()
             .map_err(error)?;
-        Ok(())
+        delete_tx(&tx, name)?;
+        tx.commit().map_err(error)
+    }
+
+    pub fn delete_with_operation(
+        &self,
+        name: &str,
+        operation_id: OperationId,
+    ) -> AppResult<((), OperationRecord)> {
+        self.with_planned_operation(operation_id, "delete_combination", |transaction| {
+            delete_tx(transaction, name)
+        })
+    }
+
+    fn with_planned_operation<T>(
+        &self,
+        operation_id: OperationId,
+        expected_kind: &str,
+        execute: impl FnOnce(&Transaction<'_>) -> AppResult<T>,
+    ) -> AppResult<(T, OperationRecord)> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| operation_conflict(operation_id))?;
+        if operation.kind != expected_kind || operation.phase != OperationPhase::Planned {
+            return Err(operation_conflict(operation_id));
+        }
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.message_code = format!("operation.{expected_kind}.committed");
+        operation.error_code = None;
+
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let result = execute(&transaction)?;
+        super::operation_repository::OperationRepositorySqlite::commit_planned_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(error)?;
+        Ok((result, operation))
     }
 
     pub fn list(&self) -> AppResult<Vec<CombinationResult>> {
@@ -161,6 +162,105 @@ impl<'a> CombinationRepository<'a> {
         }
         Ok(result)
     }
+}
+
+fn create_tx(transaction: &Transaction<'_>, name: &str, members: &[SkillId]) -> AppResult<()> {
+    let name = name.trim();
+    validate_members(name, members)?;
+    reject_duplicate_name(transaction, name)?;
+    for member in members {
+        ensure_skill_exists(transaction, *member)?;
+    }
+    let id = CombinationId::new();
+    transaction
+        .execute(
+            "INSERT INTO combinations(id,name,created_at,updated_at) VALUES(?1,?2,strftime('%s','now'),strftime('%s','now'))",
+            params![id.to_string(), name],
+        )
+        .map_err(error)?;
+    insert_members(transaction, &id.to_string(), members)
+}
+
+fn update_members_tx(
+    transaction: &Transaction<'_>,
+    name: &str,
+    members: &[SkillId],
+) -> AppResult<()> {
+    let name = name.trim();
+    validate_members(name, members)?;
+    let id = resolve_single_id(transaction, name)?;
+    for member in members {
+        ensure_skill_exists(transaction, *member)?;
+    }
+    replace_members(transaction, &id, members)?;
+    transaction
+        .execute(
+            "UPDATE combinations SET updated_at=strftime('%s','now') WHERE id=?1",
+            [&id],
+        )
+        .map_err(error)?;
+    Ok(())
+}
+
+fn rename_tx(transaction: &Transaction<'_>, from: &str, to: &str) -> AppResult<CombinationResult> {
+    let from = from.trim();
+    let to = to.trim();
+    if from.is_empty() || to.is_empty() {
+        return Err(invalid("combination names are required"));
+    }
+    let id = resolve_single_id(transaction, from)?;
+    reject_duplicate_name_except(transaction, to, &id)?;
+    transaction
+        .execute(
+            "UPDATE combinations SET name=?1, updated_at=strftime('%s','now') WHERE id=?2",
+            params![to, id],
+        )
+        .map_err(error)?;
+    let members = load_members(transaction, &id)?;
+    Ok(CombinationResult {
+        name: to.to_owned(),
+        members,
+    })
+}
+
+fn delete_tx(transaction: &Transaction<'_>, name: &str) -> AppResult<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(invalid("combination name is required"));
+    }
+    let id = resolve_single_id(transaction, name)?;
+    // combination_skills rows are removed by ON DELETE CASCADE.
+    transaction
+        .execute("DELETE FROM combinations WHERE id=?1", [&id])
+        .map_err(error)?;
+    Ok(())
+}
+
+fn validate_members(name: &str, members: &[SkillId]) -> AppResult<()> {
+    if name.is_empty() || members.is_empty() {
+        return Err(invalid("combination name and members are required"));
+    }
+    let mut unique = std::collections::HashSet::new();
+    if members.iter().any(|member| !unique.insert(*member)) {
+        return Err(invalid("combination members must be unique"));
+    }
+    Ok(())
+}
+
+fn ensure_skill_exists(transaction: &Transaction<'_>, skill_id: SkillId) -> AppResult<()> {
+    let exists: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM skills WHERE id=?1)",
+            [skill_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(error)?;
+    if !exists {
+        return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+            .with_param("skill_id", skill_id.to_string())
+            .with_action(RecoveryAction::ChooseAnotherName));
+    }
+    Ok(())
 }
 
 /// Loads the ordered member ids of one combination.
@@ -291,6 +391,12 @@ fn invalid(detail: &str) -> AppError {
     AppError::new(ErrorCode::InvalidInput, Severity::Error)
         .with_param("detail", detail)
         .with_action(RecoveryAction::ChooseAnotherName)
+}
+
+fn operation_conflict(operation_id: OperationId) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("operation_id", operation_id.to_string())
+        .with_action(RecoveryAction::Retry)
 }
 
 fn error(error: rusqlite::Error) -> AppError {
