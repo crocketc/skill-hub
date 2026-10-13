@@ -4705,7 +4705,7 @@ impl LocalApplicationFacade {
             ) {
                 Ok(result) => result,
                 Err(error) => {
-                    if self.operation_needs_recovery(adoption.operation_id) {
+                    if self.operation_needs_recovery(adoption.operation_id)? {
                         record.error_code = Some(error.code);
                         record.phase = OperationPhase::NeedsRecovery;
                         record.progress.phase = record.phase;
@@ -4822,18 +4822,26 @@ impl LocalApplicationFacade {
             });
             match result {
                 Ok(AppCommandResult::RelationMigrationResult(migration)) => {
-                    journal
-                        .completed
-                        .push(manage_migration_item(impact, migration));
+                    let item = manage_migration_item(impact, migration);
+                    if item.status == UsageChangeItemStatus::RecoveryRequired
+                        || self.operation_needs_recovery(plan.child_operation_id)?
+                    {
+                        record.phase = OperationPhase::NeedsRecovery;
+                        record.progress.phase = record.phase;
+                        record.progress.message_code =
+                            "operation.usage_manage_batch.needs_recovery".to_owned();
+                        self.persist_manage_batch_progress(&mut record, &journal)?;
+                        return Err(operation_conflict("usage_change_needs_recovery"));
+                    }
+                    journal.completed.push(item);
                 }
                 Ok(_) => {
                     return Err(operation_conflict("usage_manage_result_invalid"));
                 }
                 Err(error) => {
                     let item = failed_manage_item(impact, &error);
-                    let needs_recovery = item.status == UsageChangeItemStatus::RecoveryRequired;
-                    journal.completed.push(item);
-                    self.persist_manage_batch_progress(&mut record, &journal)?;
+                    let needs_recovery = item.status == UsageChangeItemStatus::RecoveryRequired
+                        || self.operation_needs_recovery(plan.child_operation_id)?;
                     if needs_recovery {
                         record.phase = OperationPhase::NeedsRecovery;
                         record.error_code = Some(error.code);
@@ -4849,6 +4857,7 @@ impl LocalApplicationFacade {
                             .update_sync(&record)?;
                         return Err(error);
                     }
+                    journal.completed.push(item);
                 }
             }
             record.progress.completed = (index + 1) as u32;
@@ -4881,20 +4890,15 @@ impl LocalApplicationFacade {
         Ok(result)
     }
 
-    fn operation_needs_recovery(&self, operation_id: OperationId) -> bool {
-        self.database
+    fn operation_needs_recovery(&self, operation_id: OperationId) -> AppResult<bool> {
+        let database = self
+            .database
             .lock()
-            .ok()
-            .and_then(|database| {
-                database
-                    .operation_repository()
-                    .get_sync(operation_id)
-                    .ok()
-                    .flatten()
-            })
-            .is_some_and(|record| {
-                skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
-            })
+            .map_err(|_| internal("usage_manage_batch.child_recovery_state"))?;
+        let record = database.operation_repository().get_sync(operation_id)?;
+        Ok(record.is_some_and(|record| {
+            skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+        }))
     }
 
     fn persist_manage_batch_progress(

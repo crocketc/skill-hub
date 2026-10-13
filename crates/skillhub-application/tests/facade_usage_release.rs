@@ -15,8 +15,9 @@ use skillhub_core::agent::{
     OperatingSystem, PhysicalTarget, TargetScope,
 };
 use skillhub_core::api::{
-    CommitUsageChange, CreateSkill, GetRelationshipOverview, ListSkills, PrepareRelationMigration,
-    PrepareUsageChange, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    CommitUsageChange, CreateSkill, GetOperationDetails, GetRelationshipOverview, ListSkills,
+    PrepareRelationMigration, PrepareUsageChange, RelationshipMigrationBackupPolicy,
+    RelationshipOverviewScope,
 };
 use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
@@ -629,6 +630,201 @@ async fn manage_batch_uses_the_requested_full_copy_form_for_every_entry() {
         .expect("second converted entry")
         .file_type()
         .is_symlink());
+}
+
+#[tokio::test]
+async fn manage_batch_waits_for_child_recovery_before_processing_other_entries() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let second_path = add_usage_relation(
+        &fixture,
+        SECOND_TARGET_RELATION_ID,
+        "notes-second",
+        SKILL_BODY,
+        false,
+    );
+    let second_before =
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&second_path)
+            .expect("second entry before batch");
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into(), SECOND_TARGET_RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::LibraryCurrent,
+        ))
+        .expect("prepare two-entry management batch");
+
+    let database = fixture.facade.database_for_tests();
+    {
+        let database = database.lock().expect("database lock");
+        database
+            .connection_for_test()
+            .execute_batch(
+                "CREATE TRIGGER interrupt_managed_child_commit
+                 BEFORE UPDATE OF progress_json ON operations
+                 WHEN NEW.kind = 'usage_manage' AND NEW.phase = 'committed'
+                 BEGIN SELECT RAISE(ABORT, 'injected child journal interruption'); END;",
+            )
+            .expect("install child journal interruption");
+    }
+
+    let _ = fixture
+        .facade
+        .execute(AppCommand::CommitUsageChange(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        }))
+        .await;
+    let AppQueryResult::OperationDetails(parent) = fixture
+        .facade
+        .query(AppQuery::GetOperationDetails(GetOperationDetails {
+            operation_id: prepared.operation_id,
+        }))
+        .await
+        .expect("read interrupted parent batch")
+    else {
+        panic!("expected operation details");
+    };
+    assert_eq!(
+        parent.phase,
+        skillhub_core::OperationPhase::NeedsRecovery,
+        "a parent batch must wait while a child operation needs recovery"
+    );
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted batch candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.operation_id != prepared.operation_id),
+        "the parent batch must stay hidden while its child recovery gate is active"
+    );
+    let child_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.operation_id != prepared.operation_id)
+        .collect::<Vec<_>>();
+    assert_eq!(child_candidates.len(), 1, "later entries stay unprocessed");
+    assert_eq!(
+        child_candidates[0].actions,
+        vec![RecoveryAction::RollbackOperation]
+    );
+    let AppQueryResult::RelationshipOverview(overview) = fixture
+        .facade
+        .query(AppQuery::GetRelationshipOverview(GetRelationshipOverview {
+            scope: RelationshipOverviewScope::All,
+        }))
+        .await
+        .expect("verify later entry has not been managed")
+    else {
+        panic!("expected relationship overview");
+    };
+    let later_relation = overview
+        .usage_relations
+        .iter()
+        .find(|relation| {
+            relation
+                .evidence_relation_ids
+                .contains(&SECOND_TARGET_RELATION_ID.to_owned())
+        })
+        .expect("later relationship remains visible");
+    assert_eq!(
+        later_relation.management,
+        skillhub_core::relationship::UsageManagement::Unmanaged,
+        "later relationships must remain untouched until the child settles"
+    );
+
+    let recovery_candidate = child_candidates[0].operation_id;
+    let database = fixture.facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER interrupt_managed_child_commit")
+        .expect("remove injected interruption");
+    let database_path = fixture.database_path.clone();
+    let library_root = fixture.library_root.clone();
+    drop(fixture.facade);
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        Database::open(&database_path).expect("reopen database"),
+        &library_root,
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: recovery_candidate,
+                action: RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("roll back interrupted child");
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list parent after child recovery")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let parent_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("parent resumes after child settles");
+    assert_eq!(
+        parent_candidate.actions,
+        vec![RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("resume the remaining batch entries");
+
+    let result = restarted
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("read completed batch result");
+    assert!(!result.recovery_required);
+    assert_eq!(
+        result
+            .item_results
+            .iter()
+            .find(|item| item.relation_ids == [RELATION_ID])
+            .expect("first entry result")
+            .status,
+        UsageChangeItemStatus::Failed
+    );
+    assert_eq!(
+        result
+            .item_results
+            .iter()
+            .find(|item| item.relation_ids == [SECOND_TARGET_RELATION_ID])
+            .expect("second entry result")
+            .status,
+        UsageChangeItemStatus::Applied
+    );
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&fixture.entry_path)
+            .expect("first entry restored"),
+        fixture.expected_fingerprint
+    );
+    assert_eq!(
+        skillhub_adapters::deployment::DeploymentFilesystem::hash_tree(&second_path)
+            .expect("second entry completed after recovery"),
+        second_before
+    );
 }
 
 #[tokio::test]
