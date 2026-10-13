@@ -2,6 +2,7 @@ use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, CollectDeploymentChanges,
+    IgnoreExternalChange,
 };
 use skillhub_core::catalog::Skill;
 use skillhub_core::{
@@ -208,6 +209,178 @@ async fn collect_changes_keeps_deployment_facts_and_journal_atomic_on_commit_fai
             .into_iter()
             .find(|record| record.kind == "reconcile_collect_changes")
             .expect("collect changes operation");
+        assert_eq!(operation.phase, OperationPhase::RolledBack);
+        operation.operation_id
+    };
+    let candidates = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates");
+    assert!(matches!(
+        candidates,
+        AppQueryResult::RecoveryCandidates(ref values)
+            if !values.iter().any(|candidate| candidate.operation_id == operation_id)
+    ));
+}
+
+#[tokio::test]
+async fn ignore_external_change_commits_observation_and_journal_together() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (database, library_root, deployment, initial_version, _changed_version) =
+        collect_changes_fixture(workspace.path());
+    let observed_hash = DeploymentFilesystem::hash_tree(
+        workspace
+            .path()
+            .join("agent/skills")
+            .join(deployment.runtime_name.as_str()),
+    )
+    .expect("observed target hash");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+
+    let result = facade
+        .execute(AppCommand::IgnoreExternalChange(IgnoreExternalChange {
+            deployment_id: deployment.id,
+        }))
+        .await
+        .expect("ignore external change");
+    assert!(matches!(
+        result,
+        AppCommandResult::ReconcileResult(ref value)
+            if value.action == skillhub_core::deployment::ReconcileAction::Ignore
+    ));
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let persisted = database
+        .deployment_repository()
+        .list_all()
+        .expect("deployment rows")
+        .into_iter()
+        .find(|record| record.id == deployment.id)
+        .expect("deployment row");
+    assert_eq!(persisted.version_id, initial_version.id);
+    assert_eq!(persisted.expected_hash, initial_version.manifest.tree_hash);
+    assert_eq!(
+        persisted.observed_hash.as_deref(),
+        Some(observed_hash.as_str())
+    );
+    let operation = database
+        .operation_repository()
+        .list_sync()
+        .expect("operation rows")
+        .into_iter()
+        .find(|record| record.kind == "reconcile_ignore_external_change")
+        .expect("ignore operation");
+    assert_eq!(operation.phase, OperationPhase::Committed);
+    assert_eq!(
+        operation
+            .result
+            .as_ref()
+            .and_then(|value| value.get("observed_hash"))
+            .and_then(serde_json::Value::as_str),
+        Some(observed_hash.as_str())
+    );
+}
+
+#[tokio::test]
+async fn ignore_missing_external_target_commits_without_changing_deployment_facts() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (database, library_root, deployment, initial_version, _changed_version) =
+        collect_changes_fixture(workspace.path());
+    std::fs::remove_dir_all(
+        workspace
+            .path()
+            .join("agent/skills")
+            .join(deployment.runtime_name.as_str()),
+    )
+    .expect("remove deployed target");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+
+    facade
+        .execute(AppCommand::IgnoreExternalChange(IgnoreExternalChange {
+            deployment_id: deployment.id,
+        }))
+        .await
+        .expect("ignore missing external target");
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let persisted = database
+        .deployment_repository()
+        .list_all()
+        .expect("deployment rows")
+        .into_iter()
+        .find(|record| record.id == deployment.id)
+        .expect("deployment row");
+    assert_eq!(persisted.version_id, initial_version.id);
+    assert_eq!(persisted.expected_hash, initial_version.manifest.tree_hash);
+    assert_eq!(persisted.observed_hash, None);
+    let operation = database
+        .operation_repository()
+        .list_sync()
+        .expect("operation rows")
+        .into_iter()
+        .find(|record| record.kind == "reconcile_ignore_external_change")
+        .expect("ignore operation");
+    assert_eq!(operation.phase, OperationPhase::Committed);
+    assert_eq!(
+        operation
+            .result
+            .as_ref()
+            .and_then(|value| value.get("observed_hash")),
+        Some(&serde_json::Value::Null)
+    );
+}
+
+#[tokio::test]
+async fn ignore_external_change_keeps_facts_atomic_with_journal_commit_failure() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (database, library_root, deployment, initial_version, _changed_version) =
+        collect_changes_fixture(workspace.path());
+
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_ignore_change_journal_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = 'reconcile_ignore_external_change' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected ignore journal failure'); END;",
+        )
+        .expect("install journal failure trigger");
+
+    let result = facade
+        .execute(AppCommand::IgnoreExternalChange(IgnoreExternalChange {
+            deployment_id: deployment.id,
+        }))
+        .await;
+    assert!(
+        result.is_err(),
+        "the command must not report success when its durable journal commit fails"
+    );
+
+    let operation_id = {
+        let database = database.lock().expect("database lock");
+        let persisted = database
+            .deployment_repository()
+            .list_all()
+            .expect("deployment rows")
+            .into_iter()
+            .find(|record| record.id == deployment.id)
+            .expect("deployment row");
+        assert_eq!(persisted.version_id, initial_version.id);
+        assert_eq!(persisted.expected_hash, initial_version.manifest.tree_hash);
+        assert_eq!(persisted.observed_hash, None);
+        let operation = database
+            .operation_repository()
+            .list_sync()
+            .expect("operation rows")
+            .into_iter()
+            .find(|record| record.kind == "reconcile_ignore_external_change")
+            .expect("ignore operation");
         assert_eq!(operation.phase, OperationPhase::RolledBack);
         operation.operation_id
     };

@@ -370,6 +370,97 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         transaction.commit().map_err(database_error)
     }
 
+    /// Stores an ignored external-change observation and its terminal journal
+    /// phase in one transaction. If the target disappeared after inspection,
+    /// it commits only the operation record after revalidating deployment
+    /// facts.
+    pub fn commit_reconcile_ignore_sync(
+        &self,
+        id: DeploymentId,
+        version_id: &skillhub_core::VersionId,
+        expected_hash: &str,
+        observed_hash: Option<&str>,
+        operation_id: skillhub_core::OperationId,
+    ) -> AppResult<()> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("operation_id", operation_id.to_string())
+            })?;
+        if operation.kind != "reconcile_ignore_external_change"
+            || operation.phase != OperationPhase::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("operation_id", operation_id.to_string()));
+        }
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.completed = 1;
+        operation.progress.total = 1;
+        operation.progress.message_code =
+            "operation.reconcile_ignore_external_change.committed".to_owned();
+        operation.result = Some(serde_json::json!({
+            "deployment_id": id.to_string(),
+            "observed_hash": observed_hash,
+        }));
+
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        if let Some(observed_hash) = observed_hash {
+            let changed = transaction
+                .execute(
+                    "UPDATE deployments SET observed_hash=?1, updated_at=?2 WHERE id=?3 AND state IN ('deployed','active') AND version_id=?4 AND expected_hash=?5",
+                    params![
+                        observed_hash,
+                        now(),
+                        id.to_string(),
+                        version_id.to_string(),
+                        expected_hash,
+                    ],
+                )
+                .map_err(database_error)?;
+            if changed != 1 {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("deployment_id", id.to_string()));
+            }
+            let observed_at = now();
+            let relationship_changed =
+                super::relationship_repository::sync_reconciled_deployment_tx(
+                    &transaction,
+                    &id.to_string(),
+                    expected_hash,
+                    Some(observed_hash),
+                    observed_at,
+                )?;
+            if relationship_changed {
+                super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+            }
+        } else {
+            let exists: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM deployments WHERE id=?1 AND state IN ('deployed','active') AND version_id=?2 AND expected_hash=?3)",
+                    params![id.to_string(), version_id.to_string(), expected_hash],
+                    |row| row.get(0),
+                )
+                .map_err(database_error)?;
+            if !exists {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("deployment_id", id.to_string()));
+            }
+        }
+        super::operation_repository::OperationRepositorySqlite::commit_prepared_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(database_error)
+    }
+
     /// Updates the runtime path and pinned version of one existing managed
     /// deployment without reusing another row that happens to own the new
     /// `(target, runtime_name)` pair.

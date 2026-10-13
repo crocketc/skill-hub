@@ -2014,22 +2014,24 @@ impl ReconcileBackend for LocalDeploymentBackend {
             .detach_management_sync(deployment.id)
     }
 
-    async fn ignore_external_change(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+    async fn ignore_external_change(
+        &self,
+        deployment: &DeploymentRecord,
+        operation_id: OperationId,
+    ) -> AppResult<()> {
         let observation = self.inspect_target(deployment).await?;
-        let Some(observed_hash) = observation.observed_hash else {
-            return Ok(());
-        };
         let database = self
             .database
             .lock()
             .map_err(|_| internal("reconcile.ignore"))?;
         database
             .deployment_repository()
-            .update_reconcile_facts_sync(
+            .commit_reconcile_ignore_sync(
                 deployment.id,
                 &deployment.version_id,
                 &deployment.expected_hash,
-                Some(&observed_hash),
+                observation.observed_hash.as_deref(),
+                operation_id,
             )
     }
 }
@@ -16935,17 +16937,35 @@ impl LocalApplicationFacade {
         deployment_id: skillhub_core::DeploymentId,
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "reconcile_ignore_external_change");
+        self.journal_prepared(operation_id, "reconcile_ignore_external_change");
         let result = self
             .reconcile_service
-            .ignore_external_change(deployment_id)
+            .ignore_external_change(deployment_id, operation_id)
             .await
             .map(AppCommandResult::ReconcileResult);
-        self.journal_settle(
-            operation_id,
-            "reconcile_ignore_external_change",
-            result.as_ref().err(),
-        );
+        if result.is_ok() {
+            let committed = self.database.lock().ok().and_then(|database| {
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)
+                    .ok()
+                    .flatten()
+                    .filter(|record| {
+                        record.kind == "reconcile_ignore_external_change"
+                            && record.phase == skillhub_core::OperationPhase::Committed
+                    })
+            });
+            if let Some(record) = committed {
+                self.log_journal_record(&record);
+            }
+        }
+        if let Err(error) = &result {
+            self.journal_settle(
+                operation_id,
+                "reconcile_ignore_external_change",
+                Some(error),
+            );
+        }
         result
     }
 

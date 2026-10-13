@@ -54,6 +54,7 @@ pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "save_markdown_content",
     "reconcile_restore_deployment",
     "reconcile_collect_changes",
+    "reconcile_ignore_external_change",
 ];
 
 /// Operation kinds written by the current application. Recovery UI must not

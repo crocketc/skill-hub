@@ -64,7 +64,11 @@ impl ReconcileBackend for FakeReconcileBackend {
         Ok(())
     }
 
-    async fn ignore_external_change(&self, deployment: &DeploymentRecord) -> AppResult<()> {
+    async fn ignore_external_change(
+        &self,
+        deployment: &DeploymentRecord,
+        _operation_id: skillhub_core::OperationId,
+    ) -> AppResult<()> {
         self.ignored.lock().unwrap().push(deployment.id);
         Ok(())
     }
@@ -151,7 +155,7 @@ fn keep_independent_and_ignore_are_explicit_actions() {
         assert_eq!(backend.detached.lock().unwrap().len(), 1);
 
         let ignored = service
-            .ignore_external_change(backend.record.id)
+            .ignore_external_change(backend.record.id, skillhub_core::OperationId::new())
             .await
             .unwrap();
         assert!(ignored.management_retained);

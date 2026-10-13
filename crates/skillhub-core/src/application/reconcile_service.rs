@@ -38,7 +38,11 @@ pub trait ReconcileBackend: Send + Sync {
     /// Remove the management relation while leaving target files untouched.
     async fn keep_independent(&self, deployment: &DeploymentRecord) -> AppResult<()>;
     /// Persist a scoped dismissal/evidence record without changing files.
-    async fn ignore_external_change(&self, deployment: &DeploymentRecord) -> AppResult<()>;
+    async fn ignore_external_change(
+        &self,
+        deployment: &DeploymentRecord,
+        operation_id: crate::OperationId,
+    ) -> AppResult<()>;
 }
 
 pub struct ReconcileService<B> {
@@ -117,10 +121,13 @@ where
     pub async fn ignore_external_change(
         &self,
         deployment_id: DeploymentId,
+        operation_id: crate::OperationId,
     ) -> AppResult<ReconcileResult> {
         let (deployment, observation) = self.load_observation(deployment_id).await?;
         ensure_allowed(observation.state, ReconcileAction::Ignore)?;
-        self.backend.ignore_external_change(&deployment).await?;
+        self.backend
+            .ignore_external_change(&deployment, operation_id)
+            .await?;
         Ok(ReconcileResult {
             deployment_id,
             state_before: observation.state,
