@@ -25,7 +25,7 @@ use skillhub_core::api::{
     SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::CatalogRepository;
-use skillhub_core::deployment::{observed_path_key, DeploymentPlan};
+use skillhub_core::deployment::{observed_path_key, DeploymentPlan, DeploymentRecord};
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, DeploymentRelationFact, DerivedRenamePreview,
     DerivedRenameTargetPreview, DuplicateCleanupPreview, EnvironmentProblemKind,
@@ -530,6 +530,10 @@ struct ManagedUsageChangePlan {
     deployment_id: skillhub_core::DeploymentId,
     destination: String,
     subject_version_id: VersionId,
+    #[serde(default)]
+    original_deployment: Option<DeploymentRecord>,
+    #[serde(default)]
+    original_relation: Option<DeploymentRelationFact>,
     observed_before: Option<String>,
     #[serde(default)]
     observed_identity: Option<String>,
@@ -538,6 +542,150 @@ struct ManagedUsageChangePlan {
     backup_created: bool,
     #[serde(default)]
     created_entry_identity: Option<String>,
+}
+
+/// An interrupted managed change can be settled as rolled back without
+/// touching its target only when every persisted before-fact still matches.
+/// Legacy journals intentionally fail closed because they lack DB snapshots.
+pub(crate) fn managed_usage_change_rollback_available(
+    database: &Database,
+    record: &OperationRecord,
+) -> AppResult<bool> {
+    if database
+        .operation_repository()
+        .get_sync(record.operation_id)?
+        .as_ref()
+        != Some(record)
+    {
+        return Ok(false);
+    }
+    if record.kind != MANAGED_USAGE_CHANGE_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::Verifying | OperationPhase::NeedsRecovery
+        )
+    {
+        return Ok(false);
+    }
+    let Ok(journal) =
+        serde_json::from_value::<ManagedUsageChangeJournal>(record.recovery_data.clone())
+    else {
+        return Ok(false);
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.plans.is_empty()
+        || !journal.completed.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.prepared.impacts.len()
+    {
+        return Ok(false);
+    }
+
+    let deployments = database.deployment_repository().list_all()?;
+    let relations = database.relationship_repository().list_relations()?;
+    for (index, plan) in journal.plans.iter().enumerate() {
+        let Some(original_deployment) = plan.original_deployment.as_ref() else {
+            return Ok(false);
+        };
+        let Some(original_relation) = plan.original_relation.as_ref() else {
+            return Ok(false);
+        };
+        if original_deployment.id != plan.deployment_id
+            || original_relation.relation_id != format!("managed:{}", plan.deployment_id)
+            || deployments
+                .iter()
+                .find(|item| item.id == plan.deployment_id)
+                != Some(original_deployment)
+            || relations
+                .iter()
+                .find(|item| item.relation_id == original_relation.relation_id)
+                != Some(original_relation)
+            || plan.backup_created
+            || plan.created_entry_identity.is_some()
+        {
+            return Ok(false);
+        }
+
+        let evidence = &journal.prepared.entry_evidence[index];
+        let destination = PathBuf::from(&plan.destination);
+        let Some(parent) = destination.parent() else {
+            return Ok(false);
+        };
+        if evidence.path != plan.destination
+            || destination.file_name()
+                != Some(std::ffi::OsStr::new(&original_deployment.runtime_name))
+            || skillhub_core::physical_id_for_path(parent).as_deref()
+                != Some(original_deployment.target_id.as_str())
+            || entry_fingerprint(&destination)? != plan.observed_before
+            || entry_identity(&destination)? != plan.observed_identity
+            || evidence.content_fingerprint != plan.observed_before
+            || checked_path_exists(
+                Path::new(&plan.backup_path),
+                "managed_usage_change_backup_unavailable",
+            )?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+pub(crate) fn rollback_unstarted_managed_usage_change(
+    database: &Database,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let mut record = database
+        .operation_repository()
+        .get_sync(operation_id)?
+        .ok_or_else(|| operation_conflict("managed_usage_change_preview_missing"))?;
+    if !managed_usage_change_rollback_available(database, &record)? {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let mut journal: ManagedUsageChangeJournal =
+        serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
+    let mut item_results = Vec::with_capacity(journal.plans.len());
+    for plan in &journal.plans {
+        let relation_id = format!("managed:{}", plan.deployment_id);
+        let impact = journal
+            .prepared
+            .impacts
+            .iter()
+            .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+            .ok_or_else(|| operation_conflict("managed_usage_change_impact_missing"))?;
+        item_results.push(UsageChangeItemResult {
+            relation_ids: impact.relation_ids.clone(),
+            skill_id: impact.skill_id,
+            target: impact.target.clone(),
+            action: impact.action,
+            status: UsageChangeItemStatus::Failed,
+            reason: Some("operation_rolled_back".to_owned()),
+            recovery_point: None,
+        });
+    }
+    journal.completed = item_results.clone();
+    record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+    record.result = Some(
+        serde_json::to_value(UsageChangeResult {
+            operation_id,
+            prepared_id: journal.prepared.prepared_id,
+            recovery_required: false,
+            item_results,
+            derived_skill_id: None,
+            recovery_operation_id: None,
+        })
+        .map_err(serialization_error)?,
+    );
+    record.phase = OperationPhase::RolledBack;
+    record.progress.phase = OperationPhase::RolledBack;
+    record.progress.completed = journal.plans.len() as u32;
+    record.progress.total = journal.plans.len() as u32;
+    record.progress.message_code = "recovery.managed_usage_change.rolled_back".to_owned();
+    record.error_code = None;
+    database.operation_repository().update_sync(&record)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1670,6 +1818,8 @@ impl LocalApplicationFacade {
                 deployment_id,
                 destination: destination.to_string_lossy().into_owned(),
                 subject_version_id: version_id,
+                original_deployment: Some(deployment.clone()),
+                original_relation: Some(relation.clone()),
                 observed_before,
                 observed_identity,
                 backup_path: backup_path.to_string_lossy().into_owned(),
@@ -2490,6 +2640,7 @@ impl LocalApplicationFacade {
         let recovery = LocalRecoveryBackend {
             database: Arc::clone(&self.database),
             library_runtime: Arc::clone(&self.library_runtime),
+            relation_migration_lock: Arc::clone(&self.relation_migration_lock),
             version_adoption_lock: Arc::clone(&self.version_adoption_lock),
         };
         let (mut snapshot, skill, context, target) =

@@ -2,7 +2,7 @@ use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, CommitUsageChange, GetRollbackImpact,
-    PrepareUsageChange, SetCurrentVersion,
+    PrepareUsageChange, ResolveRecovery, SetCurrentVersion,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::relationship::{UsageChangeItemStatus, UsageChangeResult};
@@ -292,6 +292,206 @@ async fn sync_failure_remains_managed_and_retries_after_restart() {
         .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
         .expect("managed relation after retry");
     assert_eq!(recovered_relation.health_reasons, Some(Vec::new()));
+}
+
+#[tokio::test]
+async fn interrupted_managed_change_before_first_write_can_be_rolled_back() {
+    let fixture = fixture().await;
+    let (deployment_id, destination) = seed_managed_copy(
+        &fixture,
+        "interrupted-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# First\n",
+    );
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "sync",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed sync");
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("operation exists");
+    let deployment_before = deploy_row(&fixture, deployment_id);
+    let relation_before = database
+        .relationship_repository()
+        .list_relations()
+        .expect("read original managed relation")
+        .into_iter()
+        .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
+        .expect("managed relation exists");
+    record.phase = skillhub_core::OperationPhase::Applying;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("simulate interruption after write checkpoint");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("interrupted managed change remains visible");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("settle an untouched managed change");
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen database")
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read settled operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::RolledBack);
+    assert_eq!(deploy_row(&fixture, deployment_id), deployment_before);
+    let relation_after = Database::open(&fixture.database_path)
+        .expect("reopen database after recovery")
+        .relationship_repository()
+        .list_relations()
+        .expect("read managed relation after recovery")
+        .into_iter()
+        .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
+        .expect("managed relation remains");
+    assert_eq!(relation_after, relation_before);
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("target content"),
+        "# First\n"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_managed_change_with_drift_has_no_automatic_action() {
+    let fixture = fixture().await;
+    let (deployment_id, destination) = seed_managed_copy(
+        &fixture,
+        "drifted-interrupted-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# First\n",
+    );
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "sync",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed sync");
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("operation exists");
+    record.phase = skillhub_core::OperationPhase::Applying;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("simulate interruption after write checkpoint");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("interrupted managed change remains visible");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+
+    std::fs::write(destination.join("SKILL.md"), "# User change\n").expect("simulate target drift");
+    let error = match restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::RollbackOperation,
+        }))
+        .await
+    {
+        Ok(_) => panic!("stale rollback should be rejected after target drift"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, skillhub_core::ErrorCode::OperationConflict);
+
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck candidates after target drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("interrupted managed change remains visible");
+    assert!(candidate.actions.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("preserved target"),
+        "# User change\n"
+    );
+    drop(restarted);
+
+    std::fs::write(destination.join("SKILL.md"), "# First\n")
+        .expect("restore target before database drift case");
+    let database = Database::open(&fixture.database_path).expect("open database for drift");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET expected_hash='changed-outside-operation' WHERE id=?1",
+            rusqlite::params![deployment_id.to_string()],
+        )
+        .expect("simulate deployment fact drift");
+    drop(database);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after database drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("interrupted managed change remains visible after database drift");
+    assert!(candidate.actions.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("target preserved"),
+        "# First\n"
+    );
 }
 
 fn version_manifest_path(fixture: &Fixture, version: &skillhub_core::VersionRecord) -> PathBuf {

@@ -164,10 +164,9 @@ pub struct LocalApplicationFacade {
     prepared_relation_migrations:
         Mutex<HashMap<OperationId, skillhub_core::PreparedRelationMigration>>,
     relation_migration_results: Mutex<HashMap<OperationId, skillhub_core::RelationMigrationResult>>,
-    /// Serializes relationship mutations and the source-fact snapshot through
-    /// the filesystem phase of a relation migration.  This closes the
-    /// in-process source_relations TOCTOU window.
-    relation_migration_lock: Mutex<()>,
+    /// Serializes relationship mutations, relation migration snapshots, and
+    /// managed usage recovery checks through their filesystem phases.
+    relation_migration_lock: Arc<Mutex<()>>,
     /// Serializes the preview validation and cross-store write sequence for a
     /// current-version adoption.
     version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
@@ -2875,6 +2874,7 @@ impl LocalApplicationFacade {
         let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let relation_migration_lock = Arc::new(Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
             library_runtime.clone(),
@@ -2890,6 +2890,7 @@ impl LocalApplicationFacade {
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
             library_runtime: library_runtime.clone(),
+            relation_migration_lock: relation_migration_lock.clone(),
             version_adoption_lock: version_adoption_lock.clone(),
         })));
         let call_policy_service =
@@ -2929,7 +2930,7 @@ impl LocalApplicationFacade {
             prepared_migrations: Mutex::new(HashMap::new()),
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
-            relation_migration_lock: Mutex::new(()),
+            relation_migration_lock,
             version_adoption_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
@@ -2998,6 +2999,7 @@ impl LocalApplicationFacade {
             library_runtime::LibraryContext::from_library(central),
         )));
         let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let relation_migration_lock = Arc::new(Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
             library_runtime.clone(),
@@ -3011,6 +3013,7 @@ impl LocalApplicationFacade {
         let recovery_service = Arc::new(RecoveryService::new(Arc::new(LocalRecoveryBackend {
             database: database.clone(),
             library_runtime: library_runtime.clone(),
+            relation_migration_lock: relation_migration_lock.clone(),
             version_adoption_lock: version_adoption_lock.clone(),
         })));
         let call_policy_service =
@@ -3050,7 +3053,7 @@ impl LocalApplicationFacade {
             prepared_migrations: Mutex::new(HashMap::new()),
             prepared_relation_migrations: Mutex::new(HashMap::new()),
             relation_migration_results: Mutex::new(HashMap::new()),
-            relation_migration_lock: Mutex::new(()),
+            relation_migration_lock,
             version_adoption_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
@@ -21359,6 +21362,11 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         RecoveryAction::RollbackOperation,
                     ],
                     "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                    "managed_usage_change"
+                        if self.managed_usage_change_rollback_available(record) =>
+                    {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
                     "usage_manage_batch"
                         if usage_change_service::manage_batch_recovery_state(record, &records)
                             == usage_change_service::ManageBatchRecoveryState::Resumable =>
@@ -21521,6 +21529,23 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 }
                 _ => Err(unsupported("recovery.resolve")),
             };
+        }
+        if operation_kind.as_deref() == Some("managed_usage_change") {
+            if action != RecoveryAction::RollbackOperation {
+                return Err(unsupported("recovery.resolve.managed_usage_change"));
+            }
+            let _mutation = self
+                .relation_migration_lock
+                .lock()
+                .map_err(|_| internal("recovery.resolve.managed_usage_change.mutation_lock"))?;
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.resolve.managed_usage_change.database"))?;
+            return usage_change_service::rollback_unstarted_managed_usage_change(
+                &database,
+                operation_id,
+            );
         }
         if operation_kind.as_deref() == Some("usage_derived_rename") {
             if action != RecoveryAction::CompleteOperation {
@@ -21789,6 +21814,20 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
+    fn managed_usage_change_rollback_available(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> bool {
+        let Ok(_mutation) = self.relation_migration_lock.lock() else {
+            return false;
+        };
+        let Ok(database) = self.database.lock() else {
+            return false;
+        };
+        usage_change_service::managed_usage_change_rollback_available(&database, record)
+            .unwrap_or(false)
+    }
+
     fn load_validated_deployment_recovery(
         &self,
         record: &skillhub_core::OperationRecord,
@@ -23770,6 +23809,7 @@ struct LocalHealthBackend {
 struct LocalRecoveryBackend {
     database: Arc<Mutex<Database>>,
     library_runtime: Arc<library_runtime::LibraryRuntime>,
+    relation_migration_lock: Arc<Mutex<()>>,
     version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
