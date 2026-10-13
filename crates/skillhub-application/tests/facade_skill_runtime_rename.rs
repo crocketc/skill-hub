@@ -1,6 +1,6 @@
 use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_application::LocalApplicationFacade;
-use skillhub_core::api::{AppCommand, AppCommandResult};
+use skillhub_core::api::{AppCommand, AppCommandResult, AppQuery, AppQueryResult};
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentRecord, DeploymentState};
 use skillhub_core::{physical_id_for_path, ApplicationFacade};
@@ -553,6 +553,23 @@ async fn rename_commit_records_recovery_when_backup_cleanup_checkpoint_fails() {
         .connection_for_test()
         .execute_batch("DROP TRIGGER reject_backup_cleanup_checkpoint")
         .expect("remove injected failure");
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain valid cleanup recovery candidate");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation],
+        "a valid committed rename journal keeps its supported completion action"
+    );
     let recovery: AppCommand = serde_json::from_value(serde_json::json!({
         "type": "resolve_recovery",
         "payload": {
@@ -573,6 +590,173 @@ async fn rename_commit_records_recovery_when_backup_cleanup_checkpoint_fails() {
         .expect("read recovered operation")
         .expect("rename operation");
     assert_eq!(record.phase, skillhub_core::OperationPhase::Committed);
+}
+
+#[tokio::test]
+async fn malformed_subject_rename_journal_keeps_candidate_without_recovery_actions() {
+    let fixture = fixture_with_two_managed_targets().await;
+    let prepared = prepare_subject_rename(&fixture, "new-runtime").await;
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("rename operation");
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.recovery_data = serde_json::json!({"metadata_committed": false});
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist malformed recovery journal");
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain malformed operation for inspection");
+    assert!(
+        candidate.actions.is_empty(),
+        "a malformed subject rename journal must not advertise a rollback that cannot be parsed"
+    );
+}
+
+#[tokio::test]
+async fn subject_rename_candidate_hides_actions_when_journal_operation_id_mismatches() {
+    let fixture = fixture_with_two_managed_targets().await;
+    let prepared = prepare_subject_rename(&fixture, "new-runtime").await;
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("rename operation");
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.recovery_data["request"]["operation_id"] =
+        serde_json::to_value(skillhub_core::OperationId::new())
+            .expect("serialize mismatched operation id");
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist mismatched recovery journal");
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain operation for inspection");
+    assert!(
+        candidate.actions.is_empty(),
+        "a subject rename journal whose operation id differs from its row must not advertise actions"
+    );
+}
+
+#[tokio::test]
+async fn subject_rename_candidate_rejects_committed_flag_without_commit_checkpoints() {
+    let fixture = fixture_with_two_managed_targets().await;
+    let prepared = prepare_subject_rename(&fixture, "new-runtime").await;
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("rename operation");
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.recovery_data["metadata_committed"] = serde_json::json!(true);
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist inconsistent committed checkpoint");
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain inconsistent operation for inspection");
+    assert!(
+        candidate.actions.is_empty(),
+        "the committed checkpoint flag alone must not advertise completion"
+    );
+}
+
+#[tokio::test]
+async fn valid_unstarted_subject_rename_recovery_keeps_rollback_action() {
+    let fixture = fixture_with_two_managed_targets().await;
+    let prepared = prepare_subject_rename(&fixture, "new-runtime").await;
+    let database = Database::open(&fixture.database_path).expect("reopen database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read operation")
+        .expect("rename operation");
+    record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist valid recovery candidate");
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain valid recovery candidate");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation],
+        "a valid unstarted rename journal keeps its supported rollback action"
+    );
+
+    let recovery: AppCommand = serde_json::from_value(serde_json::json!({
+        "type": "resolve_recovery",
+        "payload": {
+            "operation_id": prepared.operation_id.to_string(),
+            "action": "rollback_operation"
+        }
+    }))
+    .expect("rollback recovery command");
+    fixture
+        .facade
+        .execute(recovery)
+        .await
+        .expect("roll back the valid unstarted rename");
+    let database = Database::open(&fixture.database_path).expect("reopen rolled-back database");
+    let record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read rolled-back operation")
+        .expect("rename operation");
+    assert_eq!(record.phase, skillhub_core::OperationPhase::RolledBack);
 }
 
 #[tokio::test]

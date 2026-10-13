@@ -518,6 +518,121 @@ pub(crate) fn release_recovery_actions_available(record: &OperationRecord) -> bo
     true
 }
 
+pub(crate) fn subject_rename_recovery_action(record: &OperationRecord) -> Option<RecoveryAction> {
+    if record.kind != SUBJECT_RENAME_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::Verifying | OperationPhase::NeedsRecovery
+        )
+    {
+        return None;
+    }
+    let journal =
+        serde_json::from_value::<SubjectRenameJournal>(record.recovery_data.clone()).ok()?;
+    let preview = journal.prepared.subject_rename.as_ref()?;
+    let request_fingerprint = request_fingerprint(&journal.request).ok()?;
+    if journal.request.operation_id != record.operation_id
+        || journal.request.action != UsageChangeAction::RenameSubject
+        || journal.request.skill_id != Some(journal.original_skill.id())
+        || journal.request.runtime_name.as_deref() != Some(preview.runtime_name.as_str())
+        || record.request_fingerprint != request_fingerprint
+        || journal.prepared.operation_id != record.operation_id
+        || journal.prepared.action != UsageChangeAction::RenameSubject
+        || journal.prepared.affected_skill_ids != [journal.original_skill.id()]
+        || journal.prepared.subject_versions.len() != 1
+        || journal.prepared.subject_versions[0].skill_id != journal.original_skill.id()
+        || journal.prepared.subject_versions[0].version_id.as_ref()
+            != Some(&journal.previous_version_id)
+        || preview.skill_id != journal.original_skill.id()
+        || preview.previous_runtime_name != journal.original_skill.runtime_name()
+        || preview.targets.len() != journal.plans.len()
+        || journal.original_visible_hash.is_empty()
+    {
+        return None;
+    }
+
+    let renamed = renamed_skill(&journal).ok()?;
+    if renamed.runtime_name() != preview.runtime_name {
+        return None;
+    }
+    for (target, plan) in preview.targets.iter().zip(&journal.plans) {
+        let previous = Path::new(&plan.previous_path);
+        let destination = Path::new(&plan.path);
+        let backup = Path::new(&plan.backup_path);
+        let expected_backup_name = format!(
+            ".skillhub-runtime-rename-{}-{}",
+            record.operation_id, plan.deployment_id
+        );
+        if target.deployment_id != plan.deployment_id
+            || target.target_id != plan.target_id
+            || target.previous_path != plan.previous_path
+            || target.path != plan.path
+            || target.mode != plan.mode
+            || plan.original_deployment.id.to_string() != plan.deployment_id
+            || plan.original_deployment.skill_id != journal.original_skill.id()
+            || plan.original_deployment.target_id != plan.target_id
+            || plan.original_deployment.runtime_name != plan.previous_runtime_name
+            || plan.original_deployment.version_id != journal.previous_version_id
+            || plan.previous_runtime_name != preview.previous_runtime_name
+            || plan.runtime_name != preview.runtime_name
+            || plan.expected_hash != plan.original_deployment.expected_hash
+            || plan.target_root_identity.is_empty()
+            || plan.observed_before.as_deref().is_none_or(str::is_empty)
+            || previous.parent() != destination.parent()
+            || destination.parent() != backup.parent()
+            || previous.file_name().and_then(|name| name.to_str())
+                != Some(plan.previous_runtime_name.as_str())
+            || destination.file_name().and_then(|name| name.to_str())
+                != Some(plan.runtime_name.as_str())
+            || backup.file_name().and_then(|name| name.to_str())
+                != Some(expected_backup_name.as_str())
+            || plan.created_new_entry != plan.created_entry_identity.is_some()
+            || (plan.moved_previous_entry && !plan.created_new_entry)
+            || (plan.deployment_record_updated && !plan.moved_previous_entry)
+            || (plan.backup_finalized
+                && (!plan.moved_previous_entry || !journal.metadata_committed))
+        {
+            return None;
+        }
+    }
+
+    let result_matches_journal = record.result.as_ref().is_some_and(|result| {
+        serde_json::from_value::<PreparedUsageChange>(result.clone())
+            .is_ok_and(|prepared| prepared == journal.prepared)
+            || serde_json::from_value::<UsageChangeResult>(result.clone())
+                .is_ok_and(|receipt| receipt == subject_rename_result(&journal))
+    });
+    if !result_matches_journal {
+        return None;
+    }
+
+    if journal.metadata_committed {
+        if journal.new_version_id.is_none()
+            || journal
+                .new_version_hash
+                .as_deref()
+                .is_none_or(str::is_empty)
+            || journal.new_target_hash.as_deref().is_none_or(str::is_empty)
+            || journal.staging_path.is_some()
+            || journal.visible_rename.is_none()
+            || !journal.catalog_updated
+            || !journal.store_pointer_updated
+            || !journal.database_pointer_updated
+            || !journal.portable_updated
+            || journal.plans.iter().any(|plan| {
+                !plan.created_new_entry
+                    || !plan.moved_previous_entry
+                    || !plan.deployment_record_updated
+            })
+        {
+            return None;
+        }
+        Some(RecoveryAction::CompleteOperation)
+    } else {
+        Some(RecoveryAction::RollbackOperation)
+    }
+}
+
 fn validate_duplicate_cleanup_rollback_facts(
     store: &VersionStore,
     journal: &DuplicateCleanupJournal,

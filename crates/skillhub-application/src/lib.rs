@@ -21536,16 +21536,10 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
-                    "subject_runtime_rename"
-                        if record
-                            .recovery_data
-                            .get("metadata_committed")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false) =>
-                    {
-                        vec![RecoveryAction::CompleteOperation]
-                    }
-                    "subject_runtime_rename" => vec![RecoveryAction::RollbackOperation],
+                    "subject_runtime_rename" => usage_change_service::
+                        subject_rename_recovery_action(record)
+                        .into_iter()
+                        .collect(),
                     "delete_skill"
                         if parse_delete_recovery_candidate(
                             record.operation_id,
