@@ -23,6 +23,7 @@ function previewTargets(targetCount = 3, longPaths = false, agentCard = false): 
       label: index === 2 ? "Unavailable target" : `Preview Agent ${index + 1}`,
       path: targetPath,
       available: index !== 2,
+      writable: index !== 2,
       physicalId: `physical-${index + 1}`,
       modes: index % 2 === 0 ? ["symbolic_link", "managed_copy"] : ["managed_copy"],
     };
@@ -126,6 +127,8 @@ type PreviewScenario =
   | "batch-preview-fail"
   | "batch-partial"
   | "batch-fallback"
+  | "target-eligibility"
+  | "batch-target-eligibility"
   | "path-layout";
 
 const scenarios: readonly PreviewScenario[] = [
@@ -142,6 +145,8 @@ const scenarios: readonly PreviewScenario[] = [
   "batch-preview-fail",
   "batch-partial",
   "batch-fallback",
+  "target-eligibility",
+  "batch-target-eligibility",
   "path-layout",
 ];
 
@@ -151,6 +156,7 @@ const BATCH_SCENARIOS: readonly PreviewScenario[] = [
   "batch-preview-fail",
   "batch-partial",
   "batch-fallback",
+  "batch-target-eligibility",
 ];
 
 function isBatchScenario(scenario: PreviewScenario): boolean {
@@ -165,6 +171,16 @@ function previewScenario(): PreviewScenario {
 function batchSkillCount(scenario: PreviewScenario): number {
   if (scenario === "batch-fallback") return 2;
   return scenario === "batch-bulk" ? 60 : 8;
+}
+
+function previewTargetsForScenario(scenario: PreviewScenario): DeploymentTarget[] {
+  const targets = previewTargets();
+  if (scenario !== "target-eligibility" && scenario !== "batch-target-eligibility") return targets;
+  return [
+    { ...targets[0], label: "Read-only target", writable: false },
+    { ...targets[1], label: "Unsupported target", modes: [] },
+    { ...targets[2], label: "Writable target", available: true, writable: true, modes: ["managed_copy"] },
+  ];
 }
 
 function pairsFor(items: BatchPreviewItem[], targets: DeploymentTarget[], scenario: PreviewScenario): DeploymentPairPreview[] {
@@ -214,7 +230,9 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
       if (scenario === "unavailable") {
         throw new Error("preview.deploy_targets_unavailable");
       }
-      return previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout");
+      return scenario === "target-eligibility" || scenario === "batch-target-eligibility"
+        ? previewTargetsForScenario(scenario)
+        : previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout");
     },
     preview: async (items, context) => {
       if (scenario === "fail-preview" || scenario === "batch-preview-fail") {
@@ -227,7 +245,9 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
       }
       const pairs = pairsFor(
         items,
-        await previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout"),
+        scenario === "target-eligibility" || scenario === "batch-target-eligibility"
+          ? previewTargetsForScenario(scenario)
+          : await previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout"),
         scenario,
       );
       // 镜像后端裁决（14.7）：持有指纹与当前指纹一致才保留确认。

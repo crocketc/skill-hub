@@ -471,12 +471,14 @@ fn zcode_desktop_is_available_in_agents_skills_and_shares_one_physical_target_wi
 }
 
 #[test]
-fn read_only_directory_is_not_reported_as_writable() {
+#[cfg(unix)]
+fn directory_without_posix_write_permission_is_not_reported_as_writable() {
     let workspace = tempdir().unwrap();
     let home = workspace.path().join("home");
     let target = home.join(".agents/skills");
     std::fs::create_dir_all(&target).unwrap();
-    let mut permissions = std::fs::metadata(&target).unwrap().permissions();
+    let original_permissions = std::fs::metadata(&target).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
     permissions.set_readonly(true);
     std::fs::set_permissions(&target, permissions).unwrap();
     let snapshot = DiscoverAgents::builtin()
@@ -491,6 +493,7 @@ fn read_only_directory_is_not_reported_as_writable() {
         .unwrap();
     assert!(target.exists && target.readable);
     assert!(!target.writable);
+    std::fs::set_permissions(home.join(".agents/skills"), original_permissions).unwrap();
 }
 
 #[test]

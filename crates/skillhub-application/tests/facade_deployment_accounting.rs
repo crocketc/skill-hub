@@ -5,7 +5,7 @@ use skillhub_core::agent::{
 };
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CommitUsageChange, GetDeploymentPlan,
-    ListDeployments, PrepareDeployment, PrepareUsageChange,
+    ListDeploymentTargets, ListDeployments, PrepareDeployment, PrepareUsageChange,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, TargetChange};
@@ -447,6 +447,142 @@ async fn profile_without_any_deployment_support_blocks_the_plan() {
         .await
         .expect_err("unsupported client must not produce a plan");
     assert_eq!(error.code, ErrorCode::AgentProfileInvalidCapability);
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn currently_read_only_target_is_listed_but_cannot_be_planned() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let path = harness.target_root.path();
+    let original_permissions = std::fs::metadata(path)
+        .expect("target metadata")
+        .permissions();
+    let mut read_only = original_permissions.clone();
+    read_only.set_readonly(true);
+    std::fs::set_permissions(path, read_only).expect("make target read-only");
+
+    let listed = harness
+        .facade
+        .query(RootAppQuery::ListDeploymentTargets(ListDeploymentTargets))
+        .await;
+    let plan = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::deployment::DeploymentPlanRequest {
+                skill_id: harness.skill.id(),
+                version_id: harness.version_id.clone(),
+                runtime_name: "find-skills".into(),
+                logical_target_ids: vec!["claude-global".into()],
+                mode_override: None,
+            },
+        }))
+        .await;
+    std::fs::set_permissions(path, original_permissions).expect("restore target permissions");
+
+    let AppQueryResult::DeploymentTargets(targets) = listed.expect("list targets") else {
+        panic!("expected deployment targets");
+    };
+    let target = targets
+        .iter()
+        .find(|target| target.id == "claude-global")
+        .expect("discovered target stays visible");
+    assert!(
+        target.available,
+        "read-only target remains visible for explanation"
+    );
+    assert!(
+        !target.writable,
+        "write permission comes from a fresh observation"
+    );
+    assert_eq!(
+        plan.expect_err("a read-only target must not produce a plan")
+            .code,
+        ErrorCode::DeploymentTargetNotWritable
+    );
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn read_only_target_gets_a_specific_batch_preview_block_reason() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let path = harness.target_root.path();
+    let original_permissions = std::fs::metadata(path)
+        .expect("target metadata")
+        .permissions();
+    let mut read_only = original_permissions.clone();
+    read_only.set_readonly(true);
+    std::fs::set_permissions(path, read_only).expect("make target read-only");
+    let result = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentBatchPreview(
+            GetDeploymentBatchPreview {
+                items: vec![item(
+                    harness.skill.id(),
+                    Some(harness.version_id.clone()),
+                    &["claude-global"],
+                    DeploymentPreference::Automatic,
+                )],
+                confirmations: Default::default(),
+                exclusions: Vec::new(),
+            },
+        ))
+        .await;
+    std::fs::set_permissions(path, original_permissions).expect("restore target permissions");
+
+    let AppQueryResult::DeploymentBatchPreview(preview) = result.expect("batch preview") else {
+        panic!("expected deployment batch preview");
+    };
+    assert_eq!(preview.pairs.len(), 1);
+    assert_eq!(
+        preview.pairs[0].block_reason,
+        Some(skillhub_core::deployment::DeploymentBlockReason::TargetNotWritable)
+    );
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn target_becoming_read_only_after_prepare_is_refused_at_commit() {
+    let harness = harness("anthropic.claude-code", "find-skills").await;
+    let plan = managed_copy_plan(&harness).await;
+    let prepared = harness
+        .facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+
+    let path = harness.target_root.path();
+    let original_permissions = std::fs::metadata(path)
+        .expect("target metadata")
+        .permissions();
+    let mut read_only = original_permissions.clone();
+    read_only.set_readonly(true);
+    std::fs::set_permissions(path, read_only).expect("make target read-only");
+    let committed = harness
+        .facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await;
+    std::fs::set_permissions(path, original_permissions).expect("restore target permissions");
+
+    let AppCommandResult::DeploymentSummary(summary) = committed.expect("commit result") else {
+        panic!("expected deployment summary");
+    };
+    assert!(
+        !summary.committed,
+        "permission changes invalidate the prepared plan"
+    );
+    assert_eq!(
+        summary.targets[0].error_code.as_deref(),
+        Some("deployment.target_not_writable")
+    );
+    assert!(
+        !path.join("find-skills").exists(),
+        "stale target permissions must not create a destination"
+    );
 }
 
 /// Name consistency: SKILL.md `name` must match the deployed folder name or

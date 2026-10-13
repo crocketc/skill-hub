@@ -194,9 +194,39 @@ test.describe("deployment flow shell", () => {
     await expect(page.getByRole("alert")).toContainText(/failed/i);
     await expect(flowStatus(page, SINGLE_FLOW_REGION)).toContainText(/failed/i);
   });
+
+  test("shows why read-only and unsupported targets cannot be selected", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=target-eligibility");
+
+    const grid = page.getByTestId("deployment-target-grid");
+    const readOnly = grid.getByTestId("deployment-target-card").filter({ hasText: "Read-only target" });
+    const unsupported = grid.getByTestId("deployment-target-card").filter({ hasText: "Unsupported target" });
+    await expect(readOnly).toContainText("This target directory is not writable. Check the current account permissions or choose another target.");
+    await expect(unsupported).toContainText("This target has no supported dispatch mode.");
+    await expect(grid.getByRole("checkbox", { name: "Read-only target" })).toHaveCount(0);
+    await expect(grid.getByRole("checkbox", { name: "Unsupported target" })).toHaveCount(0);
+    await expect(grid.getByLabel("Writable target")).toBeEnabled();
+  });
 });
 
 test.describe("batch deployment flow", () => {
+  test("uses the same read-only and supported-mode eligibility as the single flow", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=batch-target-eligibility");
+
+    const grid = page.getByTestId("deployment-target-grid");
+    const readOnly = grid.getByTestId("deployment-target-card").filter({ hasText: "Read-only target" });
+    const unsupported = grid.getByTestId("deployment-target-card").filter({ hasText: "Unsupported target" });
+    await expect(readOnly).toContainText("This target directory is not writable. Check the current account permissions or choose another target.");
+    await expect(unsupported).toContainText("This target has no supported dispatch mode.");
+    await expect(grid.getByRole("checkbox", { name: "Read-only target" })).toHaveCount(0);
+    await expect(grid.getByRole("checkbox", { name: "Unsupported target" })).toHaveCount(0);
+    await expect(grid.getByLabel("Writable target")).toBeEnabled();
+    await grid.getByLabel("Writable target").check();
+    await expect(page.getByRole("button", { name: "Preview" })).toBeEnabled();
+  });
+
   test("keeps the non-atomic risk adjacent to the commit and guards unavailable targets", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch");

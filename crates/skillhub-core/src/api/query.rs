@@ -808,7 +808,7 @@ pub struct DeploymentBatchPreview {
     pub preserved_confirmation_ids: Vec<String>,
 }
 
-/// A registered logical filesystem target available for deployment selection.
+/// A registered filesystem target and its current dispatch eligibility facts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct DeploymentTarget {
@@ -816,6 +816,8 @@ pub struct DeploymentTarget {
     pub label: String,
     pub path: String,
     pub available: bool,
+    /// Whether the current filesystem observation permits writes to this target.
+    pub writable: bool,
     pub physical_id: String,
     pub modes: Vec<DeploymentMode>,
     /// Structured identity used by clients to render an Agent consistently.
@@ -834,7 +836,7 @@ pub struct DeploymentTarget {
     /// shared directory. Used only for the user-facing logo tooltip.
     #[serde(default)]
     pub shared_agent_brand_kinds: std::collections::BTreeMap<String, Vec<crate::agent::ClientKind>>,
-    /// User-facing directory observation fact; absent for project targets.
+    /// Current user-facing filesystem observation, including project targets.
     #[serde(default)]
     pub directory_status: Option<crate::agent::DirectoryObservationStatus>,
     /// False for a not-yet-created candidate path. Such a target may be shown

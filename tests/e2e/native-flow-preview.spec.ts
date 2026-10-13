@@ -150,9 +150,9 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
       warnings: [{ owner: "cexll", name: "myclaude", reason: "DOWNLOAD_FAILED status=404 Not Found" }],
     };
     const deploymentTargets = [
-      { id: "codex-target", label: "Codex CLI", path: "C:/Preview/.agents", available: true, physical_id: "codex-physical", modes: ["symbolic_link", "managed_copy"] },
-      { id: "claude-target", label: "Claude Code", path: "C:/Preview/.claude", available: true, physical_id: "claude-physical", modes: ["managed_copy"] },
-      { id: "missing-target", label: "Unavailable target", path: "C:/Preview/missing", available: false, physical_id: "missing-physical", modes: ["managed_copy"] },
+      { id: "codex-target", label: "Codex CLI", path: "C:/Preview/.agents", available: true, writable: true, physical_id: "codex-physical", modes: ["symbolic_link", "managed_copy"] },
+      { id: "claude-target", label: "Claude Code", path: "C:/Preview/.claude", available: true, writable: true, physical_id: "claude-physical", modes: ["managed_copy"] },
+      { id: "missing-target", label: "Unavailable target", path: "C:/Preview/missing", available: false, writable: false, physical_id: "missing-physical", modes: ["managed_copy"] },
     ];
     const deployments = [
       { id: "dep-1", skill_id: "pdf-reader", version_id: "v1", target_id: "codex-target", state: "deployed", mode: "symbolic_link", managed: true, runtime_name: "pdf-reader", expected_hash: "hash", observed_hash: "hash" },

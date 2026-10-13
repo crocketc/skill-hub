@@ -22,6 +22,7 @@ import {
   type DeploymentTarget,
   buildDeploymentTargetCards,
   groupPairsByDisposition,
+  isDeploymentTargetSelectable,
   isLinkMode,
 } from "./api";
 import { describeDeploymentResult } from "./api";
@@ -80,11 +81,11 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   // 目录的非 canonical 成员折叠到 canonical 目标）。
   const selectableTargetIdsForMember = useCallback((memberId: string): string[] => {
     const direct = (targets ?? []).find((candidate) => candidate.id === memberId);
-    if (direct) return direct.available ? [direct.id] : [];
+    if (direct) return isDeploymentTargetSelectable(direct) ? [direct.id] : [];
     const card = targetCards.find((candidate) =>
       candidate.cardModel?.members.some((member) => member.id === memberId));
     return card
-      ? card.targets.filter((target) => target.available).map((target) => target.id)
+      ? card.targets.filter(isDeploymentTargetSelectable).map((target) => target.id)
       : [];
   }, [targets, targetCards]);
 
@@ -128,7 +129,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   useEffect(() => {
     if (!preselectedAgentClientId || !targets) return;
     const target = targets.find((candidate) => candidate.agentClientId === preselectedAgentClientId
-      && candidate.available);
+      && isDeploymentTargetSelectable(candidate));
     if (target) {
       setSelectedIds((current) => current.includes(target.id) ? current : [...current, target.id]);
     } else {
@@ -483,7 +484,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
           {targetCards.filter((card) => card.targets.some((target) =>
             target.available || target.directoryStatus !== undefined)).map((card) => {
             const target = card.target;
-            const selectable = card.targets.filter((candidate) => candidate.available);
+            const selectable = card.targets.filter(isDeploymentTargetSelectable);
             const selectedCount = selectable.filter((candidate) => selectedIds.includes(candidate.id)).length;
             const checked = selectable.length > 0 && selectedCount === selectable.length;
             const pendingTargets = card.targets.filter((candidate) =>

@@ -99,6 +99,34 @@ fn planner_prefers_link_then_junction_then_managed_copy() {
 }
 
 #[test]
+fn planner_rejects_a_target_observed_as_not_writable() {
+    let workspace = tempdir().unwrap();
+    let target_path = workspace.path().join("skills");
+    std::fs::create_dir_all(&target_path).unwrap();
+    let policy = PathPolicy::from_roots([AllowedRoot::new(workspace.path()).unwrap()]).unwrap();
+    let target = TargetFact::registered(
+        "logical-codex",
+        &target_path,
+        physical_id_for_path(&target_path).unwrap(),
+        TargetFactSource::Discovery,
+        capabilities(true, true, true),
+    )
+    .with_writable(false)
+    .verify(&policy)
+    .unwrap();
+    let error = DeploymentPlanner
+        .plan(DeploymentPlanInput::new(
+            SkillId::new(),
+            VersionId::parse(&format!("sha256:{}", "a".repeat(64))).unwrap(),
+            "pdf",
+            "central/pdf",
+            vec![target],
+        ))
+        .expect_err("read-only target must not produce a deployment plan");
+    assert_eq!(error.code, ErrorCode::DeploymentTargetNotWritable);
+}
+
+#[test]
 fn planner_defaults_project_targets_to_managed_copies_while_agent_targets_stay_linked() {
     let workspace = tempdir().unwrap();
     let agent_path = workspace.path().join("agent-skills");
@@ -1384,8 +1412,27 @@ fn pair_facts(capability: DeploymentCapability) -> DeploymentPairFacts {
         conflicts: Vec::new(),
         occupancy: Vec::new(),
         path_available: true,
+        writable: true,
         requires_shared_impact_confirmation: false,
     }
+}
+
+#[test]
+fn read_only_pair_is_blocked_and_write_permission_is_fingerprinted() {
+    let writable = pair_facts(capabilities(true, false, true));
+    let mut read_only = writable.clone();
+    read_only.writable = false;
+    let preview = plan_target_preview(&read_only);
+    assert_eq!(preview.disposition, DeploymentPreviewDisposition::Blocked);
+    assert_eq!(
+        preview.block_reason,
+        Some(DeploymentBlockReason::TargetNotWritable)
+    );
+    assert_ne!(
+        preview.confirmation_fingerprint,
+        plan_target_preview(&writable).confirmation_fingerprint,
+        "a write-permission change must invalidate a held preview"
+    );
 }
 
 #[test]

@@ -332,7 +332,7 @@ pub fn observe_directory(path: &Path) -> DirectoryObservation {
         };
     }
     let readable = fs::read_dir(path).is_ok();
-    let writable = readable && !metadata.permissions().readonly();
+    let writable = readable && current_account_can_add_directory_entry(path);
     let identity = metadata_identity(path, &metadata);
     let physical_identity_verified = identity.is_some();
     DirectoryObservation {
@@ -347,6 +347,73 @@ pub fn observe_directory(path: &Path) -> DirectoryObservation {
         physical_id: identity.map(|value| format!("fs:{value}")),
         physical_identity_verified,
     }
+}
+
+/// Check the permission needed to create a Skill directory entry without
+/// writing a probe file into the user's Agent directory.
+#[cfg(unix)]
+fn current_account_can_add_directory_entry(path: &Path) -> bool {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `path` is a NUL-terminated path and the call does not mutate it.
+    unsafe {
+        libc::faccessat(
+            libc::AT_FDCWD,
+            path.as_ptr(),
+            libc::W_OK | libc::X_OK,
+            libc::AT_EACCESS,
+        ) == 0
+    }
+}
+
+/// AccessCheck the directory's create-subdirectory right on Windows. Opening
+/// the directory with this desired access checks the current token's ACL
+/// without creating a temporary file or directory.
+#[cfg(windows)]
+fn current_account_can_add_directory_entry(path: &Path) -> bool {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ADD_SUBDIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: `wide` is NUL-terminated and CreateFileW only opens the existing
+    // directory; the requested right is checked by the filesystem ACL.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            FILE_ADD_SUBDIRECTORY,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return false;
+    }
+    // SAFETY: the successful CreateFileW call returned this owned handle.
+    unsafe { CloseHandle(handle) };
+    true
+}
+
+#[cfg(not(any(unix, windows)))]
+fn current_account_can_add_directory_entry(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|metadata| !metadata.permissions().readonly())
+        .unwrap_or(false)
 }
 
 fn physical_identity(path: &Path, operating_system: OperatingSystem) -> String {

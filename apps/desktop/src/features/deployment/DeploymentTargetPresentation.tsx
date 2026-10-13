@@ -28,6 +28,11 @@ export function DeploymentTargetPresentation({
     : target?.directoryStatus === "missing"
       ? String(t("agents.pathPending"))
       : statusMessage;
+  const qualificationReason = target?.available && !target.writable
+    ? String(t("deployment.targets.notWritable"))
+    : target?.available && target.modes.length === 0
+      ? String(t("deployment.targets.noSupportedMode"))
+      : undefined;
   const suggestion = target?.directoryStatus
     && target.directoryStatus !== "missing"
     && target.directoryStatus !== "existing"
@@ -66,6 +71,7 @@ export function DeploymentTargetPresentation({
       <>
         <strong>{target?.label ?? fallback}</strong>
         <small title={target ? displayPath(target.path) : fallback}>{pathValue}</small>
+        {qualificationReason ? <small className="sh-deployment-target-card__guidance">{qualificationReason}</small> : null}
         {suggestion ? <small>{suggestion}</small> : null}
       </>
     );
@@ -84,6 +90,7 @@ export function DeploymentTargetPresentation({
       </div>
       <div className="sh-deployment-target-card__path-region">
         <small title={target ? displayPath(target.path) : fallback}>{pathValue}</small>
+        {qualificationReason ? <small className="sh-deployment-target-card__guidance">{qualificationReason}</small> : null}
         {suggestion ? <small className="sh-deployment-target-card__guidance">{suggestion}</small> : null}
       </div>
       <DeploymentCapabilityIcons directory={directory} note={note} t={(key) => String(t(key as never))} />

@@ -52,6 +52,13 @@ impl DeploymentPlanner {
             let target = target_group
                 .first()
                 .expect("selected physical target group is not empty");
+            if target_group.iter().any(|target| !target.writable()) {
+                return Err(
+                    AppError::new(ErrorCode::DeploymentTargetNotWritable, Severity::Error)
+                        .with_param("target_id", physical_id)
+                        .with_action(RecoveryAction::Retry),
+                );
+            }
             let logical_ids = merged_logical_ids(&target_group);
             let existing = merged_existing(&target_group);
             let capabilities = merged_capabilities(&target_group);
@@ -597,6 +604,8 @@ pub enum DeploymentBlockReason {
     SharedImpactRequiresResolution,
     /// No deployment form, not even a managed copy, is executable.
     CopyUnavailable,
+    /// The target directory is readable but the current account cannot write to it.
+    TargetNotWritable,
     /// 此精确技能版本存在尚未完全信任的危险级安全发现。
     SecurityAlert,
 }
@@ -627,6 +636,8 @@ pub struct DeploymentPairFacts {
     /// Occupancy snapshot of the destination at preview time.
     pub occupancy: Vec<ExistingDeployment>,
     pub path_available: bool,
+    /// Current write permission observation for the target directory.
+    pub writable: bool,
     /// Other agents read this shared directory and the shared-impact
     /// decision is still outstanding.
     pub requires_shared_impact_confirmation: bool,
@@ -657,6 +668,9 @@ pub struct PairPreview {
 pub fn plan_target_preview(facts: &DeploymentPairFacts) -> PairPreview {
     if !facts.path_available {
         return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::PathUnavailable));
+    }
+    if !facts.writable {
+        return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetNotWritable));
     }
     if !facts.conflicts.is_empty() {
         return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetOccupied));
@@ -767,7 +781,7 @@ fn preview_with_fingerprint(facts: &DeploymentPairFacts, mut preview: PairPrevie
 /// nothing that varies independently of these facts (pair ids, batch order,
 /// relationship revisions) can enter.
 fn confirmation_fingerprint(facts: &DeploymentPairFacts, preview: &PairPreview) -> String {
-    let mut canonical = String::from("deployment-confirmation-v1\n");
+    let mut canonical = String::from("deployment-confirmation-v2\n");
     canonical.push_str(facts.skill_id.to_string().as_str());
     canonical.push('\n');
     canonical.push_str(facts.version_id.as_str());
@@ -831,6 +845,7 @@ fn confirmation_fingerprint(facts: &DeploymentPairFacts, preview: &PairPreview) 
     canonical.push_str(&format!("occupancy:{}\n", occupancy.join(";")));
 
     canonical.push_str(&format!("path_available:{}\n", facts.path_available as u8));
+    canonical.push_str(&format!("target_writable:{}\n", facts.writable as u8));
     canonical.push_str(&format!(
         "shared_impact_outstanding:{}\n",
         facts.requires_shared_impact_confirmation as u8
@@ -881,6 +896,7 @@ fn block_reason_word(reason: DeploymentBlockReason) -> &'static str {
             "shared_impact_requires_resolution"
         }
         DeploymentBlockReason::CopyUnavailable => "copy_unavailable",
+        DeploymentBlockReason::TargetNotWritable => "target_not_writable",
         DeploymentBlockReason::SecurityAlert => "security_alert",
     }
 }

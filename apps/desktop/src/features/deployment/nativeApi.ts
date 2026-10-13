@@ -65,6 +65,7 @@ function toTarget(target: NativeDeploymentTarget): DeploymentTarget {
     label: target.label,
     path: target.path,
     available: target.available,
+    writable: target.writable,
     physicalId: target.physical_id,
     modes,
     agentClientId: target.agent_client_id ?? undefined,

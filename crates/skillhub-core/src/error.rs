@@ -17,6 +17,8 @@ pub enum ErrorCode {
     TargetExists,
     #[serde(rename = "deployment.target_changed")]
     TargetChanged,
+    #[serde(rename = "deployment.target_not_writable")]
+    DeploymentTargetNotWritable,
     #[serde(rename = "deployment.symlink_not_supported")]
     SymlinkNotSupported,
     #[serde(rename = "deployment.junction_not_supported")]
@@ -157,6 +159,7 @@ impl ErrorCode {
             Self::ObjectNotFound => "object.not_found",
             Self::TargetExists => "deployment.target_exists",
             Self::TargetChanged => "deployment.target_changed",
+            Self::DeploymentTargetNotWritable => "deployment.target_not_writable",
             Self::SymlinkNotSupported => "deployment.symlink_not_supported",
             Self::JunctionNotSupported => "deployment.junction_not_supported",
             Self::OwnershipUnknown => "target.ownership_unknown",

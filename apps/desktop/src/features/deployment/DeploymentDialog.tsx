@@ -14,6 +14,7 @@ import "./deployment.css";
 import {
   buildDeploymentTargetCards,
   isLinkMode,
+  isDeploymentTargetSelectable,
   type BatchDeploymentFacade,
   type BatchPreviewItem,
   type DeploymentPairPreview,
@@ -230,7 +231,8 @@ export function DeploymentDialog({
     const reselected = new Set<string>();
     for (const id of failedIds) {
       const card = targetCards.find((candidate) => candidate.targets.some((target) => target.id === id));
-      const members = card?.targets.filter((target) => target.available) ?? [];
+      const members = card?.targets.filter(isDeploymentTargetSelectable) ?? [];
+      if (!members.some((target) => target.id === id)) continue;
       if (card && members.length > 1 && members.some((target) => target.id === id)) {
         for (const member of members) reselected.add(member.id);
       } else {
@@ -402,7 +404,7 @@ export function DeploymentDialog({
             {targetCards.filter((card) => card.targets.some((target) =>
               target.available || target.directoryStatus !== undefined)).map((card) => {
               const target = card.target;
-              const selectable = card.targets.filter((candidate) => candidate.available);
+              const selectable = card.targets.filter(isDeploymentTargetSelectable);
               const selectedCount = selectable.filter((candidate) => selectedIds.includes(candidate.id)).length;
               const checked = selectable.length > 0 && selectedCount === selectable.length;
               const pendingTargets = card.targets.filter((candidate) =>

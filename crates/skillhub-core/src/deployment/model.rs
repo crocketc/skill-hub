@@ -109,6 +109,7 @@ pub struct TargetFact {
     expected_physical_id: String,
     source: TargetFactSource,
     capabilities: DeploymentCapability,
+    writable: bool,
     case_sensitive: bool,
 }
 
@@ -126,6 +127,7 @@ impl TargetFact {
             expected_physical_id: expected_physical_id.into(),
             source,
             capabilities,
+            writable: true,
             case_sensitive: !cfg!(windows),
         }
     }
@@ -158,6 +160,12 @@ impl TargetFact {
         self
     }
 
+    /// Attach the current read-only permission observation for this target.
+    pub fn with_writable(mut self, writable: bool) -> Self {
+        self.writable = writable;
+        self
+    }
+
     pub fn verify(self, policy: &PathPolicy) -> AppResult<VerifiedTarget> {
         VerifiedTarget::from_fact(self, policy)
     }
@@ -172,6 +180,7 @@ pub struct VerifiedTarget {
     physical_target_id: String,
     canonical_path: String,
     capabilities: DeploymentCapability,
+    writable: bool,
     source: TargetFactSource,
     existing: Vec<ExistingDeployment>,
     case_sensitive: bool,
@@ -205,6 +214,7 @@ impl VerifiedTarget {
             // authorization above canonicalizes it before any identity check.
             canonical_path: fact.registered_path,
             capabilities: fact.capabilities,
+            writable: fact.writable,
             source: fact.source,
             existing: Vec::new(),
             case_sensitive: fact.case_sensitive,
@@ -225,6 +235,10 @@ impl VerifiedTarget {
 
     pub fn capabilities(&self) -> &DeploymentCapability {
         &self.capabilities
+    }
+
+    pub fn writable(&self) -> bool {
+        self.writable
     }
 
     pub fn source(&self) -> TargetFactSource {

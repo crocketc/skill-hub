@@ -143,6 +143,7 @@ function nativeTarget(
     label: agentClientId ?? id,
     path,
     available,
+    writable: available,
     physical_id: physicalId,
     modes: ["managed_copy", "symbolic_link"],
     agent_client_id: agentClientId ?? null,

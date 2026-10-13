@@ -57,6 +57,7 @@ export type DeploymentTarget = {
   label: string;
   path: string;
   available: boolean;
+  writable: boolean;
   physicalId: string;
   modes: DeploymentMode[];
   agentClientId?: string;
@@ -77,6 +78,11 @@ export type DeploymentTargetCard = {
   targets: DeploymentTarget[];
   cardModel?: AgentCardModel;
 };
+
+/** 只有当前可用、可写且至少有一种支持方式的目标才可纳入派发。 */
+export function isDeploymentTargetSelectable(target: DeploymentTarget): boolean {
+  return target.available && target.writable && target.modes.length > 0;
+}
 
 /** Group only the display projection. Each original target remains addressable. */
 export function buildDeploymentTargetCards(targets: readonly DeploymentTarget[]): DeploymentTargetCard[] {
@@ -152,6 +158,8 @@ export type DeploymentBlockReason =
   | "target_occupied"
   | "path_unavailable"
   | "shared_impact_requires_resolution"
+  | "copy_unavailable"
+  | "target_not_writable"
   | "security_alert";
 
 /** 阻断原因 → 用户文案 i18n 键。原始错误码不进首屏。 */
@@ -345,6 +353,7 @@ export function customAgentDeploymentTargetFixture(): DeploymentTarget {
     label: "Acme",
     path: "D:/Agents/acme/skills",
     available: true,
+    writable: true,
     physicalId: "custom-physical-id",
     modes: ["managed_copy"],
     agentClientId: "acme.cli",
@@ -359,6 +368,7 @@ export function deploymentTargetsFixture(): DeploymentTarget[] {
       label: "Codex CLI",
       path: "C:/Users/demo/.codex/skills",
       available: true,
+      writable: true,
       physicalId: "codex-skills",
       modes: ["symbolic_link", "managed_copy"],
     },
@@ -367,6 +377,7 @@ export function deploymentTargetsFixture(): DeploymentTarget[] {
       label: "Claude Code",
       path: "C:/Users/demo/.claude/skills",
       available: true,
+      writable: true,
       physicalId: "claude-skills",
       modes: ["symbolic_link", "managed_copy"],
     },
@@ -375,6 +386,7 @@ export function deploymentTargetsFixture(): DeploymentTarget[] {
       label: "Read-only Agent",
       path: "C:/Agents/readonly",
       available: false,
+      writable: false,
       physicalId: "readonly",
       modes: ["managed_copy"],
     },

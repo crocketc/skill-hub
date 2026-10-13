@@ -971,6 +971,8 @@ export type DeploymentBlockReason =
 "shared_impact_requires_resolution" |
 /**  No deployment form, not even a managed copy, is executable. */
 "copy_unavailable" |
+/**  The target directory is readable but the current account cannot write to it. */
+"target_not_writable" |
 /**  此精确技能版本存在尚未完全信任的危险级安全发现。 */
 "security_alert";
 
@@ -1177,12 +1179,14 @@ export type DeploymentSummary = {
 	committed: boolean,
 };
 
-/**  A registered logical filesystem target available for deployment selection. */
+/**  A registered filesystem target and its current dispatch eligibility facts. */
 export type DeploymentTarget = {
 	id: string,
 	label: string,
 	path: string,
 	available: boolean,
+	/**  Whether the current filesystem observation permits writes to this target. */
+	writable: boolean,
 	physical_id: string,
 	modes: DeploymentMode[],
 	/**
@@ -1202,7 +1206,7 @@ export type DeploymentTarget = {
 	 *  shared directory. Used only for the user-facing logo tooltip.
 	 */
 	shared_agent_brand_kinds?: { [key in string]: ClientKind[] },
-	/**  User-facing directory observation fact; absent for project targets. */
+	/**  Current user-facing filesystem observation, including project targets. */
 	directory_status?: DirectoryObservationStatus | null,
 	/**
 	 *  False for a not-yet-created candidate path. Such a target may be shown
@@ -1489,7 +1493,7 @@ export type EnvironmentProblemView = {
 };
 
 /**  Stable machine-readable failures returned by the application boundary. */
-export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" |
+export type ErrorCode = "input.invalid" | "path.outside_allowed_root" | "object.not_found" | "deployment.target_exists" | "deployment.target_changed" | "deployment.target_not_writable" | "deployment.symlink_not_supported" | "deployment.junction_not_supported" | "target.ownership_unknown" | "deployment.ownership_mismatch" | "deployment.security_check_blocked" |
 /**
  *  W3-1（FB-003 裁决第 1 节）：Skill 处于安全预警状态，派发被拒。
  *  错误参数带技能名/级别等可读信息与处理入口指引；导入门禁不再使用

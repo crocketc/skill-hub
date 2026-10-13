@@ -197,6 +197,27 @@ it("renders selectable deployment targets as compact cards with full-path hints 
   expect(within(cards[0]).getByTitle("C:\\Users\\demo\\.codex\\skills")).toHaveTextContent("C:\\Users\\demo\\.codex\\skills");
 });
 
+it("keeps read-only and unsupported targets visible with a concrete reason but disables selection", async () => {
+  const base = deploymentTargetsFixture()[0];
+  const targets: DeploymentTarget[] = [
+    { ...base, id: "readonly-target", label: "只读目录", writable: false },
+    { ...base, id: "unsupported-target", label: "不支持目标", modes: [] },
+  ];
+  const facade: BatchDeploymentFacade = {
+    listTargets: async () => targets,
+    preview: async () => previewBatch([]),
+    commit: async () => [],
+  };
+
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  const grid = await screen.findByTestId("deployment-target-grid");
+  expect(within(grid).getAllByTestId("deployment-target-card")).toHaveLength(2);
+  expect(within(grid).getByText("目标目录不可写，请检查当前账户权限或选择其他目标。")).toBeVisible();
+  expect(within(grid).getByText("此目标没有可用的派发方式，请检查目标配置。")).toBeVisible();
+  expect(within(grid).queryByRole("checkbox")).not.toBeInTheDocument();
+});
+
 it("shows one directory card for same-brand kinds and expands selection to every logical target", async () => {
   const user = userEvent.setup();
   const targets: DeploymentTarget[] = [
@@ -282,6 +303,7 @@ function sharedCardFixture(): { canonicalTarget: DeploymentTarget; memberIds: st
     label: "Agent Skills",
     path: "C:/Users/demo/.agents/skills",
     available: true,
+    writable: true,
     physicalId: "shared-directory-id",
     modes: ["managed_copy", "symbolic_link"],
     agentClientId: "agent-skills.shared",
@@ -326,6 +348,7 @@ it("keeps a shared directory as one canonical selection card", async () => {
     label: "Agent Skills",
     path: "C:/Users/demo/.agents/skills",
     available: true,
+    writable: true,
     physicalId: "shared-directory-id",
     modes: ["managed_copy", "symbolic_link"],
     agentClientId: "agent-skills.shared",
@@ -614,8 +637,8 @@ it("keeps excluded pairs out of the commit execution and reports them as skipped
 
 it("expands a selected project into its linked agent targets", async () => {
   const user = userEvent.setup();
-  const agent: DeploymentTarget = { id: "logical-agent-1", label: "Codex CLI", path: "C:/codex/skills", available: true, physicalId: "p1", modes: ["managed_copy"] };
-  const project: DeploymentTarget = { id: "project-1", label: "我的项目", path: "D:/proj", available: true, physicalId: "p2", modes: ["managed_copy"] };
+  const agent: DeploymentTarget = { id: "logical-agent-1", label: "Codex CLI", path: "C:/codex/skills", available: true, writable: true, physicalId: "p1", modes: ["managed_copy"] };
+  const project: DeploymentTarget = { id: "project-1", label: "我的项目", path: "D:/proj", available: true, writable: true, physicalId: "p2", modes: ["managed_copy"] };
   const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
   const facade: BatchDeploymentFacade = {
     listTargets: async () => [agent, project],
@@ -1084,7 +1107,7 @@ it("preselects a deep-linked custom agent target (2026-09-30)", async () => {
 it("expands project agent links through card membership to addressable targets (DEV-106)", async () => {
   const user = userEvent.setup();
   const { canonicalTarget } = sharedCardFixture();
-  const project: DeploymentTarget = { id: "project-1", label: "我的项目", path: "D:/proj", available: true, physicalId: "p2", modes: ["managed_copy"] };
+  const project: DeploymentTarget = { id: "project-1", label: "我的项目", path: "D:/proj", available: true, writable: true, physicalId: "p2", modes: ["managed_copy"] };
   const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
   const facade: BatchDeploymentFacade = {
     listTargets: async () => [canonicalTarget, project],

@@ -5,9 +5,9 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::check::CheckRepository;
 use skillhub_core::{
     agent::{
-        ClientInstance, ClientKind, ClientPresence, DirectoryObservationStatus,
-        DirectoryPrecedence, DiscoverySnapshot, LogicalTarget, OperatingSystem, PhysicalTarget,
-        TargetScope,
+        AgentRootObservation, ClientInstance, ClientKind, ClientPresence,
+        DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget,
+        OperatingSystem, PhysicalTarget, TargetScope,
     },
     api::{
         AnalyzeImport, AppCommandResult, AppQueryResult, CommitDeployment, CommitRestore,
@@ -5789,8 +5789,114 @@ async fn deployment_plan_query_resolves_registered_project_with_copy_as_default(
 }
 
 #[tokio::test]
+async fn deployment_target_query_preserves_missing_status_when_verified_paths_disappear() {
+    let database = Database::open_in_memory().expect("database");
+    let agent_root = tempfile::tempdir().expect("agent root");
+    let agent_skills = agent_root.path().join("skills");
+    std::fs::create_dir(&agent_skills).expect("agent skills directory");
+    let agent_root_identity =
+        skillhub_core::physical_id_for_path(agent_root.path()).expect("agent root identity");
+    let agent_target_identity =
+        skillhub_core::physical_id_for_path(&agent_skills).expect("agent target identity");
+    database
+        .agent_repository()
+        .replace(&DiscoverySnapshot {
+            generation: "1".into(),
+            observed_at: "2026-10-13T00:00:00Z".into(),
+            instances: vec![ClientInstance {
+                profile_id: "fixture".into(),
+                client_id: "fixture-cli".into(),
+                kind: ClientKind::Cli,
+                display_name: "Fixture".into(),
+                supported_os: vec![OperatingSystem::Macos],
+                client_presence: ClientPresence::Unknown,
+            }],
+            agent_roots: vec![AgentRootObservation {
+                id: "fixture-root".into(),
+                profile_id: "fixture".into(),
+                client_id: "fixture-cli".into(),
+                scope: TargetScope::Global,
+                path: agent_root.path().to_string_lossy().into_owned(),
+                status: DirectoryObservationStatus::Existing,
+                exists: true,
+                readable: true,
+                writable: true,
+                physical_id: Some(agent_root_identity),
+                physical_identity_verified: true,
+            }],
+            logical_targets: vec![LogicalTarget {
+                id: "fixture-target".into(),
+                profile_id: "fixture".into(),
+                client_id: "fixture-cli".into(),
+                scope: TargetScope::Global,
+                path: agent_skills.to_string_lossy().into_owned(),
+                agent_root_id: "fixture-root".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: false,
+                builtin: false,
+                exists: true,
+                readable: true,
+                writable: true,
+                available: true,
+                physical_id: agent_target_identity,
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: true,
+            }],
+            physical_targets: Vec::new(),
+        })
+        .expect("save discovery");
+
+    let project_root = tempfile::tempdir().expect("project root");
+    let project = database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "Fixture project",
+            project_root.path(),
+        ))
+        .expect("register project");
+
+    std::fs::remove_dir_all(&agent_skills).expect("remove agent skills directory");
+    std::fs::remove_dir_all(project_root.path()).expect("remove project directory");
+
+    let facade = LocalApplicationFacade::new(database);
+    let result = facade
+        .query(RootAppQuery::ListDeploymentTargets(
+            skillhub_core::ListDeploymentTargets,
+        ))
+        .await
+        .expect("deployment targets");
+    let AppQueryResult::DeploymentTargets(targets) = result else {
+        panic!("expected deployment targets");
+    };
+
+    let project_id = project.id.to_string();
+    for id in ["fixture-target", project_id.as_str()] {
+        let target = targets
+            .iter()
+            .find(|target| target.id == id)
+            .unwrap_or_else(|| panic!("missing target {id}"));
+        assert_eq!(
+            target.directory_status,
+            Some(DirectoryObservationStatus::Missing),
+            "a missing directory must not be reported as an identity change: {target:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn deployment_target_query_includes_discovery_and_registered_project_targets() {
     let database = Database::open_in_memory().expect("database");
+    let target_root = tempfile::tempdir().expect("target root");
+    let codex_target = target_root.path().join("codex-skills");
+    let shared_target = target_root.path().join("shared-skills");
+    std::fs::create_dir(&codex_target).expect("Codex skills directory");
+    std::fs::create_dir(&shared_target).expect("shared skills directory");
+    let codex_target_identity =
+        skillhub_core::physical_id_for_path(&codex_target).expect("Codex target identity");
+    let shared_target_identity =
+        skillhub_core::physical_id_for_path(&shared_target).expect("shared target identity");
     let snapshot = DiscoverySnapshot {
         generation: "1".into(),
         observed_at: "2026-08-30T00:00:00Z".into(),
@@ -5818,7 +5924,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 profile_id: "codex".into(),
                 client_id: "codex.cli".into(),
                 scope: TargetScope::Global,
-                path: "C:/Users/demo/.codex/skills".into(),
+                path: codex_target.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
@@ -5828,7 +5934,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 readable: true,
                 writable: true,
                 available: true,
-                physical_id: "fs:codex".into(),
+                physical_id: codex_target_identity,
                 status: DirectoryObservationStatus::Existing,
                 physical_identity_verified: true,
             },
@@ -5837,7 +5943,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 profile_id: "agent-skills".into(),
                 client_id: "agent-skills.shared-directory".into(),
                 scope: TargetScope::Global,
-                path: "C:/Users/demo/.agents/skills".into(),
+                path: shared_target.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
@@ -5847,7 +5953,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 readable: true,
                 writable: true,
                 available: true,
-                physical_id: "fs:shared-agents".into(),
+                physical_id: shared_target_identity.clone(),
                 status: DirectoryObservationStatus::Existing,
                 physical_identity_verified: true,
             },
@@ -5856,7 +5962,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 profile_id: "codex".into(),
                 client_id: "codex.cli".into(),
                 scope: TargetScope::Global,
-                path: "C:/Users/demo/.agents/skills".into(),
+                path: shared_target.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
@@ -5866,7 +5972,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 readable: true,
                 writable: true,
                 available: true,
-                physical_id: "fs:shared-agents".into(),
+                physical_id: shared_target_identity.clone(),
                 status: DirectoryObservationStatus::Existing,
                 physical_identity_verified: true,
             },
@@ -5875,7 +5981,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 profile_id: "anthropic".into(),
                 client_id: "anthropic.claude-code".into(),
                 scope: TargetScope::Global,
-                path: "C:/Users/demo/.agents/skills".into(),
+                path: shared_target.to_string_lossy().into_owned(),
                 agent_root_id: "fixture-root".into(),
                 marker: "SKILL.md".into(),
                 precedence: DirectoryPrecedence::Preferred,
@@ -5885,7 +5991,7 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
                 readable: true,
                 writable: true,
                 available: true,
-                physical_id: "fs:shared-agents".into(),
+                physical_id: shared_target_identity.clone(),
                 status: DirectoryObservationStatus::Existing,
                 physical_identity_verified: true,
             },
@@ -5937,20 +6043,25 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     }
     assert_eq!(targets[0].modes, expected_modes);
     assert!(targets[0].available);
-    let shared_target = targets
+    let shared_target_result = targets
         .iter()
-        .find(|target| target.physical_id == "fs:shared-agents")
+        .find(|target| target.physical_id == shared_target_identity)
         .expect("deduplicated shared target");
-    assert!(shared_target.shared_directory);
-    assert_eq!(shared_target.id, "shared-directory");
-    assert_eq!(shared_target.path, "C:/Users/demo/.agents/skills");
-    assert_eq!(shared_target.shared_agent_brands, ["anthropic", "codex"]);
+    assert!(shared_target_result.shared_directory);
+    assert_eq!(shared_target_result.id, "shared-directory");
+    assert_eq!(shared_target_result.path, shared_target.to_string_lossy());
     assert_eq!(
-        shared_target.shared_agent_brand_kinds.get("anthropic"),
+        shared_target_result.shared_agent_brands,
+        ["anthropic", "codex"]
+    );
+    assert_eq!(
+        shared_target_result
+            .shared_agent_brand_kinds
+            .get("anthropic"),
         Some(&vec![ClientKind::Headless])
     );
     assert_eq!(
-        shared_target.shared_agent_brand_kinds.get("codex"),
+        shared_target_result.shared_agent_brand_kinds.get("codex"),
         Some(&vec![ClientKind::Cli])
     );
     let project_target = targets
@@ -5960,7 +6071,10 @@ async fn deployment_target_query_includes_discovery_and_registered_project_targe
     assert_eq!(project_target.label, "Aurora");
     assert_eq!(project_target.path, project.device_path);
     assert!(project_target.available);
-    assert_eq!(project_target.directory_status, None);
+    assert_eq!(
+        project_target.directory_status,
+        Some(DirectoryObservationStatus::Existing)
+    );
     assert!(project_target.modes.contains(&DeploymentMode::ManagedCopy));
 }
 
@@ -6058,7 +6172,7 @@ async fn deployment_commands_prepare_commit_and_persist_managed_copy() {
         version_id: version_id.clone(),
         runtime_name: "deployable".into(),
         mode: DeploymentMode::ManagedCopy,
-        warnings: Vec::new(),
+        warnings: vec!["deployment.securityWarnings.notChecked".into()],
         conflicts: Vec::new(),
         targets: vec![TargetPlan {
             physical_target_id: target_id,
@@ -6185,7 +6299,7 @@ async fn failed_deployment_keeps_prepared_operation_and_source_for_retry() {
         version_id: version_id.clone(),
         runtime_name: "retryable".into(),
         mode: DeploymentMode::ManagedCopy,
-        warnings: Vec::new(),
+        warnings: vec!["deployment.securityWarnings.notChecked".into()],
         conflicts: Vec::new(),
         targets: vec![TargetPlan {
             physical_target_id: target_id,
@@ -7074,7 +7188,7 @@ async fn uninstall_backup_action_creates_restorable_package_before_undeploy() {
         version_id: version_id.clone(),
         runtime_name: "backup-candidate".into(),
         mode: DeploymentMode::ManagedCopy,
-        warnings: Vec::new(),
+        warnings: vec!["deployment.securityWarnings.notChecked".into()],
         conflicts: Vec::new(),
         targets: vec![TargetPlan {
             physical_target_id: target_id,

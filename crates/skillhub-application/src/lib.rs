@@ -11989,7 +11989,7 @@ impl LocalApplicationFacade {
                     let mut targets_by_physical_id = BTreeMap::new();
                     let mut identity_changed_by_target_id = BTreeMap::new();
                     let mut directory_status_by_target_id = BTreeMap::new();
-                    for target in snapshot.logical_targets {
+                    for mut target in snapshot.logical_targets {
                         // 2026-09-25 验收裁决：内置技能目录只读观察，绝不作为
                         // 部署目标出现在选择清单中。
                         if target.builtin {
@@ -12010,27 +12010,41 @@ impl LocalApplicationFacade {
                             .find(|root| root.id == target.agent_root_id)
                             .map(|root| root.status)
                             .unwrap_or(DirectoryObservationStatus::Existing);
-                        let identity_changed = target.physical_identity_verified
-                            && deployments.iter().any(|deployment| {
-                                deployment.managed
-                                    && deployment.state != skillhub_core::DeploymentState::Removed
-                                    && registered_target_paths
-                                        .get(&deployment.target_id)
-                                        .is_some_and(|path| {
-                                            paths_resolve_to_same_directory(path, &target.path)
-                                        })
-                                    && deployment.target_id != target.physical_id
-                            });
+                        let observation = skillhub_adapters::agent::discovery::observe_directory(
+                            Path::new(&target.path),
+                        );
+                        let identity_changed = observation.status
+                            == DirectoryObservationStatus::Existing
+                            && target.physical_identity_verified
+                            && (observation.physical_id.as_deref()
+                                != Some(target.physical_id.as_str())
+                                || deployments.iter().any(|deployment| {
+                                    deployment.managed
+                                        && deployment.state
+                                            != skillhub_core::DeploymentState::Removed
+                                        && registered_target_paths
+                                            .get(&deployment.target_id)
+                                            .is_some_and(|path| {
+                                                paths_resolve_to_same_directory(path, &target.path)
+                                            })
+                                        && deployment.target_id != target.physical_id
+                                }));
                         let directory_status = if identity_changed {
                             DirectoryObservationStatus::IdentityChanged
                         } else if target.status == DirectoryObservationStatus::Missing
+                            && observation.status == DirectoryObservationStatus::Missing
                             && root_status != DirectoryObservationStatus::Existing
                             && root_status != DirectoryObservationStatus::Missing
                         {
                             root_status
+                        } else if observation.status != DirectoryObservationStatus::Existing {
+                            observation.status
                         } else {
                             target.status
                         };
+                        target.available &= observation.readable && !identity_changed;
+                        target.writable = observation.writable;
+                        target.status = directory_status;
                         identity_changed_by_target_id.insert(target.id.clone(), identity_changed);
                         directory_status_by_target_id.insert(target.id.clone(), directory_status);
                         let grouping_key = if target.physical_identity_verified {
@@ -12071,6 +12085,7 @@ impl LocalApplicationFacade {
                                     available: target.available
                                         && target.physical_identity_verified
                                         && !identity_changed,
+                                    writable: target.writable,
                                     physical_id: target.physical_id,
                                     modes,
                                     agent_client_id: Some(target.client_id),
@@ -12146,6 +12161,7 @@ impl LocalApplicationFacade {
                             available: canonical.available
                                 && canonical.physical_identity_verified
                                 && !identity_changed,
+                            writable: physical_targets.iter().all(|target| target.writable),
                             physical_id: canonical.physical_id.clone(),
                             modes,
                             agent_client_id: Some(canonical.client_id.clone()),
@@ -12180,6 +12196,7 @@ impl LocalApplicationFacade {
                     available: facts_of.observation.readable
                         && facts_of.observation.physical_identity_verified
                         && !facts_of.identity_changed,
+                    writable: facts_of.observation.writable,
                     physical_id: facts_of
                         .observation
                         .physical_id
@@ -12206,12 +12223,26 @@ impl LocalApplicationFacade {
                     .list()?
                     .into_iter()
                     .map(|project| {
-                        let available = Path::new(project.path()).is_dir();
+                        let observation = skillhub_adapters::agent::discovery::observe_directory(
+                            Path::new(project.path()),
+                        );
+                        let identity_changed = observation.status
+                            == DirectoryObservationStatus::Existing
+                            && observation.physical_id.as_deref()
+                                != Some(project.physical_id.as_str());
+                        let status = if identity_changed {
+                            DirectoryObservationStatus::IdentityChanged
+                        } else {
+                            observation.status
+                        };
                         skillhub_core::api::DeploymentTarget {
                             id: project.id.to_string(),
                             label: project.name,
                             path: project.device_path.clone(),
-                            available,
+                            available: observation.readable
+                                && observation.physical_identity_verified
+                                && !identity_changed,
+                            writable: observation.writable,
                             physical_id: project.physical_id,
                             modes: modes.clone(),
                             agent_client_id: None,
@@ -12219,8 +12250,8 @@ impl LocalApplicationFacade {
                             shared_directory: false,
                             shared_agent_brands: Vec::new(),
                             shared_agent_brand_kinds: BTreeMap::new(),
-                            directory_status: None,
-                            physical_identity_verified: true,
+                            directory_status: Some(status),
+                            physical_identity_verified: observation.physical_identity_verified,
                             preferred_mode: modes.first().cloned(),
                         }
                     }),
@@ -12589,6 +12620,7 @@ impl LocalApplicationFacade {
                 .push(target);
         }
         for (physical_id, mut group) in groups {
+            let writable = group.iter().all(VerifiedTarget::writable);
             let occupancy = group
                 .iter()
                 .flat_map(|target| target.existing().iter().cloned())
@@ -12609,37 +12641,47 @@ impl LocalApplicationFacade {
                 source_path.to_string_lossy().into_owned(),
                 std::mem::take(&mut group),
             ));
-            let (technical_error, mode, change, conflicts, warnings, logical_target_ids) =
-                match automatic {
-                    Ok(plan) => {
-                        let target = plan
-                            .targets
-                            .first()
-                            .expect("one physical group plans to one target");
-                        (
-                            None,
-                            Some(target.mode),
-                            target.change,
-                            target.conflicts.clone(),
-                            target.warnings.clone(),
-                            target.logical_target_ids.clone(),
-                        )
-                    }
-                    Err(error) => {
-                        // A whole-group planning failure (invalid declared
-                        // name, unusable capability set) blocks the pair; the
-                        // mapped reason stays conservative and the original
-                        // error travels as technical detail.
-                        (
-                            Some(error.into()),
-                            None,
-                            TargetChange::Create,
-                            Vec::new(),
-                            Vec::new(),
-                            group_logical_ids.clone(),
-                        )
-                    }
-                };
+            let (
+                technical_error,
+                planning_error_code,
+                mode,
+                change,
+                conflicts,
+                warnings,
+                logical_target_ids,
+            ) = match automatic {
+                Ok(plan) => {
+                    let target = plan
+                        .targets
+                        .first()
+                        .expect("one physical group plans to one target");
+                    (
+                        None,
+                        None,
+                        Some(target.mode),
+                        target.change,
+                        target.conflicts.clone(),
+                        target.warnings.clone(),
+                        target.logical_target_ids.clone(),
+                    )
+                }
+                Err(error) => {
+                    // A whole-group planning failure (invalid declared
+                    // name, unusable capability set) blocks the pair; the
+                    // mapped reason stays conservative and the original
+                    // error travels as technical detail.
+                    let error_code = error.code;
+                    (
+                        Some(error.into()),
+                        Some(error_code),
+                        None,
+                        TargetChange::Create,
+                        Vec::new(),
+                        Vec::new(),
+                        group_logical_ids.clone(),
+                    )
+                }
+            };
             let shared = discovery_targets
                 .iter()
                 .any(|entry| entry.shared_reference && logical_target_ids.contains(&entry.id));
@@ -12657,9 +12699,18 @@ impl LocalApplicationFacade {
                 conflicts,
                 occupancy,
                 path_available: true,
+                writable,
                 requires_shared_impact_confirmation: shared,
             };
-            if mode.is_some() {
+            if mode.is_some()
+                || matches!(
+                    planning_error_code,
+                    Some(
+                        ErrorCode::AgentProfileInvalidCapability
+                            | ErrorCode::DeploymentTargetNotWritable
+                    )
+                )
+            {
                 facts.capabilities = capabilities;
                 facts.destination_path = Path::new(&target_path)
                     .join(&runtime_name)
@@ -12729,6 +12780,7 @@ impl LocalApplicationFacade {
                 conflicts: Vec::new(),
                 occupancy: Vec::new(),
                 path_available: false,
+                writable: false,
                 requires_shared_impact_confirmation: false,
             };
             let mut decision = plan_target_preview(&facts);
@@ -13108,8 +13160,12 @@ impl LocalApplicationFacade {
             ))
             // The precise reason (occupied, vanished, renamed) belongs to the
             // next preview; a stale commit is refused as changed facts.
-            .map_err(|_| {
-                target_changed_error("the pair no longer plans as it did at preview time")
+            .map_err(|error| {
+                if error.code == ErrorCode::DeploymentTargetNotWritable {
+                    error
+                } else {
+                    target_changed_error("the pair no longer plans as it did at preview time")
+                }
             })?;
         let planned = automatic
             .targets
@@ -13135,6 +13191,7 @@ impl LocalApplicationFacade {
                 .flat_map(|target| target.existing().iter().cloned())
                 .collect(),
             path_available: true,
+            writable: verified.iter().all(VerifiedTarget::writable),
             requires_shared_impact_confirmation: shared,
         };
         let rechecked = plan_target_preview(&facts);
@@ -19267,26 +19324,42 @@ fn registered_target_index(
                 continue;
             }
             let path = PathBuf::from(&target.path);
+            let observation = skillhub_adapters::agent::discovery::observe_directory(&path);
+            if !observation.readable
+                || (target.physical_identity_verified
+                    && observation.physical_id.as_deref() != Some(target.physical_id.as_str()))
+            {
+                continue;
+            }
             let Ok(root) = AllowedRoot::new(&path) else {
                 continue;
             };
             roots.push(root);
-            facts.push(TargetFact::from_logical_target(
-                &target,
-                effective_target_capabilities(database, &target, host_capabilities),
-            ));
+            facts.push(
+                TargetFact::from_logical_target(
+                    &target,
+                    effective_target_capabilities(database, &target, host_capabilities),
+                )
+                .with_writable(observation.writable),
+            );
         }
     }
     for project in database.project_repository().list()? {
         let path = PathBuf::from(project.path());
+        let observation = skillhub_adapters::agent::discovery::observe_directory(&path);
+        if !observation.readable
+            || observation.physical_id.as_deref() != Some(project.physical_id.as_str())
+        {
+            continue;
+        }
         let Ok(root) = AllowedRoot::new(&path) else {
             continue;
         };
         roots.push(root);
-        facts.push(TargetFact::from_project(
-            &project,
-            host_capabilities.clone(),
-        ));
+        facts.push(
+            TargetFact::from_project(&project, host_capabilities.clone())
+                .with_writable(observation.writable),
+        );
     }
     // 2026-09-30 裁决：自定义 Agent 与内置 Agent 同规则进入计划索引。身份
     // 变化（基线不匹配）与目录不可读的目标不进索引——清单里它们以不可选
@@ -19305,13 +19378,16 @@ fn registered_target_index(
             .clone()
             .or_else(|| facts_of.observation.physical_id.clone())
             .unwrap_or_else(|| agent.directory.grant_id.clone());
-        facts.push(TargetFact::registered(
-            agent.id.clone(),
-            &agent.directory.path,
-            expected_physical_id,
-            skillhub_core::deployment::TargetFactSource::Custom,
-            facts_of.capabilities,
-        ));
+        facts.push(
+            TargetFact::registered(
+                agent.id.clone(),
+                &agent.directory.path,
+                expected_physical_id,
+                skillhub_core::deployment::TargetFactSource::Custom,
+                facts_of.capabilities,
+            )
+            .with_writable(facts_of.observation.writable),
+        );
     }
     let policy = PathPolicy::from_roots(roots)?;
     RegisteredTargetIndex::from_facts(facts, policy)

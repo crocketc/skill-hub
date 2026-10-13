@@ -2087,6 +2087,8 @@
       "heading": "Agent 目标",
       "description": "只有已发现且可写的目标可以选择。",
       "unavailable": "不可用",
+      "notWritable": "目标目录不可写，请检查当前账户权限或选择其他目标。",
+      "noSupportedMode": "此目标没有可用的派发方式，请检查目标配置。",
       "createAction": "创建并加入派发",
       "createTitle": "创建 Skill 目录？",
       "createDescription": "将只创建这个 Agent profile 声明的 Skill 目录，不会创建 Agent 根目录；创建后会重新验证目录，再将 Skill 派发到该目录。",
@@ -2217,6 +2219,8 @@
       "target_occupied": "目标目录已存在同名内容，无法重复添加。",
       "path_unavailable": "目标目录当前无法访问，请确认磁盘或网络连接后重试。",
       "shared_impact_requires_resolution": "其他 Agent 也在读取这个共享目录，需要先处理共享影响。",
+      "copy_unavailable": "此目标没有支持的派发方式，请检查目标配置。",
+      "target_not_writable": "目标目录当前不可写，请检查权限后重新预览。",
       "security_alert": "该版本存在尚未完全信任的危险级安全问题，暂不能派发。",
       "sharedImpactDetail": "请先在关系治理中处理共享目录的影响，再派发。",
       "committedBlocked": "该目标未能执行，保持原状。"
