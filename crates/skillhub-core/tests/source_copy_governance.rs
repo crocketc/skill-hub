@@ -444,20 +444,30 @@ mod original_migration_recovery {
     #[test]
     fn recovery_advances_by_original_and_backup_facts() {
         assert_eq!(
-            resolve_original_migration_recovery(false, true),
+            resolve_original_migration_recovery(false, false, true, true),
             OriginalMigrationRecoveryAdvancement::RollForward
         );
         assert_eq!(
-            resolve_original_migration_recovery(true, true),
+            resolve_original_migration_recovery(true, true, true, true),
             OriginalMigrationRecoveryAdvancement::RollBackToFailed
         );
         assert_eq!(
-            resolve_original_migration_recovery(false, false),
+            resolve_original_migration_recovery(false, false, false, false),
             OriginalMigrationRecoveryAdvancement::NeedsRecovery
         );
         assert_eq!(
-            resolve_original_migration_recovery(true, false),
+            resolve_original_migration_recovery(true, true, false, false),
             OriginalMigrationRecoveryAdvancement::NeedsRecovery
+        );
+        assert_eq!(
+            resolve_original_migration_recovery(true, false, true, true),
+            OriginalMigrationRecoveryAdvancement::NeedsRecovery,
+            "a present but changed source is not an intact rollback target"
+        );
+        assert_eq!(
+            resolve_original_migration_recovery(false, false, true, false),
+            OriginalMigrationRecoveryAdvancement::NeedsRecovery,
+            "an unverified backup cannot prove that deletion completed safely"
         );
     }
 }

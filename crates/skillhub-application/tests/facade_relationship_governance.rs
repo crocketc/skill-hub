@@ -11,13 +11,13 @@ use serde_json::Value;
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::agent::{DirectoryObservationStatus, DirectoryPrecedence};
 use skillhub_core::api::{
-    CommitRelationGovernanceBatch, CreateSkill, GetConflictWorkspace, GetRelationshipOverview,
-    GetRelationshipRemovalImpact, GetSkillRelationshipGraph, ListRelationGovernance,
-    ListSkillRelationshipCandidates, ListSkills, PrepareImport, PrepareRelationGovernanceBatch,
-    PrepareRelationMigration, RelationGovernanceBatchAction, RelationGovernanceBatchItemState,
-    RelationGovernanceBatchOutcome, RelationGovernanceBatchState, RelationshipGraphFilters,
-    RelationshipMigrationBackupPolicy, RelationshipOverviewScope, ResolveConflictCase,
-    RollbackRelationGovernanceBatch,
+    CommitRelationGovernanceBatch, CreateSkill, GetConflictWorkspace, GetOperationDetails,
+    GetRelationshipOverview, GetRelationshipRemovalImpact, GetSkillRelationshipGraph,
+    ListRelationGovernance, ListSkillRelationshipCandidates, ListSkills, PrepareImport,
+    PrepareRelationGovernanceBatch, PrepareRelationMigration, RelationGovernanceBatchAction,
+    RelationGovernanceBatchItemState, RelationGovernanceBatchOutcome, RelationGovernanceBatchState,
+    RelationshipGraphFilters, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
+    ResolveConflictCase, RollbackRelationGovernanceBatch,
 };
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::duplicate::{
@@ -6694,6 +6694,17 @@ mod cleanup_commit_recovery {
                 restored_relation_id: None,
             })
             .expect("seed migration record");
+        let mut operation = skillhub_core::OperationRecord::planned(
+            operation_id,
+            "migrate_original",
+            "seeded-original-migration-recovery",
+        );
+        operation.phase = OperationPhase::Applying;
+        operation.progress.phase = OperationPhase::Applying;
+        database
+            .operation_repository()
+            .insert_sync(&operation)
+            .expect("seed operation checkpoint");
         operation_id
     }
 
@@ -6837,6 +6848,59 @@ mod cleanup_commit_recovery {
         assert!(!source.exists());
     }
 
+    #[tokio::test]
+    async fn restart_recovery_settles_the_original_migration_operation_journal() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let operation_id = seed_checkpoint(
+            &facade,
+            &relation_id,
+            &source,
+            &backup_base(workspace.path(), &relation_id),
+            true,
+            OriginalMigrationState::Deleting,
+        )
+        .await;
+        std::fs::remove_dir_all(&source).expect("simulate source deletion");
+        drop(facade);
+
+        // Constructing the facade simulates application startup: Applying is
+        // conservatively moved to NeedsRecovery before the domain recovery runs.
+        let library_root = workspace.path().join("library");
+        let reopened = LocalApplicationFacade::new_with_library(
+            Database::open(workspace.path().join("db.sqlite")).expect("reopen database"),
+            &library_root,
+        );
+        let before = reopened
+            .query(AppQuery::GetOperationDetails(GetOperationDetails {
+                operation_id,
+            }))
+            .await
+            .expect("operation details before recovery");
+        let AppQueryResult::OperationDetails(before) = before else {
+            panic!("expected operation details");
+        };
+        assert_eq!(before.phase, OperationPhase::NeedsRecovery);
+
+        reopened
+            .recover_original_migrations()
+            .expect("recover original migration");
+
+        let after = reopened
+            .query(AppQuery::GetOperationDetails(GetOperationDetails {
+                operation_id,
+            }))
+            .await
+            .expect("operation details after recovery");
+        let AppQueryResult::OperationDetails(after) = after else {
+            panic!("expected operation details");
+        };
+        assert_eq!(after.phase, OperationPhase::Committed);
+    }
+
     // 8.3/8.14/8.5：checkpoint 后、删除前崩溃（原目录仍在）→ 恢复为
     // Failed，现场保留，关系 OperationFailed。
     #[tokio::test]
@@ -6866,6 +6930,48 @@ mod cleanup_commit_recovery {
             1
         );
         assert!(source.join("SKILL.md").is_file(), "scene preserved");
+    }
+
+    #[tokio::test]
+    async fn recovery_keeps_the_gate_when_the_original_tree_drifted_after_backup() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (facade, agent_root) = agent_facade(workspace.path());
+        let source = agent_root.join("notes");
+        write_skill(&source);
+        let relation_id = import_source_copy(&facade, &source, "Notes").await;
+        let operation_id = seed_checkpoint(
+            &facade,
+            &relation_id,
+            &source,
+            &backup_base(workspace.path(), &relation_id),
+            true,
+            OriginalMigrationState::Deleting,
+        )
+        .await;
+        std::fs::write(source.join("SKILL.md"), "# Notes changed during recovery\n")
+            .expect("simulate partial source deletion or external drift");
+
+        facade
+            .recover_original_migrations()
+            .expect("inspect migration recovery");
+
+        let record = committed_record(&facade, operation_id).await;
+        assert_eq!(record.state, OriginalMigrationState::NeedsRecovery);
+        let details = facade
+            .query(AppQuery::GetOperationDetails(GetOperationDetails {
+                operation_id,
+            }))
+            .await
+            .expect("operation details");
+        let AppQueryResult::OperationDetails(details) = details else {
+            panic!("expected operation details");
+        };
+        assert_eq!(details.phase, OperationPhase::NeedsRecovery);
+        assert_eq!(
+            std::fs::read_to_string(source.join("SKILL.md")).expect("read source"),
+            "# Notes changed during recovery\n",
+            "recovery must preserve the changed source without replacing it"
+        );
     }
 
     // 8.14：备份缺失 → NeedsRecovery（不归档、不假装任何一侧完好）。

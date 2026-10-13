@@ -15,9 +15,9 @@ use skillhub_core::{
         LogicalTarget, OperatingSystem, PhysicalTarget, TargetScope,
     },
     api::{
-        CommitImport, CommitOriginalMigration, CreateSkill, GetSkillProvenance,
-        ListRelationGovernance, PrepareImport, PrepareOriginalMigration, RollbackOriginalMigration,
-        RunInitializationScan,
+        CommitImport, CommitOriginalMigration, CreateSkill, GetOperationDetails,
+        GetSkillProvenance, ListRelationGovernance, PrepareImport, PrepareOriginalMigration,
+        RollbackOriginalMigration, RunInitializationScan,
     },
     import::{CandidateOwnership, ImportAction, ImportCandidate, ImportDecision},
     relationship::{RelationGovernanceFilters, RelationGovernanceReason},
@@ -31,6 +31,29 @@ use skillhub_storage::{CentralLibrary, Database};
 const CLIENT_ID: &str = "trae.code";
 const BODY_V1: &str = "# Notes\n\nshared body\n";
 const BODY_V2: &str = "# Notes rewritten\n";
+
+struct InspectingOriginalMigrationDeletion {
+    database: std::sync::Arc<std::sync::Mutex<Database>>,
+    operation_id: skillhub_core::OperationId,
+    observed_phase: std::sync::Arc<std::sync::Mutex<Option<skillhub_core::OperationPhase>>>,
+}
+
+impl skillhub_application::OriginalMigrationDeletion for InspectingOriginalMigrationDeletion {
+    fn delete_dir_all(&self, _path: &std::path::Path) -> std::io::Result<()> {
+        let database = self.database.try_lock().expect("database lock available");
+        let phase = database
+            .operation_repository()
+            .get_sync(self.operation_id)
+            .expect("read operation journal")
+            .expect("operation checkpoint exists")
+            .phase;
+        *self.observed_phase.lock().expect("phase lock") = Some(phase);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "injected deletion interruption",
+        ))
+    }
+}
 
 fn register_agent_target(database: &Database, root: &std::path::Path) {
     let physical_id = skillhub_core::physical_id_for_path(root).expect("physical id");
@@ -713,6 +736,113 @@ async fn original_migration_aborts_on_conflicts_and_preserves_the_scene() {
         skillhub_core::ErrorCode::ObjectNotFound
     );
     assert_dir_intact(&handmade_source, BODY_V1);
+}
+
+#[tokio::test]
+async fn original_migration_preflight_rejection_does_not_create_recovery_gate() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let agent_root = workspace.path().join("agents/trae/skills");
+    let source = agent_root.join("notes");
+    write_skill(&source, BODY_V1);
+    let facade = facade_with_agent(workspace.path(), &agent_root);
+
+    let prepared = prepare(&facade, &source, "Notes").await;
+    commit_copy(&facade, prepared).await;
+    let planned = facade
+        .execute(AppCommand::PrepareOriginalMigration(
+            PrepareOriginalMigration {
+                source_relation_id: source_relation_id(&facade, &source).await,
+            },
+        ))
+        .await
+        .expect("prepare migration");
+    let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
+        panic!("expected migration plan");
+    };
+
+    // The source disappears after preview, so commit must reject before
+    // copying a backup or changing any remaining user files.
+    std::fs::remove_dir_all(&source).expect("remove source after preview");
+    let rejected = facade
+        .execute(AppCommand::CommitOriginalMigration(
+            CommitOriginalMigration {
+                prepared_migration_id: plan.operation_id,
+                ownership_confirmed: true,
+            },
+        ))
+        .await;
+    assert_eq!(
+        rejected
+            .expect_err("stale migration preview must be rejected")
+            .code,
+        skillhub_core::ErrorCode::OperationConflict
+    );
+    assert!(!source.exists(), "missing source remains missing");
+
+    let details = facade
+        .query(AppQuery::GetOperationDetails(GetOperationDetails {
+            operation_id: plan.operation_id,
+        }))
+        .await
+        .expect("read operation details");
+    let AppQueryResult::OperationDetails(details) = details else {
+        panic!("expected operation details");
+    };
+    assert_eq!(
+        details.phase,
+        skillhub_core::OperationPhase::RolledBack,
+        "a preflight-only rejection must settle without blocking recovery"
+    );
+}
+
+#[tokio::test]
+async fn original_migration_persists_applying_before_deleting_the_source() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let agent_root = workspace.path().join("agents/trae/skills");
+    let source = agent_root.join("notes");
+    write_skill(&source, BODY_V1);
+    let facade = facade_with_agent(workspace.path(), &agent_root);
+
+    let prepared = prepare(&facade, &source, "Notes").await;
+    commit_copy(&facade, prepared).await;
+    let planned = facade
+        .execute(AppCommand::PrepareOriginalMigration(
+            PrepareOriginalMigration {
+                source_relation_id: source_relation_id(&facade, &source).await,
+            },
+        ))
+        .await
+        .expect("prepare migration");
+    let AppCommandResult::OriginalMigrationPlan(plan) = planned else {
+        panic!("expected migration plan");
+    };
+    let observed_phase = std::sync::Arc::new(std::sync::Mutex::new(None));
+    facade.set_original_migration_deletion_for_tests(std::sync::Arc::new(
+        InspectingOriginalMigrationDeletion {
+            database: facade.database_for_tests(),
+            operation_id: plan.operation_id,
+            observed_phase: observed_phase.clone(),
+        },
+    ));
+
+    let result = facade
+        .execute(AppCommand::CommitOriginalMigration(
+            CommitOriginalMigration {
+                prepared_migration_id: plan.operation_id,
+                ownership_confirmed: true,
+            },
+        ))
+        .await;
+    assert_eq!(
+        result.expect_err("injected deletion failure").code,
+        skillhub_core::ErrorCode::OperationConflict
+    );
+    assert_eq!(
+        *observed_phase.lock().expect("phase lock"),
+        Some(skillhub_core::OperationPhase::Applying),
+        "the operation journal must reach Applying before filesystem deletion"
+    );
+    assert_dir_intact(&source, BODY_V1);
 }
 
 #[tokio::test]

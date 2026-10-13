@@ -160,8 +160,8 @@ pub fn original_migration_backup_key(relation_id: &str) -> String {
         .collect()
 }
 
-/// 崩溃恢复的推进方向（8.14）：由"原路径/备份"两个文件系统事实决定；
-/// 活动关系状态由执行方读取（决定归档还是仅补历史），不参与方向判定。
+/// 崩溃恢复的推进方向（8.14）：必须同时核对原路径和备份是否存在、是否
+/// 与确认时的内容指纹完全一致；仅凭路径存在不能证明目录未被部分删除或替换。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OriginalMigrationRecoveryAdvancement {
     /// 删除已发生：前滚为 Migrated（补归档与历史）。
@@ -174,13 +174,19 @@ pub enum OriginalMigrationRecoveryAdvancement {
 
 pub fn resolve_original_migration_recovery(
     original_exists: bool,
+    original_matches: bool,
     backup_exists: bool,
+    backup_matches: bool,
 ) -> OriginalMigrationRecoveryAdvancement {
-    match (original_exists, backup_exists) {
-        (false, true) => OriginalMigrationRecoveryAdvancement::RollForward,
-        (true, true) => OriginalMigrationRecoveryAdvancement::RollBackToFailed,
-        // 备份不在时无论原目录在否都无法安全收场：数据安全优先。
-        (_, false) => OriginalMigrationRecoveryAdvancement::NeedsRecovery,
+    match (
+        original_exists,
+        original_matches,
+        backup_exists,
+        backup_matches,
+    ) {
+        (false, _, true, true) => OriginalMigrationRecoveryAdvancement::RollForward,
+        (true, true, true, true) => OriginalMigrationRecoveryAdvancement::RollBackToFailed,
+        _ => OriginalMigrationRecoveryAdvancement::NeedsRecovery,
     }
 }
 

@@ -3624,6 +3624,48 @@ impl LocalApplicationFacade {
         self.journal_write(journal_record(operation_id, kind, phase, error_code));
     }
 
+    /// Persists the original-migration execution checkpoint before its first
+    /// filesystem deletion. Unlike ordinary progress updates, failure to write
+    /// this checkpoint must stop the destructive step.
+    fn persist_original_migration_applying(&self, operation_id: OperationId) -> AppResult<()> {
+        let record = self.with_database(
+            "operation_journal.migrate_original_checkpoint",
+            |database| {
+                let repository = database.operation_repository();
+                let existing = repository.get_sync(operation_id)?;
+                let mut record = match existing.as_ref() {
+                    Some(record)
+                        if record.kind == "migrate_original"
+                            && record.phase == skillhub_core::OperationPhase::Prepared =>
+                    {
+                        record.clone()
+                    }
+                    Some(_) => return Err(recovery_conflict("migrate_original_not_prepared")),
+                    None => journal_record(
+                        operation_id,
+                        "migrate_original",
+                        skillhub_core::OperationPhase::Applying,
+                        None,
+                    ),
+                };
+                record.phase = skillhub_core::OperationPhase::Applying;
+                record.progress.phase = record.phase;
+                record.progress.message_code = "operation.migrate_original.applying".to_owned();
+                record.recovery_data = serde_json::json!({
+                    "migration_id": operation_id.to_string(),
+                });
+                record.error_code = None;
+                match existing {
+                    Some(_) => repository.update_sync(&record)?,
+                    None => repository.insert_sync(&record)?,
+                }
+                Ok(record)
+            },
+        )?;
+        self.log_journal_record(&record);
+        Ok(())
+    }
+
     /// K2：结算已有 journal 行但保留其 `recovery_data` 载荷（拒绝提交、
     /// 过期预览的审计追溯需要原影响快照）。行不存在时行为同
     /// [`Self::journal_advance`]。best-effort：锁失败或写失败不掩盖原错误。
@@ -15684,12 +15726,45 @@ impl LocalApplicationFacade {
                 skillhub_core::OperationPhase::Committed,
                 None,
             ),
-            Err(error) => self.journal_advance(
-                plan.operation_id,
-                "migrate_original",
-                skillhub_core::OperationPhase::NeedsRecovery,
-                Some(error.code),
-            ),
+            Err(error) => {
+                // Until the provenance checkpoint is durable, the flow has
+                // changed no source directory or relationship. Settle that
+                // rejection as terminal; once the checkpoint exists, retain
+                // the recovery gate because deletion may have started.
+                let phase = self
+                    .with_database(
+                        "execute.commit_original_migration.checkpoint_state",
+                        |database| {
+                            database
+                                .provenance_repository()
+                                .original_migration(plan.operation_id)
+                                .map(|record| match record.map(|record| record.state) {
+                                    None => skillhub_core::OperationPhase::RolledBack,
+                                    Some(skillhub_core::OriginalMigrationState::Migrated) => {
+                                        skillhub_core::OperationPhase::Committed
+                                    }
+                                    Some(
+                                        skillhub_core::OriginalMigrationState::Failed
+                                        | skillhub_core::OriginalMigrationState::RolledBack,
+                                    ) => skillhub_core::OperationPhase::RolledBack,
+                                    Some(_) => skillhub_core::OperationPhase::NeedsRecovery,
+                                })
+                        },
+                    )
+                    .unwrap_or(skillhub_core::OperationPhase::NeedsRecovery);
+                self.journal_advance(
+                    plan.operation_id,
+                    "migrate_original",
+                    phase,
+                    (phase != skillhub_core::OperationPhase::Committed).then_some(error.code),
+                );
+                if phase == skillhub_core::OperationPhase::NeedsRecovery {
+                    // The domain migration ledger can settle an interrupted
+                    // step when the source and its backup still match exactly.
+                    // Keep the original error visible even if recovery succeeds.
+                    let _ = self.recover_original_migrations();
+                }
+            }
         }
         if result.is_ok() {
             self.prepared_migrations
@@ -15774,6 +15849,7 @@ impl LocalApplicationFacade {
                     skillhub_core::OriginalMigrationState::Deleting,
                 )
         })?;
+        self.persist_original_migration_applying(plan.operation_id)?;
         // 删除前的最后防线：必须是真实目录（绝不跟随链接）。
         let metadata = std::fs::symlink_metadata(&original).map_err(|error| {
             AppError::new(ErrorCode::OperationConflict, Severity::Error)
@@ -15793,10 +15869,14 @@ impl LocalApplicationFacade {
             .map_err(|_| internal("execute.commit_original_migration.deletion"))?
             .clone();
         if let Err(error) = deletion.delete_dir_all(&original) {
-            // 8.5：审计与备份绝不删除。能确认原目录仍在 → Failed（关系
-            // OperationFailed + 历史 failed）；不能确认 → NeedsRecovery。
-            let still_there = std::fs::symlink_metadata(&original).is_ok();
-            let state = if still_there {
+            // 8.5：审计与备份绝不删除。只有原目录仍与确认指纹一致时才
+            // 标记 Failed（关系 OperationFailed + 历史 failed）；其他情况保留恢复门禁。
+            let original_matches = original_migration_tree_matches(
+                &library.store,
+                &original,
+                &plan.content_fingerprint,
+            );
+            let state = if original_matches {
                 skillhub_core::OriginalMigrationState::Failed
             } else {
                 skillhub_core::OriginalMigrationState::NeedsRecovery
@@ -15805,7 +15885,7 @@ impl LocalApplicationFacade {
                 database
                     .provenance_repository()
                     .update_original_migration_state(plan.operation_id, state)?;
-                if still_there {
+                if original_matches {
                     if let Some(mut relation) = database
                         .relationship_repository()
                         .list_source_copy_relations(false)?
@@ -15832,7 +15912,7 @@ impl LocalApplicationFacade {
             self.record_migration_history(
                 plan.relation_id.clone(),
                 plan.skill_id,
-                if still_there {
+                if original_matches {
                     "failed"
                 } else {
                     "needs_recovery"
@@ -15842,7 +15922,7 @@ impl LocalApplicationFacade {
                 .with_param("path", plan.original_path.clone())
                 .with_param(
                     "detail",
-                    "original directory deletion failed; scene preserved",
+                    "original directory deletion failed; recovery state retained",
                 )
                 .with_param("source", error.to_string())
                 .with_action(RecoveryAction::Retry));
@@ -16092,6 +16172,7 @@ impl LocalApplicationFacade {
     /// 补偿。返回推进的记录数。begin/done 两条计数进开发日志；
     /// 单条推进细节为 Debug 级（生产默认最小级别不落盘）。
     pub fn recover_original_migrations(&self) -> AppResult<usize> {
+        let library = self.library_runtime.snapshot()?;
         let pending = self.with_database("recover.original_migrations.list", |database| {
             database
                 .provenance_repository()
@@ -16113,9 +16194,26 @@ impl LocalApplicationFacade {
         for record in pending {
             let original = PathBuf::from(&record.original_path);
             let backup = PathBuf::from(&record.backup_path);
-            let original_exists = original.symlink_metadata().is_ok();
-            let backup_exists = backup.symlink_metadata().is_ok();
-            match resolve_original_migration_recovery(original_exists, backup_exists) {
+            // Stat errors are unknown, not proof of absence. Treat them as
+            // present so the pure resolver keeps the recovery gate closed.
+            let original_exists = path_entry_exists_for_recovery(&original).unwrap_or(true);
+            let backup_exists = path_entry_exists_for_recovery(&backup).unwrap_or(true);
+            let original_matches = original_migration_tree_matches(
+                &library.store,
+                &original,
+                &record.content_fingerprint,
+            );
+            let backup_matches = original_migration_tree_matches(
+                &library.store,
+                &backup,
+                &record.content_fingerprint,
+            );
+            match resolve_original_migration_recovery(
+                original_exists,
+                original_matches,
+                backup_exists,
+                backup_matches,
+            ) {
                 skillhub_core::import::OriginalMigrationRecoveryAdvancement::RollForward => {
                     // 删除已发生：前滚为 Migrated（补归档与历史）。
                     let rolled = self.with_database(
@@ -16294,6 +16392,7 @@ impl LocalApplicationFacade {
                 }
             }
         }
+        self.settle_original_migration_operation_journal()?;
         self.log_event(
             if advance_failures > 0 {
                 LogLevel::Error
@@ -16314,6 +16413,73 @@ impl LocalApplicationFacade {
         );
         Ok(advanced)
     }
+
+    /// The migration provenance row is the authoritative recovery fact, while
+    /// the operation journal is the application-wide gate. Reconcile both on
+    /// every startup scan so a crash between their separate durable writes is
+    /// safe to retry.
+    fn settle_original_migration_operation_journal(&self) -> AppResult<()> {
+        self.with_database("recover.original_migrations.settle_journal", |database| {
+            let repository = database.operation_repository();
+            let operations = repository.list_sync()?;
+            for mut operation in operations.into_iter().filter(|operation| {
+                operation.kind == "migrate_original"
+                    && skillhub_core::operation_requires_recovery_gate(
+                        &operation.kind,
+                        operation.phase,
+                    )
+            }) {
+                let migration = database
+                    .provenance_repository()
+                    .original_migration(operation.operation_id)?;
+                let next_phase = match migration.map(|migration| migration.state) {
+                    None
+                    | Some(
+                        skillhub_core::OriginalMigrationState::Failed
+                        | skillhub_core::OriginalMigrationState::RolledBack,
+                    ) => skillhub_core::OperationPhase::RolledBack,
+                    Some(skillhub_core::OriginalMigrationState::Migrated) => {
+                        skillhub_core::OperationPhase::Committed
+                    }
+                    Some(
+                        skillhub_core::OriginalMigrationState::BackedUp
+                        | skillhub_core::OriginalMigrationState::Deleting
+                        | skillhub_core::OriginalMigrationState::NeedsRecovery,
+                    ) => skillhub_core::OperationPhase::NeedsRecovery,
+                };
+                if operation.phase == next_phase {
+                    continue;
+                }
+                operation.phase = next_phase;
+                operation.progress.phase = next_phase;
+                operation.progress.message_code = format!(
+                    "operation.migrate_original.{}",
+                    operation_phase_code(next_phase)
+                );
+                if next_phase == skillhub_core::OperationPhase::Committed {
+                    operation.error_code = None;
+                }
+                repository.update_sync(&operation)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+fn original_migration_tree_matches(
+    store: &VersionStore,
+    path: &Path,
+    expected_fingerprint: &str,
+) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return false;
+    }
+    store
+        .hash_tree_read_only(path)
+        .is_ok_and(|fingerprint| fingerprint == expected_fingerprint)
 }
 
 /// 迁移/回滚的治理历史事件构造：展示名与 Agent 呈现按写时快照固化。
