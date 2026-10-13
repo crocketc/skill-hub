@@ -601,7 +601,6 @@ pub(crate) fn managed_usage_change_rollback_available(
                 .iter()
                 .find(|item| item.relation_id == original_relation.relation_id)
                 != Some(original_relation)
-            || plan.backup_created
             || plan.created_entry_identity.is_some()
         {
             return Ok(false);
@@ -620,10 +619,6 @@ pub(crate) fn managed_usage_change_rollback_available(
             || entry_fingerprint(&destination)? != plan.observed_before
             || entry_identity(&destination)? != plan.observed_identity
             || evidence.content_fingerprint != plan.observed_before
-            || checked_path_exists(
-                Path::new(&plan.backup_path),
-                "managed_usage_change_backup_unavailable",
-            )?
         {
             return Ok(false);
         }
@@ -644,6 +639,10 @@ pub(crate) fn rollback_unstarted_managed_usage_change(
             "managed_usage_change_recovery_state_changed",
         ));
     }
+    // Before the first target write, a backup can already exist whether or not
+    // `backup_created` reached disk. Its physical identity is not journaled,
+    // so settle only when all target and database before-facts match, without
+    // inspecting or touching that backup.
     let mut journal: ManagedUsageChangeJournal =
         serde_json::from_value(record.recovery_data.clone())
             .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;

@@ -383,6 +383,111 @@ async fn interrupted_managed_change_before_first_write_can_be_rolled_back() {
 }
 
 #[tokio::test]
+async fn interrupted_managed_change_with_backup_only_can_be_settled_without_touching_it() {
+    for backup_checkpointed in [false, true] {
+        let fixture = fixture().await;
+        let (deployment_id, destination) = seed_managed_copy(
+            &fixture,
+            "backup-checkpoint-agent",
+            &fixture.first_version,
+            "# First\n",
+            "# First\n",
+        );
+        let app = facade(&fixture);
+        let prepared = app
+            .prepare_usage_change(usage_change(
+                "sync",
+                &format!("managed:{deployment_id}"),
+                Some("library_current"),
+            ))
+            .expect("prepare managed sync");
+        let database = Database::open(&fixture.database_path).expect("open database");
+        let deployment_before = deploy_row(&fixture, deployment_id);
+        let relation_before = database
+            .relationship_repository()
+            .list_relations()
+            .expect("read original managed relation")
+            .into_iter()
+            .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
+            .expect("managed relation exists");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        let backup_path = PathBuf::from(
+            record.recovery_data["plans"][0]["backup_path"]
+                .as_str()
+                .expect("backup path"),
+        );
+        std::fs::create_dir_all(&backup_path).expect("create operation backup");
+        std::fs::copy(destination.join("SKILL.md"), backup_path.join("SKILL.md"))
+            .expect("copy original target into backup");
+        record.phase = skillhub_core::OperationPhase::Applying;
+        record.progress.phase = record.phase;
+        record.recovery_data["plans"][0]["backup_created"] = serde_json::json!(backup_checkpointed);
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("simulate interruption after backup creation");
+        drop(database);
+        drop(app);
+
+        let restarted = facade(&fixture);
+        let AppQueryResult::RecoveryCandidates(candidates) = restarted
+            .query(AppQuery::ListRecoveryCandidates)
+            .await
+            .expect("list recovery candidates")
+        else {
+            panic!("expected recovery candidates");
+        };
+        let candidate = candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("interrupted managed change remains visible");
+        assert_eq!(
+            candidate.actions,
+            vec![skillhub_core::RecoveryAction::RollbackOperation],
+            "an unchanged target is safe to settle when interruption leaves only its backup"
+        );
+
+        restarted
+            .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            }))
+            .await
+            .expect("settle managed change without target writes");
+        let settled = Database::open(&fixture.database_path)
+            .expect("reopen database")
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read settled operation")
+            .expect("operation remains recorded");
+        assert_eq!(settled.phase, skillhub_core::OperationPhase::RolledBack);
+        assert_eq!(deploy_row(&fixture, deployment_id), deployment_before);
+        assert_eq!(
+            std::fs::read_to_string(destination.join("SKILL.md")).expect("target content"),
+            "# First\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup_path.join("SKILL.md")).expect("preserved backup"),
+            "# First\n",
+            "recovery must not delete or rewrite a backup whose identity was not journaled"
+        );
+        let relation_after = Database::open(&fixture.database_path)
+            .expect("reopen database after recovery")
+            .relationship_repository()
+            .list_relations()
+            .expect("read managed relation after recovery")
+            .into_iter()
+            .find(|relation| relation.relation_id == format!("managed:{deployment_id}"))
+            .expect("managed relation remains");
+        assert_eq!(relation_after, relation_before);
+    }
+}
+
+#[tokio::test]
 async fn interrupted_managed_change_with_drift_has_no_automatic_action() {
     let fixture = fixture().await;
     let (deployment_id, destination) = seed_managed_copy(
@@ -406,6 +511,14 @@ async fn interrupted_managed_change_with_drift_has_no_automatic_action() {
         .get_sync(prepared.operation_id)
         .expect("read operation")
         .expect("operation exists");
+    let backup_path = PathBuf::from(
+        record.recovery_data["plans"][0]["backup_path"]
+            .as_str()
+            .expect("backup path"),
+    );
+    std::fs::create_dir_all(&backup_path).expect("create uncheckpointed backup");
+    std::fs::copy(destination.join("SKILL.md"), backup_path.join("SKILL.md"))
+        .expect("copy original target into backup");
     record.phase = skillhub_core::OperationPhase::Applying;
     record.progress.phase = record.phase;
     database
@@ -490,6 +603,10 @@ async fn interrupted_managed_change_with_drift_has_no_automatic_action() {
     assert!(candidate.actions.is_empty());
     assert_eq!(
         std::fs::read_to_string(destination.join("SKILL.md")).expect("target preserved"),
+        "# First\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(backup_path.join("SKILL.md")).expect("backup preserved"),
         "# First\n"
     );
 }
