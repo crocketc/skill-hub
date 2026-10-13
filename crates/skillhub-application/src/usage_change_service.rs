@@ -666,6 +666,10 @@ struct ManagedUsageChangePlan {
     #[serde(default)]
     backup_created: bool,
     #[serde(default)]
+    repair_removal_started: bool,
+    #[serde(default)]
+    repair_restore_started: bool,
+    #[serde(default)]
     created_entry_identity: Option<String>,
 }
 
@@ -749,6 +753,587 @@ pub(crate) fn managed_usage_change_rollback_available(
         }
     }
     Ok(true)
+}
+
+/// A repair interrupted while removing its damaged target can be rolled back
+/// only from the operation's verified backup and while the destination is the
+/// captured entry (or is absent after that entry was removed).
+pub(crate) fn managed_usage_change_repair_rollback_available(
+    database: &Database,
+    library_runtime: &super::library_runtime::LibraryRuntime,
+    record: &OperationRecord,
+) -> AppResult<bool> {
+    if database
+        .operation_repository()
+        .get_sync(record.operation_id)?
+        .as_ref()
+        != Some(record)
+        || record.kind != MANAGED_USAGE_CHANGE_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::NeedsRecovery
+        )
+    {
+        return Ok(false);
+    }
+    let Ok(journal) =
+        serde_json::from_value::<ManagedUsageChangeJournal>(record.recovery_data.clone())
+    else {
+        return Ok(false);
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.request.action != UsageChangeAction::Repair
+        || journal.prepared.action != UsageChangeAction::Repair
+        || journal.plans.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.prepared.impacts.len()
+        || journal.completed.len() > journal.plans.len()
+    {
+        return Ok(false);
+    }
+    if record.phase == OperationPhase::NeedsRecovery {
+        let recovery_result = record
+            .result
+            .as_ref()
+            .and_then(|value| serde_json::from_value::<UsageChangeResult>(value.clone()).ok());
+        let prepared_result = record
+            .result
+            .as_ref()
+            .and_then(|value| serde_json::from_value::<PreparedUsageChange>(value.clone()).ok());
+        if recovery_result.as_ref().is_some_and(|result| {
+            result.operation_id != record.operation_id
+                || result.prepared_id != journal.prepared.prepared_id
+                || !result.recovery_required
+                || result.item_results != journal.completed
+                || journal.completed.len() != journal.plans.len()
+        }) || recovery_result.is_none() && prepared_result.as_ref() != Some(&journal.prepared)
+        {
+            return Ok(false);
+        }
+    } else if record
+        .result
+        .as_ref()
+        .and_then(|value| serde_json::from_value::<PreparedUsageChange>(value.clone()).ok())
+        .as_ref()
+        != Some(&journal.prepared)
+    {
+        return Ok(false);
+    }
+
+    let Ok(library) = library_runtime.snapshot() else {
+        return Ok(false);
+    };
+    let deployments = database.deployment_repository().list_all()?;
+    let relations = database.relationship_repository().list_relations()?;
+    let target_paths = database.target_repository().paths_by_id()?;
+    let mut pending = Vec::new();
+    for (index, plan) in journal.plans.iter().enumerate() {
+        let item_needs_recovery = journal
+            .completed
+            .get(index)
+            .is_some_and(|item| item.status == UsageChangeItemStatus::RecoveryRequired);
+        if plan.repair_restore_started && !plan.repair_removal_started {
+            return Ok(false);
+        }
+        if plan.repair_removal_started {
+            if index > journal.completed.len()
+                || (index < journal.completed.len() && !item_needs_recovery)
+            {
+                return Ok(false);
+            }
+            pending.push(index);
+        } else if item_needs_recovery {
+            // Do not settle this operation if another item needs a different
+            // recovery action (for example, its failure fact was not recorded).
+            return Ok(false);
+        }
+    }
+    if pending.is_empty() {
+        return Ok(false);
+    }
+
+    for index in pending {
+        let plan = &journal.plans[index];
+        let evidence = &journal.prepared.entry_evidence[index];
+        let Some(original_deployment) = plan.original_deployment.as_ref() else {
+            return Ok(false);
+        };
+        let Some(original_relation) = plan.original_relation.as_ref() else {
+            return Ok(false);
+        };
+        let Some(expected_fingerprint) = plan.observed_before.as_deref() else {
+            return Ok(false);
+        };
+        let Some(expected_identity) = plan.observed_identity.as_deref() else {
+            return Ok(false);
+        };
+        let backup_matches = managed_usage_change_backup_matches(
+            &library.central.paths().backups_dir,
+            record.operation_id,
+            journal.prepared.prepared_id,
+            plan,
+            expected_fingerprint,
+        );
+        let target_can_restore = managed_repair_target_can_be_restored(
+            Path::new(&plan.backup_path),
+            Path::new(&plan.destination),
+            expected_identity,
+            expected_fingerprint,
+            plan.repair_restore_started,
+        );
+        if !original_deployment.mode.is_directory_link()
+            || deployments
+                .iter()
+                .find(|item| item.id == plan.deployment_id)
+                != Some(original_deployment)
+            || original_relation.relation_id != format!("managed:{}", plan.deployment_id)
+            || !relations.iter().any(|relation| {
+                relation.relation_id == original_relation.relation_id
+                    && relation_is_original_or_failed(original_relation, relation)
+            })
+            || evidence.path != plan.destination
+            || !evidence.exists
+            || evidence.content_fingerprint.as_deref() != Some(expected_fingerprint)
+            || !plan.backup_created
+            || plan.created_entry_identity.is_some()
+            || !backup_matches
+        {
+            return Ok(false);
+        }
+        let Some(target_root) = target_paths.get(&original_deployment.target_id) else {
+            return Ok(false);
+        };
+        if skillhub_core::physical_id_for_path(target_root).as_deref()
+            != Some(original_deployment.target_id.as_str())
+            || Path::new(&plan.destination)
+                != Path::new(target_root)
+                    .join(&original_deployment.runtime_name)
+                    .as_path()
+            || !target_can_restore
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn relation_is_original_or_failed(
+    original: &DeploymentRelationFact,
+    current: &DeploymentRelationFact,
+) -> bool {
+    if relation_matches_except_observed_at(current, original) {
+        return true;
+    }
+    let mut failed = original.clone();
+    let mut reasons = failed.health_reasons.take().unwrap_or_default();
+    reasons.push(skillhub_core::relationship::RelationHealthReason::OperationFailed);
+    reasons.sort_by_key(|reason| *reason as u8);
+    reasons.dedup();
+    failed.health_reasons = Some(reasons);
+    relation_matches_except_observed_at(current, &failed)
+}
+
+fn managed_repair_target_can_be_restored(
+    backup: &Path,
+    destination: &Path,
+    expected_identity: &str,
+    expected_fingerprint: &str,
+    restore_started: bool,
+) -> bool {
+    if entry_fingerprint(backup).ok().flatten().as_deref() != Some(expected_fingerprint) {
+        return false;
+    }
+    match fs::symlink_metadata(destination) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(metadata)
+            if !metadata.file_type().is_symlink()
+                && !DeploymentFilesystem::is_directory_link_entry(destination)
+                && (metadata.is_dir() || metadata.is_file()) =>
+        {
+            entry_fingerprint(destination).ok().flatten().as_deref() == Some(expected_fingerprint)
+                || (restore_started
+                    || skillhub_core::physical_id_for_path(destination).as_deref()
+                        == Some(expected_identity))
+                    && plain_entry_is_subset_of(backup, destination).unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+fn plain_entry_is_subset_of(source: &Path, destination: &Path) -> AppResult<bool> {
+    let source_metadata = fs::symlink_metadata(source).map_err(|error| {
+        operation_conflict_with("usage_backup_verification_failed", error.to_string())
+    })?;
+    let destination_metadata = fs::symlink_metadata(destination).map_err(|error| {
+        operation_conflict_with("usage_repair_target_changed", error.to_string())
+    })?;
+    if source_metadata.file_type().is_symlink()
+        || destination_metadata.file_type().is_symlink()
+        || DeploymentFilesystem::is_directory_link_entry(source)
+        || DeploymentFilesystem::is_directory_link_entry(destination)
+    {
+        return Ok(false);
+    }
+    if source_metadata.is_file() && destination_metadata.is_file() {
+        return file_is_prefix_of(source, destination);
+    }
+    if !source_metadata.is_dir() || !destination_metadata.is_dir() {
+        return Ok(false);
+    }
+    for entry in fs::read_dir(destination).map_err(|error| {
+        operation_conflict_with("usage_repair_target_changed", error.to_string())
+    })? {
+        let entry = entry.map_err(|error| {
+            operation_conflict_with("usage_repair_target_changed", error.to_string())
+        })?;
+        let source_child = source.join(entry.file_name());
+        if fs::symlink_metadata(&source_child).is_err()
+            || !plain_entry_is_subset_of(&source_child, &entry.path())?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn file_is_prefix_of(source: &Path, candidate: &Path) -> AppResult<bool> {
+    let mut source = fs::File::open(source).map_err(|error| {
+        operation_conflict_with("usage_backup_verification_failed", error.to_string())
+    })?;
+    let mut candidate = fs::File::open(candidate).map_err(|error| {
+        operation_conflict_with("usage_repair_target_changed", error.to_string())
+    })?;
+    let mut source_buffer = [0_u8; 64 * 1024];
+    let mut candidate_buffer = [0_u8; 64 * 1024];
+    loop {
+        let source_read =
+            std::io::Read::read(&mut source, &mut source_buffer).map_err(|error| {
+                operation_conflict_with("usage_backup_verification_failed", error.to_string())
+            })?;
+        if source_read == 0 {
+            let mut extra = [0_u8; 1];
+            return std::io::Read::read(&mut candidate, &mut extra)
+                .map(|read| read == 0)
+                .map_err(|error| {
+                    operation_conflict_with("usage_repair_target_changed", error.to_string())
+                });
+        }
+        let mut compared = 0;
+        while compared < source_read {
+            let candidate_read = std::io::Read::read(
+                &mut candidate,
+                &mut candidate_buffer[..source_read - compared],
+            )
+            .map_err(|error| {
+                operation_conflict_with("usage_repair_target_changed", error.to_string())
+            })?;
+            if candidate_read == 0 {
+                return Ok(true);
+            }
+            if source_buffer[compared..compared + candidate_read]
+                != candidate_buffer[..candidate_read]
+            {
+                return Ok(false);
+            }
+            compared += candidate_read;
+        }
+    }
+}
+
+fn copy_missing_plain_entry_contents(source: &Path, destination: &Path) -> AppResult<()> {
+    let source_metadata = fs::symlink_metadata(source).map_err(|error| {
+        operation_conflict_with("usage_backup_verification_failed", error.to_string())
+    })?;
+    if source_metadata.file_type().is_symlink()
+        || DeploymentFilesystem::is_directory_link_entry(source)
+    {
+        return Err(operation_conflict("usage_backup_verification_failed"));
+    }
+    if source_metadata.is_dir() {
+        match fs::symlink_metadata(destination) {
+            Ok(metadata)
+                if metadata.is_dir()
+                    && !metadata.file_type().is_symlink()
+                    && !DeploymentFilesystem::is_directory_link_entry(destination) => {}
+            Ok(_) => return Err(operation_conflict("usage_repair_target_changed")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(destination).map_err(|error| {
+                    operation_conflict_with("usage_repair_restore_failed", error.to_string())
+                })?;
+            }
+            Err(error) => {
+                return Err(operation_conflict_with(
+                    "usage_repair_target_changed",
+                    error.to_string(),
+                ));
+            }
+        }
+        for entry in fs::read_dir(source).map_err(|error| {
+            operation_conflict_with("usage_backup_verification_failed", error.to_string())
+        })? {
+            let entry = entry.map_err(|error| {
+                operation_conflict_with("usage_backup_verification_failed", error.to_string())
+            })?;
+            copy_missing_plain_entry_contents(&entry.path(), &destination.join(entry.file_name()))?;
+        }
+        return Ok(());
+    }
+    if !source_metadata.is_file() {
+        return Err(operation_conflict("usage_backup_verification_failed"));
+    }
+
+    match fs::symlink_metadata(destination) {
+        Ok(metadata)
+            if metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && !DeploymentFilesystem::is_directory_link_entry(destination) =>
+        {
+            if DeploymentFilesystem::hash_tree(source)?
+                == DeploymentFilesystem::hash_tree(destination)?
+            {
+                return Ok(());
+            }
+            if !file_is_prefix_of(source, destination)? {
+                return Err(operation_conflict("usage_repair_target_changed"));
+            }
+            let completed = metadata.len();
+            let mut source_file = fs::File::open(source).map_err(|error| {
+                operation_conflict_with("usage_backup_verification_failed", error.to_string())
+            })?;
+            std::io::Seek::seek(&mut source_file, std::io::SeekFrom::Start(completed)).map_err(
+                |error| {
+                    operation_conflict_with("usage_backup_verification_failed", error.to_string())
+                },
+            )?;
+            let mut destination_file = fs::OpenOptions::new()
+                .append(true)
+                .open(destination)
+                .map_err(|error| {
+                    operation_conflict_with("usage_repair_restore_failed", error.to_string())
+                })?;
+            std::io::copy(&mut source_file, &mut destination_file).map_err(|error| {
+                operation_conflict_with("usage_repair_restore_failed", error.to_string())
+            })?;
+            Ok(())
+        }
+        Ok(_) => Err(operation_conflict("usage_repair_target_changed")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let mut source_file = fs::File::open(source).map_err(|error| {
+                operation_conflict_with("usage_backup_verification_failed", error.to_string())
+            })?;
+            let mut destination_file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(destination)
+                .map_err(|error| {
+                    operation_conflict_with("usage_repair_restore_failed", error.to_string())
+                })?;
+            std::io::copy(&mut source_file, &mut destination_file).map_err(|error| {
+                operation_conflict_with("usage_repair_restore_failed", error.to_string())
+            })?;
+            Ok(())
+        }
+        Err(error) => Err(operation_conflict_with(
+            "usage_repair_target_changed",
+            error.to_string(),
+        )),
+    }
+}
+
+fn restore_managed_repair_entry_from_backup(
+    backup: &Path,
+    destination: &Path,
+    expected_identity: Option<&str>,
+    expected_fingerprint: Option<&str>,
+    restore_started: bool,
+) -> AppResult<()> {
+    let expected_fingerprint = expected_fingerprint
+        .ok_or_else(|| operation_conflict("usage_backup_verification_failed"))?;
+    if entry_fingerprint(backup)?.as_deref() != Some(expected_fingerprint) {
+        return Err(operation_conflict("usage_backup_verification_failed"));
+    }
+    match fs::symlink_metadata(destination) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            restore_entry(backup, destination)?;
+        }
+        Err(error) => {
+            return Err(operation_conflict_with(
+                "usage_repair_target_changed",
+                error.to_string(),
+            ));
+        }
+        Ok(metadata) => {
+            let identity_matches = expected_identity.is_some_and(|identity| {
+                skillhub_core::physical_id_for_path(destination).as_deref() == Some(identity)
+            });
+            if metadata.file_type().is_symlink()
+                || DeploymentFilesystem::is_directory_link_entry(destination)
+                || !(metadata.is_dir() || metadata.is_file())
+                || (entry_fingerprint(destination)?.as_deref() != Some(expected_fingerprint)
+                    && !identity_matches
+                    && !restore_started)
+                || !plain_entry_is_subset_of(backup, destination)?
+            {
+                return Err(operation_conflict("usage_repair_target_changed"));
+            }
+            if entry_fingerprint(destination)?.as_deref() != Some(expected_fingerprint) {
+                copy_missing_plain_entry_contents(backup, destination)?;
+            }
+        }
+    }
+    if entry_fingerprint(destination)?.as_deref() != Some(expected_fingerprint) {
+        return Err(operation_conflict(
+            "usage_repair_restore_verification_failed",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn rollback_interrupted_managed_usage_repair(
+    database: &Database,
+    library_runtime: &super::library_runtime::LibraryRuntime,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let mut record = database
+        .operation_repository()
+        .get_sync(operation_id)?
+        .ok_or_else(|| operation_conflict("managed_usage_change_preview_missing"))?;
+    if !managed_usage_change_repair_rollback_available(database, library_runtime, &record)? {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let mut journal: ManagedUsageChangeJournal =
+        serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
+    let pending = journal
+        .plans
+        .iter()
+        .enumerate()
+        .filter_map(|(index, plan)| {
+            (plan.repair_removal_started
+                && (index == journal.completed.len()
+                    || journal.completed.get(index).is_some_and(|item| {
+                        item.status == UsageChangeItemStatus::RecoveryRequired
+                    })
+                    || plan.repair_restore_started))
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    if pending.is_empty() {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+
+    for index in &pending {
+        journal.plans[*index].repair_restore_started = true;
+    }
+    record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+    database.operation_repository().update_sync(&record)?;
+
+    for index in &pending {
+        let plan = &journal.plans[*index];
+        restore_managed_repair_entry_from_backup(
+            Path::new(&plan.backup_path),
+            Path::new(&plan.destination),
+            plan.observed_identity.as_deref(),
+            plan.observed_before.as_deref(),
+            plan.repair_restore_started,
+        )?;
+        let item = managed_usage_change_failed_item(
+            &journal,
+            *index,
+            "repair_restored_after_interruption",
+        )?;
+        if *index < journal.completed.len() {
+            journal.completed[*index] = item;
+        } else if *index == journal.completed.len() {
+            journal.completed.push(item);
+        } else {
+            return Err(operation_conflict("managed_usage_change_journal_invalid"));
+        }
+    }
+    while journal.completed.len() < journal.plans.len() {
+        let index = journal.completed.len();
+        journal.completed.push(managed_usage_change_failed_item(
+            &journal,
+            index,
+            "not_attempted_after_repair_rollback",
+        )?);
+    }
+    for plan in &mut journal.plans {
+        plan.repair_removal_started = false;
+        plan.repair_restore_started = false;
+    }
+
+    let result = UsageChangeResult {
+        operation_id,
+        prepared_id: journal.prepared.prepared_id,
+        recovery_required: false,
+        item_results: journal.completed.clone(),
+        derived_skill_id: None,
+        recovery_operation_id: None,
+    };
+    let phase = if result
+        .item_results
+        .iter()
+        .any(|item| item.status == UsageChangeItemStatus::Applied)
+    {
+        OperationPhase::Committed
+    } else {
+        OperationPhase::RolledBack
+    };
+    record.result = Some(serde_json::to_value(result).map_err(serialization_error)?);
+    record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+    set_phase(
+        &mut record,
+        phase,
+        journal.plans.len() as u32,
+        journal.plans.len() as u32,
+    );
+    record.progress.message_code = if phase == OperationPhase::RolledBack {
+        "recovery.managed_usage_change.rolled_back".to_owned()
+    } else {
+        "recovery.managed_usage_change.completed".to_owned()
+    };
+    record.error_code = None;
+    database.operation_repository().update_sync(&record)
+}
+
+fn managed_usage_change_failed_item(
+    journal: &ManagedUsageChangeJournal,
+    index: usize,
+    reason: &str,
+) -> AppResult<UsageChangeItemResult> {
+    let plan = journal
+        .plans
+        .get(index)
+        .ok_or_else(|| operation_conflict("managed_usage_change_journal_invalid"))?;
+    let relation_id = format!("managed:{}", plan.deployment_id);
+    let impact = journal
+        .prepared
+        .impacts
+        .iter()
+        .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+        .ok_or_else(|| operation_conflict("managed_usage_change_impact_missing"))?;
+    Ok(UsageChangeItemResult {
+        relation_ids: impact.relation_ids.clone(),
+        skill_id: impact.skill_id,
+        target: impact.target.clone(),
+        action: impact.action,
+        status: UsageChangeItemStatus::Failed,
+        reason: Some(reason.to_owned()),
+        recovery_point: journal.plans[index]
+            .backup_created
+            .then(|| UsageRecoveryPoint {
+                path: journal.plans[index].backup_path.clone(),
+                fingerprint: journal.plans[index].observed_before.clone(),
+                representation: journal.prepared.entry_evidence[index].representation,
+            }),
+    })
 }
 
 pub(crate) fn rollback_unstarted_managed_usage_change(
@@ -2325,6 +2910,8 @@ impl LocalApplicationFacade {
                 observed_identity,
                 backup_path: backup_path.to_string_lossy().into_owned(),
                 backup_created: false,
+                repair_removal_started: false,
+                repair_restore_started: false,
                 created_entry_identity: None,
             });
         }
@@ -4896,7 +5483,30 @@ impl LocalApplicationFacade {
             self.persist_managed_usage_change_backup(operation_id, plan)
                 .map_err(|error| (error, false))?;
             backup_ready = true;
-            remove_plain_entry(&destination).map_err(|error| (error, false))?;
+            plan.repair_removal_started = true;
+            self.persist_managed_usage_change_repair_removal(operation_id, plan)
+                .map_err(|error| (error, false))?;
+            if let Err(remove_error) = remove_plain_entry(&destination) {
+                plan.repair_restore_started = true;
+                self.persist_managed_usage_change_repair_removal(operation_id, plan)
+                    .map_err(|error| (error, true))?;
+                match restore_managed_repair_entry_from_backup(
+                    Path::new(&plan.backup_path),
+                    &destination,
+                    plan.observed_identity.as_deref(),
+                    plan.observed_before.as_deref(),
+                    plan.repair_restore_started,
+                ) {
+                    Ok(()) => {
+                        plan.repair_removal_started = false;
+                        plan.repair_restore_started = false;
+                        self.persist_managed_usage_change_repair_removal(operation_id, plan)
+                            .map_err(|error| (error, true))?;
+                        return Err((remove_error, false));
+                    }
+                    Err(restore_error) => return Err((restore_error, true)),
+                }
+            }
         } else if action == UsageChangeAction::Sync {
             let proof = self
                 .backend
@@ -4915,6 +5525,10 @@ impl LocalApplicationFacade {
                 filesystem
                     .recovery_entry_identity(applied.ownership.mode, &applied.destination_path)?,
             );
+            if action == UsageChangeAction::Repair {
+                plan.repair_removal_started = false;
+                plan.repair_restore_started = false;
+            }
             self.persist_managed_usage_change_created_entry(operation_id, plan)?;
             filesystem.verify(&applied)?;
             Ok(applied.observed_tree_hash)
@@ -5001,6 +5615,31 @@ impl LocalApplicationFacade {
         })
     }
 
+    fn persist_managed_usage_change_repair_removal(
+        &self,
+        operation_id: OperationId,
+        plan: &ManagedUsageChangePlan,
+    ) -> AppResult<()> {
+        self.with_database("managed_usage_change.persist_repair_removal", |database| {
+            let mut record = database
+                .operation_repository()
+                .get_sync(operation_id)?
+                .ok_or_else(|| operation_conflict("managed_usage_change_preview_missing"))?;
+            let mut journal: ManagedUsageChangeJournal =
+                serde_json::from_value(record.recovery_data.clone())
+                    .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
+            let stored = journal
+                .plans
+                .iter_mut()
+                .find(|stored| stored.deployment_id == plan.deployment_id)
+                .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
+            stored.repair_removal_started = plan.repair_removal_started;
+            stored.repair_restore_started = plan.repair_restore_started;
+            record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+            database.operation_repository().update_sync(&record)
+        })
+    }
+
     fn persist_managed_usage_change_created_entry(
         &self,
         operation_id: OperationId,
@@ -5020,6 +5659,8 @@ impl LocalApplicationFacade {
                 .find(|stored| stored.deployment_id == plan.deployment_id)
                 .ok_or_else(|| operation_conflict("managed_usage_change_relation_missing"))?;
             stored.created_entry_identity = plan.created_entry_identity.clone();
+            stored.repair_removal_started = plan.repair_removal_started;
+            stored.repair_restore_started = plan.repair_restore_started;
             record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
             database.operation_repository().update_sync(&record)
         })

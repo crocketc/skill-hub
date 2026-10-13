@@ -21684,10 +21684,26 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .map_err(|_| internal("recovery.resolve.managed_usage_change.database"))?;
             return match action {
                 RecoveryAction::RollbackOperation => {
-                    usage_change_service::rollback_unstarted_managed_usage_change(
+                    let record = database
+                        .operation_repository()
+                        .get_sync(operation_id)?
+                        .ok_or_else(|| AppError::new(ErrorCode::ObjectNotFound, Severity::Error))?;
+                    if usage_change_service::managed_usage_change_repair_rollback_available(
                         &database,
-                        operation_id,
-                    )
+                        &self.library_runtime,
+                        &record,
+                    )? {
+                        usage_change_service::rollback_interrupted_managed_usage_repair(
+                            &database,
+                            &self.library_runtime,
+                            operation_id,
+                        )
+                    } else {
+                        usage_change_service::rollback_unstarted_managed_usage_change(
+                            &database,
+                            operation_id,
+                        )
+                    }
                 }
                 RecoveryAction::CompleteOperation => {
                     usage_change_service::complete_managed_usage_change_recovery(
@@ -21984,8 +22000,14 @@ impl LocalRecoveryBackend {
         .unwrap_or(false)
         {
             vec![RecoveryAction::CompleteOperation]
-        } else if usage_change_service::managed_usage_change_rollback_available(&database, record)
-            .unwrap_or(false)
+        } else if usage_change_service::managed_usage_change_repair_rollback_available(
+            &database,
+            &self.library_runtime,
+            record,
+        )
+        .unwrap_or(false)
+            || usage_change_service::managed_usage_change_rollback_available(&database, record)
+                .unwrap_or(false)
         {
             vec![RecoveryAction::RollbackOperation]
         } else {

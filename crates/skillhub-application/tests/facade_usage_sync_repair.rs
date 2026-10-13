@@ -5,7 +5,9 @@ use skillhub_core::api::{
     PrepareUsageChange, ResolveRecovery, SetCurrentVersion,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
-use skillhub_core::relationship::{UsageChangeItemStatus, UsageChangeResult};
+use skillhub_core::relationship::{
+    UsageChangeImpact, UsageChangeItemResult, UsageChangeItemStatus, UsageChangeResult,
+};
 use skillhub_core::ApplicationFacade;
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
 use std::path::{Path, PathBuf};
@@ -1418,6 +1420,250 @@ async fn managed_link_restore_after_filesystem_write_can_resume_database_commit(
             .phase,
         skillhub_core::OperationPhase::Committed
     );
+}
+
+#[tokio::test]
+async fn interrupted_managed_repair_during_target_removal_can_restore_verified_backup() {
+    let fixture = fixture().await;
+    let (deployment_id, destination, _visible_tree) = seed_managed_link(&fixture);
+    #[cfg(unix)]
+    std::fs::remove_file(&destination).expect("remove original symlink");
+    #[cfg(windows)]
+    std::fs::remove_dir(&destination).expect("remove original junction");
+    std::fs::create_dir_all(&destination).expect("create damaged link replacement");
+    std::fs::write(destination.join("keep.txt"), "keep me").expect("replacement content");
+    std::fs::write(destination.join("removed.txt"), "restore me")
+        .expect("content that recursive removal partially removes");
+
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "repair",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed repair");
+
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read prepared operation")
+        .expect("operation exists");
+    let backup = PathBuf::from(
+        record.recovery_data["plans"][0]["backup_path"]
+            .as_str()
+            .expect("operation backup path"),
+    );
+    std::fs::create_dir_all(&backup).expect("create operation backup");
+    std::fs::copy(destination.join("keep.txt"), backup.join("keep.txt"))
+        .expect("back up surviving file");
+    std::fs::copy(destination.join("removed.txt"), backup.join("removed.txt"))
+        .expect("back up file removed before interruption");
+
+    record.phase = skillhub_core::OperationPhase::Applying;
+    record.progress.phase = record.phase;
+    record.recovery_data["plans"][0]["backup_created"] = serde_json::json!(true);
+    record.recovery_data["plans"][0]["repair_removal_started"] = serde_json::json!(true);
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist repair removal checkpoint");
+    std::fs::remove_file(destination.join("removed.txt"))
+        .expect("simulate a crash during recursive removal");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after restart")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("interrupted repair remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+
+    std::fs::write(destination.join("keep.txt"), "external change")
+        .expect("simulate target drift after candidate listing");
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck candidates after target drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("drifted repair remains visible")
+        .actions
+        .is_empty());
+    assert_eq!(
+        std::fs::read_to_string(destination.join("keep.txt")).expect("preserve drifted file"),
+        "external change"
+    );
+    std::fs::write(destination.join("keep.txt"), "keep me")
+        .expect("restore the known partial state");
+    std::fs::write(destination.join("removed.txt"), "restore")
+        .expect("simulate an interrupted partial backup copy");
+    let database = Database::open(&fixture.database_path).expect("open recovery journal");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read recovery operation")
+        .expect("operation remains recorded");
+    record.recovery_data["plans"][0]["repair_restore_started"] = serde_json::json!(true);
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist recovery restore checkpoint");
+    drop(database);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after interrupted restore")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("partially restored repair remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::RollbackOperation,
+        }))
+        .await
+        .expect("restore the original occupied directory");
+    assert_eq!(
+        std::fs::read_to_string(destination.join("keep.txt")).expect("surviving file"),
+        "keep me"
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination.join("removed.txt")).expect("restored file"),
+        "restore me"
+    );
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen database")
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read settled operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::RolledBack);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after rollback")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.operation_id != prepared.operation_id));
+}
+
+#[tokio::test]
+async fn managed_repair_rollback_rejects_recovery_item_without_removal_checkpoint() {
+    let fixture = fixture().await;
+    let (deployment_id, destination, _visible_tree) = seed_managed_link(&fixture);
+    #[cfg(unix)]
+    std::fs::remove_file(&destination).expect("remove original symlink");
+    #[cfg(windows)]
+    std::fs::remove_dir(&destination).expect("remove original junction");
+    std::fs::create_dir_all(&destination).expect("create damaged link replacement");
+    std::fs::write(destination.join("keep.txt"), "keep me").expect("replacement content");
+
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "repair",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed repair");
+
+    let database = Database::open(&fixture.database_path).expect("open database");
+    let mut record = database
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read prepared operation")
+        .expect("operation exists");
+    let original_plan = record.recovery_data["plans"][0].clone();
+    let mut pending_plan = original_plan.clone();
+    pending_plan["repair_removal_started"] = serde_json::json!(true);
+    pending_plan["backup_created"] = serde_json::json!(true);
+    let backup = PathBuf::from(
+        pending_plan["backup_path"]
+            .as_str()
+            .expect("operation backup path"),
+    );
+    std::fs::create_dir_all(&backup).expect("create operation backup");
+    std::fs::copy(destination.join("keep.txt"), backup.join("keep.txt"))
+        .expect("back up target content");
+
+    let evidence = record.recovery_data["prepared"]["entry_evidence"][0].clone();
+    let impact: UsageChangeImpact =
+        serde_json::from_value(record.recovery_data["prepared"]["impacts"][0].clone())
+            .expect("decode prepared impact");
+    let unrelated_recovery = UsageChangeItemResult {
+        relation_ids: impact.relation_ids.clone(),
+        skill_id: impact.skill_id,
+        target: impact.target.clone(),
+        action: impact.action,
+        status: UsageChangeItemStatus::RecoveryRequired,
+        reason: Some("failure_fact_not_recorded".to_owned()),
+        recovery_point: None,
+    };
+    let mut updated_prepared = record.recovery_data["prepared"].clone();
+    updated_prepared["entry_evidence"] = serde_json::json!([evidence.clone(), evidence]);
+    updated_prepared["impacts"] = serde_json::json!([
+        impact,
+        serde_json::from_value::<UsageChangeImpact>(
+            record.recovery_data["prepared"]["impacts"][0].clone()
+        )
+        .expect("decode second prepared impact")
+    ]);
+    record.recovery_data["prepared"] = updated_prepared.clone();
+    record.recovery_data["plans"] = serde_json::json!([original_plan, pending_plan]);
+    record.recovery_data["completed"] = serde_json::json!([unrelated_recovery]);
+    record.result = Some(updated_prepared);
+    record.phase = skillhub_core::OperationPhase::Applying;
+    record.progress.phase = record.phase;
+    database
+        .operation_repository()
+        .update_sync(&record)
+        .expect("persist mixed recovery state");
+    drop(database);
+    drop(app);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("mixed recovery remains visible")
+        .actions
+        .is_empty());
 }
 
 #[tokio::test]
