@@ -506,6 +506,134 @@ async fn lineage_records_starting_version_once() {
 }
 
 #[tokio::test]
+async fn derived_rename_parent_can_settle_after_copy_child_commits() {
+    let mut fixture = Fixture::new();
+    let source = seed_source(&fixture);
+    let (selected, _) = seed_managed_target(&mut fixture, &source, "Notebook", false);
+    let facade = fixture.facade();
+    let request = derive_request(&source, "Notebook-local", &[selected], OperationId::new());
+    let prepared = facade
+        .prepare_usage_change(request.clone())
+        .expect("prepare derived rename");
+    let original_result = facade
+        .commit_usage_change(CommitUsageChange {
+            operation_id: request.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("complete derived rename child");
+    let derived_skill_id = original_result.derived_skill_id.expect("derived skill id");
+    let mut parent = fixture
+        .database()
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read parent operation")
+        .expect("parent operation exists");
+    let child_operation_id: OperationId =
+        serde_json::from_value(parent.recovery_data["child_operation_id"].clone())
+            .expect("parent journal links to the copy child");
+    let child = fixture
+        .database()
+        .operation_repository()
+        .get_sync(child_operation_id)
+        .expect("read child operation")
+        .expect("child operation exists");
+    assert_eq!(child.phase, skillhub_core::OperationPhase::Committed);
+
+    // Recreate the crash window after the child settled but before the parent
+    // saved its receipt.
+    parent.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    parent.progress.phase = parent.phase;
+    parent.progress.message_code = "operation.needs_recovery".to_owned();
+    parent.result = None;
+    fixture
+        .database()
+        .operation_repository()
+        .update_sync(&parent)
+        .expect("persist interrupted parent state");
+    let mut interrupted_child = child.clone();
+    interrupted_child.phase = skillhub_core::OperationPhase::NeedsRecovery;
+    interrupted_child.progress.phase = interrupted_child.phase;
+    fixture
+        .database()
+        .operation_repository()
+        .update_sync(&interrupted_child)
+        .expect("simulate child recovery still pending");
+    drop(facade);
+
+    let restarted = fixture.facade();
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recoverable operations")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(!candidates
+        .iter()
+        .any(|candidate| candidate.operation_id == prepared.operation_id));
+    drop(restarted);
+
+    fixture
+        .database()
+        .operation_repository()
+        .update_sync(&child)
+        .expect("settle child before parent receipt recovery");
+    let restarted = fixture.facade();
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recoverable operations after child settlement")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("derived parent remains visible until its receipt is settled");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: skillhub_core::RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("settle the parent from the committed child receipt");
+
+    let settled = fixture
+        .database()
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read settled parent")
+        .expect("parent operation exists");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    let result: skillhub_core::relationship::UsageChangeResult =
+        serde_json::from_value(settled.result.expect("parent receipt is restored"))
+            .expect("parent receipt has the usage-change contract");
+    assert_eq!(result.derived_skill_id, Some(derived_skill_id));
+    assert_eq!(result.item_results.len(), 1);
+    assert_eq!(
+        result.item_results[0].status,
+        skillhub_core::relationship::UsageChangeItemStatus::Applied
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after settling parent")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(!candidates
+        .iter()
+        .any(|candidate| candidate.operation_id == prepared.operation_id));
+}
+
+#[tokio::test]
 async fn derived_skill_has_no_inherited_update_source() {
     let mut fixture = Fixture::new();
     let source = seed_source(&fixture);

@@ -3611,6 +3611,53 @@ impl LocalApplicationFacade {
         }
     }
 
+    /// Save-copy is also the child operation of derived rename. Persist the
+    /// compact receipt with its terminal phase so a crash before the parent
+    /// stores its own result can be settled without repeating file work.
+    fn journal_settle_save_as_copy(
+        &self,
+        operation_id: OperationId,
+        skill_id: skillhub_core::SkillId,
+        version_id: &skillhub_core::VersionId,
+        items: &[skillhub_core::api::SaveAsCopyTargetResult],
+    ) -> AppResult<()> {
+        let record = self.with_database("operation_journal.save_as_copy.finish", |database| {
+            let repository = database.operation_repository();
+            let mut record = match repository.get_sync(operation_id)? {
+                Some(record) if record.kind == SAVE_MARKDOWN_AS_COPY_KIND => record,
+                Some(_) => return Err(recovery_conflict("operation_id_reused")),
+                None => journal_record(
+                    operation_id,
+                    SAVE_MARKDOWN_AS_COPY_KIND,
+                    skillhub_core::OperationPhase::Applying,
+                    None,
+                ),
+            };
+            if record.phase == skillhub_core::OperationPhase::NeedsRecovery {
+                return Err(recovery_conflict("save_as_copy_recovery_pending"));
+            }
+            record.phase = skillhub_core::OperationPhase::Committed;
+            record.progress.phase = record.phase;
+            record.progress.completed = record.progress.total;
+            record.progress.message_code = "operation.committed".to_owned();
+            record.error_code = None;
+            record.recovery_data = serde_json::json!({
+                "skill_id": skill_id,
+                "version_id": version_id,
+                "items": items,
+                "recovery_required": false,
+            });
+            record.result = Some(serde_json::json!({ "items": items }));
+            match repository.get_sync(operation_id)? {
+                Some(_) => repository.update_sync(&record)?,
+                None => repository.insert_sync(&record)?,
+            }
+            Ok(record)
+        })?;
+        self.log_journal_record(&record);
+        Ok(())
+    }
+
     /// Advances a flow record to `phase`. When no row exists (the flow failed
     /// before any record was written) a terminal row is inserted instead, so
     /// validation failures still surface in the operations history without
@@ -9619,7 +9666,7 @@ impl LocalApplicationFacade {
             .iter()
             .all(|target| matches!(&target.state, SaveAsCopyReplacementTargetState::Applied(_)));
         if all_applied {
-            self.journal_settle(operation_id, SAVE_MARKDOWN_AS_COPY_KIND, None);
+            self.journal_settle_save_as_copy(operation_id, copy.id(), version_id, &items)?;
             Ok((SaveAsCopyInheritanceOutcome::Replaced { items }, false))
         } else {
             // 每项均有稳定结果时，部分失败是已完成的结果，不应阻断
@@ -10034,7 +10081,7 @@ impl LocalApplicationFacade {
                     (outcome, recovery)
                 }
                 None => {
-                    self.journal_settle(operation_id, KIND, None);
+                    self.journal_settle_save_as_copy(operation_id, copy.id(), &version.id, &[])?;
                     (SaveAsCopyInheritanceOutcome::NotRequested, None)
                 }
             };
@@ -21291,6 +21338,13 @@ impl RecoveryBackend for LocalRecoveryBackend {
             if !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase) {
                 continue;
             }
+            let derived_rename_state =
+                usage_change_service::derived_rename_recovery_state(record, &records);
+            if derived_rename_state
+                == usage_change_service::DerivedRenameRecoveryState::WaitingOnChild
+            {
+                continue;
+            }
             if record.kind == "usage_manage_batch"
                 && usage_change_service::manage_batch_recovery_state(record, &records)
                     == usage_change_service::ManageBatchRecoveryState::WaitingOnChild
@@ -21308,6 +21362,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     "usage_manage_batch"
                         if usage_change_service::manage_batch_recovery_state(record, &records)
                             == usage_change_service::ManageBatchRecoveryState::Resumable =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
+                    "usage_derived_rename"
+                        if derived_rename_state
+                            == usage_change_service::DerivedRenameRecoveryState::Resumable =>
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
@@ -21461,6 +21521,15 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 }
                 _ => Err(unsupported("recovery.resolve")),
             };
+        }
+        if operation_kind.as_deref() == Some("usage_derived_rename") {
+            if action != RecoveryAction::CompleteOperation {
+                return Err(unsupported("recovery.resolve.usage_derived_rename"));
+            }
+            return usage_change_service::complete_derived_rename_recovery(
+                &self.database,
+                operation_id,
+            );
         }
         if operation_kind.as_deref() == Some("shared_usage_migration") {
             return Err(unsupported("recovery.shared_usage_migration"));

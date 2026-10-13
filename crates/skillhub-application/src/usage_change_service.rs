@@ -21,7 +21,8 @@ use skillhub_core::api::{
     GetSaveAsCopyReplacementPreview, PrepareRelationMigration, PrepareUsageChange,
     RelationMigrationTargetMode, RelationshipMigrationBackupPolicy, RelationshipOverviewScope,
     SaveAsCopyInheritance, SaveAsCopyInheritanceOutcome, SaveAsCopyOrigin,
-    SaveAsCopyReplacementChoice, SaveAsCopyTargetStatus, SaveMarkdownAsCopy,
+    SaveAsCopyReplacementChoice, SaveAsCopyTargetResult, SaveAsCopyTargetStatus,
+    SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::CatalogRepository;
 use skillhub_core::deployment::{observed_path_key, DeploymentPlan};
@@ -58,6 +59,7 @@ const DUPLICATE_CLEANUP_KIND: &str = "usage_duplicate_cleanup";
 const SHARED_USAGE_MIGRATION_KIND: &str = "shared_usage_migration";
 const SUBJECT_RENAME_KIND: &str = "subject_runtime_rename";
 const DERIVED_RENAME_KIND: &str = "usage_derived_rename";
+const SAVE_MARKDOWN_AS_COPY_KIND: &str = "save_markdown_as_copy";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct SubjectRenameJournal {
@@ -87,6 +89,225 @@ struct DerivedRenameJournal {
     source_version_id: VersionId,
     copy_request: SaveMarkdownAsCopy,
     child_operation_id: OperationId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DerivedRenameRecoveryState {
+    Invalid,
+    WaitingOnChild,
+    Resumable,
+}
+
+/// The derived-rename parent owns the user-facing receipt while the save-copy
+/// child owns filesystem recovery. Wait for a durable child receipt before
+/// offering a non-mutating parent settlement action.
+pub(crate) fn derived_rename_recovery_state(
+    record: &OperationRecord,
+    records: &[OperationRecord],
+) -> DerivedRenameRecoveryState {
+    if record.kind != DERIVED_RENAME_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::NeedsRecovery
+        )
+    {
+        return DerivedRenameRecoveryState::Invalid;
+    }
+    let Ok(journal) = serde_json::from_value::<DerivedRenameJournal>(record.recovery_data.clone())
+    else {
+        return DerivedRenameRecoveryState::Invalid;
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.child_operation_id == record.operation_id
+    {
+        return DerivedRenameRecoveryState::Invalid;
+    }
+    let Some(child) = records
+        .iter()
+        .find(|child| child.operation_id == journal.child_operation_id)
+    else {
+        return DerivedRenameRecoveryState::Invalid;
+    };
+    if child.kind != SAVE_MARKDOWN_AS_COPY_KIND {
+        return DerivedRenameRecoveryState::Invalid;
+    }
+    if skillhub_core::operation_requires_recovery_gate(&child.kind, child.phase) {
+        return DerivedRenameRecoveryState::WaitingOnChild;
+    }
+    if child.phase != OperationPhase::Committed
+        || build_derived_rename_result(&journal, child, None).is_err()
+    {
+        return DerivedRenameRecoveryState::Invalid;
+    }
+    DerivedRenameRecoveryState::Resumable
+}
+
+pub(crate) fn complete_derived_rename_recovery(
+    database: &std::sync::Mutex<Database>,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let database = database
+        .lock()
+        .map_err(|_| internal("recovery.derived_rename.database"))?;
+    let repository = database.operation_repository();
+    let mut parent = repository
+        .get_sync(operation_id)?
+        .ok_or_else(|| operation_conflict("derived_rename_operation_missing"))?;
+    if parent.kind != DERIVED_RENAME_KIND
+        || !skillhub_core::operation_requires_recovery_gate(&parent.kind, parent.phase)
+    {
+        return Err(operation_conflict(
+            "derived_rename_operation_not_recoverable",
+        ));
+    }
+    let journal: DerivedRenameJournal = serde_json::from_value(parent.recovery_data.clone())
+        .map_err(|_| operation_conflict("derived_rename_journal_invalid"))?;
+    let child = repository
+        .get_sync(journal.child_operation_id)?
+        .ok_or_else(|| operation_conflict("derived_rename_child_missing"))?;
+    if child.kind != SAVE_MARKDOWN_AS_COPY_KIND || child.phase != OperationPhase::Committed {
+        return Err(operation_conflict("derived_rename_child_not_committed"));
+    }
+    let result = build_derived_rename_result(&journal, &child, None)?;
+    parent.result = Some(serde_json::to_value(result).map_err(serialization_error)?);
+    parent.phase = OperationPhase::Committed;
+    parent.progress.phase = parent.phase;
+    parent.progress.completed = parent.progress.total;
+    parent.progress.message_code = "recovery.resolved".to_owned();
+    parent.error_code = None;
+    repository.update_sync(&parent)
+}
+
+fn build_derived_rename_result(
+    journal: &DerivedRenameJournal,
+    child: &OperationRecord,
+    recovery_operation_id: Option<OperationId>,
+) -> AppResult<UsageChangeResult> {
+    let skill_id: SkillId = child
+        .recovery_data
+        .get("skill_id")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .ok_or_else(|| operation_conflict("derived_rename_child_skill_missing"))?;
+    let _: VersionId = child
+        .recovery_data
+        .get("version_id")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .ok_or_else(|| operation_conflict("derived_rename_child_version_missing"))?;
+    let recorded_items: Vec<SaveAsCopyTargetResult> = child
+        .result
+        .as_ref()
+        .and_then(|value| value.get("items"))
+        .cloned()
+        .ok_or_else(|| operation_conflict("derived_rename_child_items_missing"))
+        .and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|_| operation_conflict("derived_rename_child_items_invalid"))
+        })?;
+    let durable_items: Vec<SaveAsCopyTargetResult> = child
+        .recovery_data
+        .get("items")
+        .cloned()
+        .ok_or_else(|| operation_conflict("derived_rename_child_items_missing"))
+        .and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|_| operation_conflict("derived_rename_child_items_invalid"))
+        })?;
+    if recorded_items != durable_items {
+        return Err(operation_conflict("derived_rename_child_receipt_mismatch"));
+    }
+    if child
+        .recovery_data
+        .get("recovery_required")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+    {
+        return Err(operation_conflict("derived_rename_child_recovery_pending"));
+    }
+    let expected_deployments = match &journal.copy_request.inheritance {
+        SaveAsCopyInheritance::ReplaceTargets { targets, .. } if !targets.is_empty() => targets
+            .iter()
+            .map(|target| target.deployment_id)
+            .collect::<HashSet<_>>(),
+        _ => return Err(operation_conflict("derived_rename_child_targets_missing")),
+    };
+    if expected_deployments.len()
+        != match &journal.copy_request.inheritance {
+            SaveAsCopyInheritance::ReplaceTargets { targets, .. } => targets.len(),
+            SaveAsCopyInheritance::None => 0,
+        }
+    {
+        return Err(operation_conflict("derived_rename_child_target_duplicate"));
+    }
+    let mut seen = HashSet::new();
+    let target_runtime_name = journal
+        .copy_request
+        .target_runtime_name
+        .as_deref()
+        .ok_or_else(|| operation_conflict("derived_rename_child_runtime_name_missing"))?;
+    let item_results = durable_items
+        .into_iter()
+        .map(|item| {
+            if !seen.insert(item.deployment_id) {
+                return Err(operation_conflict("derived_rename_child_target_duplicate"));
+            }
+            if !expected_deployments.contains(&item.deployment_id)
+                || !item.consumer_deployment_ids.contains(&item.deployment_id)
+                || item.runtime_name != target_runtime_name
+            {
+                return Err(operation_conflict("derived_rename_child_target_mismatch"));
+            }
+            let relation_id = format!("managed:{}", item.deployment_id);
+            let impact = journal
+                .prepared
+                .impacts
+                .iter()
+                .find(|impact| impact.relation_ids.iter().any(|id| id == &relation_id))
+                .ok_or_else(|| operation_conflict("derived_rename_result_target_missing"))?;
+            let evidence = journal
+                .prepared
+                .entry_evidence
+                .iter()
+                .find(|evidence| evidence.relation_ids.iter().any(|id| id == &relation_id))
+                .ok_or_else(|| operation_conflict("derived_rename_result_evidence_missing"))?;
+            let expected_path = Path::new(&evidence.path)
+                .parent()
+                .ok_or_else(|| operation_conflict("derived_rename_result_path_invalid"))?
+                .join(target_runtime_name);
+            if impact.target.directory_id.as_deref() != Some(item.target_id.as_str())
+                || Path::new(&item.path) != expected_path.as_path()
+            {
+                return Err(operation_conflict("derived_rename_child_target_mismatch"));
+            }
+            Ok(UsageChangeItemResult {
+                relation_ids: vec![relation_id],
+                skill_id,
+                target: impact.target.clone(),
+                action: UsageChangeImpactAction::DeriveAndReplace,
+                status: match item.status {
+                    SaveAsCopyTargetStatus::Applied => UsageChangeItemStatus::Applied,
+                    SaveAsCopyTargetStatus::Failed => UsageChangeItemStatus::Failed,
+                },
+                reason: item.error_code.map(|code| code.as_str().to_owned()),
+                recovery_point: None,
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+    if seen != expected_deployments || item_results.len() != journal.prepared.impacts.len() {
+        return Err(operation_conflict(
+            "derived_rename_child_targets_incomplete",
+        ));
+    }
+    Ok(UsageChangeResult {
+        operation_id: journal.prepared.operation_id,
+        prepared_id: journal.prepared.prepared_id,
+        item_results,
+        recovery_required: recovery_operation_id.is_some(),
+        derived_skill_id: Some(skill_id),
+        recovery_operation_id,
+    })
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
