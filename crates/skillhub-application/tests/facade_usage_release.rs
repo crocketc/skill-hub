@@ -28,7 +28,7 @@ use skillhub_core::relationship::{
 };
 use skillhub_core::{
     AppCommand, AppQuery, AppQueryResult, ApplicationFacade, ErrorCode, OperationId,
-    RelationMigrationTargetMode, SkillId,
+    RecoveryAction, RelationMigrationTargetMode, SkillId,
 };
 use skillhub_storage::{CentralLibrary, Database};
 
@@ -695,6 +695,237 @@ async fn original_entry_preview_covers_every_managed_target_and_commit_versions_
         fixture.original_path.is_dir(),
         "the original source is preserved"
     );
+}
+
+#[tokio::test]
+async fn original_entry_adoption_recovery_finishes_rewrites_and_parent_batch_after_restart() {
+    let fixture = fixture(EntryKind::FullCopy, false).await;
+    let (_, managed_path) = add_managed_usage_copy(&fixture, SKILL_BODY);
+    change_usage_entry_body(&fixture, RELATION_ID, "# Original entry\n");
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(manage_request(
+            OperationId::new(),
+            vec![RELATION_ID.into()],
+            UsageForm::FullCopy,
+            UsageContentBasis::OriginalEntry,
+        ))
+        .expect("prepare original-entry adoption");
+    let database = fixture.facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER interrupt_original_adoption_commit
+             BEFORE UPDATE OF progress_json ON operations
+             WHEN NEW.kind = 'usage_original_entry_adoption'
+               AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected interruption before adoption commit'); END;",
+        )
+        .expect("install adoption interruption");
+
+    assert!(fixture
+        .facade
+        .execute(AppCommand::CommitUsageChange(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        }))
+        .await
+        .is_err());
+    let adoption_record = {
+        let database = database.lock().expect("database lock");
+        database
+            .operation_repository()
+            .list_sync()
+            .expect("list operation records")
+            .into_iter()
+            .find(|record| record.kind == "usage_original_entry_adoption")
+            .expect("adoption operation")
+    };
+    let adoption_operation_id = adoption_record.operation_id;
+    assert_eq!(
+        adoption_record.progress.message_code.as_str(),
+        "operation.usage_original_entry_adoption.rewriting_targets"
+    );
+    assert_eq!(
+        adoption_record
+            .recovery_data
+            .get("target_version_id")
+            .and_then(serde_json::Value::as_str),
+        adoption_record
+            .result
+            .as_ref()
+            .and_then(|result| result.get("version_id"))
+            .and_then(serde_json::Value::as_str),
+        "the rewrite checkpoint must retain its exact adoption snapshot"
+    );
+    assert_eq!(
+        adoption_record
+            .recovery_data
+            .get("rewrite_managed_deployments_pending")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER interrupt_original_adoption_commit")
+        .expect("remove transient interruption");
+    let database_path = fixture.database_path.clone();
+    let library_root = fixture.library_root.clone();
+    drop(fixture.facade);
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        Database::open(&database_path).expect("reopen database"),
+        &library_root,
+    );
+    let visible_backup = adoption_record
+        .recovery_data
+        .get("visible_backup_path")
+        .and_then(serde_json::Value::as_str)
+        .map(std::path::PathBuf::from)
+        .expect("saved visible tree backup path");
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list adoption recovery")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let adoption_candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == adoption_operation_id)
+        .expect("adoption candidate");
+    assert_eq!(
+        adoption_candidate.actions,
+        vec![RecoveryAction::CompleteOperation],
+        "candidate={adoption_candidate:#?}"
+    );
+
+    std::fs::write(visible_backup.join("SKILL.md"), "# Replaced backup\n")
+        .expect("change retained backup before recovery");
+    assert!(restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: adoption_operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .is_err());
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after refusing changed backup")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == adoption_operation_id),
+        "a backup identity failure must leave the adoption retryable"
+    );
+    assert!(
+        !candidates
+            .iter()
+            .any(|candidate| candidate.operation_id == prepared.operation_id),
+        "the parent batch must remain hidden while the child recovery gate is active"
+    );
+    std::fs::write(visible_backup.join("SKILL.md"), SKILL_BODY)
+        .expect("restore exact retained backup content");
+
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER interrupt_original_adoption_commit_after_cleanup
+             BEFORE UPDATE OF progress_json ON operations
+             WHEN NEW.kind = 'usage_original_entry_adoption'
+               AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected interruption after backup cleanup'); END;",
+        )
+        .expect("install post-cleanup interruption");
+    assert!(restarted
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: adoption_operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .is_err());
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER interrupt_original_adoption_commit_after_cleanup")
+        .expect("remove post-cleanup interruption");
+    drop(restarted);
+
+    let resumed_after_cleanup = LocalApplicationFacade::new_with_library(
+        Database::open(&database_path).expect("reopen after backup cleanup interruption"),
+        &library_root,
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = resumed_after_cleanup
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after backup cleanup interruption")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == adoption_operation_id)
+        .expect("adoption remains recoverable after backup cleanup");
+    assert_eq!(candidate.actions, vec![RecoveryAction::CompleteOperation]);
+
+    resumed_after_cleanup
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: adoption_operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("finish the adoption rewrite after backup cleanup");
+    resumed_after_cleanup
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::api::ResolveRecovery {
+                operation_id: prepared.operation_id,
+                action: RecoveryAction::CompleteOperation,
+            },
+        ))
+        .await
+        .expect("resume the parent usage batch");
+    assert_eq!(
+        std::fs::read_to_string(managed_path.join("SKILL.md")).expect("managed target content"),
+        "# Original entry\n"
+    );
+    assert!(
+        !library_root
+            .join("tmp")
+            .join(format!(
+                "visible-backup-{}-{}",
+                fixture.skill_id, adoption_operation_id
+            ))
+            .exists(),
+        "the verified old visible tree backup is finalized after recovery"
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = resumed_after_cleanup
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after resuming the batch")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(!candidates.iter().any(|candidate| {
+        candidate.operation_id == adoption_operation_id
+            || candidate.operation_id == prepared.operation_id
+    }));
 }
 
 #[tokio::test]

@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -47,7 +48,7 @@ use skillhub_storage::{
 use crate::relationship_governance_service::{
     capture_path_chain, create_dir_link, PathChainSnapshot,
 };
-use crate::LocalApplicationFacade;
+use crate::{LocalApplicationFacade, LocalRecoveryBackend};
 
 const OPERATION_KIND: &str = "usage_release";
 const MANAGE_OPERATION_KIND: &str = "usage_manage";
@@ -170,6 +171,57 @@ pub(crate) fn shared_usage_migration_recovery_action_available(
                 && journal.prepared.shared_usage_migration.is_some()
                 && !journal.replacements.is_empty()
         })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManageBatchRecoveryState {
+    Invalid,
+    WaitingOnChild,
+    Resumable,
+}
+
+/// The batch journal coordinates child operations; each child owns its own
+/// filesystem recovery facts. Resume the parent only after every child that
+/// can write has reached a terminal or safely prepared state.
+pub(crate) fn manage_batch_recovery_state(
+    record: &OperationRecord,
+    records: &[OperationRecord],
+) -> ManageBatchRecoveryState {
+    if record.kind != MANAGE_BATCH_OPERATION_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::NeedsRecovery
+        )
+    {
+        return ManageBatchRecoveryState::Invalid;
+    }
+    let Ok(journal) = serde_json::from_value::<ManageBatchJournal>(record.recovery_data.clone())
+    else {
+        return ManageBatchRecoveryState::Invalid;
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.prepared.action != UsageChangeAction::Manage
+    {
+        return ManageBatchRecoveryState::Invalid;
+    }
+    let child_ids = journal
+        .adoptions
+        .iter()
+        .map(|adoption| adoption.operation_id)
+        .chain(journal.plans.iter().map(|plan| plan.child_operation_id));
+    for child_id in child_ids {
+        if records
+            .iter()
+            .find(|child| child.operation_id == child_id)
+            .is_some_and(|child| {
+                skillhub_core::operation_requires_recovery_gate(&child.kind, child.phase)
+            })
+        {
+            return ManageBatchRecoveryState::WaitingOnChild;
+        }
+    }
+    ManageBatchRecoveryState::Resumable
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2153,6 +2205,118 @@ impl LocalApplicationFacade {
         Ok(result)
     }
 
+    pub(crate) async fn resolve_usage_manage_batch_recovery(
+        &self,
+        operation_id: OperationId,
+        action: RecoveryAction,
+    ) -> AppResult<bool> {
+        if action != RecoveryAction::CompleteOperation {
+            return Ok(false);
+        }
+        let _adoption_guard = self.version_adoption_lock.clone().lock_owned().await;
+        let (record, records) = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("usage_manage_batch.recovery.load"))?;
+            let records = database.operation_repository().list_sync()?;
+            let Some(record) = records
+                .iter()
+                .find(|record| record.operation_id == operation_id)
+                .cloned()
+            else {
+                return Ok(false);
+            };
+            (record, records)
+        };
+        if record.kind != MANAGE_BATCH_OPERATION_KIND {
+            return Ok(false);
+        }
+        if manage_batch_recovery_state(&record, &records) != ManageBatchRecoveryState::Resumable {
+            return Err(operation_conflict("usage_manage_batch_child_not_settled"));
+        }
+        let journal: ManageBatchJournal = serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| operation_conflict("usage_manage_batch_journal_invalid"))?;
+        self.commit_usage_change(CommitUsageChange {
+            operation_id,
+            prepared_id: journal.prepared.prepared_id,
+        })?;
+        Ok(true)
+    }
+
+    pub(crate) async fn resolve_original_entry_adoption_recovery(
+        &self,
+        operation_id: OperationId,
+        action: RecoveryAction,
+    ) -> AppResult<bool> {
+        if action != RecoveryAction::CompleteOperation {
+            return Ok(false);
+        }
+        let _adoption_guard = self.version_adoption_lock.clone().lock_owned().await;
+        let record = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("usage_original_entry.recovery.load"))?;
+            let Some(record) = database.operation_repository().get_sync(operation_id)? else {
+                return Ok(false);
+            };
+            record
+        };
+        if record.kind != "usage_original_entry_adoption" {
+            return Ok(false);
+        }
+        let recovery = LocalRecoveryBackend {
+            database: Arc::clone(&self.database),
+            library_runtime: Arc::clone(&self.library_runtime),
+            version_adoption_lock: Arc::clone(&self.version_adoption_lock),
+        };
+        let (mut snapshot, skill, context, target) =
+            recovery.validate_original_entry_rewrite_recovery(&record)?;
+        let result = UsageOriginalEntryAdoptionResult {
+            skill_id: skill.id(),
+            version_id: Some(target.id.clone()),
+            rewrites: self
+                .rewrite_managed_deployments_for_adoption(
+                    &context,
+                    &skill,
+                    &target.id,
+                    &operation_id,
+                )
+                .into_iter()
+                .map(|outcome| UsageOriginalEntryRewriteResult {
+                    relation_id: outcome.relation_id,
+                    path: outcome.path,
+                    rewritten: outcome.rewritten,
+                    reason: outcome.reason,
+                })
+                .collect(),
+        };
+        snapshot.visible_backup_cleanup_started = true;
+        let mut record = record;
+        record.recovery_data = serde_json::to_value(&snapshot).map_err(serialization_error)?;
+        self.persist_version_adoption_record(&record)?;
+        // Keep the child recoverable until its only operation-owned backup is
+        // verified and removed. If the filesystem changes after the initial
+        // validation, a failed cleanup must leave CompleteOperation available.
+        context.central.finalize_visible_tree_adoption_recovery(
+            &skill,
+            &target.id,
+            snapshot.visible_backup_path.as_deref(),
+            snapshot.visible_tree_fingerprint.as_deref(),
+        )?;
+        record.phase = OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = 1;
+        record.progress.total = 1;
+        record.progress.message_code =
+            "operation.usage_original_entry_adoption.committed".to_owned();
+        record.error_code = None;
+        record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+        self.persist_version_adoption_record(&record)?;
+        Ok(true)
+    }
+
     fn commit_derived_rename(&self, request: CommitUsageChange) -> AppResult<UsageChangeResult> {
         let _mutation = self
             .relation_migration_lock
@@ -4106,11 +4270,16 @@ impl LocalApplicationFacade {
                     .ok_or_else(|| operation_conflict("usage_change_receipt_missing"));
             }
             if record.phase == OperationPhase::NeedsRecovery {
-                return Err(operation_conflict("usage_change_needs_recovery"));
+                let records = database.operation_repository().list_sync()?;
+                if manage_batch_recovery_state(&record, &records)
+                    != ManageBatchRecoveryState::Resumable
+                {
+                    return Err(operation_conflict("usage_change_needs_recovery"));
+                }
             }
             if !matches!(
                 record.phase,
-                OperationPhase::Prepared | OperationPhase::Applying
+                OperationPhase::Prepared | OperationPhase::Applying | OperationPhase::NeedsRecovery
             ) {
                 return Err(operation_conflict("usage_change_preview_not_prepared"));
             }
@@ -4137,14 +4306,21 @@ impl LocalApplicationFacade {
                 .map_err(|_| internal("usage_manage_batch.commit.database"))?
                 .operation_repository()
                 .update_sync(&record)?;
+        } else if record.phase == OperationPhase::NeedsRecovery {
+            record.phase = OperationPhase::Applying;
+            record.progress.phase = OperationPhase::Applying;
+            record.error_code = None;
+            record.progress.message_code = "operation.usage_manage_batch.resuming".to_owned();
+            self.persist_manage_batch_progress(&mut record, &journal)?;
         }
 
         for adoption_index in 0..journal.adoptions.len() {
             let adoption = journal.adoptions[adoption_index].clone();
-            if journal
-                .adoption_results
-                .iter()
-                .any(|result| result.skill_id == adoption.skill_id)
+            if journal.adoptions[adoption_index].completed
+                || journal
+                    .adoption_results
+                    .iter()
+                    .any(|result| result.skill_id == adoption.skill_id)
             {
                 journal.adoptions[adoption_index].completed = true;
                 continue;
@@ -4158,23 +4334,45 @@ impl LocalApplicationFacade {
             ) {
                 Ok(result) => result,
                 Err(error) => {
-                    record.error_code = Some(error.code);
-                    record.phase = if self.operation_needs_recovery(adoption.operation_id) {
-                        OperationPhase::NeedsRecovery
-                    } else {
-                        OperationPhase::RolledBack
-                    };
-                    record.progress.phase = record.phase;
-                    record.progress.message_code =
-                        format!("operation.usage_manage_batch.{}", phase_code(record.phase));
-                    record.recovery_data =
-                        serde_json::to_value(&journal).map_err(serialization_error)?;
-                    self.database
-                        .lock()
-                        .map_err(|_| internal("usage_manage_batch.commit.database"))?
-                        .operation_repository()
-                        .update_sync(&record)?;
-                    return Err(error);
+                    if self.operation_needs_recovery(adoption.operation_id) {
+                        record.error_code = Some(error.code);
+                        record.phase = OperationPhase::NeedsRecovery;
+                        record.progress.phase = record.phase;
+                        record.progress.message_code =
+                            "operation.usage_manage_batch.waiting_for_child_recovery".to_owned();
+                        record.recovery_data =
+                            serde_json::to_value(&journal).map_err(serialization_error)?;
+                        self.database
+                            .lock()
+                            .map_err(|_| internal("usage_manage_batch.commit.database"))?
+                            .operation_repository()
+                            .update_sync(&record)?;
+                        return Err(error);
+                    }
+                    for impact in journal
+                        .prepared
+                        .impacts
+                        .iter()
+                        .filter(|impact| impact.skill_id == adoption.skill_id)
+                    {
+                        if !journal
+                            .completed
+                            .iter()
+                            .any(|item| item.relation_ids == impact.relation_ids)
+                        {
+                            journal.completed.push(failed_manage_item(impact, &error));
+                        }
+                    }
+                    journal.adoptions[adoption_index].completed = true;
+                    journal
+                        .adoption_results
+                        .push(UsageOriginalEntryAdoptionResult {
+                            skill_id: adoption.skill_id,
+                            version_id: adoption.previous_version_id.clone(),
+                            rewrites: Vec::new(),
+                        });
+                    self.persist_manage_batch_progress(&mut record, &journal)?;
+                    continue;
                 }
             };
             journal.adoptions[adoption_index].completed = true;
@@ -4323,7 +4521,9 @@ impl LocalApplicationFacade {
                     .ok()
                     .flatten()
             })
-            .is_some_and(|record| record.phase == OperationPhase::NeedsRecovery)
+            .is_some_and(|record| {
+                skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase)
+            })
     }
 
     fn persist_manage_batch_progress(

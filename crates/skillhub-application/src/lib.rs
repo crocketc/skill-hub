@@ -8121,6 +8121,8 @@ impl LocalApplicationFacade {
             target_tree_hash: None,
             target_portable_record: None,
             captured_version_created: None,
+            rewrite_managed_deployments_pending: false,
+            visible_backup_cleanup_started: false,
         })
     }
 
@@ -8430,7 +8432,8 @@ impl LocalApplicationFacade {
                 .with_action(RecoveryAction::Retry);
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
-        if let Err(error) = self.content_adoption_checkpoint(operation_id, KIND, &snapshot) {
+        if let Err(error) = self.content_adoption_capture_checkpoint(operation_id, KIND, &snapshot)
+        {
             return Err(self.settle_content_adoption_rejected(operation_id, KIND, error));
         }
         let captured = match context.store.capture_with_status(skill_id, source_path) {
@@ -8456,6 +8459,28 @@ impl LocalApplicationFacade {
             })?);
             self.persist_version_adoption_record(&operation_record)?;
             return Ok(result);
+        }
+        let mut snapshot = snapshot;
+        snapshot.rewrite_managed_deployments_pending = true;
+        if let Err(error) = self.content_adoption_target_checkpoint(
+            operation_id,
+            KIND,
+            &skill,
+            &mut snapshot,
+            &version,
+            captured.created,
+        ) {
+            return Err(self.settle_content_adoption_failure(
+                &context,
+                &skill,
+                operation_id,
+                KIND,
+                &snapshot,
+                None,
+                Some((&version, captured.created)),
+                false,
+                error,
+            ));
         }
         let replacement =
             match self.adopt_captured_version(&context, &skill, &snapshot, &version, false) {
@@ -8484,6 +8509,10 @@ impl LocalApplicationFacade {
         operation_record.progress.phase = operation_record.phase;
         operation_record.progress.message_code =
             "operation.usage_original_entry_adoption.rewriting_targets".to_owned();
+        operation_record.recovery_data = serde_json::to_value(&snapshot).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+        })?;
         operation_record.result = Some(serde_json::to_value(&progress).map_err(|error| {
             AppError::new(ErrorCode::InternalError, Severity::Error)
                 .with_param("source", error.to_string())
@@ -10122,6 +10151,32 @@ impl ApplicationFacade for LocalApplicationFacade {
                 ));
             }
             AppCommand::ResolveRecovery(request) => {
+                if self
+                    .resolve_original_entry_adoption_recovery(request.operation_id, request.action)
+                    .await?
+                {
+                    return Ok(AppCommandResult::OperationSummary(
+                        skillhub_core::OperationSummary {
+                            operation_id: request.operation_id,
+                            phase: skillhub_core::OperationPhase::Committed,
+                            message_code: "recovery.resolved".to_owned(),
+                            error_code: None,
+                        },
+                    ));
+                }
+                if self
+                    .resolve_usage_manage_batch_recovery(request.operation_id, request.action)
+                    .await?
+                {
+                    return Ok(AppCommandResult::OperationSummary(
+                        skillhub_core::OperationSummary {
+                            operation_id: request.operation_id,
+                            phase: skillhub_core::OperationPhase::Committed,
+                            message_code: "recovery.resolved".to_owned(),
+                            error_code: None,
+                        },
+                    ));
+                }
                 if self
                     .resolve_subject_rename_recovery(request.operation_id, request.action)
                     .await?
@@ -18683,6 +18738,15 @@ struct ContentAdoptionSnapshot {
     target_portable_record: Option<skillhub_core::PortableSkillRecord>,
     #[serde(default)]
     captured_version_created: Option<bool>,
+    /// Original-entry adoption must finish updating managed deployment copies
+    /// once the target version is active. This durable fact survives startup
+    /// replacing the human-facing progress message with `needs_recovery`.
+    #[serde(default)]
+    rewrite_managed_deployments_pending: bool,
+    /// Persisted after every version consumer is at the target and before the
+    /// adoption backup is removed, so a restart can finish logging the commit.
+    #[serde(default)]
+    visible_backup_cleanup_started: bool,
 }
 
 /// K6：来源更新候选预览的 TTL（与版本采用预览同口径，秒）。
@@ -20882,8 +20946,14 @@ impl RecoveryBackend for LocalRecoveryBackend {
             database.operation_repository().list_sync()?
         };
         let mut candidates = Vec::new();
-        for record in records {
+        for record in &records {
             if !skillhub_core::operation_requires_recovery_gate(&record.kind, record.phase) {
+                continue;
+            }
+            if record.kind == "usage_manage_batch"
+                && usage_change_service::manage_batch_recovery_state(record, &records)
+                    == usage_change_service::ManageBatchRecoveryState::WaitingOnChild
+            {
                 continue;
             }
             candidates.push(RecoveryCandidate {
@@ -20894,6 +20964,12 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         RecoveryAction::RollbackOperation,
                     ],
                     "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                    "usage_manage_batch"
+                        if usage_change_service::manage_batch_recovery_state(record, &records)
+                            == usage_change_service::ManageBatchRecoveryState::Resumable =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
                     "shared_usage_migration"
                         if record.phase == skillhub_core::OperationPhase::NeedsRecovery
                             && usage_change_service::shared_usage_migration_recovery_action_available(
@@ -20944,22 +21020,22 @@ impl RecoveryBackend for LocalRecoveryBackend {
                             Arc::clone(&self.database),
                             Arc::clone(&self.library_runtime),
                         )
-                        .validate_reconcile_restore_recovery(&record)
+                        .validate_reconcile_restore_recovery(record)
                         .is_ok() =>
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
                     "save_markdown_as_copy"
-                        if self.validate_save_as_copy_recovery(&record).is_ok() =>
+                        if self.validate_save_as_copy_recovery(record).is_ok() =>
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
-                    "deploy_skill" if self.load_validated_deployment_recovery(&record).is_ok() => {
+                    "deploy_skill" if self.load_validated_deployment_recovery(record).is_ok() => {
                         vec![RecoveryAction::RollbackOperation]
                     }
                     "set_current_version"
                         if self
-                            .validate_version_adoption_recovery(&record, false)
+                            .validate_version_adoption_recovery(record, false)
                             .is_ok() =>
                     {
                         vec![RecoveryAction::RollbackOperation]
@@ -20969,7 +21045,21 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     | "save_skill_content"
                     | "save_markdown_content"
                         if self
-                            .validate_content_adoption_recovery(&record, false)
+                            .validate_content_adoption_recovery(record, false)
+                            .is_ok() =>
+                    {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
+                    "usage_original_entry_adoption"
+                        if self
+                            .validate_original_entry_rewrite_recovery(record)
+                            .is_ok() =>
+                    {
+                        vec![RecoveryAction::CompleteOperation]
+                    }
+                    "usage_original_entry_adoption"
+                        if self
+                            .validate_content_adoption_recovery(record, false)
                             .is_ok() =>
                     {
                         vec![RecoveryAction::RollbackOperation]
@@ -21179,6 +21269,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
             Some(
                 "create_skill"
                     | "commit_source_update"
+                    | "usage_original_entry_adoption"
                     | "save_skill_content"
                     | "save_markdown_content"
             )
@@ -22164,6 +22255,7 @@ impl LocalRecoveryBackend {
             record.kind.as_str(),
             "create_skill"
                 | "commit_source_update"
+                | "usage_original_entry_adoption"
                 | "save_skill_content"
                 | "save_markdown_content"
         ) || !matches!(
@@ -22311,7 +22403,14 @@ impl LocalRecoveryBackend {
                             &backup_path,
                         )?;
                 }
-            } else if !visible_is_previous {
+            } else if !visible_is_previous
+                && !(record.kind == "usage_original_entry_adoption"
+                    && snapshot.visible_backup_cleanup_started
+                    && store_at_target
+                    && database_at_target
+                    && portable_at_target
+                    && visible_is_target)
+            {
                 return Err(recovery_conflict(
                     "content_adoption_backup_missing_or_visible_tree_changed",
                 ));
@@ -22351,6 +22450,53 @@ impl LocalRecoveryBackend {
         };
 
         Ok((snapshot, skill, context, target_manifest))
+    }
+
+    fn validate_original_entry_rewrite_recovery(
+        &self,
+        record: &skillhub_core::OperationRecord,
+    ) -> AppResult<(
+        ContentAdoptionSnapshot,
+        Skill,
+        Arc<library_runtime::LibraryContext>,
+        skillhub_core::VersionRecord,
+    )> {
+        if record.kind != "usage_original_entry_adoption" {
+            return Err(recovery_conflict(
+                "usage_original_entry_rewrite_checkpoint_missing",
+            ));
+        }
+        let (snapshot, skill, context, target) =
+            self.validate_content_adoption_recovery(record, false)?;
+        if !snapshot.rewrite_managed_deployments_pending {
+            return Err(recovery_conflict(
+                "usage_original_entry_rewrite_checkpoint_missing",
+            ));
+        }
+        let target =
+            target.ok_or_else(|| recovery_conflict("usage_original_entry_target_missing"))?;
+        let database_version = {
+            let database = self
+                .database
+                .lock()
+                .map_err(|_| internal("recovery.usage_original_entry.validate"))?;
+            database.current_version(snapshot.skill_id)?
+        };
+        let portable = context
+            .central
+            .load_portable_skill(snapshot.skill_id)?
+            .map(|(record, _)| record);
+        let visible_tree = context.central.visible_tree_fingerprint(&skill)?;
+        if context.store.current(snapshot.skill_id)?.as_ref() != Some(&target.id)
+            || database_version.as_ref() != Some(&target.id)
+            || portable.as_ref() != snapshot.target_portable_record.as_ref()
+            || visible_tree.as_deref() != Some(target.manifest.tree_hash.as_str())
+        {
+            return Err(recovery_conflict(
+                "usage_original_entry_rewrite_consumers_not_committed",
+            ));
+        }
+        Ok((snapshot, skill, context, target))
     }
 
     fn validate_undeploy_recovery_facts(&self, prepared: &PreparedRemovalRecord) -> AppResult<()> {

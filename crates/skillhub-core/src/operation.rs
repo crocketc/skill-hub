@@ -49,6 +49,7 @@ pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "relation_governance_batch",
     "create_skill",
     "commit_source_update",
+    "usage_original_entry_adoption",
     "save_skill_content",
     "save_markdown_content",
     "reconcile_restore_deployment",

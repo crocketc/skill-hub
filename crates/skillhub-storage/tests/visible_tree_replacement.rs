@@ -235,6 +235,60 @@ fn materialize_replaces_an_existing_tree_and_can_repeat() {
 }
 
 #[test]
+fn adoption_recovery_finalizes_only_the_verified_backup_and_is_idempotent() {
+    let fixture = Fixture::new();
+    let replacement = fixture
+        .library
+        .prepare_visible_tree_replacement(&fixture.skill, &fixture.target.id)
+        .expect("prepare visible replacement");
+    let backup = replacement.backup_path().unwrap().to_path_buf();
+    drop(replacement);
+    fs::write(backup.join("SKILL.md"), "# Replaced backup\n").expect("replace backup content");
+
+    let error = fixture
+        .library
+        .finalize_visible_tree_adoption_recovery(
+            &fixture.skill,
+            &fixture.target.id,
+            Some(&backup),
+            Some(&fixture.previous.manifest.tree_hash),
+        )
+        .expect_err("do not delete a backup whose identity changed");
+    assert_eq!(
+        error
+            .params
+            .get("reason")
+            .and_then(serde_json::Value::as_str),
+        Some("visible_backup_identity_changed")
+    );
+    assert_eq!(
+        fs::read_to_string(backup.join("SKILL.md")).unwrap(),
+        "# Replaced backup\n"
+    );
+
+    fs::write(backup.join("SKILL.md"), "# Previous\n").expect("restore verified backup tree");
+    fixture
+        .library
+        .finalize_visible_tree_adoption_recovery(
+            &fixture.skill,
+            &fixture.target.id,
+            Some(&backup),
+            Some(&fixture.previous.manifest.tree_hash),
+        )
+        .expect("remove the exact, verified old tree");
+    assert!(!backup.exists());
+    fixture
+        .library
+        .finalize_visible_tree_adoption_recovery(
+            &fixture.skill,
+            &fixture.target.id,
+            Some(&backup),
+            Some(&fixture.previous.manifest.tree_hash),
+        )
+        .expect("repeat cleanup after a restart safely");
+}
+
+#[test]
 fn rollback_rejects_a_visible_output_whose_identity_changed() {
     let fixture = Fixture::new();
     let replacement = fixture

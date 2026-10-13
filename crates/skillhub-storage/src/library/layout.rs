@@ -1267,6 +1267,52 @@ impl CentralLibrary {
         Ok(())
     }
 
+    /// Completes the retained-backup cleanup for an adopted version after a
+    /// restart. Both the installed target tree and the old backup are checked
+    /// against the operation's saved identities before removing the backup.
+    pub fn finalize_visible_tree_adoption_recovery(
+        &self,
+        skill: &Skill,
+        version: &VersionId,
+        backup: Option<&Path>,
+        expected_backup_tree_hash: Option<&str>,
+    ) -> AppResult<()> {
+        let output = self.visible_skill_path(skill);
+        self.validate_visible_paths(skill.id(), &output)?;
+        let expected_target_hash = VersionStore::from_library(self)
+            .load_manifest(version)?
+            .tree_hash;
+        if !path_entry_exists(&output)?
+            || !is_real_directory(&output)?
+            || VersionStore::from_library(self).hash_tree_read_only(&output)?
+                != expected_target_hash
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("reason", "visible_output_identity_changed")
+                .with_action(RecoveryAction::InspectTarget));
+        }
+        if let Some(backup) = backup {
+            self.validate_visible_backup_path(skill.id(), &output, backup)?;
+            if path_entry_exists(backup)? {
+                let expected_backup_tree_hash = expected_backup_tree_hash.ok_or_else(|| {
+                    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("reason", "visible_backup_identity_missing")
+                        .with_action(RecoveryAction::InspectTarget)
+                })?;
+                if !is_real_directory(backup)?
+                    || VersionStore::from_library(self).hash_tree_read_only(backup)?
+                        != expected_backup_tree_hash
+                {
+                    return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                        .with_param("reason", "visible_backup_identity_changed")
+                        .with_action(RecoveryAction::InspectTarget));
+                }
+                fs::remove_dir_all(backup).map_err(io_error)?;
+            }
+        }
+        Ok(())
+    }
+
     fn materialize_missing_visible_skills(&self) -> AppResult<()> {
         for record in self.load_manifest()?.skills {
             let Some(version) = record.current_version else {
