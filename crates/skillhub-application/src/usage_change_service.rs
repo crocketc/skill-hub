@@ -812,10 +812,10 @@ pub(crate) fn rollback_unstarted_managed_usage_change(
     database.operation_repository().update_sync(&record)
 }
 
-/// A managed sync or restore can resume its database reconciliation only after
-/// the requested version tree and newly-created target entry still match the
-/// journal. A partially committed reconciliation is also accepted so a crash
-/// between target rows can be retried idempotently.
+/// A managed sync, repair or restore can resume its database reconciliation
+/// only after the requested version tree and newly-created target entry still
+/// match the journal. A partially committed reconciliation is also accepted so
+/// a crash between target rows can be retried idempotently.
 pub(crate) fn managed_usage_change_completion_available(
     database: &Database,
     library_runtime: &super::library_runtime::LibraryRuntime,
@@ -880,18 +880,43 @@ pub(crate) fn managed_usage_change_completion_available(
         };
         let expected_impact = match journal.request.action {
             UsageChangeAction::Sync => UsageChangeImpactAction::Synchronize,
+            UsageChangeAction::Repair => UsageChangeImpactAction::Repair,
             UsageChangeAction::Restore => UsageChangeImpactAction::Restore,
             _ => return Ok(false),
         };
+        let evidence = &journal.prepared.entry_evidence[index];
+        let backup_is_verified = matches!(
+            journal.request.action,
+            UsageChangeAction::Sync | UsageChangeAction::Repair
+        ) && plan.observed_before.as_deref().is_some_and(|fingerprint| {
+            managed_usage_change_backup_matches(
+                &library.central.paths().backups_dir,
+                record.operation_id,
+                journal.prepared.prepared_id,
+                plan,
+                fingerprint,
+            )
+        });
         let action_state_is_recoverable = match journal.request.action {
             UsageChangeAction::Sync => {
-                original_deployment.mode == DeploymentMode::ManagedCopy && plan.backup_created
+                original_deployment.mode == DeploymentMode::ManagedCopy
+                    && plan.backup_created
+                    && backup_is_verified
+            }
+            UsageChangeAction::Repair => {
+                original_deployment.mode.is_directory_link()
+                    && plan.backup_created
+                    && plan.observed_before.is_some()
+                    && plan.observed_identity.is_some()
+                    && evidence.exists
+                    && evidence.content_fingerprint == plan.observed_before
+                    && backup_is_verified
             }
             UsageChangeAction::Restore => {
                 plan.observed_before.is_none()
                     && plan.observed_identity.is_none()
                     && !plan.backup_created
-                    && !journal.prepared.entry_evidence[index].exists
+                    && !evidence.exists
             }
             _ => false,
         };
@@ -985,7 +1010,6 @@ pub(crate) fn managed_usage_change_completion_available(
             return Ok(false);
         }
 
-        let evidence = &journal.prepared.entry_evidence[index];
         if evidence.path != plan.destination
             || evidence.physical_source_ids != [original_deployment.target_id.clone()]
             || evidence.skill_id != original_deployment.skill_id
@@ -996,6 +1020,35 @@ pub(crate) fn managed_usage_change_completion_available(
         }
     }
     Ok(has_resumable_target)
+}
+
+/// A recovery copy is trusted only at this operation's derived path and when
+/// its ordinary file/directory tree still matches the captured source hash.
+fn managed_usage_change_backup_matches(
+    backups_dir: &Path,
+    operation_id: OperationId,
+    prepared_id: OperationId,
+    plan: &ManagedUsageChangePlan,
+    expected_fingerprint: &str,
+) -> bool {
+    let expected_path = backups_dir.join(format!(
+        "managed-usage-{operation_id}-{}-{prepared_id}",
+        plan.deployment_id
+    ));
+    let backup = Path::new(&plan.backup_path);
+    if backup != expected_path.as_path() {
+        return false;
+    }
+    let Ok(metadata) = fs::symlink_metadata(backup) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink()
+        || DeploymentFilesystem::is_directory_link_entry(backup)
+        || !(metadata.is_dir() || metadata.is_file())
+    {
+        return false;
+    }
+    entry_fingerprint(backup).ok().flatten().as_deref() == Some(expected_fingerprint)
 }
 
 pub(crate) fn complete_managed_usage_change_recovery(

@@ -1421,6 +1421,127 @@ async fn managed_link_restore_after_filesystem_write_can_resume_database_commit(
 }
 
 #[tokio::test]
+async fn managed_repair_after_filesystem_write_can_resume_when_backup_is_intact() {
+    let fixture = fixture().await;
+    let (deployment_id, destination, _visible_tree) = seed_managed_link(&fixture);
+    #[cfg(unix)]
+    std::fs::remove_file(&destination).expect("remove old symlink");
+    #[cfg(windows)]
+    std::fs::remove_dir(&destination).expect("remove old junction");
+    std::fs::create_dir_all(&destination).expect("replace link with a directory");
+    std::fs::write(destination.join("user.txt"), "keep me").expect("replacement content");
+    let app = facade(&fixture);
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "repair",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed repair");
+
+    let database = Database::open(&fixture.database_path).expect("open database for fault");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_repair_reconcile BEFORE UPDATE ON deployments
+             WHEN OLD.id = '{}'
+             BEGIN SELECT RAISE(ABORT, 'injected repair reconcile failure'); END;",
+            deployment_id
+        ))
+        .expect("install deployment update fault");
+    drop(database);
+    let interrupted = app
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("return a recoverable repair failure");
+    assert_eq!(
+        interrupted.item_results[0].status,
+        UsageChangeItemStatus::RecoveryRequired
+    );
+    let backup = interrupted.item_results[0]
+        .recovery_point
+        .as_ref()
+        .expect("repair preserves a recovery copy")
+        .path
+        .clone();
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&backup).join("user.txt"))
+            .expect("original target remains backed up"),
+        "keep me"
+    );
+    drop(app);
+
+    let database = Database::open(&fixture.database_path).expect("open database after fault");
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_repair_reconcile;")
+        .expect("remove deployment update fault");
+    drop(database);
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list repair recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("partially applied repair remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    std::fs::write(Path::new(&backup).join("user.txt"), "backup changed")
+        .expect("simulate recovery backup drift");
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck repair candidate after backup drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("drifted repair remains visible")
+        .actions
+        .is_empty());
+
+    std::fs::write(Path::new(&backup).join("user.txt"), "keep me")
+        .expect("restore exact recovery backup");
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("complete repair with verified backup");
+    assert!(DeploymentFilesystem::new()
+        .recovery_entry_identity(deploy_row(&fixture, deployment_id).mode, &destination)
+        .is_ok());
+    assert_eq!(
+        std::fs::read_to_string(Path::new(&backup).join("user.txt"))
+            .expect("verified recovery backup remains available"),
+        "keep me"
+    );
+    assert_eq!(
+        Database::open(&fixture.database_path)
+            .expect("reopen recovered database")
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read recovered operation")
+            .expect("operation remains recorded")
+            .phase,
+        skillhub_core::OperationPhase::Committed
+    );
+}
+
+#[tokio::test]
 async fn unverified_restore_is_not_success() {
     let fixture = fixture().await;
     let (deployment_id, destination) = seed_managed_copy(
