@@ -7,13 +7,16 @@
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{GetRelationshipOverview, RelationshipOverviewScope};
+use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::relationship::{ConflictClassification, ConflictEvidence, ConflictKind};
 use skillhub_core::{
     AppCommand, AppCommandResult, AppQuery, AppQueryResult, AppResult, ApplicationFacade,
     DuplicateKind, ImportCandidate, ImportDecision, PrepareImport, SourceDescriptor, SourceKind,
     SourceLocator,
 };
-use skillhub_storage::{CentralLibrary, Database};
+use skillhub_storage::{CentralLibrary, Database, VersionStore};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 fn facade_with(workspace: &std::path::Path) -> LocalApplicationFacade {
     let database = Database::open(workspace.join("db.sqlite")).expect("database");
@@ -48,7 +51,10 @@ async fn prepare(
     prepared
 }
 
-async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::PreparedImport) {
+async fn commit_copy(
+    facade: &LocalApplicationFacade,
+    prepared: &skillhub_core::PreparedImport,
+) -> Box<skillhub_core::ImportSummary> {
     let committed = facade
         .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
             prepared_import_id: prepared.id,
@@ -77,6 +83,7 @@ async fn commit_copy(facade: &LocalApplicationFacade, prepared: &skillhub_core::
         summary.items[0].skill_id.is_some(),
         "skill landed in library"
     );
+    summary
 }
 
 fn write_skill(root: &std::path::Path, body: &str) {
@@ -367,6 +374,246 @@ async fn keep_independent_import_persists_the_conflict_case_for_the_relationship
         Some(second_source.path().to_string_lossy().as_ref())
     );
     assert!(importer_member.fingerprint.is_some());
+}
+
+#[tokio::test]
+async fn import_persists_applying_checkpoint_before_catalog_insert() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Checkpoint\n");
+    let prepared = prepare(&facade, source.path(), "Checkpoint").await;
+
+    // The SQLite trigger observes the durable journal phase inside the same
+    // transaction that inserts the newly imported catalog row.
+    Database::open(&database_path)
+        .expect("second database connection")
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER require_import_applying BEFORE INSERT ON skills
+             WHEN (SELECT phase FROM operations WHERE operation_id='{}') != 'applying'
+             BEGIN SELECT RAISE(ABORT, 'import checkpoint missing'); END;",
+            prepared.id
+        ))
+        .expect("install checkpoint trigger");
+
+    let imported = commit_copy(&facade, &prepared).await;
+    assert!(imported.items[0].skill_id.is_some());
+}
+
+#[tokio::test]
+async fn interrupted_import_after_catalog_insert_can_be_rolled_back_after_restart() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Interrupted import\n");
+    let prepared = prepare(&facade, source.path(), "Interrupted import").await;
+    let operation_id = prepared.id;
+    let skill_id = skillhub_core::SkillId::new();
+    let skill = Skill::new(skill_id, "Interrupted import");
+
+    let database = Database::open(&database_path).expect("database connection");
+    let library = CentralLibrary::open_existing(&library_root).expect("open library");
+    let captured = VersionStore::from_library(&library)
+        .capture_with_status(skill_id, source.path())
+        .expect("capture import target");
+    let backup_path = library
+        .paths()
+        .tmp_dir
+        .join(format!("visible-backup-{}-{}", skill_id, operation_id));
+    let mut operation = database
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read operation")
+        .expect("operation exists");
+    operation.phase = skillhub_core::OperationPhase::Applying;
+    operation.progress.phase = skillhub_core::OperationPhase::Applying;
+    operation.progress.message_code = "operation.import_skill.applying".into();
+    operation.recovery_data = serde_json::json!({
+        "recovery_skill": skill.clone(),
+        "skill_id": skill_id,
+        "previous_version_id": null,
+        "database_previous_version_id": null,
+        "portable_previous_record": null,
+        "visible_backup_path": backup_path,
+        "visible_tree_fingerprint": null,
+        "skill_runtime_name": "Interrupted import",
+        "target_version_id": captured.record.id.clone(),
+        "target_tree_hash": captured.record.manifest.tree_hash.clone(),
+        "target_portable_record": CentralLibrary::project_portable_skill_record(
+            &skill,
+            Some(&captured.record.id),
+            None,
+        ),
+        "captured_version_created": captured.created,
+        "rewrite_managed_deployments_pending": false,
+        "visible_backup_cleanup_started": false,
+    });
+    database
+        .operation_repository()
+        .update_sync(&operation)
+        .expect("persist applying checkpoint");
+
+    // Model a process exit immediately after the first active write: the
+    // catalog row exists, while pointers, portable entry and visible tree do not.
+    database
+        .catalog_repository()
+        .expect("catalog")
+        .insert_sync(&skill)
+        .expect("insert partial import subject");
+    drop(database);
+    drop(library);
+    drop(facade);
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("reopen interrupted import");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list interrupted imports")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == operation_id)
+            .expect("import remains recoverable")
+            .actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+    facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("roll back interrupted import");
+    drop(facade);
+
+    let database = Database::open(&database_path).expect("database after rollback");
+    assert!(database
+        .catalog_repository()
+        .expect("catalog")
+        .get_sync(skill_id)
+        .expect("query catalog")
+        .is_none());
+    assert!(database
+        .current_version(skill_id)
+        .expect("query database pointer")
+        .is_none());
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("read settled operation")
+            .expect("operation exists")
+            .phase,
+        skillhub_core::OperationPhase::RolledBack
+    );
+    let library = CentralLibrary::open_existing(&library_root).expect("library after rollback");
+    let store = VersionStore::from_library(&library);
+    assert!(store.list(skill_id).expect("version list").is_empty());
+    assert_eq!(store.current(skill_id).expect("store pointer"), None);
+    assert!(!library
+        .visible_skill_path_for_runtime(skill_id, "Interrupted import")
+        .exists());
+    assert!(library
+        .load_portable_skill(skill_id)
+        .expect("portable record")
+        .is_none());
+}
+
+#[tokio::test]
+async fn failed_import_compensation_retains_recovery_snapshot_for_restart() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let armed = Arc::new(AtomicBool::new(false));
+    let fault_handler = {
+        let armed = Arc::clone(&armed);
+        Arc::new(move |point: &str| {
+            armed.load(Ordering::SeqCst) && point == "before_manifest_replace"
+        }) as skillhub_storage::ManifestFaultHandler
+    };
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize_with_fault_handler(&library_root, Arc::clone(&fault_handler))
+        .expect("initialize library");
+    let facade =
+        LocalApplicationFacade::new_with_library_and_faults(database, &library_root, fault_handler);
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Recovery\n");
+    let prepared = prepare(&facade, source.path(), "Recovery").await;
+    armed.store(true, Ordering::SeqCst);
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: prepared.id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: prepared
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
+            security_decision: None,
+        }))
+        .await
+        .expect_err("portable write and its compensation fail");
+    assert_eq!(error.severity, skillhub_core::Severity::Critical);
+    let record = Database::open(&database_path)
+        .expect("database after failed commit")
+        .operation_repository()
+        .get_sync(prepared.id)
+        .expect("read operation")
+        .expect("operation exists");
+    assert_eq!(record.phase, skillhub_core::OperationPhase::NeedsRecovery);
+    assert!(record.recovery_data.get("target_version_id").is_some());
+    drop(facade);
+
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("reopen import needing recovery");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.id)
+            .expect("failed import remains recoverable")
+            .actions,
+        vec![skillhub_core::RecoveryAction::RollbackOperation]
+    );
+    facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id: prepared.id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("retry import rollback after restart");
 }
 
 #[tokio::test]

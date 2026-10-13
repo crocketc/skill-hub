@@ -3740,14 +3740,70 @@ impl LocalApplicationFacade {
         let result = object_name
             .as_deref()
             .map(|name| serde_json::json!({ "object_name": name }));
+        let recovery_data = if phase == skillhub_core::OperationPhase::NeedsRecovery {
+            self.database
+                .lock()
+                .ok()
+                .and_then(|database| {
+                    database
+                        .operation_repository()
+                        .get_sync(operation_id)
+                        .ok()
+                        .flatten()
+                })
+                .filter(|record| {
+                    record.kind == "import_skill"
+                        && matches!(
+                            record.phase,
+                            skillhub_core::OperationPhase::Applying
+                                | skillhub_core::OperationPhase::NeedsRecovery
+                        )
+                })
+                .map(|record| record.recovery_data)
+                .unwrap_or_else(|| serde_json::Value::Object(Default::default()))
+        } else {
+            serde_json::Value::Object(Default::default())
+        };
         self.journal_advance_with_details(
             operation_id,
             "import_skill",
             phase,
             error_code,
             result,
-            serde_json::Value::Object(Default::default()),
+            recovery_data,
         );
+    }
+
+    /// The import journal must cross from Prepared to Applying with the exact
+    /// new-skill recovery snapshot before its catalog row or other live
+    /// consumer is written. The caller already holds the database guard while
+    /// the import writes are performed.
+    fn persist_import_applying_checkpoint(
+        &self,
+        database: &Database,
+        operation_id: OperationId,
+        object_name: &str,
+        snapshot: &ContentAdoptionSnapshot,
+    ) -> AppResult<()> {
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .filter(|record| {
+                record.kind == "import_skill"
+                    && record.phase == skillhub_core::OperationPhase::Prepared
+            })
+            .ok_or_else(|| recovery_conflict("import_operation_not_prepared"))?;
+        record.phase = skillhub_core::OperationPhase::Applying;
+        record.progress.phase = record.phase;
+        record.progress.message_code = "operation.import_skill.applying".to_owned();
+        record.result = Some(serde_json::json!({ "object_name": object_name }));
+        record.recovery_data = serde_json::to_value(snapshot).map_err(|error| {
+            internal_with_detail("operation_journal.import_checkpoint", error.to_string())
+        })?;
+        record.error_code = None;
+        database.operation_repository().update_sync(&record)?;
+        self.log_journal_record(&record);
+        Ok(())
     }
 
     /// Reads the candidate runtime name of a staged import without holding
@@ -13924,7 +13980,8 @@ impl LocalApplicationFacade {
             let store = &library.store;
             let skill_id = skillhub_core::SkillId::new();
             let source = Path::new(&prepared.candidate.absolute_root);
-            let version = store.capture(skill_id, source)?;
+            let captured = store.capture_with_status(skill_id, source)?;
+            let version = captured.record;
             // QA-009：导入时读取 SKILL.md 头部 description 作为原始说明；
             // 头部缺失或不可读时保持空串，不阻塞导入。
             // W2-2：覆盖名在守卫里已核对与 prepare 一致；这里解析最终
@@ -13935,6 +13992,56 @@ impl LocalApplicationFacade {
             let mut skill = Skill::new(skill_id, final_runtime_name.clone());
             if let Some(description) = read_frontmatter_description(source) {
                 skill = skill.with_description(description);
+            }
+            let backup_path = central.paths().tmp_dir.join(format!(
+                "visible-backup-{}-{}",
+                skill_id, request.prepared_import_id
+            ));
+            if database.catalog_repository()?.get_sync(skill_id)?.is_some()
+                || store.current(skill_id)?.is_some()
+                || database.current_version(skill_id)?.is_some()
+                || central.load_portable_skill(skill_id)?.is_some()
+                || central.visible_tree_fingerprint(&skill)?.is_some()
+                || path_entry_exists_for_recovery(&backup_path)?
+            {
+                return Err(recovery_conflict(
+                    "import_new_skill_identity_already_exists",
+                ));
+            }
+            let snapshot = ContentAdoptionSnapshot {
+                recovery_skill: Some(skill.clone()),
+                skill_id,
+                previous_version_id: None,
+                database_previous_version_id: None,
+                portable_previous_record: None,
+                visible_backup_path: Some(backup_path),
+                visible_tree_fingerprint: None,
+                skill_runtime_name: Some(final_runtime_name.clone()),
+                target_version_id: Some(version.id.clone()),
+                target_tree_hash: Some(version.manifest.tree_hash.clone()),
+                target_portable_record: Some(CentralLibrary::project_portable_skill_record(
+                    &skill,
+                    Some(&version.id),
+                    None,
+                )),
+                captured_version_created: Some(captured.created),
+                rewrite_managed_deployments_pending: false,
+                visible_backup_cleanup_started: false,
+            };
+            if let Err(error) = self.persist_import_applying_checkpoint(
+                database,
+                request.prepared_import_id,
+                &final_runtime_name,
+                &snapshot,
+            ) {
+                // Capture is immutable and not yet referenced by any consumer.
+                // If the durable checkpoint failed, do not enter the write
+                // phase; an uncaptured manifest can be found by the OPR-4
+                // residue inventory without blocking application startup.
+                if captured.created {
+                    let _ = store.discard_sync(&version);
+                }
+                return Err(error);
             }
             if let Err(error) = database.catalog_repository()?.insert_sync(&skill) {
                 return Err(cleanup_import_error(
@@ -18880,10 +18987,11 @@ struct VersionAdoptionSnapshot {
 }
 
 /// Pre-adoption facts of the four version consumers for one content adoption
-/// (CreateSkill / SaveSkillContent / SaveMarkdownContent / SaveMarkdownAsCopy
-/// / CommitSourceUpdate). Save flows persist these pre-adoption facts before
-/// capture, then complete the target identity in Applying before the first
-/// active-consumer mutation; a failed adopt may only roll back to these facts.
+/// (CreateSkill / ImportSkill / SaveSkillContent / SaveMarkdownContent /
+/// SaveMarkdownAsCopy / CommitSourceUpdate). Save flows persist these facts
+/// before capture, then complete the target identity in Applying before the
+/// first active-consumer mutation; a failed adopt may only roll back to these
+/// facts.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct ContentAdoptionSnapshot {
     #[serde(default)]
@@ -21207,6 +21315,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         vec![RecoveryAction::RollbackOperation]
                     }
                     "create_skill"
+                    | "import_skill"
                     | "commit_source_update"
                     | "save_skill_content"
                     | "save_markdown_content"
@@ -21434,6 +21543,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
             operation_kind.as_deref(),
             Some(
                 "create_skill"
+                    | "import_skill"
                     | "commit_source_update"
                     | "usage_original_entry_adoption"
                     | "save_skill_content"
@@ -21464,7 +21574,7 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 None,
                 None,
                 false,
-                record.kind == "create_skill",
+                matches!(record.kind.as_str(), "create_skill" | "import_skill"),
             );
             if !failures.is_empty() {
                 record.phase = skillhub_core::OperationPhase::NeedsRecovery;
@@ -22420,6 +22530,7 @@ impl LocalRecoveryBackend {
         if !matches!(
             record.kind.as_str(),
             "create_skill"
+                | "import_skill"
                 | "commit_source_update"
                 | "usage_original_entry_adoption"
                 | "save_skill_content"
@@ -22464,7 +22575,7 @@ impl LocalRecoveryBackend {
             let current = database.current_version(snapshot.skill_id)?;
             (skill, current)
         };
-        let skill = if record.kind == "create_skill" {
+        let skill = if matches!(record.kind.as_str(), "create_skill" | "import_skill") {
             let recovery_skill = snapshot
                 .recovery_skill
                 .clone()
