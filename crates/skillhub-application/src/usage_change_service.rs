@@ -394,6 +394,131 @@ pub(crate) fn shared_usage_migration_recovery_action_available(
         })
 }
 
+pub(crate) fn duplicate_cleanup_recovery_action_available(record: &OperationRecord) -> bool {
+    if record.kind != DUPLICATE_CLEANUP_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::Verifying | OperationPhase::NeedsRecovery
+        )
+    {
+        return false;
+    }
+    let Ok(journal) =
+        serde_json::from_value::<DuplicateCleanupJournal>(record.recovery_data.clone())
+    else {
+        return false;
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.request.action != UsageChangeAction::ResolveDuplicate
+        || journal.prepared.action != UsageChangeAction::ResolveDuplicate
+        || journal.prepared.duplicate_cleanup.is_none()
+        || journal.plans.is_empty()
+    {
+        return false;
+    }
+    let Ok(anchor) = verify_duplicate_backup_anchor(&journal) else {
+        return false;
+    };
+    let Some(library_root) = anchor.parent() else {
+        return false;
+    };
+    let Ok(library) = CentralLibrary::open_existing(library_root) else {
+        return false;
+    };
+    let store = VersionStore::from_library(&library);
+    validate_duplicate_cleanup_rollback_facts(&store, &journal).is_ok()
+}
+
+fn validate_duplicate_cleanup_rollback_facts(
+    store: &VersionStore,
+    journal: &DuplicateCleanupJournal,
+) -> AppResult<()> {
+    verify_duplicate_backup_anchor(journal)?;
+    for plan in &journal.plans {
+        if plan.removed && !plan.removal_started
+            || plan.destination_created && !plan.destination_started
+        {
+            return Err(operation_conflict("duplicate_cleanup_journal_invalid"));
+        }
+
+        if plan.destination_started || plan.destination_created {
+            let destination = Path::new(
+                plan.destination_path
+                    .as_deref()
+                    .ok_or_else(|| operation_conflict("duplicate_cleanup_journal_invalid"))?,
+            );
+            let parent = destination
+                .parent()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_destination_invalid"))?;
+            if plan.destination_parent_chain.as_ref() != Some(&capture_path_chain(parent)?) {
+                return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+            }
+            match fs::symlink_metadata(destination) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink()
+                        || !metadata.is_dir()
+                        || store.hash_tree_read_only(destination).map_err(|_| {
+                            operation_conflict("duplicate_cleanup_destination_changed")
+                        })? != plan.fingerprint
+                    {
+                        return Err(operation_conflict("duplicate_cleanup_destination_changed"));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(operation_conflict("duplicate_cleanup_destination_changed")),
+            }
+        }
+
+        if plan.removal_started {
+            if !plan.backup_created {
+                return Err(operation_conflict("duplicate_cleanup_backup_missing"));
+            }
+            let backup = Path::new(&plan.backup_path);
+            let backup_metadata = fs::symlink_metadata(backup)
+                .map_err(|_| operation_conflict("duplicate_cleanup_backup_missing"))?;
+            if backup_metadata.file_type().is_symlink()
+                || !backup_metadata.is_dir()
+                || store.hash_tree_read_only(backup).map_err(|_| {
+                    operation_conflict("duplicate_cleanup_backup_verification_failed")
+                })? != plan.fingerprint
+            {
+                return Err(operation_conflict(
+                    "duplicate_cleanup_backup_verification_failed",
+                ));
+            }
+            let source = Path::new(&plan.source_path);
+            let parent = source
+                .parent()
+                .ok_or_else(|| operation_conflict("duplicate_cleanup_entry_parent_missing"))?;
+            if capture_path_chain(parent)? != plan.source_parent_chain {
+                return Err(operation_conflict("duplicate_cleanup_entry_parent_changed"));
+            }
+            match fs::symlink_metadata(source) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink()
+                        || !metadata.is_dir()
+                        || store.hash_tree_read_only(source).map_err(|_| {
+                            operation_conflict("duplicate_cleanup_rollback_source_changed")
+                        })? != plan.fingerprint
+                    {
+                        return Err(operation_conflict(
+                            "duplicate_cleanup_rollback_source_changed",
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => {
+                    return Err(operation_conflict(
+                        "duplicate_cleanup_rollback_source_unavailable",
+                    ))
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ManageBatchRecoveryState {
     Invalid,

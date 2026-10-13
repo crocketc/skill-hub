@@ -21500,7 +21500,13 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         RecoveryAction::CompleteOperation,
                         RecoveryAction::RollbackOperation,
                     ],
-                    "usage_duplicate_cleanup" => vec![RecoveryAction::RollbackOperation],
+                    "usage_duplicate_cleanup"
+                        if usage_change_service::duplicate_cleanup_recovery_action_available(
+                            record,
+                        ) =>
+                    {
+                        vec![RecoveryAction::RollbackOperation]
+                    }
                     "managed_usage_change"
                         if self.managed_usage_change_rollback_available(record) =>
                     {

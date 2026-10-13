@@ -567,6 +567,99 @@ async fn interrupted_duplicate_cleanup_can_be_rolled_back_from_recovery_center()
 }
 
 #[tokio::test]
+async fn changed_source_hides_unsafe_duplicate_cleanup_rollback_action() {
+    let fixture = fixture(false);
+    write_skill(&fixture.user_directory, "formatter", "same body");
+    let second_directory = fixture.workspace.path().join("agent/other-skills");
+    std::fs::create_dir_all(&second_directory).expect("second directory");
+    add_directory(&fixture, "other-dir", &second_directory);
+    let changed_source = write_skill(&second_directory, "formatter", "same body");
+    let problem = analysis(&fixture).await.problems.remove(0);
+    let prepared = fixture
+        .facade
+        .prepare_usage_change(request(
+            problem.problem_id,
+            key("user-dir"),
+            vec![key("other-dir"), key("user-dir")],
+            None,
+        ))
+        .expect("prepare duplicate cleanup");
+
+    let database = fixture.facade.database_for_tests();
+    {
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        let plans = record.recovery_data["plans"]
+            .as_array_mut()
+            .expect("duplicate cleanup plans");
+        let plan = plans
+            .iter_mut()
+            .find(|plan| plan["entry_key"]["directory_id"] == "other-dir")
+            .expect("removed entry plan");
+        let backup = PathBuf::from(plan["backup_path"].as_str().expect("backup path"));
+        std::fs::create_dir_all(backup.parent().expect("backup parent"))
+            .expect("create backup parent");
+        std::fs::create_dir(&backup).expect("create backup");
+        std::fs::copy(changed_source.join("SKILL.md"), backup.join("SKILL.md"))
+            .expect("copy recovery backup");
+        std::fs::write(
+            changed_source.join("SKILL.md"),
+            "---\nname: formatter\n---\nchanged after interruption\n",
+        )
+        .expect("simulate source drift after interruption");
+        plan["backup_created"] = serde_json::Value::Bool(true);
+        plan["removal_started"] = serde_json::Value::Bool(true);
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("persist interrupted operation with source drift");
+    }
+
+    let candidates = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list duplicate cleanup recovery candidate");
+    assert!(matches!(
+        candidates,
+        AppQueryResult::RecoveryCandidates(ref values)
+            if values.len() == 1
+                && values[0].operation_id == prepared.operation_id
+                && values[0].actions.is_empty()
+    ));
+
+    let result = fixture
+        .facade
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: RecoveryAction::RollbackOperation,
+        }))
+        .await;
+    assert!(result.is_err(), "drifted source must not be overwritten");
+    assert_eq!(
+        std::fs::read_to_string(changed_source.join("SKILL.md")).expect("read changed source"),
+        "---\nname: formatter\n---\nchanged after interruption\n"
+    );
+    assert_eq!(
+        database
+            .lock()
+            .expect("database lock")
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation after refused rollback")
+            .expect("operation exists")
+            .phase,
+        OperationPhase::NeedsRecovery,
+    );
+}
+
+#[tokio::test]
 async fn interrupted_retained_copy_move_can_be_rolled_back() {
     let fixture = fixture(false);
     let retained = write_skill(&fixture.user_directory, "formatter", "same body");
