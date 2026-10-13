@@ -10,9 +10,9 @@ use skillhub_core::import::{
 };
 use skillhub_core::relationship::{
     AgentDirectoryCapabilityFact, ConflictCaseFact, ConflictClassification, ConflictEvidence,
-    ConflictKind, DeploymentRelationFact, DirectoryRecognition, DirectoryRole, FileRepresentation,
-    RelationHealthReason, RelationshipType, SourceCopyArchiveReason, SourceCopyDecision,
-    SourceCopyHealth, SourceCopyRelationFact, SourceRelationFact,
+    ConflictKind, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
+    FileRepresentation, RelationHealthReason, RelationshipType, SourceCopyArchiveReason,
+    SourceCopyDecision, SourceCopyHealth, SourceCopyRelationFact, SourceRelationFact,
 };
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{
@@ -141,6 +141,104 @@ fn deployment(skill_id: SkillId) -> DeploymentRelationFact {
         observed_at: 42,
         released_at: None,
     }
+}
+
+#[test]
+fn discovered_directory_refresh_binds_only_one_current_root() {
+    let db = Database::open_in_memory().expect("database");
+    let skill_id = SkillId::new();
+    skill(&db, skill_id);
+    let root = |node_id: &str, path: &str| DirectoryNodeFact {
+        node_id: node_id.into(),
+        path: path.into(),
+        path_key: skillhub_core::deployment::observed_path_key(path),
+        role: DirectoryRole::AgentNative,
+        profile_id: Some("agent".into()),
+        agent_client_id: Some("agent.demo".into()),
+        exists: true,
+        observed_at: 1,
+        scan_source: Some("agent_discovery".into()),
+    };
+    let outer = root("physical:outer", "C:/agent/skills");
+    let nested = root("physical:nested", "C:/agent/skills/nested");
+    let retired = root("physical:retired", "C:/agent/old-skills");
+    let capability_for = |client_id: &str, directory_id: &str| AgentDirectoryCapabilityFact {
+        agent_client_id: client_id.into(),
+        directory_node_id: directory_id.into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: DirectoryPrecedence::Preferred,
+        evidence_reference: Some("agent_discovery".into()),
+        researched_at: None,
+        applicable_platforms: vec!["windows".into()],
+    };
+    db.directory_repository()
+        .replace_agent_discovery_facts(
+            &[outer.clone(), nested, retired],
+            &[
+                capability_for("agent.demo", "physical:outer"),
+                capability_for("agent.demo", "physical:nested"),
+                capability_for("agent.demo", "physical:retired"),
+            ],
+        )
+        .expect("persist discovered roots");
+
+    let mut relation = deployment(skill_id);
+    relation.path = "C:/agent/skills/nested/notes".into();
+    relation.path_key = skillhub_core::deployment::observed_path_key(&relation.path);
+    db.relationship_repository()
+        .upsert_deployment_relation(&relation)
+        .expect("persist relation under overlapping roots");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(loaded[0].directory_node_id, None);
+
+    let mut unsupported_nested = capability_for("agent.demo", "physical:nested");
+    unsupported_nested.recognition = DirectoryRecognition::Unsupported;
+    db.relationship_repository()
+        .upsert_capability(&unsupported_nested)
+        .expect("record explicit unsupported capability");
+
+    let mut refreshed_outer_capability = capability_for("agent.demo", "physical:outer");
+    refreshed_outer_capability.precedence = DirectoryPrecedence::LowerPriorityCopy;
+    refreshed_outer_capability.applicable_platforms = vec!["macos".into()];
+    db.directory_repository()
+        .replace_agent_discovery_facts(&[outer], &[refreshed_outer_capability])
+        .expect("refresh with one remaining root");
+    db.relationship_repository()
+        .upsert_deployment_relation(&loaded[0])
+        .expect("bind the unique current root");
+    let loaded = db.relationship_repository().list_relations().unwrap();
+    assert_eq!(
+        loaded[0].directory_node_id.as_deref(),
+        Some("physical:outer")
+    );
+    let nodes = db.directory_repository().list_nodes().unwrap();
+    assert!(nodes
+        .iter()
+        .any(|node| node.node_id == "physical:nested" && !node.exists));
+    assert!(nodes
+        .iter()
+        .any(|node| node.node_id == "physical:retired" && !node.exists));
+    let capabilities = db.relationship_repository().list_capabilities().unwrap();
+    assert!(capabilities.iter().any(|capability| {
+        capability.directory_node_id == "physical:nested"
+            && capability.recognition == DirectoryRecognition::Unsupported
+    }));
+    let refreshed_outer_capability = capabilities
+        .iter()
+        .find(|capability| capability.directory_node_id == "physical:outer")
+        .expect("current discovery capability");
+    assert_eq!(
+        refreshed_outer_capability.precedence,
+        DirectoryPrecedence::LowerPriorityCopy
+    );
+    assert_eq!(
+        refreshed_outer_capability.applicable_platforms,
+        vec!["macos"]
+    );
+    assert!(capabilities.iter().any(|capability| {
+        capability.directory_node_id == "physical:retired"
+            && capability.recognition == DirectoryRecognition::Unknown
+    }));
 }
 
 fn source(skill_id: SkillId) -> SourceRelationFact {

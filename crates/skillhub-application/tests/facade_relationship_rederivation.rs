@@ -12,8 +12,9 @@ use skillhub_core::agent::{
 use skillhub_core::api::{AppQuery, AppQueryResult, ListRelationGovernance};
 use skillhub_core::deployment::{ObservedMatchState, ObservedOrigin};
 use skillhub_core::relationship::{
-    DeploymentRelationFact, DirectoryNodeFact, DirectoryRole, FileRepresentation, OwnershipState,
-    RelationGovernanceAction, RelationGovernanceBlocker, RelationshipType,
+    AgentDirectoryCapabilityFact, DeploymentRelationFact, DirectoryNodeFact, DirectoryRecognition,
+    DirectoryRole, FileRepresentation, OwnershipState, RelationGovernanceAction,
+    RelationGovernanceBlocker, RelationshipType,
 };
 use skillhub_core::ApplicationFacade;
 use skillhub_storage::{CentralLibrary, Database};
@@ -96,13 +97,22 @@ fn seed_unknown_relation(
     path: &std::path::Path,
     relation_id: &str,
 ) {
+    seed_unknown_relation_with_directory(facade, path, relation_id, Some("target-1"));
+}
+
+fn seed_unknown_relation_with_directory(
+    facade: &LocalApplicationFacade,
+    path: &std::path::Path,
+    relation_id: &str,
+    directory_node_id: Option<&str>,
+) {
     let fact = DeploymentRelationFact {
         relation_id: relation_id.to_owned(),
         skill_id: Some("00000000-0000-0000-0000-0000000000b1".parse().unwrap()),
         agent_client_id: CLIENT_ID.into(),
         path: path.to_string_lossy().into_owned(),
         path_key: String::new(),
-        directory_node_id: Some("target-1".into()),
+        directory_node_id: directory_node_id.map(str::to_owned),
         relationship: RelationshipType::Unknown,
         file_representation: FileRepresentation::Unknown,
         ownership: OwnershipState::ObservedUnmanaged,
@@ -125,6 +135,95 @@ fn seed_unknown_relation(
             .upsert_deployment_relation(&fact)
             .expect("seed unknown relation");
     }
+}
+
+#[tokio::test]
+async fn refreshed_agent_discovery_rebinds_legacy_relationship_without_directory_id() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (facade, agent_root) = scan_facade(workspace.path());
+    let notes = agent_root.join("notes");
+    std::fs::create_dir_all(&notes).expect("notes dir");
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database");
+        database
+            .connection_for_test()
+            .execute("DELETE FROM directory_nodes WHERE node_id='target-1'", [])
+            .expect("simulate legacy database without directory records");
+    }
+    seed_unknown_relation_with_directory(&facade, &notes, "observed:legacy", None);
+    let mut legacy_relation = relations(&facade)
+        .into_iter()
+        .find(|fact| fact.relation_id == "observed:legacy")
+        .expect("legacy relationship");
+    legacy_relation.relationship = RelationshipType::ObservedCopy;
+    legacy_relation.file_representation = FileRepresentation::Directory;
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database");
+        database
+            .relationship_repository()
+            .upsert_deployment_relation(&legacy_relation)
+            .expect("keep an already classified legacy relationship");
+    }
+
+    let canonical_root = std::fs::canonicalize(&agent_root).expect("canonical Agent directory");
+    let physical_id = skillhub_core::physical_id_for_path(&canonical_root)
+        .expect("verified physical directory identity");
+    {
+        let database = facade.database_for_tests();
+        let database = database.lock().expect("database");
+        database
+            .directory_repository()
+            .replace_agent_discovery_facts(
+                &[DirectoryNodeFact {
+                    node_id: format!("physical:{physical_id}"),
+                    path: canonical_root.to_string_lossy().into_owned(),
+                    path_key: String::new(),
+                    role: DirectoryRole::AgentNative,
+                    profile_id: Some("demo".into()),
+                    agent_client_id: Some(CLIENT_ID.into()),
+                    exists: true,
+                    observed_at: 2,
+                    scan_source: Some("agent_discovery".into()),
+                }],
+                &[AgentDirectoryCapabilityFact {
+                    agent_client_id: CLIENT_ID.into(),
+                    directory_node_id: format!("physical:{physical_id}"),
+                    recognition: DirectoryRecognition::Supported,
+                    precedence: DirectoryPrecedence::Preferred,
+                    evidence_reference: Some("agent_discovery".into()),
+                    researched_at: None,
+                    applicable_platforms: vec!["macos".into()],
+                }],
+            )
+            .expect("persist current discovery facts");
+        let nodes = database
+            .directory_repository()
+            .list_nodes()
+            .expect("discovery nodes");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].path, canonical_root.to_string_lossy());
+    }
+
+    let rederived = facade
+        .rederive_unknown_relationships_for_tests(&[canonical_root.to_string_lossy().into_owned()])
+        .expect("refresh stored relationship identity");
+    assert_eq!(
+        rederived, 0,
+        "known relationship forms need no reclassification"
+    );
+    let relation = relations(&facade)
+        .into_iter()
+        .find(|fact| fact.relation_id == "observed:legacy")
+        .expect("legacy relationship");
+    let expected_directory_id = format!("physical:{physical_id}");
+    assert_eq!(
+        relation.directory_node_id.as_deref(),
+        Some(expected_directory_id.as_str())
+    );
+    assert_eq!(relation.relationship, RelationshipType::ObservedCopy);
+    assert_eq!(relation.file_representation, FileRepresentation::Directory);
 }
 
 fn relations(facade: &LocalApplicationFacade) -> Vec<DeploymentRelationFact> {

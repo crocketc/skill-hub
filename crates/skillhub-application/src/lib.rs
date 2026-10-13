@@ -2461,6 +2461,7 @@ impl LocalApplicationFacade {
         let snapshot = DiscoverAgents::builtin().discover(&roots)?;
         self.with_database("execute.discover_agent_targets", |database| {
             let snapshot = database.agent_repository().replace(&snapshot)?;
+            self.persist_agent_discovery_relationship_facts(database, &snapshot)?;
             Ok(AppCommandResult::DiscoverySnapshot(snapshot))
         })
     }
@@ -2522,8 +2523,26 @@ impl LocalApplicationFacade {
         let refreshed = DiscoverAgents::builtin().discover(&roots)?;
         self.with_database("execute.ensure_agent_target_directory", |database| {
             let refreshed = database.agent_repository().replace(&refreshed)?;
+            self.persist_agent_discovery_relationship_facts(database, &refreshed)?;
             Ok(AppCommandResult::DiscoverySnapshot(refreshed))
         })
+    }
+
+    fn persist_agent_discovery_relationship_facts(
+        &self,
+        database: &Database,
+        snapshot: &skillhub_core::DiscoverySnapshot,
+    ) -> AppResult<usize> {
+        let (directory_nodes, capabilities, discovered_roots) =
+            agent_directory_facts_from_discovery(
+                snapshot,
+                now_epoch_seconds(),
+                current_operating_system(),
+            );
+        database
+            .directory_repository()
+            .replace_agent_discovery_facts(&directory_nodes, &capabilities)?;
+        self.rederive_unknown_relationships_in(database, &discovered_roots)
     }
 
     async fn check_application_update(
@@ -15136,51 +15155,67 @@ impl LocalApplicationFacade {
         })
     }
 
-    /// #10 第 4 项（2026-10-07 定稿）：对扫描范围内 relationship 仍未分类
-    /// （Unknown）的活跃未受管部署边，按现行 ownership×表示 口径做一次再
-    /// 推导。历史行当初落库即 Unknown、比对「未变化」又永不改写，治理清单
-    /// 因此把它们永久挡在「不可转换」后面；再推导给这些行一个随真实文件
-    /// 系统事实归位的机会。探测失败或推导仍为 Unknown 时保持原样（不猜）；
-    /// SkillHub 管理的条目永不改写。返回实际改写的行数。
+    /// Reclassifies unknown unmanaged relationships inside scanned roots and
+    /// refreshes directory IDs for active relations tied to Agent discovery.
+    /// Classification remains based on observed filesystem representation;
+    /// unknown results are not guessed, and SkillHub-managed relations are
+    /// never reclassified. Returns only the number of newly classified rows.
     fn rederive_unknown_relationships_in(
         &self,
         database: &Database,
         scanned_roots: &[String],
     ) -> AppResult<usize> {
-        if scanned_roots.is_empty() {
-            return Ok(0);
-        }
         // 与比对阶段同一口径：根路径先折叠到 canonical 形态再比较。
         let scanned_roots = scanned_roots
             .iter()
             .map(|root| Self::canonical_path_string(root))
             .collect::<Vec<_>>();
+        let discovery_node_ids = database
+            .directory_repository()
+            .list_nodes()?
+            .into_iter()
+            .filter(|node| node.scan_source.as_deref() == Some("agent_discovery"))
+            .map(|node| node.node_id)
+            .collect::<HashSet<_>>();
         let repository = database.relationship_repository();
         let mut rederived = 0;
         for mut fact in repository.list_relations()? {
-            if !fact.active
-                || fact.ownership == skillhub_core::relationship::OwnershipState::SkillhubManaged
-                || fact.relationship != skillhub_core::relationship::RelationshipType::Unknown
-            {
+            if !fact.active {
                 continue;
             }
             let fact_path = Self::canonical_path_string(&fact.path);
-            if !scanned_roots
+            let inside_scanned_root = scanned_roots
                 .iter()
-                .any(|root| path_lives_under(&fact_path, root))
+                .any(|root| path_lives_under(&fact_path, root));
+            let points_to_discovery_node = fact
+                .directory_node_id
+                .as_ref()
+                .is_some_and(|node_id| discovery_node_ids.contains(node_id));
+            if !inside_scanned_root && !points_to_discovery_node {
+                continue;
+            }
+
+            if inside_scanned_root
+                && fact.ownership != skillhub_core::relationship::OwnershipState::SkillhubManaged
+                && fact.relationship == skillhub_core::relationship::RelationshipType::Unknown
             {
-                continue;
+                let representation =
+                    FilesystemRelationshipProbe.directory_representation(&fact_path);
+                let relationship = skillhub_core::relationship::derive_relationship(
+                    fact.ownership,
+                    representation,
+                );
+                if relationship != skillhub_core::relationship::RelationshipType::Unknown {
+                    fact.relationship = relationship;
+                    fact.file_representation = representation;
+                    rederived += 1;
+                }
             }
-            let representation = FilesystemRelationshipProbe.directory_representation(&fact_path);
-            let relationship =
-                skillhub_core::relationship::derive_relationship(fact.ownership, representation);
-            if relationship == skillhub_core::relationship::RelationshipType::Unknown {
-                continue;
-            }
-            fact.relationship = relationship;
-            fact.file_representation = representation;
+
+            // Every upsert resolves the path against the current unique root
+            // set. This also clears IDs that point to a discovery root which
+            // disappeared or became ambiguous during the latest refresh.
             repository.upsert_deployment_relation(&fact)?;
-            rederived += 1;
         }
         Ok(rederived)
     }
@@ -18736,6 +18771,129 @@ fn empty_discovery() -> skillhub_core::DiscoverySnapshot {
     }
 }
 
+/// Produces relationship-directory facts only from the current discovery
+/// snapshot when both the Agent root and the target have verified, readable
+/// physical identities. A missing or ambiguous identity never becomes a
+/// persisted directory node.
+fn agent_directory_facts_from_discovery(
+    snapshot: &skillhub_core::DiscoverySnapshot,
+    observed_at: i64,
+    operating_system: skillhub_core::OperatingSystem,
+) -> (
+    Vec<skillhub_core::relationship::DirectoryNodeFact>,
+    Vec<skillhub_core::relationship::AgentDirectoryCapabilityFact>,
+    Vec<String>,
+) {
+    use skillhub_core::agent::DirectoryObservationStatus;
+    use skillhub_core::relationship::{
+        AgentDirectoryCapabilityFact, DirectoryNodeFact, DirectoryRecognition, DirectoryRole,
+    };
+
+    let verified_roots = snapshot
+        .agent_roots
+        .iter()
+        .filter(|root| {
+            root.status == DirectoryObservationStatus::Existing
+                && root.exists
+                && root.readable
+                && root.physical_identity_verified
+                && root
+                    .physical_id
+                    .as_deref()
+                    .is_some_and(|id| !id.trim().is_empty())
+        })
+        .map(|root| root.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut targets_by_physical_id =
+        BTreeMap::<String, Vec<(&skillhub_core::agent::LogicalTarget, String)>>::new();
+    for target in &snapshot.logical_targets {
+        if !verified_roots.contains(target.agent_root_id.as_str())
+            || target.status != DirectoryObservationStatus::Existing
+            || !target.exists
+            || !target.readable
+            || !target.available
+            || !target.physical_identity_verified
+            || target.physical_id.trim().is_empty()
+        {
+            continue;
+        }
+        let Ok(path) = std::fs::canonicalize(&target.path) else {
+            continue;
+        };
+        targets_by_physical_id
+            .entry(target.physical_id.clone())
+            .or_default()
+            .push((target, path.to_string_lossy().into_owned()));
+    }
+
+    let platform = match operating_system {
+        skillhub_core::OperatingSystem::Windows => "windows",
+        skillhub_core::OperatingSystem::Macos => "macos",
+    };
+    let mut nodes = Vec::with_capacity(targets_by_physical_id.len());
+    let mut capabilities = Vec::new();
+    for (physical_id, mut targets) in targets_by_physical_id {
+        targets.sort_by(|left, right| left.0.id.cmp(&right.0.id));
+        let node_id = format!("physical:{physical_id}");
+        let path = targets[0].1.clone();
+        let path_key = observed_path_key(&path);
+        let profile_ids = targets
+            .iter()
+            .map(|(target, _)| target.profile_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let client_ids = targets
+            .iter()
+            .map(|(target, _)| target.client_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        nodes.push(DirectoryNodeFact {
+            node_id: node_id.clone(),
+            path: path.clone(),
+            path_key,
+            role: if targets.iter().any(|(target, _)| target.shared_reference) {
+                DirectoryRole::SharedDirectory
+            } else {
+                // Agent workspaces and built-in directories are still Agent
+                // directories; the live Agent projection carries those roles.
+                DirectoryRole::AgentNative
+            },
+            profile_id: (profile_ids.len() == 1).then(|| profile_ids.first().unwrap().to_string()),
+            agent_client_id: (client_ids.len() == 1)
+                .then(|| client_ids.first().unwrap().to_string()),
+            exists: true,
+            observed_at,
+            scan_source: Some("agent_discovery".into()),
+        });
+
+        for (target, _) in targets {
+            if let Some(existing) =
+                capabilities
+                    .iter_mut()
+                    .find(|capability: &&mut AgentDirectoryCapabilityFact| {
+                        capability.agent_client_id == target.client_id
+                            && capability.directory_node_id == node_id
+                    })
+            {
+                if existing.precedence != target.precedence {
+                    existing.precedence = skillhub_core::DirectoryPrecedence::Unknown;
+                }
+                continue;
+            }
+            capabilities.push(AgentDirectoryCapabilityFact {
+                agent_client_id: target.client_id.clone(),
+                directory_node_id: node_id.clone(),
+                recognition: DirectoryRecognition::Supported,
+                precedence: target.precedence.clone(),
+                evidence_reference: Some("agent_discovery".into()),
+                researched_at: None,
+                applicable_platforms: vec![platform.into()],
+            });
+        }
+    }
+
+    let roots = nodes.iter().map(|node| node.path.clone()).collect();
+    (nodes, capabilities, roots)
+}
+
 fn agent_invalid(detail: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::AgentProfileInvalidCapability, Severity::Error)
         .with_param("detail", detail.into())
@@ -20582,18 +20740,144 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::{
-        civil_date_from_days, command_changes_version_adoption_facts, format_rfc3339_utc,
+        agent_directory_facts_from_discovery, civil_date_from_days,
+        command_changes_version_adoption_facts, format_rfc3339_utc,
         load_version_adoption_recovery_record, may_register_import_check, pending_recovery_targets,
         LocalApplicationFacade,
     };
+    use skillhub_core::agent::{
+        AgentRootObservation, DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot,
+        LogicalTarget, OperatingSystem, TargetScope,
+    };
     use skillhub_core::api::{AppCommand, AppQuery, AppQueryResult};
     use skillhub_core::catalog::{CallPolicy, Skill};
+    use skillhub_core::relationship::DirectoryRole;
     use skillhub_core::{
         ApplicationFacade, IgnoreSubject, OperationRecord, ProjectId, RecoveryAction, SkillId,
     };
     use skillhub_storage::Database;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn current_verified_discovery_produces_stable_directory_and_capability_facts() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let agent_root_path = workspace.path().join("agent");
+        std::fs::create_dir_all(&agent_root_path).expect("Agent root");
+        let agent_root_path = std::fs::canonicalize(agent_root_path).expect("canonical root");
+        let mut logical_targets = Vec::new();
+        for (id, path, physical_id, scope, shared, builtin, verified) in [
+            (
+                "user",
+                "user",
+                "fs:user",
+                TargetScope::Global,
+                false,
+                false,
+                true,
+            ),
+            (
+                "shared",
+                "shared",
+                "fs:shared",
+                TargetScope::Global,
+                true,
+                false,
+                true,
+            ),
+            (
+                "workspace",
+                "workspace",
+                "fs:workspace",
+                TargetScope::Project,
+                false,
+                false,
+                true,
+            ),
+            (
+                "builtin",
+                "builtin",
+                "fs:builtin",
+                TargetScope::Global,
+                false,
+                true,
+                true,
+            ),
+            (
+                "unverified",
+                "unverified",
+                "fs:unverified",
+                TargetScope::Global,
+                false,
+                false,
+                false,
+            ),
+        ] {
+            let path = workspace.path().join("agent").join(path);
+            std::fs::create_dir_all(&path).expect("target directory");
+            let path = std::fs::canonicalize(path).expect("canonical target");
+            logical_targets.push(LogicalTarget {
+                id: id.into(),
+                profile_id: "agent.profile".into(),
+                client_id: "agent.demo".into(),
+                scope,
+                path: path.to_string_lossy().into_owned(),
+                agent_root_id: "root:agent".into(),
+                marker: "SKILL.md".into(),
+                precedence: DirectoryPrecedence::Preferred,
+                shared_reference: shared,
+                builtin,
+                exists: true,
+                readable: true,
+                writable: !builtin,
+                available: true,
+                physical_id: physical_id.into(),
+                status: DirectoryObservationStatus::Existing,
+                physical_identity_verified: verified,
+            });
+        }
+        let snapshot = DiscoverySnapshot {
+            generation: "fixture-generation".into(),
+            observed_at: "2026-10-13T00:00:00Z".into(),
+            instances: Vec::new(),
+            agent_roots: vec![AgentRootObservation {
+                id: "root:agent".into(),
+                profile_id: "agent.profile".into(),
+                client_id: "agent.demo".into(),
+                scope: TargetScope::Global,
+                path: agent_root_path.to_string_lossy().into_owned(),
+                status: DirectoryObservationStatus::Existing,
+                exists: true,
+                readable: true,
+                writable: true,
+                physical_id: Some("fs:agent-root".into()),
+                physical_identity_verified: true,
+            }],
+            logical_targets,
+            physical_targets: Vec::new(),
+        };
+
+        let (nodes, capabilities, roots) =
+            agent_directory_facts_from_discovery(&snapshot, 123, OperatingSystem::Macos);
+
+        assert_eq!(nodes.len(), 4, "unverified identities stay out of storage");
+        assert_eq!(capabilities.len(), 4);
+        assert_eq!(roots.len(), 4);
+        assert!(nodes.iter().all(|node| node.exists));
+        assert!(nodes.iter().any(|node| {
+            node.node_id == "physical:fs:shared" && node.role == DirectoryRole::SharedDirectory
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.node_id == "physical:fs:workspace" && node.role == DirectoryRole::AgentNative
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.node_id == "physical:fs:builtin" && node.role == DirectoryRole::AgentNative
+        }));
+        assert!(capabilities
+            .iter()
+            .all(|fact| fact.applicable_platforms.len() == 1
+                && fact.applicable_platforms[0] == "macos"));
+    }
 
     #[test]
     fn deployment_recovery_journal_keeps_target_entry_identity() {

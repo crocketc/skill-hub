@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   classifyUsageRelation,
+  countUsageGovernanceAvailability,
   usageGovernanceActionRelationId,
   usageGovernanceRowId,
   usageGovernanceRowIsSelectable,
@@ -70,6 +71,7 @@ export function GovernanceBoard({
   const { t } = useTranslation();
   const projection = projectGovernanceBuckets(rows);
   const selectableRows = rows.filter(usageGovernanceRowIsSelectable);
+  const availability = countUsageGovernanceAvailability(rows);
   const allSelectableChecked = selectableRows.length > 0
     && selectableRows.every((row) => selectedIds.has(usageGovernanceRowId(row)));
   const columns = classification === "all"
@@ -92,6 +94,11 @@ export function GovernanceBoard({
           type="checkbox"
         />
         <span>{t("relationships.governance.table.selectAll")}</span>
+        <span aria-live="polite" data-testid="governance-selection-availability">
+          {t("relationships.governance.selectionAvailability", {
+            ...availability,
+          })}
+        </span>
       </div>
       <div
         className="sh-governance__board"

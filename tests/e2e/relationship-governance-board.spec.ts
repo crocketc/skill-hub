@@ -20,8 +20,14 @@ test("governance board stays compact, switches views with selection, and opens t
   await expect(page.getByTestId("governance-board-column-pending-count")).toHaveText("5");
   await expect(page.getByTestId("governance-board-column-no-action-count")).toHaveText("1");
   await expect(page.getByTestId("governance-row")).toHaveCount(6);
+  await expect(page.getByTestId("governance-selection-availability")).toHaveText(
+    "可批量处理 2 条；暂不可处理 3 条；无需处理 1 条。",
+  );
   await expect(page.getByTestId("governance-reasons-preview:verify-notes"))
     .toContainText("当前证据不足以核验使用状态。");
+  const unresolvedIdentity = page.getByTestId("governance-action-restriction-preview:blocked-directory");
+  await expect(unresolvedIdentity).toContainText("重新扫描并核对目录");
+  await expect(unresolvedIdentity).toHaveCount(1);
   const shortStatus = page.getByTestId("governance-short-name-preview:centralize-pdf");
   await shortStatus.focus();
   await expect(shortStatus).toHaveAccessibleDescription(
@@ -44,6 +50,10 @@ test("governance board stays compact, switches views with selection, and opens t
   await viewToggle.click();
   await expect(page).toHaveURL(/view=table/);
   await expect(page.getByTestId("governance-header-relation")).toBeVisible();
+  await expect(page.getByTestId("governance-selection-availability")).toHaveText(
+    "可批量处理 2 条；暂不可处理 3 条；无需处理 1 条。",
+  );
+  await expect(page.getByTestId("governance-action-restriction-preview:blocked-directory")).toHaveCount(1);
   await expect(page.getByTestId("governance-select-preview:centralize-pdf")).toBeChecked();
   const tableCanvas = page.getByTestId("governance-row-list");
   expect(await tableCanvas.evaluate((node) => node.scrollHeight)).toBeGreaterThan(

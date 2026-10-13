@@ -160,6 +160,7 @@
   align-items: center;
   color: var(--ui-ink-muted);
   display: flex;
+  flex-wrap: wrap;
   font-size: var(--font-size-xs);
   gap: var(--space-1);
   padding: 0 0 var(--space-2);

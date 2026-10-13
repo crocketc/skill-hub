@@ -70,6 +70,25 @@ fn node() -> DirectoryNodeFact {
     }
 }
 
+fn node_at(
+    node_id: &str,
+    path: &str,
+    role: DirectoryRole,
+    agent_client_id: Option<&str>,
+) -> DirectoryNodeFact {
+    DirectoryNodeFact {
+        node_id: node_id.into(),
+        path: path.into(),
+        path_key: skillhub_core::deployment::observed_path_key(path),
+        role,
+        profile_id: Some("agent".into()),
+        agent_client_id: agent_client_id.map(str::to_owned),
+        exists: true,
+        observed_at: 1,
+        scan_source: Some("fixture".into()),
+    }
+}
+
 fn directory_recognition() -> Vec<AgentDirectoryCapabilityFact> {
     vec![AgentDirectoryCapabilityFact {
         agent_client_id: "agent.demo".into(),
@@ -355,6 +374,214 @@ fn agent_native_directory_role_remains_unconfirmed_without_agent_projection_evid
 }
 
 #[test]
+fn legacy_deployment_without_directory_id_uses_one_verified_agent_directory() {
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.directory_node_id = None;
+
+    let views = project(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(
+        views[0].target.directory_id.as_deref(),
+        Some("directory:agent")
+    );
+    assert_eq!(
+        views[0].entry_key,
+        Some(UsageEntryKey {
+            directory_id: "directory:agent".into(),
+            relative_entry_path: "notes".into(),
+        })
+    );
+}
+
+#[test]
+fn legacy_deployment_without_directory_id_uses_verified_shared_capability() {
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.directory_node_id = None;
+    let shared_node = node_at(
+        "directory:shared",
+        ROOT,
+        DirectoryRole::SharedDirectory,
+        None,
+    );
+    let mut shared_projection = directory(AgentDirectoryRole::AgentUser);
+    shared_projection.directories[0].is_shared_directory = true;
+    let shared_capability = vec![AgentDirectoryCapabilityFact {
+        agent_client_id: "agent.demo".into(),
+        directory_node_id: "directory:shared".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: skillhub_core::agent::DirectoryPrecedence::Preferred,
+        evidence_reference: Some("fixture".into()),
+        researched_at: None,
+        applicable_platforms: vec!["windows".into()],
+    }];
+
+    let views = project_with_directory_facts(
+        &[relation],
+        &[],
+        &shared_projection,
+        &[],
+        &[],
+        &[shared_node],
+        &shared_capability,
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(
+        views[0].target.kind,
+        skillhub_core::relationship::RelationGovernanceTargetKind::SharedDirectory
+    );
+    assert_eq!(
+        views[0].target.directory_id.as_deref(),
+        Some("directory:shared")
+    );
+    assert_eq!(
+        views[0].entry_key.as_ref().unwrap().relative_entry_path,
+        "notes"
+    );
+}
+
+#[test]
+fn legacy_deployment_without_directory_id_stays_unresolved_for_overlapping_roots() {
+    let nested_root = format!("{ROOT}/nested");
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.directory_node_id = None;
+    relation.path = format!("{nested_root}/notes");
+    relation.path_key = skillhub_core::deployment::observed_path_key(&relation.path);
+    let mut nested_node = node_at(
+        "directory:nested",
+        &nested_root,
+        DirectoryRole::AgentNative,
+        Some("agent.demo"),
+    );
+    nested_node.profile_id = Some("agent".into());
+    let mut projection = directory(AgentDirectoryRole::AgentUser);
+    let mut nested_directory = projection.directories[0].clone();
+    nested_directory.path = nested_root;
+    nested_directory.identity = AgentDirectoryIdentity::VerifiedPhysical("nested-physical".into());
+    projection.directories.push(nested_directory);
+    let mut capabilities = directory_recognition();
+    capabilities.push(AgentDirectoryCapabilityFact {
+        agent_client_id: "agent.demo".into(),
+        directory_node_id: "directory:nested".into(),
+        recognition: DirectoryRecognition::Supported,
+        precedence: skillhub_core::agent::DirectoryPrecedence::Preferred,
+        evidence_reference: Some("fixture".into()),
+        researched_at: None,
+        applicable_platforms: vec!["windows".into()],
+    });
+
+    let views = project_with_directory_facts(
+        &[relation],
+        &[],
+        &projection,
+        &[],
+        &[],
+        &[node(), nested_node],
+        &capabilities,
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].target.directory_id, None);
+    assert_eq!(views[0].entry_key, None);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+}
+
+#[test]
+fn legacy_deployment_without_directory_id_does_not_guess_without_discovery() {
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.directory_node_id = None;
+    let nodes = [node()];
+    let recognition = directory_recognition();
+
+    let views = project_with_directory_facts(
+        &[relation],
+        &[],
+        &AgentDirectoryProjection::default(),
+        &[],
+        &[],
+        &nodes,
+        &recognition,
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].target.directory_id, None);
+    assert_eq!(views[0].entry_key, None);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+}
+
+#[test]
+fn stale_discovered_directory_id_is_not_trusted_after_identity_refresh() {
+    let relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    let mut stale_node = node();
+    stale_node.exists = false;
+
+    let views = project_with_directory_facts(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+        &[stale_node],
+        &directory_recognition(),
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].target.directory_id, None);
+    assert_eq!(views[0].entry_key, None);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UserConfirmation));
+}
+
+#[test]
+fn discovered_directory_id_must_match_current_physical_identity() {
+    let mut relation = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
+    relation.directory_node_id = None;
+    let mut discovered_node = node();
+    discovered_node.node_id = "physical:old-identity".into();
+    discovered_node.scan_source = Some("agent_discovery".into());
+    let mut capability = directory_recognition();
+    capability[0].directory_node_id = discovered_node.node_id.clone();
+
+    let views = project_with_directory_facts(
+        &[relation],
+        &[],
+        &directory(AgentDirectoryRole::AgentUser),
+        &[],
+        &[],
+        &[discovered_node],
+        &capability,
+    );
+
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].target.directory_id, None);
+    assert_eq!(views[0].entry_key, None);
+    assert!(views[0]
+        .health_reasons
+        .contains(&UsageHealthReason::UnableToVerify));
+}
+
+#[test]
 fn conflicting_directory_identity_is_not_replaced_by_a_path_guess() {
     let mut copy = source_copy();
     copy.directory_node_id = Some("directory:stale".into());
@@ -395,7 +622,7 @@ fn verification_match_state_is_not_discarded_when_health_reasons_are_empty() {
     let mut name_only = deployment(RelationshipType::ObservedCopy, Some(Vec::new()));
     name_only.relation_id = "relation:name-only".into();
     name_only.path = format!("{ROOT}/name-only");
-    name_only.path_key = name_only.path.to_ascii_lowercase();
+    name_only.path_key = skillhub_core::deployment::observed_path_key(&name_only.path);
     name_only.match_state = ObservedMatchState::NameOnly;
 
     let views = project(

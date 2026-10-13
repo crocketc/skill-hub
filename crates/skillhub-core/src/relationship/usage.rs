@@ -145,10 +145,16 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
             &relation.path_key,
             Some(&relation.agent_client_id),
             input.directory_nodes,
+            input.directory_recognition,
+            input.agent_directories,
         );
         let (target, entry_key) =
             target_and_entry_key(node, &relation.agent_client_id, &relation.path_key, input);
         let mut health_reasons = deployment_health(relation);
+        if node.is_none() {
+            health_reasons.push(UsageHealthReason::UnableToVerify);
+            health_reasons.push(UsageHealthReason::UserConfirmation);
+        }
         if relation.relationship == RelationshipType::Unknown {
             health_reasons.push(UsageHealthReason::UserConfirmation);
         }
@@ -209,6 +215,8 @@ pub fn project_usage_relations(input: &UsageProjectionInput<'_>) -> Vec<UsageRel
             &copy.source_path_key,
             copy.agent_client_id.as_deref(),
             input.directory_nodes,
+            input.directory_recognition,
+            input.agent_directories,
         );
         let (target, entry_key) = target_and_entry_key(
             node,
@@ -407,29 +415,90 @@ fn directory_node_for<'a>(
     entry_path_key: &str,
     agent_client_id: Option<&str>,
     nodes: &'a [DirectoryNodeFact],
+    capabilities: &[AgentDirectoryCapabilityFact],
+    directories: &AgentDirectoryProjection,
 ) -> Option<&'a DirectoryNodeFact> {
     if let Some(directory_id) = directory_id {
-        return nodes.iter().find(|node| {
+        let node = nodes.iter().find(|node| {
             node.node_id == directory_id
+                && node.exists
                 && relative_entry_path(&node.path_key, entry_path_key).is_some()
-        });
+        })?;
+        if node.scan_source.as_deref() == Some("agent_discovery") {
+            let agent_client_id = agent_client_id?;
+            return node_has_verified_agent_identity(
+                node,
+                agent_client_id,
+                capabilities,
+                directories,
+            )
+            .then_some(node);
+        }
+        return Some(node);
     }
 
-    let mut candidates = nodes
+    let agent_client_id = agent_client_id?;
+    let candidates = nodes
         .iter()
         .filter(|node| {
-            agent_client_id.is_none_or(|agent| node.agent_client_id.as_deref() == Some(agent))
+            node.exists
+                && matches!(
+                    node.role,
+                    DirectoryRole::AgentNative | DirectoryRole::SharedDirectory
+                )
                 && relative_entry_path(&node.path_key, entry_path_key).is_some()
+                && node_has_verified_agent_identity(
+                    node,
+                    agent_client_id,
+                    capabilities,
+                    directories,
+                )
         })
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|node| std::cmp::Reverse(normalize_path_key(&node.path_key).len()));
-    let best = candidates.first().copied()?;
-    if candidates.get(1).is_some_and(|other| {
-        normalize_path_key(&other.path_key).len() == normalize_path_key(&best.path_key).len()
+    (candidates.len() == 1).then(|| candidates[0])
+}
+
+/// A legacy path may recover its stable directory ID only from one current,
+/// physically verified Agent directory and that Agent's explicit recognition
+/// capability. Paths alone, nested-root precedence, and display names are not
+/// sufficient evidence to pick among directory records.
+fn node_has_verified_agent_identity(
+    node: &DirectoryNodeFact,
+    agent_client_id: &str,
+    capabilities: &[AgentDirectoryCapabilityFact],
+    directories: &AgentDirectoryProjection,
+) -> bool {
+    if !capabilities.iter().any(|capability| {
+        capability.agent_client_id == agent_client_id
+            && capability.directory_node_id == node.node_id
+            && capability.recognition == DirectoryRecognition::Supported
     }) {
-        return None;
+        return false;
     }
-    Some(best)
+
+    let matching_directories = directories
+        .directories
+        .iter()
+        .filter(|directory| {
+            directory.exists
+                && directory.readable
+                && directory.identity.is_verified()
+                && normalize_path_key(&directory.path) == normalize_path_key(&node.path)
+                && (node.scan_source.as_deref() != Some("agent_discovery")
+                    || matches!(
+                        &directory.identity,
+                        crate::agent::AgentDirectoryIdentity::VerifiedPhysical(physical_id)
+                            if node.node_id == format!("physical:{physical_id}")
+                    ))
+                && directory
+                    .members
+                    .iter()
+                    .any(|member| member.client_id.as_deref() == Some(agent_client_id))
+                && (node.role != DirectoryRole::SharedDirectory || directory.is_shared_directory)
+        })
+        .count();
+
+    matching_directories == 1
 }
 
 fn target_and_entry_key(

@@ -9,6 +9,7 @@ import { AgentPresentation } from "../../../ui/AgentPresentation";
 import { RelationshipPath } from "../RelationshipPath";
 import {
   classifyUsageRelation,
+  countUsageGovernanceAvailability,
   usageGovernanceActionRelationId,
   directoryRoleLabelKey,
   usageGovernanceRowId,
@@ -55,6 +56,7 @@ export function GovernanceRelationTable({
 }: GovernanceRelationTableProps) {
   const { t } = useTranslation();
   const selectableRows = rows.filter(usageGovernanceRowIsSelectable);
+  const availability = countUsageGovernanceAvailability(rows);
   const allChecked = selectableRows.length > 0
     && selectableRows.every((row) => selectedIds.has(usageGovernanceRowId(row)));
 
@@ -65,6 +67,13 @@ export function GovernanceRelationTable({
       onScroll={onListScroll}
       ref={listRef}
     >
+      <div className="sh-governance__board-selection">
+        <span aria-live="polite" data-testid="governance-selection-availability">
+          {t("relationships.governance.selectionAvailability", {
+            ...availability,
+          })}
+        </span>
+      </div>
       <table aria-label={t("relationships.governance.table.listLabel")} className="sh-governance__table">
         <thead>
           <tr>
@@ -268,9 +277,6 @@ export function GovernanceRelationImpact({ row }: { row: UsageGovernanceRow }) {
           </>
         : t("relationships.governance.impact.noOtherConsumers")}
       {paths.map((path) => <span key={path}><RelationshipPath path={path} /></span>)}
-      {row.actionRestriction ? (
-        <span role="note">{t(`relationships.governance.actionRestrictions.${row.actionRestriction}` as never)}</span>
-      ) : null}
     </>
   );
 }

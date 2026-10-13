@@ -3101,6 +3101,7 @@
       "placeholder": "关系治理工作台尚未提供；Skill 详情中的关系治理面板仍然可用。",
       "description": "管理导入来源与派发关系，变更先预览再确认；完整拓扑请看技能图谱。",
       "unnamedSkill": "未命名技能",
+      "selectionAvailability": "可批量处理 {{executable}} 条；暂不可处理 {{blocked}} 条；无需处理 {{noAction}} 条。",
       "previewFixtureNotice": "预览数据：以下关系均为虚构示例，不会读取或修改本机 Skill 与 Agent 目录。",
       "viewSwitch": {
         "label": "视图",
@@ -3318,7 +3319,7 @@
       },
       "actionRestrictions": {
         "missing_subject": "缺少已确认的技能主体，暂时不能执行操作。",
-        "entry_identity_unavailable": "无法核验此使用入口的唯一身份，暂时不能执行操作。",
+        "entry_identity_unavailable": "暂时无法确认这个文件属于哪个 Agent（智能体）目录，因此不能批量处理。请到 Agent（智能体）页面重新扫描并核对目录，再回到此页核验。",
         "identity_conflict": "主体或物理目标身份存在冲突，请先核对。",
         "incomplete_evidence": "底层关系证据不完整，暂时不能执行操作。",
         "multiple_targets": "此统一使用事实包含多个底层目标，当前操作入口不能安全地逐一处理。",

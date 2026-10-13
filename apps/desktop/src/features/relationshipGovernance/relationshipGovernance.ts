@@ -178,6 +178,20 @@ export function usageGovernanceRowIsSelectable(row: UsageGovernanceRow): boolean
     && (centralizeCondition?.available === true || sharedImpactOnlyConfirmation);
 }
 
+export function countUsageGovernanceAvailability(
+  rows: readonly UsageGovernanceRow[],
+): { executable: number; blocked: number; noAction: number } {
+  return rows.reduce(
+    (counts, row) => {
+      if (usageGovernanceRowIsSelectable(row)) counts.executable += 1;
+      else if (classifyUsageRelation(row.usage) === "no_action") counts.noAction += 1;
+      else counts.blocked += 1;
+      return counts;
+    },
+    { executable: 0, blocked: 0, noAction: 0 },
+  );
+}
+
 /** 用户可执行的动作入口；Task 7 只提供影响预览，不内置转换执行。 */
 export type RelationshipViewAction = "view_removal_impact";
 

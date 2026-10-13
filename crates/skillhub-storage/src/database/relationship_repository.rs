@@ -18,6 +18,7 @@ use skillhub_core::relationship::{
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 use std::collections::BTreeSet;
+use std::path::Path;
 
 pub struct RelationshipRepository<'a> {
     pub(crate) database: &'a Database,
@@ -150,39 +151,12 @@ impl<'a> RelationshipRepository<'a> {
     }
 
     pub fn upsert_capability(&self, capability: &AgentDirectoryCapabilityFact) -> AppResult<()> {
-        let platforms = serde_json::to_string(&capability.applicable_platforms)
-            .map_err(|error| serialization_error(error.to_string()))?;
         let transaction = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        let changed = transaction
-            .execute(
-                "INSERT INTO agent_directory_capabilities
-                 (agent_client_id, directory_node_id, recognition, precedence, evidence_reference, researched_at, applicable_platforms_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT(agent_client_id, directory_node_id) DO UPDATE SET
-                 recognition=excluded.recognition, precedence=excluded.precedence,
-                 evidence_reference=excluded.evidence_reference, researched_at=excluded.researched_at,
-                 applicable_platforms_json=excluded.applicable_platforms_json
-                 WHERE agent_directory_capabilities.recognition IS NOT excluded.recognition
-                    OR agent_directory_capabilities.precedence IS NOT excluded.precedence
-                    OR agent_directory_capabilities.evidence_reference IS NOT excluded.evidence_reference
-                    OR agent_directory_capabilities.researched_at IS NOT excluded.researched_at
-                    OR agent_directory_capabilities.applicable_platforms_json IS NOT excluded.applicable_platforms_json",
-                params![
-                    capability.agent_client_id,
-                    capability.directory_node_id,
-                    recognition_code(capability.recognition),
-                    precedence_code(&capability.precedence),
-                    capability.evidence_reference,
-                    capability.researched_at,
-                    platforms,
-                ],
-            )
-            .map_err(database_error)?;
-        if changed != 0 {
+        if upsert_capability_tx(&transaction, capability)? {
             bump_relationship_revision_tx(&transaction)?;
         }
         transaction.commit().map_err(database_error)
@@ -750,14 +724,14 @@ fn directory_node_id_for_path_tx(
 ) -> AppResult<Option<String>> {
     let candidate = comparable_path(path);
     let mut statement = transaction
-        .prepare("SELECT node_id, path FROM directory_nodes")
+        .prepare("SELECT node_id, path FROM directory_nodes WHERE exists_flag=1")
         .map_err(database_error)?;
     let rows = statement
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(database_error)?;
-    let mut best: Option<(usize, String)> = None;
+    let mut matches = Vec::new();
     for row in rows {
         let (node_id, node_path) = row.map_err(database_error)?;
         let root = comparable_path(&node_path);
@@ -765,15 +739,38 @@ fn directory_node_id_for_path_tx(
             || candidate
                 .strip_prefix(root.trim_end_matches('/'))
                 .is_some_and(|rest| rest.starts_with('/'));
-        if is_match && best.as_ref().is_none_or(|current| root.len() > current.0) {
-            best = Some((root.len(), node_id));
+        if is_match {
+            matches.push(node_id);
         }
     }
-    Ok(best.map(|(_, node_id)| node_id))
+    Ok((matches.len() == 1).then(|| matches.remove(0)))
 }
 
 fn comparable_path(path: &str) -> String {
-    observed_path_key(&path.replace('\\', "/"))
+    let normalized = canonicalize_existing_prefix(Path::new(path))
+        .unwrap_or_else(|| path.to_owned())
+        .replace('\\', "/");
+    observed_path_key(&normalized)
+}
+
+/// Match discovery paths and scanned relationship paths after resolving any
+/// existing symlink prefix (for example macOS `/var` to `/private/var`). If
+/// the final entry is missing, preserve its remaining components so missing
+/// relationship records can still be associated with the verified directory.
+fn canonicalize_existing_prefix(path: &Path) -> Option<String> {
+    let mut existing_prefix = path.to_path_buf();
+    let mut suffix = Vec::new();
+    while !existing_prefix.exists() {
+        suffix.push(existing_prefix.file_name()?.to_os_string());
+        if !existing_prefix.pop() {
+            return None;
+        }
+    }
+    let mut resolved = existing_prefix.canonicalize().ok()?;
+    for component in suffix.into_iter().rev() {
+        resolved.push(component);
+    }
+    Some(resolved.to_string_lossy().into_owned())
 }
 
 pub(crate) fn upsert_deployment_relation_tx(
@@ -922,6 +919,40 @@ pub(crate) fn bump_relationship_revision_tx(transaction: &Transaction<'_>) -> Ap
                     .with_action(RecoveryAction::Retry))
             }
         })
+}
+
+pub(crate) fn upsert_capability_tx(
+    transaction: &Transaction<'_>,
+    capability: &AgentDirectoryCapabilityFact,
+) -> AppResult<bool> {
+    let platforms = serde_json::to_string(&capability.applicable_platforms)
+        .map_err(|error| serialization_error(error.to_string()))?;
+    transaction
+        .execute(
+            "INSERT INTO agent_directory_capabilities
+             (agent_client_id, directory_node_id, recognition, precedence, evidence_reference, researched_at, applicable_platforms_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(agent_client_id, directory_node_id) DO UPDATE SET
+             recognition=excluded.recognition, precedence=excluded.precedence,
+             evidence_reference=excluded.evidence_reference, researched_at=excluded.researched_at,
+             applicable_platforms_json=excluded.applicable_platforms_json
+             WHERE agent_directory_capabilities.recognition IS NOT excluded.recognition
+                OR agent_directory_capabilities.precedence IS NOT excluded.precedence
+                OR agent_directory_capabilities.evidence_reference IS NOT excluded.evidence_reference
+                OR agent_directory_capabilities.researched_at IS NOT excluded.researched_at
+                OR agent_directory_capabilities.applicable_platforms_json IS NOT excluded.applicable_platforms_json",
+            params![
+                capability.agent_client_id,
+                capability.directory_node_id,
+                recognition_code(capability.recognition),
+                precedence_code(&capability.precedence),
+                capability.evidence_reference,
+                capability.researched_at,
+                platforms,
+            ],
+        )
+        .map(|changed| changed != 0)
+        .map_err(database_error)
 }
 
 pub(crate) fn sync_reconciled_deployment_tx(

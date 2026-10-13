@@ -23,6 +23,7 @@ import {
   recognitionLabelKey,
   relationshipLabelKey,
   classifyUsageRelation,
+  countUsageGovernanceAvailability,
   toRelationshipView,
   projectActiveUsageRelations,
   projectUsageGovernanceRows,
@@ -451,6 +452,37 @@ it("distinguishes a missing skill subject from an unverifiable entry identity", 
 
   expect(subjectMissing.actionRestriction).toBe("missing_subject");
   expect(entryIdentityMissing.actionRestriction).toBe("entry_identity_unavailable");
+  expect(usageGovernanceRowIsSelectable(entryIdentityMissing)).toBe(false);
+});
+
+it("counts executable, blocked, and no-action relationships separately", () => {
+  const executableUsage = usageView({
+    relation_id: "rel-ready",
+    management: "unmanaged",
+    health_reasons: ["user_confirmation"],
+    evidence_relation_ids: ["rel-ready"],
+  });
+  const executableRow = legacyRow("rel-ready");
+  executableRow.governance.action_conditions = [
+    { action: "centralize_management", available: true, reasons: [] },
+  ];
+  const blockedUsage = usageView({
+    relation_id: "rel-blocked",
+    entry_key: null,
+    management: "unmanaged",
+    health_reasons: ["unable_to_verify", "user_confirmation"],
+    evidence_relation_ids: ["rel-blocked"],
+  });
+  const noActionUsage = usageView({
+    relation_id: "rel-healthy",
+    evidence_relation_ids: ["rel-healthy"],
+  });
+  const rows = projectUsageGovernanceRows(
+    [executableUsage, blockedUsage, noActionUsage],
+    [executableRow, legacyRow("rel-blocked"), legacyRow("rel-healthy")],
+  );
+
+  expect(countUsageGovernanceAvailability(rows)).toEqual({ executable: 1, blocked: 1, noAction: 1 });
 });
 
 it("does not treat an ordinary user confirmation request as an identity conflict", () => {

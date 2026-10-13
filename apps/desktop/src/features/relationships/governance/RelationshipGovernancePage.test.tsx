@@ -1008,6 +1008,51 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(rowCheckbox("observed:agent.codex:broken")).toBeDisabled();
   });
 
+  it("explains missing directory identity and shows executable counts in both list views", async () => {
+    const ledger: RelationGovernanceLedger = {
+      ...FULL_LEDGER,
+      rows: [ELIGIBLE_ROW],
+      total: 1,
+      counts: { ...FULL_LEDGER.counts, all: 1, deployments: 1 },
+    };
+    const unresolvedUsage: UsageRelationView = {
+      ...usageViewForLegacyRow(ELIGIBLE_ROW),
+      target: {
+        ...usageViewForLegacyRow(ELIGIBLE_ROW).target,
+        directory_id: null,
+        directory_role: null,
+        recognition: null,
+      },
+      entry_key: null,
+      health_reasons: ["unable_to_verify", "user_confirmation"],
+    };
+    const facade = createFacade(ledger, {
+      getRelationshipOverview: vi.fn().mockResolvedValue({
+        ...overviewForLedger(ledger),
+        usage_relations: [unresolvedUsage],
+      }),
+    });
+
+    await renderGovernanceApp({ facade });
+    await waitRows();
+
+    const row = screen.getByTestId("governance-row");
+    expect(row).toHaveTextContent("暂时无法确认这个文件属于哪个 Agent（智能体）目录，因此不能批量处理。请到 Agent（智能体）页面重新扫描并核对目录，再回到此页核验。");
+    expect(rowCheckbox("managed:dep-eligible")).toBeDisabled();
+    expect(screen.getByTestId("governance-selection-availability")).toHaveTextContent(
+      "可批量处理 0 条；暂不可处理 1 条；无需处理 0 条。",
+    );
+    expect(screen.getAllByTestId("governance-action-restriction-managed:dep-eligible")).toHaveLength(1);
+
+    cleanup();
+    await renderGovernanceApp({ facade, entries: ["/relationships/governance?view=table"] });
+    await waitRows();
+    expect(screen.getByTestId("governance-selection-availability")).toHaveTextContent(
+      "可批量处理 0 条；暂不可处理 1 条；无需处理 0 条。",
+    );
+    expect(screen.getAllByTestId("governance-action-restriction-managed:dep-eligible")).toHaveLength(1);
+  });
+
   it("filters the unified usage facts by search text without changing the ledger query", async () => {
     const { facade } = await renderGovernanceApp();
     await waitRows();

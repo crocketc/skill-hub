@@ -3101,6 +3101,7 @@
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
       "description": "Manage import sources and dispatch relationships; preview changes before confirming. See the full topology in the skill graph.",
       "unnamedSkill": "Unnamed skill",
+      "selectionAvailability": "{{executable}} ready for batch processing; {{blocked}} blocked; {{noAction}} need no action.",
       "previewFixtureNotice": "Preview data: these fictional relationships do not read or change local Skill or Agent folders.",
       "viewSwitch": {
         "label": "View",
@@ -3318,7 +3319,7 @@
       },
       "actionRestrictions": {
         "missing_subject": "The confirmed skill subject is missing, so this action is unavailable.",
-        "entry_identity_unavailable": "The unique identity of this usage entry cannot be verified, so this action is unavailable.",
+        "entry_identity_unavailable": "The Agent directory for this file can’t be confirmed, so it can’t be processed in a batch. Rescan and review the directory on the Agent page, then return here to verify it.",
         "identity_conflict": "The subject or physical target identity conflicts. Review it first.",
         "incomplete_evidence": "Underlying relationship evidence is incomplete, so this action is unavailable.",
         "multiple_targets": "This unified usage fact contains multiple underlying targets that this action cannot safely handle together.",
