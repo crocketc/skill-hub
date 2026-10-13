@@ -3251,11 +3251,17 @@ async fn restore_failure_stays_recoverable() {
     let AppQueryResult::RecoveryCandidates(candidates) = candidates else {
         panic!("expected recovery candidates");
     };
-    assert!(
-        candidates
-            .iter()
-            .any(|candidate| candidate.operation_id == prepared.operation_id),
-        "release NeedsRecovery is visible after restart"
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("release NeedsRecovery is visible after restart");
+    assert_eq!(
+        candidate.actions,
+        vec![
+            RecoveryAction::CompleteOperation,
+            RecoveryAction::RollbackOperation,
+        ],
+        "a valid release journal keeps its supported recovery actions"
     );
     let rejected = restarted
         .execute(AppCommand::ResolveRecovery(
@@ -4118,6 +4124,93 @@ async fn decision_history_is_exposed_through_relationship_query() {
             .expect("structured decision history")
             .len(),
         1,
+    );
+}
+
+#[tokio::test]
+async fn malformed_release_journal_keeps_candidate_without_recovery_actions() {
+    let fixture = fixture(EntryKind::FullCopy, true).await;
+    let prepared = prepare_release(
+        &fixture.facade,
+        RELATION_ID,
+        Some(UsageCopyDisposition::RemoveWithBackup),
+    );
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("operation query")
+            .expect("prepared release operation");
+        record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.recovery_data = serde_json::json!({"corrupt": true});
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("persist corrupted recovery journal");
+    }
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain malformed operation for inspection");
+    assert!(
+        candidate.actions.is_empty(),
+        "a malformed release journal must not advertise actions that cannot be executed"
+    );
+}
+
+#[tokio::test]
+async fn release_candidate_hides_actions_when_journal_operation_id_mismatches() {
+    let fixture = fixture(EntryKind::FullCopy, true).await;
+    let prepared = prepare_release(
+        &fixture.facade,
+        RELATION_ID,
+        Some(UsageCopyDisposition::RemoveWithBackup),
+    );
+    {
+        let database = fixture.facade.database_for_tests();
+        let database = database.lock().expect("database lock");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("operation query")
+            .expect("prepared release operation");
+        record.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
+        record.recovery_data["request"]["operation_id"] =
+            serde_json::to_value(OperationId::new()).expect("serialize mismatched operation id");
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("persist mismatched recovery journal");
+    }
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("retain operation for inspection");
+    assert!(
+        candidate.actions.is_empty(),
+        "a journal whose embedded operation id does not match its row must not advertise actions"
     );
 }
 

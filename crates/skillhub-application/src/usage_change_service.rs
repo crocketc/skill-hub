@@ -430,6 +430,94 @@ pub(crate) fn duplicate_cleanup_recovery_action_available(record: &OperationReco
     validate_duplicate_cleanup_rollback_facts(&store, &journal).is_ok()
 }
 
+pub(crate) fn release_recovery_actions_available(record: &OperationRecord) -> bool {
+    if record.kind != OPERATION_KIND
+        || !matches!(
+            record.phase,
+            OperationPhase::Applying | OperationPhase::Verifying | OperationPhase::NeedsRecovery
+        )
+    {
+        return false;
+    }
+    let Ok(journal) = serde_json::from_value::<ReleaseJournal>(record.recovery_data.clone()) else {
+        return false;
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.request.action != UsageChangeAction::Release
+        || journal.prepared.operation_id != record.operation_id
+        || journal.prepared.action != UsageChangeAction::Release
+        || journal.plans.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.prepared.impacts.len()
+        || journal.completed.len() > journal.plans.len()
+    {
+        return false;
+    }
+    let Some(result_matches_journal) = record.result.as_ref().map(|result| {
+        serde_json::from_value::<PreparedUsageChange>(result.clone())
+            .is_ok_and(|prepared| prepared == journal.prepared)
+            || serde_json::from_value::<UsageChangeResult>(result.clone()).is_ok_and(|receipt| {
+                receipt.operation_id == record.operation_id
+                    && receipt.prepared_id == journal.prepared.prepared_id
+                    && receipt.item_results == journal.completed
+            })
+    }) else {
+        return false;
+    };
+    if !result_matches_journal {
+        return false;
+    }
+
+    for (index, plan) in journal.plans.iter().enumerate() {
+        let evidence = &journal.prepared.entry_evidence[index];
+        let impact = &journal.prepared.impacts[index];
+        let expected_decision = if impact.action == UsageChangeImpactAction::KeepIndependentCopy {
+            UsageDecision::RetainedIndependentCopy
+        } else {
+            UsageDecision::Released
+        };
+        let action_is_releasable = matches!(
+            impact.action,
+            UsageChangeImpactAction::RemoveLink
+                | UsageChangeImpactAction::KeepIndependentCopy
+                | UsageChangeImpactAction::RemoveCopyWithBackup
+                | UsageChangeImpactAction::RecordOnly
+        );
+        if !action_is_releasable
+            || plan.evidence != *evidence
+            || plan.impact != *impact
+            || evidence.relation_ids.is_empty()
+            || evidence.relation_ids != impact.relation_ids
+            || evidence.skill_id != impact.skill_id
+            || plan.decision != expected_decision
+            || plan.expected_evidence_fingerprints.len() != evidence.relation_ids.len()
+            || evidence.relation_ids.iter().any(|relation_id| {
+                !plan
+                    .expected_evidence_fingerprints
+                    .contains_key(relation_id)
+            })
+            || (impact.action == UsageChangeImpactAction::RemoveCopyWithBackup
+                && (plan.backup_path.is_none() || plan.backup_anchor_chain.is_none()))
+            || (impact.action != UsageChangeImpactAction::RemoveCopyWithBackup
+                && plan.backup_created)
+        {
+            return false;
+        }
+    }
+
+    for (plan, item) in journal.plans.iter().zip(&journal.completed) {
+        if item.relation_ids != plan.evidence.relation_ids
+            || item.skill_id != plan.evidence.skill_id
+            || item.target != plan.impact.target
+            || item.action != plan.impact.action
+            || item.status == UsageChangeItemStatus::Applied && item.reason.is_some()
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn validate_duplicate_cleanup_rollback_facts(
     store: &VersionStore,
     journal: &DuplicateCleanupJournal,

@@ -21496,10 +21496,15 @@ impl RecoveryBackend for LocalRecoveryBackend {
             candidates.push(RecoveryCandidate {
                 operation_id: record.operation_id,
                 actions: match record.kind.as_str() {
-                    "usage_release" => vec![
+                    "usage_release"
+                        if usage_change_service::release_recovery_actions_available(record) =>
+                    {
+                        vec![
                         RecoveryAction::CompleteOperation,
                         RecoveryAction::RollbackOperation,
-                    ],
+                        ]
+                    }
+                    "usage_release" => Vec::new(),
                     "usage_duplicate_cleanup"
                         if usage_change_service::duplicate_cleanup_recovery_action_available(
                             record,
