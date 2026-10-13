@@ -266,6 +266,18 @@ impl DeploymentFilesystem {
     }
 
     pub fn prepare(&self, target: &TargetPlan) -> AppResult<PreparedTarget> {
+        self.prepare_with_staging_path(target, None)
+    }
+
+    /// Prepares a deployment with a caller-owned managed-copy staging path.
+    /// Operation flows that persist recovery state can name the staging entry
+    /// before creating it, then checkpoint its ownership before moving the
+    /// current target. Link modes do not create a copy staging entry.
+    pub fn prepare_with_staging_path(
+        &self,
+        target: &TargetPlan,
+        requested_staging_path: Option<PathBuf>,
+    ) -> AppResult<PreparedTarget> {
         let source_path = PathBuf::from(&target.source_path);
         let destination_path = PathBuf::from(&target.destination_path);
         if !source_path.is_dir() {
@@ -285,10 +297,26 @@ impl DeploymentFilesystem {
 
         let expected_tree_hash = tree_hash(&source_path)?;
         let staging_path = if target.mode == DeploymentMode::ManagedCopy {
-            let staging = unique_staging_path(parent, &target.runtime_name);
+            let staging = requested_staging_path
+                .unwrap_or_else(|| unique_staging_path(parent, &target.runtime_name));
+            if staging.parent() != Some(parent) || staging == destination_path {
+                return Err(operation_conflict(
+                    "managed-copy staging path must be a distinct sibling of the destination",
+                ));
+            }
+            match fs::symlink_metadata(&staging) {
+                Ok(_) => return Err(target_exists(&staging)),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(io_error(error)),
+            }
             managed_copy::copy_tree(&source_path, &staging).map_err(io_error)?;
             Some(staging)
         } else {
+            if requested_staging_path.is_some() {
+                return Err(operation_conflict(
+                    "directory-link deployments do not accept a copy staging path",
+                ));
+            }
             None
         };
 

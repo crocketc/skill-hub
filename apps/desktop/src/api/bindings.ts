@@ -1009,6 +1009,14 @@ export type DeploymentConflictPreview = {
 	default_action: DeploymentConflictAction,
 };
 
+/**  User-readable receipt for a managed deployment conflict replacement. */
+export type DeploymentConflictReplacementSummary = {
+	previous_skill_id: SkillId,
+	previous_skill_display_name: string | null,
+	runtime_name: string,
+	target_label: string,
+};
+
 export type DeploymentDimension = "agent" | "project";
 
 export type DeploymentId = string;
@@ -1036,6 +1044,10 @@ export type DeploymentPairCommitResult = {
 	 *  of one Skill can share a single operation.
 	 */
 	operation_id: OperationId | null,
+	/**  Stable managed deployment row produced or retained by this pair. */
+	deployment_id?: DeploymentId | null,
+	/**  Present only when a conflict action replaced a managed occupant. */
+	replaced?: DeploymentConflictReplacementSummary | null,
 	error: TargetOperationError | null,
 };
 

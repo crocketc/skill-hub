@@ -87,6 +87,43 @@ fn deployment_pair_selection_keeps_fallback_confirmation_orthogonal() {
 }
 
 #[test]
+fn deployment_pair_commit_result_carries_replacement_receipt_and_reads_legacy_rows() {
+    let deployment_id = skillhub_core::DeploymentId::new();
+    let previous_skill_id = skillhub_core::SkillId::new();
+    let result = skillhub_core::api::DeploymentPairCommitResult {
+        pair_id: "new-skill:target-1".to_owned(),
+        outcome: skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
+        operation_id: Some(OperationId::new()),
+        deployment_id: Some(deployment_id),
+        replaced: Some(skillhub_core::api::DeploymentConflictReplacementSummary {
+            previous_skill_id,
+            previous_skill_display_name: Some("Previous skill".to_owned()),
+            runtime_name: "pdf".to_owned(),
+            target_label: "Claude".to_owned(),
+        }),
+        error: None,
+    };
+    let value = serde_json::to_value(result).unwrap();
+    assert_eq!(value["deployment_id"], deployment_id.to_string());
+    assert_eq!(
+        value["replaced"]["previous_skill_id"],
+        previous_skill_id.to_string()
+    );
+    assert_eq!(value["replaced"]["runtime_name"], "pdf");
+
+    let legacy = serde_json::json!({
+        "pair_id": "skill:target",
+        "outcome": "skipped",
+        "operation_id": null,
+        "error": null
+    });
+    let decoded: skillhub_core::api::DeploymentPairCommitResult =
+        serde_json::from_value(legacy).expect("old recorded results retain compatibility");
+    assert_eq!(decoded.deployment_id, None);
+    assert_eq!(decoded.replaced, None);
+}
+
+#[test]
 fn progress_event_has_stable_wire_shape() {
     let event = AppEvent::OperationProgress(OperationProgress {
         operation_id: OperationId::new(),

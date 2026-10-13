@@ -1792,7 +1792,10 @@ async fn managed_conflict_preview_names_occupant_and_consumers() {
     assert_eq!(conflict.occupants[0].consumers, vec![existing_id]);
     assert_eq!(
         conflict.available_actions,
-        vec![skillhub_core::deployment::DeploymentConflictAction::Skip]
+        vec![
+            skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+            skillhub_core::deployment::DeploymentConflictAction::Skip,
+        ]
     );
 }
 

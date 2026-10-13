@@ -674,10 +674,8 @@ pub fn plan_target_preview(facts: &DeploymentPairFacts) -> PairPreview {
     if !facts.writable {
         return preview_with_fingerprint(facts, blocked(DeploymentBlockReason::TargetNotWritable));
     }
-    if !facts.conflicts.is_empty() {
-        return preview_with_fingerprint(facts, conflict_decision_required());
-    }
-    if facts.requires_shared_impact_confirmation {
+    let has_conflict = !facts.conflicts.is_empty();
+    if facts.requires_shared_impact_confirmation && !has_conflict {
         return preview_with_fingerprint(
             facts,
             blocked(DeploymentBlockReason::SharedImpactRequiresResolution),
@@ -739,6 +737,17 @@ pub fn plan_target_preview(facts: &DeploymentPairFacts) -> PairPreview {
         }
     };
 
+    if has_conflict {
+        // A conflict still needs the user's per-target decision, but preserve
+        // the selected deployment mode (or explicit copy fallback) so a later
+        // replacement action can honor the preference without guessing.
+        preview.disposition = DeploymentPreviewDisposition::ConflictDecisionRequired;
+        if preview.mode.is_some() {
+            preview.block_reason = Some(DeploymentBlockReason::TargetOccupied);
+        }
+        return preview_with_fingerprint(facts, preview);
+    }
+
     // A NoOp outcome outranks mode selection: the same managed deployment is
     // already in place whatever the preference resolves to.
     if facts.change == TargetChange::NoOp {
@@ -767,17 +776,6 @@ fn blocked(reason: DeploymentBlockReason) -> PairPreview {
         mode: None,
         fallback_mode: None,
         block_reason: Some(reason),
-        confirmation_fingerprint: String::new(),
-    }
-}
-
-fn conflict_decision_required() -> PairPreview {
-    PairPreview {
-        preference: DeploymentPreference::Automatic,
-        disposition: DeploymentPreviewDisposition::ConflictDecisionRequired,
-        mode: None,
-        fallback_mode: None,
-        block_reason: Some(DeploymentBlockReason::TargetOccupied),
         confirmation_fingerprint: String::new(),
     }
 }

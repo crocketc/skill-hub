@@ -792,7 +792,23 @@ pub struct DeploymentPairCommitResult {
     /// Child deployment operation when the pair produced one; several pairs
     /// of one Skill can share a single operation.
     pub operation_id: Option<OperationId>,
+    /// Stable managed deployment row produced or retained by this pair.
+    #[serde(default)]
+    pub deployment_id: Option<DeploymentId>,
+    /// Present only when a conflict action replaced a managed occupant.
+    #[serde(default)]
+    pub replaced: Option<DeploymentConflictReplacementSummary>,
     pub error: Option<crate::application::TargetOperationError>,
+}
+
+/// User-readable receipt for a managed deployment conflict replacement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentConflictReplacementSummary {
+    pub previous_skill_id: SkillId,
+    pub previous_skill_display_name: Option<String>,
+    pub runtime_name: String,
+    pub target_label: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

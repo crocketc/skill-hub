@@ -24,6 +24,28 @@ fn managed_copy_is_verified_against_selected_version_manifest() {
 }
 
 #[test]
+fn managed_copy_can_use_a_recovery_recorded_staging_path() {
+    let fixture = DeploymentFixture::new();
+    let target = fixture.plan(DeploymentMode::ManagedCopy);
+    let staging_path = fixture.target_root.join(".operation-copy-stage");
+    let prepared = DeploymentFilesystem::new()
+        .prepare_with_staging_path(&target, Some(staging_path.clone()))
+        .expect("prepare at the recovery-recorded staging path");
+
+    assert_eq!(prepared.staging_path, Some(staging_path.clone()));
+    assert!(staging_path.is_dir());
+    assert!(!fixture.destination().exists());
+    let applied = DeploymentFilesystem::new()
+        .apply(prepared)
+        .expect("apply prepared target");
+    assert_eq!(applied.destination_path, fixture.destination());
+    assert_eq!(
+        DeploymentFilesystem::hash_tree(&applied.destination_path).unwrap(),
+        fixture.selected_version_tree_hash()
+    );
+}
+
+#[test]
 fn existing_unknown_target_is_rejected_without_overwrite() {
     let fixture = DeploymentFixture::new();
     fs::create_dir_all(fixture.destination()).unwrap();

@@ -1740,6 +1740,56 @@ fn unchanged_pairs_and_blockers_carry_structured_reasons() {
 }
 
 #[test]
+fn conflict_preview_preserves_the_selected_mode_or_fallback() {
+    let conflict = TargetConflict {
+        physical_target_id: "fs:target-1".into(),
+        target_path: "/agents/skills".into(),
+        runtime_name: "pdf".into(),
+        reason: TargetConflictReason::ManagedByAnotherSkill,
+        existing_ownership: ExistingOwnership::Managed,
+    };
+
+    let copy = plan_target_preview(&DeploymentPairFacts {
+        preference: DeploymentPreference::Copy,
+        conflicts: vec![conflict.clone()],
+        ..pair_facts(capabilities(true, false, true))
+    });
+    assert_eq!(
+        copy.disposition,
+        DeploymentPreviewDisposition::ConflictDecisionRequired
+    );
+    assert_eq!(copy.mode, Some(DeploymentMode::ManagedCopy));
+    assert_eq!(copy.fallback_mode, None);
+
+    let link = plan_target_preview(&DeploymentPairFacts {
+        preference: DeploymentPreference::Link,
+        conflicts: vec![conflict.clone()],
+        ..pair_facts(capabilities(true, false, true))
+    });
+    assert_eq!(
+        link.disposition,
+        DeploymentPreviewDisposition::ConflictDecisionRequired
+    );
+    assert_eq!(link.mode, Some(DeploymentMode::SymbolicLink));
+    assert_eq!(link.fallback_mode, None);
+
+    let link_fallback = plan_target_preview(&DeploymentPairFacts {
+        preference: DeploymentPreference::Link,
+        conflicts: vec![conflict],
+        ..pair_facts(capabilities(false, false, true))
+    });
+    assert_eq!(
+        link_fallback.disposition,
+        DeploymentPreviewDisposition::ConflictDecisionRequired
+    );
+    assert_eq!(link_fallback.mode, None);
+    assert_eq!(
+        link_fallback.fallback_mode,
+        Some(DeploymentMode::ManagedCopy)
+    );
+}
+
+#[test]
 fn stacked_block_facts_resolve_in_a_fixed_order() {
     let conflict = TargetConflict {
         physical_target_id: "fs:target-1".into(),

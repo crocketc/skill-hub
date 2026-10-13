@@ -1,6 +1,7 @@
 //! Shared application boundary implementations.
 
 mod agent_compatibility;
+mod deployment_conflict_service;
 mod external_link;
 pub mod library_runtime;
 mod local_open;
@@ -2123,6 +2124,13 @@ impl ReconcileBackend for LocalDeploymentBackend {
                 operation_id,
             )
     }
+}
+
+#[derive(Clone, Copy)]
+struct ConflictReplacementEligibility {
+    requested_skill_id: skillhub_core::SkillId,
+    mode: Option<DeploymentMode>,
+    allowed: bool,
 }
 
 impl LocalApplicationFacade {
@@ -12764,17 +12772,18 @@ impl LocalApplicationFacade {
             let conflict = if decision.disposition
                 == skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired
             {
-                Some(
-                    self.with_database("query.get_deployment_batch_preview", |database| {
-                        deployment_conflict_preview(
-                            database,
-                            &facts.physical_target_id,
-                            &target_path,
-                            &facts.runtime_name,
-                            &facts.occupancy,
-                        )
-                    })?,
-                )
+                Some(self.build_deployment_conflict_preview(
+                    &facts.physical_target_id,
+                    &target_path,
+                    &facts.runtime_name,
+                    &facts.occupancy,
+                    ConflictReplacementEligibility {
+                        requested_skill_id: item.skill_id,
+                        mode: decision.mode.or(decision.fallback_mode),
+                        allowed: !facts.requires_shared_impact_confirmation
+                            && !security.danger_untrusted,
+                    },
+                )?)
             } else {
                 None
             };
@@ -13013,6 +13022,122 @@ impl LocalApplicationFacade {
                 ));
                 continue;
             }
+            if disposition == skillhub_core::deployment::DeploymentPairDisposition::ReplaceTarget {
+                let needs_fallback_confirmation =
+                    pair.mode.is_none() && pair.fallback_mode.is_some();
+                if pair.disposition
+                    != skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired
+                    || (needs_fallback_confirmation
+                        && !requested.is_some_and(|requested| requested.confirm_fallback))
+                {
+                    results.push(pair_result(
+                        pair,
+                        skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                        None,
+                        None,
+                    ));
+                    continue;
+                }
+                let _mutation = match self.relation_migration_lock.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        results.push(pair_result(
+                            pair,
+                            skillhub_core::api::DeploymentPairCommitOutcome::Failed,
+                            None,
+                            Some(internal("execute.replace_deployment_conflict").into()),
+                        ));
+                        continue;
+                    }
+                };
+                let clean_targets = match self.revalidate_stored_conflict(pair) {
+                    Ok(targets) => targets,
+                    Err(error) => {
+                        results.push(pair_result(
+                            pair,
+                            skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                            None,
+                            Some(error.into()),
+                        ));
+                        continue;
+                    }
+                };
+                let selected_mode = pair
+                    .mode
+                    .or(pair.fallback_mode)
+                    .expect("a replaceable conflict preview carries a selected mode or fallback");
+                let target =
+                    match self.replan_stored_conflict_pair(pair, selected_mode, clean_targets) {
+                        Ok(target) => target,
+                        Err(error) => {
+                            results.push(pair_result(
+                                pair,
+                                skillhub_core::api::DeploymentPairCommitOutcome::Blocked,
+                                None,
+                                Some(error.into()),
+                            ));
+                            continue;
+                        }
+                    };
+                let operation_id = OperationId::new();
+                match deployment_conflict_service::execute_conflict_action(
+                    &self.database,
+                    &self.library_runtime,
+                    operation_id,
+                    pair,
+                    &target,
+                ) {
+                    Ok(receipt) => {
+                        let occupant = pair
+                            .conflict
+                            .as_ref()
+                            .and_then(|conflict| conflict.occupants.first())
+                            .expect("revalidated replacement has one occupant");
+                        let mut result = pair_result(
+                            pair,
+                            skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
+                            Some(receipt.operation_id),
+                            None,
+                        );
+                        result.deployment_id = Some(receipt.deployment_id);
+                        result.replaced =
+                            Some(skillhub_core::api::DeploymentConflictReplacementSummary {
+                                previous_skill_id: occupant
+                                    .skill_id
+                                    .expect("revalidated occupant has a Skill identity"),
+                                previous_skill_display_name: occupant.skill_display_name.clone(),
+                                runtime_name: occupant.runtime_name.clone(),
+                                target_label: pair.target_label.clone(),
+                            });
+                        results.push(result);
+                    }
+                    Err(error) => {
+                        let has_journal = self.with_database(
+                            "execute.replace_deployment_conflict.inspect_journal",
+                            |database| {
+                                Ok(database
+                                    .operation_repository()
+                                    .get_sync(operation_id)?
+                                    .is_some_and(|record| {
+                                        record.kind == deployment_conflict_service::OPERATION_KIND
+                                    }))
+                            },
+                        )?;
+                        let outcome = if error.code == ErrorCode::TargetChanged || !has_journal {
+                            skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+                        } else {
+                            skillhub_core::api::DeploymentPairCommitOutcome::Failed
+                        };
+                        results.push(pair_result(
+                            pair,
+                            outcome,
+                            has_journal.then_some(operation_id),
+                            Some(error.into()),
+                        ));
+                    }
+                }
+                continue;
+            }
             if pair.disposition == skillhub_core::deployment::DeploymentPreviewDisposition::Blocked
             {
                 results.push(pair_result(
@@ -13183,7 +13308,7 @@ impl LocalApplicationFacade {
     fn revalidate_stored_conflict(
         &self,
         pair: &skillhub_core::api::DeploymentPairPreview,
-    ) -> AppResult<()> {
+    ) -> AppResult<Vec<VerifiedTarget>> {
         let expected_conflict = pair.conflict.as_ref().ok_or_else(|| {
             target_changed_error("the stored pair is no longer a conflict preview")
         })?;
@@ -13223,28 +13348,246 @@ impl LocalApplicationFacade {
                 "the conflict target identity or path changed since preview",
             ));
         }
+        let verified_without_occupancy = verified.clone();
         self.with_database("execute.commit_deployment_preview", |database| {
             attach_target_occupancy_with(database, &pair.runtime_name, &mut verified)
         })?;
-        let current = self.with_database("execute.commit_deployment_preview", |database| {
-            let occupancy = verified
-                .iter()
-                .flat_map(|target| target.existing().iter().cloned())
-                .collect::<Vec<_>>();
-            deployment_conflict_preview(
-                database,
-                expected_physical_target,
-                &pair.target_path,
-                &pair.runtime_name,
-                &occupancy,
-            )
-        })?;
+        let occupancy = verified
+            .iter()
+            .flat_map(|target| target.existing().iter().cloned())
+            .collect::<Vec<_>>();
+        let discovery_targets =
+            self.with_database("execute.commit_deployment_preview", |database| {
+                Ok(database
+                    .agent_repository()
+                    .load()?
+                    .map(|snapshot| snapshot.logical_targets)
+                    .unwrap_or_default())
+            })?;
+        let shared = discovery_targets
+            .iter()
+            .any(|entry| entry.shared_reference && pair.logical_target_ids.contains(&entry.id));
+        let security = self
+            .with_database("execute.commit_deployment_preview.security", |database| {
+                deployment_security_assessment(database, pair.skill_id, &pair.version_id)
+            })?;
+        let conflicts = occupancy
+            .iter()
+            .filter(|existing| {
+                !(existing.ownership == ExistingOwnership::Managed
+                    && existing.skill_id == Some(pair.skill_id))
+            })
+            .map(|existing| skillhub_core::deployment::TargetConflict {
+                physical_target_id: expected_physical_target.to_owned(),
+                target_path: pair.target_path.clone(),
+                runtime_name: existing.runtime_name.clone(),
+                reason: match existing.ownership {
+                    ExistingOwnership::Unknown => {
+                        skillhub_core::deployment::TargetConflictReason::OwnershipUnknown
+                    }
+                    ExistingOwnership::Managed => {
+                        skillhub_core::deployment::TargetConflictReason::ManagedByAnotherSkill
+                    }
+                    ExistingOwnership::AgentBuiltin
+                    | ExistingOwnership::Plugin
+                    | ExistingOwnership::OtherTool => {
+                        skillhub_core::deployment::TargetConflictReason::RuntimeNameAlreadyExists
+                    }
+                },
+                existing_ownership: existing.ownership.clone(),
+            })
+            .collect();
+        let facts = skillhub_core::deployment::DeploymentPairFacts {
+            skill_id: pair.skill_id,
+            version_id: pair.version_id.clone(),
+            runtime_name: pair.runtime_name.clone(),
+            physical_target_id: expected_physical_target.to_owned(),
+            destination_path: Path::new(&pair.target_path)
+                .join(&pair.runtime_name)
+                .to_string_lossy()
+                .into_owned(),
+            capabilities: merged_capabilities_of(&verified),
+            link_permission_denied: DeploymentFilesystem::new().link_unavailability_cause()
+                == Some(skillhub_adapters::deployment::LinkUnavailableCause::Permission),
+            preference: pair.preference,
+            mode: None,
+            change: TargetChange::Create,
+            conflicts,
+            occupancy,
+            path_available: true,
+            writable: verified.iter().all(VerifiedTarget::writable),
+            requires_shared_impact_confirmation: shared,
+        };
+        let rechecked = plan_target_preview(&facts);
+        if rechecked.disposition
+            != skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired
+        {
+            return Err(target_changed_error(
+                "the conflict no longer has an executable replacement mode",
+            ));
+        }
+        let current = self.build_deployment_conflict_preview(
+            expected_physical_target,
+            &pair.target_path,
+            &pair.runtime_name,
+            &facts.occupancy,
+            ConflictReplacementEligibility {
+                requested_skill_id: pair.skill_id,
+                mode: rechecked.mode.or(rechecked.fallback_mode),
+                allowed: !shared
+                    && !security.danger_untrusted
+                    && pair.disposition
+                        == skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired,
+            },
+        )?;
+        let fingerprint =
+            bind_conflict_facts_fingerprint(&rechecked.confirmation_fingerprint, &current);
         if &current != expected_conflict {
             return Err(target_changed_error(
                 "the conflict occupant, content or consumers changed since preview",
             ));
         }
-        Ok(())
+        if fingerprint != pair.confirmation_fingerprint {
+            return Err(target_changed_error(
+                "the deployment preference, capability or shared-target facts changed since preview",
+            ));
+        }
+        Ok(verified_without_occupancy)
+    }
+
+    fn replan_stored_conflict_pair(
+        &self,
+        pair: &skillhub_core::api::DeploymentPairPreview,
+        requested_mode: DeploymentMode,
+        verified: Vec<VerifiedTarget>,
+    ) -> AppResult<TargetPlan> {
+        let security = self
+            .with_database("execute.commit_deployment_preview.security", |database| {
+                deployment_security_assessment(database, pair.skill_id, &pair.version_id)
+            })?;
+        let preview_security_warnings = pair
+            .warnings
+            .iter()
+            .filter(|warning| is_deployment_security_warning(warning))
+            .cloned()
+            .collect::<Vec<_>>();
+        if security.danger_untrusted || preview_security_warnings != security.warnings {
+            return Err(target_changed_error(
+                "the version security assessment changed since the preview",
+            ));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(pair.skill_id.to_string())
+            .join(pair.version_id.as_str());
+        let mut target = DeploymentPlanner
+            .plan(DeploymentPlanInput {
+                skill_id: pair.skill_id,
+                version_id: pair.version_id.clone(),
+                runtime_name: pair.runtime_name.clone(),
+                source_path: source_path.to_string_lossy().into_owned(),
+                targets: verified,
+                mode_override: Some(requested_mode),
+                security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+            })?
+            .targets
+            .into_iter()
+            .next()
+            .ok_or_else(|| target_changed_error("the conflict target no longer resolves"))?;
+        let occupant = pair
+            .conflict
+            .as_ref()
+            .and_then(|conflict| conflict.occupants.first())
+            .ok_or_else(|| target_changed_error("the conflict occupant is missing"))?;
+        if target.physical_target_id != occupant.physical_target_id
+            || target.target_path != pair.target_path
+            || target.destination_path != occupant.target_path
+            || target.skill_id != pair.skill_id
+            || target.version_id != pair.version_id
+            || target.runtime_name != pair.runtime_name
+        {
+            return Err(target_changed_error(
+                "the replacement plan no longer matches the selected conflict",
+            ));
+        }
+        for warning in security.warnings {
+            if !target.warnings.contains(&warning) {
+                target.warnings.push(warning);
+            }
+        }
+        Ok(target)
+    }
+
+    fn build_deployment_conflict_preview(
+        &self,
+        physical_target_id: &str,
+        target_path: &str,
+        runtime_name: &str,
+        occupancy: &[ExistingDeployment],
+        eligibility: ConflictReplacementEligibility,
+    ) -> AppResult<skillhub_core::api::DeploymentConflictPreview> {
+        let mut preview = self.with_database("query.deployment_conflict_preview", |database| {
+            deployment_conflict_preview(
+                database,
+                physical_target_id,
+                target_path,
+                runtime_name,
+                occupancy,
+            )
+        })?;
+        if !eligibility.allowed || eligibility.mode.is_none() || preview.occupants.len() != 1 {
+            return Ok(preview);
+        }
+        let occupant = &preview.occupants[0];
+        if occupant.ownership != ExistingOwnership::Managed
+            || occupant
+                .skill_id
+                .is_none_or(|skill_id| skill_id == eligibility.requested_skill_id)
+            || occupant.deployment_id.is_none()
+            || occupant.version_id.is_none()
+            || occupant.physical_target_id != physical_target_id
+            || occupant.runtime_name != runtime_name
+            || occupant.target_path != Path::new(target_path).join(runtime_name).to_string_lossy()
+            || occupant.consumers.len() != 1
+        {
+            return Ok(preview);
+        }
+        let occupant_id = occupant.deployment_id.expect("checked above");
+        let record =
+            self.with_database("query.deployment_conflict_preview.occupant", |database| {
+                Ok(database
+                    .deployment_repository()
+                    .list_all()?
+                    .into_iter()
+                    .find(|record| record.id == occupant_id))
+            })?;
+        let Some(record) = record.filter(|record| {
+            record.managed
+                && record.state == DeploymentState::Deployed
+                && record.skill_id == occupant.skill_id.expect("checked above")
+                && record.version_id == *occupant.version_id.as_ref().expect("checked above")
+                && record.target_id == physical_target_id
+                && record.runtime_name == runtime_name
+        }) else {
+            return Ok(preview);
+        };
+        let backend = LocalDeploymentBackend::new(
+            Arc::clone(&self.database),
+            Arc::clone(&self.library_runtime),
+        );
+        if backend
+            .deployment_proof(&record)
+            .and_then(|proof| backend.filesystem.verify_ownership(&proof))
+            .is_ok()
+        {
+            preview.available_actions = vec![
+                skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+                skillhub_core::deployment::DeploymentConflictAction::Skip,
+            ];
+        }
+        Ok(preview)
     }
 
     /// Re-derives one stored pair from current registered reality, refuses on
@@ -20269,6 +20612,8 @@ fn pair_result(
         pair_id: pair.pair_id.clone(),
         outcome,
         operation_id,
+        deployment_id: None,
+        replaced: None,
         error,
     }
 }
@@ -22288,6 +22633,11 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::CompleteOperation]
                     }
+                    "deployment_conflict_replace" => deployment_conflict_service::recovery_actions(
+                        &self.database,
+                        &self.library_runtime,
+                        record,
+                    ),
                     "deploy_skill" if self.load_validated_deployment_recovery(record).is_ok() => {
                         vec![RecoveryAction::RollbackOperation]
                     }
@@ -22350,6 +22700,17 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .get_sync(operation_id)?
                 .map(|record| record.kind)
         };
+        if operation_kind.as_deref() == Some(deployment_conflict_service::OPERATION_KIND) {
+            let _mutation = self.relation_migration_lock.lock().map_err(|_| {
+                internal("recovery.resolve.deployment_conflict_replace.mutation_lock")
+            })?;
+            return deployment_conflict_service::resolve_recovery(
+                &self.database,
+                &self.library_runtime,
+                operation_id,
+                action,
+            );
+        }
         if operation_kind.as_deref() == Some("usage_release") {
             let database = self
                 .database
