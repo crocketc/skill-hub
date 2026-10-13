@@ -1936,23 +1936,18 @@ impl ReconcileBackend for LocalDeploymentBackend {
     async fn collect_target_changes(
         &self,
         deployment: &DeploymentRecord,
+        operation_id: OperationId,
     ) -> AppResult<skillhub_core::VersionId> {
         let library = self.library_runtime.snapshot()?;
         let destination = self.deployment_destination(deployment)?;
         let version = library.capture(deployment.skill_id, &destination)?;
-        let observed_hash = version.manifest.tree_hash.clone();
         let database = self
             .database
             .lock()
             .map_err(|_| internal("reconcile.collect"))?;
         database
             .deployment_repository()
-            .update_reconcile_facts_sync(
-                deployment.id,
-                &version.id,
-                &observed_hash,
-                Some(&observed_hash),
-            )?;
+            .commit_reconcile_collection_sync(deployment.id, &version, operation_id)?;
         Ok(version.id)
     }
 
@@ -16862,17 +16857,31 @@ impl LocalApplicationFacade {
         deployment_id: skillhub_core::DeploymentId,
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "reconcile_collect_changes");
+        self.journal_prepared(operation_id, "reconcile_collect_changes");
         let result = self
             .reconcile_service
-            .collect_changes(deployment_id)
+            .collect_changes(deployment_id, operation_id)
             .await
             .map(AppCommandResult::ReconcileResult);
-        self.journal_settle(
-            operation_id,
-            "reconcile_collect_changes",
-            result.as_ref().err(),
-        );
+        if result.is_ok() {
+            let committed = self.database.lock().ok().and_then(|database| {
+                database
+                    .operation_repository()
+                    .get_sync(operation_id)
+                    .ok()
+                    .flatten()
+                    .filter(|record| {
+                        record.kind == "reconcile_collect_changes"
+                            && record.phase == skillhub_core::OperationPhase::Committed
+                    })
+            });
+            if let Some(record) = committed {
+                self.log_journal_record(&record);
+            }
+        }
+        if let Err(error) = &result {
+            self.journal_settle(operation_id, "reconcile_collect_changes", Some(error));
+        }
         result
     }
 

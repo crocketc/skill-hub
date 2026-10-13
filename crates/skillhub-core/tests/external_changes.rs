@@ -40,7 +40,11 @@ impl ReconcileBackend for FakeReconcileBackend {
         })
     }
 
-    async fn collect_target_changes(&self, deployment: &DeploymentRecord) -> AppResult<VersionId> {
+    async fn collect_target_changes(
+        &self,
+        deployment: &DeploymentRecord,
+        _operation_id: skillhub_core::OperationId,
+    ) -> AppResult<VersionId> {
         self.collected.lock().unwrap().push(deployment.id);
         VersionId::parse("sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
             .map_err(|_| AppError::new(ErrorCode::InternalError, skillhub_core::Severity::Error))
@@ -109,7 +113,10 @@ fn changed_managed_copy_becomes_modified_and_collect_creates_new_version() {
             .allowed_actions
             .contains(&skillhub_core::ReconcileAction::CollectChanges));
 
-        let result = service.collect_changes(backend.record.id).await.unwrap();
+        let result = service
+            .collect_changes(backend.record.id, skillhub_core::OperationId::new())
+            .await
+            .unwrap();
         assert_eq!(result.state_before, ExternalChangeState::Modified);
         assert_eq!(
             result.version_id.unwrap().as_str(),
@@ -158,7 +165,7 @@ fn collecting_unchanged_or_missing_target_is_rejected() {
         for state in [ExternalChangeState::Unchanged, ExternalChangeState::Missing] {
             let (service, backend) = service(state);
             let error = service
-                .collect_changes(backend.record.id)
+                .collect_changes(backend.record.id, skillhub_core::OperationId::new())
                 .await
                 .unwrap_err();
             assert_eq!(error.code, ErrorCode::OperationConflict);

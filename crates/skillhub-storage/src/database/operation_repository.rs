@@ -99,6 +99,43 @@ impl<'a> OperationRepositorySqlite<'a> {
         Ok(())
     }
 
+    /// Atomically commits a prepared operation alongside domain facts. The
+    /// phase predicate prevents a stale collector from overwriting a journal
+    /// row that another path has already settled.
+    pub fn commit_prepared_tx(
+        transaction: &Transaction<'_>,
+        record: &OperationRecord,
+    ) -> AppResult<()> {
+        if record.phase != OperationPhase::Committed
+            || record.progress.phase != OperationPhase::Committed
+        {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "operation_phase"));
+        }
+        let (progress, inverse) = encode_record(record)?;
+        let changed = transaction
+            .execute(
+                "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1 AND kind=?9 AND phase='prepared'",
+                params![
+                    record.operation_id.to_string(),
+                    state_code(record.phase),
+                    phase_code(record.phase),
+                    record.request_fingerprint,
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                    record.kind,
+                ],
+            )
+            .map_err(error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("operation_id", record.operation_id.to_string()));
+        }
+        Ok(())
+    }
+
     pub fn get_sync(&self, operation_id: OperationId) -> AppResult<Option<OperationRecord>> {
         let row = self
             .database
@@ -349,6 +386,7 @@ fn parse_error_code(value: &str) -> AppResult<ErrorCode> {
         ErrorCode::CredentialUnavailable,
         ErrorCode::MigrationRequired,
         ErrorCode::DatabaseNewerSchema,
+        ErrorCode::DatabaseConstraint,
         ErrorCode::InternalError,
         ErrorCode::CombinationNestingNotAllowed,
         ErrorCode::CatalogInvalidMetadata,
@@ -415,9 +453,7 @@ fn invalid_record() -> AppError {
 }
 
 fn error(error: rusqlite::Error) -> AppError {
-    AppError::new(ErrorCode::InternalError, Severity::Error)
-        .with_param("source", error.to_string())
-        .with_action(RecoveryAction::Retry)
+    super::classify_database_error(error)
 }
 
 #[cfg(test)]
@@ -450,6 +486,21 @@ mod tests {
         block_on(repository.insert(&record)).unwrap();
         let loaded = block_on(repository.get(id)).unwrap().unwrap();
         assert_eq!(loaded, record);
+    }
+
+    #[test]
+    fn round_trip_preserves_database_constraint_error_code() {
+        let database = Database::open_in_memory().unwrap();
+        let repository = OperationRepositorySqlite::new(&database);
+        let id = OperationId::new();
+        let mut record = OperationRecord::planned(id, "delete_skill", "fingerprint");
+        record.phase = OperationPhase::RolledBack;
+        record.progress.phase = OperationPhase::RolledBack;
+        record.error_code = Some(ErrorCode::DatabaseConstraint);
+
+        repository.insert_sync(&record).unwrap();
+
+        assert_eq!(repository.get_sync(id).unwrap().unwrap(), record);
     }
 
     #[test]

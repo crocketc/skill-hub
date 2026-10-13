@@ -1,12 +1,226 @@
 use skillhub_adapters::deployment::DeploymentFilesystem;
 use skillhub_application::LocalApplicationFacade;
-use skillhub_core::api::{AppCommand, AppCommandResult, AppQuery, AppQueryResult};
+use skillhub_core::api::{
+    AppCommand, AppCommandResult, AppQuery, AppQueryResult, CollectDeploymentChanges,
+};
 use skillhub_core::catalog::Skill;
 use skillhub_core::{
     ApplicationFacade, DeploymentMode, DeploymentRecord, DeploymentState, OperationPhase,
-    OperationRecord, RecoveryAction, ResolveRecovery, SkillId,
+    OperationRecord, RecoveryAction, ResolveRecovery, SkillId, VersionRecord,
 };
 use skillhub_storage::{CentralLibrary, Database, VersionStore};
+
+fn collect_changes_fixture(
+    workspace: &std::path::Path,
+) -> (
+    Database,
+    std::path::PathBuf,
+    DeploymentRecord,
+    VersionRecord,
+    VersionRecord,
+) {
+    let library_root = workspace.join("library");
+    let central = CentralLibrary::initialize(&library_root).expect("central library");
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(SkillId::new(), "Collect changes recovery");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert_sync(&skill)
+        .expect("insert skill");
+
+    let source = workspace.join("source");
+    std::fs::create_dir_all(&source).expect("source directory");
+    std::fs::write(source.join("SKILL.md"), "# approved version\n").expect("source content");
+    let initial_version = VersionStore::from_library(&central)
+        .capture(skill.id(), &source)
+        .expect("capture initial version");
+    database
+        .record_version(skill.id(), &initial_version)
+        .expect("record initial version");
+
+    let target_root = workspace.join("agent/skills");
+    std::fs::create_dir_all(&target_root).expect("target root");
+    let destination = target_root.join(skill.runtime_name());
+    std::fs::create_dir_all(&destination).expect("deployed target");
+    std::fs::write(destination.join("SKILL.md"), "# externally changed\n")
+        .expect("changed target content");
+    let changed_version = VersionStore::from_library(&central)
+        .capture(skill.id(), &destination)
+        .expect("capture changed version fixture");
+    let target_id = skillhub_core::physical_id_for_path(&target_root).expect("target identity");
+    database
+        .connection_for_test()
+        .execute(
+            "INSERT INTO targets (id, agent_id, scope, path, created_at) VALUES (?1, 'fixture', 'global', ?2, 0)",
+            rusqlite::params![target_id, target_root.to_string_lossy().into_owned()],
+        )
+        .expect("insert target");
+    let deployment = DeploymentRecord {
+        id: skillhub_core::DeploymentId::new(),
+        skill_id: skill.id(),
+        version_id: initial_version.id.clone(),
+        target_id,
+        state: DeploymentState::Deployed,
+        mode: DeploymentMode::ManagedCopy,
+        managed: true,
+        runtime_name: skill.runtime_name().to_owned(),
+        expected_hash: initial_version.manifest.tree_hash.clone(),
+        observed_hash: None,
+    };
+    database
+        .deployment_repository()
+        .insert_sync(&deployment)
+        .expect("insert deployment");
+
+    (
+        database,
+        library_root,
+        deployment,
+        initial_version,
+        changed_version,
+    )
+}
+
+#[tokio::test]
+async fn collect_changes_registers_version_and_commits_facts_with_journal() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (database, library_root, deployment, initial_version, changed_version) =
+        collect_changes_fixture(workspace.path());
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let result = facade
+        .execute(AppCommand::CollectDeploymentChanges(
+            CollectDeploymentChanges {
+                deployment_id: deployment.id,
+            },
+        ))
+        .await
+        .expect("collect changes");
+    assert!(matches!(
+        result,
+        AppCommandResult::ReconcileResult(ref value)
+            if value.version_id.as_ref() == Some(&changed_version.id)
+    ));
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let persisted = database
+        .deployment_repository()
+        .list_all()
+        .expect("deployment rows")
+        .into_iter()
+        .find(|record| record.id == deployment.id)
+        .expect("deployment row");
+    assert_eq!(persisted.version_id, changed_version.id);
+    assert_eq!(persisted.expected_hash, changed_version.manifest.tree_hash);
+    assert_eq!(
+        persisted.observed_hash.as_deref(),
+        Some(changed_version.manifest.tree_hash.as_str())
+    );
+    assert_ne!(persisted.version_id, initial_version.id);
+    let registered: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM versions WHERE id=?1",
+            [changed_version.id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("registered version count");
+    assert_eq!(registered, 1);
+    let operation = database
+        .operation_repository()
+        .list_sync()
+        .expect("operation rows")
+        .into_iter()
+        .find(|record| record.kind == "reconcile_collect_changes")
+        .expect("collect changes operation");
+    assert_eq!(operation.phase, OperationPhase::Committed);
+    assert_eq!(
+        operation
+            .result
+            .as_ref()
+            .and_then(|value| value.get("version_id"))
+            .and_then(serde_json::Value::as_str),
+        Some(changed_version.id.as_str())
+    );
+}
+
+#[tokio::test]
+async fn collect_changes_keeps_deployment_facts_and_journal_atomic_on_commit_failure() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let (database, library_root, deployment, initial_version, changed_version) =
+        collect_changes_fixture(workspace.path());
+
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_collect_changes_journal_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = 'reconcile_collect_changes' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected reconcile journal failure'); END;",
+        )
+        .expect("install journal failure trigger");
+
+    let result = facade
+        .execute(AppCommand::CollectDeploymentChanges(
+            CollectDeploymentChanges {
+                deployment_id: deployment.id,
+            },
+        ))
+        .await;
+    assert!(
+        result.is_err(),
+        "the command must not report success when its durable journal commit fails"
+    );
+
+    let operation_id = {
+        let database = database.lock().expect("database lock");
+        let persisted = database
+            .deployment_repository()
+            .list_all()
+            .expect("deployment rows")
+            .into_iter()
+            .find(|record| record.id == deployment.id)
+            .expect("deployment row");
+        assert_eq!(persisted.version_id, initial_version.id);
+        assert_eq!(persisted.expected_hash, initial_version.manifest.tree_hash);
+        assert_eq!(persisted.observed_hash, None);
+        let registered: i64 = database
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM versions WHERE id=?1",
+                [changed_version.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("registered version count");
+        assert_eq!(
+            registered, 0,
+            "failed journal commit must roll back version registration"
+        );
+        let operation = database
+            .operation_repository()
+            .list_sync()
+            .expect("operation rows")
+            .into_iter()
+            .find(|record| record.kind == "reconcile_collect_changes")
+            .expect("collect changes operation");
+        assert_eq!(operation.phase, OperationPhase::RolledBack);
+        operation.operation_id
+    };
+    let candidates = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates");
+    assert!(matches!(
+        candidates,
+        AppQueryResult::RecoveryCandidates(ref values)
+            if !values.iter().any(|candidate| candidate.operation_id == operation_id)
+    ));
+}
 
 #[tokio::test]
 async fn reconcile_restore_resumes_after_original_target_was_moved_to_backup() {

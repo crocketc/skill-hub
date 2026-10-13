@@ -6,7 +6,10 @@ use skillhub_core::deployment::{
     DeploymentState,
 };
 use skillhub_core::relationship::RelationHealthReason;
-use skillhub_core::{AppError, AppResult, DeploymentId, ErrorCode, RecoveryAction, Severity};
+use skillhub_core::{
+    AppError, AppResult, DeploymentId, ErrorCode, OperationPhase, RecoveryAction, Severity,
+    SkillId, VersionRecord,
+};
 
 /// SQLite persistence for deployment facts.  The planner itself remains in
 /// skillhub-core and does not depend on this repository.
@@ -247,6 +250,123 @@ impl<'a> DeploymentRepositorySqlite<'a> {
         if relationship_changed {
             super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
         }
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Registers the captured immutable version, updates deployment and
+    /// relationship facts, and commits the operation journal in one SQLite
+    /// transaction. A failed journal write therefore cannot leave the
+    /// deployment pointing at an uncommitted version.
+    pub fn commit_reconcile_collection_sync(
+        &self,
+        id: DeploymentId,
+        version: &VersionRecord,
+        operation_id: skillhub_core::OperationId,
+    ) -> AppResult<()> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("operation_id", operation_id.to_string())
+            })?;
+        if operation.kind != "reconcile_collect_changes"
+            || operation.phase != OperationPhase::Prepared
+        {
+            return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                .with_param("operation_id", operation_id.to_string()));
+        }
+        let expected_hash = &version.manifest.tree_hash;
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.completed = 1;
+        operation.progress.total = 1;
+        operation.progress.message_code =
+            "operation.reconcile_collect_changes.committed".to_owned();
+        operation.result = Some(serde_json::json!({
+            "deployment_id": id.to_string(),
+            "version_id": version.id.to_string(),
+        }));
+
+        let skill_id: Option<String> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT skill_id FROM deployments WHERE id=?1",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        let skill_id = skill_id
+            .ok_or_else(|| {
+                AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                    .with_param("field", "deployment")
+                    .with_action(RecoveryAction::Retry)
+            })?
+            .parse::<SkillId>()
+            .map_err(|_| invalid_record())?;
+        if version.manifest.skill_id != skill_id {
+            return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("field", "version_skill_id")
+                .with_action(RecoveryAction::Retry));
+        }
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        let manifest = serde_json::to_string(&version.manifest).map_err(|error| {
+            AppError::new(ErrorCode::InternalError, Severity::Error)
+                .with_param("source", error.to_string())
+                .with_action(RecoveryAction::Retry)
+        })?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    version.id.to_string(),
+                    version.manifest.skill_id.to_string(),
+                    version.manifest.tree_hash,
+                    manifest,
+                    now(),
+                ],
+            )
+            .map_err(database_error)?;
+        let observed_at = now();
+        let changed = transaction
+            .execute(
+                "UPDATE deployments SET version_id=?1, expected_hash=?2, observed_hash=?3, updated_at=?4 WHERE id=?5 AND state IN ('deployed','active') AND skill_id=?6",
+                params![
+                    version.id.to_string(),
+                    expected_hash,
+                    expected_hash,
+                    observed_at,
+                    id.to_string(),
+                    skill_id.to_string(),
+                ],
+            )
+            .map_err(database_error)?;
+        if changed != 1 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("field", "deployment")
+                .with_action(RecoveryAction::Retry));
+        }
+        let relationship_changed = super::relationship_repository::sync_reconciled_deployment_tx(
+            &transaction,
+            &id.to_string(),
+            expected_hash,
+            Some(expected_hash),
+            observed_at,
+        )?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
+        }
+        super::operation_repository::OperationRepositorySqlite::commit_prepared_tx(
+            &transaction,
+            &operation,
+        )?;
         transaction.commit().map_err(database_error)
     }
 

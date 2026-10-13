@@ -23,7 +23,11 @@ pub trait ReconcileBackend: Send + Sync {
     ) -> AppResult<ExternalChangeObservation>;
     /// Run basic preflight on the target and capture its content as a new
     /// version. The returned version becomes the caller's selected version.
-    async fn collect_target_changes(&self, deployment: &DeploymentRecord) -> AppResult<VersionId>;
+    async fn collect_target_changes(
+        &self,
+        deployment: &DeploymentRecord,
+        operation_id: crate::OperationId,
+    ) -> AppResult<VersionId>;
     /// Reapply the selected version to the owned target after explicit user
     /// confirmation.
     async fn restore_target(
@@ -55,10 +59,17 @@ where
         Ok(ReconcilePlan::from_observation(&deployment, observation))
     }
 
-    pub async fn collect_changes(&self, deployment_id: DeploymentId) -> AppResult<ReconcileResult> {
+    pub async fn collect_changes(
+        &self,
+        deployment_id: DeploymentId,
+        operation_id: crate::OperationId,
+    ) -> AppResult<ReconcileResult> {
         let (deployment, observation) = self.load_observation(deployment_id).await?;
         ensure_allowed(observation.state, ReconcileAction::CollectChanges)?;
-        let version_id = self.backend.collect_target_changes(&deployment).await?;
+        let version_id = self
+            .backend
+            .collect_target_changes(&deployment, operation_id)
+            .await?;
         Ok(ReconcileResult {
             deployment_id,
             state_before: observation.state,
