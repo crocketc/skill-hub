@@ -185,24 +185,19 @@ impl ExportService {
             timestamp()
         ));
         fs::create_dir_all(&self.destination).map_err(io_error)?;
-        // 故障矩阵：落盘中途失败时清理半成品归档文件，不留下损坏文件。
-        let written =
-            self.write_archive_body(&archive_path, entries, manifest, wrap_individual_skill_zips);
-        if let Err(error) = written {
-            let _ = fs::remove_file(&archive_path);
-            return Err(error);
-        }
+        write_archive_atomically(&archive_path, |file| {
+            self.write_archive_body(file, entries, manifest, wrap_individual_skill_zips)
+        })?;
         Ok(StandardExport { root: archive_path })
     }
 
     fn write_archive_body(
         &self,
-        archive_path: &std::path::Path,
+        file: fs::File,
         entries: &[ExportEntry],
         manifest: &serde_json::Value,
         wrap_individual_skill_zips: bool,
     ) -> AppResult<()> {
-        let file = fs::File::create(archive_path).map_err(io_error)?;
         let mut writer = zip::ZipWriter::new(file);
         let options = zip::write::FileOptions::<()>::default()
             .compression_method(zip::CompressionMethod::Deflated);
@@ -254,7 +249,11 @@ impl ExportService {
         writer
             .write_all(&serde_json::to_vec_pretty(manifest).map_err(json_error)?)
             .map_err(io_error)?;
-        writer.finish().map_err(zip_error)?;
+        writer
+            .finish()
+            .map_err(zip_error)?
+            .sync_all()
+            .map_err(io_error)?;
         Ok(())
     }
 }
@@ -387,4 +386,95 @@ fn json_error(error: serde_json::Error) -> AppError {
 
 fn zip_error(error: zip::result::ZipError) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error).with_param("source", error.to_string())
+}
+
+fn write_archive_atomically(
+    archive_path: &std::path::Path,
+    write_body: impl FnOnce(fs::File) -> AppResult<()>,
+) -> AppResult<()> {
+    let parent = archive_path.parent().ok_or_else(|| {
+        AppError::new(ErrorCode::InvalidInput, Severity::Error)
+            .with_param("path", archive_path.display().to_string())
+    })?;
+    let file_name = archive_path
+        .file_name()
+        .ok_or_else(|| {
+            AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                .with_param("path", archive_path.display().to_string())
+        })?
+        .to_string_lossy();
+    let partial_path = parent.join(format!(
+        ".{file_name}.{}.{}.partial",
+        std::process::id(),
+        timestamp()
+    ));
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&partial_path)
+        .map_err(io_error)?;
+
+    if let Err(error) = write_body(file) {
+        let _ = fs::remove_file(&partial_path);
+        return Err(error);
+    }
+
+    if let Err(error) = fs::rename(&partial_path, archive_path) {
+        let _ = fs::remove_file(&partial_path);
+        return Err(io_error(error));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn final_archive_is_not_visible_until_the_body_is_complete() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let archive_path = directory.path().join("export.zip");
+
+        write_archive_atomically(&archive_path, |mut file| {
+            assert!(
+                !archive_path.exists(),
+                "the final archive path must stay absent while it is written"
+            );
+            file.write_all(b"complete archive").map_err(io_error)
+        })
+        .expect("publish archive");
+
+        assert_eq!(
+            fs::read(&archive_path).expect("published archive"),
+            b"complete archive"
+        );
+        assert_eq!(
+            fs::read_dir(directory.path())
+                .expect("read temporary directory")
+                .count(),
+            1,
+            "publishing should leave only the final archive"
+        );
+    }
+
+    #[test]
+    fn failed_archive_body_removes_partial_file_and_never_publishes_final_path() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let archive_path = directory.path().join("export.zip");
+
+        let result = write_archive_atomically(&archive_path, |mut file| {
+            file.write_all(b"incomplete archive").map_err(io_error)?;
+            Err(AppError::new(ErrorCode::InternalError, Severity::Error))
+        });
+
+        assert!(result.is_err());
+        assert!(!archive_path.exists());
+        assert_eq!(
+            fs::read_dir(directory.path())
+                .expect("read temporary directory")
+                .count(),
+            0,
+            "a returned write error should clean its partial file"
+        );
+    }
 }
